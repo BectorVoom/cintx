@@ -68,11 +68,7 @@ For each design decision, document:
 
 ### 5. Performance
 - Efficient algorithms
-- Minimal network requests
-- Optimized database queries
 - Appropriate caching
-- Lazy loading
-
 
 ```markdown
 
