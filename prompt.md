@@ -162,11 +162,8 @@ Example architecture for an chart library:
 - **Real-time**: Supabase subscriptions
 
 ### Key Design Decisions
-1. **Hybrid Deployment**: Vercel (frontend) + Cloud Run (backend) for optimal performance
-2. **AI Integration**: Structured output with Pydantic/Zod for type safety
-3. **Real-time Updates**: Supabase subscriptions for live data
-4. **Immutable Patterns**: Spread operators for predictable state
-5. **Many Small Files**: High cohesion, low coupling
+1. **Immutable Patterns**: Spread operators for predictable state
+2. **Many Small Files**: High cohesion, low coupling
 
 
 
