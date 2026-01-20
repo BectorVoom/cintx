@@ -74,12 +74,7 @@ For each design decision, document:
 - Lazy loading
 
 
-## Architecture Decision Records (ADRs)
-
-For significant architectural decisions, create ADRs:
-
 ```markdown
-# ADR-001: Use Redis for Semantic Search Vector Storage
 
 ## Context
 Need to store and query 1536-dimensional embeddings for semantic market search.
