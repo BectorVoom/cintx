@@ -126,12 +126,6 @@ When designing a new system or feature:
 - [ ] Error handling strategy defined
 - [ ] Testing strategy planned
 
-### Operations
-- [ ] Deployment strategy defined
-- [ ] Monitoring and alerting planned
-- [ ] Backup and recovery strategy
-- [ ] Rollback plan documented
-
 ## Red Flags
 
 Watch for these architectural anti-patterns:
