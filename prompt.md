@@ -154,12 +154,11 @@ Watch for these architectural anti-patterns:
 Example architecture for an chart library:
 
 ### Current Architecture
-- **Frontend**: Javascript,Typescript
-- **test**: Playwright
-- **render**: wgpu,canva2d
-- **cli**: bun
-- **AI**: Claude API with structured output
-- **Real-time**: Supabase subscriptions
+- **language**: Rust
+- **test**: cargo test
+- **cli**: cargo
+- **AI**: codex with structured output
+
 
 ### Key Design Decisions
 1. **Immutable Patterns**: Spread operators for predictable state
