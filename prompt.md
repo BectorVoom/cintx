@@ -116,13 +116,12 @@ When designing a new system or feature:
 - [ ] User stories documented
 - [ ] API contracts defined
 - [ ] Data models specified
-- [ ] UI/UX flows mapped
+
 
 ### Non-Functional Requirements
 - [ ] Performance targets defined (latency, throughput)
 - [ ] Scalability requirements specified
-- [ ] Security requirements identified
-- [ ] Availability targets set (uptime %)
+
 
 ### Technical Design
 - [ ] Architecture diagram created
