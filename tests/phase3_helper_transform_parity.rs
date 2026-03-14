@@ -6,19 +6,20 @@ mod phase2_fixtures;
 mod phase3_helper_cases;
 
 use cintx::{
-    deterministic_transform_scalars, route, safe, shell_ao_layout, shell_normalization_metadata,
-    CpuRouteTarget, Representation,
+    deterministic_transform_scalars, gto_norm, route, safe, shell_ao_layout,
+    shell_normalization_metadata, CpuRouteTarget, Representation,
 };
 use oracle_runner::{assert_within_tolerance, oracle_expected_scalars, TolerancePolicy};
 use phase2_fixtures::{
-    phase3_helper_options, stable_expected_shell_counts_cartesian,
+    out_of_phase_route_keys, phase3_helper_options, stable_expected_shell_counts_cartesian,
     stable_expected_shell_counts_spherical, stable_expected_shell_counts_spinor,
     stable_expected_shell_offsets_cartesian, stable_expected_shell_offsets_spherical,
     stable_expected_shell_offsets_spinor, stable_phase2_matrix, stable_raw_layout,
     stable_safe_basis,
 };
 use phase3_helper_cases::{
-    expected_gto_norm, helper_matrix_case_count, stable_shell_normalization_expectations,
+    expected_gto_norm, helper_matrix_case_count, malformed_positive_kappa_bas,
+    malformed_truncated_bas, stable_shell_normalization_expectations,
 };
 
 const NORM_TOLERANCE: f64 = 1e-12;
@@ -146,6 +147,80 @@ fn helper_transform_parity_matrix() {
                 "3c1e spinor helper transform must preserve adapter-specific imaginary sign",
             );
         }
+    }
+}
+
+#[test]
+fn helper_failure_semantics_are_typed() {
+    let truncated_bas = malformed_truncated_bas();
+    let truncated_bas_err = shell_ao_layout(&truncated_bas, Representation::Cartesian)
+        .expect_err("truncated bas rows must fail helper layout validation");
+    assert!(matches!(
+        truncated_bas_err,
+        cintx::LibcintRsError::InvalidInput { field: "bas", reason }
+            if reason.contains("not divisible by BAS_SLOTS")
+    ));
+
+    let malformed_spinor_bas = malformed_positive_kappa_bas();
+    let malformed_spinor_err = shell_ao_layout(&malformed_spinor_bas, Representation::Spinor)
+        .expect_err("positive kappa on l=0 shell must fail helper spinor counts");
+    assert!(matches!(
+        malformed_spinor_err,
+        cintx::LibcintRsError::InvalidInput {
+            field: "shell.kappa",
+            reason
+        } if reason.contains("positive kappa requires angular momentum > 0")
+    ));
+
+    let route_target = route(
+        stable_phase2_matrix()
+            .first()
+            .expect("stable helper matrix cannot be empty")
+            .route_key(),
+    )
+    .expect("stable helper matrix route must resolve");
+    let dims_err =
+        deterministic_transform_scalars(route_target, Representation::Cartesian, &[2, 0])
+            .expect_err("zero dimension must fail helper transform scalar generation");
+    assert!(matches!(
+        dims_err,
+        cintx::LibcintRsError::InvalidInput {
+            field: "dims",
+            reason
+        } if reason.contains("must be greater than zero")
+    ));
+
+    let exponent_err = gto_norm(2, 0.0).expect_err("non-positive exponent must fail normalization");
+    assert!(matches!(
+        exponent_err,
+        cintx::LibcintRsError::InvalidInput {
+            field: "exponent",
+            reason
+        } if reason.contains("greater than zero")
+    ));
+
+    let (_, bas, mut env) = stable_raw_layout();
+    env.truncate(33);
+    let env_err = shell_normalization_metadata(1, &bas, &env)
+        .expect_err("short env buffer must fail offset-based normalization metadata");
+    assert!(matches!(
+        env_err,
+        cintx::LibcintRsError::InvalidInput {
+            field: "bas.ptr_exp",
+            reason
+        } if reason.contains("exceeds env length")
+    ));
+
+    for route_key in out_of_phase_route_keys() {
+        let route_err = route(route_key)
+            .expect_err("out-of-phase helper route must fail with typed unsupported");
+        assert!(matches!(
+            route_err,
+            cintx::LibcintRsError::UnsupportedApi {
+                api: "cpu.route",
+                ..
+            }
+        ));
     }
 }
 
