@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod execution_plan;
+pub mod raw;
 pub mod validator;
 pub mod workspace_query;
 
