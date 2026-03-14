@@ -64,7 +64,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 4
 - [x] 03-01: Helper and transform parity foundation
 - [x] 03-02: Manifest governance lock and drift contract
-- [ ] 03-03: Optimizer equivalence and regression-gate matrix
+- [x] 03-03: Optimizer equivalence and regression-gate matrix
 - [ ] 03-04: CI governance gates and traceable release policy
 
 ### Phase 4: Optional Backends and Migration Surfaces
@@ -84,5 +84,5 @@ Decimal phases appear between their surrounding integers in numeric order.
 |-------|----------------|--------|-----------|
 | 1. Contracts and Typed Foundations | 2/2 | Complete    | 2026-03-14 |
 | 2. CPU Compatibility Execution | 9/9 | Complete | 2026-03-14 |
-| 3. Verification and Compatibility Governance | 2/4 | In progress | - |
+| 3. Verification and Compatibility Governance | 3/4 | In Progress|  |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |
