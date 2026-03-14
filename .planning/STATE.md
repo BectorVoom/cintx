@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 02-07-PLAN.md
-last_updated: "2026-03-14T07:07:48.425Z"
-last_activity: 2026-03-14 - Completed plan 02-03 safe evaluate and no-partial-write execution path
+last_updated: "2026-03-14T07:09:08.678Z"
+last_activity: 2026-03-14 - Completed plan 02-07 raw query/evaluate integration
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 10
   completed_plans: 7
-  percent: 60
+  percent: 70
 ---
 
 # Project State
@@ -26,32 +26,31 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 ## Current Position
 
 Phase: 2 of 4 (CPU Compatibility Execution)
-Plan: 4 of 8 in current phase
+Plan: 5 of 8 in current phase
 Status: In Progress
-Last activity: 2026-03-14 - Completed plan 02-03 safe evaluate and no-partial-write execution path
+Last activity: 2026-03-14 - Completed plan 02-07 raw query/evaluate integration
 
-Progress: [██████░░░░] 60%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 9.3 min
-- Total execution time: 0.9 hours
+- Total plans completed: 7
+- Average duration: 10.0 min
+- Total execution time: 1.2 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Contracts and Typed Foundations | 2 | 13 min | 6.5 min |
-| 2. CPU Compatibility Execution | 4 | 46 min | 11.5 min |
+| 2. CPU Compatibility Execution | 5 | 57 min | 11.4 min |
 | 3. Verification and Compatibility Governance | 0 | 0 min | 0 min |
 | 4. Optional Backends and Migration Surfaces | 0 | 0 min | 0 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (8 min), 02-01 (7 min), 02-06 (11 min), 02-02 (16 min), 02-03 (12 min)
-- Trend: Safe evaluate/output semantics are now integrated on shared CPU execution contracts, unlocking RAW-03 no-partial-write parity work.
-| Phase 02-cpu-compatibility-execution P07 | 11 min | 3 tasks | 8 files |
+- Last 5 plans: 02-01 (7 min), 02-06 (11 min), 02-02 (16 min), 02-03 (12 min), 02-07 (11 min)
+- Trend: Raw query->execute contracts are now enforced through shared CPU routing with diagnostics-locked mismatch behavior.
 
 ## Accumulated Context
 
