@@ -1,4 +1,4 @@
-use cintx::{CpuRouteKey, CpuRouteTarget, LibcintRsError, Representation, route};
+use cintx::{route, CpuRouteKey, CpuRouteTarget, LibcintRsError, ManifestProfile, Representation};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TolerancePolicy {
@@ -12,6 +12,53 @@ impl TolerancePolicy {
             abs: 1e-12,
             rel: 1e-12,
         }
+    }
+}
+
+pub const PHASE3_REQUIRED_GATE_REQUIREMENTS: &[&str] = &["COMP-04", "VERI-02"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProfileOracleGateCase {
+    pub profile: ManifestProfile,
+    pub requirement_ids: &'static [&'static str],
+    pub feature_flags: &'static [&'static str],
+}
+
+pub fn phase3_oracle_profile_matrix() -> &'static [ProfileOracleGateCase] {
+    &[
+        ProfileOracleGateCase {
+            profile: ManifestProfile::Base,
+            requirement_ids: PHASE3_REQUIRED_GATE_REQUIREMENTS,
+            feature_flags: &["phase3-regression-gate", "profile-base"],
+        },
+        ProfileOracleGateCase {
+            profile: ManifestProfile::WithF12,
+            requirement_ids: PHASE3_REQUIRED_GATE_REQUIREMENTS,
+            feature_flags: &["phase3-regression-gate", "profile-with-f12"],
+        },
+        ProfileOracleGateCase {
+            profile: ManifestProfile::With4c1e,
+            requirement_ids: PHASE3_REQUIRED_GATE_REQUIREMENTS,
+            feature_flags: &["phase3-regression-gate", "profile-with-4c1e"],
+        },
+        ProfileOracleGateCase {
+            profile: ManifestProfile::WithF12With4c1e,
+            requirement_ids: PHASE3_REQUIRED_GATE_REQUIREMENTS,
+            feature_flags: &["phase3-regression-gate", "profile-with-f12-with-4c1e"],
+        },
+    ]
+}
+
+pub fn assert_requirement_traceability(
+    requirement_ids: &[&str],
+    required_requirements: &[&str],
+    context: &str,
+) {
+    for requirement in required_requirements {
+        assert!(
+            requirement_ids.iter().any(|candidate| candidate == requirement),
+            "{context}: missing required traceability requirement `{requirement}`",
+        );
     }
 }
 
