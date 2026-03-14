@@ -84,7 +84,11 @@ impl QueryDiagnostics {
             _ => {}
         }
 
-        self = self.with_provided_bytes_from_dims();
+        if self.provided_bytes.is_none() {
+            self = self.with_provided_bytes_from_dims();
+        } else {
+            self.refresh_correlation_id();
+        }
         tracing::error!(
             correlation_id = self.correlation_id,
             stage,

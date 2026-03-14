@@ -1,4 +1,6 @@
-use cintx::{IntegralFamily, Operator, OperatorKind, Representation, WorkspaceQueryOptions};
+use cintx::{
+    IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation, WorkspaceQueryOptions,
+};
 
 #[test]
 fn raw_query_null_equivalent_contract() {
@@ -150,6 +152,71 @@ fn raw_query_then_execute_success() {
         }
         other => panic!("expected direct CPU route target, got {other:?}"),
     }
+}
+
+#[test]
+fn raw_query_execute_mismatch_failure_diagnostics() {
+    let (atm, bas, env) = sample_raw_layout();
+    let operator = one_electron_overlap();
+    let options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(1024),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-raw-query", "phase2-raw-execute"],
+    };
+
+    let queried = cintx::raw::query_workspace_compat_with_sentinels(
+        operator,
+        Representation::Spherical,
+        cintx::raw::RawQueryRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            out: None,
+            cache: None,
+            opt: None,
+        },
+        &options,
+    )
+    .expect("query metadata should succeed for valid request");
+
+    let required_scalars = queried.required_bytes / 8;
+    let mut undersized_output = vec![0.0f64; required_scalars - 1];
+    let failure = cintx::raw::evaluate_compat(
+        operator,
+        Representation::Spherical,
+        &queried,
+        cintx::raw::RawEvaluateRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            out: &mut undersized_output,
+            cache: None,
+            opt: None,
+        },
+        &options,
+    )
+    .expect_err("execute must fail when output buffer does not satisfy queried requirement");
+
+    assert!(matches!(
+        failure.error,
+        LibcintRsError::InvalidLayout {
+            item: "out_length",
+            expected,
+            got
+        } if expected == required_scalars && got == (required_scalars - 1)
+    ));
+    assert_eq!(failure.diagnostics.api, "raw.compat.evaluate");
+    assert_eq!(failure.diagnostics.shell_tuple, vec![0, 1]);
+    assert_eq!(failure.diagnostics.dims, queried.dims);
+    assert_eq!(failure.diagnostics.required_bytes, Some(queried.required_bytes));
+    assert_eq!(
+        failure.diagnostics.provided_bytes,
+        Some((required_scalars - 1) * 8)
+    );
 }
 
 fn sample_raw_layout() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
