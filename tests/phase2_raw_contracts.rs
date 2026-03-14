@@ -3,7 +3,9 @@ use std::ptr::NonNull;
 use cintx::runtime::raw::{
     RawAtmView, RawBasView, RawEnvView, RawValidationRequest, validate_raw_contract,
 };
-use cintx::{IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation};
+use cintx::{
+    IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation, WorkspaceQueryOptions,
+};
 
 #[test]
 fn raw_layout_slot_and_offset_checks() {
@@ -188,6 +190,64 @@ fn raw_validation_matrix() {
     assert!(valid_with_cache.has_cache);
     assert!(valid_with_cache.has_opt);
     assert_eq!(valid_with_cache.cache_required_len, 2);
+}
+
+#[test]
+fn raw_api_validation_boundary() {
+    let (atm, bas, env) = sample_raw_layout();
+    let operator = one_electron_overlap();
+    let options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(1024),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-raw-contract"],
+    };
+
+    let workspace = cintx::raw::query_workspace_compat(
+        operator,
+        Representation::Spherical,
+        cintx::raw::RawCompatRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            cache: Some(&[0.0, 0.0]),
+            opt: Some(NonNull::dangling()),
+        },
+        &options,
+    )
+    .expect("valid raw compatibility request should pass API boundary");
+    assert_eq!(workspace.shell_tuple, vec![0, 1]);
+    assert_eq!(workspace.natural_dims, vec![1, 3]);
+    assert_eq!(workspace.dims, vec![1, 3]);
+    assert_eq!(workspace.required_elements, 3);
+    assert_eq!(workspace.required_bytes, 24);
+    assert_eq!(workspace.cache_required_len, 2);
+    assert!(workspace.has_cache);
+    assert!(workspace.has_opt);
+
+    let failure = cintx::raw::query_workspace_compat(
+        operator,
+        Representation::Spherical,
+        cintx::raw::RawCompatRequest {
+            shls: &[0, 1],
+            dims: Some(&[999, 3]),
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            cache: None,
+            opt: None,
+        },
+        &options,
+    )
+    .expect_err("mismatched dims should fail before execution dispatch");
+    assert!(matches!(
+        failure.error,
+        LibcintRsError::DimsBufferMismatch { .. }
+    ));
+    assert_eq!(failure.diagnostics.api, "raw.compat.query_workspace");
+    assert_eq!(failure.diagnostics.dims, vec![999, 3]);
+    assert!(failure.diagnostics.provided_bytes.is_some());
 }
 
 fn sample_raw_layout() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
