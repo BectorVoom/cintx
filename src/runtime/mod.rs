@@ -2,6 +2,7 @@ pub mod backend;
 pub mod executor;
 pub mod execution_plan;
 pub mod layout;
+pub mod memory;
 pub mod output_writer;
 pub mod planner;
 pub mod raw;

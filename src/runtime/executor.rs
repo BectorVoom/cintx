@@ -2,7 +2,9 @@ use crate::contracts::{BasisSet, Operator, Representation};
 use crate::errors::LibcintRsError;
 
 use super::{
-    CpuRouteTarget, WorkspaceQueryOptions, layout_for_plan, plan_safe,
+    CpuRouteTarget, WorkspaceQueryOptions, layout_for_plan,
+    memory::allocator::{try_alloc_real_buffer, try_alloc_spinor_buffer},
+    plan_safe,
     output_writer::{OutputWriter, StagedOutputMut},
     route_request,
 };
@@ -77,14 +79,8 @@ pub fn evaluate(
 
     match representation {
         Representation::Cartesian | Representation::Spherical => {
-            let mut values = Vec::new();
-            values.try_reserve_exact(layout.element_count).map_err(|_| {
-                LibcintRsError::AllocationFailure {
-                    operation: "safe.evaluate.real_output",
-                    detail: format!("failed to reserve {} f64 elements", layout.element_count),
-                }
-            })?;
-            values.resize(layout.element_count, 0.0);
+            let mut values =
+                try_alloc_real_buffer(layout.element_count, "safe.evaluate.real_output")?;
             execute_planned_into(
                 route_target,
                 &layout,
@@ -96,17 +92,8 @@ pub fn evaluate(
             })
         }
         Representation::Spinor => {
-            let mut values = Vec::new();
-            values.try_reserve_exact(layout.element_count).map_err(|_| {
-                LibcintRsError::AllocationFailure {
-                    operation: "safe.evaluate.spinor_output",
-                    detail: format!(
-                        "failed to reserve {} complex spinor elements",
-                        layout.element_count
-                    ),
-                }
-            })?;
-            values.resize(layout.element_count, [0.0, 0.0]);
+            let mut values =
+                try_alloc_spinor_buffer(layout.element_count, "safe.evaluate.spinor_output")?;
             execute_planned_into(
                 route_target,
                 &layout,

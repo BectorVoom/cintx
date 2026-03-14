@@ -1,6 +1,9 @@
 use crate::errors::LibcintRsError;
 
-use super::{EvaluationOutputMut, LayoutElementKind, OutputLayout};
+use super::{
+    EvaluationOutputMut, LayoutElementKind, OutputLayout,
+    memory::allocator::{try_alloc_real_buffer, try_alloc_spinor_buffer},
+};
 
 #[derive(Debug)]
 pub struct OutputWriter<'a> {
@@ -72,30 +75,13 @@ fn validate_output_contract(
 
 fn allocate_staged(layout: &OutputLayout) -> Result<StagedOutput, LibcintRsError> {
     match layout.element_kind {
-        LayoutElementKind::RealF64 => {
-            let mut staged = Vec::new();
-            staged.try_reserve_exact(layout.element_count).map_err(|_| {
-                LibcintRsError::AllocationFailure {
-                    operation: "output_writer.real_staging",
-                    detail: format!("failed to reserve {} f64 elements", layout.element_count),
-                }
-            })?;
-            staged.resize(layout.element_count, 0.0);
-            Ok(StagedOutput::Real(staged))
-        }
-        LayoutElementKind::ComplexF64Pair => {
-            let mut staged = Vec::new();
-            staged.try_reserve_exact(layout.element_count).map_err(|_| {
-                LibcintRsError::AllocationFailure {
-                    operation: "output_writer.spinor_staging",
-                    detail: format!(
-                        "failed to reserve {} spinor complex elements",
-                        layout.element_count
-                    ),
-                }
-            })?;
-            staged.resize(layout.element_count, [0.0, 0.0]);
-            Ok(StagedOutput::Spinor(staged))
-        }
+        LayoutElementKind::RealF64 => Ok(StagedOutput::Real(try_alloc_real_buffer(
+            layout.element_count,
+            "output_writer.real_staging",
+        )?)),
+        LayoutElementKind::ComplexF64Pair => Ok(StagedOutput::Spinor(try_alloc_spinor_buffer(
+            layout.element_count,
+            "output_writer.spinor_staging",
+        )?)),
     }
 }
