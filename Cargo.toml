@@ -7,3 +7,6 @@ edition = "2024"
 anyhow = "1.0.102"
 thiserror = "2.0.18"
 tracing = "0.1.41"
+
+[build-dependencies]
+cc = "1.2.15"
