@@ -25,6 +25,8 @@ pub struct RawValidationRequest<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawValidationResult {
     pub shell_tuple: Vec<usize>,
+    pub shell_angular_momentum: Vec<u8>,
+    pub primitive_count: usize,
     pub natural_dims: Vec<usize>,
     pub dims: Vec<usize>,
     pub required_elements: usize,
@@ -50,8 +52,26 @@ pub fn validate_raw_contract(
     let shls = RawShellTuple::new(request.shls).validate(expected_arity, bas.nbas())?;
 
     let mut natural_dims = Vec::with_capacity(shls.len());
+    let mut shell_angular_momentum = Vec::with_capacity(shls.len());
+    let mut primitive_count = 0usize;
     for shell_index in &shls {
         let meta = bas.shell_meta(*shell_index)?;
+        let angular_momentum =
+            u8::try_from(meta.angular_momentum).map_err(|_| LibcintRsError::InvalidInput {
+                field: "bas.ang_of",
+                reason: format!(
+                    "angular momentum {} exceeds supported u8 range",
+                    meta.angular_momentum
+                ),
+            })?;
+        shell_angular_momentum.push(angular_momentum);
+        primitive_count =
+            primitive_count
+                .checked_add(meta.nprim)
+                .ok_or_else(|| LibcintRsError::InvalidInput {
+                    field: "bas.nprim_of",
+                    reason: "primitive count overflows usize".to_string(),
+                })?;
         natural_dims.push(shell_component_count(meta, request.representation)?);
     }
 
@@ -67,6 +87,8 @@ pub fn validate_raw_contract(
 
     Ok(RawValidationResult {
         shell_tuple: shls,
+        shell_angular_momentum,
+        primitive_count,
         natural_dims,
         dims,
         required_elements,

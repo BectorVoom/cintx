@@ -5,7 +5,9 @@ use crate::contracts::{Operator, Representation};
 use crate::diagnostics::{QueryDiagnostics, QueryResult};
 use crate::errors::LibcintRsError;
 use crate::runtime::backend::cpu::{CpuRouteTarget, route_request};
+use crate::runtime::executor::build_memory_policy_outcome;
 use crate::runtime::execution_plan::{ExecutionDispatch, ExecutionRequest};
+use crate::runtime::memory::allocator::try_alloc_real_buffer;
 use crate::runtime::validator::WorkspaceQueryOptions;
 
 use super::query::{
@@ -112,12 +114,30 @@ pub fn evaluate_workspace_compat(
         .with_dims(validated.dims.clone())
         .with_required_bytes(required_bytes);
 
+    let memory_policy = build_memory_policy_outcome(
+        &validated.shell_angular_momentum,
+        validated.primitive_count,
+        validated.dims.len(),
+        validated.required_elements,
+        representation,
+        operator.kind(),
+        operator.family(),
+        options.memory_limit_bytes,
+        options.normalized_feature_flags().len(),
+    )
+    .map_err(|error| diagnostics.clone().record_failure("memory_policy", error))?;
+
     validate_query_then_execute_contract(
         queried_workspace,
         &validated.shell_tuple,
         &validated.dims,
         validated.required_elements,
         required_bytes,
+        memory_policy.required_bytes,
+        memory_policy.working_set_bytes,
+        memory_policy.scratch_bytes,
+        memory_policy.chunk_elements,
+        memory_policy.chunk_count,
         validated.cache_required_len,
         validated.has_cache,
         validated.has_opt,
@@ -147,7 +167,15 @@ pub fn evaluate_workspace_compat(
     let dispatch = ExecutionDispatch::cpu(execution_request);
 
     let required_scalars = queried_workspace.required_bytes / F64_WIDTH_BYTES;
-    write_output(route_target, &validated.dims, &mut out[..required_scalars]);
+    write_output_chunked(
+        route_target,
+        &validated.dims,
+        representation,
+        &mut out[..required_scalars],
+        queried_workspace.required_elements,
+        queried_workspace.chunk_elements,
+    )
+    .map_err(|error| diagnostics.clone().record_failure("execution", error))?;
     if let Some(cache_values) = cache.as_deref_mut() {
         for (idx, value) in cache_values
             .iter_mut()
@@ -159,7 +187,7 @@ pub fn evaluate_workspace_compat(
         }
     }
 
-    diagnostics.record_success("execution", queried_workspace.required_bytes);
+    diagnostics.record_success("execution", queried_workspace.memory_required_bytes);
     Ok(RawEvaluateResult {
         shell_tuple: validated.shell_tuple,
         dims: validated.dims,
@@ -179,6 +207,11 @@ fn validate_query_then_execute_contract(
     dims: &[usize],
     required_elements: usize,
     required_bytes: usize,
+    memory_required_bytes: usize,
+    memory_working_set_bytes: usize,
+    memory_scratch_bytes: usize,
+    chunk_elements: usize,
+    chunk_count: usize,
     cache_required_len: usize,
     has_cache: bool,
     has_opt: bool,
@@ -215,6 +248,46 @@ fn validate_query_then_execute_contract(
             item: "required_bytes",
             expected: queried_workspace.required_bytes,
             got: required_bytes,
+        });
+    }
+
+    if memory_required_bytes != queried_workspace.memory_required_bytes {
+        return Err(LibcintRsError::InvalidLayout {
+            item: "memory_required_bytes",
+            expected: queried_workspace.memory_required_bytes,
+            got: memory_required_bytes,
+        });
+    }
+
+    if memory_working_set_bytes != queried_workspace.memory_working_set_bytes {
+        return Err(LibcintRsError::InvalidLayout {
+            item: "memory_working_set_bytes",
+            expected: queried_workspace.memory_working_set_bytes,
+            got: memory_working_set_bytes,
+        });
+    }
+
+    if memory_scratch_bytes != queried_workspace.memory_scratch_bytes {
+        return Err(LibcintRsError::InvalidLayout {
+            item: "memory_scratch_bytes",
+            expected: queried_workspace.memory_scratch_bytes,
+            got: memory_scratch_bytes,
+        });
+    }
+
+    if chunk_elements != queried_workspace.chunk_elements {
+        return Err(LibcintRsError::InvalidLayout {
+            item: "chunk_elements",
+            expected: queried_workspace.chunk_elements,
+            got: chunk_elements,
+        });
+    }
+
+    if chunk_count != queried_workspace.chunk_count {
+        return Err(LibcintRsError::InvalidLayout {
+            item: "chunk_count",
+            expected: queried_workspace.chunk_count,
+            got: chunk_count,
         });
     }
 
@@ -263,10 +336,70 @@ fn validate_query_then_execute_contract(
     Ok(())
 }
 
-fn write_output(route_target: CpuRouteTarget, dims: &[usize], output: &mut [f64]) {
+fn write_output_chunked(
+    route_target: CpuRouteTarget,
+    dims: &[usize],
+    representation: Representation,
+    output: &mut [f64],
+    required_elements: usize,
+    chunk_elements: usize,
+) -> Result<(), LibcintRsError> {
+    if chunk_elements == 0 {
+        return Err(LibcintRsError::InvalidInput {
+            field: "memory_limit_bytes",
+            reason: "chunk planner yielded zero chunk elements".to_string(),
+        });
+    }
+
+    let scalars_per_element = match representation {
+        Representation::Spinor => 2,
+        Representation::Cartesian | Representation::Spherical => 1,
+    };
+    let chunk_scalar_capacity = chunk_elements.checked_mul(scalars_per_element).ok_or_else(|| {
+        LibcintRsError::InvalidInput {
+            field: "workspace",
+            reason: "chunk scalar capacity overflows usize".to_string(),
+        }
+    })?;
+    let total_scalars = required_elements
+        .checked_mul(scalars_per_element)
+        .ok_or_else(|| LibcintRsError::InvalidInput {
+            field: "workspace",
+            reason: "total scalar count overflows usize".to_string(),
+        })?;
+    if output.len() < total_scalars {
+        return Err(LibcintRsError::InvalidLayout {
+            item: "out_length",
+            expected: total_scalars,
+            got: output.len(),
+        });
+    }
+
     let seed = seed_from_route(route_target, dims);
+    let mut staged = try_alloc_real_buffer(
+        chunk_scalar_capacity,
+        "raw.compat.evaluate.chunk_staging",
+    )?;
+    let mut element_start = 0usize;
+    while element_start < required_elements {
+        let element_end = element_start
+            .saturating_add(chunk_elements)
+            .min(required_elements);
+        let element_span = element_end - element_start;
+        let scalar_start = element_start * scalars_per_element;
+        let scalar_end = scalar_start + (element_span * scalars_per_element);
+        fill_output_scalars(seed, scalar_start, &mut staged[..scalar_end - scalar_start]);
+        output[scalar_start..scalar_end].copy_from_slice(&staged[..scalar_end - scalar_start]);
+        element_start = element_end;
+    }
+
+    Ok(())
+}
+
+fn fill_output_scalars(seed: u64, start_index: usize, output: &mut [f64]) {
     for (index, value) in output.iter_mut().enumerate() {
-        let idx = u64::try_from(index).unwrap_or(u64::MAX);
+        let absolute_index = start_index.saturating_add(index);
+        let idx = u64::try_from(absolute_index).unwrap_or(u64::MAX);
         let raw = seed.wrapping_add(idx.saturating_mul(19));
         *value = f64::from((raw % 8192) as u16) / 256.0;
     }

@@ -4,6 +4,7 @@ use core::ptr::NonNull;
 use crate::contracts::{Operator, Representation};
 use crate::diagnostics::{QueryDiagnostics, QueryResult};
 use crate::errors::LibcintRsError;
+use crate::runtime::executor::build_memory_policy_outcome;
 use crate::runtime::validator::WorkspaceQueryOptions;
 
 use super::{RawValidationRequest, validate_raw_contract};
@@ -31,6 +32,11 @@ pub struct RawCompatWorkspace {
     pub dims: Vec<usize>,
     pub required_elements: usize,
     pub required_bytes: usize,
+    pub memory_required_bytes: usize,
+    pub memory_working_set_bytes: usize,
+    pub memory_scratch_bytes: usize,
+    pub chunk_elements: usize,
+    pub chunk_count: usize,
     pub natm: usize,
     pub nbas: usize,
     pub env_len: usize,
@@ -113,10 +119,23 @@ pub fn query_workspace_compat(
                 },
             )
         })?;
+    let memory_policy = build_memory_policy_outcome(
+        &validated.shell_angular_momentum,
+        validated.primitive_count,
+        validated.dims.len(),
+        validated.required_elements,
+        representation,
+        operator.kind(),
+        operator.family(),
+        options.memory_limit_bytes,
+        options.normalized_feature_flags().len(),
+    )
+    .map_err(|error| diagnostics.clone().record_failure("memory_policy", error))?;
+
     let diagnostics = diagnostics
         .with_dims(validated.dims.clone())
-        .with_required_bytes(required_bytes);
-    diagnostics.record_success("validation", required_bytes);
+        .with_required_bytes(memory_policy.required_bytes);
+    diagnostics.record_success("validation", memory_policy.required_bytes);
 
     Ok(RawCompatWorkspace {
         shell_tuple: validated.shell_tuple,
@@ -124,6 +143,11 @@ pub fn query_workspace_compat(
         dims: validated.dims,
         required_elements: validated.required_elements,
         required_bytes,
+        memory_required_bytes: memory_policy.required_bytes,
+        memory_working_set_bytes: memory_policy.working_set_bytes,
+        memory_scratch_bytes: memory_policy.scratch_bytes,
+        chunk_elements: memory_policy.chunk_elements,
+        chunk_count: memory_policy.chunk_count,
         natm: validated.natm,
         nbas: validated.nbas,
         env_len: validated.env_len,

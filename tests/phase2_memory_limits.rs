@@ -238,6 +238,79 @@ fn chunk_feasibility_boundary_is_explicit() {
     assert_eq!(feasible.required_bytes, 512);
 }
 
+#[test]
+fn api_memory_policy_threading() {
+    let basis = sample_basis();
+    let operator = Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap)
+        .expect("one-electron overlap should be supported");
+    let shell_tuple = [0, 1];
+
+    let feasible_options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(384),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-memory-policy-threading"],
+    };
+    let infeasible_options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(320),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-memory-policy-threading"],
+    };
+
+    let safe_query = cintx::safe::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &shell_tuple,
+        &feasible_options,
+    )
+    .expect("safe query should honor feasible memory policy");
+    let raw_query = cintx::raw::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &shell_tuple,
+        None,
+        &feasible_options,
+    )
+    .expect("raw query should honor feasible memory policy");
+    assert_eq!(raw_query, safe_query);
+
+    let safe_failure = cintx::safe::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &shell_tuple,
+        &infeasible_options,
+    )
+    .expect_err("safe query should fail under infeasible limit");
+    let raw_failure = cintx::raw::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &shell_tuple,
+        None,
+        &infeasible_options,
+    )
+    .expect_err("raw query should fail under infeasible limit");
+
+    assert!(matches!(
+        safe_failure.error,
+        LibcintRsError::MemoryLimitExceeded {
+            required_bytes: 512,
+            limit_bytes: 320,
+        }
+    ));
+    assert!(matches!(
+        raw_failure.error,
+        LibcintRsError::MemoryLimitExceeded {
+            required_bytes: 512,
+            limit_bytes: 320,
+        }
+    ));
+    assert_eq!(safe_failure.diagnostics.required_bytes, Some(512));
+    assert_eq!(raw_failure.diagnostics.required_bytes, Some(512));
+}
+
 fn sample_basis() -> BasisSet {
     let atom_a = Atom::new(8, [0.0, 0.0, -0.1173]).expect("atom A should be valid");
     let atom_b = Atom::new(1, [0.0, 0.7572, 0.4692]).expect("atom B should be valid");

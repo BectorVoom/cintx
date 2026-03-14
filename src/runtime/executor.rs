@@ -1,4 +1,4 @@
-use crate::contracts::{BasisSet, Operator, Representation};
+use crate::contracts::{BasisSet, IntegralFamily, Operator, OperatorKind, Representation};
 use crate::errors::LibcintRsError;
 
 use super::{
@@ -50,6 +50,74 @@ pub struct EvaluationTensor {
     pub output: EvaluationOutput,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MemoryPolicyOutcome {
+    pub total_elements: usize,
+    pub payload_bytes: usize,
+    pub scratch_bytes: usize,
+    pub required_bytes: usize,
+    pub working_set_bytes: usize,
+    pub chunk_elements: usize,
+    pub chunk_count: usize,
+}
+
+impl MemoryPolicyOutcome {
+    pub const fn chunk_plan(self) -> ChunkPlan {
+        ChunkPlan {
+            total_elements: self.total_elements,
+            chunk_elements: self.chunk_elements,
+            chunk_count: self.chunk_count,
+        }
+    }
+}
+
+impl From<MemoryPlan> for MemoryPolicyOutcome {
+    fn from(plan: MemoryPlan) -> Self {
+        Self {
+            total_elements: plan.chunk_plan.total_elements,
+            payload_bytes: plan.payload_bytes,
+            scratch_bytes: plan.scratch_bytes,
+            required_bytes: plan.required_bytes,
+            working_set_bytes: plan.working_set_bytes,
+            chunk_elements: plan.chunk_plan.chunk_elements,
+            chunk_count: plan.chunk_plan.chunk_count,
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_memory_policy_outcome(
+    shell_angular_momentum: &[u8],
+    primitive_count: usize,
+    dims_len: usize,
+    element_count: usize,
+    representation: Representation,
+    operator_kind: OperatorKind,
+    operator_family: IntegralFamily,
+    memory_limit_bytes: Option<usize>,
+    feature_flag_count: usize,
+) -> Result<MemoryPolicyOutcome, LibcintRsError> {
+    let element_width_bytes = match representation {
+        Representation::Spinor => 16,
+        Representation::Cartesian | Representation::Spherical => 8,
+    };
+    let scratch_bytes = compute_scratch_bytes(
+        shell_angular_momentum,
+        primitive_count,
+        dims_len,
+        operator_kind,
+        operator_family,
+        feature_flag_count,
+    )?;
+    let memory_plan = build_memory_plan(
+        element_count,
+        element_width_bytes,
+        scratch_bytes,
+        memory_limit_bytes,
+    )?;
+    Ok(MemoryPolicyOutcome::from(memory_plan))
+}
+
 pub fn evaluate_into(
     basis: &BasisSet,
     operator: Operator,
@@ -60,9 +128,9 @@ pub fn evaluate_into(
 ) -> Result<EvaluationMetadata, LibcintRsError> {
     let plan = plan_safe(basis, operator, representation, shell_tuple, options)?;
     let layout = layout_for_plan(&plan);
-    let memory_plan = plan_execution_memory(basis, &plan)?;
+    let memory_policy = plan_execution_memory(basis, &plan)?;
     let route_target = route_request(&plan.request)?;
-    execute_planned_into(route_target, &layout, output, memory_plan.chunk_plan)?;
+    execute_planned_into(route_target, &layout, output, memory_policy.chunk_plan())?;
 
     Ok(EvaluationMetadata {
         dims: layout.dims,
@@ -80,7 +148,7 @@ pub fn evaluate(
 ) -> Result<EvaluationTensor, LibcintRsError> {
     let plan = plan_safe(basis, operator, representation, shell_tuple, options)?;
     let layout = layout_for_plan(&plan);
-    let memory_plan = plan_execution_memory(basis, &plan)?;
+    let memory_policy = plan_execution_memory(basis, &plan)?;
     let route_target = route_request(&plan.request)?;
 
     match representation {
@@ -91,7 +159,7 @@ pub fn evaluate(
                 route_target,
                 &layout,
                 EvaluationOutputMut::Real(values.as_mut_slice()),
-                memory_plan.chunk_plan,
+                memory_policy.chunk_plan(),
             )?;
             Ok(EvaluationTensor {
                 dims: layout.dims,
@@ -105,7 +173,7 @@ pub fn evaluate(
                 route_target,
                 &layout,
                 EvaluationOutputMut::Spinor(values.as_mut_slice()),
-                memory_plan.chunk_plan,
+                memory_policy.chunk_plan(),
             )?;
             Ok(EvaluationTensor {
                 dims: layout.dims,
@@ -254,7 +322,7 @@ fn ensure_route_available(route_target: CpuRouteTarget) -> Result<(), LibcintRsE
 fn plan_execution_memory(
     basis: &BasisSet,
     plan: &PlannedExecution,
-) -> Result<MemoryPlan, LibcintRsError> {
+) -> Result<MemoryPolicyOutcome, LibcintRsError> {
     let shells = basis.shells();
     let mut shell_angular_momentum = Vec::with_capacity(plan.request.shell_tuple.len());
     let mut primitive_count = 0usize;
@@ -278,19 +346,16 @@ fn plan_execution_memory(
         })?;
     }
 
-    let scratch_bytes = compute_scratch_bytes(
+    build_memory_policy_outcome(
         &shell_angular_momentum,
         primitive_count,
         plan.dims.len(),
+        plan.element_count,
+        plan.request.representation,
         plan.request.operator.kind,
         plan.request.operator.family,
-        plan.request.memory.feature_flags.len(),
-    )?;
-    build_memory_plan(
-        plan.element_count,
-        plan.element_width_bytes,
-        scratch_bytes,
         plan.request.memory.memory_limit_bytes,
+        plan.request.memory.feature_flags.len(),
     )
 }
 
