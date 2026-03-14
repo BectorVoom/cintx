@@ -1,4 +1,5 @@
 use crate::contracts::{BasisSet, Operator, Representation, validate_dims};
+use crate::diagnostics::QueryDiagnostics;
 use crate::errors::LibcintRsError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +62,24 @@ pub fn validate_safe_query_inputs(
         shell_tuple,
         None,
         options,
+    )
+}
+
+pub fn make_query_diagnostics(
+    api: &'static str,
+    representation: Representation,
+    shell_tuple: &[usize],
+    dims_override: Option<&[usize]>,
+    options: &WorkspaceQueryOptions,
+) -> QueryDiagnostics {
+    QueryDiagnostics::new(
+        api,
+        representation,
+        shell_tuple.to_vec(),
+        dims_override.map_or_else(Vec::new, ToOwned::to_owned),
+        options.memory_limit_bytes,
+        options.backend_candidate,
+        options.normalized_feature_flags(),
     )
 }
 

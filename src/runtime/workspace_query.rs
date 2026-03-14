@@ -1,9 +1,10 @@
 use crate::contracts::{BasisSet, IntegralFamily, Operator, OperatorKind, Representation};
+use crate::diagnostics::QueryResult;
 use crate::errors::LibcintRsError;
 
 use super::validator::{
-    ValidatedInputs, ValidatedShape, WorkspaceQueryOptions, validate_raw_query_inputs,
-    validate_safe_query_inputs,
+    ValidatedInputs, ValidatedShape, WorkspaceQueryOptions, make_query_diagnostics,
+    validate_raw_query_inputs, validate_safe_query_inputs,
 };
 
 const DEFAULT_ALIGNMENT_BYTES: usize = 64;
@@ -24,10 +25,27 @@ pub fn query_workspace_safe(
     representation: Representation,
     shell_tuple: &[usize],
     options: &WorkspaceQueryOptions,
-) -> Result<WorkspaceQuery, LibcintRsError> {
+) -> QueryResult<WorkspaceQuery> {
+    let diagnostics = make_query_diagnostics(
+        "safe.query_workspace",
+        representation,
+        shell_tuple,
+        None,
+        options,
+    );
     let (validated_inputs, validated_shape) =
-        validate_safe_query_inputs(basis, operator, representation, shell_tuple, options)?;
-    estimate_workspace(&validated_inputs, &validated_shape, options)
+        validate_safe_query_inputs(basis, operator, representation, shell_tuple, options)
+            .map_err(|error| diagnostics.clone().record_failure("validation", error))?;
+    let diagnostics = diagnostics
+        .with_dims(validated_shape.dims.clone())
+        .with_provided_bytes_from_dims();
+    let workspace = estimate_workspace(&validated_inputs, &validated_shape, options)
+        .map_err(|error| diagnostics.clone().record_failure("workspace_estimation", error))?;
+    diagnostics
+        .clone()
+        .with_required_bytes(workspace.required_bytes)
+        .record_success("workspace_estimation", workspace.required_bytes);
+    Ok(workspace)
 }
 
 pub fn query_workspace_raw(
@@ -37,7 +55,15 @@ pub fn query_workspace_raw(
     shell_tuple: &[usize],
     dims_override: Option<&[usize]>,
     options: &WorkspaceQueryOptions,
-) -> Result<WorkspaceQuery, LibcintRsError> {
+) -> QueryResult<WorkspaceQuery> {
+    let diagnostics = make_query_diagnostics(
+        "raw.query_workspace",
+        representation,
+        shell_tuple,
+        dims_override,
+        options,
+    )
+    .with_provided_bytes_from_dims();
     let (validated_inputs, validated_shape) = validate_raw_query_inputs(
         basis,
         operator,
@@ -45,8 +71,16 @@ pub fn query_workspace_raw(
         shell_tuple,
         dims_override,
         options,
-    )?;
-    estimate_workspace(&validated_inputs, &validated_shape, options)
+    )
+    .map_err(|error| diagnostics.clone().record_failure("validation", error))?;
+    let diagnostics = diagnostics.with_dims(validated_shape.dims.clone());
+    let workspace = estimate_workspace(&validated_inputs, &validated_shape, options)
+        .map_err(|error| diagnostics.clone().record_failure("workspace_estimation", error))?;
+    diagnostics
+        .clone()
+        .with_required_bytes(workspace.required_bytes)
+        .record_success("workspace_estimation", workspace.required_bytes);
+    Ok(workspace)
 }
 
 pub fn estimate_workspace(
