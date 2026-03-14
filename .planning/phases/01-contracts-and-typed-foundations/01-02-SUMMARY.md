@@ -65,15 +65,18 @@ Each task was committed atomically:
 1. **Task 1: Build shared validator outputs and deterministic workspace estimator** - `542db04` (feat)
 2. **Task 2: Define structured diagnostics contract and tracing metadata** - `9818f87` (feat)
 3. **Task 3: Wire safe/raw query APIs and add contract tests** - `52fbd84` (feat)
+4. **Post-plan hardening: Resolve Rust review blockers (diagnostics bytes semantics + operator matrix strictness)** - `f164ed7` (fix)
 
 ## Files Created/Modified
 - `src/runtime/validator.rs` - Canonical safe/raw validation into deterministic `ValidatedInputs` and `ValidatedShape`.
 - `src/runtime/workspace_query.rs` - Deterministic `WorkspaceQuery` estimation and failure mapping to diagnostics wrapper errors.
 - `src/diagnostics/report.rs` - MEM-03 payload and `QueryError` wrapper that preserves typed errors plus machine-parseable context.
+- `src/contracts/operator.rs` - Explicit operator/family allow-list to enforce typed API compatibility contracts.
 - `src/api/safe.rs` - Safe workspace query API that does not expose raw dims override.
 - `src/api/raw.rs` - Raw-compatible workspace query API with deterministic dims override validation.
 - `tests/phase1_workspace_query.rs` - Determinism and invalid-dims pre-execution contract tests.
 - `tests/phase1_diagnostics_contract.rs` - Diagnostics payload completeness test for query-path failures.
+- `tests/phase1_typed_contracts.rs` - Operator/family compatibility matrix regression coverage.
 
 ## Decisions Made
 - Standardized query failure returns as `QueryError` to avoid losing typed variant matching while attaching structured diagnostics.
@@ -91,10 +94,18 @@ Each task was committed atomically:
 - **Verification:** `cargo test --workspace --test phase1_diagnostics_contract diagnostics_fields_complete`
 - **Committed in:** `9818f87`
 
+**2. [Rule 2 - Missing Critical] Resolved Rust review blockers before phase verification**
+- **Found during:** Post-plan quality gate (`rust-reviewer`)
+- **Issue:** Diagnostics `provided_bytes` could be stale, operator/family matrix was under-constrained, and regression tests missed edge cases.
+- **Fix:** Recomputed diagnostics bytes from effective dims, treated unknown dims as `None`, boxed query errors for clippy size warnings, enforced explicit operator/family compatibility matrix, and added targeted regression tests.
+- **Files modified:** `src/diagnostics/report.rs`, `src/runtime/workspace_query.rs`, `src/contracts/operator.rs`, `tests/phase1_workspace_query.rs`, `tests/phase1_diagnostics_contract.rs`, `tests/phase1_typed_contracts.rs`
+- **Verification:** `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`
+- **Committed in:** `f164ed7`
+
 ---
 
-**Total deviations:** 1 auto-fixed (1 blocking)
-**Impact on plan:** The dependency addition was required to satisfy MEM-03 structured trace correlation behavior; no scope creep.
+**Total deviations:** 2 auto-fixed (1 blocking, 1 missing critical)
+**Impact on plan:** Fixes tightened contract correctness and quality-gate compliance with no scope expansion.
 
 ## Issues Encountered
 
@@ -112,7 +123,7 @@ None - no external service configuration required.
 ## Self-Check: PASSED
 
 - Verified all key created files and summary output exist on disk.
-- Verified all task commits (`542db04`, `9818f87`, `52fbd84`) exist in git history.
+- Verified all task and hardening commits (`542db04`, `9818f87`, `52fbd84`, `f164ed7`) exist in git history.
 
 ---
 *Phase: 01-contracts-and-typed-foundations*
