@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Contracts and Typed Foundations** - Establish safe typed models, workspace introspection, and typed error diagnostics.
 - [x] **Phase 2: CPU Compatibility Execution** - Deliver stable-family CPU execution through safe and raw APIs with memory guarantees.
-- [ ] **Phase 3: Verification and Compatibility Governance** - Prove compatibility claims with helper parity, manifest governance, and CI release gates.
+- [x] **Phase 3: Verification and Compatibility Governance** - Prove compatibility claims with helper parity, manifest governance, and CI release gates.
 - [ ] **Phase 4: Optional Backends and Migration Surfaces** - Add opt-in GPU acceleration, C ABI migration shim, and optional family support envelopes.
 
 ## Phase Details
@@ -65,7 +65,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 03-01: Helper and transform parity foundation
 - [x] 03-02: Manifest governance lock and drift contract
 - [x] 03-03: Optimizer equivalence and regression-gate matrix
-- [ ] 03-04: CI governance gates and traceable release policy
+- [x] 03-04: CI governance gates and traceable release policy
 
 ### Phase 4: Optional Backends and Migration Surfaces
 **Goal:** Users can opt into acceleration and migration extensions without weakening baseline safety, compatibility, or explicit support boundaries.
@@ -84,5 +84,5 @@ Decimal phases appear between their surrounding integers in numeric order.
 |-------|----------------|--------|-----------|
 | 1. Contracts and Typed Foundations | 2/2 | Complete    | 2026-03-14 |
 | 2. CPU Compatibility Execution | 9/9 | Complete | 2026-03-14 |
-| 3. Verification and Compatibility Governance | 3/4 | In Progress|  |
+| 3. Verification and Compatibility Governance | 4/4 | Complete | 2026-03-14 |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |

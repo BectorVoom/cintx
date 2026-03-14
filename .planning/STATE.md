@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_plan: 4
-status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-03-14T13:31:47.107Z"
-last_activity: 2026-03-14 - Completed plan 03-03 optimizer equivalence and regression-gate matrix
+status: ready_for_verification
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-03-14T14:10:36.235Z"
+last_activity: 2026-03-14 - Completed plan 03-04 CI governance gates and traceable release policy
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -27,20 +27,20 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 ## Current Position
 
 Phase: 3 of 4
-Plan: 3 of 4
+Plan: 4 of 4
 Current Plan: 4
 Total Plans in Phase: 4
-Status: In Progress
-Last activity: 2026-03-14 - Completed plan 03-03 optimizer equivalence and regression-gate matrix
+Status: Ready for Verification
+Last activity: 2026-03-14 - Completed plan 03-04 CI governance gates and traceable release policy
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 14
-- Average duration: 12.6 min
-- Total execution time: 2.9 hours
+- Total plans completed: 15
+- Average duration: 12.0 min
+- Total execution time: 3.0 hours
 
 **By Phase:**
 
@@ -48,12 +48,12 @@ Progress: [█████████░] 93%
 |-------|-------|-------|----------|
 | 1. Contracts and Typed Foundations | 2 | 13 min | 6.5 min |
 | 2. CPU Compatibility Execution | 9 | 99 min | 11.0 min |
-| 3. Verification and Compatibility Governance | 3 | 65 min | 21.7 min |
+| 3. Verification and Compatibility Governance | 4 | 69 min | 17.3 min |
 | 4. Optional Backends and Migration Surfaces | 0 | 0 min | 0 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-03 (56 min), 03-02 (6 min), 03-01 (3 min), 02-07 (11 min), 02-04 (12 min)
-- Trend: Phase-3 regression gates are now materially broadened with profile-aware oracle coverage and optimizer semantics contracts.
+- Last 5 plans: 03-04 (4 min), 03-03 (56 min), 03-02 (6 min), 03-01 (3 min), 02-07 (11 min)
+- Trend: Phase-3 governance now includes enforceable PR/release CI gates with requirement-mapped traceability.
 | Phase 02 P04 | 12 min | 3 tasks | 9 files |
 | Phase 02 P08 | 12 min | 3 tasks | 6 files |
 | Phase 02-cpu-compatibility-execution P05 | 14 min | 3 tasks | 10 files |
@@ -61,6 +61,7 @@ Progress: [█████████░] 93%
 | Phase 03-verification-and-compatibility-governance P01 | 3 min | 3 tasks | 6 files |
 | Phase 03-verification-and-compatibility-governance P02 | 6 min | 3 tasks | 7 files |
 | Phase 03-verification-and-compatibility-governance P03 | 56 min | 3 tasks | 4 files |
+| Phase 03-verification-and-compatibility-governance P04 | 4 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,8 @@ Recent decisions affecting current work:
 - [Phase 03-verification-and-compatibility-governance]: Model RAW-04 optimizer parity as raw opt/cache on-versus-off behavior over every stable row.
 - [Phase 03-verification-and-compatibility-governance]: Use manifest-approved profile scope as the authoritative oracle regression matrix for COMP-04 and VERI-02 gates.
 - [Phase 03-verification-and-compatibility-governance]: Keep shared oracle helper additions warning-clean across standalone phase-3 test suites.
+- [Phase 03-verification-and-compatibility-governance]: Split governance scopes between PR and release workflows to keep pre-merge checks deterministic while preserving exhaustive release coverage.
+- [Phase 03-verification-and-compatibility-governance]: Bound each governance job to explicit requirement IDs so evidence remains auditable across workflows, support matrix, and validation artifacts.
 
 ### Pending Todos
 
@@ -124,6 +127,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-14T13:31:47.106Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-03-14T13:39:35.399Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None

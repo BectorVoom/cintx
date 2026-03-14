@@ -79,6 +79,6 @@ All Phase 3 acceptance behaviors are expected to have automated verification tar
 - [x] Wave 0 dependency check completed (no missing framework prerequisites)
 - [x] No watch-mode flags in validation commands
 - [x] `nyquist_compliant: true` set in frontmatter
-- [ ] `cargo test --workspace --all-targets` green on latest phase branch
+- [x] `cargo test --workspace --all-targets` green on latest phase branch
 
 **Approval:** pending
