@@ -1,6 +1,6 @@
 use cintx::{
-    Atom, BasisSet, IntegralFamily, Operator, OperatorKind, Representation, Shell,
-    WorkspaceQueryOptions, query_workspace_raw, query_workspace_safe,
+    Atom, BasisSet, IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation, Shell,
+    WorkspaceQueryOptions,
 };
 
 #[test]
@@ -15,7 +15,7 @@ fn deterministic_query_workspace() {
     };
     let shell_tuple = [0, 1];
 
-    let first = query_workspace_safe(
+    let first = cintx::safe::query_workspace(
         &basis,
         operator,
         Representation::Spherical,
@@ -23,7 +23,7 @@ fn deterministic_query_workspace() {
         &options,
     )
     .expect("safe query should succeed");
-    let second = query_workspace_safe(
+    let second = cintx::safe::query_workspace(
         &basis,
         operator,
         Representation::Spherical,
@@ -31,7 +31,7 @@ fn deterministic_query_workspace() {
         &options,
     )
     .expect("identical query should stay deterministic");
-    let raw = query_workspace_raw(
+    let raw = cintx::raw::query_workspace(
         &basis,
         operator,
         Representation::Spherical,
@@ -43,6 +43,30 @@ fn deterministic_query_workspace() {
 
     assert_eq!(first, second);
     assert_eq!(first, raw);
+}
+
+#[test]
+fn invalid_dims_rejected_pre_execution() {
+    let basis = sample_basis();
+    let operator =
+        Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap).expect("valid operator");
+    let options = WorkspaceQueryOptions::default();
+
+    let failure = cintx::raw::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &[0, 1],
+        Some(&[999, 1]),
+        &options,
+    )
+    .expect_err("mismatched dims must fail before workspace query");
+
+    assert!(matches!(
+        failure.error,
+        LibcintRsError::DimsBufferMismatch { .. }
+    ));
+    assert_eq!(failure.diagnostics.api, "raw.query_workspace");
 }
 
 fn sample_basis() -> BasisSet {

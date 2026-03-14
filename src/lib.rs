@@ -1,10 +1,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod api;
 pub mod contracts;
 pub mod diagnostics;
 pub mod errors;
 pub mod runtime;
 
+pub use api::{raw, safe};
 pub use contracts::{
     Atom, BasisSet, IntegralFamily, Operator, OperatorKind, Representation, Shell, ShellPrimitive,
     validate_dims,
