@@ -2,6 +2,7 @@ use cintx::{
     ExecutionBackend, ExecutionDispatch, ExecutionRequest, IntegralFamily, Operator, OperatorKind,
     Representation, WorkspaceQueryOptions,
 };
+use std::collections::HashSet;
 
 #[link(name = "cint_phase2_cpu", kind = "static")]
 #[link(name = "m")]
@@ -100,4 +101,64 @@ fn execution_request_contract() {
     assert_eq!(dispatch.backend, ExecutionBackend::CpuReference);
     assert_eq!(dispatch.backend.as_str(), "cpu-reference");
     assert_eq!(dispatch.request, raw_request);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RoutingObligation {
+    MustPassIn0206,
+}
+
+fn stable_family_required_matrix() -> Vec<(IntegralFamily, Representation, RoutingObligation)> {
+    let families = [
+        IntegralFamily::OneElectron,
+        IntegralFamily::TwoElectron,
+        IntegralFamily::TwoCenterTwoElectron,
+        IntegralFamily::ThreeCenterOneElectron,
+        IntegralFamily::ThreeCenterTwoElectron,
+    ];
+    let representations = [
+        Representation::Cartesian,
+        Representation::Spherical,
+        Representation::Spinor,
+    ];
+
+    let mut matrix = Vec::with_capacity(families.len() * representations.len());
+    for family in families {
+        for representation in representations {
+            matrix.push((family, representation, RoutingObligation::MustPassIn0206));
+        }
+    }
+    matrix
+}
+
+#[test]
+fn stable_family_required_matrix_contract() {
+    let matrix = stable_family_required_matrix();
+    assert_eq!(
+        matrix.len(),
+        15,
+        "stable-family matrix must stay complete: 5 families x 3 representations"
+    );
+
+    let mut unique_envelopes = HashSet::new();
+    for &(family, representation, obligation) in &matrix {
+        let inserted = unique_envelopes.insert((family, representation));
+        assert!(
+            inserted,
+            "duplicate envelope in stable-family contract: {family:?} x {representation:?}"
+        );
+        assert_eq!(
+            obligation,
+            RoutingObligation::MustPassIn0206,
+            "stable-family envelopes cannot be downgraded to unsupported before 02-06 routing"
+        );
+    }
+
+    assert!(
+        unique_envelopes.contains(&(
+            IntegralFamily::ThreeCenterOneElectron,
+            Representation::Spinor
+        )),
+        "3c1e spinor is mandatory in Phase 2 and must remain a required router target"
+    );
 }
