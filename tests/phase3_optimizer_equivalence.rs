@@ -7,7 +7,10 @@ use core::ffi::c_void;
 use core::ptr::NonNull;
 
 use cintx::{raw, safe, EvaluationOutputMut, LibcintRsError, Representation};
-use oracle_runner::{assert_within_tolerance, oracle_expected_scalars, TolerancePolicy};
+use oracle_runner::{
+    PHASE3_REQUIRED_GATE_REQUIREMENTS, TolerancePolicy, assert_requirement_traceability,
+    assert_within_tolerance, oracle_expected_scalars, phase3_oracle_profile_matrix,
+};
 use phase2_fixtures::{
     flatten_safe_output, phase3_optimizer_options, raw_optimizer_cache_len, stable_phase2_matrix,
     stable_raw_layout, stable_safe_basis,
@@ -15,6 +18,14 @@ use phase2_fixtures::{
 
 #[test]
 fn optimizer_on_off_equivalence_matrix() {
+    for profile_case in phase3_oracle_profile_matrix() {
+        assert_requirement_traceability(
+            profile_case.requirement_ids,
+            PHASE3_REQUIRED_GATE_REQUIREMENTS,
+            &format!("optimizer preflight profile {}", profile_case.profile.as_str()),
+        );
+    }
+
     let basis = stable_safe_basis();
     let (atm, bas, env) = stable_raw_layout();
     let baseline_options = phase3_optimizer_options(&["phase3-optimizer-off"]);
