@@ -69,6 +69,36 @@ fn invalid_dims_rejected_pre_execution() {
     assert_eq!(failure.diagnostics.api, "raw.query_workspace");
 }
 
+#[test]
+fn raw_query_without_dims_still_reports_memory_context() {
+    let basis = sample_basis();
+    let operator =
+        Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap).expect("valid operator");
+    let options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(64),
+        backend_candidate: "cpu",
+        feature_flags: vec![],
+    };
+
+    let failure = cintx::raw::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &[0, 1],
+        None,
+        &options,
+    )
+    .expect_err("memory cap should force raw query failure");
+
+    assert!(matches!(
+        failure.error,
+        LibcintRsError::MemoryLimitExceeded { .. }
+    ));
+    assert_eq!(failure.diagnostics.api, "raw.query_workspace");
+    assert!(!failure.diagnostics.dims.is_empty());
+    assert!(failure.diagnostics.provided_bytes.is_some());
+}
+
 fn sample_basis() -> BasisSet {
     let atom_a = Atom::new(8, [0.0, 0.0, -0.1173]).expect("atom should be valid");
     let atom_b = Atom::new(1, [0.0, 0.7572, 0.4692]).expect("atom should be valid");

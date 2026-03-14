@@ -36,11 +36,13 @@ pub fn query_workspace_safe(
     let (validated_inputs, validated_shape) =
         validate_safe_query_inputs(basis, operator, representation, shell_tuple, options)
             .map_err(|error| diagnostics.clone().record_failure("validation", error))?;
-    let diagnostics = diagnostics
-        .with_dims(validated_shape.dims.clone())
-        .with_provided_bytes_from_dims();
-    let workspace = estimate_workspace(&validated_inputs, &validated_shape, options)
-        .map_err(|error| diagnostics.clone().record_failure("workspace_estimation", error))?;
+    let diagnostics = diagnostics.with_dims(validated_shape.dims.clone());
+    let workspace =
+        estimate_workspace(&validated_inputs, &validated_shape, options).map_err(|error| {
+            diagnostics
+                .clone()
+                .record_failure("workspace_estimation", error)
+        })?;
     diagnostics
         .clone()
         .with_required_bytes(workspace.required_bytes)
@@ -62,8 +64,7 @@ pub fn query_workspace_raw(
         shell_tuple,
         dims_override,
         options,
-    )
-    .with_provided_bytes_from_dims();
+    );
     let (validated_inputs, validated_shape) = validate_raw_query_inputs(
         basis,
         operator,
@@ -74,8 +75,12 @@ pub fn query_workspace_raw(
     )
     .map_err(|error| diagnostics.clone().record_failure("validation", error))?;
     let diagnostics = diagnostics.with_dims(validated_shape.dims.clone());
-    let workspace = estimate_workspace(&validated_inputs, &validated_shape, options)
-        .map_err(|error| diagnostics.clone().record_failure("workspace_estimation", error))?;
+    let workspace =
+        estimate_workspace(&validated_inputs, &validated_shape, options).map_err(|error| {
+            diagnostics
+                .clone()
+                .record_failure("workspace_estimation", error)
+        })?;
     diagnostics
         .clone()
         .with_required_bytes(workspace.required_bytes)
@@ -133,13 +138,13 @@ pub fn estimate_workspace(
             reason: "required byte computation overflows usize".to_string(),
         })?;
 
-    if let Some(limit_bytes) = options.memory_limit_bytes {
-        if required_bytes > limit_bytes {
-            return Err(LibcintRsError::MemoryLimitExceeded {
-                required_bytes,
-                limit_bytes,
-            });
-        }
+    if let Some(limit_bytes) = options.memory_limit_bytes
+        && required_bytes > limit_bytes
+    {
+        return Err(LibcintRsError::MemoryLimitExceeded {
+            required_bytes,
+            limit_bytes,
+        });
     }
 
     Ok(WorkspaceQuery {
@@ -176,5 +181,7 @@ fn align_up(value: usize, alignment: usize) -> Option<usize> {
         return None;
     }
 
-    value.checked_add(alignment - 1).map(|v| v & !(alignment - 1))
+    value
+        .checked_add(alignment - 1)
+        .map(|v| v & !(alignment - 1))
 }

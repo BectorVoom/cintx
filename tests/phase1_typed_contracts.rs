@@ -65,3 +65,42 @@ fn safe01_shell_constructor_invariants() {
         Err(LibcintRsError::UnsupportedApi { api: "shell", .. })
     ));
 }
+
+#[test]
+fn operator_family_matrix_is_strict() {
+    assert!(Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap).is_ok());
+    assert!(Operator::new(IntegralFamily::OneElectron, OperatorKind::Kinetic).is_ok());
+    assert!(Operator::new(IntegralFamily::OneElectron, OperatorKind::NuclearAttraction).is_ok());
+    assert!(Operator::new(IntegralFamily::OneElectron, OperatorKind::ElectronRepulsion).is_err());
+
+    assert!(Operator::new(IntegralFamily::TwoElectron, OperatorKind::ElectronRepulsion).is_ok());
+    assert!(Operator::new(IntegralFamily::TwoElectron, OperatorKind::Overlap).is_err());
+    assert!(
+        Operator::new(
+            IntegralFamily::TwoCenterTwoElectron,
+            OperatorKind::ElectronRepulsion
+        )
+        .is_ok()
+    );
+    assert!(
+        Operator::new(
+            IntegralFamily::ThreeCenterTwoElectron,
+            OperatorKind::ElectronRepulsion
+        )
+        .is_ok()
+    );
+    assert!(
+        Operator::new(
+            IntegralFamily::ThreeCenterOneElectron,
+            OperatorKind::Overlap
+        )
+        .is_ok()
+    );
+    assert!(
+        Operator::new(
+            IntegralFamily::ThreeCenterOneElectron,
+            OperatorKind::ElectronRepulsion
+        )
+        .is_err()
+    );
+}

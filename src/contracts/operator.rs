@@ -26,15 +26,13 @@ pub struct Operator {
 
 impl Operator {
     pub fn new(family: IntegralFamily, kind: OperatorKind) -> ContractResult<Self> {
-        match (family, kind) {
-            (IntegralFamily::OneElectron, OperatorKind::ElectronRepulsion)
-            | (IntegralFamily::ThreeCenterOneElectron, OperatorKind::ElectronRepulsion) => {
-                Err(LibcintRsError::UnsupportedApi {
-                    api: "operator",
-                    reason: "electron repulsion is not valid for selected family",
-                })
-            }
-            _ => Ok(Self { family, kind }),
+        if is_supported_pair(family, kind) {
+            Ok(Self { family, kind })
+        } else {
+            Err(LibcintRsError::UnsupportedApi {
+                api: "operator",
+                reason: "operator kind is not valid for selected integral family",
+            })
         }
     }
 
@@ -45,4 +43,19 @@ impl Operator {
     pub fn kind(&self) -> OperatorKind {
         self.kind
     }
+}
+
+fn is_supported_pair(family: IntegralFamily, kind: OperatorKind) -> bool {
+    matches!(
+        (family, kind),
+        (
+            IntegralFamily::OneElectron | IntegralFamily::ThreeCenterOneElectron,
+            OperatorKind::Overlap | OperatorKind::Kinetic | OperatorKind::NuclearAttraction
+        ) | (
+            IntegralFamily::TwoElectron
+                | IntegralFamily::TwoCenterTwoElectron
+                | IntegralFamily::ThreeCenterTwoElectron,
+            OperatorKind::ElectronRepulsion
+        )
+    )
 }

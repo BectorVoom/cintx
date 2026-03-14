@@ -46,6 +46,7 @@ impl QueryDiagnostics {
 
     pub fn with_dims(mut self, dims: Vec<usize>) -> Self {
         self.dims = dims;
+        self.provided_bytes = dims_to_bytes(&self.dims, self.representation);
         self.refresh_correlation_id();
         self
     }
@@ -63,16 +64,12 @@ impl QueryDiagnostics {
     }
 
     pub fn with_provided_bytes_from_dims(mut self) -> Self {
-        if self.provided_bytes.is_none() {
-            if let Some(bytes) = dims_to_bytes(&self.dims, self.representation) {
-                self.provided_bytes = Some(bytes);
-            }
-        }
+        self.provided_bytes = dims_to_bytes(&self.dims, self.representation);
         self.refresh_correlation_id();
         self
     }
 
-    pub fn record_failure(mut self, stage: &'static str, error: LibcintRsError) -> QueryError {
+    pub fn record_failure(mut self, stage: &'static str, error: LibcintRsError) -> Box<QueryError> {
         match &error {
             LibcintRsError::DimsBufferMismatch { provided, .. } => {
                 self.dims = provided.clone();
@@ -104,10 +101,10 @@ impl QueryDiagnostics {
             "query_workspace_failure"
         );
 
-        QueryError {
+        Box::new(QueryError {
             error,
             diagnostics: self,
-        }
+        })
     }
 
     pub fn record_success(&self, stage: &'static str, required_bytes: usize) {
@@ -148,9 +145,13 @@ pub struct QueryError {
     pub diagnostics: QueryDiagnostics,
 }
 
-pub type QueryResult<T> = Result<T, QueryError>;
+pub type QueryResult<T> = Result<T, Box<QueryError>>;
 
 fn dims_to_bytes(dims: &[usize], representation: &str) -> Option<usize> {
+    if dims.is_empty() {
+        return None;
+    }
+
     let element_width_bytes = if representation == Representation::Spinor.as_str() {
         16usize
     } else {

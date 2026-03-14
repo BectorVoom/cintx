@@ -14,8 +14,14 @@ fn diagnostics_fields_complete() {
         feature_flags: vec!["with-f12"],
     };
 
-    let failure = query_workspace_safe(&basis, operator, Representation::Spherical, &[0, 1], &options)
-        .expect_err("memory cap should force typed failure");
+    let failure = query_workspace_safe(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &[0, 1],
+        &options,
+    )
+    .expect_err("memory cap should force typed failure");
 
     assert!(matches!(
         failure.error,
@@ -34,6 +40,35 @@ fn diagnostics_fields_complete() {
     assert_eq!(failure.diagnostics.backend_candidate, "cpu");
     assert_eq!(failure.diagnostics.feature_flags, vec!["with-f12"]);
     assert_ne!(failure.diagnostics.correlation_id, 0);
+}
+
+#[test]
+fn validation_failure_without_dims_keeps_provided_bytes_unknown() {
+    let basis = sample_basis();
+    let operator =
+        Operator::new(IntegralFamily::OneElectron, OperatorKind::Kinetic).expect("valid operator");
+    let options = WorkspaceQueryOptions::default();
+
+    let failure = cintx::raw::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &[99, 1],
+        None,
+        &options,
+    )
+    .expect_err("invalid shell tuple should fail validation");
+
+    assert!(matches!(
+        failure.error,
+        LibcintRsError::InvalidInput {
+            field: "shell_tuple",
+            ..
+        }
+    ));
+    assert_eq!(failure.diagnostics.api, "raw.query_workspace");
+    assert!(failure.diagnostics.dims.is_empty());
+    assert!(failure.diagnostics.provided_bytes.is_none());
 }
 
 fn sample_basis() -> BasisSet {
