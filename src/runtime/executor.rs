@@ -2,7 +2,9 @@ use crate::contracts::{BasisSet, Operator, Representation};
 use crate::errors::LibcintRsError;
 
 use super::{
-    CpuRouteTarget, WorkspaceQueryOptions, layout_for_plan, plan_safe, route_request,
+    CpuRouteTarget, WorkspaceQueryOptions, layout_for_plan, plan_safe,
+    output_writer::{OutputWriter, StagedOutputMut},
+    route_request,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,24 +55,7 @@ pub fn evaluate_into(
     let plan = plan_safe(basis, operator, representation, shell_tuple, options)?;
     let layout = layout_for_plan(&plan);
     let route_target = route_request(&plan.request)?;
-
-    match (representation, output) {
-        (Representation::Cartesian | Representation::Spherical, EvaluationOutputMut::Real(real)) => {
-            layout.validate_real_buffer_len(real.len())?;
-            execute_real(route_target, &layout.dims, real)?;
-        }
-        (Representation::Spinor, EvaluationOutputMut::Spinor(spinor)) => {
-            layout.validate_complex_buffer_len(spinor.len())?;
-            execute_spinor(route_target, &layout.dims, spinor)?;
-        }
-        (Representation::Spinor, EvaluationOutputMut::Real(_))
-        | (Representation::Cartesian | Representation::Spherical, EvaluationOutputMut::Spinor(_)) => {
-            return Err(LibcintRsError::UnsupportedRepresentation {
-                api: "safe.evaluate_into",
-                representation: representation.as_str(),
-            });
-        }
-    }
+    execute_planned_into(route_target, &layout, output)?;
 
     Ok(EvaluationMetadata {
         dims: layout.dims,
@@ -100,7 +85,11 @@ pub fn evaluate(
                 }
             })?;
             values.resize(layout.element_count, 0.0);
-            execute_real(route_target, &layout.dims, &mut values)?;
+            execute_planned_into(
+                route_target,
+                &layout,
+                EvaluationOutputMut::Real(values.as_mut_slice()),
+            )?;
             Ok(EvaluationTensor {
                 dims: layout.dims,
                 output: EvaluationOutput::Real(values),
@@ -118,13 +107,30 @@ pub fn evaluate(
                 }
             })?;
             values.resize(layout.element_count, [0.0, 0.0]);
-            execute_spinor(route_target, &layout.dims, &mut values)?;
+            execute_planned_into(
+                route_target,
+                &layout,
+                EvaluationOutputMut::Spinor(values.as_mut_slice()),
+            )?;
             Ok(EvaluationTensor {
                 dims: layout.dims,
                 output: EvaluationOutput::Spinor(values),
             })
         }
     }
+}
+
+fn execute_planned_into(
+    route_target: CpuRouteTarget,
+    layout: &super::OutputLayout,
+    output: EvaluationOutputMut<'_>,
+) -> Result<(), LibcintRsError> {
+    let mut writer = OutputWriter::new(layout, output)?;
+    match writer.staged_output_mut() {
+        StagedOutputMut::Real(staged) => execute_real(route_target, &layout.dims, staged)?,
+        StagedOutputMut::Spinor(staged) => execute_spinor(route_target, &layout.dims, staged)?,
+    }
+    writer.commit()
 }
 
 fn execute_real(
