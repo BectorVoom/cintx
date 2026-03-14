@@ -1,7 +1,7 @@
 use cintx::{
-    ALL_BOUND_SYMBOLS, CpuRouteKey, CpuRouteTarget, ExecutionBackend, ExecutionDispatch,
-    ExecutionRequest, IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation,
-    Spinor3c1eTransform, WorkspaceQueryOptions, route,
+    route, CpuRouteKey, CpuRouteTarget, ExecutionBackend, ExecutionDispatch, ExecutionRequest,
+    IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation, Spinor3c1eTransform,
+    WorkspaceQueryOptions, ALL_BOUND_SYMBOLS,
 };
 use std::collections::HashSet;
 
@@ -126,117 +126,65 @@ fn stable_family_required_matrix_contract() {
     );
 }
 
+fn stable_family_route_keys() -> Vec<CpuRouteKey> {
+    let mut keys = Vec::with_capacity(15);
+    for representation in [
+        Representation::Cartesian,
+        Representation::Spherical,
+        Representation::Spinor,
+    ] {
+        keys.push(CpuRouteKey::new(
+            IntegralFamily::OneElectron,
+            OperatorKind::Overlap,
+            representation,
+        ));
+        keys.push(CpuRouteKey::new(
+            IntegralFamily::TwoElectron,
+            OperatorKind::ElectronRepulsion,
+            representation,
+        ));
+        keys.push(CpuRouteKey::new(
+            IntegralFamily::TwoCenterTwoElectron,
+            OperatorKind::ElectronRepulsion,
+            representation,
+        ));
+        keys.push(CpuRouteKey::new(
+            IntegralFamily::ThreeCenterOneElectron,
+            OperatorKind::Kinetic,
+            representation,
+        ));
+        keys.push(CpuRouteKey::new(
+            IntegralFamily::ThreeCenterTwoElectron,
+            OperatorKind::ElectronRepulsion,
+            representation,
+        ));
+    }
+    keys
+}
+
 #[test]
 fn backend_route_matrix() {
-    let matrix = [
-        (
-            IntegralFamily::OneElectron,
-            OperatorKind::Overlap,
-            Representation::Cartesian,
-            true,
-        ),
-        (
-            IntegralFamily::OneElectron,
-            OperatorKind::Overlap,
-            Representation::Spherical,
-            true,
-        ),
-        (
-            IntegralFamily::OneElectron,
-            OperatorKind::Overlap,
-            Representation::Spinor,
-            true,
-        ),
-        (
-            IntegralFamily::TwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Cartesian,
-            true,
-        ),
-        (
-            IntegralFamily::TwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Spherical,
-            true,
-        ),
-        (
-            IntegralFamily::TwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Spinor,
-            true,
-        ),
-        (
-            IntegralFamily::TwoCenterTwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Cartesian,
-            true,
-        ),
-        (
-            IntegralFamily::TwoCenterTwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Spherical,
-            true,
-        ),
-        (
-            IntegralFamily::TwoCenterTwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Spinor,
-            true,
-        ),
-        (
-            IntegralFamily::ThreeCenterOneElectron,
-            OperatorKind::Kinetic,
-            Representation::Cartesian,
-            true,
-        ),
-        (
-            IntegralFamily::ThreeCenterOneElectron,
-            OperatorKind::Kinetic,
-            Representation::Spherical,
-            true,
-        ),
-        (
-            IntegralFamily::ThreeCenterOneElectron,
-            OperatorKind::Kinetic,
-            Representation::Spinor,
-            false,
-        ),
-        (
-            IntegralFamily::ThreeCenterTwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Cartesian,
-            true,
-        ),
-        (
-            IntegralFamily::ThreeCenterTwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Spherical,
-            true,
-        ),
-        (
-            IntegralFamily::ThreeCenterTwoElectron,
-            OperatorKind::ElectronRepulsion,
-            Representation::Spinor,
-            true,
-        ),
-    ];
-
-    for (family, operator, representation, should_route) in matrix {
-        let key = CpuRouteKey::new(family, operator, representation);
-        match (route(key), should_route) {
-            (Ok(route_target), true) => {
-                let symbol = route_target.entry_symbol();
-                assert_eq!(symbol.family(), family);
-                assert_eq!(symbol.operator(), operator);
-                assert_eq!(symbol.representation(), representation);
+    for key in stable_family_route_keys() {
+        let route_target =
+            route(key).expect("all stable-family envelopes must route in phase 2 backend map");
+        match route_target {
+            CpuRouteTarget::Direct(symbol) => {
+                assert_eq!(symbol.family(), key.family);
+                assert_eq!(symbol.operator(), key.operator);
+                assert_eq!(symbol.representation(), key.representation);
                 assert!(!symbol.as_ptr().is_null());
             }
-            (Err(LibcintRsError::UnsupportedApi { api, .. }), false) => {
-                assert_eq!(api, "cpu.route");
+            CpuRouteTarget::ThreeCenterOneElectronSpinor(adapter) => {
+                assert_eq!(key.family, IntegralFamily::ThreeCenterOneElectron);
+                assert_eq!(key.operator, OperatorKind::Kinetic);
+                assert_eq!(key.representation, Representation::Spinor);
+                assert_eq!(
+                    adapter.transform,
+                    Spinor3c1eTransform::SphericalKernelToSpinorLayout
+                );
+                assert_eq!(adapter.driver_symbol.name(), "int3c1e_p2_sph");
+                assert!(!adapter.driver_symbol.as_ptr().is_null());
             }
-            (result, _) => panic!(
-                "unexpected route result for {family:?}/{operator:?}/{representation:?}: {result:?}"
-            ),
         }
     }
 }
@@ -260,5 +208,81 @@ fn three_c_one_e_spinor_supported() {
             assert!(!adapter.driver_symbol.as_ptr().is_null());
         }
         other => panic!("expected spinor adapter route, got {other:?}"),
+    }
+}
+
+#[test]
+fn stable_family_route_matrix_complete() {
+    let matrix = stable_family_route_keys();
+    assert_eq!(
+        matrix.len(),
+        15,
+        "stable-family matrix must stay complete: 5 families x 3 representations"
+    );
+
+    let mut unique_envelopes = HashSet::new();
+    let mut adapter_hits = 0usize;
+    for key in matrix {
+        unique_envelopes.insert((key.family, key.representation));
+        match route(key) {
+            Ok(CpuRouteTarget::Direct(symbol)) => {
+                assert_eq!(symbol.family(), key.family);
+                assert_eq!(symbol.operator(), key.operator);
+                assert!(!symbol.as_ptr().is_null());
+            }
+            Ok(CpuRouteTarget::ThreeCenterOneElectronSpinor(adapter)) => {
+                adapter_hits += 1;
+                assert_eq!(key.family, IntegralFamily::ThreeCenterOneElectron);
+                assert_eq!(key.operator, OperatorKind::Kinetic);
+                assert_eq!(key.representation, Representation::Spinor);
+                assert_eq!(
+                    adapter.transform,
+                    Spinor3c1eTransform::SphericalKernelToSpinorLayout
+                );
+            }
+            Err(err) => panic!("stable-family route unexpectedly unsupported: {key:?} -> {err:?}"),
+        }
+    }
+
+    assert_eq!(unique_envelopes.len(), 15);
+    assert_eq!(
+        adapter_hits, 1,
+        "exactly one stable-family envelope should use the 3c1e spinor adapter"
+    );
+
+    let out_of_scope = [
+        CpuRouteKey::new(
+            IntegralFamily::OneElectron,
+            OperatorKind::Kinetic,
+            Representation::Cartesian,
+        ),
+        CpuRouteKey::new(
+            IntegralFamily::OneElectron,
+            OperatorKind::NuclearAttraction,
+            Representation::Spinor,
+        ),
+        CpuRouteKey::new(
+            IntegralFamily::TwoElectron,
+            OperatorKind::Overlap,
+            Representation::Spherical,
+        ),
+        CpuRouteKey::new(
+            IntegralFamily::ThreeCenterTwoElectron,
+            OperatorKind::Kinetic,
+            Representation::Spinor,
+        ),
+    ];
+    for key in out_of_scope {
+        let err = route(key).expect_err("out-of-scope route should fail with typed unsupported");
+        assert!(
+            matches!(
+                err,
+                LibcintRsError::UnsupportedApi {
+                    api: "cpu.route",
+                    ..
+                }
+            ),
+            "expected typed UnsupportedApi for out-of-scope key {key:?}, got {err:?}"
+        );
     }
 }
