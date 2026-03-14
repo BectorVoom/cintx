@@ -43,3 +43,14 @@ Rows outside the matrix above must return typed unsupported errors (`LibcintRsEr
 | `MEM-01` | Memory-limit contract gates (`phase2_memory_contracts`) |
 | `MEM-02` | Allocation-failure typed contract gates (`phase2_memory_contracts`, `phase2_raw_failure_semantics`) |
 | `EXEC-01` | CPU backend dispatch used for all stable-family rows (`phase2_cpu_execution_matrix`) |
+
+## Phase 3 Governance Ownership
+
+Phase 2 support rows are governed by Phase 3 blocking CI gates before merge and release.
+
+| Governance Scope | Workflow | Key Jobs | Requirements |
+|---|---|---|---|
+| PR blocking gates | `.github/workflows/compat-governance-pr.yml` | `helper_parity_gate`, `manifest_governance_gate`, `core_regression_gate` | `COMP-02`, `COMP-03`, `COMP-04`, `VERI-01`, `VERI-02` |
+| Release blocking gates | `.github/workflows/compat-governance-release.yml` | `helper_parity_release_gate`, `manifest_release_gate`, `oracle_profile_release_gate`, `optimizer_equivalence_release_gate` | `COMP-02`, `COMP-03`, `COMP-04`, `RAW-04`, `VERI-01`, `VERI-02`, `VERI-03` |
+
+Detailed gate policy and command-level traceability are documented in `docs/phase3-governance-gates.md`.
