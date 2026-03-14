@@ -26,7 +26,7 @@ fn execution_request_contract() {
     let options = WorkspaceQueryOptions {
         memory_limit_bytes: Some(8 * 1024),
         backend_candidate: "cpu",
-        feature_flags: vec!["trace-workspace", "phase2-contract"],
+        feature_flags: vec!["trace-workspace", "phase2-contract", "trace-workspace"],
     };
 
     let safe_request =
@@ -49,9 +49,14 @@ fn execution_request_contract() {
     assert_eq!(safe_request.dims, None);
     assert_eq!(safe_request.memory.memory_limit_bytes, Some(8 * 1024));
     assert_eq!(safe_request.memory.backend_candidate, "cpu");
+    let expected_feature_flags = options
+        .normalized_feature_flags()
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
     assert_eq!(
         safe_request.memory.feature_flags,
-        vec!["trace-workspace".to_string(), "phase2-contract".to_string()]
+        expected_feature_flags
     );
 
     assert_eq!(raw_request.operator, safe_request.operator);
