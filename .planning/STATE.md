@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-07-PLAN.md
-last_updated: "2026-03-14T07:09:08.678Z"
-last_activity: 2026-03-14 - Completed plan 02-07 raw query/evaluate integration
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-03-14T07:23:25.565Z"
+last_activity: 2026-03-14 - Completed plan 02-04 runtime memory core
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 10
-  completed_plans: 7
-  percent: 70
+  completed_plans: 8
+  percent: 80
 ---
 
 # Project State
@@ -26,31 +26,32 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 ## Current Position
 
 Phase: 2 of 4 (CPU Compatibility Execution)
-Plan: 5 of 8 in current phase
+Plan: 6 of 8 in current phase
 Status: In Progress
-Last activity: 2026-03-14 - Completed plan 02-07 raw query/evaluate integration
+Last activity: 2026-03-14 - Completed plan 02-04 runtime memory core
 
-Progress: [███████░░░] 70%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 10.0 min
-- Total execution time: 1.2 hours
+- Total plans completed: 8
+- Average duration: 10.3 min
+- Total execution time: 1.4 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Contracts and Typed Foundations | 2 | 13 min | 6.5 min |
-| 2. CPU Compatibility Execution | 5 | 57 min | 11.4 min |
+| 2. CPU Compatibility Execution | 6 | 69 min | 11.5 min |
 | 3. Verification and Compatibility Governance | 0 | 0 min | 0 min |
 | 4. Optional Backends and Migration Surfaces | 0 | 0 min | 0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (7 min), 02-06 (11 min), 02-02 (16 min), 02-03 (12 min), 02-07 (11 min)
-- Trend: Raw query->execute contracts are now enforced through shared CPU routing with diagnostics-locked mismatch behavior.
+- Last 5 plans: 02-06 (11 min), 02-02 (16 min), 02-03 (12 min), 02-07 (11 min), 02-04 (12 min)
+- Trend: Runtime memory policy is now centralized with deterministic chunk-or-fail enforcement across query/execute paths.
+| Phase 02 P04 | 12 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,9 @@ Recent decisions affecting current work:
 - [Phase 02-cpu-compatibility-execution]: Kept legacy raw compatibility query while adding sentinel-aware out/cache semantics through runtime::raw::query.
 - [Phase 02-cpu-compatibility-execution]: Raw execute now validates query metadata and buffer contracts before CPU route dispatch and writes.
 - [Phase 02-cpu-compatibility-execution]: Diagnostics now preserve explicit provided_bytes values on failure instead of always recomputing from dims.
+- [Phase 02-cpu-compatibility-execution]: Use a dedicated runtime memory module with shared allocator/chunking helpers instead of per-call allocation logic.
+- [Phase 02-cpu-compatibility-execution]: Allow memory-limited execution when chunk working set fits limit, even when full required bytes exceed the configured cap.
+- [Phase 02-cpu-compatibility-execution]: Normalize execution feature-flag vectors to keep query and execute scratch-accounting deterministic.
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-14T07:07:48.423Z
-Stopped at: Completed 02-07-PLAN.md
+Last session: 2026-03-14T07:23:25.563Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None

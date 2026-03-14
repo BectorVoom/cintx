@@ -28,8 +28,8 @@
 
 ### Memory and Error Guarantees
 
-- [ ] **MEM-01**: User can set `memory_limit_bytes` and get either chunked execution or explicit `MemoryLimitExceeded` without process abort
-- [ ] **MEM-02**: User never experiences unhandled OOM abort in supported execution paths because large allocations use fallible allocation policy
+- [x] **MEM-01**: User can set `memory_limit_bytes` and get either chunked execution or explicit `MemoryLimitExceeded` without process abort
+- [x] **MEM-02**: User never experiences unhandled OOM abort in supported execution paths because large allocations use fallible allocation policy
 - [x] **MEM-03**: User can diagnose failure causes through structured error messages and trace metadata
 
 ### Execution Backends
@@ -85,8 +85,8 @@
 | SAFE-02 | Phase 1 | Complete |
 | SAFE-03 | Phase 2 | Complete |
 | SAFE-04 | Phase 1 | Complete |
-| MEM-01 | Phase 2 | Pending |
-| MEM-02 | Phase 2 | Pending |
+| MEM-01 | Phase 2 | Complete |
+| MEM-02 | Phase 2 | Complete |
 | MEM-03 | Phase 1 | Complete |
 | EXEC-01 | Phase 2 | Complete |
 | EXEC-02 | Phase 4 | Pending |
