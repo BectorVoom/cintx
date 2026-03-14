@@ -22,7 +22,7 @@
 ### Safe Rust API
 
 - [x] **SAFE-01**: User can construct typed input models (`Atom`, `Shell`, basis/environment context) without raw pointer arithmetic
-- [ ] **SAFE-02**: User can call `query_workspace` to obtain deterministic workspace requirements before evaluation
+- [x] **SAFE-02**: User can call `query_workspace` to obtain deterministic workspace requirements before evaluation
 - [ ] **SAFE-03**: User can call `evaluate`/`evaluate_into` with typed tensor views and receive representation-correct output layout
 - [x] **SAFE-04**: User receives typed errors that distinguish unsupported API, input-layout failure, memory failure, and backend execution failure
 
@@ -30,7 +30,7 @@
 
 - [ ] **MEM-01**: User can set `memory_limit_bytes` and get either chunked execution or explicit `MemoryLimitExceeded` without process abort
 - [ ] **MEM-02**: User never experiences unhandled OOM abort in supported execution paths because large allocations use fallible allocation policy
-- [ ] **MEM-03**: User can diagnose failure causes through structured error messages and trace metadata
+- [x] **MEM-03**: User can diagnose failure causes through structured error messages and trace metadata
 
 ### Execution Backends
 
@@ -82,12 +82,12 @@
 | RAW-03 | Phase 2 | Pending |
 | RAW-04 | Phase 3 | Pending |
 | SAFE-01 | Phase 1 | Complete |
-| SAFE-02 | Phase 1 | Pending |
+| SAFE-02 | Phase 1 | Complete |
 | SAFE-03 | Phase 2 | Pending |
 | SAFE-04 | Phase 1 | Complete |
 | MEM-01 | Phase 2 | Pending |
 | MEM-02 | Phase 2 | Pending |
-| MEM-03 | Phase 1 | Pending |
+| MEM-03 | Phase 1 | Complete |
 | EXEC-01 | Phase 2 | Pending |
 | EXEC-02 | Phase 4 | Pending |
 | EXEC-03 | Phase 4 | Pending |

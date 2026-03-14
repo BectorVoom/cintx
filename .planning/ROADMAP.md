@@ -12,7 +12,7 @@ This roadmap delivers libcint-compatible results in a Rust-first library by sequ
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Contracts and Typed Foundations** - Establish safe typed models, workspace introspection, and typed error diagnostics.
+- [x] **Phase 1: Contracts and Typed Foundations** - Establish safe typed models, workspace introspection, and typed error diagnostics.
 - [ ] **Phase 2: CPU Compatibility Execution** - Deliver stable-family CPU execution through safe and raw APIs with memory guarantees.
 - [ ] **Phase 3: Verification and Compatibility Governance** - Prove compatibility claims with helper parity, manifest governance, and CI release gates.
 - [ ] **Phase 4: Optional Backends and Migration Surfaces** - Add opt-in GPU acceleration, C ABI migration shim, and optional family support envelopes.
@@ -29,8 +29,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User receives typed errors that distinguish unsupported API, input-layout failure, memory failure, and backend execution failure.
   4. User can diagnose failures via structured error messages and trace metadata.
 **Plans**: 2
-- [ ] 01-01: Typed domain contracts and error taxonomy
-- [ ] 01-02: Workspace query and diagnostics contract
+- [x] 01-01: Typed domain contracts and error taxonomy
+- [x] 01-02: Workspace query and diagnostics contract
 
 ### Phase 2: CPU Compatibility Execution
 **Goal:** Users can run supported stable-family integrals on CPU via both safe and raw interfaces while preserving explicit memory-limit behavior.
@@ -69,7 +69,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Contracts and Typed Foundations | 1/2 | In Progress|  |
+| 1. Contracts and Typed Foundations | 2/2 | Complete | 2026-03-14 |
 | 2. CPU Compatibility Execution | 0/TBD | Not started | - |
 | 3. Verification and Compatibility Governance | 0/TBD | Not started | - |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |
