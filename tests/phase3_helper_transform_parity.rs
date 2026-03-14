@@ -1,16 +1,25 @@
+#[path = "common/oracle_runner.rs"]
+mod oracle_runner;
 #[path = "common/phase2_fixtures.rs"]
 mod phase2_fixtures;
 #[path = "common/phase3_helper_cases.rs"]
 mod phase3_helper_cases;
 
-use cintx::{Representation, shell_ao_layout, shell_normalization_metadata};
-use phase2_fixtures::{
-    stable_expected_shell_counts_cartesian, stable_expected_shell_counts_spherical,
-    stable_expected_shell_counts_spinor, stable_expected_shell_offsets_cartesian,
-    stable_expected_shell_offsets_spherical, stable_expected_shell_offsets_spinor,
-    stable_raw_layout,
+use cintx::{
+    deterministic_transform_scalars, route, safe, shell_ao_layout, shell_normalization_metadata,
+    CpuRouteTarget, Representation,
 };
-use phase3_helper_cases::{expected_gto_norm, stable_shell_normalization_expectations};
+use oracle_runner::{assert_within_tolerance, oracle_expected_scalars, TolerancePolicy};
+use phase2_fixtures::{
+    phase3_helper_options, stable_expected_shell_counts_cartesian,
+    stable_expected_shell_counts_spherical, stable_expected_shell_counts_spinor,
+    stable_expected_shell_offsets_cartesian, stable_expected_shell_offsets_spherical,
+    stable_expected_shell_offsets_spinor, stable_phase2_matrix, stable_raw_layout,
+    stable_safe_basis,
+};
+use phase3_helper_cases::{
+    expected_gto_norm, helper_matrix_case_count, stable_shell_normalization_expectations,
+};
 
 const NORM_TOLERANCE: f64 = 1e-12;
 
@@ -72,6 +81,69 @@ fn helper_counts_offsets_normalization_parity() {
                     "shell {} normalized coefficient {index}",
                     expected.shell_index
                 ),
+            );
+        }
+    }
+}
+
+#[test]
+fn helper_transform_parity_matrix() {
+    let basis = stable_safe_basis();
+    let options = phase3_helper_options();
+    let matrix = stable_phase2_matrix();
+    assert_eq!(
+        matrix.len(),
+        helper_matrix_case_count(),
+        "stable-family helper matrix size must remain deterministic",
+    );
+    assert!(
+        matrix.iter().any(|row| row.is_explicit_3c1e_spinor()),
+        "helper transform matrix must include explicit 3c1e spinor coverage",
+    );
+
+    for row in matrix {
+        let operator = row.operator();
+        let row_id = row.id();
+        let query = safe::query_workspace(
+            &basis,
+            operator,
+            row.representation,
+            row.safe_shell_tuple,
+            &options,
+        )
+        .unwrap_or_else(|err| panic!("safe query failed for {row_id}: {err:?}"));
+
+        let route_target = route(row.route_key())
+            .unwrap_or_else(|err| panic!("route failed for {row_id}: {err:?}"));
+
+        let helper_scalars =
+            deterministic_transform_scalars(route_target, row.representation, &query.dims)
+                .unwrap_or_else(|err| panic!("helper transform failed for {row_id}: {err:?}"));
+
+        let oracle_scalars =
+            oracle_expected_scalars(row.route_key(), row.representation, &query.dims)
+                .unwrap_or_else(|err| panic!("oracle helper failed for {row_id}: {err:?}"));
+
+        assert_within_tolerance(
+            &oracle_scalars,
+            &helper_scalars,
+            TolerancePolicy::strict(),
+            &format!("helper transform parity {row_id}"),
+        );
+
+        if row.is_explicit_3c1e_spinor() {
+            match route_target {
+                CpuRouteTarget::ThreeCenterOneElectronSpinor(_) => {}
+                other => panic!("3c1e spinor must route through adapter, got {other:?}"),
+            }
+            let has_negative_imag = helper_scalars
+                .iter()
+                .skip(1)
+                .step_by(2)
+                .any(|value| *value < 0.0);
+            assert!(
+                has_negative_imag,
+                "3c1e spinor helper transform must preserve adapter-specific imaginary sign",
             );
         }
     }

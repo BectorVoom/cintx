@@ -232,3 +232,7 @@ pub fn stable_expected_shell_offsets_spherical() -> Vec<usize> {
 pub fn stable_expected_shell_offsets_spinor() -> Vec<usize> {
     vec![0, 2, 8, 18]
 }
+
+pub fn phase3_helper_options() -> WorkspaceQueryOptions {
+    phase2_cpu_options(&["phase3-helper-transform-parity"])
+}

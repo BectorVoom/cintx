@@ -50,6 +50,10 @@ pub fn malformed_truncated_bas() -> Vec<i32> {
     bas
 }
 
+pub fn helper_matrix_case_count() -> usize {
+    15
+}
+
 pub fn expected_gto_norm(angular_momentum: usize, exponent: f64) -> f64 {
     let gamma = gamma_half_integer(angular_momentum);
     let power = (2.0 * exponent).powf((angular_momentum as f64) + 1.5);
