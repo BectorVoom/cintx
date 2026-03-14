@@ -311,6 +311,120 @@ fn api_memory_policy_threading() {
     assert_eq!(raw_failure.diagnostics.required_bytes, Some(512));
 }
 
+#[test]
+fn raw_query_execute_memory_contract() {
+    let (atm, bas, env) = raw_sample_layout();
+    let operator = raw_one_electron_overlap();
+    let feasible_options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(320),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-memory-contract"],
+    };
+    let infeasible_options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(319),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-memory-contract"],
+    };
+
+    let queried = cintx::raw::query_workspace_compat_with_sentinels(
+        operator,
+        Representation::Spherical,
+        cintx::raw::RawQueryRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            out: None,
+            cache: None,
+            opt: None,
+        },
+        &feasible_options,
+    )
+    .expect("query should succeed under feasible memory cap");
+    assert_eq!(queried.required_bytes, 24);
+    assert_eq!(queried.memory_required_bytes, 320);
+    assert_eq!(queried.memory_working_set_bytes, 320);
+    assert_eq!(queried.memory_scratch_bytes, 288);
+    assert_eq!(queried.chunk_elements, queried.required_elements);
+    assert_eq!(queried.chunk_count, 1);
+
+    let required_scalars = queried.required_bytes / 8;
+    let mut output = vec![0.0f64; required_scalars + 2];
+    output[required_scalars] = 77.0;
+    output[required_scalars + 1] = 99.0;
+    let result = cintx::raw::evaluate_compat(
+        operator,
+        Representation::Spherical,
+        &queried,
+        cintx::raw::RawEvaluateRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            out: &mut output,
+            cache: None,
+            opt: None,
+        },
+        &feasible_options,
+    )
+    .expect("execute should succeed when query and execute memory policies agree");
+    assert_eq!(result.required_bytes, queried.required_bytes);
+    assert_eq!(output[required_scalars], 77.0);
+    assert_eq!(output[required_scalars + 1], 99.0);
+
+    let query_failure = cintx::raw::query_workspace_compat_with_sentinels(
+        operator,
+        Representation::Spherical,
+        cintx::raw::RawQueryRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            out: None,
+            cache: None,
+            opt: None,
+        },
+        &infeasible_options,
+    )
+    .expect_err("query should fail for infeasible memory limit");
+    assert!(matches!(
+        query_failure.error,
+        LibcintRsError::MemoryLimitExceeded {
+            required_bytes: 320,
+            limit_bytes: 319,
+        }
+    ));
+
+    let mut output = vec![0.0f64; required_scalars];
+    let execute_failure = cintx::raw::evaluate_compat(
+        operator,
+        Representation::Spherical,
+        &queried,
+        cintx::raw::RawEvaluateRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            out: &mut output,
+            cache: None,
+            opt: None,
+        },
+        &infeasible_options,
+    )
+    .expect_err("execute should fail when memory policy becomes infeasible");
+    assert!(matches!(
+        execute_failure.error,
+        LibcintRsError::MemoryLimitExceeded {
+            required_bytes: 320,
+            limit_bytes: 319,
+        }
+    ));
+}
+
 fn sample_basis() -> BasisSet {
     let atom_a = Atom::new(8, [0.0, 0.0, -0.1173]).expect("atom A should be valid");
     let atom_b = Atom::new(1, [0.0, 0.7572, 0.4692]).expect("atom B should be valid");
@@ -318,4 +432,28 @@ fn sample_basis() -> BasisSet {
     let shell_p = Shell::new(1, 1, vec![3.0, 0.8], vec![0.6, 0.4]).expect("p shell should be valid");
 
     BasisSet::new(vec![atom_a, atom_b], vec![shell_d, shell_p]).expect("basis should be valid")
+}
+
+fn raw_sample_layout() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    let atm = vec![
+        8, 20, 1, 0, 0, 0, //
+        1, 23, 1, 0, 0, 0,
+    ];
+    let bas = vec![
+        0, 0, 2, 1, 0, 28, 30, 0, //
+        1, 1, 2, 1, 0, 32, 34, 0,
+    ];
+    let mut env = vec![0.0f64; 40];
+    env[20..23].copy_from_slice(&[0.0, 0.0, -0.1173]);
+    env[23..26].copy_from_slice(&[0.0, 0.7572, 0.4692]);
+    env[28..30].copy_from_slice(&[130.70932, 5.0331513]);
+    env[30..32].copy_from_slice(&[0.154329, 0.535328]);
+    env[32..34].copy_from_slice(&[3.42525091, 0.62391373]);
+    env[34..36].copy_from_slice(&[0.154329, 0.535328]);
+    (atm, bas, env)
+}
+
+fn raw_one_electron_overlap() -> Operator {
+    Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap)
+        .expect("one-electron overlap operator should be valid")
 }
