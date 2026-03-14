@@ -1,6 +1,7 @@
 use cintx::{
-    CanonicalSymbolIdentity, CompiledManifestLock, IntegralFamily, ManifestGovernanceError,
-    ManifestLockEntry, ManifestProfile, OperatorKind, Representation, StabilityClass,
+    CanonicalSymbolIdentity, CompiledManifestLock, IntegralFamily, LockUpdateApproval,
+    LockUpdateReason, ManifestGovernanceError, ManifestLockEntry, ManifestProfile, OperatorKind,
+    Representation, StabilityClass,
 };
 
 fn manifest_entries_covering_all_profiles() -> Vec<ManifestLockEntry> {
@@ -142,4 +143,45 @@ fn manifest_profile_union_is_stable() {
         drift,
         ManifestGovernanceError::ProfileUnionDrift { .. }
     ));
+}
+
+#[test]
+fn lock_drift_requires_explicit_update() {
+    let baseline_lock = CompiledManifestLock::new(manifest_entries_covering_all_profiles())
+        .expect("baseline lock should be valid");
+
+    let mut drifted_entries = manifest_entries_covering_all_profiles();
+    drifted_entries[0].stability = StabilityClass::Experimental;
+    let drifted_lock =
+        CompiledManifestLock::new(drifted_entries).expect("drifted lock should still be valid");
+
+    let unapproved = drifted_lock
+        .enforce_drift_policy(&baseline_lock, None)
+        .expect_err("lock drift must fail without explicit approval");
+    assert!(matches!(
+        unapproved,
+        ManifestGovernanceError::UnapprovedLockDrift { .. }
+    ));
+
+    let empty_rationale_approval =
+        LockUpdateApproval::new(LockUpdateReason::ProfilePolicyChange, "   ");
+    let empty_rationale = drifted_lock
+        .enforce_drift_policy(&baseline_lock, Some(&empty_rationale_approval))
+        .expect_err("approval rationale cannot be blank");
+    assert!(matches!(
+        empty_rationale,
+        ManifestGovernanceError::EmptyApprovalRationale
+    ));
+
+    let approved = LockUpdateApproval::new(
+        LockUpdateReason::ProfilePolicyChange,
+        "phase-3 profile policy changed with governance review",
+    );
+    drifted_lock
+        .enforce_drift_policy(&baseline_lock, Some(&approved))
+        .expect("approved lock drift should pass");
+
+    baseline_lock
+        .enforce_drift_policy(&baseline_lock, None)
+        .expect("identical locks should not require approval");
 }
