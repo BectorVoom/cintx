@@ -1,0 +1,72 @@
+name: Compat Governance PR Gates
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, master]
+    paths:
+      - ".github/workflows/compat-governance-pr.yml"
+      - ".github/workflows/compat-governance-release.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+      - "tests/**"
+      - "docs/phase2-support-matrix.md"
+      - "docs/phase3-governance-gates.md"
+  workflow_dispatch:
+
+concurrency:
+  group: compat-governance-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  helper_parity_gate:
+    name: Helper parity gate (COMP-02)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run helper transform parity matrix
+        run: cargo test --workspace --test phase3_helper_transform_parity helper_transform_parity_matrix
+
+  manifest_governance_gate:
+    name: Manifest drift gate (COMP-03, VERI-01)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Enforce explicit lock drift policy
+        run: cargo test --workspace --test phase3_manifest_governance lock_drift_requires_explicit_update
+
+  core_regression_gate:
+    name: Core regression gate (COMP-04, VERI-02)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Enforce requirement traceability
+        run: cargo test --workspace --test phase3_regression_gates requirement_traceability_gate

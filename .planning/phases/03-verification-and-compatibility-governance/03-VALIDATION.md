@@ -52,7 +52,7 @@ updated: 2026-03-14
 | 03-03-01 | 03 | 3 | RAW-04 | integration | `cargo test --workspace --test phase3_optimizer_equivalence optimizer_on_off_equivalence_matrix` | ❌ planned | ⬜ pending |
 | 03-03-02 | 03 | 3 | VERI-03 | integration | `cargo test --workspace --test phase3_optimizer_equivalence spinor_layout_regression` | ❌ planned | ⬜ pending |
 | 03-03-03 | 03 | 3 | VERI-03 | integration | `cargo test --workspace --test phase3_optimizer_equivalence oom_error_semantics_regression` | ❌ planned | ⬜ pending |
-| 03-04-01 | 04 | 4 | COMP-02, VERI-01 | integration | `cargo test --workspace --test phase3_helper_transform_parity helper_transform_parity_matrix && cargo test --workspace --test phase3_manifest_governance lock_drift_requires_explicit_update` | ❌ planned | ⬜ pending |
+| 03-04-01 | 04 | 4 | COMP-02, VERI-01 | integration | `cargo test --workspace --test phase3_helper_transform_parity helper_transform_parity_matrix && cargo test --workspace --test phase3_manifest_governance lock_drift_requires_explicit_update` | ✅ `.github/workflows/compat-governance-pr.yml` | ✅ green |
 | 03-04-02 | 04 | 4 | VERI-02 | integration | `cargo test --workspace --test phase3_regression_gates oracle_profile_matrix_gate` | ❌ planned | ⬜ pending |
 | 03-04-03 | 04 | 4 | COMP-04, VERI-02 | integration | `cargo test --workspace --test phase3_regression_gates requirement_traceability_gate` | ❌ planned | ⬜ pending |
 
