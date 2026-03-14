@@ -26,14 +26,15 @@ pub struct ExecutionMemoryOptions {
 
 impl From<&WorkspaceQueryOptions> for ExecutionMemoryOptions {
     fn from(options: &WorkspaceQueryOptions) -> Self {
+        let feature_flags = options
+            .normalized_feature_flags()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
         Self {
             memory_limit_bytes: options.memory_limit_bytes,
             backend_candidate: options.backend_candidate.to_string(),
-            feature_flags: options
-                .feature_flags
-                .iter()
-                .map(|flag| (*flag).to_string())
-                .collect(),
+            feature_flags,
         }
     }
 }
