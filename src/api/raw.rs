@@ -3,10 +3,15 @@ use core::ptr::NonNull;
 
 use crate::contracts::{BasisSet, Operator, Representation};
 use crate::diagnostics::QueryResult;
-use crate::runtime::raw::query_workspace_compat as runtime_query_workspace_compat;
+use crate::runtime::raw::{
+    evaluate_workspace_compat as runtime_evaluate_workspace_compat,
+    query_workspace_compat as runtime_query_workspace_compat,
+};
 use crate::runtime::{WorkspaceQuery, WorkspaceQueryOptions, query_workspace_raw};
 
-pub use crate::runtime::raw::{RawCompatWorkspace, RawQueryRequest};
+pub use crate::runtime::raw::{
+    RawCompatWorkspace, RawEvaluateRequest, RawEvaluateResult, RawQueryRequest,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct RawCompatRequest<'a> {
@@ -67,4 +72,14 @@ pub fn query_workspace_compat_with_sentinels(
     options: &WorkspaceQueryOptions,
 ) -> QueryResult<RawCompatWorkspace> {
     runtime_query_workspace_compat(operator, representation, request, options)
+}
+
+pub fn evaluate_compat(
+    operator: Operator,
+    representation: Representation,
+    queried_workspace: &RawCompatWorkspace,
+    request: RawEvaluateRequest<'_>,
+    options: &WorkspaceQueryOptions,
+) -> QueryResult<RawEvaluateResult> {
+    runtime_evaluate_workspace_compat(operator, representation, queried_workspace, request, options)
 }

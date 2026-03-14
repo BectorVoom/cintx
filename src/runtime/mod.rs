@@ -2,6 +2,7 @@ pub mod backend;
 pub mod executor;
 pub mod execution_plan;
 pub mod layout;
+pub mod output_writer;
 pub mod planner;
 pub mod raw;
 pub mod validator;
@@ -21,6 +22,10 @@ pub use executor::{
 };
 pub use layout::{LayoutElementKind, OutputLayout, layout_for_plan};
 pub use planner::{PlannedExecution, plan_execution, plan_raw, plan_safe};
+pub use raw::{
+    RAW_COMPAT_EVALUATE_API, RAW_COMPAT_QUERY_API, RawCompatWorkspace, RawEvaluateRequest,
+    RawEvaluateResult, RawQueryRequest, evaluate_workspace_compat, query_workspace_compat,
+};
 pub use validator::{
     ValidatedInputs, ValidatedShape, WorkspaceQueryOptions, validate_raw_query_inputs,
     validate_safe_query_inputs,

@@ -74,6 +74,84 @@ fn raw_query_null_equivalent_contract() {
     assert_eq!(null_query.cache_provided_len, 0);
 }
 
+#[test]
+fn raw_query_then_execute_success() {
+    let (atm, bas, env) = sample_raw_layout();
+    let operator = one_electron_overlap();
+    let options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(1024),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-raw-query", "phase2-raw-execute"],
+    };
+
+    let queried = cintx::raw::query_workspace_compat_with_sentinels(
+        operator,
+        Representation::Spherical,
+        cintx::raw::RawQueryRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            out: None,
+            cache: None,
+            opt: None,
+        },
+        &options,
+    )
+    .expect("query metadata should succeed for valid raw request");
+
+    let required_scalars = queried.required_bytes / 8;
+    let mut output = vec![0.0f64; required_scalars + 2];
+    output[required_scalars] = 1234.0;
+    output[required_scalars + 1] = 5678.0;
+
+    let result = cintx::raw::evaluate_compat(
+        operator,
+        Representation::Spherical,
+        &queried,
+        cintx::raw::RawEvaluateRequest {
+            shls: &[0, 1],
+            dims: None,
+            atm: &atm,
+            bas: &bas,
+            env: &env,
+            out: &mut output,
+            cache: None,
+            opt: None,
+        },
+        &options,
+    )
+    .expect("query-compliant raw execute should dispatch successfully");
+
+    assert_eq!(result.dispatch.backend, cintx::ExecutionBackend::CpuReference);
+    assert_eq!(result.required_elements, queried.required_elements);
+    assert_eq!(result.required_bytes, queried.required_bytes);
+    assert_eq!(result.dims, queried.dims);
+    assert_eq!(result.cache_used_len, 0);
+    assert!(
+        output[..required_scalars].iter().any(|value| *value != 0.0),
+        "execute path should write deterministic payload into queried output span"
+    );
+    assert_eq!(
+        output[required_scalars], 1234.0,
+        "bytes beyond required output span must remain untouched"
+    );
+    assert_eq!(
+        output[required_scalars + 1],
+        5678.0,
+        "bytes beyond required output span must remain untouched"
+    );
+
+    match result.route_target {
+        cintx::CpuRouteTarget::Direct(symbol) => {
+            assert_eq!(symbol.name(), "int1e_ovlp_sph");
+            assert!(!symbol.as_ptr().is_null());
+        }
+        other => panic!("expected direct CPU route target, got {other:?}"),
+    }
+}
+
 fn sample_raw_layout() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let atm = vec![
         8, 20, 1, 0, 0, 0, //

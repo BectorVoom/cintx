@@ -18,7 +18,9 @@ pub use runtime::{
     ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator, ExecutionRequest,
     EvaluationMetadata, EvaluationOutput, EvaluationOutputMut, EvaluationTensor,
     LayoutElementKind, OutputLayout, PlannedExecution, Spinor3c1eAdapter, Spinor3c1eTransform,
-    ValidatedInputs, ValidatedShape, WorkspaceQuery, WorkspaceQueryOptions, adapter_route,
-    evaluate, evaluate_into, layout_for_plan, plan_execution, plan_raw, plan_safe,
+    RAW_COMPAT_EVALUATE_API, RAW_COMPAT_QUERY_API, RawCompatWorkspace, RawEvaluateRequest,
+    RawEvaluateResult, RawQueryRequest, ValidatedInputs, ValidatedShape, WorkspaceQuery,
+    WorkspaceQueryOptions, adapter_route, evaluate, evaluate_into, evaluate_workspace_compat,
+    layout_for_plan, plan_execution, plan_raw, plan_safe, query_workspace_compat,
     query_workspace_raw, query_workspace_safe, route, route_request,
 };
