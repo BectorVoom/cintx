@@ -50,6 +50,8 @@ pub struct EvaluationTensor {
     pub output: EvaluationOutput,
 }
 
+pub(crate) const SIMULATE_ALLOCATION_FAILURE_FLAG: &str = "simulate-allocation-failure";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MemoryPolicyOutcome {
     pub total_elements: usize,
@@ -83,6 +85,25 @@ impl From<MemoryPlan> for MemoryPolicyOutcome {
             chunk_count: plan.chunk_plan.chunk_count,
         }
     }
+}
+
+pub(crate) fn maybe_simulate_allocation_failure(
+    options: &WorkspaceQueryOptions,
+    operation: &'static str,
+) -> Result<(), LibcintRsError> {
+    if options
+        .normalized_feature_flags()
+        .contains(&SIMULATE_ALLOCATION_FAILURE_FLAG)
+    {
+        return Err(LibcintRsError::AllocationFailure {
+            operation,
+            detail: format!(
+                "simulated allocation failure via feature flag `{SIMULATE_ALLOCATION_FAILURE_FLAG}`"
+            ),
+        });
+    }
+
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -128,6 +149,7 @@ pub fn evaluate_into(
 ) -> Result<EvaluationMetadata, LibcintRsError> {
     let plan = plan_safe(basis, operator, representation, shell_tuple, options)?;
     let layout = layout_for_plan(&plan);
+    maybe_simulate_allocation_failure(options, "safe.evaluate_into")?;
     let memory_policy = plan_execution_memory(basis, &plan)?;
     let route_target = route_request(&plan.request)?;
     execute_planned_into(route_target, &layout, output, memory_policy.chunk_plan())?;
@@ -148,6 +170,7 @@ pub fn evaluate(
 ) -> Result<EvaluationTensor, LibcintRsError> {
     let plan = plan_safe(basis, operator, representation, shell_tuple, options)?;
     let layout = layout_for_plan(&plan);
+    maybe_simulate_allocation_failure(options, "safe.evaluate")?;
     let memory_policy = plan_execution_memory(basis, &plan)?;
     let route_target = route_request(&plan.request)?;
 

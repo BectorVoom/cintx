@@ -5,7 +5,7 @@ use crate::contracts::{Operator, Representation};
 use crate::diagnostics::{QueryDiagnostics, QueryResult};
 use crate::errors::LibcintRsError;
 use crate::runtime::backend::cpu::{CpuRouteTarget, route_request};
-use crate::runtime::executor::build_memory_policy_outcome;
+use crate::runtime::executor::{build_memory_policy_outcome, maybe_simulate_allocation_failure};
 use crate::runtime::execution_plan::{ExecutionDispatch, ExecutionRequest};
 use crate::runtime::memory::allocator::try_alloc_real_buffer;
 use crate::runtime::validator::WorkspaceQueryOptions;
@@ -150,6 +150,13 @@ pub fn evaluate_workspace_compat(
             .with_required_bytes(queried_workspace.required_bytes)
             .with_provided_bytes(provided_bytes)
             .record_failure("query_contract", error)
+    })?;
+
+    maybe_simulate_allocation_failure(options, "raw.compat.evaluate").map_err(|error| {
+        diagnostics
+            .clone()
+            .with_required_bytes(queried_workspace.memory_required_bytes)
+            .record_failure("execution", error)
     })?;
 
     let execution_request = ExecutionRequest::from_raw(
