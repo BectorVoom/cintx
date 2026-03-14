@@ -119,6 +119,7 @@ pub fn query_workspace_compat(
                 },
             )
         })?;
+    let diagnostics = diagnostics.with_dims(validated.dims.clone());
     let memory_policy = build_memory_policy_outcome(
         &validated.shell_angular_momentum,
         validated.primitive_count,
@@ -132,9 +133,7 @@ pub fn query_workspace_compat(
     )
     .map_err(|error| diagnostics.clone().record_failure("memory_policy", error))?;
 
-    let diagnostics = diagnostics
-        .with_dims(validated.dims.clone())
-        .with_required_bytes(memory_policy.required_bytes);
+    let diagnostics = diagnostics.with_required_bytes(memory_policy.required_bytes);
     diagnostics.record_success("validation", memory_policy.required_bytes);
 
     Ok(RawCompatWorkspace {
