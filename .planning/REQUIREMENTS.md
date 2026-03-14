@@ -15,15 +15,15 @@
 ### Raw Compatibility API
 
 - [x] **RAW-01**: User can call a raw API surface with `atm/bas/env`, `shls`, `dims`, `cache`, and `opt` contracts compatible with libcint usage patterns
-- [ ] **RAW-02**: User can query required workspace when output/cache pointers are null-equivalent and then execute successfully with provided buffers
-- [ ] **RAW-03**: User gets explicit error when provided `dims`/buffer shape is incompatible; partial writes and silent truncation do not occur
+- [x] **RAW-02**: User can query required workspace when output/cache pointers are null-equivalent and then execute successfully with provided buffers
+- [x] **RAW-03**: User gets explicit error when provided `dims`/buffer shape is incompatible; partial writes and silent truncation do not occur
 - [ ] **RAW-04**: User receives numerically equivalent results with and without optimizer usage for supported operators
 
 ### Safe Rust API
 
 - [x] **SAFE-01**: User can construct typed input models (`Atom`, `Shell`, basis/environment context) without raw pointer arithmetic
 - [x] **SAFE-02**: User can call `query_workspace` to obtain deterministic workspace requirements before evaluation
-- [ ] **SAFE-03**: User can call `evaluate`/`evaluate_into` with typed tensor views and receive representation-correct output layout
+- [x] **SAFE-03**: User can call `evaluate`/`evaluate_into` with typed tensor views and receive representation-correct output layout
 - [x] **SAFE-04**: User receives typed errors that distinguish unsupported API, input-layout failure, memory failure, and backend execution failure
 
 ### Memory and Error Guarantees
@@ -78,12 +78,12 @@
 | COMP-03 | Phase 3 | Pending |
 | COMP-04 | Phase 3 | Pending |
 | RAW-01 | Phase 2 | Complete |
-| RAW-02 | Phase 2 | Pending |
-| RAW-03 | Phase 2 | Pending |
+| RAW-02 | Phase 2 | Complete |
+| RAW-03 | Phase 2 | Complete |
 | RAW-04 | Phase 3 | Pending |
 | SAFE-01 | Phase 1 | Complete |
 | SAFE-02 | Phase 1 | Complete |
-| SAFE-03 | Phase 2 | Pending |
+| SAFE-03 | Phase 2 | Complete |
 | SAFE-04 | Phase 1 | Complete |
 | MEM-01 | Phase 2 | Pending |
 | MEM-02 | Phase 2 | Pending |
