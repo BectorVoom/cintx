@@ -14,6 +14,7 @@ pub use contracts::{
 pub use diagnostics::{QueryDiagnostics, QueryError, QueryResult};
 pub use errors::LibcintRsError;
 pub use runtime::{
-    ValidatedInputs, ValidatedShape, WorkspaceQuery, WorkspaceQueryOptions, query_workspace_raw,
-    query_workspace_safe,
+    ExecutionBackend, ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator,
+    ExecutionRequest, ValidatedInputs, ValidatedShape, WorkspaceQuery, WorkspaceQueryOptions,
+    query_workspace_raw, query_workspace_safe,
 };

@@ -1,3 +1,8 @@
+use cintx::{
+    ExecutionBackend, ExecutionDispatch, ExecutionRequest, IntegralFamily, Operator, OperatorKind,
+    Representation, WorkspaceQueryOptions,
+};
+
 #[link(name = "cint_phase2_cpu", kind = "static")]
 #[link(name = "m")]
 unsafe extern "C" {
@@ -41,4 +46,58 @@ fn cpu_backend_symbols_link() {
     for (name, symbol) in symbols {
         assert!(!symbol.is_null(), "symbol `{name}` should be linked");
     }
+}
+
+#[test]
+fn execution_request_contract() {
+    let operator = Operator::new(IntegralFamily::ThreeCenterOneElectron, OperatorKind::Kinetic)
+        .expect("kinetic should be valid for 3c1e");
+    let options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(8 * 1024),
+        backend_candidate: "cpu",
+        feature_flags: vec!["trace-workspace", "phase2-contract"],
+    };
+
+    let safe_request = ExecutionRequest::from_safe(
+        operator,
+        Representation::Spinor,
+        &[1, 4, 7],
+        &options,
+    );
+    let raw_request = ExecutionRequest::from_raw(
+        operator,
+        Representation::Spinor,
+        &[1, 4, 7],
+        Some(&[2, 3, 4]),
+        &options,
+    );
+
+    assert_eq!(
+        safe_request.operator.family,
+        IntegralFamily::ThreeCenterOneElectron
+    );
+    assert_eq!(safe_request.operator.kind, OperatorKind::Kinetic);
+    assert_eq!(safe_request.representation, Representation::Spinor);
+    assert_eq!(safe_request.shell_tuple, vec![1, 4, 7]);
+    assert_eq!(safe_request.dims, None);
+    assert_eq!(safe_request.memory.memory_limit_bytes, Some(8 * 1024));
+    assert_eq!(safe_request.memory.backend_candidate, "cpu");
+    assert_eq!(
+        safe_request.memory.feature_flags,
+        vec![
+            "trace-workspace".to_string(),
+            "phase2-contract".to_string()
+        ]
+    );
+
+    assert_eq!(raw_request.operator, safe_request.operator);
+    assert_eq!(raw_request.representation, safe_request.representation);
+    assert_eq!(raw_request.shell_tuple, safe_request.shell_tuple);
+    assert_eq!(raw_request.dims, Some(vec![2, 3, 4]));
+    assert_eq!(raw_request.memory, safe_request.memory);
+
+    let dispatch = ExecutionDispatch::cpu(raw_request.clone());
+    assert_eq!(dispatch.backend, ExecutionBackend::CpuReference);
+    assert_eq!(dispatch.backend.as_str(), "cpu-reference");
+    assert_eq!(dispatch.request, raw_request);
 }
