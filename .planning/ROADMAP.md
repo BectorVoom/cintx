@@ -78,6 +78,6 @@ Decimal phases appear between their surrounding integers in numeric order.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Contracts and Typed Foundations | 2/2 | Complete    | 2026-03-14 |
-| 2. CPU Compatibility Execution | 0/8 | Not started | - |
+| 2. CPU Compatibility Execution | 1/8 | In Progress|  |
 | 3. Verification and Compatibility Governance | 0/TBD | Not started | - |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |

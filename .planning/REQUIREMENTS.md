@@ -34,7 +34,7 @@
 
 ### Execution Backends
 
-- [ ] **EXEC-01**: User can run all v1-supported requirements on CPU reference backend as the correctness baseline
+- [x] **EXEC-01**: User can run all v1-supported requirements on CPU reference backend as the correctness baseline
 - [ ] **EXEC-02**: User can enable CubeCL acceleration via feature flag and receive deterministic CPU fallback when workloads are unsupported/unfavorable
 - [ ] **EXEC-03**: User can inspect backend dispatch reason (CPU/GPU/fallback) through tracing output
 
@@ -88,7 +88,7 @@
 | MEM-01 | Phase 2 | Pending |
 | MEM-02 | Phase 2 | Pending |
 | MEM-03 | Phase 1 | Complete |
-| EXEC-01 | Phase 2 | Pending |
+| EXEC-01 | Phase 2 | Complete |
 | EXEC-02 | Phase 4 | Pending |
 | EXEC-03 | Phase 4 | Pending |
 | ABIC-01 | Phase 4 | Pending |
