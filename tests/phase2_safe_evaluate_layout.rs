@@ -150,8 +150,10 @@ fn safe_evaluate_representation_layout() {
 fn sample_basis() -> BasisSet {
     let atom_a = Atom::new(8, [0.0, 0.0, -0.1173]).expect("atom A should be valid");
     let atom_b = Atom::new(1, [0.0, 0.7572, 0.4692]).expect("atom B should be valid");
-    let shell_d = Shell::new(0, 2, vec![4.0, 1.0], vec![0.7, 0.3]).expect("d shell should be valid");
-    let shell_p = Shell::new(1, 1, vec![3.0, 0.8], vec![0.6, 0.4]).expect("p shell should be valid");
+    let shell_d =
+        Shell::new(0, 2, vec![4.0, 1.0], vec![0.7, 0.3]).expect("d shell should be valid");
+    let shell_p =
+        Shell::new(1, 1, vec![3.0, 0.8], vec![0.6, 0.4]).expect("p shell should be valid");
 
     BasisSet::new(vec![atom_a, atom_b], vec![shell_d, shell_p]).expect("basis should be valid")
 }

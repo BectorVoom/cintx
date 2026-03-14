@@ -126,7 +126,10 @@ fn render_config_header(template: &str) -> String {
             ("#cmakedefine HAVE_EXPL", "#define HAVE_EXPL 1"),
             ("#cmakedefine HAVE_SQRTL", "#define HAVE_SQRTL 1"),
             ("#cmakedefine HAVE_FABSL", "#define HAVE_FABSL 1"),
-            ("#cmakedefine HAVE_QUADMATH_H", "/* #undef HAVE_QUADMATH_H */"),
+            (
+                "#cmakedefine HAVE_QUADMATH_H",
+                "/* #undef HAVE_QUADMATH_H */",
+            ),
             (
                 "#cmakedefine WITH_RANGE_COULOMB",
                 "/* #undef WITH_RANGE_COULOMB */",

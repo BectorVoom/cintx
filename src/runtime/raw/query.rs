@@ -76,18 +76,17 @@ pub fn query_workspace_compat(
         options.backend_candidate,
         options.normalized_feature_flags(),
     );
-    let output_provided_bytes =
-        output_provided_len
-            .checked_mul(F64_WIDTH_BYTES)
-            .ok_or_else(|| {
-                diagnostics.clone().record_failure(
-                    "validation",
-                    LibcintRsError::InvalidInput {
-                        field: "out",
-                        reason: "provided output byte computation overflows usize".to_string(),
-                    },
-                )
-            })?;
+    let output_provided_bytes = output_provided_len
+        .checked_mul(F64_WIDTH_BYTES)
+        .ok_or_else(|| {
+            diagnostics.clone().record_failure(
+                "validation",
+                LibcintRsError::InvalidInput {
+                    field: "out",
+                    reason: "provided output byte computation overflows usize".to_string(),
+                },
+            )
+        })?;
     let diagnostics = if query_uses_null_out {
         diagnostics
     } else {

@@ -65,13 +65,12 @@ pub fn validate_raw_contract(
                 ),
             })?;
         shell_angular_momentum.push(angular_momentum);
-        primitive_count =
-            primitive_count
-                .checked_add(meta.nprim)
-                .ok_or_else(|| LibcintRsError::InvalidInput {
-                    field: "bas.nprim_of",
-                    reason: "primitive count overflows usize".to_string(),
-                })?;
+        primitive_count = primitive_count.checked_add(meta.nprim).ok_or_else(|| {
+            LibcintRsError::InvalidInput {
+                field: "bas.nprim_of",
+                reason: "primitive count overflows usize".to_string(),
+            }
+        })?;
         natural_dims.push(shell_component_count(meta, request.representation)?);
     }
 

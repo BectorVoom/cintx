@@ -1,9 +1,7 @@
 #[path = "common/phase2_fixtures.rs"]
 mod phase2_fixtures;
 
-use cintx::{
-    IntegralFamily, LibcintRsError, OperatorKind, QueryDiagnostics, raw, safe,
-};
+use cintx::{IntegralFamily, LibcintRsError, OperatorKind, QueryDiagnostics, raw, safe};
 use phase2_fixtures::{
     phase2_cpu_options, phase2_cpu_options_with_limit, representation_width_bytes,
     stable_phase2_matrix, stable_raw_layout, stable_safe_basis,
@@ -148,7 +146,9 @@ fn raw_execute_memory_limit_failure_preserves_output_and_diagnostics() {
         LibcintRsError::MemoryLimitExceeded { limit_bytes: 1, .. }
     ));
     assert!(
-        output.iter().all(|value| (*value - 42.0).abs() < f64::EPSILON),
+        output
+            .iter()
+            .all(|value| (*value - 42.0).abs() < f64::EPSILON),
         "memory-limit failure must not partially mutate output buffer"
     );
     assert_diagnostics_common(
@@ -158,7 +158,10 @@ fn raw_execute_memory_limit_failure_preserves_output_and_diagnostics() {
     );
     assert_eq!(failure.diagnostics.memory_limit_bytes, Some(1));
     assert!(failure.diagnostics.required_bytes.is_some());
-    assert_eq!(failure.diagnostics.provided_bytes, Some(required_scalars * 8));
+    assert_eq!(
+        failure.diagnostics.provided_bytes,
+        Some(required_scalars * 8)
+    );
 }
 
 #[test]
@@ -167,10 +170,8 @@ fn allocation_failure_simulation_is_typed_for_safe_and_raw() {
     let operator = case.operator();
     let basis = stable_safe_basis();
     let (atm, bas, env) = stable_raw_layout();
-    let options = phase2_cpu_options(&[
-        "phase2-allocation-contract",
-        "simulate-allocation-failure",
-    ]);
+    let options =
+        phase2_cpu_options(&["phase2-allocation-contract", "simulate-allocation-failure"]);
 
     let safe_failure = safe::evaluate(
         &basis,
@@ -237,7 +238,9 @@ fn allocation_failure_simulation_is_typed_for_safe_and_raw() {
         }
     ));
     assert!(
-        output.iter().all(|value| (*value - 99.0).abs() < f64::EPSILON),
+        output
+            .iter()
+            .all(|value| (*value - 99.0).abs() < f64::EPSILON),
         "allocation failure must not partially mutate output buffer"
     );
     assert_diagnostics_common(

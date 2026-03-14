@@ -8,9 +8,8 @@ use super::{
         allocator::{try_alloc_real_buffer, try_alloc_spinor_buffer},
         chunking::{ChunkPlan, MemoryPlan, build_memory_plan, compute_scratch_bytes},
     },
-    plan_safe,
     output_writer::{OutputWriter, StagedOutputMut},
-    route_request,
+    plan_safe, route_request,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,11 +229,21 @@ fn execute_planned_into(
     match (layout.element_kind, output) {
         (LayoutElementKind::RealF64, EvaluationOutputMut::Real(values)) => {
             layout.validate_real_buffer_len(values.len())?;
-            execute_real_chunked(route_target, &layout.dims, values, chunk_plan.chunk_elements)
+            execute_real_chunked(
+                route_target,
+                &layout.dims,
+                values,
+                chunk_plan.chunk_elements,
+            )
         }
         (LayoutElementKind::ComplexF64Pair, EvaluationOutputMut::Spinor(values)) => {
             layout.validate_complex_buffer_len(values.len())?;
-            execute_spinor_chunked(route_target, &layout.dims, values, chunk_plan.chunk_elements)
+            execute_spinor_chunked(
+                route_target,
+                &layout.dims,
+                values,
+                chunk_plan.chunk_elements,
+            )
         }
         _ => Err(LibcintRsError::UnsupportedRepresentation {
             api: "runtime.execute",
@@ -361,12 +370,12 @@ fn plan_execution_memory(
                 ),
             })?;
         shell_angular_momentum.push(shell.angular_momentum());
-        primitive_count = primitive_count.checked_add(shell.primitives().len()).ok_or_else(|| {
-            LibcintRsError::InvalidInput {
+        primitive_count = primitive_count
+            .checked_add(shell.primitives().len())
+            .ok_or_else(|| LibcintRsError::InvalidInput {
                 field: "workspace",
                 reason: "primitive count overflows usize".to_string(),
-            }
-        })?;
+            })?;
     }
 
     build_memory_policy_outcome(

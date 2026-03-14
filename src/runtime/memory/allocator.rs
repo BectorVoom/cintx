@@ -25,9 +25,7 @@ fn try_alloc_filled<T: Clone>(
         .try_reserve_exact(element_count)
         .map_err(|_| LibcintRsError::AllocationFailure {
             operation,
-            detail: format!(
-                "failed to reserve {element_count} {element_label} elements"
-            ),
+            detail: format!("failed to reserve {element_count} {element_label} elements"),
         })?;
     values.resize(element_count, fill);
     Ok(values)

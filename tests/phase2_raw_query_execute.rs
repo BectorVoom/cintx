@@ -126,7 +126,10 @@ fn raw_query_then_execute_success() {
     )
     .expect("query-compliant raw execute should dispatch successfully");
 
-    assert_eq!(result.dispatch.backend, cintx::ExecutionBackend::CpuReference);
+    assert_eq!(
+        result.dispatch.backend,
+        cintx::ExecutionBackend::CpuReference
+    );
     assert_eq!(result.required_elements, queried.required_elements);
     assert_eq!(result.required_bytes, queried.required_bytes);
     assert_eq!(result.dims, queried.dims);
@@ -212,7 +215,10 @@ fn raw_query_execute_mismatch_failure_diagnostics() {
     assert_eq!(failure.diagnostics.api, "raw.compat.evaluate");
     assert_eq!(failure.diagnostics.shell_tuple, vec![0, 1]);
     assert_eq!(failure.diagnostics.dims, queried.dims);
-    assert_eq!(failure.diagnostics.required_bytes, Some(queried.required_bytes));
+    assert_eq!(
+        failure.diagnostics.required_bytes,
+        Some(queried.required_bytes)
+    );
     assert_eq!(
         failure.diagnostics.provided_bytes,
         Some((required_scalars - 1) * 8)

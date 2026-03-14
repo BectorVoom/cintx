@@ -1,11 +1,11 @@
 use crate::contracts::{BasisSet, Operator, Representation};
 use crate::diagnostics::QueryResult;
-use crate::runtime::{
-    EvaluationMetadata, EvaluationOutput, EvaluationOutputMut, EvaluationTensor,
-    WorkspaceQuery, WorkspaceQueryOptions, evaluate as runtime_evaluate,
-    evaluate_into as runtime_evaluate_into, query_workspace_safe,
-};
 use crate::runtime::validator::make_query_diagnostics;
+use crate::runtime::{
+    EvaluationMetadata, EvaluationOutput, EvaluationOutputMut, EvaluationTensor, WorkspaceQuery,
+    WorkspaceQueryOptions, evaluate as runtime_evaluate, evaluate_into as runtime_evaluate_into,
+    query_workspace_safe,
+};
 
 pub use crate::runtime::{
     EvaluationMetadata as SafeEvaluationMetadata, EvaluationOutput as SafeEvaluationOutput,

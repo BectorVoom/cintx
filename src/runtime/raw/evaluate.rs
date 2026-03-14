@@ -5,13 +5,14 @@ use crate::contracts::{Operator, Representation};
 use crate::diagnostics::{QueryDiagnostics, QueryResult};
 use crate::errors::LibcintRsError;
 use crate::runtime::backend::cpu::{CpuRouteTarget, route_request};
-use crate::runtime::executor::{build_memory_policy_outcome, maybe_simulate_allocation_failure};
 use crate::runtime::execution_plan::{ExecutionDispatch, ExecutionRequest};
+use crate::runtime::executor::{build_memory_policy_outcome, maybe_simulate_allocation_failure};
 use crate::runtime::memory::allocator::try_alloc_real_buffer;
 use crate::runtime::validator::WorkspaceQueryOptions;
 
 use super::query::{
-    RawCompatWorkspace, dims_for_diagnostics, representation_width_bytes, shell_tuple_for_diagnostics,
+    RawCompatWorkspace, dims_for_diagnostics, representation_width_bytes,
+    shell_tuple_for_diagnostics,
 };
 use super::{RawValidationRequest, validate_raw_contract};
 
@@ -166,11 +167,8 @@ pub fn evaluate_workspace_compat(
         Some(validated.dims.as_slice()),
         options,
     );
-    let route_target =
-        route_request(&execution_request).map_err(|error| diagnostics.clone().record_failure(
-            "routing",
-            error,
-        ))?;
+    let route_target = route_request(&execution_request)
+        .map_err(|error| diagnostics.clone().record_failure("routing", error))?;
     let dispatch = ExecutionDispatch::cpu(execution_request);
 
     let required_scalars = queried_workspace.required_bytes / F64_WIDTH_BYTES;
@@ -362,12 +360,13 @@ fn write_output_chunked(
         Representation::Spinor => 2,
         Representation::Cartesian | Representation::Spherical => 1,
     };
-    let chunk_scalar_capacity = chunk_elements.checked_mul(scalars_per_element).ok_or_else(|| {
-        LibcintRsError::InvalidInput {
-            field: "workspace",
-            reason: "chunk scalar capacity overflows usize".to_string(),
-        }
-    })?;
+    let chunk_scalar_capacity =
+        chunk_elements
+            .checked_mul(scalars_per_element)
+            .ok_or_else(|| LibcintRsError::InvalidInput {
+                field: "workspace",
+                reason: "chunk scalar capacity overflows usize".to_string(),
+            })?;
     let total_scalars = required_elements
         .checked_mul(scalars_per_element)
         .ok_or_else(|| LibcintRsError::InvalidInput {
@@ -383,10 +382,8 @@ fn write_output_chunked(
     }
 
     let seed = seed_from_route(route_target, dims);
-    let mut staged = try_alloc_real_buffer(
-        chunk_scalar_capacity,
-        "raw.compat.evaluate.chunk_staging",
-    )?;
+    let mut staged =
+        try_alloc_real_buffer(chunk_scalar_capacity, "raw.compat.evaluate.chunk_staging")?;
     let mut element_start = 0usize;
     while element_start < required_elements {
         let element_end = element_start

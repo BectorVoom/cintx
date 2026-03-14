@@ -155,7 +155,10 @@ fn out_of_phase_envelopes_report_typed_unsupported() {
         assert!(
             matches!(
                 err,
-                LibcintRsError::UnsupportedApi { api: "cpu.route", .. }
+                LibcintRsError::UnsupportedApi {
+                    api: "cpu.route",
+                    ..
+                }
             ),
             "expected typed UnsupportedApi for out-of-phase key {key:?}, got {err:?}"
         );

@@ -31,10 +31,12 @@ fn allocation_failures_are_typed() {
     assert_eq!(safe_failure.diagnostics.api, "safe.evaluate");
     assert_eq!(safe_failure.diagnostics.shell_tuple, vec![0, 1]);
     assert_eq!(safe_failure.diagnostics.memory_limit_bytes, Some(1024));
-    assert!(safe_failure
-        .diagnostics
-        .feature_flags
-        .contains(&"simulate-allocation-failure"));
+    assert!(
+        safe_failure
+            .diagnostics
+            .feature_flags
+            .contains(&"simulate-allocation-failure")
+    );
     assert_ne!(safe_failure.diagnostics.correlation_id, 0);
 
     let (atm, bas, env) = sample_raw_layout();
@@ -92,10 +94,12 @@ fn allocation_failures_are_typed() {
         Some(required_scalars * 8)
     );
     assert_eq!(raw_failure.diagnostics.memory_limit_bytes, Some(1024));
-    assert!(raw_failure
-        .diagnostics
-        .feature_flags
-        .contains(&"simulate-allocation-failure"));
+    assert!(
+        raw_failure
+            .diagnostics
+            .feature_flags
+            .contains(&"simulate-allocation-failure")
+    );
     assert_ne!(raw_failure.diagnostics.correlation_id, 0);
 }
 

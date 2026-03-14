@@ -68,7 +68,10 @@ fn raw_execute_undersized_output_reports_typed_failure_and_preserves_buffer() {
         "phase2-raw-failure-undersized",
     );
     assert_eq!(failure.diagnostics.dims, queried.dims);
-    assert_eq!(failure.diagnostics.required_bytes, Some(queried.required_bytes));
+    assert_eq!(
+        failure.diagnostics.required_bytes,
+        Some(queried.required_bytes)
+    );
     assert_eq!(
         failure.diagnostics.provided_bytes,
         Some((required_scalars - 1) * 8)
@@ -131,7 +134,9 @@ fn raw_execute_dims_mismatch_is_typed_and_preserves_buffer() {
         LibcintRsError::DimsBufferMismatch { .. }
     ));
     assert!(
-        output.iter().all(|value| (*value - 7.0).abs() < f64::EPSILON),
+        output
+            .iter()
+            .all(|value| (*value - 7.0).abs() < f64::EPSILON),
         "dims mismatch must not partially write user output"
     );
     assert_diagnostics_common(
@@ -203,7 +208,9 @@ fn raw_query_execute_contract_violation_reports_typed_shell_tuple_error() {
         LibcintRsError::InvalidInput { field: "shls", .. }
     ));
     assert!(
-        output.iter().all(|value| (*value - 5.0).abs() < f64::EPSILON),
+        output
+            .iter()
+            .all(|value| (*value - 5.0).abs() < f64::EPSILON),
         "query/execute contract violations must not partially write output"
     );
     assert_diagnostics_common(
@@ -212,8 +219,14 @@ fn raw_query_execute_contract_violation_reports_typed_shell_tuple_error() {
         "phase2-raw-failure-contract",
     );
     assert_eq!(failure.diagnostics.shell_tuple, vec![1, 0]);
-    assert_eq!(failure.diagnostics.required_bytes, Some(queried.required_bytes));
-    assert_eq!(failure.diagnostics.provided_bytes, Some(required_scalars * 8));
+    assert_eq!(
+        failure.diagnostics.required_bytes,
+        Some(queried.required_bytes)
+    );
+    assert_eq!(
+        failure.diagnostics.provided_bytes,
+        Some(required_scalars * 8)
+    );
 }
 
 fn one_electron_spherical_case() -> phase2_fixtures::StableMatrixCase {

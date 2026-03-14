@@ -24,7 +24,10 @@ enum StagedOutput {
 }
 
 impl<'a> OutputWriter<'a> {
-    pub fn new(layout: &OutputLayout, output: EvaluationOutputMut<'a>) -> Result<Self, LibcintRsError> {
+    pub fn new(
+        layout: &OutputLayout,
+        output: EvaluationOutputMut<'a>,
+    ) -> Result<Self, LibcintRsError> {
         validate_output_contract(layout, &output)?;
         let staged = allocate_staged(layout)?;
         Ok(Self { output, staged })

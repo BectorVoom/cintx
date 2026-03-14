@@ -81,5 +81,11 @@ pub fn evaluate_compat(
     request: RawEvaluateRequest<'_>,
     options: &WorkspaceQueryOptions,
 ) -> QueryResult<RawEvaluateResult> {
-    runtime_evaluate_workspace_compat(operator, representation, queried_workspace, request, options)
+    runtime_evaluate_workspace_compat(
+        operator,
+        representation,
+        queried_workspace,
+        request,
+        options,
+    )
 }

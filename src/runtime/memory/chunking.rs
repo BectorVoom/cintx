@@ -91,75 +91,72 @@ pub fn build_memory_plan(
                 reason: "required byte alignment overflow".to_string(),
             }
         })?;
-    let (chunk_elements, working_set_bytes) = match memory_limit_bytes {
-        None => (element_count, required_bytes),
-        Some(limit_bytes) if required_bytes <= limit_bytes => (element_count, required_bytes),
-        Some(limit_bytes) => {
-            let aligned_limit =
-                align_down(limit_bytes, DEFAULT_ALIGNMENT_BYTES).ok_or_else(|| {
-                    LibcintRsError::InvalidInput {
-                        field: "workspace",
-                        reason: "memory limit alignment is invalid".to_string(),
-                    }
-                })?;
-            let min_working_unaligned =
-                scratch_bytes
+    let (chunk_elements, working_set_bytes) =
+        match memory_limit_bytes {
+            None => (element_count, required_bytes),
+            Some(limit_bytes) if required_bytes <= limit_bytes => (element_count, required_bytes),
+            Some(limit_bytes) => {
+                let aligned_limit =
+                    align_down(limit_bytes, DEFAULT_ALIGNMENT_BYTES).ok_or_else(|| {
+                        LibcintRsError::InvalidInput {
+                            field: "workspace",
+                            reason: "memory limit alignment is invalid".to_string(),
+                        }
+                    })?;
+                let min_working_unaligned = scratch_bytes
                     .checked_add(element_width_bytes)
                     .ok_or_else(|| LibcintRsError::InvalidInput {
                         field: "workspace",
-                        reason: "minimum chunk working-set computation overflows usize"
-                            .to_string(),
+                        reason: "minimum chunk working-set computation overflows usize".to_string(),
                     })?;
-            let min_working_bytes =
-                align_up(min_working_unaligned, DEFAULT_ALIGNMENT_BYTES).ok_or_else(|| {
-                    LibcintRsError::InvalidInput {
+                let min_working_bytes = align_up(min_working_unaligned, DEFAULT_ALIGNMENT_BYTES)
+                    .ok_or_else(|| LibcintRsError::InvalidInput {
                         field: "workspace",
                         reason: "minimum chunk working-set alignment overflow".to_string(),
-                    }
-                })?;
-            if min_working_bytes > limit_bytes {
-                return Err(LibcintRsError::MemoryLimitExceeded {
-                    required_bytes,
-                    limit_bytes,
-                });
-            }
-
-            let available_payload = aligned_limit.saturating_sub(scratch_bytes);
-            let feasible_chunk_elements = available_payload / element_width_bytes;
-            if feasible_chunk_elements == 0 {
-                return Err(LibcintRsError::MemoryLimitExceeded {
-                    required_bytes,
-                    limit_bytes,
-                });
-            }
-
-            let chunk_elements = feasible_chunk_elements.min(element_count);
-            let chunk_payload_bytes = chunk_elements.checked_mul(element_width_bytes).ok_or_else(|| {
-                LibcintRsError::InvalidInput {
-                    field: "workspace",
-                    reason: "chunk payload byte computation overflows usize".to_string(),
+                    })?;
+                if min_working_bytes > limit_bytes {
+                    return Err(LibcintRsError::MemoryLimitExceeded {
+                        required_bytes,
+                        limit_bytes,
+                    });
                 }
-            })?;
-            let chunk_working_unaligned = scratch_bytes.checked_add(chunk_payload_bytes).ok_or_else(|| {
-                LibcintRsError::InvalidInput {
-                    field: "workspace",
-                    reason: "chunk working-set computation overflows usize".to_string(),
+
+                let available_payload = aligned_limit.saturating_sub(scratch_bytes);
+                let feasible_chunk_elements = available_payload / element_width_bytes;
+                if feasible_chunk_elements == 0 {
+                    return Err(LibcintRsError::MemoryLimitExceeded {
+                        required_bytes,
+                        limit_bytes,
+                    });
                 }
-            })?;
-            let working_set_bytes = align_up(chunk_working_unaligned, DEFAULT_ALIGNMENT_BYTES)
-                .ok_or_else(|| LibcintRsError::InvalidInput {
-                    field: "workspace",
-                    reason: "chunk working-set alignment overflow".to_string(),
-                })?;
-            if working_set_bytes > limit_bytes {
-                return Err(LibcintRsError::MemoryLimitExceeded {
-                    required_bytes,
-                    limit_bytes,
-                });
+
+                let chunk_elements = feasible_chunk_elements.min(element_count);
+                let chunk_payload_bytes = chunk_elements
+                    .checked_mul(element_width_bytes)
+                    .ok_or_else(|| LibcintRsError::InvalidInput {
+                        field: "workspace",
+                        reason: "chunk payload byte computation overflows usize".to_string(),
+                    })?;
+                let chunk_working_unaligned = scratch_bytes
+                    .checked_add(chunk_payload_bytes)
+                    .ok_or_else(|| LibcintRsError::InvalidInput {
+                        field: "workspace",
+                        reason: "chunk working-set computation overflows usize".to_string(),
+                    })?;
+                let working_set_bytes = align_up(chunk_working_unaligned, DEFAULT_ALIGNMENT_BYTES)
+                    .ok_or_else(|| LibcintRsError::InvalidInput {
+                        field: "workspace",
+                        reason: "chunk working-set alignment overflow".to_string(),
+                    })?;
+                if working_set_bytes > limit_bytes {
+                    return Err(LibcintRsError::MemoryLimitExceeded {
+                        required_bytes,
+                        limit_bytes,
+                    });
+                }
+                (chunk_elements, working_set_bytes)
             }
-            (chunk_elements, working_set_bytes)
-        }
-    };
+        };
 
     let chunk_count = if chunk_elements == 0 {
         0

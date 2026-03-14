@@ -1,7 +1,7 @@
 use cintx::{
-    route, CpuRouteKey, CpuRouteTarget, ExecutionBackend, ExecutionDispatch, ExecutionRequest,
-    IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation, Spinor3c1eTransform,
-    WorkspaceQueryOptions, ALL_BOUND_SYMBOLS,
+    ALL_BOUND_SYMBOLS, CpuRouteKey, CpuRouteTarget, ExecutionBackend, ExecutionDispatch,
+    ExecutionRequest, IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation,
+    Spinor3c1eTransform, WorkspaceQueryOptions, route,
 };
 use std::collections::HashSet;
 
@@ -59,10 +59,7 @@ fn execution_request_contract() {
         .into_iter()
         .map(str::to_string)
         .collect::<Vec<_>>();
-    assert_eq!(
-        safe_request.memory.feature_flags,
-        expected_feature_flags
-    );
+    assert_eq!(safe_request.memory.feature_flags, expected_feature_flags);
 
     assert_eq!(raw_request.operator, safe_request.operator);
     assert_eq!(raw_request.representation, safe_request.representation);

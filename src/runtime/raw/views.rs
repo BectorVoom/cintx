@@ -47,10 +47,12 @@ impl<'a> RawEnvView<'a> {
         }
 
         let start = checked_non_negative(offset, field)?;
-        let end = start.checked_add(width).ok_or_else(|| LibcintRsError::InvalidInput {
-            field,
-            reason: format!("offset range overflows usize for width {width}"),
-        })?;
+        let end = start
+            .checked_add(width)
+            .ok_or_else(|| LibcintRsError::InvalidInput {
+                field,
+                reason: format!("offset range overflows usize for width {width}"),
+            })?;
 
         if end > self.env.len() {
             return Err(LibcintRsError::InvalidInput {
@@ -185,13 +187,13 @@ impl<'a> RawBasView<'a> {
             }
 
             env.checked_offset_range("bas.ptr_exp", meta.ptr_exp, meta.nprim)?;
-            let coeff_width = meta
-                .nprim
-                .checked_mul(meta.nctr)
-                .ok_or_else(|| LibcintRsError::InvalidInput {
-                    field: "bas.ptr_coeff",
-                    reason: "nprim*nctr overflows usize".to_string(),
-                })?;
+            let coeff_width =
+                meta.nprim
+                    .checked_mul(meta.nctr)
+                    .ok_or_else(|| LibcintRsError::InvalidInput {
+                        field: "bas.ptr_coeff",
+                        reason: "nprim*nctr overflows usize".to_string(),
+                    })?;
             env.checked_offset_range("bas.ptr_coeff", meta.ptr_coeff, coeff_width)?;
         }
 
@@ -214,7 +216,11 @@ impl<'a> RawShellTuple<'a> {
         Self { shls }
     }
 
-    pub fn validate(&self, expected_arity: usize, nbas: usize) -> Result<Vec<usize>, LibcintRsError> {
+    pub fn validate(
+        &self,
+        expected_arity: usize,
+        nbas: usize,
+    ) -> Result<Vec<usize>, LibcintRsError> {
         if self.shls.len() != expected_arity {
             return Err(LibcintRsError::InvalidLayout {
                 item: "shls_arity",

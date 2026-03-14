@@ -86,12 +86,13 @@ pub fn plan_execution(
     };
     let element_count = checked_product(&dims)?;
     let element_width_bytes = representation_width_bytes(request.representation);
-    let required_output_bytes = element_count.checked_mul(element_width_bytes).ok_or_else(|| {
-        LibcintRsError::InvalidInput {
-            field: "output",
-            reason: "required output byte computation overflows usize".to_string(),
-        }
-    })?;
+    let required_output_bytes =
+        element_count
+            .checked_mul(element_width_bytes)
+            .ok_or_else(|| LibcintRsError::InvalidInput {
+                field: "output",
+                reason: "required output byte computation overflows usize".to_string(),
+            })?;
 
     Ok(PlannedExecution {
         request,
