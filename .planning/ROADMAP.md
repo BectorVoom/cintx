@@ -49,7 +49,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] 02-05: Phase-close matrix/oracle/failure evidence
 - [x] 02-06: CPU router + `3c1e` spinor compatibility envelope
 - [x] 02-07: Raw query/evaluate integration
-- [ ] 02-08: API memory threading + allocation failure contracts
+- [x] 02-08: API memory threading + allocation failure contracts
 
 ### Phase 3: Verification and Compatibility Governance
 **Goal:** Users can trust compatibility claims because helper parity, API coverage claims, and regression protection are automated and enforceable.
@@ -78,6 +78,6 @@ Decimal phases appear between their surrounding integers in numeric order.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Contracts and Typed Foundations | 2/2 | Complete    | 2026-03-14 |
-| 2. CPU Compatibility Execution | 6/8 | In Progress|  |
+| 2. CPU Compatibility Execution | 7/8 | In Progress|  |
 | 3. Verification and Compatibility Governance | 0/TBD | Not started | - |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |

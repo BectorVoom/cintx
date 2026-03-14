@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-03-14T07:23:25.565Z"
-last_activity: 2026-03-14 - Completed plan 02-04 runtime memory core
+stopped_at: Completed 02-08-PLAN.md
+last_updated: "2026-03-14T07:39:30.019Z"
+last_activity: 2026-03-14 - Completed plan 02-08 API memory threading and allocation failures
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 10
-  completed_plans: 8
-  percent: 80
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State
@@ -26,32 +26,33 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 ## Current Position
 
 Phase: 2 of 4 (CPU Compatibility Execution)
-Plan: 6 of 8 in current phase
+Plan: 7 of 8 in current phase
 Status: In Progress
-Last activity: 2026-03-14 - Completed plan 02-04 runtime memory core
+Last activity: 2026-03-14 - Completed plan 02-08 API memory threading and allocation failures
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
 **Velocity:**
 - Total plans completed: 8
-- Average duration: 10.3 min
-- Total execution time: 1.4 hours
+- Average duration: 10.7 min
+- Total execution time: 1.6 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Contracts and Typed Foundations | 2 | 13 min | 6.5 min |
-| 2. CPU Compatibility Execution | 6 | 69 min | 11.5 min |
+| 2. CPU Compatibility Execution | 7 | 81 min | 11.6 min |
 | 3. Verification and Compatibility Governance | 0 | 0 min | 0 min |
 | 4. Optional Backends and Migration Surfaces | 0 | 0 min | 0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-06 (11 min), 02-02 (16 min), 02-03 (12 min), 02-07 (11 min), 02-04 (12 min)
-- Trend: Runtime memory policy is now centralized with deterministic chunk-or-fail enforcement across query/execute paths.
+- Last 5 plans: 02-02 (16 min), 02-03 (12 min), 02-07 (11 min), 02-04 (12 min), 02-08 (12 min)
+- Trend: Safe/raw API memory threading plus typed allocation-failure regressions are now locked for MEM/RAW phase-close evidence.
 | Phase 02 P04 | 12 min | 3 tasks | 9 files |
+| Phase 02 P08 | 12 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,9 @@ Recent decisions affecting current work:
 - [Phase 02-cpu-compatibility-execution]: Use a dedicated runtime memory module with shared allocator/chunking helpers instead of per-call allocation logic.
 - [Phase 02-cpu-compatibility-execution]: Allow memory-limited execution when chunk working set fits limit, even when full required bytes exceed the configured cap.
 - [Phase 02-cpu-compatibility-execution]: Normalize execution feature-flag vectors to keep query and execute scratch-accounting deterministic.
+- [Phase 02-cpu-compatibility-execution]: Expose memory-policy planning as a shared executor outcome so safe and raw surfaces cannot drift on memory limits.
+- [Phase 02-cpu-compatibility-execution]: Persist raw query memory-policy metadata and require execute-time parity for memory required bytes, working set, scratch, and chunking.
+- [Phase 02-cpu-compatibility-execution]: Use an explicit feature-flag simulation gate to deterministically assert typed AllocationFailure diagnostics at API boundaries.
 
 ### Pending Todos
 
@@ -98,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-14T07:23:25.563Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-03-14T07:38:09Z
+Stopped at: Completed 02-08-PLAN.md
 Resume file: None
