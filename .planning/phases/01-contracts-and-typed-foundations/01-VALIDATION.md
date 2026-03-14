@@ -2,8 +2,8 @@
 phase: 1
 slug: contracts-and-typed-foundations
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-14
 ---
 
@@ -19,18 +19,18 @@ created: 2026-03-14
 |----------|-------|
 | **Framework** | Rust `cargo test` |
 | **Config file** | none — Wave 0 installs phase-specific test layout |
-| **Quick run command** | `cargo test --workspace --lib --quiet` |
+| **Quick run command** | `cargo test --workspace --lib --quiet --tests phase1_typed_contracts` |
 | **Full suite command** | `cargo test --workspace --all-targets` |
-| **Estimated runtime** | ~120 seconds |
+| **Estimated runtime** | ~25 seconds |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run `cargo test --workspace --lib --quiet`
+- **After every task commit:** Run `cargo test --workspace --lib --quiet --tests phase1_typed_contracts`
 - **After every plan wave:** Run `cargo test --workspace --all-targets`
 - **Before `$gsd-verify-work`:** Full suite must be green
-- **Max feedback latency:** 180 seconds
+- **Max feedback latency:** 30 seconds
 
 ---
 
@@ -49,9 +49,7 @@ created: 2026-03-14
 
 ## Wave 0 Requirements
 
-- [ ] `tests/phase1_contracts.rs` — typed input and workspace-query contract tests (SAFE-01, SAFE-02)
-- [ ] `tests/phase1_errors.rs` — typed error taxonomy and diagnostics tests (SAFE-04, MEM-03)
-- [ ] `Cargo.toml` test profile/config updates if required for deterministic quick/full commands
+Existing infrastructure covers all phase requirements.
 
 ---
 
@@ -67,7 +65,7 @@ All phase behaviors have automated verification.
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify
 - [ ] Wave 0 covers all MISSING references
 - [ ] No watch-mode flags
-- [ ] Feedback latency < 180s
+- [ ] Feedback latency < 30s
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-03-14

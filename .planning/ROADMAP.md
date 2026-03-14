@@ -28,7 +28,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. User can call `query_workspace` and receive deterministic workspace sizing before evaluation.
   3. User receives typed errors that distinguish unsupported API, input-layout failure, memory failure, and backend execution failure.
   4. User can diagnose failures via structured error messages and trace metadata.
-**Plans**: TBD
+**Plans**: 2
+- [ ] 01-01: Typed domain contracts and error taxonomy
+- [ ] 01-02: Workspace query and diagnostics contract
 
 ### Phase 2: CPU Compatibility Execution
 **Goal**: Users can run supported stable-family integrals on CPU via both safe and raw interfaces while preserving explicit memory-limit behavior.
@@ -67,7 +69,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Contracts and Typed Foundations | 0/TBD | Not started | - |
+| 1. Contracts and Typed Foundations | 0/2 | Not started | - |
 | 2. CPU Compatibility Execution | 0/TBD | Not started | - |
 | 3. Verification and Compatibility Governance | 0/TBD | Not started | - |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |
