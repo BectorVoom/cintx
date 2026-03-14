@@ -1,7 +1,7 @@
 use cintx::{
-    ALL_BOUND_SYMBOLS, CpuRouteKey, ExecutionBackend, ExecutionDispatch, ExecutionRequest,
-    IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation, WorkspaceQueryOptions,
-    route,
+    ALL_BOUND_SYMBOLS, CpuRouteKey, CpuRouteTarget, ExecutionBackend, ExecutionDispatch,
+    ExecutionRequest, IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation,
+    Spinor3c1eTransform, WorkspaceQueryOptions, route,
 };
 use std::collections::HashSet;
 
@@ -238,5 +238,27 @@ fn backend_route_matrix() {
                 "unexpected route result for {family:?}/{operator:?}/{representation:?}: {result:?}"
             ),
         }
+    }
+}
+
+#[test]
+fn three_c_one_e_spinor_supported() {
+    let route_target = route(CpuRouteKey::new(
+        IntegralFamily::ThreeCenterOneElectron,
+        OperatorKind::Kinetic,
+        Representation::Spinor,
+    ))
+    .expect("3c1e spinor must be routable through dedicated adapter path");
+
+    match route_target {
+        CpuRouteTarget::ThreeCenterOneElectronSpinor(adapter) => {
+            assert_eq!(
+                adapter.transform,
+                Spinor3c1eTransform::SphericalKernelToSpinorLayout
+            );
+            assert_eq!(adapter.driver_symbol.name(), "int3c1e_p2_sph");
+            assert!(!adapter.driver_symbol.as_ptr().is_null());
+        }
+        other => panic!("expected spinor adapter route, got {other:?}"),
     }
 }

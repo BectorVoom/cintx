@@ -3,6 +3,7 @@ use crate::errors::LibcintRsError;
 use crate::runtime::ExecutionRequest;
 
 use super::ffi::CpuKernelSymbol;
+use super::spinor_3c1e::{Spinor3c1eAdapter, adapter_route};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CpuRouteKey {
@@ -38,12 +39,14 @@ impl From<&ExecutionRequest> for CpuRouteKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuRouteTarget {
     Direct(CpuKernelSymbol),
+    ThreeCenterOneElectronSpinor(Spinor3c1eAdapter),
 }
 
 impl CpuRouteTarget {
     pub fn entry_symbol(self) -> CpuKernelSymbol {
         match self {
             Self::Direct(symbol) => symbol,
+            Self::ThreeCenterOneElectronSpinor(adapter) => adapter.driver_symbol,
         }
     }
 }
@@ -102,7 +105,7 @@ pub fn route(key: CpuRouteKey) -> Result<CpuRouteTarget, LibcintRsError> {
             Representation::Spherical,
         ) => Some(CpuKernelSymbol::Int3c1eP2Sph),
         (IntegralFamily::ThreeCenterOneElectron, OperatorKind::Kinetic, Representation::Spinor) => {
-            None
+            return Ok(CpuRouteTarget::ThreeCenterOneElectronSpinor(adapter_route()));
         }
         (
             IntegralFamily::ThreeCenterTwoElectron,
