@@ -1,5 +1,9 @@
-use cintx::runtime::raw::{RawAtmView, RawBasView, RawEnvView};
-use cintx::LibcintRsError;
+use std::ptr::NonNull;
+
+use cintx::runtime::raw::{
+    RawAtmView, RawBasView, RawEnvView, RawValidationRequest, validate_raw_contract,
+};
+use cintx::{IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation};
 
 #[test]
 fn raw_layout_slot_and_offset_checks() {
@@ -47,6 +51,145 @@ fn raw_layout_slot_and_offset_checks() {
     ));
 }
 
+#[test]
+fn raw_validation_matrix() {
+    let (atm, bas, env) = sample_raw_layout();
+    let operator = one_electron_overlap();
+
+    let valid = validate_raw_contract(RawValidationRequest {
+        operator,
+        representation: Representation::Spherical,
+        shls: &[0, 1],
+        dims: None,
+        atm: &atm,
+        bas: &bas,
+        env: &env,
+        cache: None,
+        opt: None,
+    })
+    .expect("valid raw contract should pass");
+    assert_eq!(valid.shell_tuple, vec![0, 1]);
+    assert_eq!(valid.natural_dims, vec![1, 3]);
+    assert_eq!(valid.dims, vec![1, 3]);
+    assert_eq!(valid.required_elements, 3);
+
+    let arity_error = validate_raw_contract(RawValidationRequest {
+        operator,
+        representation: Representation::Spherical,
+        shls: &[0],
+        dims: None,
+        atm: &atm,
+        bas: &bas,
+        env: &env,
+        cache: None,
+        opt: None,
+    })
+    .expect_err("shls arity mismatch should fail");
+    assert!(matches!(
+        arity_error,
+        LibcintRsError::InvalidLayout {
+            item: "shls_arity",
+            expected: 2,
+            got: 1
+        }
+    ));
+
+    let dims_arity_error = validate_raw_contract(RawValidationRequest {
+        operator,
+        representation: Representation::Spherical,
+        shls: &[0, 1],
+        dims: Some(&[1]),
+        atm: &atm,
+        bas: &bas,
+        env: &env,
+        cache: None,
+        opt: None,
+    })
+    .expect_err("dims arity mismatch should fail");
+    assert!(matches!(
+        dims_arity_error,
+        LibcintRsError::InvalidLayout {
+            item: "dims_arity",
+            expected: 2,
+            got: 1
+        }
+    ));
+
+    let dims_value_error = validate_raw_contract(RawValidationRequest {
+        operator,
+        representation: Representation::Spherical,
+        shls: &[0, 1],
+        dims: Some(&[9, 3]),
+        atm: &atm,
+        bas: &bas,
+        env: &env,
+        cache: None,
+        opt: None,
+    })
+    .expect_err("dims value mismatch should fail");
+    assert!(matches!(
+        dims_value_error,
+        LibcintRsError::DimsBufferMismatch {
+            expected,
+            provided
+        } if expected == vec![1, 3] && provided == vec![9, 3]
+    ));
+
+    let opt_without_cache = validate_raw_contract(RawValidationRequest {
+        operator,
+        representation: Representation::Spherical,
+        shls: &[0, 1],
+        dims: None,
+        atm: &atm,
+        bas: &bas,
+        env: &env,
+        cache: None,
+        opt: Some(NonNull::dangling()),
+    })
+    .expect_err("opt requires cache");
+    assert!(matches!(
+        opt_without_cache,
+        LibcintRsError::InvalidInput { field: "cache", .. }
+    ));
+
+    let short_cache = validate_raw_contract(RawValidationRequest {
+        operator,
+        representation: Representation::Spherical,
+        shls: &[0, 1],
+        dims: None,
+        atm: &atm,
+        bas: &bas,
+        env: &env,
+        cache: Some(&[0.0]),
+        opt: Some(NonNull::dangling()),
+    })
+    .expect_err("cache must satisfy validator minimum length");
+    assert!(matches!(
+        short_cache,
+        LibcintRsError::InvalidLayout {
+            item: "cache_length",
+            expected: 2,
+            got: 1
+        }
+    ));
+
+    let valid_with_cache = validate_raw_contract(RawValidationRequest {
+        operator,
+        representation: Representation::Spherical,
+        shls: &[0, 1],
+        dims: None,
+        atm: &atm,
+        bas: &bas,
+        env: &env,
+        cache: Some(&[0.0, 0.0]),
+        opt: Some(NonNull::dangling()),
+    })
+    .expect("opt+cache should satisfy validation contract");
+    assert!(valid_with_cache.has_cache);
+    assert!(valid_with_cache.has_opt);
+    assert_eq!(valid_with_cache.cache_required_len, 2);
+}
+
 fn sample_raw_layout() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let atm = vec![
         8, 20, 1, 0, 0, 0, //
@@ -65,4 +208,9 @@ fn sample_raw_layout() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     env[34..36].copy_from_slice(&[0.154329, 0.535328]);
 
     (atm, bas, env)
+}
+
+fn one_electron_overlap() -> Operator {
+    Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap)
+        .expect("one-electron overlap operator should be valid")
 }
