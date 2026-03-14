@@ -84,5 +84,5 @@ Decimal phases appear between their surrounding integers in numeric order.
 |-------|----------------|--------|-----------|
 | 1. Contracts and Typed Foundations | 2/2 | Complete    | 2026-03-14 |
 | 2. CPU Compatibility Execution | 9/9 | Complete | 2026-03-14 |
-| 3. Verification and Compatibility Governance | 4/4 | Complete | 2026-03-14 |
+| 3. Verification and Compatibility Governance | 4/4 | Complete    | 2026-03-14 |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |
