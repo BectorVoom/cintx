@@ -49,6 +49,104 @@ fn planner_representation_dims() {
     assert_eq!(spinor_layout.required_bytes, 60 * 16);
 }
 
+#[test]
+fn safe_evaluate_representation_layout() {
+    let basis = sample_basis();
+    let options = WorkspaceQueryOptions::default();
+    let one_electron_overlap = Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap)
+        .expect("one-electron overlap should be supported");
+
+    let cartesian = cintx::safe::evaluate(
+        &basis,
+        one_electron_overlap,
+        Representation::Cartesian,
+        &[0, 1],
+        &options,
+    )
+    .expect("cartesian evaluate should succeed");
+    assert_eq!(cartesian.dims, vec![6, 3]);
+    let expected_cartesian = match cartesian.output {
+        cintx::EvaluationOutput::Real(values) => values,
+        other => panic!("cartesian evaluate should return real output, got {other:?}"),
+    };
+    assert_eq!(expected_cartesian.len(), 18);
+
+    let spherical = cintx::safe::evaluate(
+        &basis,
+        one_electron_overlap,
+        Representation::Spherical,
+        &[0, 1],
+        &options,
+    )
+    .expect("spherical evaluate should succeed");
+    assert_eq!(spherical.dims, vec![5, 3]);
+    let expected_spherical = match spherical.output {
+        cintx::EvaluationOutput::Real(values) => values,
+        other => panic!("spherical evaluate should return real output, got {other:?}"),
+    };
+    assert_eq!(expected_spherical.len(), 15);
+
+    let spinor = cintx::safe::evaluate(
+        &basis,
+        one_electron_overlap,
+        Representation::Spinor,
+        &[0, 1],
+        &options,
+    )
+    .expect("spinor evaluate should succeed");
+    assert_eq!(spinor.dims, vec![10, 6]);
+    let expected_spinor = match spinor.output {
+        cintx::EvaluationOutput::Spinor(values) => values,
+        other => panic!("spinor evaluate should return complex output, got {other:?}"),
+    };
+    assert_eq!(expected_spinor.len(), 60);
+
+    let mut cartesian_out = vec![-1.0; 18];
+    let cartesian_meta = cintx::safe::evaluate_into(
+        &basis,
+        one_electron_overlap,
+        Representation::Cartesian,
+        &[0, 1],
+        &options,
+        cintx::EvaluationOutputMut::Real(&mut cartesian_out),
+    )
+    .expect("cartesian evaluate_into should succeed");
+    assert_eq!(cartesian_meta.dims, vec![6, 3]);
+    assert_eq!(cartesian_meta.element_count, 18);
+    assert_eq!(cartesian_meta.required_bytes, 18 * 8);
+    assert_eq!(cartesian_out, expected_cartesian);
+
+    let mut spherical_out = vec![-2.0; 15];
+    let spherical_meta = cintx::safe::evaluate_into(
+        &basis,
+        one_electron_overlap,
+        Representation::Spherical,
+        &[0, 1],
+        &options,
+        cintx::EvaluationOutputMut::Real(&mut spherical_out),
+    )
+    .expect("spherical evaluate_into should succeed");
+    assert_eq!(spherical_meta.dims, vec![5, 3]);
+    assert_eq!(spherical_meta.element_count, 15);
+    assert_eq!(spherical_meta.required_bytes, 15 * 8);
+    assert_eq!(spherical_out, expected_spherical);
+
+    let mut spinor_out = vec![[-3.0, -3.0]; 60];
+    let spinor_meta = cintx::safe::evaluate_into(
+        &basis,
+        one_electron_overlap,
+        Representation::Spinor,
+        &[0, 1],
+        &options,
+        cintx::EvaluationOutputMut::Spinor(&mut spinor_out),
+    )
+    .expect("spinor evaluate_into should succeed");
+    assert_eq!(spinor_meta.dims, vec![10, 6]);
+    assert_eq!(spinor_meta.element_count, 60);
+    assert_eq!(spinor_meta.required_bytes, 60 * 16);
+    assert_eq!(spinor_out, expected_spinor);
+}
+
 fn sample_basis() -> BasisSet {
     let atom_a = Atom::new(8, [0.0, 0.0, -0.1173]).expect("atom A should be valid");
     let atom_b = Atom::new(1, [0.0, 0.7572, 0.4692]).expect("atom B should be valid");

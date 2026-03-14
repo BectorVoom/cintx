@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod executor;
 pub mod execution_plan;
 pub mod layout;
 pub mod planner;
@@ -13,6 +14,10 @@ pub use backend::cpu::{
 pub use execution_plan::{
     ExecutionBackend, ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator,
     ExecutionRequest,
+};
+pub use executor::{
+    EvaluationMetadata, EvaluationOutput, EvaluationOutputMut, EvaluationTensor, evaluate,
+    evaluate_into,
 };
 pub use layout::{LayoutElementKind, OutputLayout, layout_for_plan};
 pub use planner::{PlannedExecution, plan_execution, plan_raw, plan_safe};

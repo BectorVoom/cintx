@@ -16,7 +16,9 @@ pub use errors::LibcintRsError;
 pub use runtime::{
     ALL_BOUND_SYMBOLS, CpuKernelFn, CpuKernelSymbol, CpuRouteKey, CpuRouteTarget, ExecutionBackend,
     ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator, ExecutionRequest,
-    Spinor3c1eAdapter, Spinor3c1eTransform, ValidatedInputs, ValidatedShape, WorkspaceQuery,
-    WorkspaceQueryOptions, adapter_route, query_workspace_raw, query_workspace_safe, route,
-    route_request,
+    EvaluationMetadata, EvaluationOutput, EvaluationOutputMut, EvaluationTensor,
+    LayoutElementKind, OutputLayout, PlannedExecution, Spinor3c1eAdapter, Spinor3c1eTransform,
+    ValidatedInputs, ValidatedShape, WorkspaceQuery, WorkspaceQueryOptions, adapter_route,
+    evaluate, evaluate_into, layout_for_plan, plan_execution, plan_raw, plan_safe,
+    query_workspace_raw, query_workspace_safe, route, route_request,
 };
