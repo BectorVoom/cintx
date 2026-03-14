@@ -395,7 +395,13 @@ fn write_output_chunked(
         let element_span = element_end - element_start;
         let scalar_start = element_start * scalars_per_element;
         let scalar_end = scalar_start + (element_span * scalars_per_element);
-        fill_output_scalars(seed, scalar_start, &mut staged[..scalar_end - scalar_start]);
+        fill_output_scalars(
+            route_target,
+            representation,
+            seed,
+            element_start,
+            &mut staged[..scalar_end - scalar_start],
+        );
         output[scalar_start..scalar_end].copy_from_slice(&staged[..scalar_end - scalar_start]);
         element_start = element_end;
     }
@@ -403,12 +409,36 @@ fn write_output_chunked(
     Ok(())
 }
 
-fn fill_output_scalars(seed: u64, start_index: usize, output: &mut [f64]) {
-    for (index, value) in output.iter_mut().enumerate() {
-        let absolute_index = start_index.saturating_add(index);
-        let idx = u64::try_from(absolute_index).unwrap_or(u64::MAX);
-        let raw = seed.wrapping_add(idx.saturating_mul(19));
-        *value = f64::from((raw % 8192) as u16) / 256.0;
+fn fill_output_scalars(
+    route_target: CpuRouteTarget,
+    representation: Representation,
+    seed: u64,
+    start_element: usize,
+    output: &mut [f64],
+) {
+    match representation {
+        Representation::Cartesian | Representation::Spherical => {
+            for (index, value) in output.iter_mut().enumerate() {
+                let absolute_index = start_element.saturating_add(index);
+                let idx = u64::try_from(absolute_index).unwrap_or(u64::MAX);
+                let raw = seed.wrapping_add(idx.saturating_mul(17));
+                *value = f64::from((raw % 4096) as u16) / 128.0;
+            }
+        }
+        Representation::Spinor => {
+            let imag_sign = match route_target {
+                CpuRouteTarget::ThreeCenterOneElectronSpinor(_) => -1.0,
+                CpuRouteTarget::Direct(_) => 1.0,
+            };
+            for (element_offset, values) in output.chunks_exact_mut(2).enumerate() {
+                let absolute_index = start_element.saturating_add(element_offset);
+                let idx = u64::try_from(absolute_index).unwrap_or(u64::MAX);
+                let real_raw = seed.wrapping_add(idx.saturating_mul(31));
+                let imag_raw = seed.wrapping_add(idx.saturating_mul(43));
+                values[0] = f64::from((real_raw % 8192) as u16) / 256.0;
+                values[1] = imag_sign * (f64::from((imag_raw % 8192) as u16) / 512.0);
+            }
+        }
     }
 }
 
