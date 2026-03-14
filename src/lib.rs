@@ -14,7 +14,8 @@ pub use contracts::{
 pub use diagnostics::{QueryDiagnostics, QueryError, QueryResult};
 pub use errors::LibcintRsError;
 pub use runtime::{
-    ExecutionBackend, ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator,
-    ExecutionRequest, ValidatedInputs, ValidatedShape, WorkspaceQuery, WorkspaceQueryOptions,
-    query_workspace_raw, query_workspace_safe,
+    ALL_BOUND_SYMBOLS, CpuKernelFn, CpuKernelSymbol, CpuRouteKey, CpuRouteTarget, ExecutionBackend,
+    ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator, ExecutionRequest,
+    ValidatedInputs, ValidatedShape, WorkspaceQuery, WorkspaceQueryOptions, query_workspace_raw,
+    query_workspace_safe, route, route_request,
 };

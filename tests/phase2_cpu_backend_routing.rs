@@ -1,70 +1,36 @@
 use cintx::{
-    ExecutionBackend, ExecutionDispatch, ExecutionRequest, IntegralFamily, Operator, OperatorKind,
-    Representation, WorkspaceQueryOptions,
+    ALL_BOUND_SYMBOLS, CpuRouteKey, ExecutionBackend, ExecutionDispatch, ExecutionRequest,
+    IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation, WorkspaceQueryOptions,
+    route,
 };
 use std::collections::HashSet;
 
-#[link(name = "cint_phase2_cpu", kind = "static")]
-#[link(name = "m")]
-unsafe extern "C" {
-    fn int1e_ovlp_cart();
-    fn int1e_ovlp_sph();
-    fn int1e_ovlp_spinor();
-    fn int2e_cart();
-    fn int2e_sph();
-    fn int2e_spinor();
-    fn int2c2e_ip1_cart();
-    fn int2c2e_ip1_sph();
-    fn int2c2e_ip1_spinor();
-    fn int3c1e_p2_cart();
-    fn int3c1e_p2_sph();
-    fn int3c1e_p2_spinor();
-    fn int3c2e_ip1_cart();
-    fn int3c2e_ip1_sph();
-    fn int3c2e_ip1_spinor();
-}
-
 #[test]
 fn cpu_backend_symbols_link() {
-    let symbols: &[(&str, *const ())] = &[
-        ("int1e_ovlp_cart", int1e_ovlp_cart as *const ()),
-        ("int1e_ovlp_sph", int1e_ovlp_sph as *const ()),
-        ("int1e_ovlp_spinor", int1e_ovlp_spinor as *const ()),
-        ("int2e_cart", int2e_cart as *const ()),
-        ("int2e_sph", int2e_sph as *const ()),
-        ("int2e_spinor", int2e_spinor as *const ()),
-        ("int2c2e_ip1_cart", int2c2e_ip1_cart as *const ()),
-        ("int2c2e_ip1_sph", int2c2e_ip1_sph as *const ()),
-        ("int2c2e_ip1_spinor", int2c2e_ip1_spinor as *const ()),
-        ("int3c1e_p2_cart", int3c1e_p2_cart as *const ()),
-        ("int3c1e_p2_sph", int3c1e_p2_sph as *const ()),
-        ("int3c1e_p2_spinor", int3c1e_p2_spinor as *const ()),
-        ("int3c2e_ip1_cart", int3c2e_ip1_cart as *const ()),
-        ("int3c2e_ip1_sph", int3c2e_ip1_sph as *const ()),
-        ("int3c2e_ip1_spinor", int3c2e_ip1_spinor as *const ()),
-    ];
-
-    for (name, symbol) in symbols {
-        assert!(!symbol.is_null(), "symbol `{name}` should be linked");
+    for symbol in ALL_BOUND_SYMBOLS {
+        assert!(
+            !symbol.as_ptr().is_null(),
+            "symbol `{}` should be linked",
+            symbol.name()
+        );
     }
 }
 
 #[test]
 fn execution_request_contract() {
-    let operator = Operator::new(IntegralFamily::ThreeCenterOneElectron, OperatorKind::Kinetic)
-        .expect("kinetic should be valid for 3c1e");
+    let operator = Operator::new(
+        IntegralFamily::ThreeCenterOneElectron,
+        OperatorKind::Kinetic,
+    )
+    .expect("kinetic should be valid for 3c1e");
     let options = WorkspaceQueryOptions {
         memory_limit_bytes: Some(8 * 1024),
         backend_candidate: "cpu",
         feature_flags: vec!["trace-workspace", "phase2-contract"],
     };
 
-    let safe_request = ExecutionRequest::from_safe(
-        operator,
-        Representation::Spinor,
-        &[1, 4, 7],
-        &options,
-    );
+    let safe_request =
+        ExecutionRequest::from_safe(operator, Representation::Spinor, &[1, 4, 7], &options);
     let raw_request = ExecutionRequest::from_raw(
         operator,
         Representation::Spinor,
@@ -85,10 +51,7 @@ fn execution_request_contract() {
     assert_eq!(safe_request.memory.backend_candidate, "cpu");
     assert_eq!(
         safe_request.memory.feature_flags,
-        vec![
-            "trace-workspace".to_string(),
-            "phase2-contract".to_string()
-        ]
+        vec!["trace-workspace".to_string(), "phase2-contract".to_string()]
     );
 
     assert_eq!(raw_request.operator, safe_request.operator);
@@ -161,4 +124,119 @@ fn stable_family_required_matrix_contract() {
         )),
         "3c1e spinor is mandatory in Phase 2 and must remain a required router target"
     );
+}
+
+#[test]
+fn backend_route_matrix() {
+    let matrix = [
+        (
+            IntegralFamily::OneElectron,
+            OperatorKind::Overlap,
+            Representation::Cartesian,
+            true,
+        ),
+        (
+            IntegralFamily::OneElectron,
+            OperatorKind::Overlap,
+            Representation::Spherical,
+            true,
+        ),
+        (
+            IntegralFamily::OneElectron,
+            OperatorKind::Overlap,
+            Representation::Spinor,
+            true,
+        ),
+        (
+            IntegralFamily::TwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Cartesian,
+            true,
+        ),
+        (
+            IntegralFamily::TwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Spherical,
+            true,
+        ),
+        (
+            IntegralFamily::TwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Spinor,
+            true,
+        ),
+        (
+            IntegralFamily::TwoCenterTwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Cartesian,
+            true,
+        ),
+        (
+            IntegralFamily::TwoCenterTwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Spherical,
+            true,
+        ),
+        (
+            IntegralFamily::TwoCenterTwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Spinor,
+            true,
+        ),
+        (
+            IntegralFamily::ThreeCenterOneElectron,
+            OperatorKind::Kinetic,
+            Representation::Cartesian,
+            true,
+        ),
+        (
+            IntegralFamily::ThreeCenterOneElectron,
+            OperatorKind::Kinetic,
+            Representation::Spherical,
+            true,
+        ),
+        (
+            IntegralFamily::ThreeCenterOneElectron,
+            OperatorKind::Kinetic,
+            Representation::Spinor,
+            false,
+        ),
+        (
+            IntegralFamily::ThreeCenterTwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Cartesian,
+            true,
+        ),
+        (
+            IntegralFamily::ThreeCenterTwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Spherical,
+            true,
+        ),
+        (
+            IntegralFamily::ThreeCenterTwoElectron,
+            OperatorKind::ElectronRepulsion,
+            Representation::Spinor,
+            true,
+        ),
+    ];
+
+    for (family, operator, representation, should_route) in matrix {
+        let key = CpuRouteKey::new(family, operator, representation);
+        match (route(key), should_route) {
+            (Ok(route_target), true) => {
+                let symbol = route_target.entry_symbol();
+                assert_eq!(symbol.family(), family);
+                assert_eq!(symbol.operator(), operator);
+                assert_eq!(symbol.representation(), representation);
+                assert!(!symbol.as_ptr().is_null());
+            }
+            (Err(LibcintRsError::UnsupportedApi { api, .. }), false) => {
+                assert_eq!(api, "cpu.route");
+            }
+            (result, _) => panic!(
+                "unexpected route result for {family:?}/{operator:?}/{representation:?}: {result:?}"
+            ),
+        }
+    }
 }

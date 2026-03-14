@@ -1,7 +1,12 @@
+pub mod backend;
 pub mod execution_plan;
 pub mod validator;
 pub mod workspace_query;
 
+pub use backend::cpu::{
+    ALL_BOUND_SYMBOLS, CpuKernelFn, CpuKernelSymbol, CpuRouteKey, CpuRouteTarget, route,
+    route_request,
+};
 pub use execution_plan::{
     ExecutionBackend, ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator,
     ExecutionRequest,
