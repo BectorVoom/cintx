@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-14T06:25:49.602Z"
-last_activity: 2026-03-14 - Completed plan 02-01 CPU linkage and shared execution request model
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-14T06:47:04.848Z"
+last_activity: 2026-03-14 - Completed plan 02-02 Raw validation boundary (views + validator)
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 10
-  completed_plans: 3
-  percent: 30
+  completed_plans: 5
+  percent: 50
 ---
 
 # Project State
@@ -26,31 +26,31 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 ## Current Position
 
 Phase: 2 of 4 (CPU Compatibility Execution)
-Plan: 1 of 8 in current phase
+Plan: 3 of 8 in current phase
 Status: In Progress
-Last activity: 2026-03-14 - Completed plan 02-01 CPU linkage and shared execution request model
+Last activity: 2026-03-14 - Completed plan 02-02 Raw validation boundary (views + validator)
 
-Progress: [███░░░░░░░] 30%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 6.7 min
-- Total execution time: 0.3 hours
+- Total plans completed: 5
+- Average duration: 9.4 min
+- Total execution time: 0.8 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Contracts and Typed Foundations | 2 | 13 min | 6.5 min |
-| 2. CPU Compatibility Execution | 1 | 7 min | 7 min |
+| 2. CPU Compatibility Execution | 3 | 34 min | 11.3 min |
 | 3. Verification and Compatibility Governance | 0 | 0 min | 0 min |
 | 4. Optional Backends and Migration Surfaces | 0 | 0 min | 0 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (5 min), 01-02 (8 min), 02-01 (7 min)
-- Trend: Entered Phase 2 with deterministic CPU linkage and shared execution-request foundations.
+- Last 5 plans: 01-01 (5 min), 01-02 (8 min), 02-01 (7 min), 02-06 (11 min), 02-02 (16 min)
+- Trend: Raw libcint compatibility contracts are now validated at the API boundary before runtime dispatch integration.
 
 ## Accumulated Context
 
@@ -70,6 +70,12 @@ Recent decisions affecting current work:
 - [Phase 02]: Generate cint.h and cint_config.h from vendored templates inside build.rs for hermetic local/CI builds.
 - [Phase 02]: Normalize safe/raw planner input through shared ExecutionRequest constructors.
 - [Phase 02]: Lock 3c1e spinor as mandatory in stable-family routing obligations ahead of 02-06.
+- [Phase 02]: Use typed CpuRouteKey (family, operator, representation) as canonical CPU routing input.
+- [Phase 02]: Return UnsupportedApi for out-of-phase route envelopes before unsafe backend calls.
+- [Phase 02]: Route 3c1e spinor through explicit adapter metadata backed by int3c1e_p2_sph driver.
+- [Phase 02]: Kept the legacy typed raw::query_workspace API intact and introduced a dedicated raw.compat validation entrypoint for libcint-style layouts.
+- [Phase 02]: Bound raw dims overrides to natural contracted-shell dimensions at validation time for deterministic RAW-01 shape contracts.
+- [Phase 02]: Encoded an explicit opt->cache invariant in raw contract validation so optional execution-state requirements fail fast and predictably.
 
 ### Pending Todos
 
@@ -82,6 +88,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-14T06:25:49.600Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-14T06:46:02.335Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None

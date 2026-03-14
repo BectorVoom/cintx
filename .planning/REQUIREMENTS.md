@@ -7,14 +7,14 @@
 
 ### Compatibility Core
 
-- [ ] **COMP-01**: User can compute stable-family integrals (`1e/2e/2c2e/3c1e/3c2e`) with results matching oracle tolerances for cart/sph/spinor representations
+- [x] **COMP-01**: User can compute stable-family integrals (`1e/2e/2c2e/3c1e/3c2e`) with results matching oracle tolerances for cart/sph/spinor representations
 - [ ] **COMP-02**: User gets parity for helper/transform essentials (AO counts, offsets, normalization, cart/sph/spinor transforms) required by migration workflows
 - [ ] **COMP-03**: User can rely on manifest-backed API coverage where each supported symbol maps to an explicit profile and stability level
 - [ ] **COMP-04**: User can trust compatibility claims because each stable-family requirement is validated by automated oracle regression gates
 
 ### Raw Compatibility API
 
-- [ ] **RAW-01**: User can call a raw API surface with `atm/bas/env`, `shls`, `dims`, `cache`, and `opt` contracts compatible with libcint usage patterns
+- [x] **RAW-01**: User can call a raw API surface with `atm/bas/env`, `shls`, `dims`, `cache`, and `opt` contracts compatible with libcint usage patterns
 - [ ] **RAW-02**: User can query required workspace when output/cache pointers are null-equivalent and then execute successfully with provided buffers
 - [ ] **RAW-03**: User gets explicit error when provided `dims`/buffer shape is incompatible; partial writes and silent truncation do not occur
 - [ ] **RAW-04**: User receives numerically equivalent results with and without optimizer usage for supported operators
@@ -73,11 +73,11 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| COMP-01 | Phase 2 | Pending |
+| COMP-01 | Phase 2 | Complete |
 | COMP-02 | Phase 3 | Pending |
 | COMP-03 | Phase 3 | Pending |
 | COMP-04 | Phase 3 | Pending |
-| RAW-01 | Phase 2 | Pending |
+| RAW-01 | Phase 2 | Complete |
 | RAW-02 | Phase 2 | Pending |
 | RAW-03 | Phase 2 | Pending |
 | RAW-04 | Phase 3 | Pending |
