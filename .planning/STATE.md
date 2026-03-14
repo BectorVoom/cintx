@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-08-PLAN.md
-last_updated: "2026-03-14T07:39:30.019Z"
-last_activity: 2026-03-14 - Completed plan 02-08 API memory threading and allocation failures
+status: completed
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-03-14T09:31:03.233Z"
+last_activity: 2026-03-14 - Completed plan 02-05 phase-close matrix, oracle, and failure evidence
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State
@@ -26,33 +26,34 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 ## Current Position
 
 Phase: 2 of 4 (CPU Compatibility Execution)
-Plan: 7 of 8 in current phase
-Status: In Progress
-Last activity: 2026-03-14 - Completed plan 02-08 API memory threading and allocation failures
+Plan: 8 of 8 in current phase
+Status: Complete
+Last activity: 2026-03-14 - Completed plan 02-05 phase-close matrix, oracle, and failure evidence
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
-- Average duration: 10.7 min
-- Total execution time: 1.6 hours
+- Total plans completed: 10
+- Average duration: 10.9 min
+- Total execution time: 1.8 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Contracts and Typed Foundations | 2 | 13 min | 6.5 min |
-| 2. CPU Compatibility Execution | 7 | 81 min | 11.6 min |
+| 2. CPU Compatibility Execution | 8 | 95 min | 11.9 min |
 | 3. Verification and Compatibility Governance | 0 | 0 min | 0 min |
 | 4. Optional Backends and Migration Surfaces | 0 | 0 min | 0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (16 min), 02-03 (12 min), 02-07 (11 min), 02-04 (12 min), 02-08 (12 min)
-- Trend: Safe/raw API memory threading plus typed allocation-failure regressions are now locked for MEM/RAW phase-close evidence.
+- Last 5 plans: 02-03 (12 min), 02-07 (11 min), 02-04 (12 min), 02-08 (12 min), 02-05 (14 min)
+- Trend: Phase-2 closeout now has stable-family matrix, oracle tolerance, and failure-semantic evidence locked for compatibility claims.
 | Phase 02 P04 | 12 min | 3 tasks | 9 files |
 | Phase 02 P08 | 12 min | 3 tasks | 6 files |
+| Phase 02-cpu-compatibility-execution P05 | 14 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ Recent decisions affecting current work:
 - [Phase 02-cpu-compatibility-execution]: Expose memory-policy planning as a shared executor outcome so safe and raw surfaces cannot drift on memory limits.
 - [Phase 02-cpu-compatibility-execution]: Persist raw query memory-policy metadata and require execute-time parity for memory required bytes, working set, scratch, and chunking.
 - [Phase 02-cpu-compatibility-execution]: Use an explicit feature-flag simulation gate to deterministically assert typed AllocationFailure diagnostics at API boundaries.
+- [Phase 02-cpu-compatibility-execution]: Aligned raw deterministic output generation with safe execution formulas to enforce safe/raw numeric parity across stable-family envelopes.
+- [Phase 02-cpu-compatibility-execution]: Attached validated dims to raw query diagnostics before memory-policy planning so memory-limit failures preserve shape context.
+- [Phase 02-cpu-compatibility-execution]: Codified phase-2 support envelope and out-of-phase typed unsupported expectations in docs/phase2-support-matrix.md.
 
 ### Pending Todos
 
@@ -102,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-14T07:38:09Z
-Stopped at: Completed 02-08-PLAN.md
+Last session: 2026-03-14T09:30:07.195Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None
