@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-03-14T09:31:03.233Z"
-last_activity: 2026-03-14 - Completed plan 02-05 phase-close matrix, oracle, and failure evidence
+stopped_at: Completed 02-09-PLAN.md
+last_updated: "2026-03-14T10:09:05.985Z"
+last_activity: 2026-03-14 - Completed plan 02-09 execution-request normalization gap closure
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 11
+  completed_plans: 11
   percent: 100
 ---
 
@@ -26,34 +26,35 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 ## Current Position
 
 Phase: 2 of 4 (CPU Compatibility Execution)
-Plan: 8 of 8 in current phase
+Plan: 9 of 9 in current phase
 Status: Complete
-Last activity: 2026-03-14 - Completed plan 02-05 phase-close matrix, oracle, and failure evidence
+Last activity: 2026-03-14 - Completed plan 02-09 execution-request normalization gap closure
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
-- Average duration: 10.9 min
-- Total execution time: 1.8 hours
+- Total plans completed: 11
+- Average duration: 10.2 min
+- Total execution time: 1.9 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Contracts and Typed Foundations | 2 | 13 min | 6.5 min |
-| 2. CPU Compatibility Execution | 8 | 95 min | 11.9 min |
+| 2. CPU Compatibility Execution | 9 | 99 min | 11.0 min |
 | 3. Verification and Compatibility Governance | 0 | 0 min | 0 min |
 | 4. Optional Backends and Migration Surfaces | 0 | 0 min | 0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-03 (12 min), 02-07 (11 min), 02-04 (12 min), 02-08 (12 min), 02-05 (14 min)
-- Trend: Phase-2 closeout now has stable-family matrix, oracle tolerance, and failure-semantic evidence locked for compatibility claims.
+- Last 5 plans: 02-07 (11 min), 02-04 (12 min), 02-08 (12 min), 02-05 (14 min), 02-09 (4 min)
+- Trend: Phase-2 closeout now includes the final execution-request normalization gap closure on top of stable-family matrix/oracle/failure evidence.
 | Phase 02 P04 | 12 min | 3 tasks | 9 files |
 | Phase 02 P08 | 12 min | 3 tasks | 6 files |
 | Phase 02-cpu-compatibility-execution P05 | 14 min | 3 tasks | 10 files |
+| Phase 02-cpu-compatibility-execution P09 | 4 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Recent decisions affecting current work:
 - [Phase 02-cpu-compatibility-execution]: Aligned raw deterministic output generation with safe execution formulas to enforce safe/raw numeric parity across stable-family envelopes.
 - [Phase 02-cpu-compatibility-execution]: Attached validated dims to raw query diagnostics before memory-policy planning so memory-limit failures preserve shape context.
 - [Phase 02-cpu-compatibility-execution]: Codified phase-2 support envelope and out-of-phase typed unsupported expectations in docs/phase2-support-matrix.md.
+- [Phase 02-cpu-compatibility-execution]: Treat execution-request feature-flag ordering as canonicalized normalization output, not insertion order.
+- [Phase 02-cpu-compatibility-execution]: Keep normalization intent explicit in request-construction code and regression assertions to prevent query/execute drift.
 
 ### Pending Todos
 
@@ -106,6 +109,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-14T09:30:07.195Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-03-14T10:09:05.983Z
+Stopped at: Completed 02-09-PLAN.md
 Resume file: None

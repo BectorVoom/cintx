@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. User can call raw APIs with libcint-compatible `atm/bas/env`, `shls`, `dims`, `cache`, and `opt` contracts, including workspace query then execution flow.
   3. User gets explicit failures for incompatible `dims` or buffer shapes, and the runtime never performs silent truncation or partial writes.
   4. User can set `memory_limit_bytes` and observe chunked execution or explicit `MemoryLimitExceeded`, with no unhandled OOM abort in supported paths.
-**Plans**: 8
+**Plans**: 9
 - [x] 02-01: CPU linkage and shared execution request model
 - [x] 02-02: Raw validation boundary (views + validator)
 - [x] 02-03: Safe evaluate and no-partial-write execution path
@@ -50,6 +50,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 02-06: CPU router + `3c1e` spinor compatibility envelope
 - [x] 02-07: Raw query/evaluate integration
 - [x] 02-08: API memory threading + allocation failure contracts
+- [x] 02-09: Execution-request normalization gap closure and verification rerun
 
 ### Phase 3: Verification and Compatibility Governance
 **Goal:** Users can trust compatibility claims because helper parity, API coverage claims, and regression protection are automated and enforceable.
@@ -78,6 +79,6 @@ Decimal phases appear between their surrounding integers in numeric order.
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Contracts and Typed Foundations | 2/2 | Complete    | 2026-03-14 |
-| 2. CPU Compatibility Execution | 8/8 | Complete | 2026-03-14 |
+| 2. CPU Compatibility Execution | 9/9 | Complete | 2026-03-14 |
 | 3. Verification and Compatibility Governance | 0/TBD | Not started | - |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |
