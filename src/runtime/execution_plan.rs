@@ -26,7 +26,8 @@ pub struct ExecutionMemoryOptions {
 
 impl From<&WorkspaceQueryOptions> for ExecutionMemoryOptions {
     fn from(options: &WorkspaceQueryOptions) -> Self {
-        let feature_flags = options
+        // Keep request memory options aligned with query-time canonicalization.
+        let normalized_feature_flags = options
             .normalized_feature_flags()
             .into_iter()
             .map(str::to_string)
@@ -34,7 +35,7 @@ impl From<&WorkspaceQueryOptions> for ExecutionMemoryOptions {
         Self {
             memory_limit_bytes: options.memory_limit_bytes,
             backend_candidate: options.backend_candidate.to_string(),
-            feature_flags,
+            feature_flags: normalized_feature_flags,
         }
     }
 }

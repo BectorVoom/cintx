@@ -49,8 +49,13 @@ fn execution_request_contract() {
     assert_eq!(safe_request.dims, None);
     assert_eq!(safe_request.memory.memory_limit_bytes, Some(8 * 1024));
     assert_eq!(safe_request.memory.backend_candidate, "cpu");
-    let expected_feature_flags = options
-        .normalized_feature_flags()
+    let expected_normalized_feature_flags = vec!["phase2-contract", "trace-workspace"];
+    assert_eq!(
+        options.normalized_feature_flags(),
+        expected_normalized_feature_flags,
+        "query options must canonicalize feature flags before request construction"
+    );
+    let expected_feature_flags = expected_normalized_feature_flags
         .into_iter()
         .map(str::to_string)
         .collect::<Vec<_>>();
