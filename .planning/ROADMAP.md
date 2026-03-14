@@ -61,7 +61,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. User can inspect manifest-backed API coverage where each supported symbol is tied to an explicit support profile and stability level.
   3. User can trust releases because CI blocks unapproved compiled-manifest lock drift and oracle-regression failures across supported profiles.
   4. User receives regression protection for optimizer on/off numerical equivalence plus spinor/layout and OOM/error-path semantics.
-**Plans**: TBD
+**Plans**: 4
+- [x] 03-01: Helper and transform parity foundation
+- [x] 03-02: Manifest governance lock and drift contract
+- [ ] 03-03: Optimizer equivalence and regression-gate matrix
+- [ ] 03-04: CI governance gates and traceable release policy
 
 ### Phase 4: Optional Backends and Migration Surfaces
 **Goal:** Users can opt into acceleration and migration extensions without weakening baseline safety, compatibility, or explicit support boundaries.
@@ -80,5 +84,5 @@ Decimal phases appear between their surrounding integers in numeric order.
 |-------|----------------|--------|-----------|
 | 1. Contracts and Typed Foundations | 2/2 | Complete    | 2026-03-14 |
 | 2. CPU Compatibility Execution | 9/9 | Complete | 2026-03-14 |
-| 3. Verification and Compatibility Governance | 0/TBD | Not started | - |
+| 3. Verification and Compatibility Governance | 2/4 | In progress | - |
 | 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 3 context gathered
-last_updated: "2026-03-14T11:11:37.105Z"
-last_activity: 2026-03-14 - Completed plan 02-09 execution-request normalization gap closure
+status: in_progress
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-14T12:02:07.666Z"
+last_activity: 2026-03-14 - Completed plan 03-01 helper parity foundation
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 11
-  completed_plans: 11
-  percent: 100
+  total_plans: 15
+  completed_plans: 13
+  percent: 87
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** Users can compute libcint-equivalent integrals through a Rust-native library with explicit safety/error guarantees and verifiable compatibility gates.
-**Current focus:** Phase 2 - CPU Compatibility Execution
+**Current focus:** Phase 3 - Verification and Compatibility Governance
 
 ## Current Position
 
-Phase: 2 of 4 (CPU Compatibility Execution)
-Plan: 9 of 9 in current phase
-Status: Complete
-Last activity: 2026-03-14 - Completed plan 02-09 execution-request normalization gap closure
+Phase: 3 of 4 (Verification and Compatibility Governance)
+Plan: 1 of 4 in current phase
+Status: In Progress
+Last activity: 2026-03-14 - Completed plan 03-01 helper parity foundation
 
-Progress: [██████████] 100%
+Progress: [█████████░] 87%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
-- Average duration: 10.2 min
-- Total execution time: 1.9 hours
+- Total plans completed: 13
+- Average duration: 9.0 min
+- Total execution time: 2.0 hours
 
 **By Phase:**
 
@@ -45,16 +45,18 @@ Progress: [██████████] 100%
 |-------|-------|-------|----------|
 | 1. Contracts and Typed Foundations | 2 | 13 min | 6.5 min |
 | 2. CPU Compatibility Execution | 9 | 99 min | 11.0 min |
-| 3. Verification and Compatibility Governance | 0 | 0 min | 0 min |
+| 3. Verification and Compatibility Governance | 2 | 9 min | 4.5 min |
 | 4. Optional Backends and Migration Surfaces | 0 | 0 min | 0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-07 (11 min), 02-04 (12 min), 02-08 (12 min), 02-05 (14 min), 02-09 (4 min)
-- Trend: Phase-2 closeout now includes the final execution-request normalization gap closure on top of stable-family matrix/oracle/failure evidence.
+- Last 5 plans: 03-02 (6 min), 03-01 (3 min), 02-07 (11 min), 02-04 (12 min), 02-08 (12 min)
+- Trend: Phase-3 compatibility governance is now underway with helper parity and manifest-governance plans landing quickly.
 | Phase 02 P04 | 12 min | 3 tasks | 9 files |
 | Phase 02 P08 | 12 min | 3 tasks | 6 files |
 | Phase 02-cpu-compatibility-execution P05 | 14 min | 3 tasks | 10 files |
 | Phase 02-cpu-compatibility-execution P09 | 4 min | 3 tasks | 2 files |
+| Phase 03-verification-and-compatibility-governance P01 | 3 min | 3 tasks | 6 files |
+| Phase 03-verification-and-compatibility-governance P02 | 6 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -97,6 +99,12 @@ Recent decisions affecting current work:
 - [Phase 02-cpu-compatibility-execution]: Codified phase-2 support envelope and out-of-phase typed unsupported expectations in docs/phase2-support-matrix.md.
 - [Phase 02-cpu-compatibility-execution]: Treat execution-request feature-flag ordering as canonicalized normalization output, not insertion order.
 - [Phase 02-cpu-compatibility-execution]: Keep normalization intent explicit in request-construction code and regression assertions to prevent query/execute drift.
+- [Phase 03-verification-and-compatibility-governance]: Expose helper parity functions at runtime/lib boundaries so compatibility gates consume one deterministic API surface.
+- [Phase 03-verification-and-compatibility-governance]: Keep helper validation failures on LibcintRsError with field-specific diagnostics by reusing raw view validation semantics.
+- [Phase 03-verification-and-compatibility-governance]: Use stable-family matrix plus oracle comparison as the transform parity contract, including explicit 3c1e spinor adapter behavior.
+- [Phase 03-verification-and-compatibility-governance]: Canonicalize profile aliases and mixed-separator labels before parsing to keep profile coverage deterministic.
+- [Phase 03-verification-and-compatibility-governance]: Treat lock drift as blocking by default and require explicit approved rationale to permit updates.
+- [Phase 03-verification-and-compatibility-governance]: Enforce phase-3 profile governance as exact observed-union match against approved scope.
 
 ### Pending Todos
 
@@ -109,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-14T11:11:37.098Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-verification-and-compatibility-governance/03-CONTEXT.md
+Last session: 2026-03-14T12:02:07.664Z
+Stopped at: Completed 03-02-PLAN.md
+Resume file: None

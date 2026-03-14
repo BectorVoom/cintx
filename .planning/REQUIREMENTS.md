@@ -8,8 +8,8 @@
 ### Compatibility Core
 
 - [x] **COMP-01**: User can compute stable-family integrals (`1e/2e/2c2e/3c1e/3c2e`) with results matching oracle tolerances for cart/sph/spinor representations
-- [ ] **COMP-02**: User gets parity for helper/transform essentials (AO counts, offsets, normalization, cart/sph/spinor transforms) required by migration workflows
-- [ ] **COMP-03**: User can rely on manifest-backed API coverage where each supported symbol maps to an explicit profile and stability level
+- [x] **COMP-02**: User gets parity for helper/transform essentials (AO counts, offsets, normalization, cart/sph/spinor transforms) required by migration workflows
+- [x] **COMP-03**: User can rely on manifest-backed API coverage where each supported symbol maps to an explicit profile and stability level
 - [ ] **COMP-04**: User can trust compatibility claims because each stable-family requirement is validated by automated oracle regression gates
 
 ### Raw Compatibility API
@@ -46,9 +46,9 @@
 
 ### Verification and Release Gates
 
-- [ ] **VERI-01**: User can trust releases because CI fails on unapproved compiled-manifest lock drift across support profiles
+- [x] **VERI-01**: User can trust releases because CI fails on unapproved compiled-manifest lock drift across support profiles
 - [ ] **VERI-02**: User gets regression protection from oracle CI matrix covering base and optional supported profiles
-- [ ] **VERI-03**: User gets validated layout and failure semantics through dedicated tests for spinor/complex layout, helper parity, and OOM/error paths
+- [x] **VERI-03**: User gets validated layout and failure semantics through dedicated tests for spinor/complex layout, helper parity, and OOM/error paths
 
 ## v2 Requirements
 
@@ -74,8 +74,8 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | COMP-01 | Phase 2 | Complete |
-| COMP-02 | Phase 3 | Pending |
-| COMP-03 | Phase 3 | Pending |
+| COMP-02 | Phase 3 | Complete |
+| COMP-03 | Phase 3 | Complete |
 | COMP-04 | Phase 3 | Pending |
 | RAW-01 | Phase 2 | Complete |
 | RAW-02 | Phase 2 | Complete |
@@ -94,9 +94,9 @@
 | ABIC-01 | Phase 4 | Pending |
 | OPTF-01 | Phase 4 | Pending |
 | OPTF-02 | Phase 4 | Pending |
-| VERI-01 | Phase 3 | Pending |
+| VERI-01 | Phase 3 | Complete |
 | VERI-02 | Phase 3 | Pending |
-| VERI-03 | Phase 3 | Pending |
+| VERI-03 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 24 total
