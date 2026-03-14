@@ -1,3 +1,4 @@
+use super::canonicalize::{canonicalize_profile_label, canonicalize_symbol_name};
 use crate::contracts::{IntegralFamily, OperatorKind, Representation};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -37,7 +38,7 @@ impl ManifestProfile {
     }
 
     pub fn parse(raw: &str) -> Result<Self, ManifestGovernanceError> {
-        let normalized = normalize_token(raw, '-');
+        let normalized = canonicalize_profile_label(raw);
         match normalized.as_str() {
             "base" => Ok(Self::Base),
             "with-f12" | "f12" => Ok(Self::WithF12),
@@ -179,7 +180,7 @@ impl CanonicalSymbolIdentity {
         representation: Representation,
         symbol: impl AsRef<str>,
     ) -> Result<Self, ManifestGovernanceError> {
-        let canonical_symbol = normalize_token(symbol.as_ref(), '_');
+        let canonical_symbol = canonicalize_symbol_name(symbol.as_ref());
         if canonical_symbol.is_empty() {
             return Err(ManifestGovernanceError::EmptySymbolIdentity);
         }
@@ -217,9 +218,7 @@ impl ManifestLockEntry {
     ) -> Result<Self, ManifestGovernanceError> {
         let normalized_profiles = normalize_profiles(profiles);
         if normalized_profiles.is_empty() {
-            return Err(ManifestGovernanceError::EmptyProfileMembership {
-                symbol: id.key(),
-            });
+            return Err(ManifestGovernanceError::EmptyProfileMembership { symbol: id.key() });
         }
         Ok(Self {
             id,
@@ -367,7 +366,7 @@ impl CompiledManifestLock {
 
     fn normalize_entries(&mut self) {
         for entry in &mut self.entries {
-            entry.id.symbol = normalize_token(&entry.id.symbol, '_');
+            entry.id.symbol = canonicalize_symbol_name(&entry.id.symbol);
             entry.profiles = normalize_profiles(entry.profiles.iter().copied());
         }
         self.entries.sort_by(|left, right| {
@@ -458,38 +457,7 @@ fn approved_profile_set() -> BTreeSet<ManifestProfile> {
     ManifestProfile::approved_scope().into_iter().collect()
 }
 
-fn normalize_profiles(
-    profiles: impl IntoIterator<Item = ManifestProfile>,
-) -> Vec<ManifestProfile> {
+fn normalize_profiles(profiles: impl IntoIterator<Item = ManifestProfile>) -> Vec<ManifestProfile> {
     let set: BTreeSet<ManifestProfile> = profiles.into_iter().collect();
     set.into_iter().collect()
-}
-
-fn normalize_token(raw: &str, separator: char) -> String {
-    let mut canonical = String::new();
-    let mut pending_separator = false;
-    let mut prev_is_plus = false;
-
-    for ch in raw.trim().chars() {
-        if ch.is_ascii_alphanumeric() {
-            if pending_separator && !canonical.is_empty() && !prev_is_plus {
-                canonical.push(separator);
-            }
-            canonical.push(ch.to_ascii_lowercase());
-            pending_separator = false;
-            prev_is_plus = false;
-            continue;
-        }
-        if ch == '+' {
-            if !canonical.is_empty() && !prev_is_plus {
-                canonical.push('+');
-                prev_is_plus = true;
-            }
-            pending_separator = false;
-            continue;
-        }
-        pending_separator = true;
-    }
-
-    canonical.trim_matches(separator).trim_matches('+').to_string()
 }

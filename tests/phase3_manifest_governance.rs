@@ -1,6 +1,6 @@
 use cintx::{
-    CanonicalSymbolIdentity, CompiledManifestLock, IntegralFamily, ManifestLockEntry,
-    ManifestProfile, OperatorKind, Representation, StabilityClass,
+    CanonicalSymbolIdentity, CompiledManifestLock, IntegralFamily, ManifestGovernanceError,
+    ManifestLockEntry, ManifestProfile, OperatorKind, Representation, StabilityClass,
 };
 
 fn manifest_entries_covering_all_profiles() -> Vec<ManifestLockEntry> {
@@ -82,4 +82,64 @@ fn manifest_schema_invariants() {
             "every lock entry needs explicit profile membership"
         );
     }
+}
+
+#[test]
+fn manifest_profile_union_is_stable() {
+    let canonicalized_entry = ManifestLockEntry::from_profile_labels(
+        CanonicalSymbolIdentity::new(
+            IntegralFamily::OneElectron,
+            OperatorKind::Overlap,
+            Representation::Cartesian,
+            " INT1E Ovlp-CART ",
+        )
+        .expect("symbol identity should canonicalize"),
+        [
+            "with_4c1e",
+            "BASE",
+            "f12",
+            "with-4c1e + with-f12",
+            "with-f12",
+        ],
+        StabilityClass::Stable,
+    )
+    .expect("entry should parse profile aliases");
+
+    let stable_lock = CompiledManifestLock::new(vec![canonicalized_entry]).expect("lock is valid");
+    assert_eq!(stable_lock.entries[0].id.symbol, "int1e_ovlp_cart");
+    assert_eq!(
+        stable_lock.entries[0].profiles,
+        vec![
+            ManifestProfile::Base,
+            ManifestProfile::WithF12,
+            ManifestProfile::With4c1e,
+            ManifestProfile::WithF12With4c1e,
+        ],
+    );
+    stable_lock
+        .validate_profile_union()
+        .expect("phase-3 profile union must stay fixed");
+
+    let drift_lock = CompiledManifestLock::new(vec![
+        ManifestLockEntry::new(
+            CanonicalSymbolIdentity::new(
+                IntegralFamily::TwoElectron,
+                OperatorKind::ElectronRepulsion,
+                Representation::Spherical,
+                "int2e_sph",
+            )
+            .expect("symbol identity should be valid"),
+            [ManifestProfile::Base, ManifestProfile::WithF12],
+            StabilityClass::Stable,
+        )
+        .expect("entry should be valid"),
+    ])
+    .expect("lock is valid");
+    let drift = drift_lock
+        .validate_profile_union()
+        .expect_err("missing governed profile combinations must be detected");
+    assert!(matches!(
+        drift,
+        ManifestGovernanceError::ProfileUnionDrift { .. }
+    ));
 }
