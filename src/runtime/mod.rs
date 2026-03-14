@@ -1,6 +1,7 @@
 pub mod backend;
-pub mod executor;
 pub mod execution_plan;
+pub mod executor;
+pub mod helpers;
 pub mod layout;
 pub mod memory;
 pub mod output_writer;
@@ -20,6 +21,12 @@ pub use execution_plan::{
 pub use executor::{
     EvaluationMetadata, EvaluationOutput, EvaluationOutputMut, EvaluationTensor, evaluate,
     evaluate_into,
+};
+pub use helpers::{
+    ShellAoLayout, ShellNormalizationMetadata, cartesian_component_count, contracted_shell_count,
+    deterministic_transform_scalars, gto_norm, shell_ao_counts, shell_ao_layout,
+    shell_normalization_metadata, shell_offsets, spherical_component_count, spinor_component_count,
+    total_ao_count,
 };
 pub use layout::{LayoutElementKind, OutputLayout, layout_for_plan};
 pub use planner::{PlannedExecution, plan_execution, plan_raw, plan_safe};

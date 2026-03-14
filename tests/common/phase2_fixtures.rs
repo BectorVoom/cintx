@@ -126,8 +126,11 @@ pub fn stable_safe_basis() -> BasisSet {
     let shell_d_b = Shell::new(1, 2, vec![3.0, 0.7], vec![0.5, 0.5]).expect("d shell is valid");
     let shell_s_b = Shell::new(1, 0, vec![2.0, 0.5], vec![0.55, 0.45]).expect("s shell is valid");
 
-    BasisSet::new(vec![atom_a, atom_b], vec![shell_s_a, shell_p_a, shell_d_b, shell_s_b])
-        .expect("phase-2 fixture basis should be valid")
+    BasisSet::new(
+        vec![atom_a, atom_b],
+        vec![shell_s_a, shell_p_a, shell_d_b, shell_s_b],
+    )
+    .expect("phase-2 fixture basis should be valid")
 }
 
 pub fn stable_raw_layout() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
@@ -204,4 +207,28 @@ pub fn scalars_per_element(representation: Representation) -> usize {
         Representation::Spinor => 2,
         Representation::Cartesian | Representation::Spherical => 1,
     }
+}
+
+pub fn stable_expected_shell_counts_cartesian() -> Vec<usize> {
+    vec![1, 3, 6, 1]
+}
+
+pub fn stable_expected_shell_counts_spherical() -> Vec<usize> {
+    vec![1, 3, 5, 1]
+}
+
+pub fn stable_expected_shell_counts_spinor() -> Vec<usize> {
+    vec![2, 6, 10, 2]
+}
+
+pub fn stable_expected_shell_offsets_cartesian() -> Vec<usize> {
+    vec![0, 1, 4, 10]
+}
+
+pub fn stable_expected_shell_offsets_spherical() -> Vec<usize> {
+    vec![0, 1, 4, 9]
+}
+
+pub fn stable_expected_shell_offsets_spinor() -> Vec<usize> {
+    vec![0, 2, 8, 18]
 }
