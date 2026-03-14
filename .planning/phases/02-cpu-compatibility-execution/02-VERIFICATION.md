@@ -1,15 +1,15 @@
 ---
 phase: 02-cpu-compatibility-execution
-status: gaps_found
-score: "8/8 phase requirement IDs behavior-verified; 1 verification gap"
-updated: 2026-03-14T09:35:23Z
-verified: 2026-03-14T09:35:23Z
+status: passed
+score: "8/8 phase requirement IDs behavior-verified; 0 verification gaps"
+updated: 2026-03-14T11:04:31Z
+verified: 2026-03-14T11:04:31Z
 ---
 
 # Phase 2: CPU Compatibility Execution Verification Report
 
 **Phase Goal:** Users can run supported stable-family integrals on CPU via both safe and raw interfaces while preserving explicit memory-limit behavior.
-**Status:** gaps_found
+**Status:** passed
 
 ## Plan Frontmatter Requirement Accounting
 
@@ -23,6 +23,7 @@ verified: 2026-03-14T09:35:23Z
 | `02-06-PLAN.md` | `EXEC-01`, `COMP-01` | Yes | ✓ |
 | `02-07-PLAN.md` | `RAW-02` | Yes | ✓ |
 | `02-08-PLAN.md` | `MEM-01`, `MEM-02`, `RAW-02` | Yes | ✓ |
+| `02-09-PLAN.md` | `EXEC-01` | Yes | ✓ |
 
 **Accounting result:** all Phase 2 IDs are present and accounted for: `COMP-01`, `RAW-01`, `RAW-02`, `RAW-03`, `SAFE-03`, `MEM-01`, `MEM-02`, `EXEC-01`.
 
@@ -52,7 +53,7 @@ verified: 2026-03-14T09:35:23Z
 
 | Plan | Must-have status | Notes |
 |---|---|---|
-| `02-01` | ⚠ PARTIAL | Build/linkage and routing obligations are present; one contract test (`execution_request_contract`) currently fails due feature-flag order assertion drift. |
+| `02-01` | ✓ VERIFIED | Build/linkage and shared execution-request contract remain intact; normalization semantics are explicitly asserted in `tests/phase2_cpu_backend_routing.rs::execution_request_contract`. |
 | `02-02` | ✓ VERIFIED | Raw view/validator boundary implemented and tested. |
 | `02-03` | ✓ VERIFIED | Safe evaluate + no-partial-write enforced in shared executor/writer path. |
 | `02-04` | ✓ VERIFIED | Runtime chunking/fallible allocation memory core implemented and tested. |
@@ -60,26 +61,23 @@ verified: 2026-03-14T09:35:23Z
 | `02-06` | ✓ VERIFIED | CPU routing matrix complete with explicit `3c1e` spinor adapter route. |
 | `02-07` | ✓ VERIFIED | Raw query/evaluate integration and query-contract checks implemented and tested. |
 | `02-08` | ✓ VERIFIED | API-level memory threading/allocation-failure contracts implemented and tested. |
+| `02-09` | ✓ VERIFIED | Gap-closure updates align execution-request feature-flag assertions with canonical normalized ordering and preserve shared safe/raw normalization behavior. |
 
 ## Automated Checks Run
 
-- `cargo test --workspace --test phase2_cpu_backend_routing --test phase2_raw_contracts --test phase2_raw_query_execute --test phase2_safe_evaluate_layout --test phase2_no_partial_write --test phase2_memory_limits --test phase2_allocation_failures --test phase2_cpu_execution_matrix --test phase2_safe_raw_equivalence --test phase2_oracle_tolerance --test phase2_raw_failure_semantics --test phase2_memory_contracts`  
-  Result: **failed** (1 test): `tests/phase2_cpu_backend_routing.rs::execution_request_contract`
-- `cargo test --workspace --test phase2_raw_contracts --test phase2_raw_query_execute --test phase2_safe_evaluate_layout --test phase2_no_partial_write --test phase2_memory_limits --test phase2_allocation_failures --test phase2_cpu_execution_matrix --test phase2_safe_raw_equivalence --test phase2_oracle_tolerance --test phase2_raw_failure_semantics --test phase2_memory_contracts`  
-  Result: **passed**
 - `cargo test --workspace --test phase2_cpu_backend_routing execution_request_contract`  
-  Result: **failed** (asserted feature-flag order mismatch)
+  Result: **passed**
+- `cargo test --workspace --test phase2_cpu_backend_routing --test phase2_raw_contracts --test phase2_raw_query_execute --test phase2_safe_evaluate_layout --test phase2_no_partial_write --test phase2_memory_limits --test phase2_allocation_failures --test phase2_cpu_execution_matrix --test phase2_safe_raw_equivalence --test phase2_oracle_tolerance --test phase2_raw_failure_semantics --test phase2_memory_contracts`  
+  Result: **passed**
 - `cargo test --workspace --lib --quiet`  
   Result: **passed**
 
-## Gap Summary
+## Gap Closure Confirmation
 
-1. **Failing Phase 2 regression gate in `phase2_cpu_backend_routing`**
-   - **Failure:** `execution_request_contract` expects feature flags in insertion order but runtime normalizes/sorts flags in `WorkspaceQueryOptions::normalized_feature_flags()` and `ExecutionMemoryOptions::from`.
-   - **Observed mismatch:** left `["phase2-contract", "trace-workspace"]` vs expected `["trace-workspace", "phase2-contract"]`.
-   - **Impact:** verification suite for Phase 2 is not fully green, so phase cannot be marked `passed`.
-   - **Suggested fix:** update test expectation to normalized order (or compare as set if order is intentionally non-contractual).
+- Previous gap from the prior report (`tests/phase2_cpu_backend_routing.rs::execution_request_contract`) is closed.
+- Contract now asserts canonical feature-flag normalization (`WorkspaceQueryOptions::normalized_feature_flags`) and execution-request propagation (`ExecutionMemoryOptions::from`) instead of insertion-order artifacts.
+- Full Phase 2 verification matrix reruns clean, with no newly introduced regressions.
 
 ## Final Verdict
 
-Phase 2 goal behavior is implemented and evidenced across safe/raw CPU execution, routing, memory policy, and failure semantics; however, one required Phase 2 regression test is currently failing, so final status is **`gaps_found`**.
+Phase 2 goal behavior is fully re-verified across stable-family CPU routing/execution, safe/raw contract parity, explicit dims/buffer failures without partial writes, and memory-limit/fallible-allocation guarantees. Final status is **`passed`**.
