@@ -21,10 +21,10 @@
 
 ### Safe Rust API
 
-- [ ] **SAFE-01**: User can construct typed input models (`Atom`, `Shell`, basis/environment context) without raw pointer arithmetic
+- [x] **SAFE-01**: User can construct typed input models (`Atom`, `Shell`, basis/environment context) without raw pointer arithmetic
 - [ ] **SAFE-02**: User can call `query_workspace` to obtain deterministic workspace requirements before evaluation
 - [ ] **SAFE-03**: User can call `evaluate`/`evaluate_into` with typed tensor views and receive representation-correct output layout
-- [ ] **SAFE-04**: User receives typed errors that distinguish unsupported API, input-layout failure, memory failure, and backend execution failure
+- [x] **SAFE-04**: User receives typed errors that distinguish unsupported API, input-layout failure, memory failure, and backend execution failure
 
 ### Memory and Error Guarantees
 
@@ -81,10 +81,10 @@
 | RAW-02 | Phase 2 | Pending |
 | RAW-03 | Phase 2 | Pending |
 | RAW-04 | Phase 3 | Pending |
-| SAFE-01 | Phase 1 | Pending |
+| SAFE-01 | Phase 1 | Complete |
 | SAFE-02 | Phase 1 | Pending |
 | SAFE-03 | Phase 2 | Pending |
-| SAFE-04 | Phase 1 | Pending |
+| SAFE-04 | Phase 1 | Complete |
 | MEM-01 | Phase 2 | Pending |
 | MEM-02 | Phase 2 | Pending |
 | MEM-03 | Phase 1 | Pending |
