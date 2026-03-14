@@ -4,6 +4,7 @@ pub mod api;
 pub mod contracts;
 pub mod diagnostics;
 pub mod errors;
+pub mod manifest;
 pub mod runtime;
 
 pub use api::{raw, safe};
@@ -13,6 +14,11 @@ pub use contracts::{
 };
 pub use diagnostics::{QueryDiagnostics, QueryError, QueryResult};
 pub use errors::LibcintRsError;
+pub use manifest::{
+    CanonicalSymbolIdentity, CompiledManifestLock, FamilyTag, LockUpdateApproval,
+    LockUpdateReason, ManifestGovernanceError, ManifestLockEntry, ManifestProfile, OperatorTag,
+    RepresentationTag, StabilityClass,
+};
 pub use runtime::{
     ALL_BOUND_SYMBOLS, CpuKernelFn, CpuKernelSymbol, CpuRouteKey, CpuRouteTarget, ExecutionBackend,
     ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator, ExecutionRequest,
