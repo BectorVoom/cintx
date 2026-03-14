@@ -236,3 +236,14 @@ pub fn stable_expected_shell_offsets_spinor() -> Vec<usize> {
 pub fn phase3_helper_options() -> WorkspaceQueryOptions {
     phase2_cpu_options(&["phase3-helper-transform-parity"])
 }
+
+pub fn phase3_optimizer_options(extra_feature_flags: &[&'static str]) -> WorkspaceQueryOptions {
+    let mut feature_flags = Vec::with_capacity(1 + extra_feature_flags.len());
+    feature_flags.push("phase3-optimizer-equivalence");
+    feature_flags.extend_from_slice(extra_feature_flags);
+    phase2_cpu_options(feature_flags.as_slice())
+}
+
+pub fn raw_optimizer_cache_len(raw_shls: &[i32]) -> usize {
+    raw_shls.len().max(1)
+}
