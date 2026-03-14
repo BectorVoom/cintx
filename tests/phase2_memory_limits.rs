@@ -137,6 +137,107 @@ fn chunk_or_memory_limit_exceeded() {
     assert!(untouched_output.iter().all(|value| (*value - 13.0).abs() < f64::EPSILON));
 }
 
+#[test]
+fn spinor_chunked_execute_matches_unlimited_execution() {
+    let basis = sample_basis();
+    let operator = Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap)
+        .expect("one-electron overlap should be supported");
+    let shell_tuple = [0, 1];
+
+    let unlimited_options = WorkspaceQueryOptions::default();
+    let chunked_options = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(768),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-memory-policy"],
+    };
+
+    let chunk_query = cintx::safe::query_workspace(
+        &basis,
+        operator,
+        Representation::Spinor,
+        &shell_tuple,
+        &chunked_options,
+    )
+    .expect("spinor query should succeed under chunk-feasible limit");
+    assert_eq!(chunk_query.required_bytes, 1344);
+    assert!(chunk_query.required_bytes > 768);
+
+    let baseline_tensor = cintx::safe::evaluate(
+        &basis,
+        operator,
+        Representation::Spinor,
+        &shell_tuple,
+        &unlimited_options,
+    )
+    .expect("unlimited spinor evaluate should succeed");
+    let chunked_tensor = cintx::safe::evaluate(
+        &basis,
+        operator,
+        Representation::Spinor,
+        &shell_tuple,
+        &chunked_options,
+    )
+    .expect("chunked spinor evaluate should succeed");
+
+    assert_eq!(chunked_tensor.dims, baseline_tensor.dims);
+    assert_eq!(chunked_tensor.dims, vec![10, 6]);
+
+    let baseline_values = match baseline_tensor.output {
+        cintx::EvaluationOutput::Spinor(values) => values,
+        other => panic!("expected spinor output from spinor evaluate, got {other:?}"),
+    };
+    let chunked_values = match chunked_tensor.output {
+        cintx::EvaluationOutput::Spinor(values) => values,
+        other => panic!("expected spinor output from spinor evaluate, got {other:?}"),
+    };
+    assert_eq!(chunked_values, baseline_values);
+}
+
+#[test]
+fn chunk_feasibility_boundary_is_explicit() {
+    let basis = sample_basis();
+    let operator = Operator::new(IntegralFamily::OneElectron, OperatorKind::Overlap)
+        .expect("one-electron overlap should be supported");
+    let shell_tuple = [0, 1];
+
+    let just_infeasible = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(383),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-memory-policy"],
+    };
+    let minimal_feasible = WorkspaceQueryOptions {
+        memory_limit_bytes: Some(384),
+        backend_candidate: "cpu",
+        feature_flags: vec!["phase2-memory-policy"],
+    };
+
+    let infeasible = cintx::safe::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &shell_tuple,
+        &just_infeasible,
+    )
+    .expect_err("limit below chunk minimum must fail");
+    assert!(matches!(
+        infeasible.error,
+        LibcintRsError::MemoryLimitExceeded {
+            required_bytes: 512,
+            limit_bytes: 383,
+        }
+    ));
+
+    let feasible = cintx::safe::query_workspace(
+        &basis,
+        operator,
+        Representation::Spherical,
+        &shell_tuple,
+        &minimal_feasible,
+    )
+    .expect("minimum chunk-feasible limit should succeed");
+    assert_eq!(feasible.required_bytes, 512);
+}
+
 fn sample_basis() -> BasisSet {
     let atom_a = Atom::new(8, [0.0, 0.0, -0.1173]).expect("atom A should be valid");
     let atom_b = Atom::new(1, [0.0, 0.7572, 0.4692]).expect("atom B should be valid");
