@@ -1,4 +1,5 @@
-use super::{ContractError, ContractResult};
+use super::ContractResult;
+use crate::errors::LibcintRsError;
 
 const MAX_ANGULAR_MOMENTUM: u8 = 8;
 
@@ -11,14 +12,14 @@ pub struct ShellPrimitive {
 impl ShellPrimitive {
     pub fn new(exponent: f64, coefficient: f64) -> ContractResult<Self> {
         if !exponent.is_finite() || exponent <= 0.0 {
-            return Err(ContractError::InvalidInput {
+            return Err(LibcintRsError::InvalidInput {
                 field: "exponent",
                 reason: "must be a finite value greater than zero".to_string(),
             });
         }
 
         if !coefficient.is_finite() {
-            return Err(ContractError::InvalidInput {
+            return Err(LibcintRsError::InvalidInput {
                 field: "coefficient",
                 reason: "must be a finite value".to_string(),
             });
@@ -54,14 +55,14 @@ impl Shell {
         coefficients: Vec<f64>,
     ) -> ContractResult<Self> {
         if exponents.is_empty() {
-            return Err(ContractError::InvalidInput {
+            return Err(LibcintRsError::InvalidInput {
                 field: "exponents",
                 reason: "must contain at least one primitive".to_string(),
             });
         }
 
         if exponents.len() != coefficients.len() {
-            return Err(ContractError::InvalidLayout {
+            return Err(LibcintRsError::InvalidLayout {
                 item: "primitive coefficients",
                 expected: exponents.len(),
                 got: coefficients.len(),
@@ -69,9 +70,9 @@ impl Shell {
         }
 
         if angular_momentum > MAX_ANGULAR_MOMENTUM {
-            return Err(ContractError::Unsupported {
-                field: "angular_momentum",
-                value: "value exceeds supported metadata range",
+            return Err(LibcintRsError::UnsupportedApi {
+                api: "shell",
+                reason: "angular momentum exceeds supported metadata range",
             });
         }
 
@@ -84,7 +85,7 @@ impl Shell {
             .iter()
             .all(|primitive| primitive.coefficient() == 0.0)
         {
-            return Err(ContractError::InvalidInput {
+            return Err(LibcintRsError::InvalidInput {
                 field: "coefficients",
                 reason: "at least one primitive coefficient must be non-zero".to_string(),
             });

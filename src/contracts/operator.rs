@@ -1,4 +1,5 @@
-use super::{ContractError, ContractResult};
+use super::ContractResult;
+use crate::errors::LibcintRsError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IntegralFamily {
@@ -28,9 +29,9 @@ impl Operator {
         match (family, kind) {
             (IntegralFamily::OneElectron, OperatorKind::ElectronRepulsion)
             | (IntegralFamily::ThreeCenterOneElectron, OperatorKind::ElectronRepulsion) => {
-                Err(ContractError::Unsupported {
-                    field: "operator",
-                    value: "electron repulsion is not valid for selected family",
+                Err(LibcintRsError::UnsupportedApi {
+                    api: "operator",
+                    reason: "electron repulsion is not valid for selected family",
                 })
             }
             _ => Ok(Self { family, kind }),

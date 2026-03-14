@@ -1,4 +1,5 @@
-use super::{ContractError, ContractResult};
+use super::ContractResult;
+use crate::errors::LibcintRsError;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Atom {
@@ -9,14 +10,14 @@ pub struct Atom {
 impl Atom {
     pub fn new(atomic_number: u8, coordinates: [f64; 3]) -> ContractResult<Self> {
         if atomic_number == 0 {
-            return Err(ContractError::InvalidInput {
+            return Err(LibcintRsError::InvalidInput {
                 field: "atomic_number",
                 reason: "must be greater than zero".to_string(),
             });
         }
 
         if coordinates.iter().any(|value| !value.is_finite()) {
-            return Err(ContractError::InvalidInput {
+            return Err(LibcintRsError::InvalidInput {
                 field: "coordinates",
                 reason: "all coordinate values must be finite".to_string(),
             });
