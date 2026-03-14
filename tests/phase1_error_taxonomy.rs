@@ -1,4 +1,6 @@
-use cintx::{Atom, IntegralFamily, LibcintRsError, Operator, OperatorKind, Shell, validate_dims};
+use cintx::{
+    Atom, BasisSet, IntegralFamily, LibcintRsError, Operator, OperatorKind, Shell, validate_dims,
+};
 
 #[test]
 fn typed_error_categories() {
@@ -71,5 +73,47 @@ fn typed_error_categories() {
     assert!(matches!(
         backend_failure,
         LibcintRsError::BackendFailure { .. }
+    ));
+}
+
+#[test]
+fn typed_error_constructor_failures_are_stable() {
+    let invalid_coordinates = Atom::new(8, [f64::NAN, 0.0, 0.0]);
+    assert!(matches!(
+        invalid_coordinates,
+        Err(LibcintRsError::InvalidInput {
+            field: "coordinates",
+            ..
+        })
+    ));
+
+    let mismatched_contraction = Shell::new(0, 1, vec![1.0], vec![1.0, 0.5]);
+    assert!(matches!(
+        mismatched_contraction,
+        Err(LibcintRsError::InvalidLayout {
+            item: "primitive coefficients",
+            expected: 1,
+            got: 2,
+        })
+    ));
+
+    let atom = Atom::new(1, [0.0, 0.0, 0.0]).expect("atom should build");
+    let shell = Shell::new(2, 0, vec![1.0], vec![1.0]).expect("shell should build");
+    let basis_error = BasisSet::new(vec![atom], vec![shell]);
+    assert!(matches!(
+        basis_error,
+        Err(LibcintRsError::InvalidInput {
+            field: "shell.center_index",
+            ..
+        })
+    ));
+
+    let dims_error = validate_dims(&[2, 2], &[2, 3]);
+    assert!(matches!(
+        dims_error,
+        Err(LibcintRsError::DimsBufferMismatch {
+            expected,
+            provided,
+        }) if expected == vec![2, 2] && provided == vec![2, 3]
     ));
 }

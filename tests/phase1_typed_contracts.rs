@@ -1,4 +1,6 @@
-use cintx::{Atom, BasisSet, IntegralFamily, Operator, OperatorKind, Representation, Shell};
+use cintx::{
+    Atom, BasisSet, IntegralFamily, LibcintRsError, Operator, OperatorKind, Representation, Shell,
+};
 
 #[test]
 fn typed_model_construction() {
@@ -20,4 +22,46 @@ fn typed_model_construction() {
     assert!(Atom::new(0, [0.0, 0.0, 0.0]).is_err());
     assert!(Shell::new(0, 1, vec![1.0], vec![]).is_err());
     assert!(Operator::new(IntegralFamily::OneElectron, OperatorKind::ElectronRepulsion).is_err());
+}
+
+#[test]
+fn safe01_basis_rejects_shell_outside_atom_range() {
+    let atom = Atom::new(1, [0.0, 0.0, 0.0]).expect("atom should build");
+    let shell = Shell::new(1, 0, vec![1.0], vec![1.0]).expect("shell metadata should build");
+
+    let error = BasisSet::new(vec![atom], vec![shell]).expect_err("shell index must be in bounds");
+    assert!(matches!(
+        error,
+        LibcintRsError::InvalidInput {
+            field: "shell.center_index",
+            ..
+        }
+    ));
+}
+
+#[test]
+fn safe01_shell_constructor_invariants() {
+    let non_positive_exponent = Shell::new(0, 0, vec![0.0], vec![1.0]);
+    assert!(matches!(
+        non_positive_exponent,
+        Err(LibcintRsError::InvalidInput {
+            field: "exponent",
+            ..
+        })
+    ));
+
+    let all_zero_coefficients = Shell::new(0, 0, vec![1.0, 2.0], vec![0.0, 0.0]);
+    assert!(matches!(
+        all_zero_coefficients,
+        Err(LibcintRsError::InvalidInput {
+            field: "coefficients",
+            ..
+        })
+    ));
+
+    let unsupported_angular_momentum = Shell::new(0, 9, vec![1.0], vec![1.0]);
+    assert!(matches!(
+        unsupported_angular_momentum,
+        Err(LibcintRsError::UnsupportedApi { api: "shell", .. })
+    ));
 }
