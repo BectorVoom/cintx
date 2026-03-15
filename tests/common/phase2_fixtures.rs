@@ -46,7 +46,7 @@ impl StableMatrixCase {
 }
 
 pub fn stable_phase2_matrix() -> Vec<StableMatrixCase> {
-    let mut matrix = Vec::with_capacity(15);
+    let mut matrix = Vec::with_capacity(14);
     for representation in [
         Representation::Cartesian,
         Representation::Spherical,
@@ -73,13 +73,15 @@ pub fn stable_phase2_matrix() -> Vec<StableMatrixCase> {
             safe_shell_tuple: SHLS_2_SAFE,
             raw_shls: SHLS_2_RAW,
         });
-        matrix.push(StableMatrixCase {
-            family: IntegralFamily::ThreeCenterOneElectron,
-            operator_kind: OperatorKind::Kinetic,
-            representation,
-            safe_shell_tuple: SHLS_3_SAFE,
-            raw_shls: SHLS_3_RAW,
-        });
+        if representation != Representation::Spinor {
+            matrix.push(StableMatrixCase {
+                family: IntegralFamily::ThreeCenterOneElectron,
+                operator_kind: OperatorKind::Kinetic,
+                representation,
+                safe_shell_tuple: SHLS_3_SAFE,
+                raw_shls: SHLS_3_RAW,
+            });
+        }
         matrix.push(StableMatrixCase {
             family: IntegralFamily::ThreeCenterTwoElectron,
             operator_kind: OperatorKind::ElectronRepulsion,
@@ -95,19 +97,14 @@ pub fn stable_phase2_matrix() -> Vec<StableMatrixCase> {
 pub fn out_of_phase_route_keys() -> Vec<CpuRouteKey> {
     vec![
         CpuRouteKey::new(
-            IntegralFamily::OneElectron,
-            OperatorKind::Kinetic,
-            Representation::Cartesian,
-        ),
-        CpuRouteKey::new(
-            IntegralFamily::OneElectron,
-            OperatorKind::NuclearAttraction,
-            Representation::Spinor,
-        ),
-        CpuRouteKey::new(
             IntegralFamily::TwoElectron,
             OperatorKind::Overlap,
             Representation::Spherical,
+        ),
+        CpuRouteKey::new(
+            IntegralFamily::ThreeCenterOneElectron,
+            OperatorKind::Kinetic,
+            Representation::Spinor,
         ),
         CpuRouteKey::new(
             IntegralFamily::ThreeCenterTwoElectron,

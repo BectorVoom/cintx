@@ -66,6 +66,16 @@ impl<'a> RawEnvView<'a> {
 
         Ok(start)
     }
+
+    pub fn checked_slice(
+        &self,
+        field: &'static str,
+        offset: i32,
+        width: usize,
+    ) -> Result<&'a [f64], LibcintRsError> {
+        let start = self.checked_offset_range(field, offset, width)?;
+        Ok(&self.env[start..start + width])
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +114,26 @@ impl<'a> RawAtmView<'a> {
         }
 
         Ok(())
+    }
+
+    pub fn atom_coordinates(
+        &self,
+        atom_index: usize,
+        env: &RawEnvView<'_>,
+    ) -> Result<[f64; 3], LibcintRsError> {
+        if atom_index >= self.natm() {
+            return Err(LibcintRsError::InvalidInput {
+                field: "bas.atom_of",
+                reason: format!(
+                    "atom index {atom_index} is out of bounds for {} atoms",
+                    self.natm()
+                ),
+            });
+        }
+
+        let row = self.row(atom_index);
+        let coordinates = env.checked_slice("atm.ptr_coord", row[ATM_PTR_COORD_SLOT], 3)?;
+        Ok([coordinates[0], coordinates[1], coordinates[2]])
     }
 
     fn row(&self, index: usize) -> &'a [i32] {

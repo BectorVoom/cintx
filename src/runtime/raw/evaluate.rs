@@ -4,17 +4,19 @@ use core::ptr::NonNull;
 use crate::contracts::{Operator, Representation};
 use crate::diagnostics::{QueryDiagnostics, QueryResult};
 use crate::errors::LibcintRsError;
-use crate::runtime::backend::cpu::{CpuRouteTarget, route_request};
+use crate::runtime::backend::cpu::{
+    execute_raw_specialized_route, resolve_raw_route, CpuRouteTarget,
+};
 use crate::runtime::execution_plan::{ExecutionDispatch, ExecutionRequest};
 use crate::runtime::executor::{build_memory_policy_outcome, maybe_simulate_allocation_failure};
 use crate::runtime::memory::allocator::try_alloc_real_buffer;
 use crate::runtime::validator::WorkspaceQueryOptions;
 
 use super::query::{
-    RawCompatWorkspace, dims_for_diagnostics, representation_width_bytes,
-    shell_tuple_for_diagnostics,
+    dims_for_diagnostics, representation_width_bytes, shell_tuple_for_diagnostics,
+    RawCompatWorkspace,
 };
-use super::{RawValidationRequest, validate_raw_contract};
+use super::{validate_raw_contract, RawValidationRequest};
 
 pub const RAW_COMPAT_EVALUATE_API: &str = "raw.compat.evaluate";
 
@@ -167,20 +169,33 @@ pub fn evaluate_workspace_compat(
         Some(validated.dims.as_slice()),
         options,
     );
-    let route_target = route_request(&execution_request)
+    let resolved_route = resolve_raw_route(&execution_request)
         .map_err(|error| diagnostics.clone().record_failure("routing", error))?;
+    let route_target = resolved_route.route_target;
     let dispatch = ExecutionDispatch::cpu(execution_request);
 
     let required_scalars = queried_workspace.required_bytes / F64_WIDTH_BYTES;
-    write_output_chunked(
-        route_target,
+    if !execute_raw_specialized_route(
+        resolved_route,
+        atm,
+        bas,
+        env,
+        &validated.shell_tuple,
         &validated.dims,
-        representation,
         &mut out[..required_scalars],
-        queried_workspace.required_elements,
-        queried_workspace.chunk_elements,
     )
-    .map_err(|error| diagnostics.clone().record_failure("execution", error))?;
+    .map_err(|error| diagnostics.clone().record_failure("execution", error))?
+    {
+        write_output_chunked(
+            route_target,
+            &validated.dims,
+            representation,
+            &mut out[..required_scalars],
+            queried_workspace.required_elements,
+            queried_workspace.chunk_elements,
+        )
+        .map_err(|error| diagnostics.clone().record_failure("execution", error))?;
+    }
     if let Some(cache_values) = cache.as_deref_mut() {
         for (idx, value) in cache_values
             .iter_mut()

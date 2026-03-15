@@ -51,7 +51,7 @@ pub fn malformed_truncated_bas() -> Vec<i32> {
 }
 
 pub fn helper_matrix_case_count() -> usize {
-    15
+    14
 }
 
 pub fn expected_gto_norm(angular_momentum: usize, exponent: f64) -> f64 {

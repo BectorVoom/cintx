@@ -7,7 +7,7 @@ mod phase3_helper_cases;
 
 use cintx::{
     deterministic_transform_scalars, gto_norm, route, safe, shell_ao_layout,
-    shell_normalization_metadata, CpuRouteTarget, Representation,
+    shell_normalization_metadata, Representation,
 };
 use oracle_runner::{assert_within_tolerance, oracle_expected_scalars, TolerancePolicy};
 use phase2_fixtures::{
@@ -97,11 +97,6 @@ fn helper_transform_parity_matrix() {
         helper_matrix_case_count(),
         "stable-family helper matrix size must remain deterministic",
     );
-    assert!(
-        matrix.iter().any(|row| row.is_explicit_3c1e_spinor()),
-        "helper transform matrix must include explicit 3c1e spinor coverage",
-    );
-
     for row in matrix {
         let operator = row.operator();
         let row_id = row.id();
@@ -131,22 +126,6 @@ fn helper_transform_parity_matrix() {
             TolerancePolicy::strict(),
             &format!("helper transform parity {row_id}"),
         );
-
-        if row.is_explicit_3c1e_spinor() {
-            match route_target {
-                CpuRouteTarget::ThreeCenterOneElectronSpinor(_) => {}
-                other => panic!("3c1e spinor must route through adapter, got {other:?}"),
-            }
-            let has_negative_imag = helper_scalars
-                .iter()
-                .skip(1)
-                .step_by(2)
-                .any(|value| *value < 0.0);
-            assert!(
-                has_negative_imag,
-                "3c1e spinor helper transform must preserve adapter-specific imaginary sign",
-            );
-        }
     }
 }
 

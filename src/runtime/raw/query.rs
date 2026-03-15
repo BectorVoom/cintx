@@ -4,6 +4,8 @@ use core::ptr::NonNull;
 use crate::contracts::{Operator, Representation};
 use crate::diagnostics::{QueryDiagnostics, QueryResult};
 use crate::errors::LibcintRsError;
+use crate::runtime::backend::cpu::resolve_raw_route;
+use crate::runtime::execution_plan::ExecutionRequest;
 use crate::runtime::executor::build_memory_policy_outcome;
 use crate::runtime::validator::WorkspaceQueryOptions;
 
@@ -119,6 +121,14 @@ pub fn query_workspace_compat(
             )
         })?;
     let diagnostics = diagnostics.with_dims(validated.dims.clone());
+    resolve_raw_route(&ExecutionRequest::from_raw(
+        operator,
+        representation,
+        validated.shell_tuple.as_slice(),
+        Some(validated.dims.as_slice()),
+        options,
+    ))
+    .map_err(|error| diagnostics.clone().record_failure("routing", error))?;
     let memory_policy = build_memory_policy_outcome(
         &validated.shell_angular_momentum,
         validated.primitive_count,

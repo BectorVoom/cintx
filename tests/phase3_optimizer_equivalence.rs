@@ -8,8 +8,9 @@ use core::ptr::NonNull;
 
 use cintx::{raw, safe, EvaluationOutputMut, LibcintRsError, Representation};
 use oracle_runner::{
-    PHASE3_REQUIRED_GATE_REQUIREMENTS, TolerancePolicy, assert_requirement_traceability,
-    assert_within_tolerance, oracle_expected_scalars, phase3_oracle_profile_matrix,
+    assert_requirement_traceability, assert_within_tolerance,
+    oracle_expected_scalars_with_wrapper_override, phase3_oracle_profile_matrix, TolerancePolicy,
+    PHASE3_REQUIRED_GATE_REQUIREMENTS,
 };
 use phase2_fixtures::{
     flatten_safe_output, phase3_optimizer_options, raw_optimizer_cache_len, stable_phase2_matrix,
@@ -22,7 +23,10 @@ fn optimizer_on_off_equivalence_matrix() {
         assert_requirement_traceability(
             profile_case.requirement_ids,
             PHASE3_REQUIRED_GATE_REQUIREMENTS,
-            &format!("optimizer preflight profile {}", profile_case.profile.as_str()),
+            &format!(
+                "optimizer preflight profile {}",
+                profile_case.profile.as_str()
+            ),
         );
     }
 
@@ -140,9 +144,12 @@ fn optimizer_on_off_equivalence_matrix() {
         assert_eq!(safe_tensor.dims, optimized_result.dims);
         assert_eq!(safe_scalars.len(), baseline_output.len());
         assert_eq!(baseline_output.len(), optimized_output.len());
-        let oracle_scalars =
-            oracle_expected_scalars(row.route_key(), row.representation, &safe_tensor.dims)
-                .unwrap_or_else(|err| panic!("oracle generation failed for {row_id}: {err:?}"));
+        let oracle_scalars = oracle_expected_scalars_with_wrapper_override(
+            row.route_key(),
+            row.representation,
+            &safe_tensor.dims,
+        )
+        .unwrap_or_else(|err| panic!("oracle generation failed for {row_id}: {err:?}"));
         assert_eq!(oracle_scalars.len(), baseline_output.len());
 
         assert_within_tolerance(
@@ -197,8 +204,11 @@ fn spinor_layout_and_oom_semantics_regression() {
     let (atm, bas, env) = stable_raw_layout();
     let row = stable_phase2_matrix()
         .into_iter()
-        .find(|case| case.is_explicit_3c1e_spinor())
-        .expect("stable matrix must include explicit 3c1e spinor row");
+        .find(|case| {
+            case.family == cintx::IntegralFamily::ThreeCenterTwoElectron
+                && case.representation == Representation::Spinor
+        })
+        .expect("stable matrix must include explicit supported 3c2e spinor row");
     let operator = row.operator();
     let row_id = row.id();
     let options = phase3_optimizer_options(&["phase3-spinor-layout-regression"]);
@@ -242,14 +252,9 @@ fn spinor_layout_and_oom_semantics_regression() {
         safe_scalars.len(),
         "spinor scalar layout must remain real/imag paired for {row_id}"
     );
-    let safe_has_negative_imag = safe_scalars
-        .iter()
-        .skip(1)
-        .step_by(2)
-        .any(|value| *value < 0.0);
     assert!(
-        safe_has_negative_imag,
-        "3c1e spinor safe output must retain adapter-specific negative imaginary values",
+        safe_scalars.iter().any(|value| *value != 0.0),
+        "3c2e spinor safe output must contain non-zero payload values",
     );
 
     let required_scalars = raw_workspace.required_bytes / 8;
@@ -273,19 +278,17 @@ fn spinor_layout_and_oom_semantics_regression() {
     .unwrap_or_else(|err| panic!("raw evaluate failed for {row_id}: {err:?}"));
     assert_eq!(raw_result.dims, raw_workspace.dims);
     assert_eq!(raw_output.len() % 2, 0);
-    let raw_has_negative_imag = raw_output
-        .iter()
-        .skip(1)
-        .step_by(2)
-        .any(|value| *value < 0.0);
     assert!(
-        raw_has_negative_imag,
-        "3c1e spinor raw output must retain adapter-specific negative imaginary values",
+        raw_output.iter().any(|value| *value != 0.0),
+        "3c2e spinor raw output must contain non-zero payload values",
     );
 
-    let oracle_scalars =
-        oracle_expected_scalars(row.route_key(), row.representation, &safe_tensor.dims)
-            .unwrap_or_else(|err| panic!("oracle generation failed for {row_id}: {err:?}"));
+    let oracle_scalars = oracle_expected_scalars_with_wrapper_override(
+        row.route_key(),
+        row.representation,
+        &safe_tensor.dims,
+    )
+    .unwrap_or_else(|err| panic!("oracle generation failed for {row_id}: {err:?}"));
     assert_within_tolerance(
         &oracle_scalars,
         &safe_scalars,
@@ -359,8 +362,10 @@ fn spinor_layout_and_oom_semantics_regression() {
         "raw contract failures must preserve caller buffers without partial writes",
     );
 
-    let oom_options =
-        phase3_optimizer_options(&["phase3-oom-semantics-regression", "simulate-allocation-failure"]);
+    let oom_options = phase3_optimizer_options(&[
+        "phase3-oom-semantics-regression",
+        "simulate-allocation-failure",
+    ]);
     let safe_oom = safe::evaluate(
         &basis,
         operator,

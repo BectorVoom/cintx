@@ -1,4 +1,6 @@
-use crate::contracts::{BasisSet, IntegralFamily, Operator, Representation, validate_dims};
+use crate::contracts::{
+    validate_dims, BasisSet, IntegralFamily, Operator, OperatorKind, Representation,
+};
 use crate::errors::LibcintRsError;
 
 use super::{ExecutionRequest, WorkspaceQueryOptions};
@@ -75,6 +77,9 @@ pub fn plan_execution(
             shell.angular_momentum(),
             request.representation,
         )?);
+    }
+    if let Some(extra_dim) = extra_component_dim(request.operator.family, request.operator.kind) {
+        natural_dims.push(extra_dim);
     }
 
     let dims = match request.dims.as_deref() {
@@ -217,5 +222,12 @@ fn family_arity(family: IntegralFamily) -> usize {
         IntegralFamily::OneElectron | IntegralFamily::TwoCenterTwoElectron => 2,
         IntegralFamily::ThreeCenterOneElectron | IntegralFamily::ThreeCenterTwoElectron => 3,
         IntegralFamily::TwoElectron => 4,
+    }
+}
+
+fn extra_component_dim(family: IntegralFamily, kind: OperatorKind) -> Option<usize> {
+    match (family, kind) {
+        (IntegralFamily::ThreeCenterTwoElectron, OperatorKind::ElectronRepulsion) => Some(3),
+        _ => None,
     }
 }

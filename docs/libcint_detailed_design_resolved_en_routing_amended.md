@@ -1,6 +1,6 @@
 # Detailed Design Document for the Rust Redesign and Reimplementation of libcint (Re-review Reflected Edition)
 
-- Document version: 0.4-resolved
+- Document version: 0.4.1-routing-amended
 - Target: A public library that redesigns and reimplements libcint in Rust
 - Target upstream: libcint 6.1.3 (`README.rst:4-5`)
 - Purpose of this document: To define a detailed design whose primary goal is result compatibility with libcint while also satisfying Rust-native type safety, speed, memory efficiency, and ease of verification
@@ -58,6 +58,7 @@ This document is the finalized design specification produced by re-reviewing the
 | Representation coverage of F12/STG/YP | In the current upstream snapshot, the supported representation for F12/STG/YP is finalized as **sph only**; cart/spinor are treated not as "missing" but as "out of scope" | Feature matrix, oracle comparison, release gate | 3.11.3, 10.1, 13.4, 16.2 |
 | Positioning of GTG | GTG is included in none of initial GA, optional, or unstable; it is **roadmap-only and out of scope**. No public feature flag is added | Scope, manifest, tests, documentation | 1.3, 3.3.1, 10.1, 16.2, 18 |
 | Parity of helper transform APIs | Helper comparison is included in the stable release gate | Helper API implementation and CI | 13.4, 14.1 |
+| Routing governance | Production execution routes are resolved only through a shared route coverage manifest and route resolver; ad-hoc family-specific bypasses in facade / compat / executor entry layers are forbidden | Prevent parity fixes from fragmenting dispatch logic and ensure safe/raw/capi consistency | 3.3.2, 4.2, 4.6, 5.1, 7.1, 7.2, 13.10, 14.1 |
 
 ---
 
@@ -94,6 +95,7 @@ Basis: `README.rst:11-14`, `README.rst:38-40`, `README.rst:52-70`, `README.rst:2
 | Compatibility model | **Result compatibility > API compatibility > implementation compatibility** | Because the original requirement prioritizes results |
 | Public surface | Safe Rust API first, raw compat API second, C ABI shim optional | To balance Rust usability and migration compatibility |
 | Execution model | Shared planner + CPU/CubeCL backend executors | To balance shared logic across CPU/GPU with optimization headroom |
+| Routing model | Shared route resolver + route coverage manifest + backend-owned kernels | To prevent proliferation of dedicated bypasses while keeping parity fixes inside the common dispatch model |
 | OOM | Centralize fallible allocation and stop with typed errors on failure | Because safe stop is a mandatory requirement |
 | API inventory | Use the generated manifest as the sole source of truth | To make full API coverage verifiable |
 | Optional families | Explicit feature gates and stability levels | Because upstream itself contains conditional / unstable APIs |
@@ -104,6 +106,7 @@ Basis: `README.rst:11-14`, `README.rst:38-40`, `README.rst:52-70`, `README.rst:2
 - Reproduce the contracts of `out == NULL` / `cache == NULL` / `dims == NULL` in the compat / C ABI layers
 - Split the Safe Rust API into `query_workspace()` and `evaluate()` so users are not exposed to C-style sentinel arguments
 - Match libcint for cart/sph/spinor shapes, component ordering, and complex interleaving
+- Resolve every production execution through a shared route resolver derived from manifest metadata; safe/raw/C ABI layers must not introduce ad-hoc family-specific bypasses
 - Guarantee that numerical results do not change depending on whether an optimizer is used
 
 ### 1.6 Rust-Native Design Policy
@@ -219,6 +222,8 @@ The generated manifest in `libcint-ops` must contain at least the following fiel
 | `helper_kind` | helper / transform / optimizer lifecycle / legacy |
 | `canonical_family` | Family name normalized from wrapper / Fortran suffix |
 
+`compiled_manifest.lock.json` remains the source of truth for the supported public surface. Routing governance is handled by a separate internal manifest so that public API inventory and production execution policy are not conflated.
+
 #### 3.3.1 Finalization Method for the Compiled-Symbol-Based Final Manifest
 - **Purpose**: Fix the actually exposed ABI surface, rather than relying on header/source description differences, and make “full API coverage” mechanically auditable
 - **Source of truth**: `crates/libcint-ops/generated/compiled_manifest.lock.json`
@@ -245,6 +250,43 @@ The generated manifest in `libcint-ops` must contain at least the following fiel
   - Unit: `canonicalize_symbol()` and `declared_in` classification logic
   - Integration: 4-profile build + lock diff
   - Oracle: re-compare families with diffs
+
+#### 3.3.2 Route Coverage Manifest for Production Execution
+
+To prevent dedicated bypasses from proliferating as parity fixes are added, the runtime shall use a second generated lock file, `crates/libcint-ops/generated/route_coverage_manifest.lock.json`. This file does **not** replace `compiled_manifest.lock.json`; it governs how supported APIs are allowed to execute inside the Rust implementation.
+
+| field | Meaning |
+|---|---|
+| `route_id` | Unique production route key |
+| `canonical_family` | Normalized family name matched to the compiled manifest |
+| `representation` | `cart`, `sph`, `spinor` |
+| `surface_group` | `safe`, `raw`, `capi`, or `all` |
+| `feature_flag` | Feature required for the route to exist |
+| `stability` | `stable`, `optional`, `unstable_source` |
+| `support_predicate` | Additional policy gate such as `Validated4C1E`, `sph_only_f12`, or `always` |
+| `route_kind` | `direct_kernel`, `transform_from_cart`, `composed_workaround`, or `unsupported_policy` |
+| `backend_set` | Allowed backends such as `cpu`, `cpu+cubecl` |
+| `entry_kernel` | Internal backend kernel or planner node that owns the implementation |
+| `transform_chain` | Required pre/post transforms, if any |
+| `writer_contract` | Writer/layout contract used by the route |
+| `optimizer_mode` | `supported`, `ignored_but_invariant`, or `not_applicable` |
+| `parity_gate` | Oracle/parity suite that must pass for this route |
+| `status` | `implemented`, `planned`, `unsupported_policy` |
+
+Rules:
+1. Every `stable` public family/representation/profile combination that is supported by policy shall have **exactly one** `status = implemented` production route.
+2. Optional families shall also have exactly one production route for each supported combination when the feature is enabled.
+3. Unsupported combinations shall be explicit entries with `status = unsupported_policy`; absence is not an acceptable way to express policy.
+4. Safe API, raw compat API, and C ABI shim shall all call the same `resolve_route()` path before backend execution.
+5. Dedicated family-specific execution bypasses from facade, compat, `runtime::executor`, or `runtime::raw::evaluate` are forbidden in production code. Backend specialization is allowed only **behind** the shared resolver and only when named by `entry_kernel`.
+6. A temporary diagnostic path may exist only under a dev-only feature and shall not be linked into production crates or counted as route coverage.
+
+Generation and governance:
+- Start from `compiled_manifest.lock.json`
+- Expand by representation/profile/policy predicates
+- Materialize one production route or one explicit `unsupported_policy` entry per supported denominator row
+- Fail CI if a stable denominator row is missing, duplicated, or reachable only through an ad-hoc bypass
+- Update the route lock in the same PR whenever a new stable implementation route is introduced
 
 ### 3.4 Generic Integral Signature
 ```c
@@ -440,8 +482,8 @@ Safe Rust API / Raw Compat API / Optional C ABI
 | compat | Raw arrays, legacy wrappers, helper APIs | core, runtime |
 | capi | `extern` C ABI shim | compat |
 | core | Domain model, errors, tensor views, traits | none |
-| ops | Generated manifest, operator metadata | core |
-| runtime | Validation, planning, scheduling, workspace, tracing | core, ops |
+| ops | Generated manifest, operator metadata, route coverage manifest | core |
+| runtime | Validation, route resolution, planning, scheduling, workspace, tracing | core, ops |
 | cpu | CPU kernels, transforms, SIMD | core, ops, runtime |
 | cubecl | GPU kernels, transfer planning, device cache | core, ops, runtime |
 | oracle/dev | libcint build + bindgen + compare harness | compat, capi |
@@ -476,11 +518,12 @@ Safe Rust API / Raw Compat API / Optional C ABI
 ### 4.6 Data Flow
 1. Accept input (safe or raw)
 2. The manifest resolver identifies the API family
-3. The validator checks raw layout / shell tuple / representation
-4. The planner determines shape / workspace / device / chunking
-5. The scheduler splits batches into chunks
-6. The backend executes recurrence → contraction → transform → writer
-7. Return a result view and emit tracing / metrics
+3. The shared route resolver selects `route_id`, applies policy gates, and rejects unsupported combinations explicitly
+4. The validator checks raw layout / shell tuple / representation
+5. The planner determines shape / workspace / device / chunking from the resolved route
+6. The scheduler splits batches into chunks
+7. The backend executes recurrence → contraction → transform → writer through the route-owned backend kernel
+8. Return a result view and emit tracing / metrics
 
 ### 4.7 Control Flow and Synchronization Model
 - Public APIs are synchronous and blocking
@@ -563,7 +606,9 @@ Apply `#![deny(unsafe_op_in_unsafe_fn)]` to each crate, and require a safety com
 | `core::tensor` | Shape/layout/views | Public |
 | `core::error` | Typed errors | Public |
 | `ops::manifest` | Generated API manifest | Public |
+| `ops::route_manifest` | Generated route coverage manifest | Internal |
 | `runtime::validator` | Input validation | Internal |
+| `runtime::route_resolver` | Shared production route selection and policy gating | Internal |
 | `runtime::planner` | Execution plan generation | Internal |
 | `runtime::scheduler` | Batch/chunking | Internal |
 | `runtime::workspace` | Fallible allocation, pools | Internal |
@@ -578,6 +623,10 @@ pub trait BackendExecutor {
     fn supports(&self, plan: &ExecutionPlan) -> bool;
     fn query_workspace(&self, plan: &ExecutionPlan) -> Result<WorkspaceBytes, LibcintRsError>;
     fn execute(&self, plan: &ExecutionPlan, io: &mut ExecutionIo<'_>) -> Result<ExecutionStats, LibcintRsError>;
+}
+
+pub trait RouteResolver {
+    fn resolve_route(&self, request: &RouteRequest<'_>) -> Result<RouteDescriptor, LibcintRsError>;
 }
 
 pub trait WorkspaceAllocator {
@@ -778,20 +827,28 @@ pub struct TensorLayout {
 ### 7.1 Safe API Call Flow
 1. Accept `OperatorId` and `Representation`
 2. Validate the `BasisSet` and shell tuple
-3. The planner determines the natural shape and component count
-4. Estimate workspace
-5. Create chunks subject to `ExecutionOptions.memory_limit_bytes`
-6. Execute the backend
-7. Return the output tensor view
+3. Resolve the production route through `runtime::route_resolver`
+4. The planner determines the natural shape and component count from the resolved route
+5. Estimate workspace
+6. Create chunks subject to `ExecutionOptions.memory_limit_bytes`
+7. Execute the backend through the route-owned kernel path
+8. Return the output tensor view
 
 ### 7.2 Raw Compatibility API Call Flow
 1. Create `RawAtmView` / `RawBasView` / `RawEnvView`
 2. Validate `shls` arity
-3. If `dims == NULL`, use the natural shape; if non-`NULL`, validate it as `CompatDims`
-4. If `out == NULL`, return the required workspace bytes
-5. If `cache == NULL`, try an internal fallible allocation
-6. If `opt` is present, use the optimizer cache; otherwise use the non-optimized path
-7. Return `not0` and `bytes_written`
+3. Resolve the production route through the same `runtime::route_resolver` used by the Safe API
+4. If `dims == NULL`, use the natural shape; if non-`NULL`, validate it as `CompatDims`
+5. If `out == NULL`, return the required workspace bytes
+6. If `cache == NULL`, try an internal fallible allocation
+7. If `opt` is present, use the optimizer cache; otherwise use the non-optimized path
+8. Return `not0` and `bytes_written`
+
+### 7.2.1 Routing Governance Rules
+- The only production entry to backend execution is `resolve_route()`
+- `UnsupportedApi` is returned only when the resolved policy says `unsupported_policy`; a missing stable route is a CI/release-gate failure, not a normal runtime policy outcome
+- Safe/raw/C ABI route resolution must be equivalent for the same family, representation, feature profile, and policy predicate
+- Backend-specific specialization is permitted only below the resolver and only for `entry_kernel` values declared in the route coverage manifest
 
 ### 7.3 Input Validation
 | Validation | Failure |
@@ -1229,6 +1286,9 @@ The initial conservative heuristic is as follows.
 
 ### 13.10 Regression Detection
 - Manifest coverage diff
+- Route coverage manifest diff
+- Safe/raw/C ABI route-resolution equivalence diff
+- Ad-hoc bypass detection in facade / compat / executor entry layers
 - Criterion baseline diff
 - Tolerance-exceed diff report
 - Peak RSS / workspace-bytes regression
@@ -1259,13 +1319,14 @@ The initial conservative heuristic is as follows.
 ### 14.1 Release Gate
 The following are required before release.
 1. `manifest-audit` matches header/source/compiled symbols against `compiled_manifest.lock.json` for the support matrix `{base, with-f12, with-4c1e, with-f12+with-4c1e}`
-2. All oracle comparisons for stable APIs pass
-3. Under the `with-f12` profile, the F12/STG/YP sph-only coverage test passes and cart/spinor symbol count is zero
-4. Under the `with-4c1e` profile, `Validated4C1E` comparison and bug-envelope rejection tests pass
-5. OOM tests pass
-6. CPU/GPU consistency tests pass for supported families
-7. Helper API comparison passes
-8. GTG symbols do not appear in any of the public manifest, facade, compat, or capi surfaces
+2. `route-audit` proves that every policy-supported denominator row has exactly one production route in `route_coverage_manifest.lock.json`, and that no stable route is reachable only through an ad-hoc bypass in facade / compat / executor entry layers
+3. All oracle comparisons for stable APIs pass
+4. Under the `with-f12` profile, the F12/STG/YP sph-only coverage test passes and cart/spinor symbol count is zero
+5. Under the `with-4c1e` profile, `Validated4C1E` comparison and bug-envelope rejection tests pass
+6. OOM tests pass
+7. CPU/GPU consistency tests pass for supported families
+8. Helper API comparison passes
+9. GTG symbols do not appear in any of the public manifest, facade, compat, or capi surfaces
 
 ---
 
@@ -1280,7 +1341,8 @@ libcint-rs/
 ├── docs/
 │   ├── design/
 │   │   ├── libcint_rust_detailed_design_reviewed.md  # This design document
-│   │   ├── api_manifest.csv                          # Generated manifest
+│   │   ├── api_manifest.csv                          # Generated public-surface manifest
+│   │   ├── route_coverage_manifest.lock.json         # Generated production route manifest
 │   │   └── diagrams.md                               # Mermaid diagrams split out
 │   └── compatibility.md                # API support status table
 ├── crates/

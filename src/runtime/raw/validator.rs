@@ -1,7 +1,7 @@
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
-use crate::contracts::{IntegralFamily, Operator, Representation};
+use crate::contracts::{IntegralFamily, Operator, OperatorKind, Representation};
 use crate::errors::LibcintRsError;
 
 use super::views::{
@@ -73,15 +73,18 @@ pub fn validate_raw_contract(
         })?;
         natural_dims.push(shell_component_count(meta, request.representation)?);
     }
+    if let Some(extra_dim) = extra_component_dim(request.operator) {
+        natural_dims.push(extra_dim);
+    }
 
-    let dims = CompatDims::new(request.dims).validate(expected_arity, &natural_dims)?;
+    let dims = CompatDims::new(request.dims).validate(natural_dims.len(), &natural_dims)?;
     let required_elements = checked_product(&dims)?;
 
     let cache = RawCacheView::new(request.cache);
     let opt = RawOptView::new(request.opt);
     opt.validate_with_cache(&cache)?;
 
-    let cache_required_len = dims.len().max(1);
+    let cache_required_len = shls.len().max(1);
     cache.validate_min_len(cache_required_len)?;
 
     Ok(RawValidationResult {
@@ -206,5 +209,12 @@ fn family_arity(family: IntegralFamily) -> usize {
         IntegralFamily::OneElectron | IntegralFamily::TwoCenterTwoElectron => 2,
         IntegralFamily::ThreeCenterOneElectron | IntegralFamily::ThreeCenterTwoElectron => 3,
         IntegralFamily::TwoElectron => 4,
+    }
+}
+
+fn extra_component_dim(operator: Operator) -> Option<usize> {
+    match (operator.family(), operator.kind()) {
+        (IntegralFamily::ThreeCenterTwoElectron, OperatorKind::ElectronRepulsion) => Some(3),
+        _ => None,
     }
 }

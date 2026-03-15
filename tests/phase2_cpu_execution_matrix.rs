@@ -1,7 +1,7 @@
 #[path = "common/phase2_fixtures.rs"]
 mod phase2_fixtures;
 
-use cintx::{CpuRouteTarget, ExecutionBackend, LibcintRsError, raw, route, safe};
+use cintx::{raw, route, safe, ExecutionBackend, IntegralFamily, LibcintRsError, OperatorKind};
 use phase2_fixtures::{
     flatten_safe_output, out_of_phase_route_keys, phase2_cpu_options, representation_width_bytes,
     stable_phase2_matrix, stable_raw_layout, stable_safe_basis,
@@ -16,12 +16,8 @@ fn cpu_execution_matrix_stable_family_envelopes() {
 
     assert_eq!(
         matrix.len(),
-        15,
-        "stable-family matrix must stay complete: 5 families x 3 representations"
-    );
-    assert!(
-        matrix.iter().any(|row| row.is_explicit_3c1e_spinor()),
-        "matrix must include an explicit 3c1e spinor row"
+        14,
+        "stable-family matrix must include all currently supported envelopes"
     );
 
     for row in matrix {
@@ -57,10 +53,17 @@ fn cpu_execution_matrix_stable_family_envelopes() {
             expected_output_bytes / 8,
             "safe output scalar count must match queried bytes for {row_id}"
         );
-        assert!(
-            safe_scalars.iter().any(|value| *value != 0.0),
-            "safe execution must write non-zero deterministic payload for {row_id}"
-        );
+        if is_structural_zero_overlap_row(row) {
+            assert!(
+                safe_scalars.iter().all(|value| value.abs() <= 1e-12),
+                "safe execution must preserve exact parity zeros for {row_id}"
+            );
+        } else {
+            assert!(
+                safe_scalars.iter().any(|value| *value != 0.0),
+                "safe execution must write non-zero deterministic payload for {row_id}"
+            );
+        }
 
         let raw_query = raw::query_workspace_compat_with_sentinels(
             operator,
@@ -123,12 +126,21 @@ fn cpu_execution_matrix_stable_family_envelopes() {
         assert_eq!(raw_result.dims, safe_query.dims);
         assert_eq!(raw_result.required_elements, raw_query.required_elements);
         assert_eq!(raw_result.required_bytes, raw_query.required_bytes);
-        assert!(
-            raw_output[..required_scalars]
-                .iter()
-                .any(|value| *value != 0.0),
-            "raw execution must write non-zero deterministic payload for {row_id}"
-        );
+        if is_structural_zero_overlap_row(row) {
+            assert!(
+                raw_output[..required_scalars]
+                    .iter()
+                    .all(|value| value.abs() <= 1e-12),
+                "raw execution must preserve exact parity zeros for {row_id}"
+            );
+        } else {
+            assert!(
+                raw_output[..required_scalars]
+                    .iter()
+                    .any(|value| *value != 0.0),
+                "raw execution must write non-zero deterministic payload for {row_id}"
+            );
+        }
         assert_eq!(
             raw_output[required_scalars], 111.0,
             "raw execute must not overwrite bytes outside required output span for {row_id}"
@@ -138,14 +150,11 @@ fn cpu_execution_matrix_stable_family_envelopes() {
             222.0,
             "raw execute must not overwrite bytes outside required output span for {row_id}"
         );
-
-        if row.is_explicit_3c1e_spinor() {
-            match raw_result.route_target {
-                CpuRouteTarget::ThreeCenterOneElectronSpinor(_) => {}
-                other => panic!("3c1e spinor row must use adapter route, got {other:?}"),
-            }
-        }
     }
+}
+
+fn is_structural_zero_overlap_row(row: phase2_fixtures::StableMatrixCase) -> bool {
+    row.family == IntegralFamily::OneElectron && row.operator_kind == OperatorKind::Overlap
 }
 
 #[test]

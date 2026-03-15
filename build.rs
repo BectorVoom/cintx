@@ -90,6 +90,38 @@ fn write_generated(path: &Path, content: &str) {
     });
 }
 
+fn configure_cpu_build(
+    libcint_root: &Path,
+    generated_include_dir: &Path,
+    generated_src_dir: &Path,
+) -> cc::Build {
+    let mut build = cc::Build::new();
+    build
+        .warnings(false)
+        .define("WITH_FORTRAN", None)
+        .define("WITH_CINT2_INTERFACE", None)
+        .flag_if_supported("-std=c99")
+        .flag_if_supported("-fno-math-errno")
+        .include(generated_include_dir)
+        .include(generated_src_dir)
+        .include(libcint_root.join("include"))
+        .include(libcint_root.join("src"));
+
+    for source in REQUIRED_CPU_SOURCES {
+        let path = libcint_root.join(source);
+        if !path.is_file() {
+            fail(
+                BuildDiagnosticKind::MissingSource,
+                format!("required source file missing: `{}`", path.display()),
+            );
+        }
+        println!("cargo:rerun-if-changed={}", path.display());
+        build.file(path);
+    }
+
+    build
+}
+
 fn replace_cmakedefines(template: &str, replacements: &[(&str, &str)]) -> String {
     let mut output = String::with_capacity(template.len() + 128);
     for line in template.lines() {
@@ -218,30 +250,10 @@ fn main() {
         &rendered_cint_config_h,
     );
 
-    let mut build = cc::Build::new();
-    build
-        .warnings(false)
-        .define("WITH_FORTRAN", None)
-        .define("WITH_CINT2_INTERFACE", None)
-        .flag_if_supported("-std=c99")
-        .flag_if_supported("-fno-math-errno")
-        .include(&generated_include_dir)
-        .include(&generated_src_dir)
-        .include(libcint_root.join("include"))
-        .include(libcint_root.join("src"));
-
-    for source in REQUIRED_CPU_SOURCES {
-        let path = libcint_root.join(source);
-        if !path.is_file() {
-            fail(
-                BuildDiagnosticKind::MissingSource,
-                format!("required source file missing: `{}`", path.display()),
-            );
-        }
-        println!("cargo:rerun-if-changed={}", path.display());
-        build.file(path);
-    }
-
-    build.compile("cint_phase2_cpu");
+    configure_cpu_build(&libcint_root, &generated_include_dir, &generated_src_dir)
+        .compile("cint_phase2_cpu");
+    // Build a second archive with the conventional upstream name so the libcint
+    // Rust wrapper can link hermetically against the vendored oracle sources.
+    configure_cpu_build(&libcint_root, &generated_include_dir, &generated_src_dir).compile("cint");
     println!("cargo:rustc-link-lib=m");
 }

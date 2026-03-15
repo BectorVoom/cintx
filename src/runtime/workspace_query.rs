@@ -2,6 +2,8 @@ use crate::contracts::{BasisSet, Operator, Representation};
 use crate::diagnostics::QueryResult;
 use crate::errors::LibcintRsError;
 
+use super::backend::cpu::{resolve_raw_route, resolve_safe_route};
+use super::execution_plan::ExecutionRequest;
 use super::memory::chunking::{build_memory_plan, compute_scratch_bytes};
 use super::validator::{
     ValidatedInputs, ValidatedShape, WorkspaceQueryOptions, make_query_diagnostics,
@@ -36,6 +38,13 @@ pub fn query_workspace_safe(
         validate_safe_query_inputs(basis, operator, representation, shell_tuple, options)
             .map_err(|error| diagnostics.clone().record_failure("validation", error))?;
     let diagnostics = diagnostics.with_dims(validated_shape.dims.clone());
+    resolve_safe_route(&ExecutionRequest::from_safe(
+        operator,
+        representation,
+        shell_tuple,
+        options,
+    ))
+    .map_err(|error| diagnostics.clone().record_failure("routing", error))?;
     let workspace =
         estimate_workspace(&validated_inputs, &validated_shape, options).map_err(|error| {
             diagnostics
@@ -74,6 +83,14 @@ pub fn query_workspace_raw(
     )
     .map_err(|error| diagnostics.clone().record_failure("validation", error))?;
     let diagnostics = diagnostics.with_dims(validated_shape.dims.clone());
+    resolve_raw_route(&ExecutionRequest::from_raw(
+        operator,
+        representation,
+        shell_tuple,
+        dims_override,
+        options,
+    ))
+    .map_err(|error| diagnostics.clone().record_failure("routing", error))?;
     let workspace =
         estimate_workspace(&validated_inputs, &validated_shape, options).map_err(|error| {
             diagnostics

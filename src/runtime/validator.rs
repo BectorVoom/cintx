@@ -1,4 +1,6 @@
-use crate::contracts::{BasisSet, Operator, Representation, validate_dims};
+use crate::contracts::{
+    validate_dims, BasisSet, IntegralFamily, Operator, OperatorKind, Representation,
+};
 use crate::diagnostics::QueryDiagnostics;
 use crate::errors::LibcintRsError;
 
@@ -140,6 +142,9 @@ fn validate_query_inputs(
         primitive_count += shell.primitives().len();
         natural_dims.push(component_count(shell.angular_momentum(), representation));
     }
+    if let Some(extra_dim) = extra_component_dim(operator) {
+        natural_dims.push(extra_dim);
+    }
 
     let dims = match dims_override {
         Some(provided_dims) => {
@@ -208,5 +213,12 @@ fn component_count(angular_momentum: u8, representation: Representation) -> usiz
         Representation::Cartesian => ((l + 1) * (l + 2)) / 2,
         Representation::Spherical => (2 * l) + 1,
         Representation::Spinor => 2 * ((2 * l) + 1),
+    }
+}
+
+fn extra_component_dim(operator: Operator) -> Option<usize> {
+    match (operator.family(), operator.kind()) {
+        (IntegralFamily::ThreeCenterTwoElectron, OperatorKind::ElectronRepulsion) => Some(3),
+        _ => None,
     }
 }

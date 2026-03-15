@@ -11,8 +11,12 @@ pub mod validator;
 pub mod workspace_query;
 
 pub use backend::cpu::{
-    ALL_BOUND_SYMBOLS, CpuKernelFn, CpuKernelSymbol, CpuRouteKey, CpuRouteTarget,
-    Spinor3c1eAdapter, Spinor3c1eTransform, adapter_route, route, route_request,
+    ALL_BOUND_SYMBOLS, CpuKernelFn, CpuKernelSymbol, CpuRouteKey, CpuRouteManifestEntry,
+    CpuRouteTarget, ResolvedCpuRoute, RouteEntryKernel, RouteKind, RouteOptimizerMode,
+    RouteStability, RouteStatus, RouteSurface, RouteSurfaceGroup, Spinor3c1eAdapter,
+    Spinor3c1eTransform, adapter_route, resolve_capi_route, resolve_raw_route, resolve_route,
+    resolve_route_request, resolve_safe_route, route, route_manifest_entries,
+    route_manifest_lock_json, route_request,
 };
 pub use execution_plan::{
     ExecutionBackend, ExecutionDispatch, ExecutionMemoryOptions, ExecutionOperator,

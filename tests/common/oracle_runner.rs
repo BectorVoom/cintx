@@ -1,4 +1,14 @@
-use cintx::{route, CpuRouteKey, CpuRouteTarget, LibcintRsError, ManifestProfile, Representation};
+#![allow(dead_code)]
+
+#[path = "phase2_fixtures.rs"]
+mod phase2_fixtures;
+
+use cintx::{
+    route, CpuRouteKey, CpuRouteTarget, IntegralFamily, LibcintRsError, ManifestProfile,
+    OperatorKind, Representation,
+};
+use libcint::{cint::CInt, prelude::CIntType};
+use phase2_fixtures::stable_raw_layout;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TolerancePolicy {
@@ -56,7 +66,9 @@ pub fn assert_requirement_traceability(
 ) {
     for requirement in required_requirements {
         assert!(
-            requirement_ids.iter().any(|candidate| candidate == requirement),
+            requirement_ids
+                .iter()
+                .any(|candidate| candidate == requirement),
             "{context}: missing required traceability requirement `{requirement}`",
         );
     }
@@ -72,6 +84,18 @@ pub fn oracle_expected_scalars(
     let mut expected = vec![0.0f64; element_count * scalars_per_element(representation)];
     fill_oracle_scalars(route_target, representation, dims, &mut expected);
     Ok(expected)
+}
+
+pub fn oracle_expected_scalars_with_wrapper_override(
+    route_key: CpuRouteKey,
+    representation: Representation,
+    dims: &[usize],
+) -> Result<Vec<f64>, LibcintRsError> {
+    if let Some(wrapper_scalars) = stable_wrapper_oracle_scalars(route_key, representation, dims)? {
+        return Ok(wrapper_scalars);
+    }
+
+    oracle_expected_scalars(route_key, representation, dims)
 }
 
 pub fn assert_within_tolerance(
@@ -170,4 +194,231 @@ fn seed_from_route(route_target: CpuRouteTarget, dims: &[usize]) -> u64 {
         seed = seed.wrapping_mul(257).wrapping_add(dim_u64);
     }
     seed
+}
+
+fn stable_wrapper_oracle_scalars(
+    route_key: CpuRouteKey,
+    representation: Representation,
+    dims: &[usize],
+) -> Result<Option<Vec<f64>>, LibcintRsError> {
+    let stable_overlap_key = CpuRouteKey::new(
+        IntegralFamily::OneElectron,
+        OperatorKind::Overlap,
+        representation,
+    );
+    let stable_two_e_key = CpuRouteKey::new(
+        IntegralFamily::TwoElectron,
+        OperatorKind::ElectronRepulsion,
+        representation,
+    );
+    let stable_three_c1e_key = CpuRouteKey::new(
+        IntegralFamily::ThreeCenterOneElectron,
+        OperatorKind::Kinetic,
+        representation,
+    );
+    let stable_three_c2e_key = CpuRouteKey::new(
+        IntegralFamily::ThreeCenterTwoElectron,
+        OperatorKind::ElectronRepulsion,
+        representation,
+    );
+    if route_key != stable_overlap_key
+        && route_key != stable_two_e_key
+        && route_key != stable_three_c1e_key
+        && route_key != stable_three_c2e_key
+    {
+        return Ok(None);
+    }
+
+    let (atm, bas, env) = stable_raw_layout();
+    let cint = CInt {
+        atm: atm
+            .chunks_exact(6)
+            .map(|row| row.try_into().expect("atm rows must have 6 slots"))
+            .collect(),
+        bas: bas
+            .chunks_exact(8)
+            .map(|row| row.try_into().expect("bas rows must have 8 slots"))
+            .collect(),
+        ecpbas: Vec::new(),
+        env,
+        cint_type: match representation {
+            Representation::Cartesian => CIntType::Cartesian,
+            Representation::Spherical => CIntType::Spheric,
+            Representation::Spinor => CIntType::Spinor,
+        },
+    };
+
+    if route_key == stable_overlap_key {
+        let expected_dims: &[usize] = match representation {
+            Representation::Cartesian | Representation::Spherical => &[1, 3],
+            Representation::Spinor => &[2, 6],
+        };
+        if dims != expected_dims {
+            return Err(LibcintRsError::InvalidInput {
+                field: "dims",
+                reason: format!(
+                    "wrapper-backed stable overlap oracle only supports dims {expected_dims:?} for {representation:?}, got {dims:?}"
+                ),
+            });
+        }
+
+        return match representation {
+            Representation::Cartesian | Representation::Spherical => {
+                let (out, shape) = cint
+                    .integrate("int1e_ovlp", None, [[0usize, 1usize], [1usize, 2usize]])
+                    .into();
+                assert_eq!(shape, dims);
+                Ok(Some(out))
+            }
+            Representation::Spinor => {
+                let (out, shape) = cint
+                    .integrate_spinor("int1e_ovlp", None, [[0usize, 1usize], [1usize, 2usize]])
+                    .into();
+                assert_eq!(shape, dims);
+                let mut flattened = Vec::with_capacity(out.len() * 2);
+                for value in out {
+                    flattened.push(value.re);
+                    flattened.push(value.im);
+                }
+                Ok(Some(flattened))
+            }
+        };
+    }
+
+    if route_key == stable_two_e_key {
+        let expected_dims: &[usize] = match representation {
+            Representation::Cartesian => &[1, 3, 6, 1],
+            Representation::Spherical => &[1, 3, 5, 1],
+            Representation::Spinor => &[2, 6, 10, 2],
+        };
+        if dims != expected_dims {
+            return Err(LibcintRsError::InvalidInput {
+                field: "dims",
+                reason: format!(
+                    "wrapper-backed stable 2e oracle only supports dims {expected_dims:?} for {representation:?}, got {dims:?}"
+                ),
+            });
+        }
+
+        return match representation {
+            Representation::Cartesian | Representation::Spherical => {
+                let (out, shape) = cint
+                    .integrate(
+                        "int2e",
+                        None,
+                        [
+                            [0usize, 1usize],
+                            [1usize, 2usize],
+                            [2usize, 3usize],
+                            [3usize, 4usize],
+                        ],
+                    )
+                    .into();
+                assert_eq!(shape, dims);
+                Ok(Some(out))
+            }
+            Representation::Spinor => {
+                let (out, shape) = cint
+                    .integrate_spinor(
+                        "int2e",
+                        None,
+                        [
+                            [0usize, 1usize],
+                            [1usize, 2usize],
+                            [2usize, 3usize],
+                            [3usize, 4usize],
+                        ],
+                    )
+                    .into();
+                assert_eq!(shape, dims);
+                let mut flattened = Vec::with_capacity(out.len() * 2);
+                for value in out {
+                    flattened.push(value.re);
+                    flattened.push(value.im);
+                }
+                Ok(Some(flattened))
+            }
+        };
+    }
+
+    if route_key == stable_three_c1e_key {
+        if representation == Representation::Spinor {
+            return Err(LibcintRsError::UnsupportedApi {
+                api: "oracle.wrapper",
+                reason: "3c1e spinor is policy-blocked because upstream libcint exits process in CINT3c1e_spinor_drv",
+            });
+        }
+        let expected_dims: &[usize] = match representation {
+            Representation::Cartesian => &[1, 3, 6],
+            Representation::Spherical => &[1, 3, 5],
+            Representation::Spinor => unreachable!("3c1e spinor is blocked above"),
+        };
+        if dims != expected_dims {
+            return Err(LibcintRsError::InvalidInput {
+                field: "dims",
+                reason: format!(
+                    "wrapper-backed stable 3c1e oracle only supports dims {expected_dims:?} for {representation:?}, got {dims:?}"
+                ),
+            });
+        }
+
+        return match representation {
+            Representation::Cartesian | Representation::Spherical => {
+                let (out, shape) = cint
+                    .integrate(
+                        "int3c1e_p2",
+                        None,
+                        [[0usize, 1usize], [1usize, 2usize], [2usize, 3usize]],
+                    )
+                    .into();
+                assert_eq!(shape, dims);
+                Ok(Some(out))
+            }
+            Representation::Spinor => unreachable!("3c1e spinor is blocked above"),
+        };
+    }
+
+    let expected_dims: &[usize] = match representation {
+        Representation::Cartesian => &[1, 3, 6, 3],
+        Representation::Spherical => &[1, 3, 5, 3],
+        Representation::Spinor => &[2, 6, 10, 3],
+    };
+    if dims != expected_dims {
+        return Err(LibcintRsError::InvalidInput {
+            field: "dims",
+            reason: format!(
+                "wrapper-backed stable 3c2e oracle only supports dims {expected_dims:?} for {representation:?}, got {dims:?}"
+            ),
+        });
+    }
+
+    match representation {
+        Representation::Cartesian | Representation::Spherical => {
+            let (out, shape) = cint
+                .integrate(
+                    "int3c2e_ip1",
+                    None,
+                    [[0usize, 1usize], [1usize, 2usize], [2usize, 3usize]],
+                )
+                .into();
+            assert_eq!(shape, dims);
+            Ok(Some(out))
+        }
+        Representation::Spinor => {
+            let (out, shape) = cint
+                .integrate_spinor(
+                    "int3c2e_ip1",
+                    None,
+                    [[0usize, 1usize], [1usize, 2usize], [2usize, 3usize]],
+                )
+                .into();
+            assert_eq!(shape, dims);
+            let mut flattened = Vec::with_capacity(out.len() * 2);
+            for value in out {
+                flattened.push(value.re);
+                flattened.push(value.im);
+            }
+            Ok(Some(flattened))
+        }
+    }
 }

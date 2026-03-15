@@ -7,8 +7,9 @@ use std::collections::BTreeSet;
 
 use cintx::{raw, safe, ManifestProfile};
 use oracle_runner::{
-    PHASE3_REQUIRED_GATE_REQUIREMENTS, TolerancePolicy, assert_requirement_traceability,
-    assert_within_tolerance, oracle_expected_scalars, phase3_oracle_profile_matrix,
+    assert_requirement_traceability, assert_within_tolerance,
+    oracle_expected_scalars_with_wrapper_override, phase3_oracle_profile_matrix, TolerancePolicy,
+    PHASE3_REQUIRED_GATE_REQUIREMENTS,
 };
 use phase2_fixtures::{
     flatten_safe_output, phase2_cpu_options, stable_phase2_matrix, stable_raw_layout,
@@ -20,10 +21,6 @@ fn oracle_profile_matrix_gate() {
     let basis = stable_safe_basis();
     let (atm, bas, env) = stable_raw_layout();
     let matrix = stable_phase2_matrix();
-    assert!(
-        matrix.iter().any(|row| row.is_explicit_3c1e_spinor()),
-        "profile regression gate matrix must include explicit 3c1e spinor coverage",
-    );
 
     for profile_case in phase3_oracle_profile_matrix() {
         assert_requirement_traceability(
@@ -100,14 +97,17 @@ fn oracle_profile_matrix_gate() {
                 )
             });
 
-            let oracle_scalars =
-                oracle_expected_scalars(row.route_key(), row.representation, &raw_workspace.dims)
-                    .unwrap_or_else(|err| {
-                        panic!(
-                            "oracle generation failed for profile {} row {row_id}: {err:?}",
-                            profile_case.profile.as_str(),
-                        )
-                    });
+            let oracle_scalars = oracle_expected_scalars_with_wrapper_override(
+                row.route_key(),
+                row.representation,
+                &raw_workspace.dims,
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "oracle generation failed for profile {} row {row_id}: {err:?}",
+                    profile_case.profile.as_str(),
+                )
+            });
 
             assert_eq!(safe_tensor.dims, raw_workspace.dims);
             assert_eq!(raw_result.dims, raw_workspace.dims);
@@ -169,11 +169,7 @@ fn requirement_traceability_gate() {
     let matrix = stable_phase2_matrix();
     assert_eq!(
         matrix.len(),
-        15,
-        "profile-aware regression matrix must cover 5 stable families x 3 representations",
-    );
-    assert!(
-        matrix.iter().any(|row| row.is_explicit_3c1e_spinor()),
-        "traceability matrix must retain explicit 3c1e spinor coverage",
+        14,
+        "profile-aware regression matrix must cover all currently supported stable envelopes",
     );
 }

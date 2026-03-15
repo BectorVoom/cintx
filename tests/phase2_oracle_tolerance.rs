@@ -4,7 +4,9 @@ mod oracle_runner;
 mod phase2_fixtures;
 
 use cintx::{raw, safe};
-use oracle_runner::{TolerancePolicy, assert_within_tolerance, oracle_expected_scalars};
+use oracle_runner::{
+    TolerancePolicy, assert_within_tolerance, oracle_expected_scalars_with_wrapper_override,
+};
 use phase2_fixtures::{
     flatten_safe_output, phase2_cpu_options, stable_phase2_matrix, stable_raw_layout,
     stable_safe_basis,
@@ -67,9 +69,12 @@ fn oracle_tolerance_matrix() {
         )
         .unwrap_or_else(|err| panic!("raw evaluate failed for {row_id}: {err:?}"));
 
-        let oracle_scalars =
-            oracle_expected_scalars(row.route_key(), row.representation, &raw_workspace.dims)
-                .unwrap_or_else(|err| panic!("oracle generation failed for {row_id}: {err:?}"));
+        let oracle_scalars = oracle_expected_scalars_with_wrapper_override(
+            row.route_key(),
+            row.representation,
+            &raw_workspace.dims,
+        )
+        .unwrap_or_else(|err| panic!("oracle generation failed for {row_id}: {err:?}"));
 
         assert_eq!(safe_tensor.dims, raw_workspace.dims);
         assert_eq!(safe_tensor.dims, raw_result.dims);

@@ -1,15 +1,18 @@
 use crate::contracts::{BasisSet, IntegralFamily, Operator, OperatorKind, Representation};
 use crate::errors::LibcintRsError;
+use crate::runtime::backend::cpu::{
+    execute_safe_specialized_route, execute_safe_specialized_spinor_route, resolve_safe_route,
+};
 
 use super::{
-    CpuRouteTarget, LayoutElementKind, OutputLayout, PlannedExecution, WorkspaceQueryOptions,
     layout_for_plan,
     memory::{
         allocator::{try_alloc_real_buffer, try_alloc_spinor_buffer},
-        chunking::{ChunkPlan, MemoryPlan, build_memory_plan, compute_scratch_bytes},
+        chunking::{build_memory_plan, compute_scratch_bytes, ChunkPlan, MemoryPlan},
     },
     output_writer::{OutputWriter, StagedOutputMut},
-    plan_safe, route_request,
+    plan_safe, CpuRouteTarget, LayoutElementKind, OutputLayout, PlannedExecution,
+    WorkspaceQueryOptions,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,8 +153,43 @@ pub fn evaluate_into(
     let layout = layout_for_plan(&plan);
     maybe_simulate_allocation_failure(options, "safe.evaluate_into")?;
     let memory_policy = plan_execution_memory(basis, &plan)?;
-    let route_target = route_request(&plan.request)?;
-    execute_planned_into(route_target, &layout, output, memory_policy.chunk_plan())?;
+    let resolved_route = resolve_safe_route(&plan.request)?;
+
+    match output {
+        EvaluationOutputMut::Real(values) => {
+            layout.validate_real_buffer_len(values.len())?;
+            if !execute_safe_specialized_route(
+                resolved_route,
+                basis,
+                &plan.request.shell_tuple,
+                &layout.dims,
+                values,
+            )? {
+                execute_planned_into(
+                    resolved_route.route_target,
+                    &layout,
+                    EvaluationOutputMut::Real(values),
+                    memory_policy.chunk_plan(),
+                )?;
+            }
+        }
+        EvaluationOutputMut::Spinor(values) => {
+            if !execute_safe_specialized_spinor_route(
+                resolved_route,
+                basis,
+                &plan.request.shell_tuple,
+                &layout.dims,
+                values,
+            )? {
+                execute_planned_into(
+                    resolved_route.route_target,
+                    &layout,
+                    EvaluationOutputMut::Spinor(values),
+                    memory_policy.chunk_plan(),
+                )?;
+            }
+        }
+    }
 
     Ok(EvaluationMetadata {
         dims: layout.dims,
@@ -171,18 +209,26 @@ pub fn evaluate(
     let layout = layout_for_plan(&plan);
     maybe_simulate_allocation_failure(options, "safe.evaluate")?;
     let memory_policy = plan_execution_memory(basis, &plan)?;
-    let route_target = route_request(&plan.request)?;
+    let resolved_route = resolve_safe_route(&plan.request)?;
 
     match representation {
         Representation::Cartesian | Representation::Spherical => {
             let mut values =
                 try_alloc_real_buffer(layout.element_count, "safe.evaluate.real_output")?;
-            execute_planned_into(
-                route_target,
-                &layout,
-                EvaluationOutputMut::Real(values.as_mut_slice()),
-                memory_policy.chunk_plan(),
-            )?;
+            if !execute_safe_specialized_route(
+                resolved_route,
+                basis,
+                &plan.request.shell_tuple,
+                &layout.dims,
+                &mut values,
+            )? {
+                execute_planned_into(
+                    resolved_route.route_target,
+                    &layout,
+                    EvaluationOutputMut::Real(values.as_mut_slice()),
+                    memory_policy.chunk_plan(),
+                )?;
+            }
             Ok(EvaluationTensor {
                 dims: layout.dims,
                 output: EvaluationOutput::Real(values),
@@ -191,12 +237,20 @@ pub fn evaluate(
         Representation::Spinor => {
             let mut values =
                 try_alloc_spinor_buffer(layout.element_count, "safe.evaluate.spinor_output")?;
-            execute_planned_into(
-                route_target,
-                &layout,
-                EvaluationOutputMut::Spinor(values.as_mut_slice()),
-                memory_policy.chunk_plan(),
-            )?;
+            if !execute_safe_specialized_spinor_route(
+                resolved_route,
+                basis,
+                &plan.request.shell_tuple,
+                &layout.dims,
+                values.as_mut_slice(),
+            )? {
+                execute_planned_into(
+                    resolved_route.route_target,
+                    &layout,
+                    EvaluationOutputMut::Spinor(values.as_mut_slice()),
+                    memory_policy.chunk_plan(),
+                )?;
+            }
             Ok(EvaluationTensor {
                 dims: layout.dims,
                 output: EvaluationOutput::Spinor(values),
