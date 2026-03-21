@@ -1,7 +1,7 @@
 # Roadmap
 
 ## Phases
-- [ ] **Phase 1: Manifest & Planner Foundation** - Lock down typed domain models, manifest registry, and planner scaffolding so everything else has a deterministic catalog to build against.
+- [x] **Phase 1: Manifest & Planner Foundation** - Lock down typed domain models, manifest registry, and planner scaffolding so everything else has a deterministic catalog to build against.
 - [ ] **Phase 2: Execution & Compatibility Stabilization** - Wire the CubeCL-backed planner to the raw compat layer, including helper/legacy transforms, workspace queries, typed errors, and shape/optimizer guarantees.
 - [ ] **Phase 3: Safe Surface, C ABI Shim & Optional Families** - Layer the safe Rust façade, optional C shim, and feature-gated optional families on the stabilized runtime.
 - [ ] **Phase 4: Verification & Release Automation** - Close the manifest/oracle loop with CI, benchmarks, and diagnostics that block regressions before release.
@@ -55,7 +55,7 @@
 ## Progress
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| Phase 1: Manifest & Planner Foundation | 0/0 | Not started | - |
+| Phase 1: Manifest & Planner Foundation | 2/2 | Complete | 2026-03-21 |
 | Phase 2: Execution & Compatibility Stabilization | 0/0 | Not started | - |
 | Phase 3: Safe Surface, C ABI Shim & Optional Families | 0/0 | Not started | - |
 | Phase 4: Verification & Release Automation | 0/0 | Not started | - |
