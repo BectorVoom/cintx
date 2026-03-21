@@ -1,20 +1,24 @@
+use crate::dispatch::{
+    BackendExecutor, DispatchDecision, DispatchFamily, ExecutionIo, OutputOwnership, WorkspaceBytes,
+};
+use crate::metrics::{ExecutionStats, RunMetrics};
 use crate::options::ExecutionOptions;
+use crate::scheduler::schedule_chunks;
 use crate::validator::{ValidatedShellTuple, validate_shell_tuple};
 use crate::workspace::{
-    ChunkPlanner, DEFAULT_ALIGNMENT_BYTES, WorkspaceAllocator, WorkspaceQuery, WorkspaceRequest,
+    ChunkInfo, ChunkPlanner, DEFAULT_ALIGNMENT_BYTES, WorkspaceAllocator, WorkspaceQuery,
+    WorkspaceRequest,
 };
 use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
 use cintx_ops::resolver::{OperatorDescriptor, Resolver, ResolverError};
 use tracing::{debug, info_span};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ExecutionStats {
-    pub workspace_bytes: usize,
-    pub required_workspace_bytes: usize,
-    pub peak_workspace_bytes: usize,
-    pub chunk_count: usize,
-    pub planned_batches: usize,
-    pub fallback_reason: Option<&'static str>,
+pub struct OutputLayoutMetadata {
+    pub extents: Vec<usize>,
+    pub component_axis_leading: bool,
+    pub complex_interleaved: bool,
+    pub staging_elements: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -24,6 +28,9 @@ pub struct ExecutionPlan<'a> {
     pub representation: Representation,
     pub shells: ValidatedShellTuple,
     pub workspace: &'a WorkspaceQuery,
+    pub dispatch: DispatchDecision,
+    pub component_count: usize,
+    pub output_layout: OutputLayoutMetadata,
 }
 
 impl<'a> ExecutionPlan<'a> {
@@ -43,12 +50,20 @@ impl<'a> ExecutionPlan<'a> {
                 detail: "workspace query does not match the validated shell tuple".to_owned(),
             });
         }
+
+        let dispatch = DispatchDecision::from_manifest_family(descriptor.family())?;
+        let component_count = parse_component_multiplier(descriptor.entry.component_rank)?;
+        let output_layout = build_output_layout(&shells, rep, component_count)?;
+
         Ok(Self {
             basis,
             descriptor,
             representation: rep,
             shells,
             workspace,
+            dispatch,
+            component_count,
+            output_layout,
         })
     }
 }
@@ -111,6 +126,7 @@ pub fn evaluate(
     plan: ExecutionPlan<'_>,
     opts: &ExecutionOptions,
     allocator: &mut dyn WorkspaceAllocator,
+    executor: &dyn BackendExecutor,
 ) -> Result<ExecutionStats, cintxRsError> {
     let _parent = opts.trace_span.as_ref().map(tracing::Span::enter);
     let span = info_span!(
@@ -118,6 +134,7 @@ pub fn evaluate(
         operator = plan.descriptor.operator_name(),
         family = plan.descriptor.family(),
         representation = %plan.representation,
+        dispatch_family = ?plan.dispatch.family,
         profile = opts.profile_label.unwrap_or("default")
     );
     let _entered = span.enter();
@@ -129,34 +146,134 @@ pub fn evaluate(
         });
     }
 
-    let mut peak_workspace_bytes = 0usize;
+    if plan.dispatch.final_write != OutputOwnership::CompatFinalWrite {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "evaluate",
+            detail: "planner dispatch must preserve CompatFinalWrite ownership".to_owned(),
+        });
+    }
+    plan.dispatch.ensure_output_contract()?;
 
-    for chunk in &plan.workspace.chunks {
+    if !executor.supports(&plan) {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!(
+                "{}/{}/{}",
+                plan.descriptor.family(),
+                plan.descriptor.operator_name(),
+                plan.representation
+            ),
+        });
+    }
+
+    let backend_workspace = executor.query_workspace(&plan)?.get();
+    if backend_workspace > plan.workspace.bytes {
+        return Err(cintxRsError::MemoryLimitExceeded {
+            requested: backend_workspace,
+            limit: plan.workspace.bytes,
+        });
+    }
+
+    let schedule = schedule_chunks(plan.workspace);
+    let mut metrics = RunMetrics::default();
+
+    for chunk in schedule.chunks() {
         debug!(
             chunk_index = chunk.index,
             chunk_bytes = chunk.bytes,
             chunk_work_units = chunk.work_unit_count,
+            dispatch_family = ?plan.dispatch.family,
+            output_contract = "staging-only",
             fallback_reason = plan.workspace.fallback_reason.unwrap_or("none"),
-            "executing planned chunk"
+            "executing runtime-owned scheduled chunk"
         );
-        let buffer = allocator.try_alloc(chunk.bytes, plan.workspace.alignment)?;
-        peak_workspace_bytes = peak_workspace_bytes.max(buffer.len());
-        allocator.release(buffer);
+
+        let mut workspace = allocator.try_alloc(chunk.bytes, plan.workspace.alignment)?;
+        let mut staging = try_alloc_staging(staging_elements_for_chunk(&plan, chunk)?)?;
+
+        {
+            let mut io = ExecutionIo::new(chunk, staging.as_mut_slice(), &mut workspace, plan.dispatch)?;
+            io.ensure_output_contract()?;
+
+            let backend_stats = executor.execute(&plan, &mut io)?;
+            io.ensure_output_contract()?;
+
+            metrics.observe_transfer_bytes(io.transfer_bytes());
+            metrics.observe_not0(io.not0());
+            metrics.merge_backend_stats(&backend_stats);
+        }
+
+        metrics.observe_chunk(chunk, workspace.len());
+        allocator.release(workspace);
     }
 
-    Ok(ExecutionStats {
-        workspace_bytes: plan.workspace.bytes,
-        required_workspace_bytes: plan.workspace.required_bytes,
-        peak_workspace_bytes,
-        chunk_count: plan.workspace.chunks.len(),
-        planned_batches: plan
-            .workspace
-            .chunks
-            .iter()
-            .map(|chunk| chunk.work_unit_count)
-            .sum(),
-        fallback_reason: plan.workspace.fallback_reason,
+    Ok(metrics.finish(plan.workspace))
+}
+
+fn build_output_layout(
+    shells: &ValidatedShellTuple,
+    representation: Representation,
+    component_count: usize,
+) -> Result<OutputLayoutMetadata, cintxRsError> {
+    let extents: Vec<usize> = shells
+        .as_slice()
+        .iter()
+        .map(|shell| shell.ao_per_shell())
+        .collect();
+    let base_elements = extents
+        .iter()
+        .try_fold(1usize, |acc, extent| acc.checked_mul(*extent))
+        .ok_or_else(|| cintxRsError::ChunkPlanFailed {
+            from: "layout",
+            detail: "output extent product overflowed usize".to_owned(),
+        })?;
+    let complex_multiplier = if matches!(representation, Representation::Spinor) {
+        2usize
+    } else {
+        1usize
+    };
+    let staging_elements = base_elements
+        .checked_mul(component_count)
+        .and_then(|value| value.checked_mul(complex_multiplier))
+        .ok_or_else(|| cintxRsError::ChunkPlanFailed {
+            from: "layout",
+            detail: "staging element count overflowed usize".to_owned(),
+        })?;
+
+    Ok(OutputLayoutMetadata {
+        extents,
+        component_axis_leading: true,
+        complex_interleaved: complex_multiplier == 2,
+        staging_elements,
     })
+}
+
+fn staging_elements_for_chunk(plan: &ExecutionPlan<'_>, chunk: &ChunkInfo) -> Result<usize, cintxRsError> {
+    let total_units = plan.workspace.work_units.max(1);
+    let start = chunk.work_unit_start.min(total_units);
+    let end = chunk
+        .work_unit_start
+        .checked_add(chunk.work_unit_count)
+        .ok_or_else(|| cintxRsError::ChunkPlanFailed {
+            from: "layout",
+            detail: "chunk work unit range overflowed usize".to_owned(),
+        })?
+        .min(total_units);
+
+    let prefix = plan.output_layout.staging_elements.saturating_mul(start) / total_units;
+    let suffix = plan.output_layout.staging_elements.saturating_mul(end) / total_units;
+    Ok(suffix.saturating_sub(prefix).max(1))
+}
+
+fn try_alloc_staging(elements: usize) -> Result<Vec<f64>, cintxRsError> {
+    let bytes = elements
+        .checked_mul(std::mem::size_of::<f64>())
+        .ok_or(cintxRsError::HostAllocationFailed { bytes: usize::MAX })?;
+    let mut staging = Vec::new();
+    staging
+        .try_reserve_exact(elements)
+        .map_err(|_| cintxRsError::HostAllocationFailed { bytes })?;
+    staging.resize(elements, 0.0);
+    Ok(staging)
 }
 
 fn estimate_workspace_request(
@@ -197,9 +314,7 @@ fn estimate_workspace_request(
             detail: "workspace byte estimate overflowed usize".to_owned(),
         })?;
     let work_units = shells.work_units();
-    let min_chunk_bytes = required_bytes
-        .div_ceil(work_units)
-        .max(DEFAULT_ALIGNMENT_BYTES);
+    let min_chunk_bytes = required_bytes.div_ceil(work_units).max(DEFAULT_ALIGNMENT_BYTES);
 
     Ok(WorkspaceRequest {
         required_bytes,
@@ -273,6 +388,54 @@ mod tests {
     use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
     use std::sync::Arc;
 
+    #[derive(Debug, Default)]
+    struct MockBackend {
+        supports: bool,
+    }
+
+    impl BackendExecutor for MockBackend {
+        fn supports(&self, _plan: &ExecutionPlan<'_>) -> bool {
+            self.supports
+        }
+
+        fn query_workspace(
+            &self,
+            plan: &ExecutionPlan<'_>,
+        ) -> Result<WorkspaceBytes, cintxRsError> {
+            Ok(WorkspaceBytes(plan.workspace.bytes))
+        }
+
+        fn execute(
+            &self,
+            plan: &ExecutionPlan<'_>,
+            io: &mut ExecutionIo<'_>,
+        ) -> Result<ExecutionStats, cintxRsError> {
+            let transfer_bytes = {
+                let staging = io.staging_output();
+                if let Some(first) = staging.first_mut() {
+                    *first = 1.0;
+                }
+                staging.len().saturating_mul(std::mem::size_of::<f64>())
+            };
+            let not0 = io.chunk().work_unit_count as i32;
+            let peak_workspace_bytes = io.workspace().len();
+
+            io.record_transfer_bytes(transfer_bytes);
+            io.record_not0(not0);
+
+            Ok(ExecutionStats {
+                workspace_bytes: plan.workspace.bytes,
+                required_workspace_bytes: plan.workspace.required_bytes,
+                peak_workspace_bytes,
+                chunk_count: 1,
+                planned_batches: io.chunk().work_unit_count,
+                transfer_bytes,
+                not0,
+                fallback_reason: plan.workspace.fallback_reason,
+            })
+        }
+    }
+
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_vec().into_boxed_slice())
     }
@@ -326,13 +489,20 @@ mod tests {
             &query,
         )
         .expect("plan should build");
+        assert_eq!(plan.dispatch.family, DispatchFamily::OneElectron);
+        assert_eq!(plan.dispatch.final_write, OutputOwnership::CompatFinalWrite);
+
         let mut allocator = HostWorkspaceAllocator::default();
-        let stats = evaluate(plan, &opts, &mut allocator).expect("evaluation should succeed");
+        let backend = MockBackend { supports: true };
+        let stats = evaluate(plan, &opts, &mut allocator, &backend)
+            .expect("evaluation should succeed");
 
         assert_eq!(stats.workspace_bytes, query.bytes);
         assert_eq!(stats.chunk_count, query.chunk_count);
         assert_eq!(stats.fallback_reason, Some("memory_limit"));
         assert_eq!(stats.planned_batches, query.work_units);
+        assert!(stats.transfer_bytes > 0);
+        assert!(stats.not0 > 0);
         assert!(allocator.allocations() >= query.chunk_count);
     }
 
@@ -391,7 +561,46 @@ mod tests {
             ..ExecutionOptions::default()
         };
         let mut allocator = HostWorkspaceAllocator::default();
-        let err = evaluate(plan, &eval_opts, &mut allocator).unwrap_err();
+        let backend = MockBackend { supports: true };
+        let err = evaluate(plan, &eval_opts, &mut allocator, &backend).unwrap_err();
+
+        assert!(matches!(
+            err,
+            cintxRsError::ChunkPlanFailed {
+                from: "evaluate",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn evaluate_rejects_dispatch_paths_that_skip_compat_final_write() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            ..ExecutionOptions::default()
+        };
+        let query = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .expect("workspace query should succeed");
+        let mut plan = ExecutionPlan::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .expect("plan should build");
+        plan.dispatch.final_write = OutputOwnership::BackendStagingOnly;
+
+        let mut allocator = HostWorkspaceAllocator::default();
+        let backend = MockBackend { supports: true };
+        let err = evaluate(plan, &opts, &mut allocator, &backend).unwrap_err();
 
         assert!(matches!(
             err,
