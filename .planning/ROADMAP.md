@@ -33,7 +33,7 @@ Plans:
 - [x] 02-PLAN.md - Activate the Phase 2 workspace members and wire compat-to-CubeCL plus oracle-to-compat crate dependencies.
 - [x] 03-PLAN.md - Expand the canonical manifest and public error surface for helper/legacy coverage plus typed raw failures.
 - [x] 04-PLAN.md - Add the backend-neutral runtime execution contract, deterministic scheduling, and runtime-owned execution metrics.
-- [ ] 05-PLAN.md - Implement the CubeCL executor core and the `1e`/`2e`/`2c2e` kernel slice.
+- [x] 05-PLAN.md - Implement the CubeCL executor core and the `1e`/`2e`/`2c2e` kernel slice.
 - [ ] 06-PLAN.md - Build the raw compat query/evaluate pipeline and enforce no-partial-write layout rules.
 - [ ] 07-PLAN.md - Add helper/transform/optimizer/legacy compat APIs and oracle parity coverage.
 - [ ] 08-PLAN.md - Finish the `3c1e`/`3c2e` CubeCL kernels and cart/sph/spinor transform routing.
