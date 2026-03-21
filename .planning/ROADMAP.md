@@ -1,88 +1,61 @@
-# Roadmap: libcint-rs
-
-## Overview
-
-This roadmap delivers libcint-compatible results in a Rust-first library by sequencing typed contract foundations, CPU correctness parity, compatibility proof gates, and finally optional acceleration and migration surfaces.
+# Roadmap
 
 ## Phases
-
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
-
-Decimal phases appear between their surrounding integers in numeric order.
-
-- [x] **Phase 1: Contracts and Typed Foundations** - Establish safe typed models, workspace introspection, and typed error diagnostics.
-- [x] **Phase 2: CPU Compatibility Execution** - Deliver stable-family CPU execution through safe and raw APIs with memory guarantees.
-- [x] **Phase 3: Verification and Compatibility Governance** - Prove compatibility claims with helper parity, manifest governance, and CI release gates.
-- [ ] **Phase 4: Optional Backends and Migration Surfaces** - Add opt-in GPU acceleration, C ABI migration shim, and optional family support envelopes.
+- [ ] **Phase 1: Manifest & Planner Foundation** - Lock down typed domain models, manifest registry, and planner scaffolding so everything else has a deterministic catalog to build against.
+- [ ] **Phase 2: Execution & Compatibility Stabilization** - Wire the CubeCL-backed planner to the raw compat layer, including helper/legacy transforms, workspace queries, typed errors, and shape/optimizer guarantees.
+- [ ] **Phase 3: Safe Surface, C ABI Shim & Optional Families** - Layer the safe Rust façade, optional C shim, and feature-gated optional families on the stabilized runtime.
+- [ ] **Phase 4: Verification & Release Automation** - Close the manifest/oracle loop with CI, benchmarks, and diagnostics that block regressions before release.
 
 ## Phase Details
 
-### Phase 1: Contracts and Typed Foundations
-**Goal:** Users can prepare and validate integral requests through typed Rust contracts with deterministic workspace requirements and diagnosable failures.
-**Depends on:** Nothing (first phase)
-**Requirements**: SAFE-01, SAFE-02, SAFE-04, MEM-03
+### Phase 1: Manifest & Planner Foundation
+**Goal**: Establish the typed domain structures, manifest lock, registry, and planner foundations that every later layer consumes.
+**Depends on**: Nothing
+**Requirements**: BASE-01, BASE-02, BASE-03
 **Success Criteria** (what must be TRUE):
-  1. User can construct `Atom`, `Shell`, and basis/environment inputs through typed APIs without raw pointer arithmetic.
-  2. User can call `query_workspace` and receive deterministic workspace sizing before evaluation.
-  3. User receives typed errors that distinguish unsupported API, input-layout failure, memory failure, and backend execution failure.
-  4. User can diagnose failures via structured error messages and trace metadata.
-**Plans**: 2
-- [x] 01-01: Typed domain contracts and error taxonomy
-- [x] 01-02: Workspace query and diagnostics contract
+  1. Maintainers can instantiate atoms, shells, basis sets, environment parameters, operator IDs, and tensor layouts through the typed Rust structures defined in the manifest (BASE-01).
+  2. The manifest generation pipeline emits a lock that classifies stable, optional, and unstable-source families across the support matrix and becomes the canonical input for downstream gating (BASE-02).
+  3. The manifest-aware registry resolves which integral families and representations are available without depending on raw symbol names, so consumers can pick kernels declaratively (BASE-03).
+**Plans**: TBD
 
-### Phase 2: CPU Compatibility Execution
-**Goal:** Users can run supported stable-family integrals on CPU via both safe and raw interfaces while preserving explicit memory-limit behavior.
-**Depends on:** Phase 1
-**Requirements**: COMP-01, RAW-01, RAW-02, RAW-03, SAFE-03, MEM-01, MEM-02, EXEC-01
+### Phase 2: Execution & Compatibility Stabilization
+**Goal**: Prove the CubeCL-backed planner and compat/API surface can consume the manifest, honor workspace queries, handle memory limits, and deliver upstream-compatible outputs.
+**Depends on**: Phase 1
+**Requirements**: COMP-01, COMP-02, COMP-03, COMP-05, EXEC-02, EXEC-03, EXEC-04, EXEC-05
 **Success Criteria** (what must be TRUE):
-  1. User can evaluate stable-family integrals (`1e/2e/2c2e/3c1e/3c2e`) through safe APIs and get oracle-tolerance results across cart/sph/spinor representations.
-  2. User can call raw APIs with libcint-compatible `atm/bas/env`, `shls`, `dims`, `cache`, and `opt` contracts, including workspace query then execution flow.
-  3. User gets explicit failures for incompatible `dims` or buffer shapes, and the runtime never performs silent truncation or partial writes.
-  4. User can set `memory_limit_bytes` and observe chunked execution or explicit `MemoryLimitExceeded`, with no unhandled OOM abort in supported paths.
-**Plans**: 9
-- [x] 02-01: CPU linkage and shared execution request model
-- [x] 02-02: Raw validation boundary (views + validator)
-- [x] 02-03: Safe evaluate and no-partial-write execution path
-- [x] 02-04: Runtime memory core (allocator + chunking)
-- [x] 02-05: Phase-close matrix/oracle/failure evidence
-- [x] 02-06: CPU router + `3c1e` spinor compatibility envelope
-- [x] 02-07: Raw query/evaluate integration
-- [x] 02-08: API memory threading + allocation failure contracts
-- [x] 02-09: Execution-request normalization gap closure and verification rerun
+  1. Compat callers can invoke the raw APIs with the documented `atm/bas/env/shls/dims/opt/cache` inputs and reach the helper/legacy/transform symbols preserved in the manifest (COMP-01, COMP-03).
+  2. Workspace and output query helpers return buffer sizes and workspace estimates before evaluation, letting callers plan allocations safely (COMP-02).
+  3. The CubeCL-backed planner evaluates the 1e, 2e, 2c2e, 3c1e, and 3c2e families through the shared backend, selecting kernels based on the manifest registry (EXEC-02).
+  4. Memory-limited runs chunk deterministically, surface typed `MemoryLimitExceeded` or `UnsupportedApi`, and never write partial results, keeping validation failures explicit (EXEC-03, COMP-05).
+  5. Outputs appear with the expected cart/sph/spinor shapes and ordering and stay numerically equivalent whether optimizer support is toggled (EXEC-04, EXEC-05).
+**Plans**: TBD
 
-### Phase 3: Verification and Compatibility Governance
-**Goal:** Users can trust compatibility claims because helper parity, API coverage claims, and regression protection are automated and enforceable.
-**Depends on:** Phase 2
-**Requirements**: COMP-02, COMP-03, COMP-04, RAW-04, VERI-01, VERI-02, VERI-03
+### Phase 3: Safe Surface, C ABI Shim & Optional Families
+**Goal**: Expose the safe Rust façade, optional C shim, and gated optional families once the runtime is stable.
+**Depends on**: Phase 2
+**Requirements**: EXEC-01, COMP-04, OPT-01, OPT-02, OPT-03
 **Success Criteria** (what must be TRUE):
-  1. User gets helper/transform parity (AO counts, offsets, normalization, cart/sph/spinor transforms) required by migration workflows.
-  2. User can inspect manifest-backed API coverage where each supported symbol is tied to an explicit support profile and stability level.
-  3. User can trust releases because CI blocks unapproved compiled-manifest lock drift and oracle-regression failures across supported profiles.
-  4. User receives regression protection for optimizer on/off numerical equivalence plus spinor/layout and OOM/error-path semantics.
-**Plans**: 4
-- [x] 03-01: Helper and transform parity foundation
-- [x] 03-02: Manifest governance lock and drift contract
-- [x] 03-03: Optimizer equivalence and regression-gate matrix
-- [x] 03-04: CI governance gates and traceable release policy
+  1. The safe Rust API splits `query_workspace()` from `evaluate()`, letting callers observe workspace needs before committing to execution (EXEC-01).
+  2. The optional C ABI shim accepts compat-style inputs, returns integer status codes, and exposes thread-local last-error details for C integrators (COMP-04).
+  3. `with-f12`, `with-4c1e`, and other optional-family gates only enable validated envelopes and emit `UnsupportedApi` for out-of-envelope arguments (OPT-01, OPT-02).
+  4. Source-only APIs stay behind `unstable-source-api` so the GA surface remains stable until the maintainer intentionally enables those symbols (OPT-03).
+**Plans**: TBD
 
-### Phase 4: Optional Backends and Migration Surfaces
-**Goal:** Users can opt into acceleration and migration extensions without weakening baseline safety, compatibility, or explicit support boundaries.
-**Depends on:** Phase 3
-**Requirements**: EXEC-02, EXEC-03, ABIC-01, OPTF-01, OPTF-02
+### Phase 4: Verification & Release Automation
+**Goal**: Close the manifest/oracle verification loop, run multi-profile CI/benchmarks, and surface diagnostics that block regressions before release.
+**Depends on**: Phase 3
+**Requirements**: VERI-01, VERI-02, VERI-03, VERI-04
 **Success Criteria** (what must be TRUE):
-  1. User can enable CubeCL acceleration through feature flags and gets deterministic CPU fallback when workloads are unsupported or unfavorable.
-  2. User can inspect backend dispatch and fallback reasons through tracing output for each execution path.
-  3. User can opt into a C ABI shim with status-code calls and last-error retrieval for phased migration.
-  4. User can opt into `with-f12` and `with-4c1e` only within validated support envelopes, and out-of-envelope usage returns explicit unsupported errors.
+  1. The oracle suite compares the stable and optional APIs against upstream libcint per manifest family with documented tolerances and flags regressions (VERI-01).
+  2. CI workflows block manifest drift, helper/legacy parity regressions, CubeCL consistency failures, and OOM contract violations before merges land (VERI-02).
+  3. Benchmarks capture throughput, memory usage, and CPU-GPU crossover regressions for trend tracking (VERI-03).
+  4. Tracing and diagnostics expose planner chunking, fallback, transfer, and OOM behavior for manual inspection (VERI-04).
 **Plans**: TBD
 
 ## Progress
-
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Contracts and Typed Foundations | 2/2 | Complete    | 2026-03-14 |
-| 2. CPU Compatibility Execution | 9/9 | Complete | 2026-03-14 |
-| 3. Verification and Compatibility Governance | 4/4 | Complete    | 2026-03-14 |
-| 4. Optional Backends and Migration Surfaces | 0/TBD | Not started | - |
+| Phase 1: Manifest & Planner Foundation | 0/0 | Not started | - |
+| Phase 2: Execution & Compatibility Stabilization | 0/0 | Not started | - |
+| Phase 3: Safe Surface, C ABI Shim & Optional Families | 0/0 | Not started | - |
+| Phase 4: Verification & Release Automation | 0/0 | Not started | - |

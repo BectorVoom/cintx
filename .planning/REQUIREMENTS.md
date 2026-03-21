@@ -68,31 +68,31 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BASE-01 | TBD | Pending roadmap |
-| BASE-02 | TBD | Pending roadmap |
-| BASE-03 | TBD | Pending roadmap |
-| COMP-01 | TBD | Pending roadmap |
-| COMP-02 | TBD | Pending roadmap |
-| COMP-03 | TBD | Pending roadmap |
-| COMP-04 | TBD | Pending roadmap |
-| COMP-05 | TBD | Pending roadmap |
-| EXEC-01 | TBD | Pending roadmap |
-| EXEC-02 | TBD | Pending roadmap |
-| EXEC-03 | TBD | Pending roadmap |
-| EXEC-04 | TBD | Pending roadmap |
-| EXEC-05 | TBD | Pending roadmap |
-| OPT-01 | TBD | Pending roadmap |
-| OPT-02 | TBD | Pending roadmap |
-| OPT-03 | TBD | Pending roadmap |
-| VERI-01 | TBD | Pending roadmap |
-| VERI-02 | TBD | Pending roadmap |
-| VERI-03 | TBD | Pending roadmap |
-| VERI-04 | TBD | Pending roadmap |
+| BASE-01 | Phase 1 | Pending |
+| BASE-02 | Phase 1 | Pending |
+| BASE-03 | Phase 1 | Pending |
+| COMP-01 | Phase 2 | Pending |
+| COMP-02 | Phase 2 | Pending |
+| COMP-03 | Phase 2 | Pending |
+| COMP-04 | Phase 3 | Pending |
+| COMP-05 | Phase 2 | Pending |
+| EXEC-01 | Phase 3 | Pending |
+| EXEC-02 | Phase 2 | Pending |
+| EXEC-03 | Phase 2 | Pending |
+| EXEC-04 | Phase 2 | Pending |
+| EXEC-05 | Phase 2 | Pending |
+| OPT-01 | Phase 3 | Pending |
+| OPT-02 | Phase 3 | Pending |
+| OPT-03 | Phase 3 | Pending |
+| VERI-01 | Phase 4 | Pending |
+| VERI-02 | Phase 4 | Pending |
+| VERI-03 | Phase 4 | Pending |
+| VERI-04 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
