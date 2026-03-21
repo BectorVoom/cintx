@@ -22,14 +22,15 @@ requirements:
 must_haves:
   truths:
     - "The CubeCL backend exposes a concrete `CubeClExecutor` type that later compat work can instantiate through the explicit Wave 1 crate dependency."
+    - "Phase 2 pins the initial executable CubeCL runtime profile to `cpu` (`CUBECL_RUNTIME_PROFILE = \"cpu\"`) for deterministic local/CI bring-up, and later verification steps reuse this baseline unless explicitly overridden."
     - "The CubeCL backend can execute the first base-family slice `1e`, `2e`, and `2c2e` instead of stopping at executor scaffolding."
-    - "Resident-cache and transfer planning stay inside `cintx-cubecl`, keep host work limited to marshaling/copy orchestration, and continue to fail with typed allocation errors."
+    - "Resident-cache and transfer planning stay inside `cintx-cubecl`, keep host work limited to marshaling/copy orchestration, and continue to fail with typed allocation errors while returning staging-only output buffers/metadata to compat."
   artifacts:
     - path: crates/cintx-cubecl/src/executor.rs
       provides: "Concrete `CubeClExecutor` implementation of the runtime `BackendExecutor` contract."
       min_lines: 120
     - path: crates/cintx-cubecl/src/transfer.rs
-      provides: "Transfer planning for shell metadata, workspace buffers, and output slices."
+      provides: "Transfer planning for shell metadata, workspace buffers, and staging-only output buffers/metadata (no caller-visible final writes)."
       min_lines: 60
     - path: crates/cintx-cubecl/src/kernels/one_electron.rs
       provides: "CubeCL kernel entry points and launch wiring for manifest `1e` families."
@@ -43,8 +44,8 @@ must_haves:
   key_links:
     - from: crates/cintx-cubecl/src/executor.rs
       to: crates/cintx-cubecl/src/transfer.rs
-      via: "The concrete backend stages metadata, workspace, and output buffers through a transfer plan without bypassing the fallible allocation contract."
-      pattern: "TransferPlan"
+      via: "The concrete backend stages metadata, workspace, and staging output buffers through a transfer plan without bypassing the fallible allocation contract or taking ownership of caller-visible final writes."
+      pattern: "TransferPlan|staging|OutputOwnership"
     - from: crates/cintx-cubecl/src/executor.rs
       to: crates/cintx-cubecl/src/resident_cache.rs
       via: "Executor launches reuse device-resident metadata through the basis/device cache instead of rebuilding state for every chunk."
@@ -86,17 +87,19 @@ Output: `CubeClExecutor` core plus the `1e`/`2e`/`2c2e` family kernel registry.
   <files>crates/cintx-cubecl/src/lib.rs, crates/cintx-cubecl/src/executor.rs, crates/cintx-cubecl/src/resident_cache.rs, crates/cintx-cubecl/src/specialization.rs, crates/cintx-cubecl/src/transfer.rs</files>
   <read_first>crates/cintx-cubecl/src/lib.rs, crates/cintx-cubecl/src/executor.rs, crates/cintx-cubecl/src/resident_cache.rs, crates/cintx-cubecl/src/specialization.rs, crates/cintx-cubecl/src/transfer.rs, crates/cintx-runtime/src/dispatch.rs, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md, AGENTS.md</read_first>
   <action>
-Implement the CubeCL backend core in the `cubecl 0.9.0` line only. In `executor.rs`, add `CubeClExecutor` that implements `BackendExecutor`, exports a concrete constructor the compat crate can call later, and refuses unsupported families through `cintxRsError::UnsupportedApi`. In `specialization.rs`, define a `SpecializationKey` that includes canonical family, representation, component rank, and shell angular-momentum tuple so family kernels can specialize without leaking raw symbol names. In `resident_cache.rs`, add a basis/device-scoped resident metadata cache keyed by basis hash plus representation. In `transfer.rs`, add a `TransferPlan` that stages shell metadata, workspace buffers, and output slices while keeping host CPU work limited to validation, marshaling, and copy orchestration. Keep `center_4c1e` unsupported in this phase even if a stub file exists, and ensure allocation/transfer failures map to `HostAllocationFailed` or `DeviceOutOfMemory` rather than ad hoc errors. Update `lib.rs` exports and add focused unit tests around specialization keys and executor family support.
+Implement the CubeCL backend core in the `cubecl 0.9.0` line only. In `executor.rs`, add `CubeClExecutor` that implements `BackendExecutor`, exports a concrete constructor the compat crate can call later, and refuses unsupported families through `cintxRsError::UnsupportedApi`. Define and use `pub const CUBECL_RUNTIME_PROFILE: &str = "cpu";` as the initial Phase 2 runtime baseline and thread this choice through executor construction/tests so later oracle checks can reference one concrete runtime path. In `specialization.rs`, define a `SpecializationKey` that includes canonical family, representation, component rank, and shell angular-momentum tuple so family kernels can specialize without leaking raw symbol names. In `resident_cache.rs`, add a basis/device-scoped resident metadata cache keyed by basis hash plus representation. In `transfer.rs`, add a `TransferPlan` that stages shell metadata, workspace buffers, and staging output buffers/metadata while keeping host CPU work limited to validation, marshaling, and copy orchestration; do not allow `transfer.rs` or `executor.rs` to own final caller-visible flat writes. Keep `center_4c1e` unsupported in this phase even if a stub file exists, and ensure allocation/transfer failures map to `HostAllocationFailed` or `DeviceOutOfMemory` rather than ad hoc errors. Update `lib.rs` exports and add focused unit tests around specialization keys, runtime-profile selection, and executor family support.
   </action>
   <acceptance_criteria>
     - `rg -n "struct CubeClExecutor" crates/cintx-cubecl/src/executor.rs`
     - `rg -n "impl BackendExecutor for CubeClExecutor" crates/cintx-cubecl/src/executor.rs`
+    - `rg -n "CUBECL_RUNTIME_PROFILE\\s*:\\s*&str\\s*=\\s*\"cpu\"" crates/cintx-cubecl/src/executor.rs`
     - `rg -n "struct SpecializationKey" crates/cintx-cubecl/src/specialization.rs`
     - `rg -n "struct TransferPlan" crates/cintx-cubecl/src/transfer.rs`
+    - `rg -n "staging|OutputOwnership|CompatFinalWrite" crates/cintx-cubecl/src/executor.rs crates/cintx-cubecl/src/transfer.rs`
     - `rg -n "DeviceResidentCache|ResidentCache" crates/cintx-cubecl/src/resident_cache.rs`
   </acceptance_criteria>
   <verify>
-    <automated>cargo test -p cintx-cubecl --lib</automated>
+    <automated>CINTX_CUBECL_RUNTIME=cpu cargo test -p cintx-cubecl --lib</automated>
   </verify>
   <done>The CubeCL backend core exists, plugs into runtime through `BackendExecutor`, and exposes the concrete executor surface that later compat work will call without broadening support beyond the locked Phase 2 scope.</done>
 </task>
@@ -115,7 +118,7 @@ Replace the kernel stubs for `1e`, `2e`, and `2c2e` with concrete family launch 
     - `rg -n "center_4c1e|center_3c1e|center_3c2e" crates/cintx-cubecl/src/kernels/mod.rs`
   </acceptance_criteria>
   <verify>
-    <automated>cargo test -p cintx-cubecl --lib</automated>
+    <automated>CINTX_CUBECL_RUNTIME=cpu cargo test -p cintx-cubecl --lib</automated>
   </verify>
   <done>The CubeCL backend has concrete family launch paths for `1e`, `2e`, and `2c2e`, and the family registry continues to fail closed for unsupported families until the follow-on plan lands.</done>
 </task>
@@ -123,11 +126,11 @@ Replace the kernel stubs for `1e`, `2e`, and `2c2e` with concrete family launch 
 </tasks>
 
 <verification>
-Run the CubeCL library tests after both tasks to prove the executor core, cache/transfer pipeline, and the first family registry slice all compile and agree on supported-family selection.
+Run the CubeCL library tests with `CINTX_CUBECL_RUNTIME=cpu` after both tasks to prove the executor core, cache/transfer pipeline, and the first family registry slice all compile and agree on supported-family selection.
 </verification>
 
 <success_criteria>
-The CubeCL backend exposes a concrete executor, stages device/cache/transfer state explicitly, and executes the `1e`/`2e`/`2c2e` slice without expanding Phase 2 to unsupported families.
+The CubeCL backend exposes a concrete executor, pins the initial runtime path to `cpu`, stages device/cache/transfer state explicitly as staging-only output, and executes the `1e`/`2e`/`2c2e` slice without expanding Phase 2 to unsupported families.
 </success_criteria>
 
 <output>

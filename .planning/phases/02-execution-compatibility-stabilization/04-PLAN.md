@@ -20,6 +20,7 @@ must_haves:
   truths:
     - "The shared runtime no longer stops at allocation rehearsal; it can hand validated chunk plans to a backend-neutral execution contract."
     - "Execution dispatch metadata, chunk ordering, and run metrics stay runtime-owned so compat and later safe APIs share one planner path."
+    - "The runtime contract explicitly declares backend output ownership as staging-only (`BackendStagingOnly`) and reserves final caller-visible flat writes for `cintx-compat::layout` (`CompatFinalWrite`) before CubeCL family work starts."
     - "Memory-limit chunking remains authoritative: no backend launch or output write begins before runtime validation, workspace sizing, and allocation all succeed."
   artifacts:
     - path: crates/cintx-runtime/src/dispatch.rs
@@ -47,6 +48,10 @@ must_haves:
       to: crates/cintx-runtime/src/metrics.rs
       via: "Runtime evaluation reports chunk count, workspace bytes, transfer bytes, and `not0` through shared metrics."
       pattern: "transfer_bytes|not0|chunk_count"
+    - from: crates/cintx-runtime/src/dispatch.rs
+      to: crates/cintx-compat/src/layout.rs
+      via: "Dispatch/output contract states backend returns staging buffers only and compat owns final flat writes, so later plans cannot split caller-visible write ownership."
+      pattern: "OutputOwnership|BackendStagingOnly|CompatFinalWrite"
 ---
 
 <objective>
@@ -110,12 +115,13 @@ pub trait BackendExecutor {
   <files>crates/cintx-runtime/src/lib.rs, crates/cintx-runtime/src/dispatch.rs</files>
   <read_first>crates/cintx-runtime/src/lib.rs, crates/cintx-runtime/src/dispatch.rs, crates/cintx-runtime/src/planner.rs, docs/design/cintx_detailed_design.md §5.2 and §7.1-7.8, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
   <action>
-In `dispatch.rs`, define `BackendExecutor` exactly around `supports`, `query_workspace`, and `execute`, plus `ExecutionIo<'a>`, `WorkspaceBytes`, `DispatchDecision`, and a `DispatchFamily` enum that covers exactly `OneElectron`, `TwoElectron`, `Center2c2e`, `Center3c1e`, and `Center3c2e`. Keep the trait backend-neutral: no CubeCL types, client handles, or device-specific caches in `cintx-runtime`. Update `lib.rs` exports so later plans can import the execution contract directly from `cintx_runtime`.
+In `dispatch.rs`, define `BackendExecutor` exactly around `supports`, `query_workspace`, and `execute`, plus `ExecutionIo<'a>`, `WorkspaceBytes`, `DispatchDecision`, and a `DispatchFamily` enum that covers exactly `OneElectron`, `TwoElectron`, `Center2c2e`, `Center3c1e`, and `Center3c2e`. Also define an explicit output-ownership contract in runtime with concrete values `OutputOwnership::BackendStagingOnly` and `OutputOwnership::CompatFinalWrite`, and wire it into `DispatchDecision` and `ExecutionIo` so backend execution can only fill staging buffers/metadata and cannot own caller-visible flat writes. Keep the trait backend-neutral: no CubeCL types, client handles, or device-specific caches in `cintx-runtime`. Update `lib.rs` exports so later plans can import the execution contract directly from `cintx_runtime`.
   </action>
   <acceptance_criteria>
     - `rg -n "trait BackendExecutor" crates/cintx-runtime/src/dispatch.rs`
     - `rg -n "enum DispatchFamily" crates/cintx-runtime/src/dispatch.rs`
     - `rg -n "struct ExecutionIo" crates/cintx-runtime/src/dispatch.rs`
+    - `rg -n "enum OutputOwnership|BackendStagingOnly|CompatFinalWrite" crates/cintx-runtime/src/dispatch.rs`
     - `rg -n "pub use .*BackendExecutor|pub use .*DispatchDecision" crates/cintx-runtime/src/lib.rs`
   </acceptance_criteria>
   <verify>
@@ -129,10 +135,11 @@ In `dispatch.rs`, define `BackendExecutor` exactly around `supports`, `query_wor
   <files>crates/cintx-runtime/src/planner.rs, crates/cintx-runtime/src/metrics.rs, crates/cintx-runtime/src/scheduler.rs</files>
   <read_first>crates/cintx-runtime/src/planner.rs, crates/cintx-runtime/src/metrics.rs, crates/cintx-runtime/src/scheduler.rs, crates/cintx-runtime/src/workspace.rs, crates/cintx-runtime/src/dispatch.rs, docs/design/cintx_detailed_design.md §5.2 and §7.1-7.8, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
   <action>
-In `planner.rs`, extend `ExecutionPlan` with the resolved dispatch family, component count, and output-layout metadata that any backend will need, then change `evaluate()` so it validates the query contract, allocates workspace, constructs `ExecutionIo`, and delegates chunk execution to a `&dyn BackendExecutor` instead of stopping after buffer allocation. In `scheduler.rs`, centralize iteration over `WorkspaceQuery.chunks` so chunk ordering remains deterministic under `memory_limit_bytes`. In `metrics.rs`, add per-run metrics for chunk count, peak workspace bytes, transfer bytes, and `not0` so later compat/oracle work can inspect execution behavior without embedding metric logic in a backend crate.
+In `planner.rs`, extend `ExecutionPlan` with the resolved dispatch family, component count, and output-layout metadata that any backend will need, then change `evaluate()` so it validates the query contract, allocates workspace, constructs `ExecutionIo`, and delegates chunk execution to a `&dyn BackendExecutor` instead of stopping after buffer allocation. Enforce `OutputOwnership::CompatFinalWrite` in planner/dispatch handoff and reject any backend path that attempts to bypass staging-only semantics. In `scheduler.rs`, centralize iteration over `WorkspaceQuery.chunks` so chunk ordering remains deterministic under `memory_limit_bytes`. In `metrics.rs`, add per-run metrics for chunk count, peak workspace bytes, transfer bytes, and `not0` so later compat/oracle work can inspect execution behavior without embedding metric logic in a backend crate.
   </action>
   <acceptance_criteria>
     - `rg -n "executor: &dyn BackendExecutor|&dyn BackendExecutor" crates/cintx-runtime/src/planner.rs`
+    - `rg -n "OutputOwnership|CompatFinalWrite|staging" crates/cintx-runtime/src/planner.rs`
     - `rg -n "peak_workspace_bytes|transfer_bytes|not0" crates/cintx-runtime/src/metrics.rs`
     - `rg -n "schedule|chunks" crates/cintx-runtime/src/scheduler.rs`
   </acceptance_criteria>

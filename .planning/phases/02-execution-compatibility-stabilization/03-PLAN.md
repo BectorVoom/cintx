@@ -23,7 +23,7 @@ must_haves:
     - "Base-only Phase 2 scope stays explicit: helper and legacy coverage is added for the upstream base surface, while `4c1e`, F12/STG/YP, and GTG remain outside this phase."
   artifacts:
     - path: crates/cintx-ops/generated/compiled_manifest.lock.json
-      provides: "Canonical manifest entries for operator plus helper/transform/optimizer/legacy symbols."
+      provides: "Canonical manifest entries for operator plus helper/transform/optimizer/legacy symbols, including the misc.h-derived `cNAME*` wrapper rows for in-scope base families."
       min_lines: 150
     - path: crates/cintx-ops/src/resolver.rs
       provides: "Metadata-aware lookup helpers that can distinguish operator, helper, transform, optimizer, and legacy entries."
@@ -72,22 +72,24 @@ Output: Expanded canonical manifest metadata and a completed `cintxRsError` raw-
 <tasks>
 
 <task type="auto">
-  <name>Task 1: Extend the canonical manifest to cover the helper and legacy Phase 2 surface</name>
+  <name>Task 1: Extend the canonical manifest to cover the helper and full misc.h-derived legacy Phase 2 surface</name>
   <files>crates/cintx-ops/generated/compiled_manifest.lock.json, crates/cintx-ops/build.rs, crates/cintx-ops/src/generated/api_manifest.rs, crates/cintx-ops/src/generated/api_manifest.csv, crates/cintx-ops/src/resolver.rs</files>
-  <read_first>crates/cintx-ops/generated/compiled_manifest.lock.json, crates/cintx-ops/build.rs, crates/cintx-ops/src/resolver.rs, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md, docs/design/cintx_detailed_design.md §3.3 and Appendix A, libcint-master/include/cint.h.in:227-290, libcint-master/src/misc.h:34-76</read_first>
+  <read_first>crates/cintx-ops/generated/compiled_manifest.lock.json, crates/cintx-ops/build.rs, crates/cintx-ops/src/resolver.rs, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md, docs/design/cintx_detailed_design.md §3.3, §3.4.1, and Appendix C, libcint-master/include/cint.h.in:227-290, libcint-master/src/misc.h:34-76, libcint-master/src/cint1e.c, libcint-master/src/cint2e.c, libcint-master/src/cint2c2e.c, libcint-master/src/cint3c1e.c, libcint-master/src/cint3c2e.c</read_first>
   <action>
-Extend the canonical manifest and code generation pipeline so the lock includes the upstream base-scope helper, transform, optimizer-lifecycle, and legacy-wrapper symbols listed in `include/cint.h.in:227-290` and `src/misc.h:34-76`. Add entries for the helper counts/offsets/norms, the Cartesian-to-spherical and Cartesian-to-spinor transform helpers, the optimizer lifecycle symbols (`CINTinit_2e_optimizer`, `CINTinit_optimizer`, `CINTdel_2e_optimizer`, `CINTdel_optimizer`), and the legacy `cint2e_cart`, `cint2e_sph`, `cint2e`, and matching optimizer wrappers. In the lock and generated tables, set `category` to `helper` or `legacy`, set `helper_kind` to one of `Helper`, `Transform`, `Optimizer`, or `Legacy`, and normalize `canonical_family` so wrapper/optimizer rows still map back to the underlying base family. Keep the additions Phase-2-scoped: do not add `4c1e`, F12/STG/YP, or GTG helper/wrapper rows here. Update `Resolver` so lookup helpers can filter by `helper_kind` and resolve helper/legacy symbols without hard-coded string tables outside the generated manifest.
+Extend the canonical manifest and code generation pipeline so the lock includes the upstream base-scope helper, transform, optimizer-lifecycle, and legacy-wrapper symbols listed in `include/cint.h.in:227-290` and derived from `src/misc.h:34-76`. Do not stop at `cint2e_*`: generate the full Phase 2 `cNAME*` legacy wrapper surface for every in-scope base family normalized into the manifest. Follow the actual macro rules from upstream: families using `ALL_CINT1E` contribute `cNAME_cart`, `cNAME_sph`, and `cNAME`; families using `ALL_CINT` contribute those three plus `cNAME_cart_optimizer`, `cNAME_sph_optimizer`, and `cNAME_optimizer`. Preserve the helper counts/offsets/norms, the Cartesian-to-spherical and Cartesian-to-spinor transform helpers, and the optimizer lifecycle symbols (`CINTinit_2e_optimizer`, `CINTinit_optimizer`, `CINTdel_2e_optimizer`, `CINTdel_optimizer`). In the lock and generated tables, set `category` to `helper` or `legacy`, set `helper_kind` to one of `Helper`, `Transform`, `Optimizer`, or `Legacy`, and normalize `canonical_family` so wrapper/optimizer rows still map back to the underlying base family. Add a regression test in `resolver.rs` or adjacent generated-table coverage that derives the expected wrapper symbol set from the in-scope base-family manifest entries plus the `misc.h` macro rules and fails on missing or extra wrapper rows, including optimizer variants where applicable. Keep the additions Phase-2-scoped: do not add `4c1e`, F12/STG/YP, or GTG helper/wrapper rows here. Update `Resolver` so lookup helpers can filter by `helper_kind` and resolve helper/legacy symbols without hard-coded string tables outside the generated manifest.
   </action>
   <acceptance_criteria>
     - `rg -n "HelperKind::Helper|HelperKind::Transform|HelperKind::Optimizer|HelperKind::Legacy" crates/cintx-ops/src/generated/api_manifest.rs`
-    - `rg -n "CINTinit_optimizer|CINTdel_optimizer|cint2e_cart|CINTc2s_bra_sph" crates/cintx-ops/src/generated/api_manifest.csv`
+    - `rg -n "CINTinit_optimizer|CINTdel_optimizer|CINTc2s_bra_sph" crates/cintx-ops/src/generated/api_manifest.csv`
+    - `rg -n "cint1e_ovlp_cart|cint1e_nuc|cint2e_cart_optimizer|cint2c2e_optimizer|cint3c1e_sph_optimizer|cint3c2e_optimizer" crates/cintx-ops/src/generated/api_manifest.csv`
     - `rg -n "helper_kind" crates/cintx-ops/build.rs`
-    - `rg -n "filter.*helper_kind|helpers_by_kind|entries_by_kind" crates/cintx-ops/src/resolver.rs`
+    - `rg -n "filter.*helper_kind|helpers_by_kind|entries_by_kind|legacy_wrapper.*misc|misc.*wrapper" crates/cintx-ops/src/resolver.rs`
+    - `cargo test -p cintx-ops --lib legacy_wrapper_manifest_matches_misc -- --exact`
   </acceptance_criteria>
   <verify>
-    <automated>cargo test -p cintx-ops --lib</automated>
+    <automated>cargo test -p cintx-ops --lib legacy_wrapper_manifest_matches_misc -- --exact</automated>
   </verify>
-  <done>The canonical manifest and generated resolver metadata now enumerate the helper/transform/optimizer/legacy APIs that COMP-03 depends on, without broadening Phase 2 beyond the locked base-family scope.</done>
+  <done>The canonical manifest and generated resolver metadata now enumerate the helper/transform/optimizer/legacy APIs that COMP-03 depends on, and the misc.h-derived wrapper coverage test proves the in-scope base-family `cNAME*` surface is complete without broadening Phase 2 beyond the locked base-family scope.</done>
 </task>
 
 <task type="auto">
@@ -113,11 +115,11 @@ Expand `cintxRsError` so raw compat callers can receive typed layout and output-
 </tasks>
 
 <verification>
-Regenerate the manifest tables from the canonical lock, then run the `cintx-ops` and `cintx-core` library test suites to confirm helper metadata and typed errors both compile and match tests.
+Regenerate the manifest tables from the canonical lock, then run the misc.h-derived legacy-wrapper coverage test plus the `cintx-ops` and `cintx-core` library test suites to confirm helper metadata, wrapper completeness, and typed errors all compile and match tests.
 </verification>
 
 <success_criteria>
-Helper/transform/optimizer/legacy symbols are present in the canonical manifest and generated tables, and the public error enum exposes explicit raw-layout and buffer-size failures for later compat work.
+Helper/transform/optimizer/legacy symbols, including the full misc.h-derived `cNAME*` base-family wrapper set, are present in the canonical manifest and generated tables, and the public error enum exposes explicit raw-layout and buffer-size failures for later compat work.
 </success_criteria>
 
 <output>

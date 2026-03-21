@@ -2,9 +2,10 @@
 phase: 02-execution-compatibility-stabilization
 plan: 08
 type: execute
-wave: 4
+wave: 5
 depends_on:
   - 05
+  - 06
 files_modified:
   - crates/cintx-cubecl/src/kernels/mod.rs
   - crates/cintx-cubecl/src/kernels/center_3c1e.rs
