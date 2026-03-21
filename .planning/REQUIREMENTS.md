@@ -15,9 +15,9 @@
 
 - [ ] **COMP-01**: Compat caller can invoke raw APIs using `atm`, `bas`, `env`, `shls`, `dims`, `opt`, and `cache` inputs that match documented layout contracts.
 - [ ] **COMP-02**: Compat caller can query required output sizes and workspace requirements without performing a full evaluation or writing output buffers.
-- [ ] **COMP-03**: Compat caller can use helper, transform, optimizer-lifecycle, and legacy wrapper APIs that are included in the upstream compatibility scope.
+- [x] **COMP-03**: Compat caller can use helper, transform, optimizer-lifecycle, and legacy wrapper APIs that are included in the upstream compatibility scope.
 - [ ] **COMP-04**: C integrator can enable an optional C ABI shim that returns integer status codes and exposes thread-local last-error details.
-- [ ] **COMP-05**: Compat caller receives typed validation failures or explicit `UnsupportedApi` errors instead of silent truncation, partial writes, or undefined behavior.
+- [x] **COMP-05**: Compat caller receives typed validation failures or explicit `UnsupportedApi` errors instead of silent truncation, partial writes, or undefined behavior.
 
 ### Execution
 
@@ -73,9 +73,9 @@
 | BASE-03 | Phase 1 | Complete |
 | COMP-01 | Phase 2 | Pending |
 | COMP-02 | Phase 2 | Pending |
-| COMP-03 | Phase 2 | Pending |
+| COMP-03 | Phase 2 | Complete |
 | COMP-04 | Phase 3 | Pending |
-| COMP-05 | Phase 2 | Pending |
+| COMP-05 | Phase 2 | Complete |
 | EXEC-01 | Phase 3 | Pending |
 | EXEC-02 | Phase 2 | Complete |
 | EXEC-03 | Phase 2 | Complete |
