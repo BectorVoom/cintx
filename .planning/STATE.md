@@ -2,16 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-03-21T04:35:00.453Z"
-last_activity: 2026-03-21 — ROADMAP drafted
+status: unknown
+stopped_at: Completed 01-manifest-planner-foundation-PLAN.md
+last_updated: "2026-03-21T06:24:49.260Z"
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State
@@ -21,15 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 1: Manifest & Planner Foundation
+**Current focus:** Phase 01 — manifest-planner-foundation
 
 ## Current Position
 
-Phase: 1 of 4 (Manifest & Planner Foundation)  
-Plan: 0 of 0 in current phase  
-Status: Ready to plan  
-Last activity: 2026-03-21 — ROADMAP drafted  
-Progress: [░░░░░░░░░░] 0%
+Phase: 01 (manifest-planner-foundation) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -49,11 +44,17 @@ Progress: [░░░░░░░░░░] 0%
 - Last 5 plans: none
 - Trend: Stable
 
+| Phase 01-manifest-planner-foundation P01 | 18min | 2 tasks | 15 files |
+
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md. No new decisions yet.
+
+- [Phase 01-manifest-planner-foundation]: Always derive the manifest arity from the family (1e/2c2e=2, 3c1e/3c2e=3, 2e/4c1e=4) to align with the documented dims contract.
+- [Phase 01-manifest-planner-foundation]: Represent FeatureFlag, Stability, and HelperKind with Cow<'static, str> so generated metadata and runtime parsers can share 'static data without lifetime issues.
+- [Phase 01-manifest-planner-foundation]: Keep the canonical lock in crates/cintx-ops/generated and implicitly validate the support matrix before emitting resolver tables.
 
 ### Pending Todos
 
@@ -65,6 +66,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T04:35:00.439Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-manifest-planner-foundation/01-CONTEXT.md
+Last session: 2026-03-21T06:24:49.258Z
+Stopped at: Completed 01-manifest-planner-foundation-PLAN.md
+Resume file: None
