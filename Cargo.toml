@@ -19,8 +19,10 @@ cc = "1.2.15"
 members = [
     "crates/cintx-core",
     "crates/cintx-ops",
+    "crates/cintx-runtime",
 ]
 default-members = [
     "crates/cintx-core",
     "crates/cintx-ops",
+    "crates/cintx-runtime",
 ]

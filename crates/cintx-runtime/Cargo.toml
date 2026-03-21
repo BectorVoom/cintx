@@ -1,0 +1,12 @@
+[package]
+name = "cintx-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+cintx-core = { path = "../cintx-core" }
+cintx-ops = { path = "../cintx-ops" }
+tracing = "0.1"

@@ -1,3 +1,4 @@
+use crate::operator::Representation;
 use thiserror::Error;
 
 /// Common errors for cintx-core domain constructors.
@@ -27,6 +28,32 @@ pub enum CoreError {
     ShellIndexOutOfBounds { index: usize, total: usize },
     #[error("shell tuple cannot exceed {limit} entries")]
     ShellTupleArityExceeded { limit: usize },
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug, Error)]
+pub enum cintxRsError {
+    #[error("unsupported api requested={requested}")]
+    UnsupportedApi { requested: String },
+    #[error("unsupported representation {representation} for {operator}")]
+    UnsupportedRepresentation {
+        operator: String,
+        representation: Representation,
+    },
+    #[error("invalid shell tuple: expected {expected}, got {got}")]
+    InvalidShellTuple { expected: usize, got: usize },
+    #[error("invalid shell atom index {index}; basis has {atom_count} atoms")]
+    InvalidShellAtomIndex { index: usize, atom_count: usize },
+    #[error("invalid dims: expected {expected}, provided {provided}")]
+    InvalidDims { expected: usize, provided: usize },
+    #[error("memory limit exceeded: requested={requested}, limit={limit}")]
+    MemoryLimitExceeded { requested: usize, limit: usize },
+    #[error("host allocation failed for {bytes} bytes")]
+    HostAllocationFailed { bytes: usize },
+    #[error("device out of memory for {bytes} bytes on {device}")]
+    DeviceOutOfMemory { bytes: usize, device: String },
+    #[error("chunk plan failed in {from}: {detail}")]
+    ChunkPlanFailed { from: &'static str, detail: String },
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;
