@@ -1,10 +1,7 @@
 //! Runtime planning and workspace governance for cintx.
 
-pub mod dispatch;
-pub mod metrics;
 pub mod options;
 pub mod planner;
-pub mod scheduler;
 pub mod validator;
 pub mod workspace;
 
