@@ -1,0 +1,11 @@
+[package]
+name = "cintx-core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = "2"
+smallvec = "1.13"
