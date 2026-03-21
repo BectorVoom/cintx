@@ -1,5 +1,6 @@
 use crate::atom::Atom;
-use crate::shell::Shell;
+use crate::error::{CoreError, CoreResult};
+use crate::shell::{SHELL_TUPLE_CAPACITY, Shell, ShellTuple};
 use smallvec::SmallVec;
 use std::sync::Arc;
 
@@ -21,7 +22,7 @@ impl BasisMeta {
 
         for shell in shells {
             shell_offsets.push(total_ao);
-            let count = shell.nctr as usize;
+            let count = shell.ao_per_shell();
             ao_counts.push(count);
             total_ao += count;
         }
@@ -51,9 +52,28 @@ pub struct BasisSet {
 }
 
 impl BasisSet {
-    pub fn new(atoms: Arc<[Atom]>, shells: Arc<[Arc<Shell>]>) -> Self {
+    pub fn try_new(atoms: Arc<[Atom]>, shells: Arc<[Arc<Shell>]>) -> CoreResult<Self> {
+        if shells.is_empty() {
+            return Err(CoreError::EmptyBasis);
+        }
+
+        let atom_count = atoms.len();
+        for shell in shells.iter() {
+            let atom_index = shell.atom_index as usize;
+            if atom_index >= atom_count {
+                return Err(CoreError::MissingAtomIndex {
+                    index: atom_index,
+                    total: atom_count,
+                });
+            }
+        }
+
         let meta = BasisMeta::from_shells(&shells);
-        BasisSet { atoms, shells, meta }
+        Ok(BasisSet {
+            atoms,
+            shells,
+            meta,
+        })
     }
 
     pub fn atoms(&self) -> &[Atom] {
@@ -66,5 +86,65 @@ impl BasisSet {
 
     pub fn meta(&self) -> &BasisMeta {
         &self.meta
+    }
+
+    pub fn shell_tuple_for_indices<I>(&self, idx: I) -> CoreResult<ShellTuple>
+    where
+        I: IntoIterator<Item = usize>,
+    {
+        let mut buffer = Vec::new();
+        for index in idx {
+            let shell = self
+                .shells
+                .get(index)
+                .ok_or(CoreError::ShellIndexOutOfBounds {
+                    index,
+                    total: self.shells.len(),
+                })?;
+            buffer.push(shell.clone());
+        }
+        ShellTuple::try_from_iter(buffer).map_err(|_| CoreError::ShellTupleArityExceeded {
+            limit: SHELL_TUPLE_CAPACITY,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::NuclearModel;
+    use crate::atom::Atom;
+    use crate::operator::Representation;
+    use std::sync::Arc;
+
+    fn arc_f64(values: &[f64]) -> Arc<[f64]> {
+        Arc::from(values.to_owned().into_boxed_slice())
+    }
+
+    #[test]
+    fn missing_atom_index_is_rejected() {
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom].into_boxed_slice());
+
+        let shell = Arc::new(
+            Shell::try_new(
+                1,
+                1,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                arc_f64(&[1.0]),
+                arc_f64(&[1.0]),
+            )
+            .unwrap(),
+        );
+        let shells = Arc::from(vec![shell].into_boxed_slice());
+
+        let err = BasisSet::try_new(atoms, shells).unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::MissingAtomIndex { index: 1, total: 1 }
+        ));
     }
 }
