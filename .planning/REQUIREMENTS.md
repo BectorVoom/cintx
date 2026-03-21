@@ -22,8 +22,8 @@
 ### Execution
 
 - [ ] **EXEC-01**: Rust caller can query workspace needs separately from evaluation through the safe API.
-- [ ] **EXEC-02**: Rust or compat caller can evaluate supported 1e, 2e, 2c2e, 3c1e, and 3c2e families through the shared planner and CubeCL backend.
-- [ ] **EXEC-03**: Caller can enforce memory limits so large evaluations chunk safely or fail with typed memory-limit or allocation errors and no partial writes.
+- [x] **EXEC-02**: Rust or compat caller can evaluate supported 1e, 2e, 2c2e, 3c1e, and 3c2e families through the shared planner and CubeCL backend.
+- [x] **EXEC-03**: Caller can enforce memory limits so large evaluations chunk safely or fail with typed memory-limit or allocation errors and no partial writes.
 - [ ] **EXEC-04**: Caller receives outputs with upstream-compatible cart, sph, and spinor shapes, ordering, and complex-layout semantics.
 - [ ] **EXEC-05**: Caller gets numerically equivalent results within accepted tolerance regardless of whether optimizer support is enabled.
 
@@ -77,8 +77,8 @@
 | COMP-04 | Phase 3 | Pending |
 | COMP-05 | Phase 2 | Pending |
 | EXEC-01 | Phase 3 | Pending |
-| EXEC-02 | Phase 2 | Pending |
-| EXEC-03 | Phase 2 | Pending |
+| EXEC-02 | Phase 2 | Complete |
+| EXEC-03 | Phase 2 | Complete |
 | EXEC-04 | Phase 2 | Pending |
 | EXEC-05 | Phase 2 | Pending |
 | OPT-01 | Phase 3 | Pending |

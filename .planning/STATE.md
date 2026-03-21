@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_for_phase_02
-stopped_at: Completed Phase 01 execution and verification; ready to discuss Phase 02
-last_updated: "2026-03-21T07:31:26Z"
+status: unknown
+stopped_at: Completed 02-execution-compatibility-stabilization-02-PLAN.md
+last_updated: "2026-03-21T10:18:50.152Z"
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 9
+  completed_plans: 4
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 02 — execution & compatibility stabilization
+**Current focus:** Phase 02 — execution-compatibility-stabilization
 
 ## Current Position
 
-Phase: 02 (execution-&-compatibility-stabilization) — READY TO DISCUSS
-Plan: Not started
+Phase: 02 (execution-compatibility-stabilization) — EXECUTING
+Plan: 2 of 7
 
 ## Performance Metrics
 
@@ -46,6 +46,7 @@ Plan: Not started
 
 | Phase 01-manifest-planner-foundation P01 | 18min | 2 tasks | 15 files |
 | Phase 01-manifest-planner-foundation P02 | 9min | 2 tasks | 10 files |
+| Phase 02-execution-compatibility-stabilization P02 | 18min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -59,6 +60,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 01-manifest-planner-foundation]: Persist exact chunk layouts inside `WorkspaceQuery` and reject evaluate-time planning drift instead of silently replanning.
 - [Phase 01-manifest-planner-foundation]: Clamp `chunk_size_override` to the maximum work units that fit inside the effective memory limit.
 - [Phase 01-manifest-planner-foundation]: Surface bad shell atom references through `InvalidShellAtomIndex` instead of `ChunkPlanFailed`.
+- [Phase 02-execution-compatibility-stabilization]: Keep Phase 2 workspace scope limited to core/ops/runtime/compat/cubecl/oracle and defer cintx-rs/cintx-capi membership.
+- [Phase 02-execution-compatibility-stabilization]: Require explicit crate edges compat->cubecl and oracle->compat instead of implicit transitive wiring.
+- [Phase 02-execution-compatibility-stabilization]: Resolve CubeCL kernels module ambiguity by pinning lib export to kernels/mod.rs during workspace activation.
 
 ### Pending Todos
 
@@ -70,6 +74,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-21T07:31:26Z
-Stopped at: Completed Phase 01 execution and verification; ready to discuss Phase 02
+Last session: 2026-03-21T10:18:50.150Z
+Stopped at: Completed 02-execution-compatibility-stabilization-02-PLAN.md
 Resume file: None

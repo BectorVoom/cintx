@@ -30,7 +30,7 @@
   5. Outputs appear with the expected cart/sph/spinor shapes and ordering and stay numerically equivalent whether optimizer support is toggled (EXEC-04, EXEC-05).
 **Plans**: 7 plans
 Plans:
-- [ ] 02-PLAN.md - Activate the Phase 2 workspace members and wire compat-to-CubeCL plus oracle-to-compat crate dependencies.
+- [x] 02-PLAN.md - Activate the Phase 2 workspace members and wire compat-to-CubeCL plus oracle-to-compat crate dependencies.
 - [ ] 03-PLAN.md - Expand the canonical manifest and public error surface for helper/legacy coverage plus typed raw failures.
 - [ ] 04-PLAN.md - Add the backend-neutral runtime execution contract, deterministic scheduling, and runtime-owned execution metrics.
 - [ ] 05-PLAN.md - Implement the CubeCL executor core and the `1e`/`2e`/`2c2e` kernel slice.
