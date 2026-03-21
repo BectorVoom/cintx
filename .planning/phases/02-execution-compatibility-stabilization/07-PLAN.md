@@ -5,8 +5,8 @@ type: execute
 wave: 5
 depends_on:
   - 03
-  - 05
   - 06
+  - 08
 files_modified:
   - crates/cintx-compat/src/helpers.rs
   - crates/cintx-compat/src/transform.rs
@@ -25,7 +25,7 @@ must_haves:
   truths:
     - "Compat callers can use the helper, transform, optimizer-lifecycle, and legacy-wrapper APIs that Phase 2 claims to preserve from upstream libcint."
     - "Optimized and non-optimized execution paths share the same writer/layout contract and produce numerically equivalent results within the accepted tolerance envelope."
-    - "The oracle harness can compare the Phase 2 base-family compat surface against vendored upstream libcint, including helper parity and optimizer-on/off equivalence."
+    - "The oracle harness reaches the Phase 2 compat APIs directly and can compare that compat surface against vendored upstream libcint, including helper parity and optimizer-on/off equivalence."
   artifacts:
     - path: crates/cintx-compat/src/helpers.rs
       provides: "The upstream helper/count/offset/norm APIs for the Phase 2 base scope."
@@ -44,10 +44,10 @@ must_haves:
       to: crates/cintx-compat/src/raw.rs
       via: "Legacy wrappers forward into the same raw path instead of duplicating dims/output math."
       pattern: "eval_raw|query_workspace_raw"
-    - from: crates/cintx-compat/src/optimizer.rs
-      to: crates/cintx-oracle/src/compare.rs
-      via: "Optimizer handles are verified by on/off parity checks against oracle comparisons."
-      pattern: "optimizer"
+    - from: crates/cintx-oracle/src/compare.rs
+      to: crates/cintx-compat/src/lib.rs
+      via: "Oracle comparisons import helper, raw, optimizer, and legacy compat APIs instead of calling runtime or CubeCL directly."
+      pattern: "cintx_compat"
     - from: crates/cintx-oracle/src/fixtures.rs
       to: crates/cintx-ops/generated/compiled_manifest.lock.json
       via: "Oracle fixtures derive the Phase 2 comparison set from the canonical manifest."
@@ -124,10 +124,11 @@ In `optimizer.rs`, implement an immutable `RawOptimizerHandle` backed by cached 
   <files>crates/cintx-oracle/build.rs, crates/cintx-oracle/src/lib.rs, crates/cintx-oracle/src/fixtures.rs, crates/cintx-oracle/src/compare.rs</files>
   <read_first>crates/cintx-oracle/build.rs, crates/cintx-oracle/src/lib.rs, crates/cintx-oracle/src/fixtures.rs, crates/cintx-oracle/src/compare.rs, crates/cintx-ops/generated/compiled_manifest.lock.json, libcint-master/include/cint_funcs.h, docs/design/cintx_detailed_design.md §13.4 and §14.1, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
   <action>
-Implement the oracle harness for the Phase 2 base families. In `build.rs`, wire the vendored upstream libcint build and bindgen/header setup needed for oracle comparison. In `fixtures.rs`, derive the comparison target set from the canonical manifest, but keep it limited to the Phase 2 base families and helper/legacy scope. In `compare.rs`, implement comparison routines for helper parity (counts, offsets, norms, transforms) and optimizer-on/off equivalence for `1e`, `2e`, `2c2e`, `3c1e`, and `3c2e`. Add tests that fail when helper coverage drifts from the manifest or when optimized vs non-optimized outputs exceed the accepted tolerance envelope. Export the harness through `lib.rs`.
+Implement the oracle harness for the Phase 2 base families. In `build.rs`, wire the vendored upstream libcint build and bindgen/header setup needed for oracle comparison. In `fixtures.rs`, derive the comparison target set from the canonical manifest, but keep it limited to the Phase 2 base families and helper/legacy scope. In `compare.rs`, implement comparison routines by importing and calling the public `cintx-compat` helper, raw, optimizer, and legacy APIs; do not call `cintx-runtime` or `cintx-cubecl` directly from oracle code. Cover helper parity (counts, offsets, norms, transforms) and optimizer-on/off equivalence for `1e`, `2e`, `2c2e`, `3c1e`, and `3c2e`. Add tests that fail when helper coverage drifts from the manifest or when optimized vs non-optimized outputs exceed the accepted tolerance envelope. Export the harness through `lib.rs`.
   </action>
   <acceptance_criteria>
     - `rg -n "compiled_manifest|manifest" crates/cintx-oracle/src/fixtures.rs`
+    - `rg -n "cintx_compat" crates/cintx-oracle/src/compare.rs`
     - `rg -n "optimizer|tolerance|helper" crates/cintx-oracle/src/compare.rs`
     - `rg -n "cc::Build|bindgen" crates/cintx-oracle/build.rs`
     - `rg -n "pub mod compare;|pub mod fixtures;" crates/cintx-oracle/src/lib.rs`

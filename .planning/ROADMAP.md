@@ -28,14 +28,15 @@
   3. The CubeCL-backed planner evaluates the 1e, 2e, 2c2e, 3c1e, and 3c2e families through the shared backend, selecting kernels based on the manifest registry (EXEC-02).
   4. Memory-limited runs chunk deterministically, surface typed `MemoryLimitExceeded` or `UnsupportedApi`, and never write partial results, keeping validation failures explicit (EXEC-03, COMP-05).
   5. Outputs appear with the expected cart/sph/spinor shapes and ordering and stay numerically equivalent whether optimizer support is toggled (EXEC-04, EXEC-05).
-**Plans**: 6 plans
+**Plans**: 7 plans
 Plans:
-- [ ] 02-PLAN.md - Activate the Phase 2 workspace members and make compat/CubeCL/oracle crates buildable targets.
+- [ ] 02-PLAN.md - Activate the Phase 2 workspace members and wire compat-to-CubeCL plus oracle-to-compat crate dependencies.
 - [ ] 03-PLAN.md - Expand the canonical manifest and public error surface for helper/legacy coverage plus typed raw failures.
-- [ ] 04-PLAN.md - Add the backend-neutral runtime execution contract and CubeCL executor core.
-- [ ] 05-PLAN.md - Implement base-family CubeCL kernels and cart/sph/spinor output transforms.
+- [ ] 04-PLAN.md - Add the backend-neutral runtime execution contract, deterministic scheduling, and runtime-owned execution metrics.
+- [ ] 05-PLAN.md - Implement the CubeCL executor core and the `1e`/`2e`/`2c2e` kernel slice.
 - [ ] 06-PLAN.md - Build the raw compat query/evaluate pipeline and enforce no-partial-write layout rules.
 - [ ] 07-PLAN.md - Add helper/transform/optimizer/legacy compat APIs and oracle parity coverage.
+- [ ] 08-PLAN.md - Finish the `3c1e`/`3c2e` CubeCL kernels and cart/sph/spinor transform routing.
 
 ### Phase 3: Safe Surface, C ABI Shim & Optional Families
 **Goal**: Expose the safe Rust façade, optional C shim, and gated optional families once the runtime is stable.
@@ -63,6 +64,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | Phase 1: Manifest & Planner Foundation | 2/2 | Complete | 2026-03-21 |
-| Phase 2: Execution & Compatibility Stabilization | 0/6 | Planned | - |
+| Phase 2: Execution & Compatibility Stabilization | 0/7 | Planned | - |
 | Phase 3: Safe Surface, C ABI Shim & Optional Families | 0/0 | Not started | - |
 | Phase 4: Verification & Release Automation | 0/0 | Not started | - |

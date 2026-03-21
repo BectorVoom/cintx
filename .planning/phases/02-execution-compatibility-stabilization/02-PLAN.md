@@ -20,6 +20,8 @@ requirements:
 must_haves:
   truths:
     - "Maintainers can build and test `cintx-compat`, `cintx-cubecl`, and `cintx-oracle` through the active workspace instead of leaving Phase 2 crates outside CI and local verification."
+    - "`cintx-compat` has an explicit workspace dependency on `cintx-cubecl`, so the raw compat layer can construct the concrete CubeCL backend without hidden wiring."
+    - "`cintx-oracle` has an explicit workspace dependency on `cintx-compat`, so parity work exercises compat APIs instead of reaching into runtime or backend internals."
     - "Phase 2 execution work stays scoped to compat/runtime/backend/oracle crates; `cintx-rs` and `cintx-capi` remain out of the workspace until Phase 3."
     - "The workspace lock captures the Phase 2 dependency graph deterministically so later CubeCL, compat, and oracle work can verify under `cargo --locked`."
   artifacts:
@@ -27,27 +29,27 @@ must_haves:
       provides: "Workspace membership and default-member activation for the Phase 2 crates."
       min_lines: 20
     - path: crates/cintx-compat/Cargo.toml
-      provides: "Compat crate dependency contract on `cintx-core`, `cintx-ops`, and `cintx-runtime`."
+      provides: "Compat crate dependency contract on `cintx-core`, `cintx-ops`, `cintx-runtime`, and `cintx-cubecl`."
       min_lines: 10
     - path: crates/cintx-cubecl/Cargo.toml
       provides: "CubeCL backend dependency contract pinned to the approved `cubecl 0.9.x` line."
       min_lines: 10
     - path: crates/cintx-oracle/Cargo.toml
-      provides: "Oracle crate dependency contract for vendored upstream comparison work."
+      provides: "Oracle crate dependency contract for vendored upstream comparison work routed through `cintx-compat`."
       min_lines: 10
   key_links:
     - from: Cargo.toml
       to: crates/cintx-compat/Cargo.toml
       via: "Adds `cintx-compat` to workspace/default-members so compat code is built by normal verification commands."
       pattern: "cintx-compat"
-    - from: Cargo.toml
+    - from: crates/cintx-compat/Cargo.toml
       to: crates/cintx-cubecl/Cargo.toml
-      via: "Adds `cintx-cubecl` to workspace/default-members so backend code participates in Phase 2 checks."
+      via: "Adds the direct compat-to-CubeCL dependency that later raw calls use to construct the concrete backend."
       pattern: "cintx-cubecl"
-    - from: Cargo.toml
-      to: crates/cintx-oracle/Cargo.toml
-      via: "Adds `cintx-oracle` to workspace/default-members so parity tests can land before Phase 4."
-      pattern: "cintx-oracle"
+    - from: crates/cintx-oracle/Cargo.toml
+      to: crates/cintx-compat/Cargo.toml
+      via: "Adds the direct oracle-to-compat dependency so parity tests import the compat APIs instead of backend internals."
+      pattern: "cintx-compat"
 ---
 
 <objective>
@@ -79,16 +81,18 @@ Output: Updated workspace membership, locked crate dependencies, and crate roots
 <tasks>
 
 <task type="auto">
-  <name>Task 1: Add compat, CubeCL, and oracle crates to the active workspace</name>
+  <name>Task 1: Add the Phase 2 crates to the workspace and wire the crate-level call path</name>
   <files>Cargo.toml, Cargo.lock, crates/cintx-compat/Cargo.toml, crates/cintx-cubecl/Cargo.toml, crates/cintx-oracle/Cargo.toml</files>
   <read_first>Cargo.toml, Cargo.lock, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md, AGENTS.md, crates/cintx-runtime/Cargo.toml, crates/cintx-compat/Cargo.toml, crates/cintx-cubecl/Cargo.toml, crates/cintx-oracle/Cargo.toml</read_first>
   <action>
-Update the root workspace so `[workspace].members` and `[workspace].default-members` include exactly `crates/cintx-core`, `crates/cintx-ops`, `crates/cintx-runtime`, `crates/cintx-compat`, `crates/cintx-cubecl`, and `crates/cintx-oracle`. Keep `crates/cintx-rs` and `crates/cintx-capi` out of the workspace for this phase. In `crates/cintx-compat/Cargo.toml`, add path dependencies on `cintx-core`, `cintx-ops`, and `cintx-runtime`, plus `smallvec = "1"` and `tracing = "0.1"`. In `crates/cintx-cubecl/Cargo.toml`, add `cubecl = "0.9.0"`, path dependencies on `cintx-core`, `cintx-ops`, and `cintx-runtime`, plus `smallvec = "1"` and `tracing = "0.1"`. In `crates/cintx-oracle/Cargo.toml`, add `anyhow = "1.0.102"`, `serde_json = "1.0.145"`, and path dependencies on `cintx-core` and `cintx-ops`, and add `bindgen = "0.71.1"` plus `cc = "1.2.15"` under build-dependencies. Regenerate `Cargo.lock` so the new members resolve under the pinned toolchain.
+Update the root workspace so `[workspace].members` and `[workspace].default-members` include exactly `crates/cintx-core`, `crates/cintx-ops`, `crates/cintx-runtime`, `crates/cintx-compat`, `crates/cintx-cubecl`, and `crates/cintx-oracle`. Keep `crates/cintx-rs` and `crates/cintx-capi` out of the workspace for this phase. In `crates/cintx-compat/Cargo.toml`, add path dependencies on `cintx-core`, `cintx-ops`, `cintx-runtime`, and `cintx-cubecl`, plus `smallvec = "1"` and `tracing = "0.1"`, so the compat layer has an explicit crate edge to the concrete CubeCL backend from Wave 1 onward. In `crates/cintx-cubecl/Cargo.toml`, add `cubecl = "0.9.0"`, path dependencies on `cintx-core`, `cintx-ops`, and `cintx-runtime`, plus `smallvec = "1"` and `tracing = "0.1"`. In `crates/cintx-oracle/Cargo.toml`, add `anyhow = "1.0.102"`, `serde_json = "1.0.145"`, path dependencies on `cintx-core`, `cintx-ops`, and `cintx-compat`, and add `bindgen = "0.71.1"` plus `cc = "1.2.15"` under build-dependencies. Do not add direct `cintx-oracle -> cintx-runtime` or `cintx-oracle -> cintx-cubecl` dependencies in this phase; oracle work must reach the implementation through compat APIs. Regenerate `Cargo.lock` so the new members resolve under the pinned toolchain.
   </action>
   <acceptance_criteria>
     - `rg -n "crates/cintx-compat" Cargo.toml`
     - `rg -n "crates/cintx-cubecl" Cargo.toml`
     - `rg -n "crates/cintx-oracle" Cargo.toml`
+    - `rg -n "cintx-cubecl" crates/cintx-compat/Cargo.toml`
+    - `rg -n "cintx-compat" crates/cintx-oracle/Cargo.toml`
     - `rg -n "cubecl = \\\"0\\.9\\.0\\\"" crates/cintx-cubecl/Cargo.toml`
     - `rg -n "bindgen = \\\"0\\.71\\.1\\\"" crates/cintx-oracle/Cargo.toml`
     - `rg -n "cc = \\\"1\\.2\\.15\\\"" crates/cintx-oracle/Cargo.toml`
@@ -105,12 +109,14 @@ Update the root workspace so `[workspace].members` and `[workspace].default-memb
   <files>crates/cintx-compat/src/lib.rs, crates/cintx-cubecl/src/lib.rs, crates/cintx-oracle/src/lib.rs</files>
   <read_first>crates/cintx-compat/src/lib.rs, crates/cintx-cubecl/src/lib.rs, crates/cintx-oracle/src/lib.rs, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md, AGENTS.md</read_first>
   <action>
-Replace the current one-line stub crate roots with explicit module exports and minimal `#[cfg(test)]` smoke tests that prove each crate now builds inside the workspace. `crates/cintx-compat/src/lib.rs` must continue exporting `helpers`, `layout`, `legacy`, `optimizer`, `raw`, and `transform`. `crates/cintx-cubecl/src/lib.rs` must continue exporting `executor`, `kernels`, `resident_cache`, `specialization`, `transfer`, and `transform`. `crates/cintx-oracle/src/lib.rs` must continue exporting `compare` and `fixtures`. Keep these smoke tests narrow: assert the exported modules compile and the crate roots remain Phase-2-only surfaces, without adding safe facade or C ABI exports here.
+Replace the current one-line stub crate roots with explicit module exports and minimal `#[cfg(test)]` smoke tests that prove each crate now builds inside the workspace. `crates/cintx-compat/src/lib.rs` must continue exporting `helpers`, `layout`, `legacy`, `optimizer`, `raw`, and `transform`. `crates/cintx-cubecl/src/lib.rs` must continue exporting `executor`, `kernels`, `resident_cache`, `specialization`, `transfer`, and `transform`. `crates/cintx-oracle/src/lib.rs` must continue exporting `compare` and `fixtures`. Add one narrow cross-crate smoke test in `cintx-compat` that references the `cintx_cubecl::executor` module so the compat-to-backend dependency edge is exercised immediately, and one in `cintx-oracle` that references `cintx_compat::raw` so the oracle-to-compat edge is exercised immediately. Keep these smoke tests narrow: assert the exported modules compile and the crate roots remain Phase-2-only surfaces, without adding safe facade or C ABI exports here.
   </action>
   <acceptance_criteria>
     - `rg -n "#\\[cfg\\(test\\)\\]" crates/cintx-compat/src/lib.rs`
     - `rg -n "#\\[cfg\\(test\\)\\]" crates/cintx-cubecl/src/lib.rs`
     - `rg -n "#\\[cfg\\(test\\)\\]" crates/cintx-oracle/src/lib.rs`
+    - `rg -n "cintx_cubecl::executor" crates/cintx-compat/src/lib.rs`
+    - `rg -n "cintx_compat::raw" crates/cintx-oracle/src/lib.rs`
     - `rg -n "pub mod transform;" crates/cintx-cubecl/src/lib.rs`
     - `rg -n "pub mod compare;" crates/cintx-oracle/src/lib.rs`
   </acceptance_criteria>
