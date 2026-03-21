@@ -63,11 +63,12 @@ completed: 2026-03-21T07:28:53Z
 
 ## Task Commits
 
-This resumed plan finalized as a single buildable code commit because the paused worktree already interleaved Task 1 and Task 2 runtime scaffolding:
+This resumed plan finalized as buildable code across two commits because the paused worktree already interleaved Task 1 and Task 2 runtime scaffolding and a final clean-checkout sanity pass exposed one extra export fix:
 
 1. **Task 1 + Task 2 finalization** - `0523f36` (fix)
+2. **Build hygiene follow-up** - `89b6fee` (fix)
 
-**Plan metadata:** pending final summary/state/verification commit
+**Plan metadata:** recorded in the phase-close docs commits for Phase 01
 
 ## Files Created/Modified
 - `Cargo.toml` - adds `crates/cintx-runtime` to the workspace and default members.
@@ -95,14 +96,23 @@ This resumed plan finalized as a single buildable code commit because the paused
 - **Verification:** `cargo test -p cintx-core --lib`, `cargo test -p cintx-runtime --lib`, `cargo test --workspace`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo fmt --all -- --check`
 - **Committed in:** `0523f36`
 
+**2. [Rule 3 - Blocking] Final sanity pass found clean-checkout-only stub exports**
+- **Found during:** Post-close verification
+- **Issue:** `crates/cintx-runtime/src/lib.rs` still exported `dispatch`, `metrics`, and `scheduler`, but those modules only existed as local untracked stubs. The committed runtime crate would not build from a clean checkout.
+- **Fix:** Removed the unused exports from `crates/cintx-runtime/src/lib.rs` and re-ran runtime verification.
+- **Files modified:** `crates/cintx-runtime/src/lib.rs`
+- **Verification:** `cargo test -p cintx-runtime --lib`, `cargo fmt --all -- --check`
+- **Committed in:** `89b6fee`
+
 ---
 
-**Total deviations:** 1 auto-fixed (1 blocking)
-**Impact on plan:** The deviation preserved a buildable history for resumed work without changing Plan 02 scope.
+**Total deviations:** 2 auto-fixed (2 blocking)
+**Impact on plan:** Both deviations preserved a buildable Phase 01 history without expanding Plan 02 scope.
 
 ## Issues Encountered
 - The sandbox blocks `.git/index.lock` creation, so the code commit had to be rerun with elevated git permissions.
 - The built-in GSD artifact verifier could not parse this plan's nested `must_haves` structure, so phase verification used direct file/test evidence instead of the helper command.
+- A final clean-checkout sanity pass caught unused runtime stub exports before handoff, avoiding a broken `cintx-runtime` crate in committed history.
 
 ## User Setup Required
 None - no external service configuration required.
