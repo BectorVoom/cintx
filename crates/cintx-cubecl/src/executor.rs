@@ -1,3 +1,4 @@
+use crate::kernels;
 use crate::resident_cache::DeviceResidentCache;
 use crate::specialization::SpecializationKey;
 use crate::transfer::TransferPlan;
@@ -34,10 +35,6 @@ impl CubeClExecutor {
         &self.resident_cache
     }
 
-    fn supports_canonical_family(family: &str) -> bool {
-        matches!(family, "1e" | "2e" | "2c2e")
-    }
-
     fn ensure_supported_family(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
         let canonical_family = plan.descriptor.entry.canonical_family;
         if canonical_family == "4c1e" {
@@ -46,7 +43,7 @@ impl CubeClExecutor {
             });
         }
 
-        if !Self::supports_canonical_family(canonical_family) {
+        if !kernels::supports_canonical_family(canonical_family) {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
                     "CubeCL executor family {canonical_family} is not enabled in the 1e/2e/2c2e slice"
@@ -60,7 +57,7 @@ impl CubeClExecutor {
 
 impl BackendExecutor for CubeClExecutor {
     fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
-        Self::supports_canonical_family(plan.descriptor.entry.canonical_family)
+        kernels::supports_canonical_family(plan.descriptor.entry.canonical_family)
             && plan
                 .descriptor
                 .entry
@@ -93,7 +90,7 @@ impl BackendExecutor for CubeClExecutor {
             });
         }
 
-        let _specialization = SpecializationKey::from_plan(plan);
+        let specialization = SpecializationKey::from_plan(plan);
         let _resident = self.resident_cache.resident_metadata(
             self.runtime_profile,
             plan.basis,
@@ -102,22 +99,18 @@ impl BackendExecutor for CubeClExecutor {
         let transfer_plan = TransferPlan::from_plan(plan, io.chunk())?;
         transfer_plan.ensure_output_contract()?;
         let transfer = transfer_plan.stage_device_buffers(self.runtime_profile)?;
+        let mut stats = kernels::launch_family(plan, &specialization, &transfer_plan)?;
 
         // Phase 2 keeps backend output as staging only; compat owns final flat writes.
         for value in io.staging_output().iter_mut() {
             *value = 0.0;
         }
 
-        Ok(ExecutionStats {
-            workspace_bytes: plan.workspace.bytes,
-            required_workspace_bytes: plan.workspace.required_bytes,
-            peak_workspace_bytes: transfer.workspace_bytes.max(io.workspace().len()),
-            chunk_count: 1,
-            planned_batches: io.chunk().work_unit_count,
-            transfer_bytes: transfer.transfer_bytes,
-            not0: i32::from(!io.staging_output().is_empty()),
-            fallback_reason: plan.workspace.fallback_reason,
-        })
+        stats.peak_workspace_bytes = stats
+            .peak_workspace_bytes
+            .max(transfer.workspace_bytes.max(io.workspace().len()));
+        stats.planned_batches = io.chunk().work_unit_count.max(1);
+        Ok(stats)
     }
 }
 

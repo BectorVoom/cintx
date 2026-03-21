@@ -1,0 +1,33 @@
+use crate::specialization::SpecializationKey;
+use crate::transfer::TransferPlan;
+use cintx_core::cintxRsError;
+use cintx_runtime::{ExecutionPlan, ExecutionStats};
+
+pub fn launch_center_2c2e(
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    transfer: &TransferPlan,
+) -> Result<ExecutionStats, cintxRsError> {
+    if specialization.canonical_family() != "2c2e" {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "cubecl_center_2c2e",
+            detail: format!(
+                "canonical_family mismatch for 2c2e launch: {}",
+                specialization.canonical_family()
+            ),
+        });
+    }
+    transfer.ensure_output_contract()?;
+    let staging = transfer.stage_output_buffer()?;
+
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: transfer.workspace_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: transfer.transfer_bytes,
+        not0: i32::from(!staging.is_empty()),
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}

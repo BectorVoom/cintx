@@ -1,0 +1,173 @@
+pub mod center_2c2e;
+pub mod center_3c1e;
+pub mod center_3c2e;
+pub mod center_4c1e;
+pub mod one_electron;
+pub mod two_electron;
+
+use crate::specialization::SpecializationKey;
+use crate::transfer::TransferPlan;
+use cintx_core::cintxRsError;
+use cintx_runtime::{ExecutionPlan, ExecutionStats};
+
+pub type FamilyLaunchFn = fn(
+    &ExecutionPlan<'_>,
+    &SpecializationKey,
+    &TransferPlan,
+) -> Result<ExecutionStats, cintxRsError>;
+
+const SUPPORTED_CANONICAL_FAMILIES: &[&str] = &["1e", "2e", "2c2e"];
+const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["center_4c1e", "center_3c1e", "center_3c2e"];
+
+fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
+    match canonical_family {
+        "1e" => Some(one_electron::launch_one_electron as FamilyLaunchFn),
+        "2e" => Some(two_electron::launch_two_electron as FamilyLaunchFn),
+        "2c2e" => Some(center_2c2e::launch_center_2c2e as FamilyLaunchFn),
+        _ => None,
+    }
+}
+
+pub fn supports_canonical_family(canonical_family: &str) -> bool {
+    SUPPORTED_CANONICAL_FAMILIES.contains(&canonical_family)
+}
+
+pub fn unresolved_families() -> &'static [&'static str] {
+    UNSUPPORTED_FOLLOW_ON_FAMILIES
+}
+
+pub fn resolve_family(plan: &ExecutionPlan<'_>) -> Result<FamilyLaunchFn, cintxRsError> {
+    if !plan
+        .descriptor
+        .entry
+        .supports_representation(plan.representation)
+    {
+        return Err(cintxRsError::UnsupportedRepresentation {
+            operator: format!(
+                "{}/{}",
+                plan.descriptor.entry.canonical_family,
+                plan.descriptor.operator_name()
+            ),
+            representation: plan.representation,
+        });
+    }
+
+    let canonical_family = plan.descriptor.entry.canonical_family;
+    resolve_family_name(canonical_family).ok_or_else(|| cintxRsError::UnsupportedApi {
+        requested: format!(
+            "CubeCL family registry does not include canonical_family={canonical_family}"
+        ),
+    })
+}
+
+pub fn launch_family(
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    transfer_plan: &TransferPlan,
+) -> Result<ExecutionStats, cintxRsError> {
+    let launch = resolve_family(plan)?;
+    launch(plan, specialization, transfer_plan)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
+    use cintx_runtime::{query_workspace, ExecutionOptions};
+    use std::sync::Arc;
+
+    fn arc_f64(values: &[f64]) -> Arc<[f64]> {
+        Arc::from(values.to_vec().into_boxed_slice())
+    }
+
+    fn sample_basis(rep: Representation, shell_count: usize) -> BasisSet {
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom].into_boxed_slice());
+        let mut shells = Vec::with_capacity(shell_count);
+        for index in 0..shell_count {
+            shells.push(Arc::new(
+                Shell::try_new(
+                    0,
+                    (index % 3 + 1) as u8,
+                    1,
+                    1,
+                    0,
+                    rep,
+                    arc_f64(&[1.0]),
+                    arc_f64(&[1.0]),
+                )
+                .unwrap(),
+            ));
+        }
+        BasisSet::try_new(atoms, Arc::from(shells.into_boxed_slice())).unwrap()
+    }
+
+    fn build_plan(
+        basis: &'static BasisSet,
+        operator_id: u32,
+        representation: Representation,
+        arity: usize,
+    ) -> ExecutionPlan<'static> {
+        let shells = ShellTuple::try_from_iter(
+            basis
+                .shells()
+                .iter()
+                .take(arity)
+                .cloned()
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let query = query_workspace(
+            OperatorId::new(operator_id),
+            representation,
+            basis,
+            shells.clone(),
+            &ExecutionOptions::default(),
+        )
+        .unwrap();
+        let query = Box::leak(Box::new(query));
+        ExecutionPlan::new(
+            OperatorId::new(operator_id),
+            representation,
+            basis,
+            shells,
+            query,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn family_registry_resolves_base_slice() {
+        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
+        let one_e = build_plan(basis, 0, Representation::Cart, 2);
+        let two_e = build_plan(basis, 9, Representation::Cart, 4);
+        let two_c2e = build_plan(basis, 12, Representation::Cart, 2);
+
+        assert!(resolve_family(&one_e).is_ok());
+        assert!(resolve_family(&two_e).is_ok());
+        assert!(resolve_family(&two_c2e).is_ok());
+    }
+
+    #[test]
+    fn family_registry_rejects_unsupported_families() {
+        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
+        let three_c1e = build_plan(basis, 15, Representation::Cart, 3);
+
+        let err = resolve_family(&three_c1e).unwrap_err();
+        assert!(matches!(err, cintxRsError::UnsupportedApi { .. }));
+        assert_eq!(
+            unresolved_families(),
+            &["center_4c1e", "center_3c1e", "center_3c2e"]
+        );
+    }
+
+    #[test]
+    fn supports_function_tracks_registry() {
+        assert!(supports_canonical_family("1e"));
+        assert!(supports_canonical_family("2e"));
+        assert!(supports_canonical_family("2c2e"));
+        assert!(!supports_canonical_family("3c1e"));
+        assert!(!supports_canonical_family("3c2e"));
+        assert!(!supports_canonical_family("4c1e"));
+    }
+}
