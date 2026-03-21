@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-03-21T10:26:59.699Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-03-21T10:38:02.533Z"
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 9
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 ## Current Position
 
 Phase: 02 (execution-compatibility-stabilization) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Plan: 3 of 7
 | Phase 01-manifest-planner-foundation P02 | 9min | 2 tasks | 10 files |
 | Phase 02-execution-compatibility-stabilization P02 | 18min | 2 tasks | 8 files |
 | Phase 02 P03 | 9 min | 2 tasks | 6 files |
+| Phase 02 P04 | 7 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 02]: Treat helper/transform/optimizer-lifecycle and legacy-wrapper rows as first-class canonical manifest entries with explicit helper_kind/category metadata.
 - [Phase 02]: Derive expected legacy wrappers from in-scope base symbols plus misc.h macro classification to fail on missing or extra wrapper rows.
 - [Phase 02]: Expose resolver helper_kind filters and kind-aware symbol lookup so helper/legacy resolution stays manifest-driven.
+- [Phase 02]: Keep the runtime execution contract backend-neutral and enforce OutputOwnership as BackendStagingOnly -> CompatFinalWrite at planner/dispatch boundaries.
+- [Phase 02]: Route evaluate() through deterministic runtime scheduling and centralized run metrics (chunk_count, peak_workspace_bytes, transfer_bytes, not0) instead of backend-owned policy.
 
 ### Pending Todos
 
@@ -78,6 +81,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-21T10:26:59.697Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-03-21T10:38:02.531Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None
