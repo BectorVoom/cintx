@@ -1,124 +1,26 @@
-# Feature Research
+# Feature Landscape
 
-**Domain:** Rust crate test governance (policy + tooling selection + CI gates)
+**Domain:** Rust-native libcint-compatible integral library
 **Researched:** 2026-03-21
-**Confidence:** MEDIUM
 
-## Feature Landscape
+## Table Stakes (must ship for credibility & migration)
 
-### Table Stakes (Users Expect These)
+- **Three-layer API surface (safe Rust, raw compat, C shim)** – The detailed design is explicit that result parity is the primary goal, but shipping a Rust-friendly API plus the `atm`/`bas`/`env` raw facade and an optional C ABI with typed status/last-error support is required for migration paths and compatibility certification. This requires aligning the safe builders with the manifest-driven symbol list, keeping the raw validator in lockstep, and wiring the optional shim to the same planner so there is no semantic drift. (Design sections 1.1‑1.5, 3.1, 3.5)
+- **Manifest-backed API inventory + oracle/CI verification** – Table-stakes compatibility depends on the compiled manifest lock as the source of truth, multi-profile builds (`base`, `with-f12`, `with-4c1e`, `with-f12+with-4c1e`), and automated oracle comparisons covering every stable/helper/legacy/optional symbol. The feature matrix, manifest audit, and regression detection (tolerances, peak RSS, symbol diffs) must be wired through CI before declaring parity, so the implementation must integrate codegen (`cintx-ops`), manifest audits, and oracle harness from the start. (Sections 2.2, 3.2, 3.3, 13.10, 16)
+- **CubeCL-backed planner with fallible allocation / OOM-safe stop** – High speed, memory efficiency, and safe failure are explicit non-negotiables. The shared planner + CubeCL executor, chunking/memory-limit heuristics, fallible workspace allocator, and typed `MemoryLimitExceeded`/`DeviceFailure` errors must be in place so even OOM scenarios halt predictably and observability spans trace planner decisions, chunking, and transfers. Building this path touches multiple crates (`cintx-runtime`, `cintx-cubecl`, `cintx-core`, validators, schedulers) because every integral call must funnel through the same compute path. (Sections 1.1, 2.1/2.4/2.5, 2.6, 6.1/6.2)
+- **Helper/optimizer/transform/legacy API parity** – Upstream helper exports (`CINTlen_cart`, transforms, optimizer lifecycle, `cint2e_*`, etc.) are part of the compatibility definition. Reproducing them (with the raw helper layouts in compat modules and the safe builders in core) is table stakes because users rely on them for AO counts, normalization, and legacy entry points; the manifest reflects them separately so tests and CI treat them equally with integral symbols. (Sections 2.1, 3.1, Appendix A)
+- **Feature-gated optional families with explicit stability levels** – The base compatibility profile covers cart/sph/spinor for 1e–3c2e, but source-only exports, F12/STG/YP, 4c1e, and other optional families must exist behind the documented features (`with-f12`, `with-4c1e`, `unstable-source-api`) and must fall back to `UnsupportedApi` or `NotImplementedByFeature` outside their supported envelopes. Getting those feature boundaries, manifest annotations, and regression tests right is required even if the features are gated because the release gate checks expect zero stray symbols. (Sections 0.3, 0.4, 3.2, 3.3, 10.1, 16.2)
 
-Features users assume exist. Missing these = product feels incomplete.
+## Differentiators (nice-to-have/value-add that can follow once the base ships)
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Crate classification by risk traits (unsafe, concurrency, parser exposure, feature flags, invariants) | Governance must be risk-aware and crate-specific | MEDIUM | Drives tool applicability and gate choices |
-| Mandatory baseline toolset enforcement with rationale | Rust testing governance implies a minimum verification bar | MEDIUM | Baseline: `cargo test`, `proptest`, `cargo-mutants`, `cargo-hack`, `cargo-llvm-cov`, doctests, compile-fail where applicable |
-| Conditional tool selection based on classification | Users expect “why this tool” to be explicit | MEDIUM | E.g., `loom` for concurrency, `Miri` for unsafe, `cargo-fuzz` for parsers |
-| CI gate definitions for PR/nightly/release | Governance implies auditable gates by stage | MEDIUM | Gate scope, required tools, and waiver rules differ by stage |
-| Verified vs unverified scope reporting | Avoids false assurance | MEDIUM | Explicitly separate verified scope, blocked, waived, and unverified areas |
-| Residual risk capture | Required for governance clarity | LOW | Must persist in outputs, not hidden |
+- **Rich builders & typed domain models beyond the compatibility layout** – While safe builders for `Atom`, `Shell`, `BasisSet`, `EnvParams`, `OperatorId`, and `ExecutionPlan` underlie the safe API, their ergonomics (e.g., convenient constructors, validation helpers, `OutputTensorView` helpers) can be incrementally improved once the core compatibility surface is stable. They remain differentiators because they do not affect raw parity but do influence DX for Rust-first users. (Sections 1.6, 6.4)
+- **Advanced profiling / benchmarking / metrics beyond tracing spans** – The design already plans `tracing` for planner decisions, chunking, fallback reasons, and OOM diagnostics, but full criterion benchmarks, CubeCL batch threshold studies, or building a public benchmark report can be deferred. They are valuable for tuning but not required before the library proves correctness. (Sections 1.1, 2.7, 16.6)
+- **Extended oracle/property coverage for optional/unstable families** – Automating hundreds of feature-specific comparison fixtures (random, adversarial, feature-specific) is expensive. Initial GA can focus on deterministic fixtures for stable APIs while deferring the most exotic property tests and adversarial datasets (especially for `with-f12` sph-only combos or new `unstable-source-api` families) until the stable manifest is shipped. (Sections 12.3, 13.3, 16.3)
+- **Multi-device CubeCL consistency and fallback polishing** – Ensuring consistency across multiple GPUs and establishing fallback heuristics (e.g., auto-transfer heuristics, device selection explanations, resident cache tuning) adds polish and can be done once the single-device CubeCL path is built and verified. (Sections 6.1, 16.4, 17.2)
 
-### Differentiators (Competitive Advantage)
+## Anti-Features / Non-Goals to keep out of v1
 
-Features that set the product apart. Not required, but valuable.
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Spec-to-test/tool traceability map | Auditable alignment between spec, tests, and gates | HIGH | Links spec items to tools, tests, and gates |
-| Waiver lifecycle management (expiry, owner, rationale) | Prevents permanent risk debt | MEDIUM | Includes expiration and revalidation triggers |
-| Anti-fake-implementation checks as first-class outcomes | Detects shallow or hardcoded implementations | HIGH | Requires mutation testing, negative tests, and property tests alignment |
-| Gate cost modeling (time/resource budgets by stage) | Balances rigor with CI cost | MEDIUM | Explicit PR vs nightly vs release cost tradeoffs |
-| Reusable report templates with required phrasing | Reduces audit friction, enforces precise language | LOW | Standardizes "Verified in scope" / "Not yet verified" statements |
-
-### Anti-Features (Commonly Requested, Often Problematic)
-
-Features that seem good but create problems.
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Single score or “overall quality” badge | Easy status reporting | Encourages false assurance and hides unverified scope | Verified vs unverified scope report with residual risks |
-| Coverage-only gating | Fast pass/fail signal | Coverage is insufficient and can be gamed | Coverage as supporting evidence with mutation/property tests |
-| One-size-fits-all toolchain | Simplifies adoption | Ignores crate-specific risk traits | Classification-driven tool applicability matrix |
-| “All good” or “fully tested” claims | Appealing certainty | Violates governance integrity | Required phrasing with explicit gaps and risks |
-
-## Feature Dependencies
-
-```
-Crate Classification
-    └──requires──> Tool Applicability Decision
-                       └──requires──> CI Gate Definitions
-                                              └──requires──> Verified/Unverified Reporting
-
-Spec Identification ──enhances──> Spec-to-Test Traceability
-
-Waiver Tracking ──requires──> CI Gate Definitions
-
-Anti-Fake-Implementation Checks ──requires──> Mutation + Property Test Baseline
-```
-
-### Dependency Notes
-
-- **Crate Classification requires Tool Applicability Decision:** classification drives which tools are mandatory vs conditional.
-- **Tool Applicability Decision requires CI Gate Definitions:** gates are built from the selected toolset per stage.
-- **CI Gate Definitions require Verified/Unverified Reporting:** reporting must reflect what was gated and what was not.
-- **Spec Identification enhances Spec-to-Test Traceability:** traceability only works if a spec source is explicitly named.
-- **Waiver Tracking requires CI Gate Definitions:** waivers are defined against a specific gate and stage.
-- **Anti-Fake-Implementation Checks require Mutation + Property Test Baseline:** these checks depend on robust test varieties.
-
-## MVP Definition
-
-### Launch With (v1)
-
-Minimum viable product — what's needed to validate the concept.
-
-- [ ] Crate classification by risk traits — core input to all governance decisions
-- [ ] Mandatory baseline tool enforcement + conditional tool selection — defines verification scope
-- [ ] PR/nightly/release gate definitions — operationalizes governance
-- [ ] Verified vs unverified scope reporting + residual risks — prevents false assurance
-
-### Add After Validation (v1.x)
-
-Features to add once core is working.
-
-- [ ] Waiver lifecycle management — add when multiple waivers are accumulating
-- [ ] Spec-to-test/tool traceability map — add when audits or compliance pressure appear
-
-### Future Consideration (v2+)
-
-Features to defer until product-market fit is established.
-
-- [ ] Gate cost modeling and optimization — valuable at scale but not required initially
-- [ ] Automated report generation integrations — add after workflow stabilizes
-
-## Feature Prioritization Matrix
-
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Crate classification by risk traits | HIGH | MEDIUM | P1 |
-| Mandatory baseline tool enforcement | HIGH | MEDIUM | P1 |
-| Conditional tool selection | HIGH | MEDIUM | P1 |
-| CI gate definitions (PR/nightly/release) | HIGH | MEDIUM | P1 |
-| Verified vs unverified scope reporting | HIGH | MEDIUM | P1 |
-| Residual risk capture | HIGH | LOW | P1 |
-| Waiver lifecycle management | MEDIUM | MEDIUM | P2 |
-| Spec-to-test/tool traceability | MEDIUM | HIGH | P2 |
-| Anti-fake-implementation checks | MEDIUM | HIGH | P2 |
-| Gate cost modeling | LOW | MEDIUM | P3 |
-
-## Competitor Feature Analysis
-
-| Feature | Competitor A | Competitor B | Our Approach |
-|---------|--------------|--------------|--------------|
-| Baseline Rust toolset | Generic QA policies | Rust testing checklists | Governance baseline with applicability rationale |
-| Stage-separated CI gates | Ad-hoc CI configs | “All tests on PR” | Explicit PR/nightly/release gate definitions |
-| Verified vs unverified reporting | Rare | Rare | Mandatory, structured reporting |
-
-## Sources
-
-- `test/rust_crate_guideline.md`
-- `.planning/PROJECT.md`
-
----
-*Feature research for: Rust crate test governance*
-*Researched: 2026-03-21*
+- **GTG support in the public surface** – Upstream marks GTG as deprecated/incorrect, and the design explicitly keeps GTG out of GA (no feature flag, ensure symbols never leak). It should remain a roadmap-only ambition because shipping it would break the compatibility promise. (Sections 0.4.A3, 10.1, 17.4)
+- **Bitwise-identical implementation or Fortran wrappers** – The charter targets result compatibility, not line-by-line/bit-level clones of libcint or reproducing the Fortran wrapper; chasing those would waste time and doesn’t improve migration. Keep the Rust-native layout and `Result`/typed-error semantics instead. (Sections 0.3, 1.3, Appendix C)
+- **Asynchronous public API surface** – The design purposely keeps execution synchronous so compatibility behavior stays predictable; adding async APIs would change allocation/dispatch timing and complicate the OOM-safe policy. Keep async plans for future phases only if explicit use cases emerge. (Sections 0.3, 1.3)
+- **Unbounded optional profiling transforms (cart/spinor for F12/STG/YP or unsupported 4c1e regions)** – The validated support envelopes (e.g., F12/STG/YP = sph only, 4c1e limited to the bug envelope) must stay enforced by returning `UnsupportedApi` or specialized errors outside of those planes. Trying to ship partial or incorrect support is worse than a clear unsupported error. (Sections 0.4, 3.11, 10.1, 16.4)

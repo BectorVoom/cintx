@@ -1,126 +1,141 @@
 # Project Research Summary
 
-**Project:** Rust Crate Test Governance
-**Domain:** Rust crate test-governance policy, CI gates, and verification reporting
+**Project:** cintx
+**Domain:** Rust-native libcint-compatible integral library
 **Researched:** 2026-03-21
 **Confidence:** MEDIUM
 
 ## Executive Summary
 
-This project defines a Rust-specific test-governance system that turns a crate’s characteristics into an auditable verification plan. The research converges on a risk-trait classification step that drives tool selection, CI gate tiering (PR/nightly/release), and reporting that explicitly separates verified from unverified scope. Experts build this as policy-as-data plus a deterministic decision pipeline, so governance remains auditable and adaptable without rewriting logic.
+cintx is a Rust-native reimplementation of libcint whose credibility depends on matching the upstream API result matrix while adding typed safety, predictable error contracts, and observable planning/allocator behavior. Experts build it by keeping a manifest-driven API catalog, distinguishing the safe Rust facade from the raw compat surface and optional C shim, and letting a single CubeCL-backed planner execute every integral family so that parity proofs stay centralized.
 
-The recommended approach is to establish the mandatory baseline toolset, then layer conditional tools based on risk traits (unsafe, concurrency, parsing, compile-time contracts). Separate CI gates prevent expensive verification from collapsing into PR-only checks, while reports must surface residual risks and avoid coverage-only claims. Tool versions should be pinned and governance updates required for tool upgrades to preserve reproducibility.
+The recommended approach is to stabilize the foundational stack first: pin Rust 1.94.0, lock Cargo dependencies, generate the compiled manifest lock, and implement the typed domain models plus the manifest-aware planner/validator before wiring the CubeCL executor, compat writer, and safe API on top of it. Fallible allocation, tracing spans for chunking/fallbacks, and manifest/oracle audits are non-negotiable requirements.
 
-Key risks are misclassification (skipping required tools), gate collapse (all checks in one tier), and misleading assurance language. Mitigation is explicit classification artifacts, tiered gate policy, and enforced report templates that require verified/unverified scope plus tool limitation notes.
+Key risks surface when reduction order drifts, large feature families hit GPU limits, or the manifest/oracle inventory diverges; mitigate them by enforcing deterministic planner contracts, routing every allocation through fallible limits with explicit `UnsupportedApi` for envelopes outside the support matrix, and gating every change with manifest diffs plus oracle regressions before release.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is centered on stable Rust plus a pinned nightly for verification tooling, with GitHub Actions for CI orchestration and RustSec tooling for dependency governance. The baseline includes `cargo test`, `proptest`, `cargo-mutants`, `cargo-hack`, and `cargo-llvm-cov`, with conditional tools for unsafe (`miri`), concurrency (`loom`), parsers (`cargo-fuzz`), and compile-fail contracts (`trybuild`/`ui_test`). Tool version pinning is required to prevent drift in results.
+The project relies on a pinned Rust 1.94.0 toolchain, Cargo with `resolver = "3"` and `cargo --locked`, CubeCL as the GPU backend, and crates that expose observable diagnostics (e.g., `tracing`, `thiserror`, `anyhow`). These choices keep verification reproducible, errors typed, and backend switching future-proof while preserving the manifest/oracle audit loops spelled out in the design.
 
 **Core technologies:**
-- Rust toolchain (stable + pinned nightly) — baseline testing plus nightly-only verification like Miri.
-- GitHub Actions + rust-toolchain action — CI orchestration with explicit toolchain control.
-- RustSec enforcement (`cargo-audit`, `cargo-deny`) — dependency and license policy gates.
+- `rustc 1.94.0` + `rust-toolchain.toml`: reproducible compiler output and CI parity.
+- Cargo lockfile & resolver 3: deterministic dependency resolution across the multi-crate workspace.
+- CubeCL (current `0.9.x`): the shared GPU executor that keeps host work focused on planning and validation.
+- `tracing` + fallible allocators (`thiserror`/`anyhow` for boundaries): observable planner decisions and safe-stop semantics.
 
 ### Expected Features
 
+The launch must deliver the three-layer surface (safe Rust API, raw compat API, optional C shim), manifest-backed symbol coverage with multi-profile CI, CubeCL-backed planner with fallible allocation, and the legacy/helper/optimizer parity that migration users expect. Optional feature families must be gated behind documented flags and issue explicit `UnsupportedApi` responses when out of scope.
+
 **Must have (table stakes):**
-- Crate classification by risk traits — drives governance decisions.
-- Mandatory baseline tool enforcement + conditional tool selection — defines verification scope.
-- PR/nightly/release gate definitions — operationalizes governance stages.
-- Verified vs unverified scope reporting + residual risks — prevents false assurance.
+- Tri-layer API surface with safe builders, raw compat validators, and the C ABI shim sharing the planner.
+- Manifest-backed API inventory plus feature-matrix/oracle verification covering base, `with-f12`, `with-4c1e`, and combined profiles.
+- CubeCL planner locked into fallible allocation, chunking heuristics, and typed failure diagnostics so OOM/rejection paths stay deterministic.
+- Helper/optimizer/transform parity so the legacy symbol list stays intact.
 
 **Should have (competitive):**
-- Waiver lifecycle management — avoids permanent risk debt.
-- Spec-to-test/tool traceability map — auditability for compliance contexts.
-- Anti-fake-implementation checks — elevate mutation/property testing outcomes.
+- Ergonomic builders & typed domain helpers for atoms, shells, environments, and tensor views beyond the strict compat layout.
+- Advanced profiling/benchmarking beyond tracing spans (criterion baselines, CubeCL throughput studies).
+- Extended oracle/property coverage for optional/unstable families once stable coverage is in place.
+- Multi-device CubeCL consistency and transfer/fallback heuristics for polished GPU behavior.
 
 **Defer (v2+):**
-- Gate cost modeling and optimization — valuable at scale but not required for v1.
-- Automated report integrations — add after workflow stabilizes.
+- GTG support in the public surface (roadmap-only and explicitly out of scope).
+- Bitwise-identical libcint internals or Fortran wrapper telemetry.
+- Asynchronous public APIs for the initial GA.
+- Unbounded optional profiling transforms or partial support for optional families outside their validated envelopes.
 
 ### Architecture Approach
 
-Architecture should treat policy as data, with a deterministic pipeline: classification engine → tool selection → gate planning → report building. Major components are policy assets (baseline and applicability matrix), domain models (traits/tools/gates), analysis logic (classifier/selector/planner), reporting (verified vs unverified scope + spec mapping), and CI integration (workflow templates + artifact publishing).
+The architecture splits alignment, planning, execution, compat writing, safe facades, and verification into separate crates so that the manifest, planner, CubeCL executor, compat helpers, safe API, C shim, and oracle tooling can evolve with clear dependencies; verification tooling reuses the runtime and compat paths to enforce parity.
 
 **Major components:**
-1. Policy assets — baseline requirements, applicability matrix, reporting language.
-2. Classification and selection — risk traits to tools with rationale.
-3. Gate planning + reporting — PR/nightly/release rules and evidence outputs.
+1. `cintx-core` + `cintx-ops` — define typed domain models and the compiled manifest/resolver required before any planner logic can exist.
+2. `cintx-runtime` + `cintx-cubecl` — implement validator/planner/scheduler/workspace contracts around the CubeCL executor and fallible allocator hooks.
+3. `cintx-compat` + `cintx-rs` + `cintx-capi` — validate raw layouts, provide helper/legacy bridges, and expose the safe Rust and optional C APIs atop the runtime.
 
 ### Critical Pitfalls
 
-1. **Misclassifying the crate** — require a signed-off classification artifact that maps traits to required tools.
-2. **Collapsing CI gates** — define distinct PR/nightly/release workflows with cost-appropriate checks.
-3. **Coverage/passing tests as proof** — enforce verified vs unverified scope and tool limitations in reports.
-4. **Mutation testing skew** — require hermetic, deterministic tests and document scope.
-5. **Fuzzing without artifacts** — bound runtime and upload crash artifacts in CI.
+1. **Non-deterministic reduction order** — lock reduction strategies into the planner contract, trace chunk plans, and require oracle fixtures whenever chunking heuristics change.
+2. **GPU memory blowups on high families** — route every allocation through fallible pools, pre-check workspace needs, chunk deterministically, and treat unsupported envelopes as explicit errors.
+3. **Compat layout divergence** — centralize layout validation, exercise compatible permutations via both API paths, and fail fast on mismatched `dims`/buffers.
+4. **Manifest/oracle drift** — tie every API change to lock file regeneration, multi-profile CI, and manifest/oracle diffs before gating releases.
+5. **Backend leakage into the public surface** — keep public contracts typed and backend-agnostic, exposing only diagnostics while hiding CubeCL handles.
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure:
+### Phase 1: Manifest & Planner Foundation
+**Rationale:** Manifest-driven APIs, typed domain models, and planner scaffolding are prerequisites for every other layer because the planner requires a stable symbol catalog and fallible memory policies.
+**Delivers:** `cintx-core`/`cintx-ops` definitions, `cintx-runtime` validator/planner hooks with mock executor stubs, manifest lock generation pipeline, and fallible workspace pools.
+**Addresses:** Manifest-backed API inventory, base compatibility requirements, and deterministic chunking (table stakes).
+**Avoids:** Manifest/oracle drift by locking the symbol catalog early and backend leakage by keeping CubeCL detached.
 
-### Phase 1: Policy Baseline + Classification
-**Rationale:** All downstream decisions depend on correct crate classification and baseline policy.
-**Delivers:** Policy assets, classification rubric, and mandatory baseline toolset.
-**Addresses:** Crate classification, baseline enforcement, conditional tool selection.
-**Avoids:** Misclassification pitfall.
+### Phase 2: Execution & Compat Stabilization
+**Rationale:** Once the planner and manifest exist, bring in the CubeCL executor and raw compatibility glue to prove results, handle helper parity, chunking, and layout writes before exposing any higher-level APIs.
+**Delivers:** `cintx-cubecl` executor, `cintx-compat` layout validators/writers/helpers, fallible allocator tied to CubeCL, and tracing for chunking/fallback.
+**Uses:** CubeCL backend, `tracing`, fallible allocators (`thiserror`/`anyhow`), and existing manifest resolver to pick kernels.
+**Implements:** The runtime-to-executor data flow (scheduler→CubeCL→layout writer) from the architecture guidance.
+**Addresses:** CubeCL-backed planner, compat raw API, helper/legacy parity.
+**Avoids:** Non-deterministic reduction order, compat layout divergence, high-memory family blowups.
 
-### Phase 2: Gate Planning + Tooling Integration
-**Rationale:** Gate separation and tool configuration are required to operationalize policy.
-**Delivers:** PR/nightly/release gate schema, CI workflow templates, pinned tool versions.
-**Uses:** GitHub Actions, cargo toolchain, nightly pinning, RustSec tools.
-**Implements:** Gate planner + integration components.
+### Phase 3: Safe Facade, C ABI & Optional Families
+**Rationale:** Once the raw runtime proves stability, expose the typed Rust builders, safe tensor views, compatibility helpers, C shim, and optional feature flags so downstream users can migrate confidently.
+**Delivers:** `cintx-rs` safe API, `cintx-capi` shim, feature gates (`with-f12`, `with-4c1e`, `unstable-source-api`), and optional family behavior (`UnsupportedApi` handling).
+**Addresses:** Three-layer public surface, feature-gated optional families, helper APIs, and ergonomics differentiators.
+**Avoids:** Backend leakage, partial optional-family support by default, unsynchronized helper parity.
 
-### Phase 3: Reporting + Evidence Mapping
-**Rationale:** Governance requires explicit verified/unverified reporting and evidence traceability.
-**Delivers:** Report templates, verified/unverified scope sections, residual-risk capture.
-**Implements:** Reporting pipeline and spec-to-evidence mapping.
+### Phase 4: Verification & Release Automation
+**Rationale:** With the execution stack and facades in place, close the manifest/oracle loop, run multi-profile CI, and produce the automation/benchmark artifacts needed for release confidence.
+**Delivers:** `cintx-oracle` comparison harness, `xtask` manifest/oracle audit jobs, multi-profile CI workflows, OOM/benchmarks, and documentation/regression analytics.
+**Addresses:** Manifest-backed verification, property tests, multi-profile oracle coverage, and release gates.
+**Avoids:** Manifest/oracle drift, GPU regression surprises, insufficient verification before release.
 
 ### Phase Ordering Rationale
-
-- Classification must precede tool selection, which must precede gate design and reporting.
-- Architecture separates policy, analysis, and reporting; phases map to those component boundaries.
-- Separating gate design from reporting reduces the risk of coverage-only or “all good” claims.
+- Foundations (manifest, planner, memory policy) must precede real execution/compat code so that every API change can be validated against a stable lock.
+- Execution & compat stabilization naturally lead into safe APIs, optional families, and C shims because the higher layers reuse the runtime/compat plumbing.
+- Verification closes the loop once the whole stack exists so manifest/oracle diffs and performance regressions stop gating release.
 
 ### Research Flags
-
 Phases likely needing deeper research during planning:
-- **Phase 2:** CI integration details for tools like `cargo-mutants`, `cargo-fuzz`, `miri`, and `loom` (workflow specifics and runtime controls).
-- **Phase 3:** Evidence schema and report phrasing requirements for audited environments.
+- **Phase 3:** Optional families (F12, 4c1e, unstable source APIs) involve complex feature-gating, tolerance envelopes, and multi-device CubeCL behavior that should be validated before approval.
+- **Phase 4:** Multi-profile oracle and benchmark automation demand reproducible GPU CI (hardware variance, tolerance thresholds, regression tracking) requiring more investigation.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1:** Policy baseline and classification (well-defined in existing guidance and research).
+- **Phase 1:** Manifest generation, resolver patterns, and planner scaffolding follow well-documented Cargo/workspace practices and the detailed design.
+- **Phase 2:** CubeCL execution pipeline and compat layout writers follow the documented architecture and manifest-driven data flow.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM | Tooling choices are well-established, but versions and integration details need validation. |
-| Features | MEDIUM | Strong alignment with project brief; differentiation features need user validation. |
-| Architecture | MEDIUM | Patterns are standard; implementation complexity depends on reporting scope. |
-| Pitfalls | MEDIUM | Derived from known tooling limitations; mitigation is clear but requires enforcement. |
+| Stack | HIGH | STACK.md directly references the pinned toolchain, Cargo policies, and CubeCL choice with explicit version guidance. |
+| Features | HIGH | FEATURE.md enumerates table stakes, differentiators, and anti-goals drawn from the detailed design’s requirement sections. |
+| Architecture | HIGH | ARCHITECTURE.md defines clear component boundaries, data flow, and build order; it aligns with the design doc. |
+| Pitfalls | MEDIUM | PITFALLS.md distills major risks from the same design doc but mitigation estimates are less quantified. |
 
 **Overall confidence:** MEDIUM
 
 ### Gaps to Address
 
-- CI workflow specifics for nightly tools and fuzzing runtime controls — confirm expected runtimes and artifact retention strategy.
-- Report schema fidelity — validate required language with stakeholders to avoid compliance gaps.
+- Multi-device CubeCL behavior and fallback heuristics: plan labs to validate transfer/queue selection and caching before optional families expand.
+- GPU CI stability and tolerance thresholds for oracle comparisons: document hardware assumptions and stress the CI matrix early.
+- Optional-family and unstable-source feature gating costs: scope how many manifest/oracle fixtures each new profile adds before locking them in.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- .planning/PROJECT.md — project constraints and baseline requirements.
-- test/rust_crate_guideline.md — domain brief and mandatory baseline.
+- `docs/design/cintx_detailed_design.md` — detailed scope, manifest policy, verification plan, architecture, and release gating.
 
 ### Secondary (MEDIUM confidence)
-- .planning/research/STACK.md — toolchain recommendations and version pinning.
-- .planning/research/FEATURES.md — feature expectations and priorities.
-- .planning/research/ARCHITECTURE.md — architecture patterns and component boundaries.
-- .planning/research/PITFALLS.md — risk analysis and mitigation strategies.
+- `.planning/research/STACK.md` — pinned toolchain, Cargo policy, CubeCL choice, and supporting libraries.
+- `.planning/research/FEATURES.md` — table stakes, differentiators, and anti-features in the compatibility story.
+- `.planning/research/ARCHITECTURE.md` — component boundaries, data flow, and build sequencing guidance.
+- `.planning/PROJECT.md` — project intent, requirements, and scope constraints.
+
+### Tertiary (LOW confidence)
+- `.planning/research/PITFALLS.md` — key risks and their mitigation strategies (valuation lacks cost estimates).
 
 ---
 *Research completed: 2026-03-21*

@@ -1,205 +1,33 @@
-# Architecture Research
+# Architecture for the libcint Reimplementation
 
-**Domain:** Rust crate test-governance system
-**Researched:** 2026-03-21
-**Confidence:** MEDIUM
+## Component boundaries
+| Component | Responsibility | Talks to |
+|-----------|----------------|----------|
+| `cintx-core` | Domain types (`Atom`, `Shell`, `BasisSet`, `EnvParams`, `OperatorId`, `OutputTensorView`) and the typed error graph (`thiserror`-based `cintxRsError`). | Runtime, safe API, compat writer, manifest resolver. |
+| `cintx-ops` | Manifest generation / resolver (`compiled_manifest.lock.json`, feature-aware symbol metadata, `OperatorId` lookup) that defines what APIs must exist and what feature gates/optional families are available. | Runtime (planner/validator uses symbol metadata), xtask/CI (manifest audit), verification harness (oracle targets). |
+| `cintx-runtime` | Planner, validator, scheduler, workspace allocator, dispatch logic, options/metrics; consumes manifest metadata to select kernels, choose chunking, honor memory limits, and emit tracing spans. | Core types, manifest resolver, CubeCL backend, compat layer, safe API, xtask/oracle instrumentation. |
+| `cintx-cubecl` | CubeCL executor kernels, data transfer (H2D/D2H), specialization cache, resident metadata, staging/transfer helpers; encapsulates GPU compute. | Runtime dispatch + scheduler (launch plans), workspace (buffers), compat layer (output writes), safe API (indirectly through runtime). |
+| `cintx-compat` | Raw compatibility API plus helpers/legacy/transform wrappers and layout writers that convert C-style `atm/bas/env/dims` vectors into typed models and write results back into legacy buffers. | Safe API (for fallback helpers), runtime (planner/executor invocation), C API shim, oracle harness (comparison input/output). |
+| `cintx-rs` | Safe Rust facade, builders, prelude, feature-gated entry points; exposes typed evaluation APIs, workspace builders, memory limits, and structured outputs. | Core types, runtime planner, compat helpers (for C-API overlaps), manifest metadata (via resolver helper). |
+| `cintx-capi` | Optional C ABI shim with explicit layout contracts, integer status codes, and thread-local last-error state. | Compat layer (reuses layout validation) and safe API (for shared logic). |
+| `cintx-oracle` | Vendored libcint build + adapter, comparison harness, fixtures; drives result verification against the runtime using raw compat contracts. | Compat layer (feeding raw buffers), xtask (oracle job orchestration), runtime (same planning/execution path). |
+| `xtask` | Manifest audit, oracle update, docs/benchmark helpers; enforces manifest coverage diffs and regenerates documentation keyed to the cataloged API surface. | `cintx-ops` (lock diff), runtime/compat (oracle comparisons), CI (scripts). |
 
-## Standard Architecture
+## Data flow
+1. **Inputs enter through either the safe Rust API or the raw compat surface.** Builders in `cintx-rs` assemble typed `Atom`/`Shell`/`EnvParams`/`OperatorId` objects, while `cintx-compat` validates `atm`/`bas`/`env` arrays, optimizers, and layout parameters against the same domain model before handing them to the shared runtime.
+2. **Planner/validator resolves the target operator via `cintx-ops` metadata.** The runtime reads the manifest lock to confirm the requested symbol exists under the current feature gate (stable, optional, unstable_source) and to know which CubeCL kernel family to specialize.
+3. **Scheduler + workspace allocate fallible memory and chunk work.** Chunking honors the `memory_limit_bytes` policy, workspace pools issue `FallibleBuffer`s, and `dispatch` chooses a CubeCL queue/queue capability (CPU only for control-plane).
+4. **CubeCL executor consumes the execution plan.** `cintx-cubecl` kernels run on the GPU, using `transfer`/`staging` layers to move data and the specialization cache for param layouts. Intermediate tensors remain within the executor until they are reduced to the final `TensorView`.
+5. **Results propagate back through layout writers or safe views.** The compat layer writes results into legacy `out`/`cache` buffers, while the safe API exposes Rust-native `TensorView` slices and `ExecutionPlan` diagnostics. Tracing/metrics capture chunking decisions, fallback reasons, and OOM events during this final stage.
+6. **Verification tooling reuses real runtime and compat flows.** `cintx-oracle` builds vendored libcint, drives the raw compat layer with identical inputs, and compares outputs to the runtime’s results (per the tolerance table in section 13.8). `xtask manifest_audit` uses `cintx-ops` lock diffs to ensure coverage, and oracle/manifest regressions feed back into CI gates.
+7. **Manifest-driven coverage closes the loop.** Changes to API surfaces regenerate `cintx-ops` artifacts (`compiled_manifest.lock.json`), `xtask` audits diffs, and only compatible backend/compat/ safe API combos pass the release gate (oracle comparisons + lock diff = 0).
 
-### System Overview
+## Build order and sequencing guidance
+1. **Domain models + manifest resolver (`cintx-core`, `cintx-ops`).** Define typed inputs/output models and the canonicalized API catalog before any planner/backed code runs; manifest-aware planning cannot exist without a stable lock file and `OperatorId` resolver.
+2. **Runtime scaffolding (`cintx-runtime`).** Implement validator, planner, scheduler, workspace, dispatch, and metric hooks with mock executor integrations first so that manifest metadata and memory policy can be exercised without GPU code.
+3. **CubeCL backend (`cintx-cubecl`).** Plug the real executor/kernels into the runtime once plans emit the right chunk shapes; this isolates GPU volatility and allows the safe API/compat layers to start wiring to a stable planner.
+4. **Compat surface (`cintx-compat`).** With planner+executor in place, implement raw layout validation/writers, helper/legacy adapters, and optimizer handle contracts; raw API bugs are high risk, so they should be surfaced before the safe facade depends on them.
+5. **Safe facade & C shim (`cintx-rs`, `cintx-capi`).** Drive the typed API and optional C ABI atop the runtime/compat plumbing, reusing builder/validator logic; the safe API can defer to the raw layer for helper parity, and the C shim is thin once compat is stable.
+6. **Verification & automation (`cintx-oracle`, `xtask`).** Once the runtime+compat+backend stack produces results, enable manifest audits, oracle comparisons, and documentation generation so that regressions surface before release; these tasks close the manifest/oracle loop described in sections 3.3 and 16.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                 Policy & Governance Layer                                │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌────────────────────┐  ┌──────────────────────────┐ │
-│  │ Policy Assets│  │ Tool Applicability │  │ CI Gate Definitions      │ │
-│  │ (guidelines, │  │ Matrix & Rules     │  │ (PR/Nightly/Release)     │ │
-│  │ templates)   │  └─────────┬──────────┘  └──────────┬───────────────┘ │
-│  └──────┬───────┘            │                       │                  │
-├─────────┴────────────────────┴───────────────────────┴──────────────────┤
-│                 Analysis & Orchestration Layer                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────────────────────────────┐ │
-│  │ Classification Engine → Tool Selection → Gate Plan → Report Builder │ │
-│  └─────────────────────────────────────────────────────────────────────┘ │
-├─────────────────────────────────────────────────────────────────────────┤
-│                 Execution & Evidence Layer                                │
-│  ┌──────────┐  ┌───────────┐  ┌──────────┐  ┌─────────────────────────┐ │
-│  │ CI Jobs  │  │ Test Tools│  │ Evidence │  │ Artifact Store (reports)│ │
-│  │ (GitHub/ │  │ (cargo*,  │  │ Collector│  │                         │ │
-│  │ CI)      │  │ miri, etc)│  │           │  │                         │ │
-│  └──────────┘  └───────────┘  └──────────┘  └─────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| Policy assets | Define mandatory baseline, conditional tools, reporting language, and prohibited claims | Markdown policy docs, templates, checklists |
-| Classification engine | Map crate traits (unsafe, concurrency, parsers, feature flags) to risk classes | Rule-based classifier with inputs from crate metadata and spec |
-| Tool selection | Select mandatory + conditional tools with rationale | Rule table lookup + decision log |
-| Gate planner | Produce PR/Nightly/Release gate requirements + waivers | CI gate schema and checklist |
-| Execution layer | Run selected tools and collect outputs | CI workflows, cargo tool invocations |
-| Evidence & reporting | Aggregate results, map to spec items, state verified/unverified scope | Report templates + structured artifact outputs |
-
-## Recommended Project Structure
-
-```
-src/
-├── policy/                 # Policy assets and templates
-│   ├── baseline.md         # Mandatory baseline requirements
-│   ├── applicability.md    # Tool applicability matrix
-│   └── report-template.md  # Reporting structure
-├── domain/                 # Core domain models
-│   ├── classification.rs   # Crate traits and risk classes
-│   ├── tools.rs            # Tool catalog + applicability rules
-│   └── gates.rs            # PR/Nightly/Release gate definitions
-├── analysis/               # Decision logic
-│   ├── classifier.rs       # Rule evaluation
-│   ├── selector.rs         # Tool selection with rationale
-│   └── planner.rs          # Gate plan construction
-├── reporting/              # Report generation
-│   ├── renderer.rs         # Markdown/JSON report builder
-│   └── mapping.rs          # Spec-to-test mapping
-├── integration/            # CI integration helpers
-│   ├── github.rs           # GitHub Actions emitters
-│   └── artifacts.rs        # Artifact paths and storage conventions
-└── cli/                    # CLI entrypoints (if needed)
-    └── main.rs
-```
-
-### Structure Rationale
-
-- **policy/**: Keeps non-code governance artifacts close to the system, since they are authoritative inputs.
-- **domain/** + **analysis/**: Clean boundary between data models and decision logic; makes policy changes auditable.
-- **reporting/**: Ensures the verified/unverified scope split is consistently expressed across outputs.
-- **integration/**: CI provider specifics are isolated from policy logic to avoid vendor lock-in.
-
-## Architectural Patterns
-
-### Pattern 1: Policy-as-Data (Decision Tables)
-
-**What:** Encode tool applicability and gate requirements in structured tables or rules.
-**When to use:** When policy must be auditable and changeable without rewiring code.
-**Trade-offs:** More upfront structuring; fewer ad-hoc decisions later.
-
-**Example:**
-```rust
-// Pseudocode-style model
-struct ToolRule {
-    applies_if: Vec<CrateTrait>,
-    tool: ToolId,
-    rationale: &'static str,
-}
-```
-
-### Pattern 2: Spec-to-Evidence Mapping
-
-**What:** Every spec item maps to tests/tools and resulting evidence.
-**When to use:** Always — required to avoid unsupported assurance claims.
-**Trade-offs:** Additional mapping work; higher assurance clarity.
-
-**Example:**
-```rust
-struct EvidenceMap {
-    spec_item: String,
-    tool: ToolId,
-    gate: GateTier,
-    status: EvidenceStatus,
-}
-```
-
-### Pattern 3: Gate Tiering (PR/Nightly/Release)
-
-**What:** Separate gates by CI tier with explicit rationale and waiver rules.
-**When to use:** Always — requested in project constraints.
-**Trade-offs:** Extra CI config; avoids conflating fast feedback with deep verification.
-
-## Data Flow
-
-### Request Flow
-
-```
-Testing Request
-    ↓
-Scope + Spec Inputs
-    ↓
-Classification Engine
-    ↓
-Tool Selection (mandatory + conditional)
-    ↓
-Gate Plan (PR/Nightly/Release + waivers)
-    ↓
-CI Execution + Evidence Collection
-    ↓
-Report Generation (verified vs unverified scope)
-```
-
-### Key Data Flows
-
-1. **Policy → Decision:** Policy assets feed classification and selection logic.
-2. **Decision → CI:** Gate plan configures CI jobs and required tools.
-3. **CI → Report:** Tool outputs become evidence, mapped back to spec items.
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 0-10 crates | Single repo + static policy docs; manual report generation |
-| 10-100 crates | Centralized policy + reusable gate templates; automated reporting |
-| 100+ crates | Policy registry + automated classification + standardized artifact schema |
-
-### Scaling Priorities
-
-1. **First bottleneck:** Manual report assembly → automate evidence collection and mapping.
-2. **Second bottleneck:** Divergent CI configs → normalize with shared gate templates.
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Coverage-Only Governance
-
-**What people do:** Treat coverage or green tests as sufficient.
-**Why it's wrong:** Violates governance rule against unsupported assurance.
-**Do this instead:** Map spec items to tools + evidence and report residual risk.
-
-### Anti-Pattern 2: Single-Gate CI
-
-**What people do:** Run all tools on PR or only on nightly.
-**Why it's wrong:** Blurs assurance tiers and breaks explicit gate requirements.
-**Do this instead:** Keep PR/Nightly/Release gates separate with rationale.
-
-## Integration Points
-
-### External Services
-
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| GitHub Actions (or CI) | Generated workflow fragments or templates | Keep gate tiers separate |
-| Artifact storage | Publish reports + evidence logs | Must preserve waived/blocked info |
-
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| policy ↔ analysis | Rule tables and metadata | Must be auditable |
-| analysis ↔ integration | Gate plan output | Deterministic, versioned |
-| integration ↔ reporting | Evidence bundle | Consistent schema for reports |
-
-## Suggested Build Order
-
-1. **Policy assets + domain models** (baseline, applicability matrix, gate schema).
-2. **Classification + tool selection logic** (rule engine + rationale output).
-3. **Gate planner** (PR/Nightly/Release tiering and waiver handling).
-4. **Reporting pipeline** (spec-to-evidence mapping, verified/unverified outputs).
-5. **CI integration** (workflow generation and artifact publishing).
-
-## Sources
-
-- `test/rust_crate_guideline.md`
-- `.planning/PROJECT.md`
-
----
-*Architecture research for: Rust crate test-governance system*
-*Researched: 2026-03-21*
+Sequencing by dependency keeps high-risk, low-level logic (manifest, planner, GPU kernel, raw layout) under test before higher-level APIs rely on it, and it allows verification tooling to gate upgrades via manifest/oracle feedback.

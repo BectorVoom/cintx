@@ -1,128 +1,83 @@
 # Stack Research
 
-**Domain:** Rust crate test-governance policy, CI enforcement, and auditable reporting
+**Domain:** Rust-native libcint-compatible integral library
 **Researched:** 2026-03-21
-**Confidence:** MEDIUM
+**Confidence:** HIGH for core toolchain and foundational crates; MEDIUM for long-term CubeCL ecosystem assumptions.
 
 ## Recommended Stack
 
-### Core Technologies
+### Core Platform
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Rust toolchain (stable + pinned nightly) | stable + `nightly-YYYY-MM-DD` | Baseline compilation/tests + nightly-only verification (Miri, fuzzing, some coverage modes) | Miri and other verification tooling require nightly; pinning nightly keeps audits reproducible. citeturn1search2 |
-| GitHub Actions + rust-toolchain action | `actions-rs/toolchain@v1` | CI orchestration and toolchain provisioning | Widely used Rust CI surface with explicit toolchain control. citeturn5search3 |
-| RustSec advisory enforcement | `cargo-audit` 0.22.1 + `cargo-deny` 0.18.9 | Dependency vulnerability + license/policy enforcement | RustSec is the canonical advisory DB; cargo-audit and cargo-deny are standard enforcement tools. citeturn3search9turn5search6turn2search7 |
+| Technology | Version guidance | Purpose | Why recommended |
+|------------|------------------|---------|-----------------|
+| Rust toolchain | Pin `1.94.0` in `rust-toolchain.toml` | Reproducible compiler behavior across local dev and CI | Rust 1.94.0 is the current stable release as of 2026-03-05, and pinning an exact toolchain keeps oracle and manifest results reproducible. |
+| Cargo lockfile | Commit `Cargo.lock`; run CI with `cargo --locked` | Deterministic dependency graph | Oracle comparisons and manifest audits are only credible if every runner uses the same resolved graph. |
+| Cargo resolver | Use edition-2024 default `resolver = "3"`; if the root becomes a virtual workspace, declare it explicitly under `[workspace]` | Predictable feature resolution in a multi-crate workspace | Resolver 3 is the 2024-edition default and is the right baseline for the workspace described in the design doc. |
+| Multi-crate workspace | Keep the crate split from the design (`core`, `ops`, `runtime`, `cubecl`, `compat`, `capi`, `oracle`, `xtask`) | Isolate domain types, execution, compat, verification, and tooling | The project has hard boundaries between typed API, compat contracts, backend execution, and release gating; the crate layout should reflect them. |
 
-### Supporting Libraries
+### Core Libraries
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| `proptest` | 1.7.0 | Property-based tests with shrinking | Mandatory baseline for input-space exploration beyond example tests. citeturn4search2 |
-| `cargo-mutants` | 26.0.0 | Mutation testing to detect fake/weak tests | Mandatory baseline to guard against tests that don’t fail when code is wrong. citeturn3search2 |
-| `cargo-llvm-cov` | 0.6.18 | Coverage reports (line/region/branch) | Baseline visibility signal (not a sufficiency gate). citeturn5search1 |
-| `cargo-hack` | 0.6.43 | Feature-matrix testing, MSRV range checks | Mandatory for feature-flag governance and MSRV drift detection. citeturn3search0turn0search2 |
-| `trybuild` | 1.0.114 | Compile-fail/UI tests for user-facing diagnostics | Required when crates expose compile-time contracts or macro diagnostics. citeturn5search8 |
-| `ui_test` | 0.30.1 | Compiler-output regression harness | Use when you need rustc-style UI test semantics. citeturn1search7 |
-| `loom` | 0.7 | Deterministic concurrency permutation testing | Required for atomics/concurrency risk classes. citeturn0search3 |
-| `Miri` | nightly component | Undefined-behavior detection for unsafe code | Required whenever unsafe code exists; catches UB in tests. citeturn1search2 |
-| `cargo-fuzz` | 0.13.1 | Fuzzing via libFuzzer | Required for parsers/decoders/formatters or hostile inputs. citeturn0search5turn0search8 |
-| `Kani` | latest (pin release in CI) | Bounded model checking for critical invariants | Required for high-value invariants where bounded proofs are feasible. citeturn0search7 |
-| `cargo-nextest` | 0.9.111 | Parallel test execution + JUnit/JSON reporting | Use to scale test suites and produce auditable machine-readable reports. citeturn2search4 |
-| `cargo-auditable` | 0.7.0 | Embed dependency metadata into binaries | Use when you need post-build provenance for audits. citeturn4search0 |
+| Library | Version guidance | Purpose | Notes |
+|---------|------------------|---------|-------|
+| `cubecl` | Keep the current `0.9.x` line unless a verified backend issue forces a change | Shared GPU compute backend | `docs.rs` shows `cubecl 0.9.0` as the latest published crate. Keep the public API backend-agnostic enough that a backend swap remains possible if the ecosystem shifts. |
+| `thiserror` | `2.0.18` | Public typed error surface | Fits the design requirement for library-facing error enums without leaking implementation details into the API contract. |
+| `anyhow` | `1.0.102` | App-boundary, xtask, benchmark, and oracle tooling errors | Matches the design choice to keep ergonomic context-rich errors out of the public library surface. |
+| `tracing` | Stay on the current stable `0.1.x` line used by the workspace | Structured spans and diagnostics | Required for planner decisions, chunking, transfers, fallback reasons, and OOM visibility. |
+| `bindgen` | Current workspace is `0.71.1`; latest published line is `0.72.1` | Oracle/header binding generation | Upgrade deliberately, not automatically: header-generation changes must be validated against the manifest and oracle harness. |
+| `cc` | Keep current stable `1.2.x` line | Vendored upstream libcint build integration | Needed to keep the oracle harness hermetic and reproducible. |
+
+### Supporting Libraries from the Design
+
+| Library | Use | Why it belongs here |
+|---------|-----|---------------------|
+| `rayon` | Host-side staging and chunk-preparation parallelism | Good fit for CPU-side marshaling without exposing threading complexity in the public API. |
+| `smallvec` | Small fixed-ish collections (`dims`, shell tuples, strides) | Cuts heap churn in hot control-plane paths. |
+| `num-complex` | Safe API complex/spinor outputs | Better than raw interleaved buffers leaking into typed callers. |
+| `approx`, `proptest`, `criterion` | Verification and benchmarking | Match the design's emphasis on oracle comparison, property testing, and repeatable perf baselines. |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| `cargo test` | Baseline unit/integration/regression tests | Baseline gate; not sufficient for assurance alone. |
-| `cargo miri test` | Unsafe UB checks | Use nightly; run as separate CI lane. citeturn1search2 |
-| `cargo mutants` | Mutation testing | Use incremental PR mode + full mainline/nightly sweeps. citeturn3search2 |
-| `cargo hack` | Feature and MSRV matrix | Use `--each-feature` or `--feature-powerset` based on size. citeturn0search2 |
-| `cargo llvm-cov` | Coverage artifacts | Produce LCOV/HTML artifacts for audit trail. citeturn5search1 |
-| `cargo audit` / `cargo deny` | Supply-chain enforcement | Use CI gates + scheduled audits. citeturn5search6turn2search7 |
-
-## Installation
-
-```bash
-# Core (tooling binaries)
-cargo install --locked cargo-mutants cargo-llvm-cov cargo-hack cargo-fuzz cargo-nextest cargo-audit cargo-deny cargo-auditable
-
-# Nightly components
-rustup toolchain install nightly
-rustup +nightly component add miri
-
-# Supporting test crates (dev-dependencies)
-cargo add -D proptest trybuild ui_test loom
-```
+| `cargo nextest` | Faster and more controllable CI test execution | Useful once oracle, feature-matrix, and regression suites become expensive. |
+| `rustfmt` + `clippy` | Baseline style and lint enforcement | Already aligned with the current `rust-toolchain.toml` components. |
+| `xtask` commands | Manifest audit, oracle refresh, docs generation, bench reporting | Keeps release gates expressed as code instead of tribal knowledge. |
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| `cargo-mutants` | `mutagen` | Use only if you need manual mutation control and can accept higher setup overhead. citeturn3search2turn0search4 |
-| `trybuild` | `ui_test` | Use `ui_test` if you need rustc-style UI test semantics; otherwise `trybuild` is simpler for crate-level compile-fail tests. citeturn1search7turn5search8 |
-| `cargo-nextest` | `cargo test` only | Use `cargo test` alone for tiny crates with short runtimes; otherwise nextest improves throughput and reporting. citeturn2search4 |
+| Recommended | Alternative | When the alternative is justified |
+|-------------|-------------|----------------------------------|
+| `cubecl` | Another GPU backend or a CPU compute backend | Only if CubeCL blocks correctness, platform coverage, or maintainability; do not leak CubeCL-specific types into the public API. |
+| `thiserror` for library errors | `anyhow` everywhere | Only for internal binaries or scripts; not for the public library contract. |
+| Exact toolchain pin | Floating `stable` | Acceptable for quick local experimentation, but not for release-gated CI or oracle baselines. |
 
-## What NOT to Use
+## What Not to Use
 
-| Avoid | Why | Use Instead |
+| Avoid | Why | Use instead |
 |-------|-----|-------------|
-| Coverage-only gates | Coverage does not prove correctness or spec conformance | Use mutation tests + property tests + targeted verification. |
-| Unpinned nightly toolchains | Non-reproducible audits and flaky CI | Pin nightly by date in `rust-toolchain.toml`. citeturn1search2 |
-| Outdated fuzzing wrappers (e.g., `cargo-libafl`) | Marked as outdated and behind `cargo-fuzz` | Use `cargo-fuzz` unless you have a specific LibAFL requirement. citeturn6view0turn0search8 |
-
-## Stack Patterns by Variant
-
-**If the crate contains unsafe code or FFI:**
-- Add `Miri` to PR/nightly gates.
-- Because it detects UB that `cargo test` cannot. citeturn1search2
-
-**If the crate is concurrent or uses atomics:**
-- Add `loom` model tests.
-- Because it explores interleavings deterministically. citeturn0search3
-
-**If the crate parses external input or has serialization formats:**
-- Add `cargo-fuzz` fuzz targets.
-- Because libFuzzer-based fuzzing finds hostile-input bugs. citeturn0search8
-
-**If the crate exposes compile-time constraints or macros:**
-- Add `trybuild` or `ui_test`.
-- Because compile-fail diagnostics are part of the public contract. citeturn5search8turn1search7
-
-**If the crate has critical invariants:**
-- Add `Kani` proofs for bounded verification.
-- Because model checking can prove properties that tests may miss. citeturn0search7
-
-## Version Compatibility
-
-| Package A | Compatible With | Notes |
-|-----------|-----------------|-------|
-| `cargo-llvm-cov` 0.6.18 | Rust nightly (branch coverage optional) | Branch coverage requires nightly. citeturn5search1 |
-| `cargo-fuzz` 0.13.1 | Nightly + libFuzzer | Uses libFuzzer via cargo-fuzz. citeturn0search5turn0search8 |
-| `Miri` (nightly component) | Pinned nightly toolchain | Install via rustup nightly; supports `cargo miri test`. citeturn1search2 |
+| Nightly as the project baseline | Changes compiler behavior and weakens reproducibility | Stable Rust pinned in `rust-toolchain.toml` |
+| Unpinned dependency resolution in CI | Makes manifest/oracle drift hard to diagnose | `Cargo.lock` plus `cargo --locked` |
+| Public APIs that expose backend-specific runtime types | Makes future backend changes expensive and risky | Keep backend details behind planner/executor traits and typed output views |
+| Best-effort partial writes on allocation failure | Violates the design's OOM-safe stop contract | Fallible allocation + typed failure + no partial writes |
 
 ## Sources
 
-- https://github.com/rust-lang/miri — UB detection + nightly install details citeturn1search2
-- https://github.com/taiki-e/cargo-hack — feature matrix + MSRV range tooling citeturn0search2
-- https://lib.rs/crates/cargo-llvm-cov — cargo-llvm-cov release info + branch coverage note citeturn5search1
-- https://docs.rs/crate/cargo-hack/0.2.0 — cargo-hack version history citeturn3search0
-- https://github.com/sourcefrog/cargo-mutants — cargo-mutants usage + CI integration citeturn3search2
-- https://lib.rs/crates/cargo-fuzz — cargo-fuzz version info citeturn0search5
-- https://rust-fuzz.github.io/book/cargo-fuzz.html — cargo-fuzz usage + libFuzzer binding citeturn0search8
-- https://model-checking.github.io/kani/ — Kani overview + workflow citeturn0search7
-- https://docs.rs/crate/cargo-audit/latest — cargo-audit version info + usage citeturn5search6
-- https://www.mail-archive.com/package-announce%40lists.fedoraproject.org/msg440085.html — cargo-deny version reference citeturn2search7
-- https://lib.rs/crates/proptest — proptest version info citeturn4search2
-- https://github.com/tokio-rs/loom — loom quickstart version pin citeturn0search3
-- https://www.mail-archive.com/package-announce%40lists.fedoraproject.org/msg441946.html — trybuild version reference citeturn5search8
-- https://lib.rs/crates/ui_test — ui_test version info citeturn1search7
-- https://github.com/nextest-rs/nextest — cargo-nextest releases citeturn2search4
-- https://lib.rs/crates/cargo-auditable — cargo-auditable version info citeturn4search0
-- https://github.com/marketplace/actions/rust-toolchain — GitHub Actions rust-toolchain action citeturn5search3
-- https://github.com/rustsec/rustsec — RustSec advisory tooling citeturn3search9
+### Official / primary
+- Rust 1.94.0 release announcement: https://blog.rust-lang.org/2026/03/05/Rust-1.94.0/
+- Cargo resolver guidance: https://doc.rust-lang.org/nightly/cargo/reference/resolver.html
+- Cargo feature resolver details: https://doc.rust-lang.org/stable/cargo/reference/features.html
+- Cargo nextest docs: https://nexte.st/
+- CubeCL crate docs: https://docs.rs/crate/cubecl/latest
+- thiserror crate docs: https://docs.rs/crate/thiserror/latest
+- anyhow crate docs: https://docs.rs/crate/anyhow/latest
+- bindgen crate docs: https://docs.rs/crate/bindgen/0.71.1 and https://docs.rs/crate/bindgen/latest
+
+### Local project evidence
+- `Cargo.toml`
+- `Cargo.lock`
+- `rust-toolchain.toml`
+- `docs/design/cintx_detailed_design.md`
 
 ---
-*Stack research for: Rust crate test-governance policy, CI enforcement, and auditable reporting*
+*Stack research for: cintx*
 *Researched: 2026-03-21*

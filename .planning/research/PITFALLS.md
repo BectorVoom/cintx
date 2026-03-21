@@ -1,197 +1,166 @@
 # Pitfalls Research
 
-**Domain:** Rust crate test-governance policies, CI gates, and verification reporting
+**Domain:** Rust-native libcint-compatible integral library
 **Researched:** 2026-03-21
-**Confidence:** MEDIUM
+**Confidence:** HIGH for project-specific pitfalls derived from the design and current architecture; MEDIUM for mitigation cost estimates.
 
 ## Critical Pitfalls
 
-### Pitfall 1: Misclassifying the Crate and Skipping Required Tools
+### Pitfall 1: Nondeterministic reduction order breaks oracle parity
 
 **What goes wrong:**
-The governance plan misses conditional tools (e.g., `loom`, `miri`, `cargo-fuzz`, `trybuild`) because the crate’s traits (unsafe, concurrency, parser exposure, compile-time contracts) were not captured, leading to unverified risk classes that appear “covered.” 
+Chunking, batching, or kernel specialization changes the accumulation order, and numerically valid GPU outputs drift outside the accepted oracle tolerances.
 
 **Why it happens:**
-Classification is treated as a quick checklist rather than a requirements analysis mapped to concrete tool applicability.
+Floating-point addition is not associative, and GPU work partitioning makes it easy to reorder reductions without noticing.
 
 **How to avoid:**
-Make classification a required phase artifact. For each risk class, explicitly state whether it applies and why; link each “applies” decision to a required tool and CI gate.
+- Make reduction order a planner contract, not an implementation accident.
+- Record chunk plans and reduction strategies in tracing so parity failures can be tied to execution shape changes.
+- Require an oracle regression fixture whenever chunking or reduction heuristics change.
 
 **Warning signs:**
-“No unsafe/concurrency/parsing” claims without evidence; missing references to public API/feature-flag surface; no explicit mapping from traits to tools.
+- Parity failures appear only after scheduler changes.
+- Results differ by chunk size or backend configuration.
+- The same family passes on small cases but fails on large batches.
 
 **Phase to address:**
-Phase 1 — Crate classification and mandatory baseline definition.
+Base execution phase and every later performance-tuning phase.
 
 ---
 
-### Pitfall 2: Collapsing PR/Nightly/Release Gates into a Single Gate
+### Pitfall 2: High-memory families blow through GPU limits
 
 **What goes wrong:**
-Expensive or long-running verification (mutation testing, fuzzing, Miri, Loom) is either skipped entirely or forced into PR CI, causing timeouts and eventual removal of gates.
+Large or high-angular-momentum families exhaust device memory, leading to unstable runtime behavior, silent partial work, or late-stage support rollbacks.
 
 **Why it happens:**
-Governance policy does not distinguish cost profiles and assurance goals for PR vs. nightly vs. release.
+The support matrix includes families whose workspace and intermediate-buffer sizes can grow sharply, especially once optional families are enabled.
 
 **How to avoid:**
-Define explicit gate tiers: PR for fast, deterministic checks; nightly for expensive, broader checks; release for full verification including longer fuzzing and mutation runs. Use separate workflows.
+- Route every large allocation through a fallible allocator.
+- Estimate memory before launch and chunk deterministically.
+- Treat unsupported envelopes as explicit `UnsupportedApi` decisions, not accidental runtime failures.
+- Add OOM and memory-limit tests before expanding optional-family coverage.
 
 **Warning signs:**
-PR CI routinely times out; teams disable gates or reduce test coverage without documented risk tradeoffs.
+- `MemoryLimitExceeded` appears only under optional feature profiles.
+- Planner retries repeatedly with shrinking chunks.
+- Large-family tests pass locally but fail on smaller CI GPUs.
 
 **Phase to address:**
-Phase 2 — CI gate design and workflow separation.
+Planner/runtime phase, optional-family phase, and dedicated OOM/verification phase.
 
 ---
 
-### Pitfall 3: Treating Coverage or Passing Tests as Proof of Correctness
+### Pitfall 3: Compat layout contracts diverge from device-buffer assumptions
 
 **What goes wrong:**
-Reports imply completeness because “tests pass” or coverage is high, even when conditional tools were not run or coverage is known to be incomplete/unstable.
+The raw compatibility layer accepts shapes, dims, or buffer layouts that the backend cannot safely execute or write back, causing misordered results, invalid writes, or incorrect complex/cart/spinor layouts.
 
 **Why it happens:**
-Coverage is easier to communicate than verification scope; teams ignore tool-specific limitations (e.g., unstable branch/doctest coverage in `cargo-llvm-cov`). citeturn2view3
+The public compat contract is more permissive than a naive device-copy path. If layout validation lags behind backend assumptions, bugs appear at the raw boundary.
 
 **How to avoid:**
-Require explicit verified vs. unverified scope in reporting. Document tool limitations in the report and avoid blanket claims.
+- Keep one source of truth for `dims`, required element counts, and output layout contracts.
+- Validate all raw inputs before any transfer or kernel launch.
+- Exercise layout permutations through both safe and compat entrypoints in tests.
+- Treat partial writes and implicit truncation as hard failures.
 
 **Warning signs:**
-“Fully tested” or “complete” language; coverage reports used as the only acceptance signal; doctests or branch coverage assumed stable without validation. citeturn2view3
+- Raw APIs fail while equivalent safe APIs pass.
+- Cart/sph/spinor result sizes differ between planning and writeback.
+- Bugs cluster around custom `dims`, `out == NULL`, or `cache == NULL` cases.
 
 **Phase to address:**
-Phase 3 — Reporting templates and assurance language rules.
+Typed-foundation/compat phase and all later oracle-comparison phases.
 
 ---
 
-### Pitfall 4: Mutation Testing Results Skewed by Non-Hermetic Tests
+### Pitfall 4: Manifest and oracle coverage drift apart
 
 **What goes wrong:**
-`cargo-mutants` draws the wrong conclusions when tests are flaky, non-deterministic, or depend on external state, and it cannot see tests that are not run by `cargo test`. This makes mutation results look better (or worse) than reality. citeturn2view0
+The codebase appears feature-complete, but symbol coverage, optional-family behavior, or helper parity drifts from the compiled manifest lock and release gates.
 
 **Why it happens:**
-Teams treat mutation testing as “set and forget” and ignore the requirement that the test suite be hermetic and in-tree.
+Wide API coverage is hard to track manually; optional and unstable families multiply the number of profiles that must stay consistent.
 
 **How to avoid:**
-Ensure tests are hermetic and deterministic; document any reliance on external state; ensure critical tests are actually run by `cargo test` or explicitly mark them as out-of-scope in the report. citeturn2view0
+- Treat manifest audit and oracle comparison as hard release gates from the start.
+- Regenerate and diff the compiled manifest lock whenever feature coverage changes.
+- Update CI jobs automatically when optional-family coverage expands.
+- Require helper/legacy/transform parity to pass with the same seriousness as core integrals.
 
 **Warning signs:**
-Frequent flaky failures; mutation results change across runs without code changes; key tests live outside `cargo test`. citeturn2view0
+- CI passes for one feature profile but fails for another.
+- New symbols appear without matching tests.
+- Helper APIs lag behind the main integral families.
 
 **Phase to address:**
-Phase 2 — Tool configuration and CI gate policy.
+Manifest/governance phase and every release-preparation checkpoint.
 
 ---
 
-### Pitfall 5: Fuzzing in CI with No Artifact Capture or Bounded Runtime
+### Pitfall 5: Backend details leak into the public API too early
 
 **What goes wrong:**
-Fuzzing runs are either too short to find issues or too long and get killed by CI; crash artifacts are lost, making failures non-actionable. citeturn2view2
+Safe or compat callers become coupled to CubeCL-specific concepts, making future backend changes or fallback strategies expensive and destabilizing.
 
 **Why it happens:**
-CI workflows omit artifact upload or do not bound fuzzing time.
+The project is compute-heavy, so it is tempting to expose backend-specific handles for performance work before the public contract is stable.
 
 **How to avoid:**
-Define fuzzing as a bounded smoke test in CI with explicit time limits and artifact upload on failure. citeturn2view2
+- Keep public APIs framed in terms of typed inputs, outputs, plans, and error contracts.
+- Hide backend selection and transfer details behind runtime/planner boundaries.
+- Expose diagnostics, not backend internals.
 
 **Warning signs:**
-Fuzz targets are not built or run in CI; fuzz failures without reproducible inputs; CI jobs killed for time. citeturn2view2
+- Public types reference backend runtime objects.
+- Changing backend execution details requires public API changes.
+- Planner diagnostics are only available through internal types.
 
 **Phase to address:**
-Phase 2 — CI gate design for fuzzing.
-
----
-
-### Pitfall 6: Tool Version Drift Changes Results Without Governance Review
-
-**What goes wrong:**
-Mutation testing outcomes change between versions (new mutation patterns, changed heuristics), and coverage or verification results shift without any policy update.
-
-**Why it happens:**
-Tool versions are not pinned, and changes are not tracked in governance documentation. `cargo-mutants` explicitly notes behavior can change between versions, which affects results. citeturn2view1
-
-**How to avoid:**
-Pin tool versions in CI; require a governance review when tool versions change; document expected deltas in reports. citeturn2view1
-
-**Warning signs:**
-Mutation counts change across CI runs without code changes; “new” mutants appear after tool updates. citeturn2view1
-
-**Phase to address:**
-Phase 2 — Tooling and CI policy hardening.
-
----
+API-design phase and safe-facade/C-ABI phase.
 
 ## Technical Debt Patterns
 
-| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+| Shortcut | Immediate Benefit | Long-term Cost | When acceptable |
 |----------|-------------------|----------------|-----------------|
-| Skip mutation testing to “speed up CI” | Faster PRs | No defense against fake implementations | Only in early prototype; must schedule nightly mutation gate |
-| Run fuzzing locally only | Faster CI | No reproducible CI evidence; regressions slip in | Only when fuzzing infrastructure is pending |
-| Single “all checks” CI job | Simpler pipeline | No separation of cost/assurance; leads to gate removal | Never |
-
-## Integration Gotchas
-
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| `cargo-llvm-cov` | Assuming branch or doctest coverage is stable | Treat as unstable; document limitations in reports citeturn2view3 |
-| `cargo-mutants` | Ignoring hermetic-test requirement | Make tests deterministic and in-tree for `cargo test` citeturn2view0 |
-| `cargo-fuzz` | No artifact upload or time limit | Bound run time and upload artifacts on failure citeturn2view2 |
-
-## Performance Traps
-
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Mutation testing on PR for large crates | PR CI timeouts, disabled gates | Run on nightly/release; tune timeouts and caching | Medium to large crates or >10 minutes baseline tests |
-| Unlimited fuzzing in CI | Jobs killed or starved | Use bounded smoke tests in CI citeturn2view2 | Any shared CI runner |
-
-## Security Mistakes
-
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| No fuzzing for hostile-input parsers | Input-triggered crashes or logic flaws | Require `cargo-fuzz` for parsers and artifact capture citeturn2view2 |
-| Trusting coverage as a security signal | Gaps in edge-case coverage | Explicitly report unverified scope and tool limitations citeturn2view3 |
-
-## UX Pitfalls
-
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-----------------|
-| Reports omit unverified scope | False sense of assurance | Mandate “Verified in scope” vs “Not yet verified” sections |
-| Gate language is ambiguous | Teams interpret checks differently | Use explicit PR/nightly/release gate definitions |
+| Hard-coding support decisions outside the manifest | Faster prototyping | Coverage drift and opaque release failures | Never beyond short local experiments |
+| Using floating `stable` and unlocked dependencies in CI | Less setup work | Non-reproducible oracle and manifest results | Never for gated CI |
+| Writing raw-layout logic twice (safe path and compat path) | Faster initial implementation | Semantic drift and duplicated bugs | Never; centralize validation and sizing rules |
+| Expanding optional families before OOM/oracle coverage exists | Earlier apparent coverage | Support matrix becomes untrustworthy | Only behind private experiments |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Classification:** Missing evidence for unsafe/concurrency/parser exposure.
-- [ ] **Coverage:** Report lacks tool limitations for `cargo-llvm-cov`. citeturn2view3
-- [ ] **Mutation Testing:** Non-hermetic or non-deterministic tests. citeturn2view0
-- [ ] **Fuzzing:** No bounded CI run or artifact upload. citeturn2view2
-
-## Recovery Strategies
-
-| Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Misclassified crate | MEDIUM | Re-run classification; add missing tools; update gates and report |
-| Collapsed gates | MEDIUM | Split workflows; move heavy checks to nightly/release |
-| Misleading coverage claims | LOW | Update report language; add tool limitation notes citeturn2view3 |
-| Mutation testing skew | MEDIUM | Make tests hermetic; rerun and annotate results citeturn2view0 |
-| Fuzzing without artifacts | LOW | Add artifact upload and rerun with bounded time citeturn2view2 |
+- [ ] **Manifest coverage:** every stable and enabled optional symbol is implemented and audited.
+- [ ] **Raw compatibility:** `dims`, `out`, `cache`, optimizer, and complex layout edge cases are tested.
+- [ ] **OOM behavior:** allocator failures and memory-limit failures stop safely with no partial writes.
+- [ ] **Optimizer parity:** with/without optimizer results are equivalent within accepted tolerance.
+- [ ] **Feature-matrix CI:** base, `with-f12`, `with-4c1e`, and combined profiles all run the right gates.
 
 ## Pitfall-to-Phase Mapping
 
-| Pitfall | Prevention Phase | Verification |
+| Pitfall | Prevention phase | Verification |
 |---------|------------------|--------------|
-| Misclassifying the crate | Phase 1 | Classification matrix and tool applicability signed off |
-| Collapsed gates | Phase 2 | Separate PR/nightly/release workflows exist and pass |
-| Coverage/passing tests as proof | Phase 3 | Report template enforces verified vs unverified scope |
-| Mutation testing skewed by non-hermetic tests | Phase 2 | Mutation runs are stable and deterministic across runs |
-| Fuzzing without artifacts | Phase 2 | CI uploads fuzz artifacts on failure |
-| Tool version drift | Phase 2 | Tool versions pinned and changes documented citeturn2view1 |
+| Nondeterministic reduction order | Execution backend foundation | Oracle regression tests under varied chunking |
+| GPU memory blowups | Planner/runtime + optional families | OOM and memory-limit suites across profiles |
+| Compat/layout drift | Typed foundations + compat layer | Raw/safe equivalence and layout tests |
+| Manifest/oracle drift | Governance/release gating | Manifest audit plus oracle CI |
+| Backend leakage | Safe facade and C-ABI design | API review against backend-agnostic public types |
 
 ## Sources
 
-- cargo-llvm-cov: Known limitations (branch and doctest coverage instability). citeturn2view3
-- cargo-mutants: Limitations and hermetic test requirement. citeturn2view0
-- cargo-mutants: Stability and version-to-version changes. citeturn2view1
-- Rust Fuzz Book: CI smoke tests and time-bounded fuzzing. citeturn2view2
+### Primary inputs
+- `docs/design/cintx_detailed_design.md`
+- `README.md`
+- Local crate structure under `crates/` and `xtask/`
+
+### Supporting references
+- CubeCL docs: https://docs.rs/crate/cubecl/latest
+- Cargo resolver docs: https://doc.rust-lang.org/nightly/cargo/reference/resolver.html
+- Cargo feature docs: https://doc.rust-lang.org/stable/cargo/reference/features.html
 
 ---
-*Pitfalls research for: Rust crate test-governance policies, CI gates, and verification reporting*
+*Pitfalls research for: cintx*
 *Researched: 2026-03-21*
