@@ -1,0 +1,79 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-03-21T06:53:29.620Z",
+  "phase": "01",
+  "phase_name": "manifest-planner-foundation",
+  "phase_dir": ".planning/phases/01-manifest-planner-foundation",
+  "plan": 2,
+  "task": 2,
+  "total_tasks": 2,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Define typed runtime errors and execution options",
+      "status": "done",
+      "commit": null,
+      "progress": "Added `cintxRsError` in `cintx-core`, re-exported it, and created `ExecutionOptions` in `cintx-runtime`."
+    },
+    {
+      "id": 2,
+      "name": "Implement validator/planner/workspace contract",
+      "status": "in_progress",
+      "progress": "Added validator/planner/workspace modules, runtime tests, workspace membership, and verification passes. Rust review then blocked finalization on three issues in chunk planning, query/evaluate contract consistency, and typed validation errors."
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 2,
+      "name": "Implement validator/planner/workspace contract",
+      "status": "in_progress",
+      "remaining": [
+        "Fix `ChunkPlanner::plan` so `chunk_size_override` cannot under-allocate a chunk under a memory cap.",
+        "Make `evaluate` use the queried workspace contract or reject mismatched planning options instead of silently re-planning.",
+        "Replace the bad-shell-atom-index `ChunkPlanFailed` path with a dedicated typed validation error.",
+        "Re-run `cargo test --workspace`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo fmt --all -- --check`.",
+        "Write `02-PLAN-SUMMARY.md` and commit the code/docs once review findings are fixed."
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Mandatory Rust review returned BLOCK on the current uncommitted Plan 02 changes.",
+      "type": "technical",
+      "workaround": "Address the three findings before committing: chunk-size override fit calculation, query/evaluate contract drift, and typed invalid-shell-index error handling."
+    }
+  ],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "Add `crates/cintx-runtime` to the root workspace/default-members now.",
+      "rationale": "Phase 01 Plan 02 verification explicitly depends on `cargo test -p cintx-runtime --lib` and workspace-wide Rust gates.",
+      "phase": "01"
+    },
+    {
+      "decision": "Keep typed runtime errors in `cintx-core` and route runtime validation/planner failures through them.",
+      "rationale": "This matches the Phase 01 requirement that downstream callers see typed contracts instead of ad-hoc planner errors.",
+      "phase": "01"
+    },
+    {
+      "decision": "Use manifest-driven resolver metadata to estimate workspace and validate shell tuples.",
+      "rationale": "Phase 01 depends on planner scaffolding consuming the canonical manifest instead of raw symbol names.",
+      "phase": "01"
+    }
+  ],
+  "uncommitted_files": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/cintx-core/src/error.rs",
+    "crates/cintx-core/src/lib.rs",
+    "crates/cintx-runtime/Cargo.toml",
+    "crates/cintx-runtime/src/lib.rs",
+    "crates/cintx-runtime/src/options.rs",
+    "crates/cintx-runtime/src/planner.rs",
+    "crates/cintx-runtime/src/validator.rs",
+    "crates/cintx-runtime/src/workspace.rs"
+  ],
+  "next_action": "Start by fixing the three rust-reviewer findings in `crates/cintx-runtime/src/workspace.rs`, `crates/cintx-runtime/src/planner.rs`, and `crates/cintx-runtime/src/validator.rs`, then rerun the full Rust verification gate.",
+  "context_notes": "This repo still has many pre-existing deletions/untracked files outside the current Phase 01 scope. Do not revert them. Wave 1 is already committed cleanly, including the generated-manifest formatting fix (`e43316d`). Plan 02 implementation is local-only right now: tests/clippy/fmt pass, but review blocked final commit. No background processes are running."
+}
