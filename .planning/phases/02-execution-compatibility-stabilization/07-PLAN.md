@@ -24,8 +24,8 @@ requirements:
 must_haves:
   truths:
     - "Compat callers can use the helper, transform, optimizer-lifecycle, and legacy-wrapper APIs that Phase 2 claims to preserve from upstream libcint."
-    - "Optimized and non-optimized execution paths share the same writer/layout contract and produce numerically equivalent results within the accepted tolerance envelope."
-    - "The oracle harness reaches the Phase 2 compat APIs directly and can compare that compat surface against vendored upstream libcint, including helper parity and optimizer-on/off equivalence."
+    - "Optimized and non-optimized execution paths share the same compat writer/layout contract introduced earlier and produce numerically equivalent results within the accepted family-specific tolerance envelope."
+    - "The oracle harness reaches the Phase 2 compat APIs directly and compares evaluated outputs against vendored upstream libcint for `1e`, `2e`, `2c2e`, `3c1e`, and `3c2e`, with helper parity and optimizer-on/off equivalence treated as additional gates rather than substitutes."
   artifacts:
     - path: crates/cintx-compat/src/helpers.rs
       provides: "The upstream helper/count/offset/norm APIs for the Phase 2 base scope."
@@ -37,7 +37,7 @@ must_haves:
       provides: "Thin `cint2e_*` wrapper forwards into the shared raw compat pipeline."
       min_lines: 80
     - path: crates/cintx-oracle/src/compare.rs
-      provides: "Oracle comparison routines for helper parity and optimizer equivalence."
+      provides: "Oracle comparison routines for helper parity, family-output vs upstream comparisons, and optimizer equivalence."
       min_lines: 120
   key_links:
     - from: crates/cintx-compat/src/legacy.rs
@@ -46,7 +46,7 @@ must_haves:
       pattern: "eval_raw|query_workspace_raw"
     - from: crates/cintx-oracle/src/compare.rs
       to: crates/cintx-compat/src/lib.rs
-      via: "Oracle comparisons import helper, raw, optimizer, and legacy compat APIs instead of calling runtime or CubeCL directly."
+      via: "Oracle comparisons import helper, raw, optimizer, and legacy compat APIs instead of calling runtime or CubeCL directly, then compare their evaluated outputs against vendored upstream libcint."
       pattern: "cintx_compat"
     - from: crates/cintx-oracle/src/fixtures.rs
       to: crates/cintx-ops/generated/compiled_manifest.lock.json
@@ -76,6 +76,8 @@ Output: Helper/transform/optimizer/legacy compat APIs plus a base-family oracle 
 @libcint-master/include/cint.h.in:227-290
 @libcint-master/src/misc.h:24-76
 @crates/cintx-compat/src/raw.rs
+@crates/cintx-compat/src/optimizer.rs
+@crates/cintx-compat/src/layout.rs
 @crates/cintx-cubecl/src/transform/mod.rs
 @crates/cintx-ops/generated/compiled_manifest.lock.json
 </context>
@@ -105,7 +107,7 @@ Implement the exact upstream helper and transform APIs that are in Phase 2 scope
   <files>crates/cintx-compat/src/optimizer.rs, crates/cintx-compat/src/legacy.rs, crates/cintx-compat/src/lib.rs</files>
   <read_first>crates/cintx-compat/src/optimizer.rs, crates/cintx-compat/src/legacy.rs, crates/cintx-compat/src/raw.rs, libcint-master/include/cint.h.in:256-278, libcint-master/src/misc.h:34-76, docs/design/cintx_detailed_design.md §7.8, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
   <action>
-In `optimizer.rs`, implement an immutable `RawOptimizerHandle` backed by cached planner/backend metadata and expose the upstream lifecycle entry points `CINTinit_2e_optimizer`, `CINTinit_optimizer`, `CINTdel_2e_optimizer`, and `CINTdel_optimizer`. In `legacy.rs`, implement the thin wrapper forwards `cint2e_cart`, `cint2e_cart_optimizer`, `cint2e_sph`, `cint2e_sph_optimizer`, `cint2e`, and `cint2e_optimizer` so they call the shared raw compat pipeline instead of duplicating dims math, layout writers, or backend dispatch. Keep the optimized and non-optimized paths on the same output writer and `RawEvalSummary` contract, and export the new APIs from `lib.rs`.
+Extend the `RawOptimizerHandle` contract introduced in Plan 06 into an immutable handle backed by cached planner/backend metadata and expose the upstream lifecycle entry points `CINTinit_2e_optimizer`, `CINTinit_optimizer`, `CINTdel_2e_optimizer`, and `CINTdel_optimizer`. In `legacy.rs`, implement the thin wrapper forwards `cint2e_cart`, `cint2e_cart_optimizer`, `cint2e_sph`, `cint2e_sph_optimizer`, `cint2e`, and `cint2e_optimizer` so they call the shared raw compat pipeline instead of duplicating dims math, layout writers, or backend dispatch. Keep the optimized and non-optimized paths on the same compat-owned output writer and `RawEvalSummary` contract, and export the new APIs from `lib.rs`.
   </action>
   <acceptance_criteria>
     - `rg -n "struct RawOptimizerHandle" crates/cintx-compat/src/optimizer.rs`
@@ -120,33 +122,35 @@ In `optimizer.rs`, implement an immutable `RawOptimizerHandle` backed by cached 
 </task>
 
 <task type="auto">
-  <name>Task 3: Build the base-family oracle harness for helper parity and optimizer equivalence</name>
+  <name>Task 3: Build the base-family oracle harness for evaluated-output comparison, helper parity, and optimizer equivalence</name>
   <files>crates/cintx-oracle/build.rs, crates/cintx-oracle/src/lib.rs, crates/cintx-oracle/src/fixtures.rs, crates/cintx-oracle/src/compare.rs</files>
   <read_first>crates/cintx-oracle/build.rs, crates/cintx-oracle/src/lib.rs, crates/cintx-oracle/src/fixtures.rs, crates/cintx-oracle/src/compare.rs, crates/cintx-ops/generated/compiled_manifest.lock.json, libcint-master/include/cint_funcs.h, docs/design/cintx_detailed_design.md §13.4 and §14.1, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
   <action>
-Implement the oracle harness for the Phase 2 base families. In `build.rs`, wire the vendored upstream libcint build and bindgen/header setup needed for oracle comparison. In `fixtures.rs`, derive the comparison target set from the canonical manifest, but keep it limited to the Phase 2 base families and helper/legacy scope. In `compare.rs`, implement comparison routines by importing and calling the public `cintx-compat` helper, raw, optimizer, and legacy APIs; do not call `cintx-runtime` or `cintx-cubecl` directly from oracle code. Cover helper parity (counts, offsets, norms, transforms) and optimizer-on/off equivalence for `1e`, `2e`, `2c2e`, `3c1e`, and `3c2e`. Add tests that fail when helper coverage drifts from the manifest or when optimized vs non-optimized outputs exceed the accepted tolerance envelope. Export the harness through `lib.rs`.
+Implement the oracle harness for the Phase 2 base families. In `build.rs`, wire the vendored upstream libcint build and bindgen/header setup needed for oracle comparison. In `fixtures.rs`, derive the comparison target set from the canonical manifest, but keep it limited to the Phase 2 base families and helper/legacy scope. In `compare.rs`, implement comparison routines by importing and calling the public `cintx-compat` helper, raw, optimizer, and legacy APIs; do not call `cintx-runtime` or `cintx-cubecl` directly from oracle code. The oracle must explicitly compare evaluated compat outputs against vendored upstream libcint for `1e`, `2e`, `2c2e`, `3c1e`, and `3c2e` using identical `atm`/`bas`/`env`/`shls`/`dims` fixtures and the family-specific tolerance criteria from `docs/design/cintx_detailed_design.md` §13.8 plus §13.9: basic `1e` uses `atol=1e-11`, `rtol=1e-9`; plain/low-derivative `2e` uses `atol=1e-12`, `rtol=1e-10`; `2c2e` and `3c2e` use `atol=1e-9`, `rtol=1e-7`; high-order `3c1e` uses `atol=1e-7`, `rtol=1e-5`; and when `abs(ref) < 1e-18`, compare by absolute error only. Cover helper parity (counts, offsets, norms, transforms) and optimizer-on/off equivalence for the same family set as additional gates. Add tests that fail when helper coverage drifts from the manifest, when evaluated-output diffs vs upstream exceed tolerance, or when optimized vs non-optimized outputs diverge beyond the same family tolerance envelope. Export the harness through `lib.rs`.
   </action>
   <acceptance_criteria>
     - `rg -n "compiled_manifest|manifest" crates/cintx-oracle/src/fixtures.rs`
     - `rg -n "cintx_compat" crates/cintx-oracle/src/compare.rs`
-    - `rg -n "optimizer|tolerance|helper" crates/cintx-oracle/src/compare.rs`
+    - `rg -n "1e-11|1e-12|1e-9|1e-7|1e-5|1e-18" crates/cintx-oracle/src/compare.rs`
+    - `rg -n "1e|2e|2c2e|3c1e|3c2e" crates/cintx-oracle/src/compare.rs crates/cintx-oracle/src/fixtures.rs`
+    - `rg -n "optimizer|tolerance|helper|upstream|atol|rtol|zero_threshold" crates/cintx-oracle/src/compare.rs`
     - `rg -n "cc::Build|bindgen" crates/cintx-oracle/build.rs`
     - `rg -n "pub mod compare;|pub mod fixtures;" crates/cintx-oracle/src/lib.rs`
   </acceptance_criteria>
   <verify>
     <automated>cargo test -p cintx-oracle --lib && cargo test -p cintx-compat --lib</automated>
   </verify>
-  <done>The Phase 2 compatibility claims are now backed by an oracle harness that checks helper parity and optimizer-on/off equivalence against vendored upstream libcint, satisfying EXEC-05.</done>
+  <done>The Phase 2 compatibility claims are now backed by an oracle harness that compares evaluated outputs against vendored upstream libcint for `1e`/`2e`/`2c2e`/`3c1e`/`3c2e`, while also checking helper parity and optimizer-on/off equivalence, satisfying EXEC-05.</done>
 </task>
 
 </tasks>
 
 <verification>
-Run the compat and oracle library tests together; the result should prove that the helper/wrapper surface exists and that optimizer parity is checked against vendored upstream behavior.
+Run the compat and oracle library tests together; the result should prove that the helper/wrapper surface exists and that evaluated outputs plus optimizer parity are checked against vendored upstream behavior under the explicit family tolerance table.
 </verification>
 
 <success_criteria>
-All Phase 2 helper, transform, optimizer, and legacy compat APIs exist, and oracle-backed tests verify helper parity plus optimized/non-optimized result equivalence for the base family set.
+All Phase 2 helper, transform, optimizer, and legacy compat APIs exist, and oracle-backed tests verify helper parity, evaluated-output-vs-upstream parity, and optimized/non-optimized result equivalence for the base family set with explicit tolerance criteria.
 </success_criteria>
 
 <output>

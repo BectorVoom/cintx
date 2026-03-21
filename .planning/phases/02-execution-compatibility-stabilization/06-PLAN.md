@@ -12,6 +12,7 @@ files_modified:
   - crates/cintx-compat/src/lib.rs
   - crates/cintx-compat/src/raw.rs
   - crates/cintx-compat/src/layout.rs
+  - crates/cintx-compat/src/optimizer.rs
 autonomous: true
 requirements:
   - COMP-01
@@ -22,16 +23,20 @@ requirements:
   - EXEC-04
 must_haves:
   truths:
-    - "Compat callers can pass `atm`, `bas`, `env`, `shls`, `dims`, `opt`, and `cache` into a raw API entry and reach the shared runtime/CubeCL backend."
+    - "Compat callers can pass `atm`, `bas`, `env`, `shls`, `dims`, `opt`, and `cache` into a raw API entry and reach the shared runtime/CubeCL backend through one compat-owned raw pipeline."
     - "Compat callers can query output/workspace requirements without writing outputs by using the canonical `query_workspace_raw` path or by passing `out == NULL`."
-    - "Invalid dims, undersized output/cache buffers, malformed raw layouts, and impossible memory limits fail before any caller-visible write occurs."
+    - "The `opt` argument is represented by a minimal opaque `RawOptimizerHandle` contract in `cintx-compat`, so raw query/evaluate signatures do not depend on later optimizer-lifecycle work."
+    - "Invalid dims, undersized output/cache buffers, malformed raw layouts, and impossible memory limits fail before any caller-visible flat write occurs, and `cintx-compat::layout` is the sole owner of final cart/sph/spinor buffer commits."
   artifacts:
     - path: crates/cintx-compat/src/raw.rs
       provides: "Raw view validation, API-to-manifest mapping, and the `query_workspace_raw` / `eval_raw` entry points."
       min_lines: 180
     - path: crates/cintx-compat/src/layout.rs
-      provides: "`CompatDims`, required-element calculation, and flat output writer rules for cart/sph/spinor buffers."
+      provides: "`CompatDims`, required-element calculation, and the sole caller-visible flat output writer rules for cart/sph/spinor buffers."
       min_lines: 120
+    - path: crates/cintx-compat/src/optimizer.rs
+      provides: "Minimal opaque `RawOptimizerHandle` contract used by raw query/evaluate signatures before lifecycle helpers land."
+      min_lines: 30
     - path: crates/cintx-compat/src/lib.rs
       provides: "Public raw-compat exports for Phase 2 callers."
       min_lines: 30
@@ -46,8 +51,12 @@ must_haves:
       pattern: "query_workspace|evaluate"
     - from: crates/cintx-compat/src/raw.rs
       to: crates/cintx-compat/src/layout.rs
-      via: "Raw calls compute required sizes and write flat outputs through the shared layout contract."
-      pattern: "required_elems_from_dims|CompatDims"
+      via: "Raw calls compute required sizes and commit the final caller-visible flat buffer only through the shared compat layout contract; backend code returns staged results but does not write directly into caller memory."
+      pattern: "required_elems_from_dims|CompatDims|write"
+    - from: crates/cintx-compat/src/raw.rs
+      to: crates/cintx-compat/src/optimizer.rs
+      via: "The raw `opt` argument is threaded through a compat-owned opaque handle contract here and extended into lifecycle helpers later."
+      pattern: "RawOptimizerHandle"
 ---
 
 <objective>
@@ -75,6 +84,7 @@ Output: Validated raw views, `CompatDims`, `query_workspace_raw`, `eval_raw`, an
 @crates/cintx-runtime/src/dispatch.rs
 @crates/cintx-cubecl/src/executor.rs
 @crates/cintx-ops/src/resolver.rs
+@crates/cintx-compat/src/optimizer.rs
 <interfaces>
 From `docs/design/cintx_detailed_design.md` §5.5:
 ```rust
@@ -111,36 +121,45 @@ pub fn query_workspace(
     opts: &ExecutionOptions,
 ) -> Result<WorkspaceQuery, cintxRsError>;
 ```
+
+Planned contract owned by this plan:
+```rust
+pub struct RawOptimizerHandle {
+    // Opaque compat-owned handle. Lifecycle constructors/destructors land in Plan 07.
+}
+```
 </interfaces>
 </context>
 
 <tasks>
 
 <task type="auto">
-  <name>Task 1: Implement raw views, slot validation, and the shared dims/output contract</name>
-  <files>crates/cintx-compat/src/lib.rs, crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs</files>
-  <read_first>crates/cintx-compat/src/lib.rs, crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs, libcint-master/include/cint.h.in:46-70, libcint-master/include/cint.h.in:227-290, docs/design/cintx_detailed_design.md §3.6.1, §6.2, and §7.2-7.3, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
+  <name>Task 1: Implement raw views, the minimal optimizer-handle contract, and the shared dims/output contract</name>
+  <files>crates/cintx-compat/src/lib.rs, crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs, crates/cintx-compat/src/optimizer.rs</files>
+  <read_first>crates/cintx-compat/src/lib.rs, crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs, crates/cintx-compat/src/optimizer.rs, libcint-master/include/cint.h.in:46-70, libcint-master/include/cint.h.in:227-290, docs/design/cintx_detailed_design.md §3.6.1, §3.8, §6.2, and §7.2-7.3, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
   <action>
-In `raw.rs`, define the exact raw slot constants from upstream (`ATM_SLOTS = 6`, `BAS_SLOTS = 8`, `PTR_COORD`, `PTR_ZETA`, `PTR_FRAC_CHARGE`, `PTR_EXP`, `PTR_COEFF`) and use them to implement `RawAtmView`, `RawBasView`, and `RawEnvView`. Validate `atm.len() % ATM_SLOTS == 0`, `bas.len() % BAS_SLOTS == 0`, every pointer slot stays within `env.len()`, and `NPRIM_OF > 0` plus `NCTR_OF > 0`. In `layout.rs`, define `CompatDims`, `required_elems_from_dims(arity, component_count, dims, complex_interleaved)`, and flat writer helpers that treat the component axis as manifest-derived and never part of `dims`. Accept only exact `dims.len() == arity`; reject both undersized and oversized overrides with `InvalidDims`, and return `BufferTooSmall` when the caller-provided `out` or `cache` slice is shorter than the computed requirement. Re-export the raw/layout types from `lib.rs`.
+In `raw.rs`, define the exact raw slot constants from upstream (`ATM_SLOTS = 6`, `BAS_SLOTS = 8`, `PTR_COORD`, `PTR_ZETA`, `PTR_FRAC_CHARGE`, `PTR_EXP`, `PTR_COEFF`) and use them to implement `RawAtmView`, `RawBasView`, and `RawEnvView`. Validate `atm.len() % ATM_SLOTS == 0`, `bas.len() % BAS_SLOTS == 0`, every pointer slot stays within `env.len()`, and `NPRIM_OF > 0` plus `NCTR_OF > 0`. In `optimizer.rs`, introduce the minimal opaque `RawOptimizerHandle` contract that `query_workspace_raw` and `eval_raw` accept in this plan: the type must be public, own its internals privately, and expose only the minimal accessors needed to forward optimizer-derived metadata through the raw execution path. Do not add `CINTinit_*` or `CINTdel_*` lifecycle entry points here; Plan 07 extends this contract. In `layout.rs`, define `CompatDims`, `required_elems_from_dims(arity, component_count, dims, complex_interleaved)`, and flat writer helpers that treat the component axis as manifest-derived and never part of `dims`. `layout.rs` is the only module allowed to finalize caller-visible cart/sph/spinor writes. Accept only exact `dims.len() == arity`; reject both undersized and oversized overrides with `InvalidDims`, and return `BufferTooSmall` when the caller-provided `out` or `cache` slice is shorter than the computed requirement. Re-export the raw/layout/optimizer types from `lib.rs`.
   </action>
   <acceptance_criteria>
     - `rg -n "ATM_SLOTS\\s*=\\s*6|BAS_SLOTS\\s*=\\s*8" crates/cintx-compat/src/raw.rs`
     - `rg -n "struct RawAtmView|struct RawBasView|struct RawEnvView" crates/cintx-compat/src/raw.rs`
     - `rg -n "struct CompatDims|required_elems_from_dims" crates/cintx-compat/src/layout.rs`
+    - `rg -n "struct RawOptimizerHandle" crates/cintx-compat/src/optimizer.rs`
     - `rg -n "BufferTooSmall|InvalidDims" crates/cintx-compat/src/layout.rs crates/cintx-compat/src/raw.rs`
+    - `rg -n "pub mod optimizer|RawOptimizerHandle" crates/cintx-compat/src/lib.rs`
   </acceptance_criteria>
   <verify>
     <automated>cargo test -p cintx-compat --lib</automated>
   </verify>
-  <done>The compat layer now has a single authoritative raw-layout and dims contract, satisfying the input-validation half of COMP-01, COMP-02, and COMP-05.</done>
+  <done>The compat layer now has a single authoritative raw-layout and dims contract plus the minimal opaque optimizer-handle type required by the raw function signatures, satisfying the input-validation half of COMP-01, COMP-02, and COMP-05.</done>
 </task>
 
 <task type="auto">
   <name>Task 2: Bridge raw compat calls into runtime query/evaluate with exact sentinel behavior</name>
   <files>crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs</files>
-  <read_first>crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs, crates/cintx-runtime/src/planner.rs, crates/cintx-runtime/src/dispatch.rs, crates/cintx-ops/src/resolver.rs, docs/design/cintx_detailed_design.md §5.5 and §7.2-7.5, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
+  <read_first>crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs, crates/cintx-compat/src/optimizer.rs, crates/cintx-runtime/src/planner.rs, crates/cintx-runtime/src/dispatch.rs, crates/cintx-ops/src/resolver.rs, docs/design/cintx_detailed_design.md §5.5 and §7.2-7.5, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md</read_first>
   <action>
-Implement `RawApiId`, `RawEvalSummary`, `query_workspace_raw`, and `eval_raw` in `raw.rs`. Map each raw API identifier to manifest family/operator/representation metadata through `Resolver`, validate `shls` arity against the resolved descriptor, and convert the validated raw arrays into the typed `BasisSet` and `ShellTuple` values that `cintx-runtime` expects. Enforce the exact sentinel rules from the design: `dims == None` means natural shape, `out == None` returns workspace/output requirements without writing, `cache == None` allocates through the fallible workspace path, and `opt` is forwarded when present but cannot change output layout. Instantiate `cintx_cubecl::executor::CubeClExecutor` from the compat layer through the explicit Wave 1 crate dependency rather than reaching into runtime internals or inventing a second backend-selection path. Use `query_workspace()` as the canonical estimator, then call backend `evaluate()` only after layout validation, output-size checks, cache checks, and workspace allocation all succeed. Return `RawEvalSummary { not0, bytes_written, workspace_bytes }`, and keep every early failure path side-effect-free on the caller's `out` slice.
+Implement `RawApiId`, `RawEvalSummary`, `query_workspace_raw`, and `eval_raw` in `raw.rs`. Map each raw API identifier to manifest family/operator/representation metadata through `Resolver`, validate `shls` arity against the resolved descriptor, and convert the validated raw arrays into the typed `BasisSet` and `ShellTuple` values that `cintx-runtime` expects. Enforce the exact sentinel rules from the design: `dims == None` means natural shape, `out == None` returns workspace/output requirements without writing, `cache == None` allocates through the fallible workspace path, and `opt` is forwarded when present but cannot change output layout. Instantiate `cintx_cubecl::executor::CubeClExecutor` from the compat layer through the explicit Wave 1 crate dependency rather than reaching into runtime internals or inventing a second backend-selection path. Use `query_workspace()` as the canonical estimator, then call backend `evaluate()` only after layout validation, output-size checks, cache checks, and workspace allocation all succeed. `cintx-compat::layout` remains the sole owner of caller-visible flat writes: backend evaluation and the Plan 08 transform path may produce staging buffers or transformed intermediate tensors, but they must not write directly into the caller's `out` slice. `eval_raw` must commit the final flat buffer only through the compat layout writer after the full execution/transform path succeeds. Return `RawEvalSummary { not0, bytes_written, workspace_bytes }`, and keep every early failure path side-effect-free on the caller's `out` slice.
   </action>
   <acceptance_criteria>
     - `rg -n "enum RawApiId" crates/cintx-compat/src/raw.rs`
@@ -148,6 +167,7 @@ Implement `RawApiId`, `RawEvalSummary`, `query_workspace_raw`, and `eval_raw` in
     - `rg -n "unsafe fn query_workspace_raw" crates/cintx-compat/src/raw.rs`
     - `rg -n "unsafe fn eval_raw" crates/cintx-compat/src/raw.rs`
     - `rg -n "CubeClExecutor" crates/cintx-compat/src/raw.rs`
+    - `rg -n "RawOptimizerHandle" crates/cintx-compat/src/raw.rs`
     - `rg -n "out\\.is_none|cache\\.is_none|dims" crates/cintx-compat/src/raw.rs`
   </acceptance_criteria>
   <verify>
@@ -161,7 +181,7 @@ Implement `RawApiId`, `RawEvalSummary`, `query_workspace_raw`, and `eval_raw` in
   <files>crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs</files>
   <read_first>crates/cintx-compat/src/raw.rs, crates/cintx-compat/src/layout.rs, .planning/phases/02-execution-compatibility-stabilization/02-RESEARCH.md, docs/design/cintx_detailed_design.md §7.3-7.5 and §11.1</read_first>
   <action>
-Add focused tests inside `raw.rs` and `layout.rs` that cover: malformed `atm`/`bas` slot widths; bad `PTR_*` env offsets; invalid `dims` length for each arity; undersized output buffers; `query_workspace_raw` vs `eval_raw(out=None)` agreement; `memory_limit_bytes` chunking that either succeeds without partial writes or fails with `MemoryLimitExceeded`; and a sentinel test proving a rejected call leaves the caller's output slice unchanged. Keep the tests Phase-2-scoped to `1e`, `2e`, `2c2e`, `3c1e`, and `3c2e`.
+Add focused tests inside `raw.rs` and `layout.rs` that cover: malformed `atm`/`bas` slot widths; bad `PTR_*` env offsets; invalid `dims` length for each arity; undersized output buffers; `query_workspace_raw` vs `eval_raw(out=None)` agreement; `memory_limit_bytes` chunking that either succeeds without partial writes or fails with `MemoryLimitExceeded`; and a sentinel test proving a rejected call leaves the caller's output slice unchanged. Keep kernel-backed execution assertions in this plan limited to the family slice implemented by Plan 05 (`1e`, `2e`, and `2c2e`). For `3c1e` and `3c2e`, cover only raw-contract invariants that do not require the Plan 08 kernels yet, such as resolver mapping, arity/dims validation, and workspace-only sentinel behavior. Full evaluated-output coverage for `3c1e` and `3c2e` lands in Plan 07 after Plan 08.
   </action>
   <acceptance_criteria>
     - `rg -n "output slice unchanged|partial write|MemoryLimitExceeded" crates/cintx-compat/src/raw.rs crates/cintx-compat/src/layout.rs`
@@ -171,17 +191,17 @@ Add focused tests inside `raw.rs` and `layout.rs` that cover: malformed `atm`/`b
   <verify>
     <automated>cargo test -p cintx-compat --lib</automated>
   </verify>
-  <done>Compat regression coverage now proves raw layout failures, buffer-size failures, and impossible memory limits are explicit and side-effect-free, satisfying the remaining COMP-05 and EXEC-03 contract checks for this phase.</done>
+  <done>Compat regression coverage now proves raw layout failures, buffer-size failures, and impossible memory limits are explicit and side-effect-free for the implemented execution slice, while locking down the pre-execution 3c contract that Plans 08 and 07 complete later.</done>
 </task>
 
 </tasks>
 
 <verification>
-Run the compat library tests after all three tasks; the suite should cover raw validation, workspace-query semantics, and no-partial-write failure cases for the Phase 2 base families.
+Run the compat library tests after all three tasks; the suite should cover raw validation, workspace-query semantics, and no-partial-write failure cases for the implemented execution slice plus non-execution 3c contract checks.
 </verification>
 
 <success_criteria>
-`query_workspace_raw` and `eval_raw` exist, raw inputs are validated against upstream slot rules and dims semantics, and failure cases are tested to prove no partial writes occur.
+`query_workspace_raw` and `eval_raw` exist, raw inputs are validated against upstream slot rules and dims semantics, `RawOptimizerHandle` is owned by compat from this plan onward, and failure cases are tested to prove no partial writes occur.
 </success_criteria>
 
 <output>
