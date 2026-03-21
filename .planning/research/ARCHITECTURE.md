@@ -1,208 +1,174 @@
 # Architecture Research
 
-**Domain:** Rust-first scientific compute library (libcint-compatible integral engine)
-**Researched:** 2026-03-14
-**Confidence:** HIGH
+**Domain:** Rust crate test-governance system
+**Researched:** 2026-03-21
+**Confidence:** MEDIUM
 
 ## Standard Architecture
 
 ### System Overview
 
-```text
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ API Layer                                                                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Safe Rust API (facade)   Raw Compat API (atm/bas/env)   Optional C ABI     │
-└───────────────┬───────────────────────────────┬─────────────────────────────┘
-                │                               │
-┌───────────────┴───────────────────────────────┴─────────────────────────────┐
-│ Validation + Resolution Layer                                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Input Validator   Manifest Resolver   Feature/Stability Gate Classifier      │
-└───────────────┬───────────────────────────────┬─────────────────────────────┘
-                │                               │
-┌───────────────┴───────────────────────────────┴─────────────────────────────┐
-│ Runtime Layer                                                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  Planner   Scheduler/Chunker   Workspace Estimator   Dispatch/Fallback Logic  │
-└───────────────┬───────────────────────────────┬─────────────────────────────┘
-                │                               │
-┌───────────────┴───────────────┐   ┌───────────┴────────────────────────────┐
-│ CPU Backend (reference)        │   │ CubeCL Backend (optional GPU)          │
-├────────────────────────────────┤   ├────────────────────────────────────────┤
-│ Kernels + transforms + writer  │   │ Kernels + transfers + device caches    │
-└───────────────┬────────────────┘   └───────────┬────────────────────────────┘
-                │                                │
-┌───────────────┴────────────────────────────────┴─────────────────────────────┐
-│ Verification/Gate Layer                                                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ Oracle compare (vendored libcint) + manifest audit + feature-matrix CI gates │
-└─────────────────────────────────────────────────────────────────────────────┘
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                 Policy & Governance Layer                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌────────────────────┐  ┌──────────────────────────┐ │
+│  │ Policy Assets│  │ Tool Applicability │  │ CI Gate Definitions      │ │
+│  │ (guidelines, │  │ Matrix & Rules     │  │ (PR/Nightly/Release)     │ │
+│  │ templates)   │  └─────────┬──────────┘  └──────────┬───────────────┘ │
+│  └──────┬───────┘            │                       │                  │
+├─────────┴────────────────────┴───────────────────────┴──────────────────┤
+│                 Analysis & Orchestration Layer                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │ Classification Engine → Tool Selection → Gate Plan → Report Builder │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────────────────────┤
+│                 Execution & Evidence Layer                                │
+│  ┌──────────┐  ┌───────────┐  ┌──────────┐  ┌─────────────────────────┐ │
+│  │ CI Jobs  │  │ Test Tools│  │ Evidence │  │ Artifact Store (reports)│ │
+│  │ (GitHub/ │  │ (cargo*,  │  │ Collector│  │                         │ │
+│  │ CI)      │  │ miri, etc)│  │           │  │                         │ │
+│  └──────────┘  └───────────┘  └──────────┘  └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
 | Component | Responsibility | Typical Implementation |
 |-----------|----------------|------------------------|
-| `facade` | Safe typed API (`BasisSet`, `OperatorId`, `ExecutionOptions`) | Thin public crate delegating to runtime |
-| `compat` | libcint-style raw compatibility (`atm/bas/env`, `shls`, `dims`, cache/query behavior) | Unsafe boundary + strict validator + shared runtime |
-| `capi` | Optional `extern "C"` ABI shim for migration | `feature = "capi"` crate layered over `compat` |
-| `core` | Domain model, tensor layout/view types, typed errors | Dependency-free core crate |
-| `ops` | Generated operator manifest and metadata tables | Generated code + lockfile-backed manifest resolver |
-| `runtime` | Validation, planning, chunking, workspace allocation, dispatch | Shared orchestration crate used by safe+compat APIs |
-| `cpu` | Reference numerical backend and canonical behavior | Kernel modules + transforms + direct writer |
-| `cubecl` | Optional GPU acceleration backend | CubeCL executors, transfer planner, resident caches |
-| `oracle/dev` | Result-compatibility gates and regression checks | Vendored libcint build/bindgen + comparison harness |
+| Policy assets | Define mandatory baseline, conditional tools, reporting language, and prohibited claims | Markdown policy docs, templates, checklists |
+| Classification engine | Map crate traits (unsafe, concurrency, parsers, feature flags) to risk classes | Rule-based classifier with inputs from crate metadata and spec |
+| Tool selection | Select mandatory + conditional tools with rationale | Rule table lookup + decision log |
+| Gate planner | Produce PR/Nightly/Release gate requirements + waivers | CI gate schema and checklist |
+| Execution layer | Run selected tools and collect outputs | CI workflows, cargo tool invocations |
+| Evidence & reporting | Aggregate results, map to spec items, state verified/unverified scope | Report templates + structured artifact outputs |
 
 ## Recommended Project Structure
 
-```text
-.
-├── crates/
-│   ├── libcint-rs/        # Safe facade exports
-│   ├── libcint-core/      # Domain types, errors, tensor views, traits
-│   ├── libcint-ops/       # Generated API manifest + resolver
-│   ├── libcint-runtime/   # Validation, planning, dispatch, workspace
-│   ├── libcint-cpu/       # CPU kernels/transforms/executor
-│   ├── libcint-cubecl/    # CubeCL kernels/transfers/executor (feature-gated)
-│   ├── libcint-compat/    # Raw compat + helper/legacy APIs
-│   ├── libcint-capi/      # Optional C ABI shim (feature-gated)
-│   └── libcint-oracle/    # Oracle comparison harness (dev/CI)
-├── xtask/                 # manifest audit, oracle tooling, benchmark/report glue
-├── docs/
-│   ├── design/            # detailed design + diagrams
-│   └── compatibility.md   # support matrix and gate status
-├── libcint-master/        # vendored upstream oracle/reference source
-└── .planning/             # planning and research artifacts
+```
+src/
+├── policy/                 # Policy assets and templates
+│   ├── baseline.md         # Mandatory baseline requirements
+│   ├── applicability.md    # Tool applicability matrix
+│   └── report-template.md  # Reporting structure
+├── domain/                 # Core domain models
+│   ├── classification.rs   # Crate traits and risk classes
+│   ├── tools.rs            # Tool catalog + applicability rules
+│   └── gates.rs            # PR/Nightly/Release gate definitions
+├── analysis/               # Decision logic
+│   ├── classifier.rs       # Rule evaluation
+│   ├── selector.rs         # Tool selection with rationale
+│   └── planner.rs          # Gate plan construction
+├── reporting/              # Report generation
+│   ├── renderer.rs         # Markdown/JSON report builder
+│   └── mapping.rs          # Spec-to-test mapping
+├── integration/            # CI integration helpers
+│   ├── github.rs           # GitHub Actions emitters
+│   └── artifacts.rs        # Artifact paths and storage conventions
+└── cli/                    # CLI entrypoints (if needed)
+    └── main.rs
 ```
 
 ### Structure Rationale
 
-- **`libcint-core` + `libcint-ops` split:** keeps domain model stable while operator inventory evolves via generated manifests.
-- **Single shared `libcint-runtime`:** ensures safe API and raw compat API cannot drift in execution semantics.
-- **Backend crates isolated from API crates:** CPU reference correctness stays independent from optional CubeCL acceleration.
-- **`libcint-compat` and `libcint-capi` separated:** unsafe raw contracts and C ABI concerns stay outside safe facade.
-- **`libcint-oracle` + `xtask` isolated:** verification gates remain strong without polluting production runtime dependencies.
-
-## Build Order
-
-1. **`libcint-core`**: establish typed domain model, tensor/layout contracts, and public error taxonomy.
-2. **`libcint-ops`**: generate manifest schema/resolver and pin `compiled_manifest.lock.json` workflow.
-3. **`libcint-runtime`**: implement validator, planner, scheduler, workspace allocator, and dispatch traits.
-4. **`libcint-cpu`**: deliver reference executor for required stable families; wire direct writer/transform paths.
-5. **`libcint-compat` + `libcint-rs`**: expose raw and safe APIs on the same runtime path; enforce `dims`/buffer contracts.
-6. **`libcint-oracle` + `xtask` gates**: add oracle comparison, manifest-audit checks, helper parity, and CI release gates.
-7. **`libcint-capi` (optional)**: add C ABI shim only after compat layer stabilizes and error-report API is defined.
-8. **`libcint-cubecl` (optional GPU)**: add CubeCL executor with deterministic CPU fallback and CPU/GPU consistency gates.
-9. **Feature-gated families**: add `with-f12` (sph-only), `with-4c1e` (Validated4C1E envelope), then `unstable-source-api`.
+- **policy/**: Keeps non-code governance artifacts close to the system, since they are authoritative inputs.
+- **domain/** + **analysis/**: Clean boundary between data models and decision logic; makes policy changes auditable.
+- **reporting/**: Ensures the verified/unverified scope split is consistently expressed across outputs.
+- **integration/**: CI provider specifics are isolated from policy logic to avoid vendor lock-in.
 
 ## Architectural Patterns
 
-### Pattern 1: Layered API Surfaces on Shared Runtime
+### Pattern 1: Policy-as-Data (Decision Tables)
 
-**What:** Safe Rust API, raw compatibility API, and optional C ABI all funnel into one runtime pipeline.
-**When to use:** Always; this prevents semantic drift and duplicated numerical logic.
-**Trade-offs:** Strong consistency and easier testing, but runtime abstractions must be carefully designed for both typed and raw call sites.
-
-**Example:**
-```rust
-pub fn evaluate_safe(req: SafeRequest) -> Result<Stats, LibcintRsError> {
-    let plan = runtime::planner::build_from_safe(req)?;
-    runtime::execute(plan)
-}
-
-pub unsafe fn eval_raw(req: RawRequest<'_>) -> Result<RawEvalSummary, LibcintRsError> {
-    let plan = runtime::planner::build_from_raw(req)?;
-    runtime::execute(plan).map(RawEvalSummary::from)
-}
-```
-
-### Pattern 2: Manifest-Driven Capability and Stability Gates
-
-**What:** Route operators through generated metadata (`stable | optional | unstable_source`, feature flags, representation support).
-**When to use:** For every operator lookup, CI audit, and release gate.
-**Trade-offs:** More codegen/tooling overhead, but it makes "full coverage" claims auditable and protects against silent API drift.
+**What:** Encode tool applicability and gate requirements in structured tables or rules.
+**When to use:** When policy must be auditable and changeable without rewiring code.
+**Trade-offs:** More upfront structuring; fewer ad-hoc decisions later.
 
 **Example:**
 ```rust
-match manifest.resolve(api_name, features)? {
-    OperatorMeta { stability: Stability::Stable, .. } => proceed(),
-    OperatorMeta { stability: Stability::Optional, feature, .. } if feature.enabled() => proceed(),
-    meta => Err(LibcintRsError::UnsupportedApi { api: meta.name, reason: "feature/stability gate" }),
+// Pseudocode-style model
+struct ToolRule {
+    applies_if: Vec<CrateTrait>,
+    tool: ToolId,
+    rationale: &'static str,
 }
 ```
 
-### Pattern 3: Backend Strategy with Deterministic CPU Fallback
+### Pattern 2: Spec-to-Evidence Mapping
 
-**What:** Planner decides CPU vs CubeCL based on support and cost; unsupported/unstable paths fall back to CPU or return typed rejection.
-**When to use:** Every execution plan with GPU enabled.
-**Trade-offs:** Predictable correctness and easier debugging, but heuristic tuning is required to avoid GPU overhead regressions.
+**What:** Every spec item maps to tests/tools and resulting evidence.
+**When to use:** Always — required to avoid unsupported assurance claims.
+**Trade-offs:** Additional mapping work; higher assurance clarity.
+
+**Example:**
+```rust
+struct EvidenceMap {
+    spec_item: String,
+    tool: ToolId,
+    gate: GateTier,
+    status: EvidenceStatus,
+}
+```
+
+### Pattern 3: Gate Tiering (PR/Nightly/Release)
+
+**What:** Separate gates by CI tier with explicit rationale and waiver rules.
+**When to use:** Always — requested in project constraints.
+**Trade-offs:** Extra CI config; avoids conflating fast feedback with deep verification.
 
 ## Data Flow
 
 ### Request Flow
 
-```text
-[Safe API | Raw Compat | Optional C ABI]
-              ↓
- [Input Validation + Manifest Resolve]
-              ↓
-[Plan shape/workspace/backend/chunking]
-              ↓
-      [Dispatch Decision]
-        ↓             ↓
- [CPU Executor]   [CubeCL Executor]
-        ↓             ↓
-      [Writer / Transform / Output View]
-              ↓
-    [Result + typed error + tracing stats]
 ```
-
-### State Management
-
-```text
-[Basis/Operator Metadata Cache]      [Optimizer Cache]
-               ↓                           ↓
-        [Planner + Scheduler] ←→ [Workspace Pool]
-               ↓                           ↓
-         [Execution Plan] → [Backend Executor]
-               ↓
-    [ExecutionStats + fallback reason + bytes]
+Testing Request
+    ↓
+Scope + Spec Inputs
+    ↓
+Classification Engine
+    ↓
+Tool Selection (mandatory + conditional)
+    ↓
+Gate Plan (PR/Nightly/Release + waivers)
+    ↓
+CI Execution + Evidence Collection
+    ↓
+Report Generation (verified vs unverified scope)
 ```
 
 ### Key Data Flows
 
-1. **Primary evaluation flow:** caller inputs are validated, normalized into an `ExecutionPlan`, executed on CPU/CubeCL, and written to compat-correct output layout.
-2. **Oracle gate flow:** the same raw inputs run through project API and vendored libcint oracle; diffs/tolerances are enforced in CI.
-3. **Feature/stability flow:** `with-f12`, `with-4c1e`, and `unstable-source-api` gates are checked at resolve/plan time before backend dispatch.
-4. **OOM-safe flow:** workspace estimate compares against memory limits, then chunking is attempted; irreducible over-limit requests stop with typed errors.
+1. **Policy → Decision:** Policy assets feed classification and selection logic.
+2. **Decision → CI:** Gate plan configures CI jobs and required tools.
+3. **CI → Report:** Tool outputs become evidence, mapped back to spec items.
 
 ## Scaling Considerations
 
 | Scale | Architecture Adjustments |
 |-------|--------------------------|
-| Small workloads (single calls to small batches) | CPU-only fast path; avoid GPU startup overhead; minimal caching. |
-| Medium workloads (repeated batch workloads) | Reuse optimizer/workspace caches; enable Rayon chunk parallelism; tune chunk size by memory limit. |
-| Large workloads (high-throughput homogeneous batches) | Enable CubeCL backend and device-resident caches; tune crossover heuristics and transfer plans; keep CPU fallback deterministic. |
+| 0-10 crates | Single repo + static policy docs; manual report generation |
+| 10-100 crates | Centralized policy + reusable gate templates; automated reporting |
+| 100+ crates | Policy registry + automated classification + standardized artifact schema |
 
 ### Scaling Priorities
 
-1. **First bottleneck: workspace pressure/OOM risk.** Fix with allocator wrappers, up-front estimates, and chunk planner enforcement.
-2. **Second bottleneck: backend crossover mistakes.** Fix with benchmarked dispatch thresholds and tracing of fallback/dispatch reasons.
+1. **First bottleneck:** Manual report assembly → automate evidence collection and mapping.
+2. **Second bottleneck:** Divergent CI configs → normalize with shared gate templates.
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Mixing Raw Pointer Contracts into Safe API
+### Anti-Pattern 1: Coverage-Only Governance
 
-**What people do:** expose `atm/bas/env` offsets and `dims` sentinel behavior directly in "safe" interfaces.
-**Why it's wrong:** defeats Rust type-safety goals and spreads unsafe layout assumptions across the codebase.
-**Do this instead:** keep raw contracts in `compat`/`capi`; safe API uses typed `BasisSet`, `ShellTuple`, and tensor views.
+**What people do:** Treat coverage or green tests as sufficient.
+**Why it's wrong:** Violates governance rule against unsupported assurance.
+**Do this instead:** Map spec items to tools + evidence and report residual risk.
 
-### Anti-Pattern 2: Declaring Parity Without Manifest + Oracle Gates
+### Anti-Pattern 2: Single-Gate CI
 
-**What people do:** mark APIs as supported based on header/source inspection or ad hoc tests only.
-**Why it's wrong:** source-only/feature-gated symbols drift silently and compatibility claims become non-auditable.
-**Do this instead:** require compiled-manifest lock diff checks, oracle comparisons, helper parity checks, and feature-matrix CI gates.
+**What people do:** Run all tools on PR or only on nightly.
+**Why it's wrong:** Blurs assurance tiers and breaks explicit gate requirements.
+**Do this instead:** Keep PR/Nightly/Release gates separate with rationale.
 
 ## Integration Points
 
@@ -210,27 +176,30 @@ match manifest.resolve(api_name, features)? {
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| Vendored upstream `libcint` | Local build + bindgen via `libcint-oracle` | Authoritative oracle for result parity and helper API comparison. |
-| CubeCL runtime | Optional backend crate (`feature = "gpu"`) | GPU acceleration only; CPU remains reference/fallback backend. |
-| CI runners (feature matrix) | `xtask`-driven manifest/oracle/benchmark jobs | Release gates enforce manifest lock, oracle parity, 4c1e envelope, and F12 sph-only constraints. |
+| GitHub Actions (or CI) | Generated workflow fragments or templates | Keep gate tiers separate |
+| Artifact storage | Publish reports + evidence logs | Must preserve waived/blocked info |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| `facade` ↔ `runtime` | Typed plan/input structs | Safe API never touches raw pointer layout internals. |
-| `compat` ↔ `runtime` | Validated raw-view DTOs | Only validated raw data may cross into planner. |
-| `runtime` ↔ `cpu/cubecl` | `BackendExecutor` trait | Standard `supports/query_workspace/execute` contract. |
-| `compat` ↔ `capi` | Thin FFI wrappers + error translation | C ABI is optional and isolated behind feature gate. |
-| `oracle/xtask` ↔ `ops` | Manifest lock + resolver metadata | Gate coverage is generated from operator inventory, not hand-maintained lists. |
+| policy ↔ analysis | Rule tables and metadata | Must be auditable |
+| analysis ↔ integration | Gate plan output | Deterministic, versioned |
+| integration ↔ reporting | Evidence bundle | Consistent schema for reports |
+
+## Suggested Build Order
+
+1. **Policy assets + domain models** (baseline, applicability matrix, gate schema).
+2. **Classification + tool selection logic** (rule engine + rationale output).
+3. **Gate planner** (PR/Nightly/Release tiering and waiver handling).
+4. **Reporting pipeline** (spec-to-evidence mapping, verified/unverified outputs).
+5. **CI integration** (workflow generation and artifact publishing).
 
 ## Sources
 
+- `test/rust_crate_guideline.md`
 - `.planning/PROJECT.md`
-- `docs/libcint_detailed_design_resolved_en.md` (sections 1-5, 7, 10, 12-16)
-- `.planning/codebase/STRUCTURE.md`
-- `.planning/codebase/ARCHITECTURE.md`
 
 ---
-*Architecture research for: libcint-rs (Rust-compatible libcint redesign)*
-*Researched: 2026-03-14*
+*Architecture research for: Rust crate test-governance system*
+*Researched: 2026-03-21*
