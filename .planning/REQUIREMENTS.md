@@ -1,108 +1,88 @@
-# Requirements: libcint-rs
+# Requirements: Rust Crate Test Governance
 
-**Defined:** 2026-03-14
-**Core Value:** Users can compute libcint-equivalent integrals through a Rust-native library with explicit safety/error guarantees and verifiable compatibility gates.
+**Defined:** 2026-03-21
+**Core Value:** Users can turn a Rust crate testing request into an auditable verification plan that chooses the right tools, sets the right gates, and states residual risk clearly.
 
 ## v1 Requirements
 
-### Compatibility Core
+### Scoping
 
-- [x] **COMP-01**: User can compute stable-family integrals (`1e/2e/2c2e/3c1e/3c2e`) with results matching oracle tolerances for cart/sph/spinor representations
-- [x] **COMP-02**: User gets parity for helper/transform essentials (AO counts, offsets, normalization, cart/sph/spinor transforms) required by migration workflows
-- [x] **COMP-03**: User can rely on manifest-backed API coverage where each supported symbol maps to an explicit profile and stability level
-- [x] **COMP-04**: User can trust compatibility claims because each stable-family requirement is validated by automated oracle regression gates
+- [ ] **SCOP-01**: User can identify the Rust crate or module that is in scope for verification.
+- [ ] **SCOP-02**: User can name the governing specification sources, public APIs, invariants, error contracts, feature flags, and side effects that define the review scope.
 
-### Raw Compatibility API
+### Classification
 
-- [x] **RAW-01**: User can call a raw API surface with `atm/bas/env`, `shls`, `dims`, `cache`, and `opt` contracts compatible with libcint usage patterns
-- [x] **RAW-02**: User can query required workspace when output/cache pointers are null-equivalent and then execute successfully with provided buffers
-- [x] **RAW-03**: User gets explicit error when provided `dims`/buffer shape is incompatible; partial writes and silent truncation do not occur
-- [x] **RAW-04**: User receives numerically equivalent results with and without optimizer usage for supported operators
+- [ ] **CLAS-01**: User can classify whether the target crate includes public API docs or doctests, compile-time usage constraints, stateful workflows, unsafe code, concurrency or atomics, hostile-input parsing, multiple feature flags, and high-value invariants.
+- [ ] **CLAS-02**: User can record why each detected trait changes the required verification tools or CI gates.
 
-### Safe Rust API
+### Tool Selection
 
-- [x] **SAFE-01**: User can construct typed input models (`Atom`, `Shell`, basis/environment context) without raw pointer arithmetic
-- [x] **SAFE-02**: User can call `query_workspace` to obtain deterministic workspace requirements before evaluation
-- [x] **SAFE-03**: User can call `evaluate`/`evaluate_into` with typed tensor views and receive representation-correct output layout
-- [x] **SAFE-04**: User receives typed errors that distinguish unsupported API, input-layout failure, memory failure, and backend execution failure
+- [ ] **TOOL-01**: User can apply the mandatory baseline toolset (`cargo test`, `proptest`, `cargo-mutants`, `cargo-hack`, `cargo-llvm-cov`, doctests, and compile-fail tests where applicable) unless scope is explicitly narrowed.
+- [ ] **TOOL-02**: User can require conditional tools (`proptest-state-machine`, `Kani`, `Miri`, `loom`, and `cargo-fuzz`) when the target crate traits make them applicable.
+- [ ] **TOOL-03**: User can produce a tool-selection decision with explicit rationale, including why non-applicable tools were excluded.
+- [ ] **TOOL-04**: User can define checks that expose fake or shallow implementations instead of accepting narrow happy-path tests.
 
-### Memory and Error Guarantees
+### CI Gates
 
-- [x] **MEM-01**: User can set `memory_limit_bytes` and get either chunked execution or explicit `MemoryLimitExceeded` without process abort
-- [x] **MEM-02**: User never experiences unhandled OOM abort in supported execution paths because large allocations use fallible allocation policy
-- [x] **MEM-03**: User can diagnose failure causes through structured error messages and trace metadata
+- [ ] **GATE-01**: User can define explicit PR CI gate conditions, including what must pass, what is blocked, and what can be waived.
+- [ ] **GATE-02**: User can define explicit nightly CI gate conditions for heavier or slower verification work.
+- [ ] **GATE-03**: User can define explicit release gate conditions that must pass before strong quality or compatibility claims are published.
+- [ ] **GATE-04**: User can document waiver owner, rationale, expiry, and revalidation trigger for any blocked or deferred gate.
 
-### Execution Backends
+### Reporting
 
-- [x] **EXEC-01**: User can run all v1-supported requirements on CPU reference backend as the correctness baseline
-- [ ] **EXEC-02**: User can enable CubeCL acceleration via feature flag and receive deterministic CPU fallback when workloads are unsupported/unfavorable
-- [ ] **EXEC-03**: User can inspect backend dispatch reason (CPU/GPU/fallback) through tracing output
+- [ ] **REPT-01**: User can produce an auditable report that maps each recommendation or change to a specification item, test or tool, gate condition, and residual risk.
+- [ ] **REPT-02**: User can state verified scope, not yet verified scope, blocked items, and waiver status without making unqualified assurance claims.
+- [ ] **REPT-03**: User can deliver a testing gap analysis that distinguishes verified scope from unverified scope and names residual risks.
 
-### Optional and Migration Surfaces
+### Repository Changes
 
-- [ ] **ABIC-01**: User can opt into a C ABI shim that exposes status-code based calls and last-error retrieval for phased migration
-- [ ] **OPTF-01**: User can opt into `with-f12` support only within documented supported envelopes; unsupported representations return explicit errors
-- [ ] **OPTF-02**: User can opt into `with-4c1e` only within validated envelope; out-of-envelope requests return `UnsupportedApi`
-
-### Verification and Release Gates
-
-- [x] **VERI-01**: User can trust releases because CI fails on unapproved compiled-manifest lock drift across support profiles
-- [x] **VERI-02**: User gets regression protection from oracle CI matrix covering base and optional supported profiles
-- [x] **VERI-03**: User gets validated layout and failure semantics through dedicated tests for spinor/complex layout, helper parity, and OOM/error paths
+- [ ] **CHNG-01**: User can request concrete repository updates and receive consistent policy, CI, and template changes aligned with the governance rules.
 
 ## v2 Requirements
 
 ### Future Extensions
 
-- **ASYNC-01**: User can optionally use async execution APIs once core parity and observability are stable
-- **UNST-01**: User can consume promoted source-only unstable families after multi-release validation evidence
-- **GTG-01**: User can evaluate GTG families only if independently implemented and fully validated against explicit acceptance criteria
-- **AUTO-01**: User gets hardware-adaptive GPU threshold auto-tuning after stable benchmark corpus is established
+- **AUTO-01**: User can generate machine-readable evidence bundles and publish them automatically to downstream audit systems.
+- **COST-01**: User can model PR, nightly, and release gate cost envelopes before enabling expensive verification lanes.
+- **BENCH-01**: User can compare the governance profile against external frameworks or competitor policies with cited evidence.
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Bitwise identity with libcint internals | Project targets numerical-result compatibility, not implementation equivalence |
-| Reproducing upstream internal scratch/layout implementation details | Internal strategy is allowed to differ if external contracts and results hold |
-| Public async API in initial release | Adds complexity without improving compatibility baseline; deferred to v2 |
-| GTG in initial GA surface | Upstream marks GTG path as deprecated/incorrect; excluded from initial scope |
-| Fortran wrapper parity in initial release | Migration priority is Rust safe API + raw compatibility + optional C ABI |
+| Non-Rust crate or application QA governance | This project is specifically for Rust crate verification policy and tool selection |
+| Single score or overall quality badge | Encourages false assurance and hides unverified scope |
+| Coverage-only pass/fail decisions | Coverage is supporting evidence, not proof of correctness or conformance |
+| One-size-fits-all toolchain with no applicability rationale | Ignores crate-specific risk traits and breaks governance intent |
+| Unqualified claims such as "fully tested" or "all good" | The project requires explicit verified scope, unverified scope, and residual risk reporting |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| COMP-01 | Phase 2 | Complete |
-| COMP-02 | Phase 3 | Complete |
-| COMP-03 | Phase 3 | Complete |
-| COMP-04 | Phase 3 | Complete |
-| RAW-01 | Phase 2 | Complete |
-| RAW-02 | Phase 2 | Complete |
-| RAW-03 | Phase 2 | Complete |
-| RAW-04 | Phase 3 | Complete |
-| SAFE-01 | Phase 1 | Complete |
-| SAFE-02 | Phase 1 | Complete |
-| SAFE-03 | Phase 2 | Complete |
-| SAFE-04 | Phase 1 | Complete |
-| MEM-01 | Phase 2 | Complete |
-| MEM-02 | Phase 2 | Complete |
-| MEM-03 | Phase 1 | Complete |
-| EXEC-01 | Phase 2 | Complete |
-| EXEC-02 | Phase 4 | Pending |
-| EXEC-03 | Phase 4 | Pending |
-| ABIC-01 | Phase 4 | Pending |
-| OPTF-01 | Phase 4 | Pending |
-| OPTF-02 | Phase 4 | Pending |
-| VERI-01 | Phase 3 | Complete |
-| VERI-02 | Phase 3 | Complete |
-| VERI-03 | Phase 3 | Complete |
+| SCOP-01 | TBD | Pending |
+| SCOP-02 | TBD | Pending |
+| CLAS-01 | TBD | Pending |
+| CLAS-02 | TBD | Pending |
+| TOOL-01 | TBD | Pending |
+| TOOL-02 | TBD | Pending |
+| TOOL-03 | TBD | Pending |
+| TOOL-04 | TBD | Pending |
+| GATE-01 | TBD | Pending |
+| GATE-02 | TBD | Pending |
+| GATE-03 | TBD | Pending |
+| GATE-04 | TBD | Pending |
+| REPT-01 | TBD | Pending |
+| REPT-02 | TBD | Pending |
+| REPT-03 | TBD | Pending |
+| CHNG-01 | TBD | Pending |
 
 **Coverage:**
-- v1 requirements: 24 total
-- Mapped to phases: 24
-- Unmapped: 0
+- v1 requirements: 16 total
+- Mapped to phases: 0
+- Unmapped: 16 WARNING
 
 ---
-*Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 after roadmap mapping*
+*Requirements defined: 2026-03-21*
+*Last updated: 2026-03-21 after initial definition*
