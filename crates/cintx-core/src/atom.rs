@@ -87,11 +87,15 @@ impl Atom {
             return Err(CoreError::InvalidCoordinate(coord_bohr));
         }
 
-        if let Some(z) = zeta && (!z.is_finite() || z <= 0.0) {
+        if let Some(z) = zeta
+            && (!z.is_finite() || z <= 0.0)
+        {
             return Err(CoreError::InvalidNuclearDetail);
         }
 
-        if let Some(frac) = fractional_charge && (!frac.is_finite() || frac.abs() > 2.0) {
+        if let Some(frac) = fractional_charge
+            && (!frac.is_finite() || frac.abs() > 2.0)
+        {
             return Err(CoreError::InvalidFractionalCharge(frac));
         }
 

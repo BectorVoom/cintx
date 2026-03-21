@@ -255,6 +255,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "cintx-core"
+version = "0.1.0"
+dependencies = [
+ "smallvec",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "cintx-ops"
+version = "0.1.0"
+dependencies = [
+ "cintx-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

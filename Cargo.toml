@@ -14,3 +14,13 @@ tracing = "0.1.41"
 
 [build-dependencies]
 cc = "1.2.15"
+
+[workspace]
+members = [
+    "crates/cintx-core",
+    "crates/cintx-ops",
+]
+default-members = [
+    "crates/cintx-core",
+    "crates/cintx-ops",
+]

@@ -10,7 +10,6 @@ pub enum EnvUnits {
     Angstrom,
 }
 
-
 #[derive(Debug, thiserror::Error)]
 #[error("env index {requested} is out of bounds for {available} entries")]
 pub struct EnvBoundsError {

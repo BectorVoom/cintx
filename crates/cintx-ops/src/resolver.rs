@@ -197,9 +197,7 @@ impl Resolver {
     ) -> Result<&'static OperatorDescriptor, ResolverError> {
         let matches: Vec<&OperatorDescriptor> = OPERATOR_DESCRIPTORS
             .iter()
-            .filter(|desc| {
-                desc.entry.family_name == family && desc.entry.operator_name == operator
-            })
+            .filter(|desc| desc.entry.family_name == family && desc.entry.operator_name == operator)
             .collect();
 
         if matches.is_empty() {
@@ -234,11 +232,15 @@ mod tests {
 
     #[test]
     fn resolve_uses_metadata_over_symbol() {
-        let descriptor =
-            Resolver::resolve("1e", "overlap", Representation::Cart).expect("metadata should exist");
+        let descriptor = Resolver::resolve("1e", "overlap", Representation::Cart)
+            .expect("metadata should exist");
         assert_eq!(descriptor.operator_name(), "overlap");
         assert_eq!(descriptor.family(), "1e");
-        assert!(descriptor.entry.supports_representation(Representation::Cart));
+        assert!(
+            descriptor
+                .entry
+                .supports_representation(Representation::Cart)
+        );
     }
 
     #[test]
