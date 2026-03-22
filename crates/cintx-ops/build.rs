@@ -41,16 +41,15 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
             .join(", ");
         format!("&[{}]", joined)
     };
-    writeln!(
-        rs_buffer,
-        "pub const PROFILE_SCOPE_APPROVED: &[&str] = {};",
-        approved_literals
-    )?;
+    writeln!(rs_buffer, "pub const PROFILE_SCOPE_APPROVED: &[&str] =")?;
+    writeln!(rs_buffer, "    {};", approved_literals)?;
 
+    writeln!(rs_buffer, "use crate::resolver::{{")?;
     writeln!(
         rs_buffer,
-        "use crate::resolver::{{FeatureFlag, HelperKind, ManifestEntry, OperatorDescriptor, RepresentationSupport, Stability}};"
+        "    FeatureFlag, HelperKind, ManifestEntry, OperatorDescriptor, RepresentationSupport, Stability,"
     )?;
+    writeln!(rs_buffer, "}};")?;
     writeln!(rs_buffer, "use cintx_core::OperatorId;")?;
     writeln!(
         rs_buffer,
@@ -77,42 +76,91 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
         let feature_flag = feature_flag_snippet(&entry.feature_flag);
         let stability = stability_snippet(&entry.stability);
         let helper = helper_kind_snippet(&entry.helper_kind);
+        writeln!(rs_buffer, "    ManifestEntry {{")?;
         writeln!(
             rs_buffer,
-            "    ManifestEntry {{ family_name: {family}, operator_name: {operator}, symbol_name: {symbol}, category: {category}, arity: {arity}, forms: {forms}, component_rank: {component}, feature_flag: {feature_flag}, stability: {stability}, declared_in: {declared}, compiled_in_profiles: {compiled}, oracle_covered: {oracle}, helper_kind: {helper}, canonical_family: {canonical}, representation: RepresentationSupport::new({cart}, {spheric}, {spinor}) }},",
-            family = family_literal,
-            operator = operator_literal,
-            symbol = symbol_literal,
-            category = category_literal,
-            arity = entry.arity,
-            forms = forms_literal,
-            component = component_literal,
-            feature_flag = feature_flag,
-            stability = stability,
-            declared = declared_literal,
-            compiled = compiled_literal,
-            oracle = entry.oracle_covered,
-            helper = helper,
-            canonical = canonical_literal,
+            "        family_name: {family},",
+            family = family_literal
+        )?;
+        writeln!(
+            rs_buffer,
+            "        operator_name: {operator},",
+            operator = operator_literal
+        )?;
+        writeln!(
+            rs_buffer,
+            "        symbol_name: {symbol},",
+            symbol = symbol_literal
+        )?;
+        writeln!(
+            rs_buffer,
+            "        category: {category},",
+            category = category_literal
+        )?;
+        writeln!(rs_buffer, "        arity: {arity},", arity = entry.arity)?;
+        writeln!(rs_buffer, "        forms: {forms},", forms = forms_literal)?;
+        writeln!(
+            rs_buffer,
+            "        component_rank: {component},",
+            component = component_literal
+        )?;
+        writeln!(
+            rs_buffer,
+            "        feature_flag: {feature_flag},",
+            feature_flag = feature_flag
+        )?;
+        writeln!(
+            rs_buffer,
+            "        stability: {stability},",
+            stability = stability
+        )?;
+        writeln!(
+            rs_buffer,
+            "        declared_in: {declared},",
+            declared = declared_literal
+        )?;
+        writeln!(
+            rs_buffer,
+            "        compiled_in_profiles: {compiled},",
+            compiled = compiled_literal
+        )?;
+        writeln!(
+            rs_buffer,
+            "        oracle_covered: {oracle},",
+            oracle = entry.oracle_covered
+        )?;
+        writeln!(rs_buffer, "        helper_kind: {helper},", helper = helper)?;
+        writeln!(
+            rs_buffer,
+            "        canonical_family: {canonical},",
+            canonical = canonical_literal
+        )?;
+        writeln!(
+            rs_buffer,
+            "        representation: RepresentationSupport::new({cart}, {spheric}, {spinor}),",
             cart = entry.rep_cart,
             spheric = entry.rep_spheric,
             spinor = entry.rep_spinor,
         )?;
+        writeln!(rs_buffer, "    }},")?;
     }
 
-    writeln!(rs_buffer, "];\n")?;
+    writeln!(rs_buffer, "];")?;
     writeln!(
         rs_buffer,
         "pub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &["
     )?;
     for idx in 0..entries.len() {
+        writeln!(rs_buffer, "    OperatorDescriptor {{")?;
+        writeln!(rs_buffer, "        id: OperatorId::new({idx}),", idx = idx)?;
         writeln!(
             rs_buffer,
-            "    OperatorDescriptor {{ id: OperatorId::new({idx}), entry: &MANIFEST_ENTRIES[{idx}] }},",
+            "        entry: &MANIFEST_ENTRIES[{idx}],",
             idx = idx,
         )?;
+        writeln!(rs_buffer, "    }},")?;
     }
-    writeln!(rs_buffer, "];\n")?;
+    writeln!(rs_buffer, "];")?;
 
     let mut csv_buffer = String::from(
         "family_name,operator_name,symbol_name,category,arity,forms,component_rank,feature_flag,stability,declared_in,compiled_in_profiles,oracle_covered,helper_kind,canonical_family\n",

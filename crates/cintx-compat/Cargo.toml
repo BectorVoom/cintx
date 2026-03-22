@@ -1,0 +1,15 @@
+[package]
+name = "cintx-compat"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+cintx-core = { path = "../cintx-core" }
+cintx-cubecl = { path = "../cintx-cubecl" }
+cintx-ops = { path = "../cintx-ops" }
+cintx-runtime = { path = "../cintx-runtime" }
+smallvec = "1"
+tracing = "0.1"

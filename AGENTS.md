@@ -73,6 +73,8 @@ cintx is a public Rust library that redesigns and reimplements libcint with resu
 - thiserror crate docs: https://docs.rs/crate/thiserror/latest
 - anyhow crate docs: https://docs.rs/crate/anyhow/latest
 - bindgen crate docs: https://docs.rs/crate/bindgen/0.71.1 and https://docs.rs/crate/bindgen/latest
+
+
 ### Local project evidence
 - `Cargo.toml`
 - `Cargo.lock`
@@ -80,11 +82,10 @@ cintx is a public Rust library that redesigns and reimplements libcint with resu
 - `docs/design/cintx_detailed_design.md`
 <!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
-<!-- GSD:conventions-end -->
+- Before creating any test code, read `\home\chemtech\workspace\cintx\docs\rust_crate_test_guideline.md` and follow it when designing and implementing the tests.
+
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
