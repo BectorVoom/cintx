@@ -16,14 +16,16 @@ pub type FamilyLaunchFn = fn(
     &TransferPlan,
 ) -> Result<ExecutionStats, cintxRsError>;
 
-const SUPPORTED_CANONICAL_FAMILIES: &[&str] = &["1e", "2e", "2c2e"];
-const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["center_4c1e", "center_3c1e", "center_3c2e"];
+const SUPPORTED_CANONICAL_FAMILIES: &[&str] = &["1e", "2e", "2c2e", "3c1e", "3c2e"];
+const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["center_4c1e"];
 
 fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
     match canonical_family {
         "1e" => Some(one_electron::launch_one_electron as FamilyLaunchFn),
         "2e" => Some(two_electron::launch_two_electron as FamilyLaunchFn),
         "2c2e" => Some(center_2c2e::launch_center_2c2e as FamilyLaunchFn),
+        "3c1e" => Some(center_3c1e::launch_center_3c1e as FamilyLaunchFn),
+        "3c2e" => Some(center_3c2e::launch_center_3c2e as FamilyLaunchFn),
         _ => None,
     }
 }
@@ -73,6 +75,7 @@ pub fn launch_family(
 mod tests {
     use super::*;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
+    use cintx_ops::resolver::Resolver;
     use cintx_runtime::{query_workspace, ExecutionOptions};
     use std::sync::Arc;
 
@@ -142,23 +145,26 @@ mod tests {
         let one_e = build_plan(basis, 0, Representation::Cart, 2);
         let two_e = build_plan(basis, 9, Representation::Cart, 4);
         let two_c2e = build_plan(basis, 12, Representation::Cart, 2);
+        let three_c1e = build_plan(basis, 15, Representation::Cart, 3);
+        let three_c2e = build_plan(basis, 17, Representation::Cart, 3);
 
         assert!(resolve_family(&one_e).is_ok());
         assert!(resolve_family(&two_e).is_ok());
         assert!(resolve_family(&two_c2e).is_ok());
+        assert!(resolve_family(&three_c1e).is_ok());
+        assert!(resolve_family(&three_c2e).is_ok());
     }
 
     #[test]
     fn family_registry_rejects_unsupported_families() {
-        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
-        let three_c1e = build_plan(basis, 15, Representation::Cart, 3);
-
-        let err = resolve_family(&three_c1e).unwrap_err();
-        assert!(matches!(err, cintxRsError::UnsupportedApi { .. }));
-        assert_eq!(
-            unresolved_families(),
-            &["center_4c1e", "center_3c1e", "center_3c2e"]
-        );
+        let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("4c1e descriptor should exist")
+            .entry
+            .canonical_family;
+        assert_eq!(op_4c1e, "4c1e");
+        assert!(!supports_canonical_family(op_4c1e));
+        assert!(resolve_family_name(op_4c1e).is_none());
+        assert_eq!(unresolved_families(), &["center_4c1e"]);
     }
 
     #[test]
@@ -166,8 +172,8 @@ mod tests {
         assert!(supports_canonical_family("1e"));
         assert!(supports_canonical_family("2e"));
         assert!(supports_canonical_family("2c2e"));
-        assert!(!supports_canonical_family("3c1e"));
-        assert!(!supports_canonical_family("3c2e"));
+        assert!(supports_canonical_family("3c1e"));
+        assert!(supports_canonical_family("3c2e"));
         assert!(!supports_canonical_family("4c1e"));
     }
 }

@@ -1,13 +1,13 @@
-use crate::layout::{CompatDims, ensure_cache_len};
+use crate::layout::{ensure_cache_len, CompatDims};
 use crate::optimizer::RawOptimizerHandle;
 use cintx_core::{
-    Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple, cintxRsError,
+    cintxRsError, Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple,
 };
 use cintx_cubecl::CubeClExecutor;
 use cintx_ops::resolver::{HelperKind, OperatorDescriptor, Resolver, ResolverError};
 use cintx_runtime::{
-    ExecutionOptions, ExecutionPlan, HostWorkspaceAllocator, WorkspaceQuery, evaluate,
-    query_workspace,
+    evaluate, query_workspace, ExecutionOptions, ExecutionPlan, HostWorkspaceAllocator,
+    WorkspaceQuery,
 };
 use std::mem::size_of;
 use std::sync::Arc;
@@ -1019,7 +1019,7 @@ mod tests {
     }
 
     #[test]
-    fn three_center_contract_query_works_while_eval_is_not_yet_supported() {
+    fn three_center_contract_query_and_eval_work_for_supported_backend() {
         let fixture = RawFixture::single_atom_three_shells();
         let query = unsafe {
             query_workspace_raw(
@@ -1036,7 +1036,7 @@ mod tests {
         assert_eq!(query.work_units, 3);
 
         let mut out = vec![1.0; 3];
-        let err = unsafe {
+        let summary = unsafe {
             eval_raw(
                 RawApiId::INT3C1E_P2_CART,
                 Some(&mut out),
@@ -1049,8 +1049,8 @@ mod tests {
                 None,
             )
         }
-        .unwrap_err();
-        assert!(matches!(err, cintxRsError::UnsupportedApi { .. }));
-        assert!(out.iter().all(|value| *value == 1.0));
+        .expect("3c eval should succeed when kernel support is available");
+        assert!(summary.bytes_written > 0);
+        assert!(out.iter().all(|value| *value == 0.0));
     }
 }
