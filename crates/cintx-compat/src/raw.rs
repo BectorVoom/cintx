@@ -1,13 +1,13 @@
-use crate::layout::{ensure_cache_len, CompatDims};
+use crate::layout::{CompatDims, ensure_cache_len};
 use crate::optimizer::RawOptimizerHandle;
 use cintx_core::{
-    cintxRsError, Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple,
+    Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple, cintxRsError,
 };
 use cintx_cubecl::CubeClExecutor;
 use cintx_ops::resolver::{HelperKind, OperatorDescriptor, Resolver, ResolverError};
 use cintx_runtime::{
-    evaluate, query_workspace, ExecutionOptions, ExecutionPlan, HostWorkspaceAllocator,
-    WorkspaceQuery,
+    ExecutionOptions, ExecutionPlan, HostWorkspaceAllocator, WorkspaceQuery, evaluate,
+    query_workspace,
 };
 use std::mem::size_of;
 use std::sync::Arc;
@@ -60,6 +60,7 @@ impl RawApiId {
 
     pub const INT3C1E_P2_CART: Self = Self::Symbol("int3c1e_p2_cart");
     pub const INT3C1E_P2_SPH: Self = Self::Symbol("int3c1e_p2_sph");
+    pub const INT3C1E_P2_SPINOR: Self = Self::Symbol("int3c1e_p2_spinor");
 
     pub const INT3C2E_IP1_CART: Self = Self::Symbol("int3c2e_ip1_cart");
     pub const INT3C2E_IP1_SPH: Self = Self::Symbol("int3c2e_ip1_sph");

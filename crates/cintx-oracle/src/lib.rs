@@ -1,4 +1,4 @@
-//! Oracle adapter (stub).
+//! Oracle adapter for Phase 2 parity checks.
 
 pub mod compare;
 pub mod fixtures;
