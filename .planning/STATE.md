@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Completed 02-08-PLAN.md
-last_updated: "2026-03-26T11:20:00.688Z"
+status: in_progress
+stopped_at: Completed 02-07-PLAN.md
+last_updated: "2026-03-26T11:44:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -19,30 +19,31 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 02 — execution-compatibility-stabilization
+**Current focus:** Phase 03 — safe-surface-c-abi-optional-families
 
 ## Current Position
 
-Phase: 02 (execution-compatibility-stabilization) — EXECUTING
-Plan: 6 of 7
+Phase: 02 (execution-compatibility-stabilization) — COMPLETE
+Plan: 7 of 7
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2
-- Average duration: 13 min
-- Total execution time: 0.5 hours
+- Total plans completed: 3
+- Average duration: 21 min
+- Total execution time: 1.0 hours
 
 **By Phase:**
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 2 | 27 min | 13.5 min |
+| 02 | 7 | 107 min | 15.3 min |
 
 **Recent Trend:**
 
-- Last 5 plans: 18 min, 9 min
-- Trend: Stable
+- Last 5 plans: 7 min, 10 min, 26 min, 8 min, 29 min
+- Trend: Improved after raw/oracle stabilization
 
 | Phase 01-manifest-planner-foundation P01 | 18min | 2 tasks | 15 files |
 | Phase 01-manifest-planner-foundation P02 | 9min | 2 tasks | 10 files |
@@ -51,6 +52,8 @@ Plan: 6 of 7
 | Phase 02 P04 | 7 min | 2 tasks | 5 files |
 | Phase 02 P05 | 10 min | 2 tasks | 9 files |
 | Phase 02 P06 | 26 min | 3 tasks | 3 files |
+| Phase 02 P08 | 8 min | 2 tasks | 8 files |
+| Phase 02 P07 | 29 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -78,6 +81,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 02]: Use symbol-backed RawApiId resolved through Resolver — Keeps raw dispatch manifest-driven and avoids hardcoding operator ids in compat.
 - [Phase 02]: Map RawOptimizerHandle workspace hints to runtime memory limits — Enables deterministic chunking and MemoryLimitExceeded validation without extending raw function signatures.
 - [Phase 02]: Enable 3c1e/3c2e in kernel registry while keeping 4c1e unsupported — Completes Phase 2 base-family execution envelope without expanding unsupported scope.
+- [Phase 02]: Extend compat optimizer coverage with `int2e_cart_optimizer`, `int2e_sph_optimizer`, and `int2e_optimizer` so helper-kind optimizer symbols remain manifest-complete.
+- [Phase 02]: Drive parity fixtures from the canonical `compiled_manifest.lock.json` and emit representation matrices plus parity reports with `/mnt/data` required-path metadata.
+- [Phase 02]: Verify family-specific tolerance envelopes and optimizer on/off equivalence through compat raw + legacy wrapper comparisons while asserting final flat-buffer and spinor interleaving contracts.
 
 ### Pending Todos
 
@@ -89,6 +95,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-26T11:20:00Z
-Stopped at: Completed 02-08-PLAN.md
+Last session: 2026-03-26T11:44:00Z
+Stopped at: Completed 02-07-PLAN.md
 Resume file: None
