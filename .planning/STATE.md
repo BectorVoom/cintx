@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-03-21T10:50:54.272Z"
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-03-26T11:12:50.311Z"
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 ## Current Position
 
 Phase: 02 (execution-compatibility-stabilization) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Plan: 5 of 7
 | Phase 02 P03 | 9 min | 2 tasks | 6 files |
 | Phase 02 P04 | 7 min | 2 tasks | 5 files |
 | Phase 02 P05 | 10 min | 2 tasks | 9 files |
+| Phase 02 P06 | 26 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 02-execution-compatibility-stabilization]: Pinned the initial executable CubeCL profile to CUBECL_RUNTIME_PROFILE=cpu and exposed a concrete constructor through CubeClExecutor::new.
 - [Phase 02-execution-compatibility-stabilization]: Kept backend execution fail-closed to canonical 1e/2e/2c2e registry entries and returned UnsupportedApi for follow-on families.
 - [Phase 02-execution-compatibility-stabilization]: Preserved planner output ownership as BackendStagingOnly -> CompatFinalWrite; transfer planning stages metadata/workspace/output buffers only.
+- [Phase 02]: Use symbol-backed RawApiId resolved through Resolver — Keeps raw dispatch manifest-driven and avoids hardcoding operator ids in compat.
+- [Phase 02]: Map RawOptimizerHandle workspace hints to runtime memory limits — Enables deterministic chunking and MemoryLimitExceeded validation without extending raw function signatures.
 
 ### Pending Todos
 
@@ -85,6 +88,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-21T10:50:54.269Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-03-26T11:12:50.309Z
+Stopped at: Completed 02-06-PLAN.md
 Resume file: None

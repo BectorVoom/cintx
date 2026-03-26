@@ -34,7 +34,7 @@ Plans:
 - [x] 03-PLAN.md - Expand the canonical manifest and public error surface for helper/legacy coverage plus typed raw failures.
 - [x] 04-PLAN.md - Add the backend-neutral runtime execution contract, deterministic scheduling, and runtime-owned execution metrics.
 - [x] 05-PLAN.md - Implement the CubeCL executor core and the `1e`/`2e`/`2c2e` kernel slice.
-- [ ] 06-PLAN.md - Build the raw compat query/evaluate pipeline and enforce no-partial-write layout rules.
+- [x] 06-PLAN.md - Build the raw compat query/evaluate pipeline and enforce no-partial-write layout rules.
 - [ ] 07-PLAN.md - Add helper/transform/optimizer/legacy compat APIs and oracle parity coverage.
 - [ ] 08-PLAN.md - Finish the `3c1e`/`3c2e` CubeCL kernels and cart/sph/spinor transform routing.
 
@@ -64,6 +64,6 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | Phase 1: Manifest & Planner Foundation | 2/2 | Complete | 2026-03-21 |
-| Phase 2: Execution & Compatibility Stabilization | 3/7 | In Progress | - |
+| Phase 2: Execution & Compatibility Stabilization | 5/7 | In Progress | - |
 | Phase 3: Safe Surface, C ABI Shim & Optional Families | 0/0 | Not started | - |
 | Phase 4: Verification & Release Automation | 0/0 | Not started | - |
