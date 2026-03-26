@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-03-26T11:12:50.311Z"
+stopped_at: Completed 02-08-PLAN.md
+last_updated: "2026-03-26T11:20:00.688Z"
 progress:
   total_phases: 4
   completed_phases: 1
@@ -77,6 +77,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 02-execution-compatibility-stabilization]: Preserved planner output ownership as BackendStagingOnly -> CompatFinalWrite; transfer planning stages metadata/workspace/output buffers only.
 - [Phase 02]: Use symbol-backed RawApiId resolved through Resolver — Keeps raw dispatch manifest-driven and avoids hardcoding operator ids in compat.
 - [Phase 02]: Map RawOptimizerHandle workspace hints to runtime memory limits — Enables deterministic chunking and MemoryLimitExceeded validation without extending raw function signatures.
+- [Phase 02]: Enable 3c1e/3c2e in kernel registry while keeping 4c1e unsupported — Completes Phase 2 base-family execution envelope without expanding unsupported scope.
 
 ### Pending Todos
 
@@ -88,6 +89,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-26T11:12:50.309Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-03-26T11:20:00Z
+Stopped at: Completed 02-08-PLAN.md
 Resume file: None
