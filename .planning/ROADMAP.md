@@ -47,7 +47,12 @@ Plans:
   2. The optional C ABI shim accepts compat-style inputs, returns integer status codes, and exposes thread-local last-error details for C integrators (COMP-04).
   3. `with-f12`, `with-4c1e`, and other optional-family gates only enable validated envelopes and emit `UnsupportedApi` for out-of-envelope arguments (OPT-01, OPT-02).
   4. Source-only APIs stay behind `unstable-source-api` so the GA surface remains stable until the maintainer intentionally enables those symbols (OPT-03).
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 01-PLAN.md - Activate Phase 3 workspace/feature topology and stable-vs-unstable namespace scaffolding for `cintx-rs`/`cintx-capi`.
+- [ ] 02-PLAN.md - Add manifest-driven optional-family and unstable-source gates with strict runtime envelope enforcement.
+- [ ] 03-PLAN.md - Implement the safe Rust session facade with split `query_workspace()`/`evaluate()` and owned typed outputs.
+- [ ] 04-PLAN.md - Implement the optional C ABI shim with integer status taxonomy and thread-local last-error copy-out APIs.
 
 ### Phase 4: Verification & Release Automation
 **Goal**: Close the manifest/oracle verification loop, run multi-profile CI/benchmarks, and surface diagnostics that block regressions before release.
@@ -65,5 +70,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | Phase 1: Manifest & Planner Foundation | 2/2 | Complete | 2026-03-21 |
 | Phase 2: Execution & Compatibility Stabilization | 7/7 | Complete | 2026-03-26 |
-| Phase 3: Safe Surface, C ABI Shim & Optional Families | 0/0 | Not started | - |
+| Phase 3: Safe Surface, C ABI Shim & Optional Families | 0/4 | Not started | - |
 | Phase 4: Verification & Release Automation | 0/0 | Not started | - |
