@@ -7,3 +7,13 @@ edition = "2024"
 path = "src/lib.rs"
 
 [dependencies]
+cintx-core = { path = "../cintx-core" }
+cintx-runtime = { path = "../cintx-runtime" }
+thiserror = "2"
+
+[features]
+default = []
+with-f12 = []
+with-4c1e = []
+# Source-only APIs remain opt-in until manifest/oracle release gates approve promotion.
+unstable-source-api = []
