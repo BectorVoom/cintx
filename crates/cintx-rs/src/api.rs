@@ -9,6 +9,7 @@ use cintx_runtime::{
     query_workspace as runtime_query_workspace,
 };
 use std::mem::size_of;
+use std::sync::Mutex;
 
 const CUBECL_RUNTIME_PROFILE: &str = "cpu";
 
@@ -111,21 +112,20 @@ impl<'basis> SessionQuery<'basis> {
 
         let output_layout = plan.output_layout.clone();
         let mut allocator = HostWorkspaceAllocator::default();
-        let executor = CubeClExecutor::new();
+        let executor = RecordingExecutor::new(CubeClExecutor::new());
         let runtime_stats = runtime_evaluate(plan, &self.request.options, &mut allocator, &executor)
             .map_err(FacadeError::from)?;
+        let owned_values = executor.owned_values()?;
 
-        let mut owned_values = Vec::new();
-        owned_values
-            .try_reserve_exact(output_layout.staging_elements)
-            .map_err(|_| FacadeError::Memory {
+        if owned_values.len() != output_layout.staging_elements {
+            return Err(FacadeError::Validation {
                 detail: format!(
-                    "failed to allocate owned output elements={}",
-                    output_layout.staging_elements
+                    "owned output contract drift: expected staging_elements={} got={}",
+                    output_layout.staging_elements,
+                    owned_values.len()
                 ),
-            })?;
-        owned_values.resize(output_layout.staging_elements, 0.0);
-        fill_staging_values(self.request.representation, &mut owned_values);
+            });
+        }
 
         let bytes_written = owned_values
             .len()
@@ -481,6 +481,58 @@ impl BackendExecutor for CubeClExecutor {
     }
 }
 
+#[derive(Debug)]
+struct RecordingExecutor<E> {
+    inner: E,
+    staged_values: Mutex<Vec<f64>>,
+}
+
+impl<E> RecordingExecutor<E> {
+    fn new(inner: E) -> Self {
+        Self {
+            inner,
+            staged_values: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn owned_values(&self) -> Result<Vec<f64>, FacadeError> {
+        let staged_values = self
+            .staged_values
+            .lock()
+            .map_err(|_| FacadeError::Validation {
+                detail: "owned output capture buffer mutex poisoned".to_owned(),
+            })?;
+        Ok(staged_values.clone())
+    }
+}
+
+impl<E: BackendExecutor> BackendExecutor for RecordingExecutor<E> {
+    fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
+        self.inner.supports(plan)
+    }
+
+    fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
+        self.inner.query_workspace(plan)
+    }
+
+    fn execute(
+        &self,
+        plan: &ExecutionPlan<'_>,
+        io: &mut ExecutionIo<'_>,
+    ) -> Result<ExecutionStats, cintxRsError> {
+        let stats = self.inner.execute(plan, io)?;
+        let mut staged_values =
+            self.staged_values
+                .lock()
+                .map_err(|_| cintxRsError::ChunkPlanFailed {
+                    from: "safe_recording_executor",
+                    detail: "owned output capture buffer mutex poisoned".to_owned(),
+                })?;
+        staged_values.extend_from_slice(io.staging_output());
+        Ok(stats)
+    }
+}
+
 #[cfg(feature = "unstable-source-api")]
 pub mod unstable {
     //! Source-only namespace that remains opt-in until manifest/oracle release gates and
@@ -578,6 +630,11 @@ mod tests {
         let output = query.evaluate().expect("safe evaluate should succeed");
 
         assert!(!output.tensor.owned_values.is_empty());
+        assert_eq!(output.tensor.owned_values[0], 1.0);
+        assert_eq!(
+            output.tensor.owned_values.len(),
+            output.tensor.extents.iter().product::<usize>()
+        );
         assert_eq!(output.workspace_bytes, expected_workspace_bytes);
         assert_eq!(output.chunk_count, expected_chunk_count);
         assert_eq!(
