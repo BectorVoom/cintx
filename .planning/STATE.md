@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-05-PLAN.md
-last_updated: "2026-03-28T06:47:11.616Z"
+stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-06-PLAN.md
+last_updated: "2026-03-28T07:11:00.105Z"
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 15
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -63,6 +63,7 @@ Plan: 6 of 6
 | Phase 03-safe-surface-c-abi-shim-optional-families P04 | 4m | 2 tasks | 3 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P03 | 9 min | 2 tasks | 1 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P05 | 34 min | 2 tasks | 4 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P06 | 8 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Record safe/capi feature-forwarding and stability contracts in package.metadata.cintx for manifest-level audits.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Use SessionBuilder::from_request with typed composition helpers to rebuild requests immutably while preserving query/evaluate invariants.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Keep prelude unstable exports behind cfg(feature = unstable-source-api) while expanding grouped stable re-exports.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Use cintx_compat::raw::enforce_safe_facade_policy_gate as the single UnsupportedApi policy source for safe evaluate preflight.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Run a compat-policy preflight before ExecutionPlan::new and again after plan construction so source-only families fail with compat-origin text before planner dispatch-family rejection.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Make cintx-rs depend directly on cintx-compat and cintx-ops so resolver metadata and shared policy gates are available in all safe-facade builds.
 
 ### Pending Todos
 
@@ -121,6 +125,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T06:47:11.614Z
-Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-05-PLAN.md
+Last session: 2026-03-28T07:11:00.103Z
+Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-06-PLAN.md
 Resume file: None

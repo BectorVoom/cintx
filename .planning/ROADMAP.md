@@ -3,7 +3,7 @@
 ## Phases
 - [x] **Phase 1: Manifest & Planner Foundation** - Lock down typed domain models, manifest registry, and planner scaffolding so everything else has a deterministic catalog to build against.
 - [x] **Phase 2: Execution & Compatibility Stabilization** - Wire the CubeCL-backed planner to the raw compat layer, including helper/legacy transforms, workspace queries, typed errors, and shape/optimizer guarantees.
-- [ ] **Phase 3: Safe Surface, C ABI Shim & Optional Families** - Layer the safe Rust façade, optional C shim, and feature-gated optional families on the stabilized runtime.
+- [x] **Phase 3: Safe Surface, C ABI Shim & Optional Families** - Layer the safe Rust façade, optional C shim, and feature-gated optional families on the stabilized runtime.
 - [ ] **Phase 4: Verification & Release Automation** - Close the manifest/oracle loop with CI, benchmarks, and diagnostics that block regressions before release.
 
 ## Phase Details
@@ -47,13 +47,14 @@ Plans:
   2. The optional C ABI shim accepts compat-style inputs, returns integer status codes, and exposes thread-local last-error details for C integrators (COMP-04).
   3. `with-f12`, `with-4c1e`, and other optional-family gates only enable validated envelopes and emit `UnsupportedApi` for out-of-envelope arguments (OPT-01, OPT-02).
   4. Source-only APIs stay behind `unstable-source-api` so the GA surface remains stable until the maintainer intentionally enables those symbols (OPT-03).
-**Plans**: 5 plans
+**Plans**: 6 plans
 Plans:
 - [x] 01-PLAN.md - Activate Phase 3 workspace/feature topology and stable-vs-unstable namespace scaffolding for `cintx-rs`/`cintx-capi`.
 - [x] 02-PLAN.md - Add manifest-driven optional-family and unstable-source gates with strict runtime envelope enforcement.
 - [x] 03-PLAN.md - Implement the safe Rust session facade with split `query_workspace()`/`evaluate()` and owned typed outputs.
 - [x] 04-PLAN.md - Implement the optional C ABI shim with integer status taxonomy and thread-local last-error copy-out APIs.
 - [x] 05-PLAN.md - Raise manifest artifact depth and expand safe builder/prelude ergonomics to satisfy Phase 3 must-have substance gates.
+- [x] 06-PLAN.md - Wire safe evaluate policy enforcement through shared compat raw gates for optional/source UnsupportedApi parity.
 
 ### Phase 4: Verification & Release Automation
 **Goal**: Close the manifest/oracle verification loop, run multi-profile CI/benchmarks, and surface diagnostics that block regressions before release.
@@ -71,5 +72,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | Phase 1: Manifest & Planner Foundation | 2/2 | Complete | 2026-03-21 |
 | Phase 2: Execution & Compatibility Stabilization | 7/7 | Complete | 2026-03-26 |
-| Phase 3: Safe Surface, C ABI Shim & Optional Families | 5/6 | In Progress | - |
+| Phase 3: Safe Surface, C ABI Shim & Optional Families | 6/6 | Complete | 2026-03-28 |
 | Phase 4: Verification & Release Automation | 0/0 | Not started | - |
