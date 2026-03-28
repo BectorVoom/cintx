@@ -1,7 +1,9 @@
 //! Safe Rust facade scaffolding for query/evaluate session flows.
 
 use crate::error::FacadeError;
+use cintx_compat::raw::enforce_safe_facade_policy_gate;
 use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
+use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
     BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
     HostWorkspaceAllocator, OutputOwnership, WorkspaceBytes,
@@ -10,8 +12,6 @@ use cintx_runtime::{
 };
 use std::mem::size_of;
 use std::sync::Mutex;
-
-const CUBECL_RUNTIME_PROFILE: &str = "cpu";
 
 /// Typed safe request object that keeps `query_workspace()` and `evaluate()` connected.
 #[derive(Clone, Debug)]
@@ -101,12 +101,35 @@ impl<'basis> SessionQuery<'basis> {
             .execution_token
             .ensure_matches(&self.request, &self.runtime_workspace)?;
 
+        let descriptor = Resolver::descriptor(self.request.operator).map_err(|err| {
+            FacadeError::UnsupportedApi {
+                requested: err.to_string(),
+            }
+        })?;
+        // Preflight source/profile/optional policy before ExecutionPlan::new so source-only
+        // operators fail with compat-origin UnsupportedApi reasons instead of planner internals.
+        enforce_safe_facade_policy_gate(
+            descriptor,
+            self.request.representation,
+            &self.request.shells,
+            &[],
+        )
+        .map_err(FacadeError::from)?;
+
         let plan = ExecutionPlan::new(
             self.request.operator,
             self.request.representation,
             self.request.basis,
             self.request.shells.clone(),
             &self.runtime_workspace,
+        )
+        .map_err(FacadeError::from)?;
+
+        enforce_safe_facade_policy_gate(
+            plan.descriptor,
+            self.request.representation,
+            &self.request.shells,
+            &plan.output_layout.extents,
         )
         .map_err(FacadeError::from)?;
 
@@ -355,69 +378,15 @@ fn fill_staging_values(representation: Representation, staging: &mut [f64]) {
     }
 }
 
-fn active_manifest_profile() -> &'static str {
-    match (cfg!(feature = "with-f12"), cfg!(feature = "with-4c1e")) {
-        (true, true) => "with-f12+with-4c1e",
-        (true, false) => "with-f12",
-        (false, true) => "with-4c1e",
-        (false, false) => "base",
-    }
-}
-
-fn is_f12_family_symbol(symbol: &str) -> bool {
-    symbol.starts_with("int2e_stg") || symbol.starts_with("int2e_yp")
-}
-
 #[derive(Debug, Default)]
-struct CubeClExecutor {
-    runtime_profile: &'static str,
-}
+struct CubeClExecutor;
 
 impl CubeClExecutor {
     fn new() -> Self {
-        Self {
-            runtime_profile: CUBECL_RUNTIME_PROFILE,
-        }
+        Self
     }
 
-    fn ensure_supported(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
-        let profile = active_manifest_profile();
-        if !plan.descriptor.is_compiled_in_profile(profile) {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!(
-                    "{} is not compiled in active profile {profile}",
-                    plan.descriptor.operator_symbol()
-                ),
-            });
-        }
-        if plan.descriptor.is_source_only() && !cfg!(feature = "unstable-source-api") {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!(
-                    "source-only symbol {} requires feature `unstable-source-api`",
-                    plan.descriptor.operator_symbol()
-                ),
-            });
-        }
-        if is_f12_family_symbol(plan.descriptor.operator_symbol()) && !cfg!(feature = "with-f12") {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!(
-                    "{} requires feature `with-f12`",
-                    plan.descriptor.operator_symbol()
-                ),
-            });
-        }
-        if plan.descriptor.entry.canonical_family == "4c1e" {
-            if !cfg!(feature = "with-4c1e") {
-                return Err(cintxRsError::UnsupportedApi {
-                    requested: "4c1e requires feature `with-4c1e`".to_owned(),
-                });
-            }
-            if self.runtime_profile != CUBECL_RUNTIME_PROFILE {
-                return Err(cintxRsError::UnsupportedApi {
-                    requested: "outside Validated4C1E (CubeCL backend must be cpu)".to_owned(),
-                });
-            }
-        }
+    fn ensure_supported(&self, _plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
         Ok(())
     }
 }
@@ -556,32 +525,45 @@ pub mod unstable {
 mod tests {
     use super::{SessionRequest, unsupported_unstable_request};
     use crate::error::FacadeError;
+    #[cfg(feature = "with-f12")]
+    use cintx_compat::raw::enforce_safe_facade_policy_gate;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
+    #[cfg(feature = "with-f12")]
+    use cintx_runtime::{ExecutionPlan, query_workspace as runtime_query_workspace};
     use cintx_runtime::ExecutionOptions;
     use std::sync::Arc;
+
+    #[cfg(feature = "with-4c1e")]
+    const INT4C1E_CART_OPERATOR_ID: u32 = 20;
+    #[cfg(feature = "with-f12")]
+    const INT2E_STG_SPH_OPERATOR_ID: u32 = 92;
+    const INT2E_IPIP1_SPH_OPERATOR_ID: u32 = 102;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_vec().into_boxed_slice())
     }
 
-    fn sample_basis(rep: Representation) -> (BasisSet, ShellTuple) {
+    fn sample_basis_with_shells(rep: Representation, shell_l_values: &[u8]) -> (BasisSet, ShellTuple) {
         let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom].into_boxed_slice());
 
-        let shell_a = Arc::new(
-            Shell::try_new(0, 1, 1, 2, 0, rep, arc_f64(&[1.0]), arc_f64(&[1.0, 0.5])).unwrap(),
-        );
-        let shell_b = Arc::new(
-            Shell::try_new(0, 1, 1, 2, 0, rep, arc_f64(&[0.8]), arc_f64(&[0.7, 0.3])).unwrap(),
-        );
+        let mut shells = Vec::new();
+        for (idx, shell_l) in shell_l_values.iter().copied().enumerate() {
+            let exponent = 1.0 - (idx as f64 * 0.05);
+            let shell = Arc::new(
+                Shell::try_new(0, shell_l, 1, 1, 0, rep, arc_f64(&[exponent]), arc_f64(&[1.0]))
+                    .unwrap(),
+            );
+            shells.push(shell);
+        }
 
-        let basis = BasisSet::try_new(
-            atoms,
-            Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice()),
-        )
-        .unwrap();
-        let shells = ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
-        (basis, shells)
+        let basis = BasisSet::try_new(atoms, Arc::from(shells.clone().into_boxed_slice())).unwrap();
+        let shell_tuple = ShellTuple::try_from_iter(shells).unwrap();
+        (basis, shell_tuple)
+    }
+
+    fn sample_basis(rep: Representation) -> (BasisSet, ShellTuple) {
+        sample_basis_with_shells(rep, &[1, 1])
     }
 
     #[test]
@@ -664,6 +646,96 @@ mod tests {
         let err = query.evaluate().unwrap_err();
         assert!(matches!(err, FacadeError::Validation { .. }));
         assert!(err.to_string().contains("contract drift"));
+    }
+
+    #[cfg(feature = "with-f12")]
+    #[test] // unsupported
+    fn compat_policy_gate_reports_with_f12_sph_envelope_reason_in_safe_module() {
+        let (basis, shells) = sample_basis_with_shells(Representation::Spheric, &[1, 1, 1, 1]);
+        let request = SessionRequest::new(
+            OperatorId::new(INT2E_STG_SPH_OPERATOR_ID),
+            Representation::Spheric,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let runtime_workspace = runtime_query_workspace(
+            request.operator(),
+            request.representation(),
+            request.basis(),
+            request.shells().clone(),
+            request.options(),
+        )
+        .expect("with-f12 query should succeed");
+        let plan = ExecutionPlan::new(
+            request.operator(),
+            request.representation(),
+            request.basis(),
+            request.shells().clone(),
+            &runtime_workspace,
+        )
+        .expect("with-f12 execution plan should build");
+
+        let err = enforce_safe_facade_policy_gate(
+            plan.descriptor,
+            Representation::Cart,
+            request.shells(),
+            &plan.output_layout.extents,
+        )
+        .map_err(FacadeError::from)
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            FacadeError::UnsupportedApi { requested }
+                if requested.contains("with-f12 sph envelope")
+        ));
+    }
+
+    #[cfg(feature = "with-4c1e")]
+    #[test] // unsupported validated4c1e
+    fn evaluate_rejects_out_of_envelope_validated4c1e_requests() {
+        let (basis, shells) = sample_basis_with_shells(Representation::Cart, &[5, 1, 1, 1]);
+        let request = SessionRequest::new(
+            OperatorId::new(INT4C1E_CART_OPERATOR_ID),
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+
+        let query = request.query_workspace().expect("query should succeed");
+        let err = query.evaluate().unwrap_err();
+        assert!(matches!(
+            err,
+            FacadeError::UnsupportedApi { requested }
+                if requested.contains("outside Validated4C1E") && requested.contains("max(l)>4")
+        ));
+    }
+
+    #[cfg(not(feature = "unstable-source-api"))]
+    #[test] // source unsupported
+    fn evaluate_rejects_source_only_symbols_via_compat_policy_gate() {
+        let (basis, shells) = sample_basis_with_shells(Representation::Spheric, &[1, 1, 1, 1]);
+        let request = SessionRequest::new(
+            OperatorId::new(INT2E_IPIP1_SPH_OPERATOR_ID),
+            Representation::Spheric,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+
+        let query = request.query_workspace().expect("query should succeed");
+        let err = query.evaluate().unwrap_err();
+        match err {
+            FacadeError::UnsupportedApi { requested } => {
+                assert!(
+                    requested.contains("source-only symbol")
+                        && requested.contains("unstable-source-api"),
+                    "unexpected unsupported reason: {requested}"
+                );
+            }
+            other => panic!("expected UnsupportedApi error, got {other:?}"),
+        }
     }
 
     #[test]
