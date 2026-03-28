@@ -470,6 +470,25 @@ fn validated_4c1e_error(reason: &str) -> cintxRsError {
     }
 }
 
+fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(), cintxRsError> {
+    let symbol = descriptor.operator_symbol();
+    let profile = active_manifest_profile();
+    if !descriptor.is_compiled_in_profile(profile) {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("raw api {symbol} is not compiled in active profile {profile}"),
+        });
+    }
+    if descriptor.is_source_only() && !unstable_source_api_enabled() {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!(
+                "source-only symbol {symbol} requires feature `unstable-source-api`"
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 fn dims_match_natural(dims: Option<&[i32]>, natural_extents: &[usize]) -> bool {
     let Some(dims) = dims else {
         return true;
@@ -538,6 +557,20 @@ fn validate_4c1e_envelope(
         return Err(validated_4c1e_error("CubeCL backend must be cpu"));
     }
 
+    Ok(())
+}
+
+/// Apply the same manifest profile/source-only/optional envelope policy gates used by
+/// compat raw dispatch so safe facade callers get identical UnsupportedApi reasons.
+pub fn enforce_safe_facade_policy_gate(
+    descriptor: &OperatorDescriptor,
+    representation: Representation,
+    shells: &ShellTuple,
+    natural_extents: &[usize],
+) -> Result<(), cintxRsError> {
+    validate_profile_and_source_gate(descriptor)?;
+    validate_f12_envelope(descriptor, representation, None, natural_extents)?;
+    validate_4c1e_envelope(descriptor, representation, shells, None, natural_extents)?;
     Ok(())
 }
 
@@ -637,19 +670,7 @@ fn resolve_raw_api(api: RawApiId) -> Result<ResolvedRawApi, cintxRsError> {
         });
     }
 
-    let profile = active_manifest_profile();
-    if !descriptor.is_compiled_in_profile(profile) {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: format!("raw api {symbol} is not compiled in active profile {profile}"),
-        });
-    }
-    if descriptor.is_source_only() && !unstable_source_api_enabled() {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: format!(
-                "source-only symbol {symbol} requires feature `unstable-source-api`"
-            ),
-        });
-    }
+    validate_profile_and_source_gate(descriptor)?;
 
     let representation = representation_from_descriptor(descriptor)?;
     Ok(ResolvedRawApi {
@@ -1250,6 +1271,38 @@ mod tests {
     }
 
     #[cfg(feature = "with-f12")]
+    #[test] // safe-facade policy gate
+    fn safe_facade_gate_reports_with_f12_sph_envelope_for_cart_representation() {
+        let descriptor = Resolver::descriptor_by_symbol("int2e_stg_sph")
+            .expect("stg symbol must exist in manifest");
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        let atm = RawAtmView::new(&atm).expect("atm layout");
+        let bas = RawBasView::new(&bas).expect("bas layout");
+        let env = RawEnvView::new(&env);
+        let (_, shells) = build_typed_basis_and_shell_tuple(
+            descriptor,
+            Representation::Cart,
+            &shls_4,
+            &atm,
+            &bas,
+            &env,
+        )
+        .expect("shell tuple should build");
+
+        let err = enforce_safe_facade_policy_gate(
+            descriptor,
+            Representation::Cart,
+            &shells,
+            &[1, 1, 1, 1],
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested } if requested.contains("with-f12 sph envelope")
+        ));
+    }
+
+    #[cfg(feature = "with-f12")]
     #[test]
     fn f12_sph_symbol_is_queryable_when_feature_enabled() {
         let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
@@ -1318,6 +1371,41 @@ mod tests {
     }
 
     #[cfg(feature = "with-4c1e")]
+    #[test] // safe-facade policy gate
+    fn safe_facade_gate_reports_validated_4c1e_reason_for_out_of_envelope_shells() {
+        let descriptor = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("int4c1e cart symbol must exist in manifest");
+        let (shls_4, atm, mut bas, env) = RawFixture::single_atom_four_shells();
+        bas[ANG_OF] = 5;
+
+        let atm = RawAtmView::new(&atm).expect("atm layout");
+        let bas = RawBasView::new(&bas).expect("bas layout");
+        let env = RawEnvView::new(&env);
+        let (_, shells) = build_typed_basis_and_shell_tuple(
+            descriptor,
+            Representation::Cart,
+            &shls_4,
+            &atm,
+            &bas,
+            &env,
+        )
+        .expect("shell tuple should build");
+
+        let err = enforce_safe_facade_policy_gate(
+            descriptor,
+            Representation::Cart,
+            &shells,
+            &[1, 1, 1, 1],
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested }
+                if requested.contains("outside Validated4C1E") && requested.contains("max(l)>4")
+        ));
+    }
+
+    #[cfg(feature = "with-4c1e")]
     #[test]
     fn int4c1e_accepts_validated_inputs() {
         let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
@@ -1334,6 +1422,39 @@ mod tests {
         }
         .expect("validated 4c1e envelope should be queryable");
         assert!(query.bytes > 0);
+    }
+
+    #[cfg(not(feature = "unstable-source-api"))]
+    #[test] // safe-facade policy gate
+    fn safe_facade_gate_rejects_source_only_symbol_without_unstable_feature() {
+        let descriptor = Resolver::descriptor_by_symbol("int2e_ipip1_sph")
+            .expect("source-only symbol must exist in manifest");
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        let atm = RawAtmView::new(&atm).expect("atm layout");
+        let bas = RawBasView::new(&bas).expect("bas layout");
+        let env = RawEnvView::new(&env);
+        let (_, shells) = build_typed_basis_and_shell_tuple(
+            descriptor,
+            Representation::Spheric,
+            &shls_4,
+            &atm,
+            &bas,
+            &env,
+        )
+        .expect("shell tuple should build");
+
+        let err = enforce_safe_facade_policy_gate(
+            descriptor,
+            Representation::Spheric,
+            &shells,
+            &[1, 1, 1, 1],
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested }
+                if requested.contains("requires feature `unstable-source-api`")
+        ));
     }
 
     #[cfg(not(feature = "unstable-source-api"))]
