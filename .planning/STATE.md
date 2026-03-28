@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-03-PLAN.md
-last_updated: "2026-03-28T05:51:16.586Z"
+stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-05-PLAN.md
+last_updated: "2026-03-28T06:47:11.616Z"
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 15
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 ## Current Position
 
 Phase: 03 (safe-surface-c-abi-shim-optional-families) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Plan: 5 of 6
 | Phase 03-safe-surface-c-abi-shim-optional-families P02 | 62m | 2 tasks | 1 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P04 | 4m | 2 tasks | 3 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P03 | 9 min | 2 tasks | 1 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P05 | 34 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Treat (ptr == NULL && len > 0) in cintrs_eval as NullPointer to keep C ABI fail-closed semantics explicit.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Expose accessor methods on WorkspaceExecutionToken to keep contract metadata stable without exposing private fields.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Capture owned safe output directly from runtime backend staging via RecordingExecutor instead of rebuilding buffers after evaluate.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Record safe/capi feature-forwarding and stability contracts in package.metadata.cintx for manifest-level audits.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Use SessionBuilder::from_request with typed composition helpers to rebuild requests immutably while preserving query/evaluate invariants.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Keep prelude unstable exports behind cfg(feature = unstable-source-api) while expanding grouped stable re-exports.
 
 ### Pending Todos
 
@@ -117,6 +121,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T05:51:16.585Z
-Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-03-PLAN.md
+Last session: 2026-03-28T06:47:11.614Z
+Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-05-PLAN.md
 Resume file: None
