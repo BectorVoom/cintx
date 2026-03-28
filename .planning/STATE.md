@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-01-PLAN.md
-last_updated: "2026-03-28T00:04:29.870Z"
+stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-02-PLAN.md
+last_updated: "2026-03-28T00:26:06.911Z"
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 ## Current Position
 
 Phase: 03 (safe-surface-c-abi-shim-optional-families) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Plan: 2 of 4
 | Phase 02 P08 | 8 min | 2 tasks | 8 files |
 | Phase 02 P07 | 29 min | 3 tasks | 9 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P01 | 3 min | 2 tasks | 9 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P02 | 11m | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Top-level with-f12/with-4c1e gates explicitly map to libcint with_f12/with_4c1e to prevent feature-profile drift.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: cintx-rs unstable source APIs are exposed only via cfg(feature = "unstable-source-api") namespace to preserve stable defaults.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: cintx-capi remains a stable-only export boundary in plan 01 with no unstable-source C exports.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Treat optional-family availability as manifest-profile plus runtime-envelope dual gates.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Keep source-only rows manifest-visible but reject them unless unstable-source-api is enabled.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Allow runtime dispatch family 4c1e so validated with-4c1e calls can execute through the shared planner path.
 
 ### Pending Todos
 
@@ -99,6 +103,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T00:04:29.868Z
-Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-01-PLAN.md
+Last session: 2026-03-28T00:26:06.909Z
+Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-02-PLAN.md
 Resume file: None

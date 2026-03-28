@@ -29,8 +29,8 @@
 
 ### Optional Families
 
-- [ ] **OPT-01**: Caller can enable sph-only F12, STG, and YP families behind `with-f12`, and unsupported representations fail explicitly.
-- [ ] **OPT-02**: Caller can enable 4c1e behind `with-4c1e` only within the validated bug envelope, and out-of-envelope cases fail explicitly.
+- [x] **OPT-01**: Caller can enable sph-only F12, STG, and YP families behind `with-f12`, and unsupported representations fail explicitly.
+- [x] **OPT-02**: Caller can enable 4c1e behind `with-4c1e` only within the validated bug envelope, and out-of-envelope cases fail explicitly.
 - [x] **OPT-03**: Maintainer can expose approved source-only families behind `unstable-source-api` without changing the stable GA surface.
 
 ### Verification
@@ -81,8 +81,8 @@
 | EXEC-03 | Phase 2 | Complete |
 | EXEC-04 | Phase 2 | Complete |
 | EXEC-05 | Phase 2 | Complete |
-| OPT-01 | Phase 3 | Pending |
-| OPT-02 | Phase 3 | Pending |
+| OPT-01 | Phase 3 | Complete |
+| OPT-02 | Phase 3 | Complete |
 | OPT-03 | Phase 3 | Complete |
 | VERI-01 | Phase 4 | Pending |
 | VERI-02 | Phase 4 | Pending |
