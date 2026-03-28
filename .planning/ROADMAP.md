@@ -76,7 +76,7 @@ Plans:
 - [x] 02-PLAN.md - Implement xtask gate commands for manifest drift, oracle parity, helper/legacy parity, and OOM-contract enforcement.
 - [x] 03-PLAN.md - Wire merge-blocking PR CI gates and required profile matrix verification through the new xtask command surface.
 - [x] 04-PLAN.md - Add benchmark/diagnostics automation with threshold gating and advisory-vs-required GPU workflow policy.
-- [ ] 05-PLAN.md - Close the remaining oracle crate export-surface substance gap in `crates/cintx-oracle/src/lib.rs`.
+- [x] 05-PLAN.md - Close the remaining oracle crate export-surface substance gap in `crates/cintx-oracle/src/lib.rs`.
 
 ## Progress
 | Phase | Plans Complete | Status | Completed |

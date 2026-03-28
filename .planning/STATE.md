@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-verification-release-automation-04-PLAN.md
-last_updated: "2026-03-28T11:47:54.940Z"
+stopped_at: Completed 04-verification-release-automation-05-PLAN.md
+last_updated: "2026-03-28T12:15:37.609Z"
 progress:
   total_phases: 4
   completed_phases: 4
-  total_plans: 19
-  completed_plans: 20
+  total_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 4 of 4
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Plan: 4 of 4
 | Phase 04-verification-release-automation P02 | 21m | 3 tasks | 6 files |
 | Phase 04-verification-release-automation P03 | 2m | 2 tasks | 3 files |
 | Phase 04-verification-release-automation P04 | 17min | 3 tasks | 11 files |
+| Phase 04-verification-release-automation P05 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -130,6 +131,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Bench regressions fail only when configured thresholds are exceeded.
 - [Phase 04-verification-release-automation]: Bench and runtime diagnostics artifacts must target /mnt/data with CINTX_ARTIFACT_DIR fallback metadata.
 - [Phase 04-verification-release-automation]: PR GPU/bench jobs stay advisory while release/scheduled/merge-queue jobs are required via explicit continue-on-error policy.
+- [Phase 04-verification-release-automation]: Keep pub mod compare/fixtures intact while exporting profile-aware fixture/parity APIs explicitly from crate root.
+- [Phase 04-verification-release-automation]: Preserve compile-edge export smoke coverage while expanding crate-root re-exports for Phase 4 gate consumers.
 
 ### Pending Todos
 
@@ -141,6 +144,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T11:47:54.924Z
-Stopped at: Completed 04-verification-release-automation-04-PLAN.md
+Last session: 2026-03-28T12:15:37.606Z
+Stopped at: Completed 04-verification-release-automation-05-PLAN.md
 Resume file: None
