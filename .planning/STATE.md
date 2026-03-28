@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-04-PLAN.md
-last_updated: "2026-03-28T05:49:15.912Z"
+stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-03-PLAN.md
+last_updated: "2026-03-28T05:51:16.586Z"
 progress:
   total_phases: 4
   completed_phases: 2
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 ## Current Position
 
 Phase: 03 (safe-surface-c-abi-shim-optional-families) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Plan: 4 of 6
 | Phase 03-safe-surface-c-abi-shim-optional-families P01 | 4 min | 2 tasks | 3 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P02 | 62m | 2 tasks | 1 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P04 | 4m | 2 tasks | 3 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P03 | 9 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Add explicit resolver MissingSymbol checks for F12/STG/YP cart and spinor symbols to harden sph-only manifest envelope enforcement.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Expose CINTX_STATUS_* constants so C callers can bind stable integer codes independent of Rust enum layout.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Treat (ptr == NULL && len > 0) in cintrs_eval as NullPointer to keep C ABI fail-closed semantics explicit.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Expose accessor methods on WorkspaceExecutionToken to keep contract metadata stable without exposing private fields.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Capture owned safe output directly from runtime backend staging via RecordingExecutor instead of rebuilding buffers after evaluate.
 
 ### Pending Todos
 
@@ -114,6 +117,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T05:49:15.910Z
-Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-04-PLAN.md
+Last session: 2026-03-28T05:51:16.585Z
+Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-03-PLAN.md
 Resume file: None
