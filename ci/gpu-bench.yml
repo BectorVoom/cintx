@@ -1,1 +1,93 @@
-# Stub CI workflow.
+name: gpu-bench-template
+
+on:
+  workflow_call:
+    inputs:
+      enforcement_mode:
+        description: Advisory for PRs, required for release/scheduled paths.
+        required: true
+        type: string
+      artifact_root:
+        description: Root directory used for GPU benchmark artifacts.
+        required: false
+        type: string
+        default: /mnt/data/cintx/gpu-bench
+      continue_on_error:
+        description: When true, benchmark failures are advisory only.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gpu_bench_template:
+    name: gpu bench template (${{ inputs.enforcement_mode }})
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ inputs.continue_on_error }}
+    env:
+      CINTX_ARTIFACT_DIR: ${{ format('{0}/{1}/{2}', inputs.artifact_root, github.run_id, inputs.enforcement_mode) }}
+      CINTX_BENCH_PROFILE: ${{ inputs.enforcement_mode }}
+      CINTX_BENCH_THRESHOLD_FILE: ci/benchmark-thresholds.json
+      CINTX_BENCH_REPORT_REQUIRED: /mnt/data/cintx_phase_04_bench_report.json
+      CINTX_RUNTIME_DIAGNOSTICS_REQUIRED: /mnt/data/cintx_phase_04_runtime_diagnostics.json
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve pinned Rust channel
+        id: rust
+        run: |
+          channel="$(grep -E '^channel\\s*=\\s*\"' rust-toolchain.toml | sed -E 's/.*\"([^\"]+)\".*/\\1/' | head -n1)"
+          if [ -z "${channel}" ]; then
+            echo "failed to resolve channel from rust-toolchain.toml" >&2
+            exit 1
+          fi
+          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Prepare artifact directories
+        run: |
+          mkdir -p /mnt/data
+          mkdir -p "${CINTX_ARTIFACT_DIR}"
+          rm -f /mnt/data/cintx_phase_04_bench_rows.jsonl
+
+      - name: GPU consistency smoke checks
+        run: |
+          cargo test --locked -p cintx-runtime planner::tests::query_workspace_honors_memory_limit -- --exact
+          cargo test --locked -p cintx-runtime planner::tests::query_workspace_reports_unreachable_limit -- --exact
+
+      - name: Run benchmark suites
+        run: |
+          cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
+
+      - name: Generate benchmark + diagnostics reports
+        run: |
+          cargo run --locked --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
+
+      - name: Upload GPU benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-bench-${{ inputs.enforcement_mode }}
+          if-no-files-found: warn
+          path: |
+            ${{ env.CINTX_ARTIFACT_DIR }}
+            /mnt/data/cintx_phase_04_bench_rows.jsonl
+            /mnt/data/cintx_phase_04_bench_report.json
+            /mnt/data/cintx_phase_04_runtime_diagnostics.json
+            /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
+            /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
+            target/criterion

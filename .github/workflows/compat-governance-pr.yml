@@ -9,6 +9,9 @@ on:
       - ".github/workflows/compat-governance-release.yml"
       - "ci/oracle-compare.yml"
       - "ci/feature-matrix.yml"
+      - "ci/gpu-bench.yml"
+      - "ci/benchmark-thresholds.json"
+      - "benches/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
@@ -148,3 +151,59 @@ jobs:
             echo "running oom-contract-check for profile=${profile} (base,with-f12,with-4c1e,with-f12+with-4c1e)"
             cargo run --manifest-path xtask/Cargo.toml -- oom-contract-check
           done
+
+  gpu_bench_advisory:
+    name: gpu_bench_advisory
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      CINTX_ARTIFACT_DIR: /mnt/data/cintx/pr-gpu-bench/${{ github.run_id }}
+      CINTX_BENCH_PROFILE: advisory-pr
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve pinned Rust channel
+        id: rust
+        run: |
+          channel="$(grep -E '^channel\\s*=\\s*\"' rust-toolchain.toml | sed -E 's/.*\"([^\"]+)\".*/\\1/' | head -n1)"
+          if [ -z "${channel}" ]; then
+            echo "failed to resolve channel from rust-toolchain.toml" >&2
+            exit 1
+          fi
+          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Prepare artifact directories
+        run: |
+          mkdir -p /mnt/data
+          mkdir -p "${CINTX_ARTIFACT_DIR}"
+          rm -f /mnt/data/cintx_phase_04_bench_rows.jsonl
+
+      - name: Run GPU benchmark suites (advisory)
+        run: |
+          # Keep commands aligned with ci/gpu-bench.yml policy template.
+          cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
+          cargo run --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
+
+      - name: Upload GPU advisory artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-bench-advisory-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            ${{ env.CINTX_ARTIFACT_DIR }}
+            /mnt/data/cintx_phase_04_bench_rows.jsonl
+            /mnt/data/cintx_phase_04_bench_report.json
+            /mnt/data/cintx_phase_04_runtime_diagnostics.json
+            /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
+            /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
+            target/criterion
