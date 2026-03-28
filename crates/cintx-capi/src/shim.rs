@@ -353,6 +353,22 @@ pub unsafe extern "C" fn cintrs_eval(
                 "summary_out",
             ));
         }
+        if out.is_null() && out_len > 0 {
+            return Err(CintxErrorReport::null_pointer(
+                meta.symbol,
+                meta.family,
+                meta.representation,
+                "out",
+            ));
+        }
+        if cache.is_null() && cache_len > 0 {
+            return Err(CintxErrorReport::null_pointer(
+                meta.symbol,
+                meta.family,
+                meta.representation,
+                "cache",
+            ));
+        }
         if !out.is_null() && !cache.is_null() && std::ptr::eq(out, cache) {
             return Err(invalid_input_report(
                 meta,
@@ -521,6 +537,68 @@ mod tests {
         let report = current_last_error();
         assert_eq!(report.status, CintxStatus::Panic);
         assert!(report.message.contains("panic in C ABI shim"));
+    }
+
+    #[test]
+    fn invalid_api_id_sets_tls_report() {
+        clear_last_error();
+        let mut query = CintxWorkspaceQuery::default();
+        let status = unsafe {
+            cintrs_query_workspace(
+                999,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                ptr::null(),
+                &mut query,
+            )
+        };
+
+        assert_eq!(status, CintxStatus::UnsupportedApi.code());
+        let report = current_last_error();
+        assert_eq!(report.status, CintxStatus::UnsupportedApi);
+        assert!(report.message.contains("unsupported C ABI api id 999"));
+    }
+
+    #[test]
+    fn eval_rejects_null_out_pointer_when_out_len_is_nonzero() {
+        clear_last_error();
+        let fixture = RawFixture::single_atom_two_shells();
+        let mut summary = CintxEvalSummary::default();
+        let status = unsafe {
+            cintrs_eval(
+                CintxRawApi::Int1eOvlpCart as i32,
+                ptr::null_mut(),
+                3,
+                ptr::null(),
+                0,
+                fixture.shls_2.as_ptr(),
+                fixture.shls_2.len(),
+                fixture.atm.as_ptr(),
+                fixture.atm.len(),
+                fixture.bas.as_ptr(),
+                fixture.bas.len(),
+                fixture.env.as_ptr(),
+                fixture.env.len(),
+                ptr::null(),
+                ptr::null_mut(),
+                0,
+                &mut summary,
+            )
+        };
+
+        assert_eq!(status, CintxStatus::NullPointer.code());
+        let report = current_last_error();
+        assert_eq!(report.status, CintxStatus::NullPointer);
+        assert!(report.message.contains("null pointer for required parameter `out`"));
+        assert_eq!(summary, CintxEvalSummary::default());
     }
 
     #[test]
