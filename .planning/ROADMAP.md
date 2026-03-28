@@ -51,8 +51,8 @@ Plans:
 Plans:
 - [x] 01-PLAN.md - Activate Phase 3 workspace/feature topology and stable-vs-unstable namespace scaffolding for `cintx-rs`/`cintx-capi`.
 - [x] 02-PLAN.md - Add manifest-driven optional-family and unstable-source gates with strict runtime envelope enforcement.
-- [ ] 03-PLAN.md - Implement the safe Rust session facade with split `query_workspace()`/`evaluate()` and owned typed outputs.
-- [ ] 04-PLAN.md - Implement the optional C ABI shim with integer status taxonomy and thread-local last-error copy-out APIs.
+- [x] 03-PLAN.md - Implement the safe Rust session facade with split `query_workspace()`/`evaluate()` and owned typed outputs.
+- [x] 04-PLAN.md - Implement the optional C ABI shim with integer status taxonomy and thread-local last-error copy-out APIs.
 
 ### Phase 4: Verification & Release Automation
 **Goal**: Close the manifest/oracle verification loop, run multi-profile CI/benchmarks, and surface diagnostics that block regressions before release.
