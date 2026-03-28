@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 4 context gathered
-last_updated: "2026-03-28T09:43:32.245Z"
+stopped_at: Completed 04-verification-release-automation-01-PLAN.md
+last_updated: "2026-03-28T10:56:49.807Z"
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 15
-  completed_plans: 16
+  total_plans: 19
+  completed_plans: 17
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 04 — verification-&-release-automation
+**Current focus:** Phase 04 — verification-release-automation
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 04 (verification-release-automation) — EXECUTING
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Plan: Not started
 | Phase 03-safe-surface-c-abi-shim-optional-families P03 | 9 min | 2 tasks | 1 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P05 | 34 min | 2 tasks | 4 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P06 | 8 min | 2 tasks | 4 files |
+| Phase 04-verification-release-automation P01 | 9 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Use cintx_compat::raw::enforce_safe_facade_policy_gate as the single UnsupportedApi policy source for safe evaluate preflight.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Run a compat-policy preflight before ExecutionPlan::new and again after plan construction so source-only families fail with compat-origin text before planner dispatch-family rejection.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Make cintx-rs depend directly on cintx-compat and cintx-ops so resolver metadata and shared policy gates are available in all safe-facade builds.
+- [Phase 04-verification-release-automation]: Promote oracle fixture generation to profile-scoped APIs backed by compiled-manifest lock profile/stability metadata.
+- [Phase 04-verification-release-automation]: Aggregate parity mismatches across the full fixture matrix, persist report artifacts first, then fail with mismatch_count.
+- [Phase 04-verification-release-automation]: Default merge-blocking parity mode keeps include_unstable_source=false, requiring explicit opt-in for unstable-source coverage.
 
 ### Pending Todos
 
@@ -125,6 +129,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T09:43:32.240Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-verification-release-automation/04-CONTEXT.md
+Last session: 2026-03-28T10:56:49.804Z
+Stopped at: Completed 04-verification-release-automation-01-PLAN.md
+Resume file: None
