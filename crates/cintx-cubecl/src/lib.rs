@@ -8,7 +8,7 @@ pub mod specialization;
 pub mod transfer;
 pub mod transform;
 
-pub use executor::{CubeClExecutor, CUBECL_RUNTIME_PROFILE};
+pub use executor::{CUBECL_RUNTIME_PROFILE, CubeClExecutor};
 pub use resident_cache::{DeviceResidentCache, ResidentCache};
 pub use specialization::{ComponentRank, SpecializationKey};
 pub use transfer::{TransferPlan, TransferWorkspaceBuffers};
@@ -19,8 +19,9 @@ mod tests {
     fn exports_compile() {
         #[allow(unused_imports)]
         use super::{
-            executor, kernels, resident_cache, specialization, transfer, transform, CubeClExecutor,
-            DeviceResidentCache, TransferPlan, TransferWorkspaceBuffers, CUBECL_RUNTIME_PROFILE,
+            CUBECL_RUNTIME_PROFILE, CubeClExecutor, DeviceResidentCache, TransferPlan,
+            TransferWorkspaceBuffers, executor, kernels, resident_cache, specialization, transfer,
+            transform,
         };
     }
 }

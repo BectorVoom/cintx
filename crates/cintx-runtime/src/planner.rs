@@ -191,7 +191,8 @@ pub fn evaluate(
         let mut staging = try_alloc_staging(staging_elements_for_chunk(&plan, chunk)?)?;
 
         {
-            let mut io = ExecutionIo::new(chunk, staging.as_mut_slice(), &mut workspace, plan.dispatch)?;
+            let mut io =
+                ExecutionIo::new(chunk, staging.as_mut_slice(), &mut workspace, plan.dispatch)?;
             io.ensure_output_contract()?;
 
             let backend_stats = executor.execute(&plan, &mut io)?;
@@ -247,7 +248,10 @@ fn build_output_layout(
     })
 }
 
-fn staging_elements_for_chunk(plan: &ExecutionPlan<'_>, chunk: &ChunkInfo) -> Result<usize, cintxRsError> {
+fn staging_elements_for_chunk(
+    plan: &ExecutionPlan<'_>,
+    chunk: &ChunkInfo,
+) -> Result<usize, cintxRsError> {
     let total_units = plan.workspace.work_units.max(1);
     let start = chunk.work_unit_start.min(total_units);
     let end = chunk
@@ -314,7 +318,9 @@ fn estimate_workspace_request(
             detail: "workspace byte estimate overflowed usize".to_owned(),
         })?;
     let work_units = shells.work_units();
-    let min_chunk_bytes = required_bytes.div_ceil(work_units).max(DEFAULT_ALIGNMENT_BYTES);
+    let min_chunk_bytes = required_bytes
+        .div_ceil(work_units)
+        .max(DEFAULT_ALIGNMENT_BYTES);
 
     Ok(WorkspaceRequest {
         required_bytes,
@@ -494,8 +500,8 @@ mod tests {
 
         let mut allocator = HostWorkspaceAllocator::default();
         let backend = MockBackend { supports: true };
-        let stats = evaluate(plan, &opts, &mut allocator, &backend)
-            .expect("evaluation should succeed");
+        let stats =
+            evaluate(plan, &opts, &mut allocator, &backend).expect("evaluation should succeed");
 
         assert_eq!(stats.workspace_bytes, query.bytes);
         assert_eq!(stats.chunk_count, query.chunk_count);
