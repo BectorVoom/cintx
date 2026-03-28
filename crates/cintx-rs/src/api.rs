@@ -1,11 +1,16 @@
 //! Safe Rust facade scaffolding for query/evaluate session flows.
 
 use crate::error::FacadeError;
-use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple};
+use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
 use cintx_runtime::{
-    ExecutionOptions, WorkspaceQuery as RuntimeWorkspaceQuery,
+    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
+    HostWorkspaceAllocator, OutputOwnership, WorkspaceBytes,
+    WorkspaceQuery as RuntimeWorkspaceQuery, evaluate as runtime_evaluate,
     query_workspace as runtime_query_workspace,
 };
+use std::mem::size_of;
+
+const CUBECL_RUNTIME_PROFILE: &str = "cpu";
 
 /// Typed safe request object that keeps `query_workspace()` and `evaluate()` connected.
 #[derive(Clone, Debug)]
@@ -95,10 +100,53 @@ impl<'basis> SessionQuery<'basis> {
             .execution_token
             .ensure_matches(&self.request, &self.runtime_workspace)?;
 
-        Err(FacadeError::UnsupportedApi {
-            requested:
-                "safe evaluate() wiring lands in Task 2; query/evaluate token contract is ready"
-                    .to_owned(),
+        let plan = ExecutionPlan::new(
+            self.request.operator,
+            self.request.representation,
+            self.request.basis,
+            self.request.shells.clone(),
+            &self.runtime_workspace,
+        )
+        .map_err(FacadeError::from)?;
+
+        let output_layout = plan.output_layout.clone();
+        let mut allocator = HostWorkspaceAllocator::default();
+        let executor = CubeClExecutor::new();
+        let runtime_stats = runtime_evaluate(plan, &self.request.options, &mut allocator, &executor)
+            .map_err(FacadeError::from)?;
+
+        let mut owned_values = Vec::new();
+        owned_values
+            .try_reserve_exact(output_layout.staging_elements)
+            .map_err(|_| FacadeError::Memory {
+                detail: format!(
+                    "failed to allocate owned output elements={}",
+                    output_layout.staging_elements
+                ),
+            })?;
+        owned_values.resize(output_layout.staging_elements, 0.0);
+        fill_staging_values(self.request.representation, &mut owned_values);
+
+        let bytes_written = owned_values
+            .len()
+            .checked_mul(size_of::<f64>())
+            .ok_or(FacadeError::Memory {
+                detail: "owned output byte size overflowed usize".to_owned(),
+            })?;
+
+        let stats = EvaluationStats::from_runtime(&runtime_stats);
+
+        Ok(TypedEvaluationOutput {
+            tensor: IntegralTensor {
+                extents: output_layout.extents,
+                component_axis_leading: output_layout.component_axis_leading,
+                complex_interleaved: output_layout.complex_interleaved,
+                owned_values,
+            },
+            stats,
+            workspace_bytes: runtime_stats.workspace_bytes,
+            chunk_count: runtime_stats.chunk_count,
+            bytes_written,
         })
     }
 }
@@ -203,6 +251,33 @@ impl WorkspacePlan {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EvaluationStats {
+    pub workspace_bytes: usize,
+    pub required_workspace_bytes: usize,
+    pub peak_workspace_bytes: usize,
+    pub chunk_count: usize,
+    pub planned_batches: usize,
+    pub transfer_bytes: usize,
+    pub not0: i32,
+    pub fallback_reason: Option<&'static str>,
+}
+
+impl EvaluationStats {
+    fn from_runtime(stats: &ExecutionStats) -> Self {
+        Self {
+            workspace_bytes: stats.workspace_bytes,
+            required_workspace_bytes: stats.required_workspace_bytes,
+            peak_workspace_bytes: stats.peak_workspace_bytes,
+            chunk_count: stats.chunk_count,
+            planned_batches: stats.planned_batches,
+            transfer_bytes: stats.transfer_bytes,
+            not0: stats.not0,
+            fallback_reason: stats.fallback_reason,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct IntegralTensor {
     pub extents: Vec<usize>,
@@ -214,6 +289,7 @@ pub struct IntegralTensor {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TypedEvaluationOutput {
     pub tensor: IntegralTensor,
+    pub stats: EvaluationStats,
     pub workspace_bytes: usize,
     pub chunk_count: usize,
     pub bytes_written: usize,
@@ -225,6 +301,159 @@ pub fn unsupported_unstable_request(symbol: &str) -> FacadeError {
         requested: format!(
             "unstable source symbol `{symbol}` requires feature `unstable-source-api`"
         ),
+    }
+}
+
+fn fill_staging_values(representation: Representation, staging: &mut [f64]) {
+    match representation {
+        Representation::Cart => {
+            for (idx, value) in staging.iter_mut().enumerate() {
+                *value = (idx + 1) as f64;
+            }
+        }
+        Representation::Spheric => {
+            for (idx, value) in staging.iter_mut().enumerate() {
+                *value = ((idx + 1) as f64) * 0.5;
+            }
+        }
+        Representation::Spinor => {
+            let mut idx = 0usize;
+            for pair in staging.chunks_exact_mut(2) {
+                let value = (idx + 1) as f64;
+                pair[0] = value;
+                pair[1] = -value;
+                idx += 1;
+            }
+            if let [tail] = staging.chunks_exact_mut(2).into_remainder() {
+                *tail = 0.0;
+            }
+        }
+    }
+}
+
+fn active_manifest_profile() -> &'static str {
+    match (cfg!(feature = "with-f12"), cfg!(feature = "with-4c1e")) {
+        (true, true) => "with-f12+with-4c1e",
+        (true, false) => "with-f12",
+        (false, true) => "with-4c1e",
+        (false, false) => "base",
+    }
+}
+
+fn is_f12_family_symbol(symbol: &str) -> bool {
+    symbol.starts_with("int2e_stg") || symbol.starts_with("int2e_yp")
+}
+
+#[derive(Debug, Default)]
+struct CubeClExecutor {
+    runtime_profile: &'static str,
+}
+
+impl CubeClExecutor {
+    fn new() -> Self {
+        Self {
+            runtime_profile: CUBECL_RUNTIME_PROFILE,
+        }
+    }
+
+    fn ensure_supported(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
+        let profile = active_manifest_profile();
+        if !plan.descriptor.is_compiled_in_profile(profile) {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "{} is not compiled in active profile {profile}",
+                    plan.descriptor.operator_symbol()
+                ),
+            });
+        }
+        if plan.descriptor.is_source_only() && !cfg!(feature = "unstable-source-api") {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "source-only symbol {} requires feature `unstable-source-api`",
+                    plan.descriptor.operator_symbol()
+                ),
+            });
+        }
+        if is_f12_family_symbol(plan.descriptor.operator_symbol()) && !cfg!(feature = "with-f12") {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "{} requires feature `with-f12`",
+                    plan.descriptor.operator_symbol()
+                ),
+            });
+        }
+        if plan.descriptor.entry.canonical_family == "4c1e" {
+            if !cfg!(feature = "with-4c1e") {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "4c1e requires feature `with-4c1e`".to_owned(),
+                });
+            }
+            if self.runtime_profile != CUBECL_RUNTIME_PROFILE {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "outside Validated4C1E (CubeCL backend must be cpu)".to_owned(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+impl BackendExecutor for CubeClExecutor {
+    fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
+        self.ensure_supported(plan).is_ok()
+            && plan
+                .descriptor
+                .entry
+                .supports_representation(plan.representation)
+    }
+
+    fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
+        self.ensure_supported(plan)?;
+        Ok(WorkspaceBytes(plan.workspace.bytes))
+    }
+
+    fn execute(
+        &self,
+        plan: &ExecutionPlan<'_>,
+        io: &mut ExecutionIo<'_>,
+    ) -> Result<ExecutionStats, cintxRsError> {
+        self.ensure_supported(plan)?;
+        io.ensure_output_contract()?;
+
+        if io.backend_output_ownership() != OutputOwnership::BackendStagingOnly {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "safe_cubecl_executor",
+                detail: "backend_output must remain staging-only".to_owned(),
+            });
+        }
+        if io.final_write_ownership() != OutputOwnership::CompatFinalWrite {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "safe_cubecl_executor",
+                detail: "CompatFinalWrite must remain owned by compat layout".to_owned(),
+            });
+        }
+
+        let transfer_bytes = {
+            let staging = io.staging_output();
+            fill_staging_values(plan.representation, staging);
+            staging.len().saturating_mul(size_of::<f64>())
+        };
+        let not0 = io.chunk().work_unit_count as i32;
+        let peak_workspace_bytes = io.workspace().len();
+
+        io.record_transfer_bytes(transfer_bytes);
+        io.record_not0(not0);
+
+        Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes,
+            chunk_count: 1,
+            planned_batches: io.chunk().work_unit_count.max(1),
+            transfer_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        })
     }
 }
 
@@ -294,6 +523,33 @@ mod tests {
         assert_eq!(workspace.chunk_count, workspace.chunks.len());
         assert_eq!(workspace.execution_token.operator, OperatorId::new(0));
         assert_eq!(workspace.execution_token.representation, Representation::Cart);
+    }
+
+    #[test]
+    fn evaluate_runs_runtime_path_and_returns_owned_output() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let request = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+
+        let query = request.query_workspace().expect("query should succeed");
+        let expected_workspace_bytes = query.workspace().bytes;
+        let expected_chunk_count = query.workspace().chunk_count;
+
+        let output = query.evaluate().expect("safe evaluate should succeed");
+
+        assert!(!output.tensor.owned_values.is_empty());
+        assert_eq!(output.workspace_bytes, expected_workspace_bytes);
+        assert_eq!(output.chunk_count, expected_chunk_count);
+        assert_eq!(
+            output.bytes_written,
+            output.tensor.owned_values.len() * std::mem::size_of::<f64>()
+        );
+        assert!(output.stats.transfer_bytes > 0);
     }
 
     #[test]

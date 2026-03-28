@@ -6,6 +6,7 @@ pub mod error;
 pub mod prelude;
 
 pub use api::IntegralTensor;
+pub use api::EvaluationStats;
 pub use api::SessionQuery;
 pub use api::SessionRequest;
 pub use api::TypedEvaluationOutput;

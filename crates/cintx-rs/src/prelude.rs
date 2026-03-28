@@ -1,5 +1,6 @@
 //! Stable prelude re-exports for the safe facade.
 
+pub use crate::api::EvaluationStats;
 pub use crate::api::IntegralTensor;
 pub use crate::api::SessionQuery;
 pub use crate::api::SessionRequest;
