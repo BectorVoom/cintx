@@ -1,18 +1,21 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, bail, Context, Result};
 use cintx_compat::helpers::{CINTcgto_cart, CINTcgto_spheric, CINTcgto_spinor};
 use cintx_core::Representation;
 use cintx_ops::resolver::{HelperKind, ManifestEntry, Resolver};
-use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const REQUIRED_MATRIX_ARTIFACT: &str =
-    "/mnt/data/cintx_phase_02_manifest_representation_matrix.json";
+    "/mnt/data/cintx_phase_04_manifest_representation_matrix.json";
 pub const MATRIX_ARTIFACT_FALLBACK_NAME: &str =
-    "cintx_phase_02_manifest_representation_matrix.json";
-pub const REQUIRED_REPORT_ARTIFACT: &str = "/mnt/data/cintx_phase_02_compat_parity_report.json";
-pub const REPORT_ARTIFACT_FALLBACK_NAME: &str = "cintx_phase_02_compat_parity_report.json";
+    "cintx_phase_04_manifest_representation_matrix.json";
+pub const REQUIRED_REPORT_ARTIFACT: &str = "/mnt/data/cintx_phase_04_compat_parity_report.json";
+pub const REPORT_ARTIFACT_FALLBACK_NAME: &str = "cintx_phase_04_compat_parity_report.json";
+pub const PHASE4_APPROVED_PROFILES: &[&str] =
+    &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"];
+pub const PHASE4_ORACLE_FAMILIES: &[&str] = &["1e", "2e", "2c2e", "3c1e", "3c2e", "4c1e"];
 pub const PHASE2_FAMILIES: &[&str] = &["1e", "2e", "2c2e", "3c1e", "3c2e"];
 pub const COMPILED_MANIFEST_LOCK_JSON: &str =
     include_str!("../../cintx-ops/generated/compiled_manifest.lock.json");
@@ -29,6 +32,12 @@ pub struct OracleFixture {
     pub dims: Vec<usize>,
     pub component_count: usize,
     pub complex_interleaved: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProfileRepresentationMatrix {
+    pub profile: String,
+    pub fixtures: Vec<OracleFixture>,
 }
 
 impl OracleFixture {
@@ -109,6 +118,12 @@ pub struct ArtifactWriteResult {
     pub actual_path: PathBuf,
     pub used_required_path: bool,
     pub fallback_reason: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct LockSymbolMetadata {
+    profiles: BTreeSet<String>,
+    stability: String,
 }
 
 pub fn write_pretty_json_artifact(
@@ -226,27 +241,29 @@ fn dims_for_arity(
         .collect()
 }
 
-fn phase2_operator_entries() -> Vec<&'static ManifestEntry> {
-    let mut entries: Vec<_> = Resolver::manifest()
-        .iter()
-        .filter(|entry| {
-            matches!(entry.helper_kind, HelperKind::Operator)
-                && entry.compiled_in_profiles.contains(&BASE_PROFILE)
-                && PHASE2_FAMILIES.contains(&entry.family_name)
-        })
-        .collect();
-    entries.sort_by_key(|entry| entry.symbol_name);
-    entries
+fn is_phase4_oracle_family(family: &str) -> bool {
+    PHASE4_ORACLE_FAMILIES.contains(&family) || family.starts_with("unstable::source::")
 }
 
-pub fn phase2_manifest_symbols() -> BTreeSet<String> {
-    phase2_operator_entries()
-        .into_iter()
-        .map(|entry| entry.symbol_name.to_owned())
-        .collect()
+fn stability_is_included(stability: &str, include_unstable_source: bool) -> bool {
+    match stability {
+        "stable" | "optional" => true,
+        "unstable_source" => include_unstable_source,
+        _ => false,
+    }
 }
 
-pub fn manifest_lock_symbols() -> Result<BTreeSet<String>> {
+fn ensure_profile_approved(profile: &str) -> Result<()> {
+    if PHASE4_APPROVED_PROFILES.contains(&profile) {
+        return Ok(());
+    }
+    bail!(
+        "unsupported profile `{profile}`; expected one of {:?}",
+        PHASE4_APPROVED_PROFILES
+    )
+}
+
+fn manifest_lock_symbol_metadata() -> Result<BTreeMap<String, LockSymbolMetadata>> {
     let root: Value = serde_json::from_str(COMPILED_MANIFEST_LOCK_JSON)
         .context("parse compiled manifest lock")?;
     let entries = root
@@ -254,43 +271,140 @@ pub fn manifest_lock_symbols() -> Result<BTreeSet<String>> {
         .and_then(Value::as_array)
         .context("compiled manifest lock missing `entries` array")?;
 
-    let mut symbols = BTreeSet::new();
+    let mut symbols = BTreeMap::new();
     for entry in entries {
         let id = entry
             .get("id")
             .and_then(Value::as_object)
             .context("compiled manifest entry missing `id`")?;
         let family = id.get("family").and_then(Value::as_str).unwrap_or_default();
+        if !is_phase4_oracle_family(family) {
+            continue;
+        }
         let Some(symbol) = id.get("symbol").and_then(Value::as_str) else {
             continue;
         };
         let Some(_representation) = id.get("representation").and_then(Value::as_str) else {
             continue;
         };
-        if !PHASE2_FAMILIES.contains(&family) {
-            continue;
-        }
-        let has_base = entry
+
+        let profiles = entry
             .get("profiles")
             .and_then(Value::as_array)
             .map(|profiles| {
                 profiles
                     .iter()
                     .filter_map(Value::as_str)
-                    .any(|profile| profile == BASE_PROFILE)
+                    .map(ToOwned::to_owned)
+                    .collect::<BTreeSet<_>>()
             })
-            .unwrap_or(false);
-        if has_base {
-            symbols.insert(symbol.to_owned());
+            .unwrap_or_default();
+        if profiles.is_empty() {
+            continue;
         }
+        let stability = entry
+            .get("stability")
+            .and_then(Value::as_str)
+            .unwrap_or("stable")
+            .to_owned();
+        symbols.insert(
+            symbol.to_owned(),
+            LockSymbolMetadata {
+                profiles,
+                stability,
+            },
+        );
     }
 
     Ok(symbols)
 }
 
-pub fn build_phase2_representation_matrix(inputs: &OracleRawInputs) -> Result<Vec<OracleFixture>> {
+fn phase4_operator_entries(
+    profile: &str,
+    include_unstable_source: bool,
+) -> Result<Vec<&'static ManifestEntry>> {
+    ensure_profile_approved(profile)?;
+    let metadata = manifest_lock_symbol_metadata()?;
+
+    let mut entries = Vec::new();
+    for entry in Resolver::manifest() {
+        if !matches!(
+            entry.helper_kind,
+            HelperKind::Operator | HelperKind::SourceOnly
+        ) {
+            continue;
+        }
+        if !is_phase4_oracle_family(entry.family_name) {
+            continue;
+        }
+        let Some(lock_entry) = metadata.get(entry.symbol_name) else {
+            bail!(
+                "manifest lock metadata missing for oracle symbol `{}`",
+                entry.symbol_name
+            );
+        };
+        if !lock_entry.profiles.contains(profile) {
+            continue;
+        }
+        if !stability_is_included(&lock_entry.stability, include_unstable_source) {
+            continue;
+        }
+        entries.push(entry);
+    }
+    entries.sort_by_key(|entry| entry.symbol_name);
+    Ok(entries)
+}
+
+fn phase2_operator_entries() -> Result<Vec<&'static ManifestEntry>> {
+    let entries = phase4_operator_entries(BASE_PROFILE, false)?;
+    Ok(entries
+        .into_iter()
+        .filter(|entry| PHASE2_FAMILIES.contains(&entry.family_name))
+        .collect())
+}
+
+pub fn phase2_manifest_symbols() -> BTreeSet<String> {
+    phase2_operator_entries()
+        .expect("phase2 manifest symbols")
+        .into_iter()
+        .map(|entry| entry.symbol_name.to_owned())
+        .collect()
+}
+
+pub fn manifest_lock_symbols_for_profile(
+    profile: &str,
+    include_unstable_source: bool,
+) -> Result<BTreeSet<String>> {
+    ensure_profile_approved(profile)?;
+    let metadata = manifest_lock_symbol_metadata()?;
+    Ok(metadata
+        .into_iter()
+        .filter(|(_, value)| value.profiles.contains(profile))
+        .filter(|(_, value)| stability_is_included(&value.stability, include_unstable_source))
+        .map(|(symbol, _)| symbol)
+        .collect())
+}
+
+pub fn manifest_lock_symbols() -> Result<BTreeSet<String>> {
+    Ok(manifest_lock_symbols_for_profile(BASE_PROFILE, false)?
+        .into_iter()
+        .filter(|symbol| {
+            Resolver::manifest().iter().any(|entry| {
+                entry.symbol_name == symbol
+                    && matches!(entry.helper_kind, HelperKind::Operator)
+                    && PHASE2_FAMILIES.contains(&entry.family_name)
+            })
+        })
+        .collect())
+}
+
+pub fn build_profile_representation_matrix(
+    inputs: &OracleRawInputs,
+    profile: &str,
+    include_unstable_source: bool,
+) -> Result<Vec<OracleFixture>> {
     let mut fixtures = Vec::new();
-    for entry in phase2_operator_entries() {
+    for entry in phase4_operator_entries(profile, include_unstable_source)? {
         let Some(representation) = representation_from_entry(entry) else {
             continue;
         };
@@ -311,9 +425,67 @@ pub fn build_phase2_representation_matrix(inputs: &OracleRawInputs) -> Result<Ve
     Ok(fixtures)
 }
 
-pub fn write_representation_matrix_artifact(
+pub fn build_required_profile_matrices(
+    inputs: &OracleRawInputs,
+) -> Result<Vec<ProfileRepresentationMatrix>> {
+    PHASE4_APPROVED_PROFILES
+        .iter()
+        .copied()
+        .map(|profile| {
+            let fixtures = build_profile_representation_matrix(inputs, profile, false)?;
+            Ok(ProfileRepresentationMatrix {
+                profile: profile.to_owned(),
+                fixtures,
+            })
+        })
+        .collect()
+}
+
+pub fn build_phase2_representation_matrix(inputs: &OracleRawInputs) -> Result<Vec<OracleFixture>> {
+    Ok(
+        build_profile_representation_matrix(inputs, BASE_PROFILE, false)?
+            .into_iter()
+            .filter(|fixture| PHASE2_FAMILIES.contains(&fixture.family.as_str()))
+            .collect(),
+    )
+}
+
+pub fn write_profile_representation_matrix_artifact(
+    profile: &str,
+    include_unstable_source: bool,
     matrix: &[OracleFixture],
 ) -> Result<ArtifactWriteResult> {
+    ensure_profile_approved(profile)?;
+
+    let fixture_symbols: BTreeSet<&str> = matrix
+        .iter()
+        .map(|fixture| fixture.symbol.as_str())
+        .collect();
+    let expected_symbols = manifest_lock_symbols_for_profile(profile, include_unstable_source)?;
+    let missing_symbols: Vec<String> = expected_symbols
+        .iter()
+        .filter(|symbol| !fixture_symbols.contains(symbol.as_str()))
+        .cloned()
+        .collect();
+    if !missing_symbols.is_empty() {
+        bail!(
+            "fixture matrix for profile `{profile}` is missing {} symbols from compiled manifest lock",
+            missing_symbols.len()
+        );
+    }
+
+    let matrix_families: BTreeSet<&str> = matrix
+        .iter()
+        .map(|fixture| fixture.family.as_str())
+        .collect();
+    if matrix
+        .iter()
+        .any(|fixture| fixture.family.starts_with("unstable::source::"))
+        && !include_unstable_source
+    {
+        bail!("fixture matrix unexpectedly contains unstable_source rows while disabled");
+    }
+
     let fixtures_json: Vec<Value> = matrix
         .iter()
         .map(|fixture| {
@@ -331,10 +503,15 @@ pub fn write_representation_matrix_artifact(
         .collect();
 
     let artifact = json!({
+        "profile": profile,
+        "include_unstable_source": include_unstable_source,
         "representation_matrix": fixtures_json,
+        "fixture_count": matrix.len(),
         "required_path": REQUIRED_MATRIX_ARTIFACT,
         "compiled_manifest": "crates/cintx-ops/generated/compiled_manifest.lock.json",
-        "families": PHASE2_FAMILIES,
+        "approved_profiles": PHASE4_APPROVED_PROFILES,
+        "oracle_families": PHASE4_ORACLE_FAMILIES,
+        "matrix_families": matrix_families,
     });
 
     write_pretty_json_artifact(
@@ -342,6 +519,12 @@ pub fn write_representation_matrix_artifact(
         MATRIX_ARTIFACT_FALLBACK_NAME,
         &artifact,
     )
+}
+
+pub fn write_representation_matrix_artifact(
+    matrix: &[OracleFixture],
+) -> Result<ArtifactWriteResult> {
+    write_profile_representation_matrix_artifact(BASE_PROFILE, false, matrix)
 }
 
 #[cfg(test)]
@@ -365,9 +548,58 @@ mod tests {
     }
 
     #[test]
+    fn required_profile_matrices_match_manifest_profiles() {
+        let inputs = OracleRawInputs::sample();
+        let matrices = build_required_profile_matrices(&inputs).expect("required matrices");
+        let actual_profiles: Vec<String> = matrices
+            .iter()
+            .map(|matrix| matrix.profile.clone())
+            .collect();
+        let expected_profiles: Vec<String> = PHASE4_APPROVED_PROFILES
+            .iter()
+            .map(|profile| (*profile).to_owned())
+            .collect();
+        assert_eq!(actual_profiles, expected_profiles);
+
+        for matrix in matrices {
+            let symbols: BTreeSet<String> = matrix
+                .fixtures
+                .iter()
+                .map(|fixture| fixture.symbol.clone())
+                .collect();
+            let expected = manifest_lock_symbols_for_profile(&matrix.profile, false)
+                .expect("profile lock symbols");
+            assert_eq!(symbols, expected, "profile {} mismatch", matrix.profile);
+        }
+    }
+
+    #[test]
+    fn unstable_source_fixtures_require_opt_in() {
+        let inputs = OracleRawInputs::sample();
+        let stable_only =
+            build_profile_representation_matrix(&inputs, BASE_PROFILE, false).expect("stable");
+        assert!(
+            stable_only
+                .iter()
+                .all(|fixture| !fixture.family.starts_with("unstable::source::")),
+            "stable run should exclude unstable_source fixtures"
+        );
+
+        let with_unstable =
+            build_profile_representation_matrix(&inputs, BASE_PROFILE, true).expect("unstable");
+        assert!(
+            with_unstable
+                .iter()
+                .any(|fixture| fixture.family.starts_with("unstable::source::")),
+            "explicit unstable_source mode should include source-only fixtures"
+        );
+    }
+
+    #[test]
     fn representation_matrix_artifact_is_written() {
         let inputs = OracleRawInputs::sample();
-        let matrix = build_phase2_representation_matrix(&inputs).expect("matrix");
+        let matrix =
+            build_profile_representation_matrix(&inputs, BASE_PROFILE, false).expect("matrix");
         let written = write_representation_matrix_artifact(&matrix).expect("artifact write");
         assert!(
             written.actual_path.is_file(),
@@ -378,5 +610,6 @@ mod tests {
         let content = fs::read_to_string(&written.actual_path).expect("artifact content");
         assert!(content.contains("representation_matrix"));
         assert!(content.contains(REQUIRED_MATRIX_ARTIFACT));
+        assert!(content.contains("\"profile\": \"base\""));
     }
 }

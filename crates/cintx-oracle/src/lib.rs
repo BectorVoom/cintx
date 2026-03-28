@@ -1,7 +1,9 @@
-//! Oracle adapter for Phase 2 parity checks.
+//! Oracle adapter for profile-aware parity checks.
 
 pub mod compare;
 pub mod fixtures;
+
+pub use fixtures::{build_profile_representation_matrix, build_required_profile_matrices};
 
 #[cfg(test)]
 mod tests {
