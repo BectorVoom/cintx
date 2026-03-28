@@ -70,5 +70,5 @@ Plans:
 |-------|----------------|--------|-----------|
 | Phase 1: Manifest & Planner Foundation | 2/2 | Complete | 2026-03-21 |
 | Phase 2: Execution & Compatibility Stabilization | 7/7 | Complete | 2026-03-26 |
-| Phase 3: Safe Surface, C ABI Shim & Optional Families | 0/4 | Not started | - |
+| Phase 3: Safe Surface, C ABI Shim & Optional Families | 4/6 | In Progress | - |
 | Phase 4: Verification & Release Automation | 0/0 | Not started | - |
