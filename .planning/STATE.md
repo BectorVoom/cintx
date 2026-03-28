@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-verification-release-automation-02-PLAN.md
-last_updated: "2026-03-28T11:21:38.386Z"
+stopped_at: Completed 04-verification-release-automation-03-PLAN.md
+last_updated: "2026-03-28T11:27:41.949Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Plan: 3 of 4
 | Phase 03-safe-surface-c-abi-shim-optional-families P06 | 8 min | 2 tasks | 4 files |
 | Phase 04-verification-release-automation P01 | 9 min | 2 tasks | 3 files |
 | Phase 04-verification-release-automation P02 | 21m | 3 tasks | 6 files |
+| Phase 04-verification-release-automation P03 | 2m | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Keep xtask verification gates fail-closed with non-zero exits on drift/parity/OOM regressions.
 - [Phase 04-verification-release-automation]: Scope manifest lock diffing to oracle operator/source symbols to avoid helper/legacy false positives.
 - [Phase 04-verification-release-automation]: Persist profile-specific oracle artifacts for each approved profile even when a profile fails parity.
+- [Phase 04-verification-release-automation]: Keep required PR verification as four explicit jobs: manifest_drift_gate, oracle_parity_gate, helper_legacy_parity_gate, and oom_contract_gate.
+- [Phase 04-verification-release-automation]: Resolve Rust channel from rust-toolchain.toml in each required job to avoid toolchain drift.
+- [Phase 04-verification-release-automation]: Exercise helper/legacy and OOM gates across base,with-f12,with-4c1e,with-f12+with-4c1e profiles through deterministic loop execution.
 
 ### Pending Todos
 
@@ -133,6 +137,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T11:21:38.384Z
-Stopped at: Completed 04-verification-release-automation-02-PLAN.md
+Last session: 2026-03-28T11:27:41.947Z
+Stopped at: Completed 04-verification-release-automation-03-PLAN.md
 Resume file: None
