@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-verification-release-automation-01-PLAN.md
-last_updated: "2026-03-28T10:56:49.807Z"
+stopped_at: Completed 04-verification-release-automation-02-PLAN.md
+last_updated: "2026-03-28T11:21:38.386Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Plan: 2 of 4
 | Phase 03-safe-surface-c-abi-shim-optional-families P05 | 34 min | 2 tasks | 4 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P06 | 8 min | 2 tasks | 4 files |
 | Phase 04-verification-release-automation P01 | 9 min | 2 tasks | 3 files |
+| Phase 04-verification-release-automation P02 | 21m | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Promote oracle fixture generation to profile-scoped APIs backed by compiled-manifest lock profile/stability metadata.
 - [Phase 04-verification-release-automation]: Aggregate parity mismatches across the full fixture matrix, persist report artifacts first, then fail with mismatch_count.
 - [Phase 04-verification-release-automation]: Default merge-blocking parity mode keeps include_unstable_source=false, requiring explicit opt-in for unstable-source coverage.
+- [Phase 04-verification-release-automation]: Keep xtask verification gates fail-closed with non-zero exits on drift/parity/OOM regressions.
+- [Phase 04-verification-release-automation]: Scope manifest lock diffing to oracle operator/source symbols to avoid helper/legacy false positives.
+- [Phase 04-verification-release-automation]: Persist profile-specific oracle artifacts for each approved profile even when a profile fails parity.
 
 ### Pending Todos
 
@@ -129,6 +133,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T10:56:49.804Z
-Stopped at: Completed 04-verification-release-automation-01-PLAN.md
+Last session: 2026-03-28T11:21:38.384Z
+Stopped at: Completed 04-verification-release-automation-02-PLAN.md
 Resume file: None
