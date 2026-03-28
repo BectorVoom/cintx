@@ -120,7 +120,9 @@ impl ManifestEntry {
     }
 
     pub fn is_compiled_in_profile(&self, profile: &str) -> bool {
-        self.compiled_in_profiles.iter().any(|value| *value == profile)
+        self.compiled_in_profiles
+            .iter()
+            .any(|value| *value == profile)
     }
 
     pub fn is_source_only(&self) -> bool {
@@ -311,12 +313,9 @@ mod tests {
 
     fn misc_wrapper_macro(base_symbol: &str) -> Option<MiscWrapperMacro> {
         match base_symbol {
-            "int1e_ovlp"
-            | "int1e_nuc"
-            | "int2e"
-            | "int2c2e"
-            | "int3c1e_p2"
-            | "int3c2e_ip1" => Some(MiscWrapperMacro::AllCint),
+            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e_p2" | "int3c2e_ip1" => {
+                Some(MiscWrapperMacro::AllCint)
+            }
             "int1e_kin" => Some(MiscWrapperMacro::AllCint1e),
             _ => None,
         }
@@ -451,12 +450,48 @@ mod tests {
                 && !entry.supports_representation(Representation::Cart)
                 && !entry.supports_representation(Representation::Spinor)
         }));
+        assert!(f12_entries
+            .iter()
+            .all(|entry| entry.compiled_in_profiles == ["with-f12", "with-f12+with-4c1e"]));
+
+        let cart_spinor_symbols = [
+            "int2e_stg_cart",
+            "int2e_stg_spinor",
+            "int2e_stg_ip1_cart",
+            "int2e_stg_ip1_spinor",
+            "int2e_stg_ipip1_cart",
+            "int2e_stg_ipip1_spinor",
+            "int2e_stg_ipvip1_cart",
+            "int2e_stg_ipvip1_spinor",
+            "int2e_stg_ip1ip2_cart",
+            "int2e_stg_ip1ip2_spinor",
+            "int2e_yp_cart",
+            "int2e_yp_spinor",
+            "int2e_yp_ip1_cart",
+            "int2e_yp_ip1_spinor",
+            "int2e_yp_ipip1_cart",
+            "int2e_yp_ipip1_spinor",
+            "int2e_yp_ipvip1_cart",
+            "int2e_yp_ipvip1_spinor",
+            "int2e_yp_ip1ip2_cart",
+            "int2e_yp_ip1ip2_spinor",
+        ];
+        for symbol in cart_spinor_symbols {
+            let err = Resolver::descriptor_by_symbol(symbol).unwrap_err();
+            assert!(
+                matches!(err, ResolverError::MissingSymbol(ref name) if name == symbol),
+                "expected cart/spinor F12 symbol to be absent from manifest inventory: {symbol}"
+            );
+        }
     }
 
     #[test]
     fn source_only_symbols_are_identifiable() {
         let source_entries = Resolver::entries_by_kind(HelperKind::SourceOnly);
-        assert!(!source_entries.is_empty(), "expected source-only manifest entries");
+        assert!(
+            !source_entries.is_empty(),
+            "expected source-only manifest entries"
+        );
         for entry in &source_entries {
             assert!(matches!(entry.stability, Stability::UnstableSource));
             assert!(matches!(entry.feature_flag, FeatureFlag::UnstableSource));
