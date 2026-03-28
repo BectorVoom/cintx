@@ -1,6 +1,7 @@
 pub mod center_2c2e;
 pub mod center_3c1e;
 pub mod center_3c2e;
+#[cfg(feature = "with-4c1e")]
 pub mod center_4c1e;
 pub mod one_electron;
 pub mod two_electron;
@@ -16,8 +17,10 @@ pub type FamilyLaunchFn = fn(
     &TransferPlan,
 ) -> Result<ExecutionStats, cintxRsError>;
 
-const SUPPORTED_CANONICAL_FAMILIES: &[&str] = &["1e", "2e", "2c2e", "3c1e", "3c2e"];
+#[cfg(not(feature = "with-4c1e"))]
 const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["center_4c1e"];
+#[cfg(feature = "with-4c1e")]
+const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &[];
 
 fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
     match canonical_family {
@@ -26,12 +29,18 @@ fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
         "2c2e" => Some(center_2c2e::launch_center_2c2e as FamilyLaunchFn),
         "3c1e" => Some(center_3c1e::launch_center_3c1e as FamilyLaunchFn),
         "3c2e" => Some(center_3c2e::launch_center_3c2e as FamilyLaunchFn),
+        #[cfg(feature = "with-4c1e")]
+        "4c1e" => Some(center_4c1e::launch_center_4c1e as FamilyLaunchFn),
         _ => None,
     }
 }
 
 pub fn supports_canonical_family(canonical_family: &str) -> bool {
-    SUPPORTED_CANONICAL_FAMILIES.contains(&canonical_family)
+    match canonical_family {
+        "1e" | "2e" | "2c2e" | "3c1e" | "3c2e" => true,
+        "4c1e" => cfg!(feature = "with-4c1e"),
+        _ => false,
+    }
 }
 
 pub fn unresolved_families() -> &'static [&'static str] {
@@ -76,7 +85,7 @@ mod tests {
     use super::*;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
     use cintx_ops::resolver::Resolver;
-    use cintx_runtime::{query_workspace, ExecutionOptions};
+    use cintx_runtime::{ExecutionOptions, query_workspace};
     use std::sync::Arc;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
@@ -156,7 +165,8 @@ mod tests {
     }
 
     #[test]
-    fn family_registry_rejects_unsupported_families() {
+    #[cfg(not(feature = "with-4c1e"))]
+    fn family_registry_rejects_unsupported_4c1e_when_feature_disabled() {
         let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
             .expect("4c1e descriptor should exist")
             .entry
@@ -174,6 +184,22 @@ mod tests {
         assert!(supports_canonical_family("2c2e"));
         assert!(supports_canonical_family("3c1e"));
         assert!(supports_canonical_family("3c2e"));
+        #[cfg(feature = "with-4c1e")]
+        assert!(supports_canonical_family("4c1e"));
+        #[cfg(not(feature = "with-4c1e"))]
         assert!(!supports_canonical_family("4c1e"));
+    }
+
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn family_registry_enables_4c1e_when_feature_enabled() {
+        let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("4c1e descriptor should exist")
+            .entry
+            .canonical_family;
+        assert_eq!(op_4c1e, "4c1e");
+        assert!(supports_canonical_family(op_4c1e));
+        assert!(resolve_family_name(op_4c1e).is_some());
+        assert!(unresolved_families().is_empty());
     }
 }

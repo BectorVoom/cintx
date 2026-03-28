@@ -3,7 +3,7 @@ use crate::optimizer::RawOptimizerHandle;
 use cintx_core::{
     Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple, cintxRsError,
 };
-use cintx_cubecl::CubeClExecutor;
+use cintx_cubecl::{CUBECL_RUNTIME_PROFILE, CubeClExecutor};
 use cintx_ops::resolver::{HelperKind, OperatorDescriptor, Resolver, ResolverError};
 use cintx_runtime::{
     ExecutionOptions, ExecutionPlan, HostWorkspaceAllocator, WorkspaceQuery, evaluate,
@@ -31,6 +31,7 @@ pub const BAS_SLOTS: usize = 8;
 pub const POINT_NUC: i32 = 1;
 pub const GAUSSIAN_NUC: i32 = 2;
 pub const FRAC_CHARGE_NUC: i32 = 3;
+const VALIDATED_4C1E_REASON: &str = "outside Validated4C1E";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RawApiId {
@@ -65,6 +66,9 @@ impl RawApiId {
     pub const INT3C2E_IP1_CART: Self = Self::Symbol("int3c2e_ip1_cart");
     pub const INT3C2E_IP1_SPH: Self = Self::Symbol("int3c2e_ip1_sph");
     pub const INT3C2E_IP1_SPINOR: Self = Self::Symbol("int3c2e_ip1_spinor");
+
+    pub const INT4C1E_CART: Self = Self::Symbol("int4c1e_cart");
+    pub const INT4C1E_SPH: Self = Self::Symbol("int4c1e_sph");
 
     fn symbol(self) -> &'static str {
         match self {
@@ -437,6 +441,106 @@ pub unsafe fn eval_raw(
     })
 }
 
+fn active_manifest_profile() -> &'static str {
+    match (cfg!(feature = "with-f12"), cfg!(feature = "with-4c1e")) {
+        (true, true) => "with-f12+with-4c1e",
+        (true, false) => "with-f12",
+        (false, true) => "with-4c1e",
+        (false, false) => "base",
+    }
+}
+
+fn unstable_source_api_enabled() -> bool {
+    cfg!(feature = "unstable-source-api")
+}
+
+fn is_f12_family_symbol(symbol: &str) -> bool {
+    symbol.starts_with("int2e_stg") || symbol.starts_with("int2e_yp")
+}
+
+fn f12_sph_envelope_error(symbol: &str) -> cintxRsError {
+    cintxRsError::UnsupportedApi {
+        requested: format!("{symbol} is outside with-f12 sph envelope"),
+    }
+}
+
+fn validated_4c1e_error(reason: &str) -> cintxRsError {
+    cintxRsError::UnsupportedApi {
+        requested: format!("{VALIDATED_4C1E_REASON} ({reason})"),
+    }
+}
+
+fn dims_match_natural(dims: Option<&[i32]>, natural_extents: &[usize]) -> bool {
+    let Some(dims) = dims else {
+        return true;
+    };
+    if dims.len() != natural_extents.len() {
+        return false;
+    }
+    dims.iter()
+        .zip(natural_extents.iter())
+        .all(|(provided, expected)| usize::try_from(*provided).ok() == Some(*expected))
+}
+
+fn validate_f12_envelope(
+    descriptor: &OperatorDescriptor,
+    representation: Representation,
+    dims: Option<&[i32]>,
+    natural_extents: &[usize],
+) -> Result<(), cintxRsError> {
+    let symbol = descriptor.operator_symbol();
+    if !is_f12_family_symbol(symbol) {
+        return Ok(());
+    }
+
+    if !matches!(representation, Representation::Spheric) {
+        return Err(f12_sph_envelope_error(symbol));
+    }
+    if !dims_match_natural(dims, natural_extents) {
+        return Err(f12_sph_envelope_error(symbol));
+    }
+    Ok(())
+}
+
+fn validate_4c1e_envelope(
+    descriptor: &OperatorDescriptor,
+    representation: Representation,
+    shells: &ShellTuple,
+    dims: Option<&[i32]>,
+    natural_extents: &[usize],
+) -> Result<(), cintxRsError> {
+    if descriptor.entry.canonical_family != "4c1e" {
+        return Ok(());
+    }
+
+    if !cfg!(feature = "with-4c1e") {
+        return Err(validated_4c1e_error("with-4c1e feature disabled"));
+    }
+    if !matches!(
+        representation,
+        Representation::Cart | Representation::Spheric
+    ) {
+        return Err(validated_4c1e_error("representation must be cart/sph"));
+    }
+    if !descriptor.entry.component_rank.trim().is_empty()
+        && descriptor.entry.component_rank != "scalar"
+    {
+        return Err(validated_4c1e_error("component rank must be scalar"));
+    }
+    if !dims_match_natural(dims, natural_extents) {
+        return Err(validated_4c1e_error("dims must be natural"));
+    }
+    // Validated4C1E requires max(l)<=4.
+    if shells.iter().any(|shell| shell.ang_momentum > 4) {
+        return Err(validated_4c1e_error("max(l)>4"));
+    }
+    if CUBECL_RUNTIME_PROFILE != "cpu" {
+        return Err(validated_4c1e_error("CubeCL backend must be cpu"));
+    }
+
+    Ok(())
+}
+
 fn prepare_raw_call(
     api: RawApiId,
     dims: Option<&[i32]>,
@@ -480,6 +584,20 @@ fn prepare_raw_call(
         &query,
     )?;
 
+    validate_f12_envelope(
+        resolved.descriptor,
+        resolved.representation,
+        dims,
+        &layout_plan.output_layout.extents,
+    )?;
+    validate_4c1e_envelope(
+        resolved.descriptor,
+        resolved.representation,
+        &shells,
+        dims,
+        &layout_plan.output_layout.extents,
+    )?;
+
     let compat_dims = CompatDims::from_override(
         &layout_plan.output_layout.extents,
         dims,
@@ -499,17 +617,36 @@ fn prepare_raw_call(
 }
 
 fn resolve_raw_api(api: RawApiId) -> Result<ResolvedRawApi, cintxRsError> {
+    let symbol = api.symbol();
+    if is_f12_family_symbol(symbol) && !symbol.ends_with("_sph") {
+        return Err(f12_sph_envelope_error(symbol));
+    }
+
     let descriptor =
-        Resolver::descriptor_by_symbol(api.symbol()).map_err(|err| map_resolver_error(api, err))?;
+        Resolver::descriptor_by_symbol(symbol).map_err(|err| map_resolver_error(api, err))?;
 
     if !matches!(
         descriptor.entry.helper_kind,
-        HelperKind::Operator | HelperKind::Legacy
+        HelperKind::Operator | HelperKind::Legacy | HelperKind::SourceOnly
     ) {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!(
-                "raw api {} must resolve to operator/legacy manifest entries",
-                api.symbol()
+                "raw api {} must resolve to operator/legacy/source manifest entries",
+                symbol
+            ),
+        });
+    }
+
+    let profile = active_manifest_profile();
+    if !descriptor.is_compiled_in_profile(profile) {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("raw api {symbol} is not compiled in active profile {profile}"),
+        });
+    }
+    if descriptor.is_source_only() && !unstable_source_api_enabled() {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!(
+                "source-only symbol {symbol} requires feature `unstable-source-api`"
             ),
         });
     }
@@ -540,9 +677,9 @@ fn representation_from_descriptor(
 
 fn execution_options_from_opt(opt: Option<&RawOptimizerHandle>) -> ExecutionOptions {
     let mut options = ExecutionOptions::default();
+    options.profile_label = Some(active_manifest_profile());
     if let Some(opt) = opt {
         options.memory_limit_bytes = opt.workspace_hint_bytes();
-        options.profile_label = opt.symbol_hint();
     }
     options
 }
@@ -782,6 +919,18 @@ mod tests {
                 bas,
                 env,
             }
+        }
+
+        fn single_atom_four_shells() -> ([i32; 4], Vec<i32>, Vec<i32>, Vec<f64>) {
+            let env = vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
+            let atm = vec![1, 0, POINT_NUC, 0, 0, 0];
+            let bas = vec![
+                0, 0, 1, 1, 0, 3, 4, 0, // shell 0
+                0, 1, 1, 1, 0, 5, 6, 0, // shell 1
+                0, 0, 1, 1, 0, 7, 8, 0, // shell 2
+                0, 2, 1, 1, 0, 9, 10, 0, // shell 3
+            ];
+            ([0, 1, 2, 3], atm, bas, env)
         }
     }
 
@@ -1053,5 +1202,160 @@ mod tests {
         .expect("3c eval should succeed when kernel support is available");
         assert!(summary.bytes_written > 0);
         assert!(out.iter().all(|value| *value == 0.0));
+    }
+
+    #[test]
+    fn f12_cart_symbol_is_rejected_with_explicit_sph_envelope_reason() {
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        let err = unsafe {
+            query_workspace_raw(
+                RawApiId::Symbol("int2e_stg_cart"),
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested } if requested.contains("with-f12 sph envelope")
+        ));
+    }
+
+    #[cfg(not(feature = "with-f12"))]
+    #[test]
+    fn f12_sph_symbol_requires_with_f12_profile() {
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        let err = unsafe {
+            query_workspace_raw(
+                RawApiId::Symbol("int2e_stg_sph"),
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested }
+                if requested.contains("active profile")
+                    && requested.contains(active_manifest_profile())
+        ));
+    }
+
+    #[cfg(feature = "with-f12")]
+    #[test]
+    fn f12_sph_symbol_is_queryable_when_feature_enabled() {
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        let query = unsafe {
+            query_workspace_raw(
+                RawApiId::Symbol("int2e_stg_sph"),
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        }
+        .expect("with-f12 should allow sph-only f12 symbols");
+        assert!(query.bytes > 0);
+    }
+
+    #[cfg(not(feature = "with-4c1e"))]
+    #[test]
+    fn int4c1e_requires_with_4c1e_profile() {
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        let err = unsafe {
+            query_workspace_raw(
+                RawApiId::INT4C1E_CART,
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested }
+                if requested.contains("active profile")
+                    && requested.contains(active_manifest_profile())
+        ));
+    }
+
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn int4c1e_rejects_bug_envelope_inputs() {
+        let (shls_4, atm, mut bas, env) = RawFixture::single_atom_four_shells();
+        bas[ANG_OF] = 5; // max(l)>4 should fail the Validated4C1E envelope.
+
+        let err = unsafe {
+            query_workspace_raw(
+                RawApiId::INT4C1E_CART,
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested }
+                if requested.contains("outside Validated4C1E") && requested.contains("max(l)>4")
+        ));
+    }
+
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn int4c1e_accepts_validated_inputs() {
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        let query = unsafe {
+            query_workspace_raw(
+                RawApiId::INT4C1E_CART,
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        }
+        .expect("validated 4c1e envelope should be queryable");
+        assert!(query.bytes > 0);
+    }
+
+    #[cfg(not(feature = "unstable-source-api"))]
+    #[test]
+    fn source_only_symbol_requires_unstable_feature() {
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        let err = unsafe {
+            query_workspace_raw(
+                RawApiId::Symbol("int2e_ipip1_sph"),
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested }
+                if requested.contains("requires feature `unstable-source-api`")
+        ));
     }
 }

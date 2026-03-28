@@ -11,6 +11,7 @@ pub enum DispatchFamily {
     Center2c2e,
     Center3c1e,
     Center3c2e,
+    Center4c1e,
 }
 
 impl DispatchFamily {
@@ -21,6 +22,7 @@ impl DispatchFamily {
             "2c2e" => Ok(Self::Center2c2e),
             "3c1e" => Ok(Self::Center3c1e),
             "3c2e" => Ok(Self::Center3c2e),
+            "4c1e" => Ok(Self::Center4c1e),
             _ => Err(cintxRsError::UnsupportedApi {
                 requested: format!("unsupported dispatch family {family}"),
             }),

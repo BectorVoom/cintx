@@ -3,7 +3,7 @@ use crate::resident_cache::DeviceResidentCache;
 use crate::specialization::SpecializationKey;
 use crate::transfer::TransferPlan;
 use crate::transform;
-use cintx_core::cintxRsError;
+use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{
     BackendExecutor, ExecutionIo, ExecutionPlan, ExecutionStats, OutputOwnership, WorkspaceBytes,
 };
@@ -36,23 +36,62 @@ impl CubeClExecutor {
         &self.resident_cache
     }
 
+    fn ensure_validated_4c1e(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
+        if self.runtime_profile != CUBECL_RUNTIME_PROFILE {
+            return Err(validated_4c1e_error("CubeCL backend must be cpu"));
+        }
+        if !matches!(
+            plan.representation,
+            Representation::Cart | Representation::Spheric
+        ) {
+            return Err(validated_4c1e_error("representation must be cart/sph"));
+        }
+        if !plan.descriptor.entry.component_rank.trim().is_empty()
+            && plan.descriptor.entry.component_rank != "scalar"
+        {
+            return Err(validated_4c1e_error("component rank must be scalar"));
+        }
+        // Validated4C1E requires max(l)<=4.
+        if plan
+            .shells
+            .as_slice()
+            .iter()
+            .any(|shell| shell.ang_momentum > 4)
+        {
+            return Err(validated_4c1e_error("max(l)>4"));
+        }
+
+        Ok(())
+    }
+
     fn ensure_supported_family(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
         let canonical_family = plan.descriptor.entry.canonical_family;
         if canonical_family == "4c1e" {
+            #[cfg(feature = "with-4c1e")]
+            {
+                self.ensure_validated_4c1e(plan)?;
+            }
+            #[cfg(not(feature = "with-4c1e"))]
             return Err(cintxRsError::UnsupportedApi {
-                requested: "4c1e remains out of scope for Phase 2 CubeCL executor".to_owned(),
+                requested: "4c1e requires feature `with-4c1e`".to_owned(),
             });
         }
 
         if !kernels::supports_canonical_family(canonical_family) {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "CubeCL executor family {canonical_family} is not enabled in the Phase 2 base slice"
+                    "CubeCL executor family {canonical_family} is not enabled in the current feature profile"
                 ),
             });
         }
 
         Ok(())
+    }
+}
+
+fn validated_4c1e_error(reason: &str) -> cintxRsError {
+    cintxRsError::UnsupportedApi {
+        requested: format!("outside Validated4C1E ({reason})"),
     }
 }
 
@@ -126,7 +165,7 @@ mod tests {
     use super::*;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
     use cintx_ops::resolver::Resolver;
-    use cintx_runtime::{query_workspace, ExecutionOptions, FallibleBuffer};
+    use cintx_runtime::{ExecutionOptions, FallibleBuffer, query_workspace};
     use std::sync::Arc;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
@@ -213,31 +252,111 @@ mod tests {
         assert!(executor.supports(&three_c2e));
     }
 
+    #[cfg(not(feature = "with-4c1e"))]
     #[test]
-    fn unsupported_4c1e_is_rejected_during_planning() {
+    fn unsupported_4c1e_is_rejected_without_feature() {
         let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
+        let executor = CubeClExecutor::new();
         let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
             .expect("4c1e descriptor should exist")
             .id
             .raw();
-        let shells = shell_tuple_for_first_n(basis, 4);
-        let query = query_workspace(
-            OperatorId::new(op_4c1e),
-            Representation::Cart,
-            basis,
-            shells.clone(),
-            &ExecutionOptions::default(),
-        )
-        .expect("workspace query should still be estimable");
-        let err = ExecutionPlan::new(
-            OperatorId::new(op_4c1e),
-            Representation::Cart,
-            basis,
-            shells,
-            &query,
-        )
-        .unwrap_err();
+        let plan = build_plan(basis, op_4c1e, Representation::Cart, 4);
+        let err = executor.query_workspace(&plan).unwrap_err();
         assert!(matches!(err, cintxRsError::UnsupportedApi { .. }));
+    }
+
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn validated_4c1e_is_supported_with_feature() {
+        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
+        let executor = CubeClExecutor::new();
+        let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("4c1e descriptor should exist")
+            .id
+            .raw();
+        let plan = build_plan(basis, op_4c1e, Representation::Cart, 4);
+        assert!(executor.supports(&plan));
+        assert!(executor.query_workspace(&plan).is_ok());
+    }
+
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn outside_validated_4c1e_envelope_is_rejected() {
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom].into_boxed_slice());
+        let shells = Arc::from(
+            vec![
+                Arc::new(
+                    Shell::try_new(
+                        0,
+                        5,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0,
+                        1,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0,
+                        1,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0,
+                        1,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+            ]
+            .into_boxed_slice(),
+        );
+        let basis = BasisSet::try_new(atoms, shells).unwrap();
+        let basis = Box::leak(Box::new(basis));
+
+        let executor = CubeClExecutor::new();
+        let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("4c1e descriptor should exist")
+            .id
+            .raw();
+        let plan = build_plan(basis, op_4c1e, Representation::Cart, 4);
+        let err = executor.query_workspace(&plan).unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested }
+                if requested.contains("outside Validated4C1E")
+        ));
     }
 
     #[test]

@@ -6,6 +6,12 @@ edition = "2024"
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+with-f12 = ["cintx-cubecl/with-f12"]
+with-4c1e = ["cintx-cubecl/with-4c1e"]
+unstable-source-api = []
+
 [dependencies]
 cintx-core = { path = "../cintx-core" }
 cintx-cubecl = { path = "../cintx-cubecl" }

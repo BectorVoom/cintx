@@ -336,7 +336,7 @@
       "forms": [
         "cart"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-4c1e",
       "declared_in": "src/cint4c1e.c",
       "oracle_covered": false,
@@ -364,7 +364,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-4c1e",
       "declared_in": "src/cint4c1e.c",
       "oracle_covered": false,
@@ -2626,7 +2626,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2654,7 +2654,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2682,7 +2682,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2710,7 +2710,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2738,7 +2738,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2766,7 +2766,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2794,7 +2794,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2822,7 +2822,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2850,7 +2850,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2878,7 +2878,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": false,
@@ -2911,7 +2911,7 @@
         "sph",
         "source"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "unstable_source",
       "declared_in": "src/source/unstable",
       "oracle_covered": false,
@@ -2944,7 +2944,7 @@
         "sph",
         "source"
       ],
-      "component_rank": "scalar",
+      "component_rank": "",
       "feature_flag": "unstable_source",
       "declared_in": "src/source/unstable",
       "oracle_covered": false,
