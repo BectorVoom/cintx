@@ -3887,6 +3887,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cintx-compat",
  "cintx-ops",
  "cintx-oracle",
  "serde_json",
