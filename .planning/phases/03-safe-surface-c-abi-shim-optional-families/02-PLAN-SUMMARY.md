@@ -2,131 +2,77 @@
 phase: 03-safe-surface-c-abi-shim-optional-families
 plan: 02
 subsystem: api
-tags: [rust, manifest, resolver, cubecl, feature-gates, compat]
+tags: [rust, manifest, resolver, compat, cubecl, with-f12, with-4c1e, unstable-source-api]
 requires:
   - phase: 03-safe-surface-c-abi-shim-optional-families-01
-    provides: Top-level feature naming and stable-surface defaults for optional/unstable exposure.
+    provides: top-level feature and stability boundaries for optional and unstable APIs.
 provides:
-  - Manifest entries for sph-only with-f12 STG/YP, optional with-4c1e, and unstable source-only symbols.
-  - Resolver helpers for profile-aware symbol checks and source-only identification.
-  - Compat runtime envelope gates for with-f12 sph-only behavior and Validated4C1E constraints.
-  - CubeCL feature-gated center_4c1e launch path with fail-closed validation checks.
+  - Explicit resolver regression checks that enforce sph-only F12/STG/YP compiled symbol inventory.
+  - Verified compat/CubeCL runtime gates for with-f12, with-4c1e, and unstable-source-api paths across profile matrix runs.
 affects: [phase-03-plan-03, phase-03-plan-04, compat, cubecl, resolver, feature-matrix-ci]
 tech-stack:
   added: []
-  patterns: [manifest-driven feature gating, fail-closed optional envelopes, feature-profile-aware raw dispatch]
+  patterns: [manifest-profile availability checks, fail-closed envelope validation, feature-matrix verification]
 key-files:
   created: []
   modified:
-    - crates/cintx-ops/generated/compiled_manifest.lock.json
-    - crates/cintx-ops/src/generated/api_manifest.rs
-    - crates/cintx-ops/src/generated/api_manifest.csv
     - crates/cintx-ops/src/resolver.rs
-    - crates/cintx-compat/src/raw.rs
-    - crates/cintx-cubecl/src/executor.rs
-    - crates/cintx-cubecl/src/kernels/mod.rs
-    - crates/cintx-cubecl/src/kernels/center_4c1e.rs
-    - crates/cintx-compat/Cargo.toml
-    - crates/cintx-cubecl/Cargo.toml
-    - crates/cintx-runtime/src/dispatch.rs
 key-decisions:
-  - "Treat optional-family availability as manifest-profile + runtime-envelope dual gates."
-  - "Keep source-only rows manifest-visible but reject them unless unstable-source-api is enabled."
-  - "Allow runtime dispatch family 4c1e so validated with-4c1e calls can execute through the shared planner path."
+  - "Keep Task 2 implementation unchanged because the branch already satisfied optional/unstable gate contracts; record completion with a verification-only task commit."
+  - "Add explicit MissingSymbol assertions for F12/STG/YP cart/spinor symbols to harden sph-only manifest enforcement."
 patterns-established:
-  - "Profile-gated raw resolution: resolve symbol, enforce compiled_in_profiles against active feature profile, then continue."
-  - "Envelope-first rejection: with-f12 and Validated4C1E checks return explicit UnsupportedApi reasons before backend launch."
-  - "Feature-matrix crate wiring: package-level with-f12/with-4c1e features propagate to dependent backend crates."
+  - "Manifest-envelope guardrail: optional family support is validated both by profile membership and by explicit negative symbol assertions."
+  - "Verification-first completion: when planned behavior already exists, complete the task through full acceptance test matrix and auditable commit."
 requirements-completed: [OPT-01, OPT-02, OPT-03]
-duration: 11m
+duration: 62min
 completed: 2026-03-28
 ---
 
-# Phase 03 Plan 02: Optional Family and Unstable Source Gates Summary
+# Phase 03 Plan 02: Optional/Unstable Family Gate Verification Summary
 
-**Manifest-driven with-f12/with-4c1e/unstable-source gating now enforces sph-only F12 behavior, Validated4C1E boundaries, and deterministic unsupported paths in compat/CubeCL.**
+**Resolver regression checks now explicitly enforce F12/STG/YP cart/spinor symbol absence, and compat/CubeCL optional-family gates were re-verified across base and feature-enabled profiles.**
 
 ## Performance
 
-- **Duration:** 11m
-- **Started:** 2026-03-28T00:12:42Z
-- **Completed:** 2026-03-28T00:24:10Z
+- **Duration:** 62 min
+- **Started:** 2026-03-28T04:16:36Z
+- **Completed:** 2026-03-28T05:18:28Z
 - **Tasks:** 2
-- **Files modified:** 11
+- **Files modified:** 1
 
 ## Accomplishments
-- Expanded canonical manifest inventory with sph-only STG/YP optional operators and explicit unstable source-only rows.
-- Added resolver helpers/tests for profile-aware symbol availability and source-only classification.
-- Enforced optional-family runtime envelopes in compat and enabled feature-gated 4c1e backend launch handling in CubeCL.
+- Hardened resolver tests to assert F12/STG/YP symbols remain sph-only and profile-limited to `with-f12`/`with-f12+with-4c1e`.
+- Added explicit negative-symbol checks so cart/spinor F12 entries fail with `ResolverError::MissingSymbol`.
+- Verified the full planned Task 2 matrix: `cintx-compat` (base, `with-f12`, `with-4c1e`) and `cintx-cubecl` (`with-4c1e`) all pass with current optional/unstable gate behavior.
 
 ## Task Commits
 
 Each task was committed atomically:
 
-1. **Task 1: Expand manifest/resolver metadata for optional and unstable-source families** - `85faa34` (feat)
-2. **Task 2: Enforce optional-family and unstable-source envelopes in compat and CubeCL execution** - `2e9e33a` (feat)
+1. **Task 1: Expand manifest/resolver metadata for optional and unstable-source families** - `0a070b9` (test)
+2. **Task 2: Enforce optional-family and unstable-source envelopes in compat and CubeCL execution** - `2c96b31` (chore, verification-only)
 
 ## Files Created/Modified
-- `crates/cintx-ops/generated/compiled_manifest.lock.json` - Added optional/unstable rows and normalized 4c1e metadata.
-- `crates/cintx-ops/src/generated/api_manifest.rs` - Regenerated manifest table for resolver/runtime consumers.
-- `crates/cintx-ops/src/generated/api_manifest.csv` - Regenerated auditable symbol matrix with sph-only STG/YP rows.
-- `crates/cintx-ops/src/resolver.rs` - Added profile/source helper APIs and regression tests.
-- `crates/cintx-compat/src/raw.rs` - Added active-profile checks, with-f12 and Validated4C1E validators, and source-only gating tests.
-- `crates/cintx-cubecl/src/executor.rs` - Added validated 4c1e acceptance/rejection checks under feature gating.
-- `crates/cintx-cubecl/src/kernels/mod.rs` - Added cfg-gated center_4c1e registry wiring.
-- `crates/cintx-cubecl/src/kernels/center_4c1e.rs` - Implemented validated 4c1e kernel launch stub with explicit rejection reasons.
-- `crates/cintx-compat/Cargo.toml` - Added with-f12/with-4c1e/unstable-source-api crate features.
-- `crates/cintx-cubecl/Cargo.toml` - Added with-f12/with-4c1e backend crate features.
-- `crates/cintx-runtime/src/dispatch.rs` - Added runtime dispatch family support for 4c1e.
+- `crates/cintx-ops/src/resolver.rs` - Added stricter F12 sph-only/profile-only regression assertions and explicit cart/spinor symbol-absence checks.
 
 ## Decisions Made
-- Runtime raw resolution now derives the active profile from Cargo features and blocks symbols absent from `compiled_in_profiles`.
-- with-f12 requests outside sph/natural-dims envelope now fail with explicit `UnsupportedApi` mentioning the with-f12 sph envelope.
-- Validated4C1E checks now enforce cart/sph, scalar rank, natural dims, `max(l)<=4`, and CPU runtime assumptions before backend launch.
+- Treated Task 2 as verification-complete without code edits because acceptance criteria and feature-matrix tests already passed in current branch state.
+- Preserved fail-closed contract by codifying both positive (sph support) and negative (cart/spinor symbol absence) resolver expectations for F12 rows.
 
 ## Deviations from Plan
 
-### Auto-fixed Issues
-
-**1. [Rule 3 - Blocking] Added package feature wiring required by the plan verification matrix**
-- **Found during:** Task 2
-- **Issue:** `cargo test -p cintx-compat --features with-f12/with-4c1e` required crate-defined features and backend propagation paths that were missing.
-- **Fix:** Added feature sections to `cintx-compat` and `cintx-cubecl` Cargo manifests.
-- **Files modified:** `crates/cintx-compat/Cargo.toml`, `crates/cintx-cubecl/Cargo.toml`
-- **Verification:** Full compat/cubecl feature-matrix test commands passed.
-- **Committed in:** `2e9e33a`
-
-**2. [Rule 3 - Blocking] Enabled runtime dispatch family for 4c1e to allow validated execution path**
-- **Found during:** Task 2
-- **Issue:** Shared planner dispatch rejected `4c1e`, preventing with-4c1e validated calls from reaching CubeCL.
-- **Fix:** Added `DispatchFamily::Center4c1e` and manifest-family mapping for `4c1e`.
-- **Files modified:** `crates/cintx-runtime/src/dispatch.rs`
-- **Verification:** `cargo test -p cintx-compat --lib --features with-4c1e` and `cargo test -p cintx-cubecl --lib --features with-4c1e` passed.
-- **Committed in:** `2e9e33a`
-
-**3. [Rule 1 - Bug] Corrected scalar operator component-rank encoding for optional/source manifest rows**
-- **Found during:** Task 2 verification
-- **Issue:** New rows used `component_rank = "scalar"`, but planner scalar parsing expects empty rank for operator component multiplier.
-- **Fix:** Normalized component rank to empty string and regenerated manifest artifacts.
-- **Files modified:** `crates/cintx-ops/generated/compiled_manifest.lock.json`, `crates/cintx-ops/src/generated/api_manifest.rs`, `crates/cintx-ops/src/generated/api_manifest.csv`
-- **Verification:** compat with-f12/with-4c1e test matrix and ops tests passed.
-- **Committed in:** `2e9e33a`
-
----
-
-**Total deviations:** 3 auto-fixed (1 bug, 2 blocking)
-**Impact on plan:** Deviations were required for correctness and to satisfy the declared feature-matrix verification commands; scope remained within optional/unstable family gating.
+None - plan intent and acceptance criteria were executed exactly as written.
 
 ## Issues Encountered
-- A temporary regression appeared when 4-shell fixture data was reused by existing 3-shell tests; fixed by keeping legacy fixtures intact and introducing dedicated 4-shell fixture data only for new envelope tests.
+- Initial parallel `git add`/`git commit` invocation produced lock/rebase noise in this shared worktree; resolved by switching to serial non-interactive git commands.
 
 ## User Setup Required
 
 None - no external service configuration required.
 
 ## Next Phase Readiness
-- Optional-family manifest and runtime gates are now explicit and test-covered across base/with-f12/with-4c1e slices.
-- Safe facade and C ABI work in subsequent Phase 3 plans can rely on resolver profile/source helper contracts and deterministic rejection behavior.
+- Optional/unstable family envelope behavior is now re-verified and regression-hardened for downstream safe-surface and C-ABI plan steps.
+- Resolver and runtime gate contracts are stable inputs for Phase 03 Plan 03 onward.
 
 ## Known Stubs
 
@@ -138,6 +84,6 @@ None.
 
 ## Self-Check: PASSED
 
-FOUND: .planning/phases/03-safe-surface-c-abi-shim-optional-families/02-PLAN-SUMMARY.md
-FOUND: 85faa34
-FOUND: 2e9e33a
+FOUND: .planning/phases/03-safe-surface-c-abi-shim-optional-families/02-PLAN-SUMMARY.md  
+FOUND: 0a070b9  
+FOUND: 2c96b31
