@@ -37,8 +37,8 @@
 
 - [x] **VERI-01**: Maintainer can compare stable and enabled optional APIs against vendored upstream libcint through oracle tests with family-appropriate tolerances.
 - [x] **VERI-02**: CI can block manifest drift, helper/legacy parity regressions, CubeCL consistency failures, and OOM contract violations across the support matrix.
-- [ ] **VERI-03**: Maintainer can benchmark representative workloads and track throughput, memory, and CPU-GPU crossover regressions over time.
-- [ ] **VERI-04**: Maintainer can inspect planner, chunking, transfer, fallback, and OOM behavior through structured tracing and diagnostics.
+- [x] **VERI-03**: Maintainer can benchmark representative workloads and track throughput, memory, and CPU-GPU crossover regressions over time.
+- [x] **VERI-04**: Maintainer can inspect planner, chunking, transfer, fallback, and OOM behavior through structured tracing and diagnostics.
 
 ## v2 Requirements
 
@@ -86,8 +86,8 @@
 | OPT-03 | Phase 3 | Complete |
 | VERI-01 | Phase 4 | Complete |
 | VERI-02 | Phase 4 | Complete |
-| VERI-03 | Phase 4 | Pending |
-| VERI-04 | Phase 4 | Pending |
+| VERI-03 | Phase 4 | Complete |
+| VERI-04 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 20 total

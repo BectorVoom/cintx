@@ -21,7 +21,7 @@ Plans:
 - [x] 01-PLAN.md - Upgrade oracle fixtures and parity reporting to required profile coverage with non-fail-fast mismatch artifacts.
 - [x] 02-PLAN.md - Implement xtask gate commands for manifest drift, oracle parity, helper/legacy parity, and OOM-contract enforcement.
 - [x] 03-PLAN.md - Wire merge-blocking PR CI gates and required profile matrix verification through the new xtask command surface.
-- [ ] 04-PLAN.md - Add benchmark/diagnostics automation with threshold gating and advisory-vs-required GPU workflow policy.
+- [x] 04-PLAN.md - Add benchmark/diagnostics automation with threshold gating and advisory-vs-required GPU workflow policy.
 
 ### Phase 2: Execution & Compatibility Stabilization
 **Goal**: Prove the CubeCL-backed planner and compat/API surface can consume the manifest, honor workspace queries, handle memory limits, and deliver upstream-compatible outputs.
