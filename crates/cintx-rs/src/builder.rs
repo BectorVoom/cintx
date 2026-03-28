@@ -34,13 +34,23 @@ impl<'basis> SessionBuilder<'basis> {
         self
     }
 
+    pub fn memory_limit_bytes(mut self, memory_limit_bytes: Option<usize>) -> Self {
+        self.options.memory_limit_bytes = memory_limit_bytes;
+        self
+    }
+
+    pub fn chunk_size_override(mut self, chunk_size_override: Option<usize>) -> Self {
+        self.options.chunk_size_override = chunk_size_override;
+        self
+    }
+
     pub fn build(self) -> SessionRequest<'basis> {
-        SessionRequest {
-            operator: self.operator,
-            representation: self.representation,
-            basis: self.basis,
-            shells: self.shells,
-            options: self.options,
-        }
+        SessionRequest::new(
+            self.operator,
+            self.representation,
+            self.basis,
+            self.shells,
+            self.options,
+        )
     }
 }
