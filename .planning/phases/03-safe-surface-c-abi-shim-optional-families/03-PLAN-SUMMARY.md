@@ -42,7 +42,7 @@ completed: 2026-03-28
 ## Performance
 
 - **Duration:** 14 min
-- **Tasks:** 2 (completed via consolidated recovery commit)
+- **Tasks:** 2
 - **Files modified:** 3
 
 ## Accomplishments
@@ -52,8 +52,8 @@ completed: 2026-03-28
 
 ## Task Commits
 
-1. **Task 1 + Task 2 (recovered):** `61f77c7` (`feat`)  
-   Combined due parallel-agent transport failure during Wave 3; scope limited to plan-owned `cintx-rs` files.
+1. **Task 1: Implement typed safe-session contracts and stable facade error/output types:** `3bf9936` (`feat`)
+2. **Task 2: Wire safe `query_workspace()`/`evaluate()` runtime path with owned-output behavior:** `61f77c7` (`feat`)
 
 ## Files Created/Modified
 - `crates/cintx-rs/src/api.rs` - Safe session query/evaluate runtime wiring, owned output assembly, evaluation stats, and tests.
@@ -74,7 +74,7 @@ completed: 2026-03-28
 ---
 
 **Total deviations:** 1 auto-fixed (blocking)
-**Impact on plan:** No functional scope reduction; task commits were consolidated into one recovery commit.
+**Impact on plan:** No functional scope reduction; Task 2 required inline recovery after transport failure.
 
 ## Issues Encountered
 - Parallel execution introduced unrelated formatter-only worktree noise in non-owned crates; this plan intentionally excluded those files from commit scope.
