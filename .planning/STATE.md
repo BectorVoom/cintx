@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 3 context gathered
-last_updated: "2026-03-27T23:05:16.544Z"
+stopped_at: Completed 03-safe-surface-c-abi-shim-optional-families-01-PLAN.md
+last_updated: "2026-03-28T00:04:29.870Z"
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 9
-  completed_plans: 10
+  total_plans: 13
+  completed_plans: 11
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 03 — safe-surface-c-abi-optional-families
+**Current focus:** Phase 03 — safe-surface-c-abi-shim-optional-families
 
 ## Current Position
 
-Phase: 02 (execution-compatibility-stabilization) — COMPLETE
-Plan: 7 of 7
+Phase: 03 (safe-surface-c-abi-shim-optional-families) — EXECUTING
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Plan: 7 of 7
 | Phase 02 P06 | 26 min | 3 tasks | 3 files |
 | Phase 02 P08 | 8 min | 2 tasks | 8 files |
 | Phase 02 P07 | 29 min | 3 tasks | 9 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P01 | 3 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 02]: Extend compat optimizer coverage with `int2e_cart_optimizer`, `int2e_sph_optimizer`, and `int2e_optimizer` so helper-kind optimizer symbols remain manifest-complete.
 - [Phase 02]: Drive parity fixtures from the canonical `compiled_manifest.lock.json` and emit representation matrices plus parity reports with `/mnt/data` required-path metadata.
 - [Phase 02]: Verify family-specific tolerance envelopes and optimizer on/off equivalence through compat raw + legacy wrapper comparisons while asserting final flat-buffer and spinor interleaving contracts.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Top-level with-f12/with-4c1e gates explicitly map to libcint with_f12/with_4c1e to prevent feature-profile drift.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: cintx-rs unstable source APIs are exposed only via cfg(feature = "unstable-source-api") namespace to preserve stable defaults.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: cintx-capi remains a stable-only export boundary in plan 01 with no unstable-source C exports.
 
 ### Pending Todos
 
@@ -95,6 +99,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-27T23:05:16.542Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-safe-surface-c-abi-shim-optional-families/03-CONTEXT.md
+Last session: 2026-03-28T00:04:29.868Z
+Stopped at: Completed 03-safe-surface-c-abi-shim-optional-families-01-PLAN.md
+Resume file: None
