@@ -15,5 +15,6 @@ cintx-core = { path = "../cintx-core" }
 default = []
 # Keep the C ABI crate stable-only in Phase 3; no unstable-source exports here yet.
 capi = []
-with-f12 = []
-with-4c1e = []
+# Forward optional-family gates to compat while preserving the stable C symbol boundary.
+with-f12 = ["cintx-compat/with-f12"]
+with-4c1e = ["cintx-compat/with-4c1e"]

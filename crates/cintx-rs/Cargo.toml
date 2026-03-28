@@ -9,11 +9,22 @@ path = "src/lib.rs"
 [dependencies]
 cintx-core = { path = "../cintx-core" }
 cintx-runtime = { path = "../cintx-runtime" }
+cintx-compat = { path = "../cintx-compat", optional = true, default-features = false }
 thiserror = "2"
 
 [features]
 default = []
-with-f12 = []
-with-4c1e = []
+# Optional families stay explicitly forwarded from the safe facade boundary.
+with-f12 = [
+    "dep:cintx-compat",
+    "cintx-compat/with-f12",
+]
+with-4c1e = [
+    "dep:cintx-compat",
+    "cintx-compat/with-4c1e",
+]
 # Source-only APIs remain opt-in until manifest/oracle release gates approve promotion.
-unstable-source-api = []
+unstable-source-api = [
+    "dep:cintx-compat",
+    "cintx-compat/unstable-source-api",
+]
