@@ -1,3 +1,4 @@
+mod bench_report;
 mod manifest_audit;
 mod oracle_update;
 
@@ -13,6 +14,10 @@ enum Command {
     ManifestAudit {
         profiles: Vec<String>,
         check_lock: bool,
+    },
+    BenchReport {
+        thresholds_path: String,
+        mode: String,
     },
     OracleCompare {
         profiles: Vec<String>,
@@ -41,6 +46,7 @@ fn run() -> Result<()> {
 
     let command = match command_name.as_str() {
         "manifest-audit" => parse_manifest_audit(args)?,
+        "bench-report" => parse_bench_report(args)?,
         "oracle-compare" => parse_oracle_compare(args)?,
         "helper-legacy-parity" => parse_helper_legacy_parity(args)?,
         "oom-contract-check" => parse_oom_contract_check(args)?,
@@ -57,6 +63,10 @@ fn execute(command: Command) -> Result<()> {
             profiles,
             check_lock,
         } => manifest_audit::run_manifest_audit(&profiles, check_lock),
+        Command::BenchReport {
+            thresholds_path,
+            mode,
+        } => bench_report::run_bench_report(&thresholds_path, &mode),
         Command::OracleCompare {
             profiles,
             include_unstable_source,
@@ -126,6 +136,37 @@ fn parse_oracle_compare(args: impl Iterator<Item = String>) -> Result<Command> {
     Ok(Command::OracleCompare {
         profiles,
         include_unstable_source,
+    })
+}
+
+fn parse_bench_report(args: impl Iterator<Item = String>) -> Result<Command> {
+    let items: Vec<String> = args.collect();
+    let mut thresholds_path = String::from("ci/benchmark-thresholds.json");
+    let mut mode = String::from("enforce");
+    let mut index = 0;
+    while let Some(flag) = items.get(index) {
+        match flag.as_str() {
+            "--thresholds" => {
+                let value = items
+                    .get(index + 1)
+                    .context("expected path after --thresholds")?;
+                thresholds_path = value.clone();
+                index += 2;
+            }
+            "--mode" => {
+                let value = items
+                    .get(index + 1)
+                    .context("expected value after --mode")?;
+                mode = value.clone();
+                index += 2;
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => return Err(anyhow!("unknown bench-report flag: {other}")),
+        }
+    }
+    Ok(Command::BenchReport {
+        thresholds_path,
+        mode,
     })
 }
 
@@ -215,6 +256,7 @@ fn print_help() {
     println!();
     println!("Commands:");
     println!("  manifest-audit [--profiles {REQUIRED_PROFILES_CSV}] [--check-lock]");
+    println!("  bench-report [--thresholds ci/benchmark-thresholds.json] [--mode enforce|calibration]");
     println!(
         "  oracle-compare [--profiles {REQUIRED_PROFILES_CSV}] [--include-unstable-source true|false]"
     );
