@@ -25,6 +25,18 @@ impl CintxStatus {
     }
 }
 
+pub const CINTX_STATUS_SUCCESS: i32 = CintxStatus::Success as i32;
+pub const CINTX_STATUS_INVALID_INPUT: i32 = CintxStatus::InvalidInput as i32;
+pub const CINTX_STATUS_UNSUPPORTED_API: i32 = CintxStatus::UnsupportedApi as i32;
+pub const CINTX_STATUS_UNSUPPORTED_REPRESENTATION: i32 =
+    CintxStatus::UnsupportedRepresentation as i32;
+pub const CINTX_STATUS_BUFFER_TOO_SMALL: i32 = CintxStatus::BufferTooSmall as i32;
+pub const CINTX_STATUS_MEMORY_LIMIT_EXCEEDED: i32 = CintxStatus::MemoryLimitExceeded as i32;
+pub const CINTX_STATUS_ALLOCATION_FAILED: i32 = CintxStatus::AllocationFailed as i32;
+pub const CINTX_STATUS_EXECUTION_FAILED: i32 = CintxStatus::ExecutionFailed as i32;
+pub const CINTX_STATUS_NULL_POINTER: i32 = CintxStatus::NullPointer as i32;
+pub const CINTX_STATUS_PANIC: i32 = CintxStatus::Panic as i32;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CintxErrorReport {
     pub status: CintxStatus,
@@ -245,6 +257,38 @@ mod tests {
     #[test]
     fn success_status_is_zero() {
         assert_eq!(CintxStatus::Success.code(), 0);
+    }
+
+    #[test]
+    fn exported_status_constants_match_enum_codes() {
+        assert_eq!(CINTX_STATUS_SUCCESS, CintxStatus::Success.code());
+        assert_eq!(CINTX_STATUS_INVALID_INPUT, CintxStatus::InvalidInput.code());
+        assert_eq!(
+            CINTX_STATUS_UNSUPPORTED_API,
+            CintxStatus::UnsupportedApi.code()
+        );
+        assert_eq!(
+            CINTX_STATUS_UNSUPPORTED_REPRESENTATION,
+            CintxStatus::UnsupportedRepresentation.code()
+        );
+        assert_eq!(
+            CINTX_STATUS_BUFFER_TOO_SMALL,
+            CintxStatus::BufferTooSmall.code()
+        );
+        assert_eq!(
+            CINTX_STATUS_MEMORY_LIMIT_EXCEEDED,
+            CintxStatus::MemoryLimitExceeded.code()
+        );
+        assert_eq!(
+            CINTX_STATUS_ALLOCATION_FAILED,
+            CintxStatus::AllocationFailed.code()
+        );
+        assert_eq!(
+            CINTX_STATUS_EXECUTION_FAILED,
+            CintxStatus::ExecutionFailed.code()
+        );
+        assert_eq!(CINTX_STATUS_NULL_POINTER, CintxStatus::NullPointer.code());
+        assert_eq!(CINTX_STATUS_PANIC, CintxStatus::Panic.code());
     }
 
     #[test]
