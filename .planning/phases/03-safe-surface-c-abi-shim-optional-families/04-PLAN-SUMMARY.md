@@ -2,106 +2,90 @@
 phase: 03-safe-surface-c-abi-shim-optional-families
 plan: 04
 subsystem: api
-tags: [rust, c-abi, tls, compat, ffi, error-handling]
+tags: [rust, c-abi, ffi, tls, compat]
 requires:
-  - phase: 03-safe-surface-c-abi-shim-optional-families-01
-    provides: Stable-only C ABI crate boundary and phase-3 safe-surface scaffolding.
-  - phase: 03-safe-surface-c-abi-shim-optional-families-02
-    provides: Optional-family/runtime-envelope compat behavior consumed by raw wrappers.
+  - phase: 03-safe-surface-c-abi-shim-optional-families-03
+    provides: Stable-only C ABI boundary and safe/raw integration contracts used by the shim.
 provides:
-  - Stable integer C status taxonomy with `Success = 0` and typed nonzero failure codes.
-  - Thread-local last-error reports with copy-out C APIs (`code`, `message`, `api`, `family`, `representation`, `clear`).
-  - Panic-bounded `extern "C"` query/eval wrappers over `query_workspace_raw` and `eval_raw`.
-  - Stable crate-root C ABI export surface for status/error + shim wrappers.
-affects: [phase-03-plan-03, phase-04, cintx-capi, migration-interop, compat-ffi]
+  - Stable `#[repr(i32)]` C status taxonomy exports with explicit `CINTX_STATUS_*` constants.
+  - Thread-local last-error code/message/api/family/representation copy-out APIs for C callers.
+  - Panic-bounded `extern "C"` query/eval wrappers over compat raw APIs with fail-closed behavior.
+  - Null-pointer guardrails for nonzero-length eval buffers to avoid silent success on invalid pointers.
+affects: [cintx-capi, compat-ffi, phase-04-verification-release-automation]
 tech-stack:
   added: []
-  patterns: [tls-last-error-state, fail-closed-c-shim-wrapper, panic-to-status-mapping]
+  patterns: [stable-status-constants, tls-last-error-copyout, fail-closed-pointer-validation]
 key-files:
-  created:
-    - .planning/phases/03-safe-surface-c-abi-shim-optional-families/deferred-items.md
+  created: []
   modified:
     - crates/cintx-capi/src/errors.rs
-    - crates/cintx-capi/src/shim.rs
     - crates/cintx-capi/src/lib.rs
+    - crates/cintx-capi/src/shim.rs
 key-decisions:
-  - "Use a numeric C API id (`CintxRawApi`) that maps directly to `RawApiId` constants, avoiding dynamic symbol-lifetime problems in FFI."
-  - "Return required byte count (including trailing NUL) for all copy-out last-error accessors so callers can preflight/resize safely."
-  - "Keep C ABI stable-only by exporting shim/error symbols through crate root and explicitly pinning `CAPI_EXPOSES_UNSTABLE_SOURCE_API = false`."
+  - "Expose `CINTX_STATUS_*` constants beside `CintxStatus` so C callers can bind stable integer codes without enum layout assumptions."
+  - "Treat `(ptr == NULL && len > 0)` for eval output/cache as `NullPointer` to preserve fail-closed semantics for invalid C call sites."
 patterns-established:
-  - "C wrapper boundary pattern: validate pointers -> catch_unwind -> call compat raw API -> map typed status -> update TLS report."
-  - "Fail-closed reporting pattern: write caller outputs only after compat call success; failures return status and TLS diagnostics only."
+  - "Shim path pattern: decode API -> catch_unwind boundary -> map typed status -> update TLS last-error report."
+  - "Copy-out diagnostics pattern: return required NUL-terminated byte lengths even when output buffer is NULL."
 requirements-completed: [COMP-04]
-duration: 10m
+duration: 4m
 completed: 2026-03-28
 ---
 
 # Phase 03 Plan 04: Optional C ABI Shim Summary
 
-**C ABI query/eval wrappers now provide deterministic integer statuses and thread-local copy-out diagnostics over compat raw paths with panic-safe fail-closed behavior.**
+**C ABI shim wrappers now expose stable status constants and stricter fail-closed pointer validation while preserving thread-local copy-out diagnostics over compat raw APIs.**
 
 ## Performance
 
-- **Duration:** 10m
-- **Started:** 2026-03-28T00:27:08Z
-- **Completed:** 2026-03-28T00:37:27Z
+- **Duration:** 4m
+- **Started:** 2026-03-28T05:44:13Z
+- **Completed:** 2026-03-28T05:47:51Z
 - **Tasks:** 2
 - **Files modified:** 3
 
 ## Accomplishments
-- Implemented `errors.rs` status taxonomy (`#[repr(i32)]`, `Success = 0`) plus TLS `LAST_ERROR` storage and copy-out C APIs.
-- Implemented `shim.rs` thin `extern "C"` wrappers that call `query_workspace_raw` / `eval_raw` inside panic boundaries and set/clear TLS diagnostics consistently.
-- Finalized `lib.rs` stable export surface by re-exporting shim/error symbols and asserting stable-only boundary behavior in tests.
+- Added explicit `CINTX_STATUS_*` integer constants for the complete C ABI status taxonomy and re-exported them from crate root.
+- Extended status mapping coverage with regression tests to lock enum-to-integer code consistency.
+- Hardened `cintrs_eval` to return `NullPointer` when output/cache pointers are null but nonzero lengths are supplied.
+- Added shim regression tests for invalid API-id TLS reporting and null-pointer fail-closed behavior.
 
 ## Task Commits
 
 Each task was committed atomically:
 
-1. **Task 1: Build C status taxonomy and thread-local last-error copy-out APIs** - `21b730a` (feat)
-2. **Task 2: Implement thin compat-style extern wrappers with fail-closed status + TLS reporting** - `dfbabaf` (feat)
-
-Additional corrective commit:
-
-1. **Follow-up: finalize stable crate-root C ABI exports** - `90571c6` (fix)
+1. **Task 1: Build C status taxonomy and thread-local last-error copy-out APIs** - `447ddf2` (feat)
+2. **Task 2: Implement thin compat-style extern wrappers with fail-closed status + TLS reporting** - `8141f0e` (fix)
 
 ## Files Created/Modified
-- `crates/cintx-capi/src/errors.rs` - Added typed C status codes, TLS report model, error mapping, copy-out APIs, C exports, and unit tests.
-- `crates/cintx-capi/src/shim.rs` - Added C API id mapping, panic-bounded query/eval wrappers, pointer validation, compat dispatch, and shim tests.
-- `crates/cintx-capi/src/lib.rs` - Added crate-root stable re-exports/constants and regression test for stable-only boundary.
-- `.planning/phases/03-safe-surface-c-abi-shim-optional-families/deferred-items.md` - Logged out-of-scope workspace issues discovered during execution.
+- `crates/cintx-capi/src/errors.rs` - Added exported status constants and status-code regression coverage.
+- `crates/cintx-capi/src/lib.rs` - Re-exported status constants and aligned crate-level success constant with shared status taxonomy.
+- `crates/cintx-capi/src/shim.rs` - Added null-pointer guards for nonzero-length eval buffers and new shim failure-path tests.
 
 ## Decisions Made
-- Keep wrapper ABI centered on integer API identifiers (`i32`) rather than dynamic C strings to preserve strict mapping to manifest-backed `RawApiId` constants.
-- Expose copy-out diagnostics for all required report fields (`message`, `api`, `family`, `representation`) and make truncation detectable via required-length return values.
-- Keep C ABI failure semantics fail-closed: wrapper code does not emit partial success writes, and all failures route through nonzero status + TLS report.
+- Stabilize integer status access via named constants (`CINTX_STATUS_*`) in addition to enum variants.
+- Reject null output/cache pointers paired with nonzero lengths at the C ABI boundary rather than allowing implicit `out=None` execution.
 
 ## Deviations from Plan
 
 ### Auto-fixed Issues
 
-**1. [Rule 2 - Missing Critical] Filled missing stable crate-root export surface**
-- **Found during:** Task 2 final verification
-- **Issue:** `crates/cintx-capi/src/lib.rs` remained near-stub and did not reflect the stable C ABI export surface described by plan artifacts.
-- **Fix:** Added stable re-exports for error/shim symbols, explicit success/status constants, and a crate-level stable-only regression test.
-- **Files modified:** `crates/cintx-capi/src/lib.rs`
+**1. [Rule 1 - Bug] Prevented silent success on null eval pointers with nonzero lengths**
+- **Found during:** Task 2
+- **Issue:** `cintrs_eval` treated null `out`/`cache` pointers as optional slices even when lengths were nonzero, which could mask caller bugs.
+- **Fix:** Added explicit `NullPointer` checks for `(out == NULL && out_len > 0)` and `(cache == NULL && cache_len > 0)` before compat dispatch.
+- **Files modified:** `crates/cintx-capi/src/shim.rs`
 - **Verification:** `cargo test -p cintx-capi --lib`
-- **Committed in:** `90571c6`
-
-**2. [Rule 3 - Blocking] Scoped formatting to avoid unrelated workspace rustfmt failure**
-- **Found during:** Task 1 verification
-- **Issue:** `cargo fmt --all` failed because an unrelated workspace module file (`crates/cintx-rs/src/error.rs`) was missing while module resolution ran.
-- **Fix:** Switched to scoped formatting for touched files (`rustfmt crates/cintx-capi/src/*.rs`) and continued plan verification.
-- **Files modified:** None (workflow adjustment only)
-- **Verification:** `cargo test -p cintx-capi --lib errors::tests:: -- --nocapture` and `cargo test -p cintx-capi --lib`
-- **Committed in:** N/A (no source change)
+- **Committed in:** `8141f0e`
 
 ---
 
-**Total deviations:** 2 auto-handled (1 missing critical, 1 blocking)
-**Impact on plan:** Deviations stayed within plan scope and were necessary to satisfy the required stable C ABI surface and complete verification reliably.
+**Total deviations:** 1 auto-fixed (1 bug)
+**Impact on plan:** The fix tightened C ABI fail-closed semantics without expanding scope beyond the optional shim contract.
 
 ## Issues Encountered
-- Concurrent parallel execution left unrelated files modified in the worktree; this plan staged only `crates/cintx-capi/src/{errors.rs,shim.rs,lib.rs}` and logged scope boundaries in `deferred-items.md`.
+
+None.
 
 ## Authentication Gates
 
@@ -112,13 +96,16 @@ None.
 None - no external service configuration required.
 
 ## Next Phase Readiness
-- C callers can now invoke shim query/eval entry points and read deterministic typed diagnostics via TLS copy-out APIs.
-- Phase 3/4 consumers can build on the stable-only C ABI boundary without exposing unstable source-only symbols.
+
+- C callers now have stable integer status constants, typed nonzero failures, and thread-local copy-out diagnostics.
+- Shim wrappers enforce stricter invalid-pointer handling for eval failure paths, reducing integration ambiguity for downstream C consumers.
 
 ## Known Stubs
 
 None.
 
----
-*Phase: 03-safe-surface-c-abi-shim-optional-families*
-*Completed: 2026-03-28*
+## Self-Check: PASSED
+
+- Found `.planning/phases/03-safe-surface-c-abi-shim-optional-families/04-PLAN-SUMMARY.md`.
+- Found `crates/cintx-capi/src/errors.rs`, `crates/cintx-capi/src/lib.rs`, and `crates/cintx-capi/src/shim.rs`.
+- Found task commits `447ddf2` and `8141f0e` in git history.
