@@ -326,7 +326,22 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "experimental"
+      "stability": "optional",
+      "compiled_in_profiles": [
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "category": "4c1e",
+      "arity": 4,
+      "forms": [
+        "cart"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-4c1e",
+      "declared_in": "src/cint4c1e.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "4c1e"
     },
     {
       "id": {
@@ -339,7 +354,22 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "experimental"
+      "stability": "optional",
+      "compiled_in_profiles": [
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "category": "4c1e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-4c1e",
+      "declared_in": "src/cint4c1e.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "4c1e"
     },
     {
       "id": {
@@ -2574,6 +2604,352 @@
       "oracle_covered": false,
       "helper_kind": "legacy",
       "canonical_family": "3c2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "stg",
+        "representation": "sph",
+        "symbol": "int2e_stg_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "stg_ip1",
+        "representation": "sph",
+        "symbol": "int2e_stg_ip1_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "stg_ipip1",
+        "representation": "sph",
+        "symbol": "int2e_stg_ipip1_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "stg_ipvip1",
+        "representation": "sph",
+        "symbol": "int2e_stg_ipvip1_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "stg_ip1ip2",
+        "representation": "sph",
+        "symbol": "int2e_stg_ip1ip2_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "yp",
+        "representation": "sph",
+        "symbol": "int2e_yp_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "yp_ip1",
+        "representation": "sph",
+        "symbol": "int2e_yp_ip1_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "yp_ipip1",
+        "representation": "sph",
+        "symbol": "int2e_yp_ipip1_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "yp_ipvip1",
+        "representation": "sph",
+        "symbol": "int2e_yp_ipvip1_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "2e",
+        "operator": "yp_ip1ip2",
+        "representation": "sph",
+        "symbol": "int2e_yp_ip1ip2_sph"
+      },
+      "profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "with-f12",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "optional",
+      "category": "2e",
+      "arity": 4,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "with-f12",
+      "declared_in": "src/cint2e_f12.c",
+      "oracle_covered": false,
+      "helper_kind": "operator",
+      "canonical_family": "2e"
+    },
+    {
+      "id": {
+        "family": "unstable::source::2e",
+        "operator": "ipip1",
+        "representation": "sph",
+        "symbol": "int2e_ipip1_sph"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 4,
+      "forms": [
+        "sph",
+        "source"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "unstable::source::2e"
+    },
+    {
+      "id": {
+        "family": "unstable::source::2e",
+        "operator": "ipvip1",
+        "representation": "sph",
+        "symbol": "int2e_ipvip1_sph"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 4,
+      "forms": [
+        "sph",
+        "source"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "unstable::source::2e"
     }
   ]
 }
