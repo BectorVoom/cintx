@@ -170,6 +170,30 @@ pub struct WorkspaceExecutionToken {
 }
 
 impl WorkspaceExecutionToken {
+    pub fn operator(&self) -> OperatorId {
+        self.operator
+    }
+
+    pub fn representation(&self) -> Representation {
+        self.representation
+    }
+
+    pub fn shell_count(&self) -> usize {
+        self.shell_count
+    }
+
+    pub fn required_workspace_bytes(&self) -> usize {
+        self.required_workspace_bytes
+    }
+
+    pub fn memory_limit_bytes(&self) -> Option<usize> {
+        self.memory_limit_bytes
+    }
+
+    pub fn chunk_size_override(&self) -> Option<usize> {
+        self.chunk_size_override
+    }
+
     fn from_request(
         request: &SessionRequest<'_>,
         workspace: &RuntimeWorkspaceQuery,
@@ -524,8 +548,16 @@ mod tests {
 
         assert!(workspace.bytes > 0);
         assert_eq!(workspace.chunk_count, workspace.chunks.len());
-        assert_eq!(workspace.execution_token.operator, OperatorId::new(0));
-        assert_eq!(workspace.execution_token.representation, Representation::Cart);
+        assert_eq!(workspace.execution_token.operator(), OperatorId::new(0));
+        assert_eq!(
+            workspace.execution_token.representation(),
+            Representation::Cart
+        );
+        assert_eq!(workspace.execution_token.shell_count(), 2);
+        assert_eq!(
+            workspace.execution_token.required_workspace_bytes(),
+            workspace.required_bytes
+        );
     }
 
     #[test]
