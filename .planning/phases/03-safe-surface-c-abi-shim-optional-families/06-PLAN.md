@@ -2,8 +2,9 @@
 phase: 03-safe-surface-c-abi-shim-optional-families
 plan: 06
 type: execute
-wave: 2
+wave: 5
 depends_on:
+  - 02
   - 05
 files_modified:
   - crates/cintx-compat/src/raw.rs

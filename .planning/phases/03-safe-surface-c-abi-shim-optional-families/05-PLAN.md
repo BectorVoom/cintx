@@ -2,8 +2,10 @@
 phase: 03-safe-surface-c-abi-shim-optional-families
 plan: 05
 type: execute
-wave: 1
-depends_on: []
+wave: 4
+depends_on:
+  - 01
+  - 03
 files_modified:
   - crates/cintx-rs/Cargo.toml
   - crates/cintx-capi/Cargo.toml
@@ -12,14 +14,13 @@ files_modified:
 autonomous: true
 requirements:
   - EXEC-01
-  - COMP-04
   - OPT-03
 gap_closure: true
 must_haves:
   truths:
-    - "Phase 03 crate manifests contain explicit, auditable feature/dependency wiring and satisfy the declared artifact depth thresholds."
-    - "The safe facade builder/prelude surface is substantive enough to support stable typed session construction without ad-hoc imports."
-    - "Stable-only C ABI crate wiring remains explicit while unstable source APIs stay opt-in and non-default."
+    - "Safe-surface crate manifests expose explicit feature/dependency wiring so optional and unstable gates are auditable at the crate boundary."
+    - "Rust callers can construct typed sessions through the stable `SessionBuilder` and import the needed safe-surface entry points via `prelude`."
+    - "The C ABI crate remains stable-only while forwarding optional-family feature gates without exposing unstable-source C exports."
   artifacts:
     - path: crates/cintx-rs/Cargo.toml
       provides: "Safe crate feature/dependency wiring, including explicit compat bridge dependency and threshold-compliant manifest depth."
