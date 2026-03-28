@@ -118,6 +118,16 @@ impl ManifestEntry {
     pub fn supports_representation(&self, rep: Representation) -> bool {
         self.representation.supports(rep)
     }
+
+    pub fn is_compiled_in_profile(&self, profile: &str) -> bool {
+        self.compiled_in_profiles
+            .iter()
+            .any(|value| *value == profile)
+    }
+
+    pub fn is_source_only(&self) -> bool {
+        matches!(self.helper_kind, HelperKind::SourceOnly)
+    }
 }
 
 #[derive(Debug)]
@@ -145,6 +155,14 @@ impl OperatorDescriptor {
 
     pub fn stability(&self) -> Stability {
         self.entry.stability.clone()
+    }
+
+    pub fn is_compiled_in_profile(&self, profile: &str) -> bool {
+        self.entry.is_compiled_in_profile(profile)
+    }
+
+    pub fn is_source_only(&self) -> bool {
+        self.entry.is_source_only()
     }
 }
 
@@ -211,6 +229,18 @@ impl Resolver {
             .iter()
             .find(|desc| desc.entry.symbol_name == symbol)
             .ok_or_else(|| ResolverError::MissingSymbol(symbol.to_owned()))
+    }
+
+    pub fn symbol_compiled_in_profile(symbol: &str, profile: &str) -> Result<bool, ResolverError> {
+        let descriptor = Self::descriptor_by_symbol(symbol)?;
+        Ok(descriptor.is_compiled_in_profile(profile))
+    }
+
+    /// Source-only rows stay unstable by default and are only promotable after
+    /// manifest/oracle/release evidence plus an explicit maintainer decision.
+    pub fn symbol_is_source_only(symbol: &str) -> Result<bool, ResolverError> {
+        let descriptor = Self::descriptor_by_symbol(symbol)?;
+        Ok(descriptor.is_source_only())
     }
 
     pub fn descriptor_by_symbol_and_kind(
@@ -283,12 +313,9 @@ mod tests {
 
     fn misc_wrapper_macro(base_symbol: &str) -> Option<MiscWrapperMacro> {
         match base_symbol {
-            "int1e_ovlp"
-            | "int1e_nuc"
-            | "int2e"
-            | "int2c2e"
-            | "int3c1e_p2"
-            | "int3c2e_ip1" => Some(MiscWrapperMacro::AllCint),
+            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e_p2" | "int3c2e_ip1" => {
+                Some(MiscWrapperMacro::AllCint)
+            }
             "int1e_kin" => Some(MiscWrapperMacro::AllCint1e),
             _ => None,
         }
@@ -387,5 +414,93 @@ mod tests {
             actual, expected,
             "legacy wrapper entries drifted from misc.h wrapper rules"
         );
+    }
+
+    #[test]
+    fn profile_aware_lookup_reports_optional_symbols() {
+        assert!(
+            Resolver::symbol_compiled_in_profile("int2e_stg_sph", "with-f12")
+                .expect("f12 symbol exists")
+        );
+        assert!(
+            !Resolver::symbol_compiled_in_profile("int2e_stg_sph", "base")
+                .expect("f12 symbol exists")
+        );
+        assert!(
+            Resolver::symbol_compiled_in_profile("int4c1e_cart", "with-4c1e")
+                .expect("4c1e symbol exists")
+        );
+        assert!(
+            !Resolver::symbol_compiled_in_profile("int4c1e_cart", "base")
+                .expect("4c1e symbol exists")
+        );
+    }
+
+    #[test]
+    fn f12_entries_are_spheric_only() {
+        let f12_entries: Vec<&ManifestEntry> = Resolver::entries_by_kind(HelperKind::Operator)
+            .into_iter()
+            .filter(|entry| {
+                entry.symbol_name.contains("int2e_stg") || entry.symbol_name.contains("int2e_yp")
+            })
+            .collect();
+        assert!(!f12_entries.is_empty(), "expected f12 manifest entries");
+        assert!(f12_entries.iter().all(|entry| {
+            entry.supports_representation(Representation::Spheric)
+                && !entry.supports_representation(Representation::Cart)
+                && !entry.supports_representation(Representation::Spinor)
+        }));
+        assert!(f12_entries
+            .iter()
+            .all(|entry| entry.compiled_in_profiles == ["with-f12", "with-f12+with-4c1e"]));
+
+        let cart_spinor_symbols = [
+            "int2e_stg_cart",
+            "int2e_stg_spinor",
+            "int2e_stg_ip1_cart",
+            "int2e_stg_ip1_spinor",
+            "int2e_stg_ipip1_cart",
+            "int2e_stg_ipip1_spinor",
+            "int2e_stg_ipvip1_cart",
+            "int2e_stg_ipvip1_spinor",
+            "int2e_stg_ip1ip2_cart",
+            "int2e_stg_ip1ip2_spinor",
+            "int2e_yp_cart",
+            "int2e_yp_spinor",
+            "int2e_yp_ip1_cart",
+            "int2e_yp_ip1_spinor",
+            "int2e_yp_ipip1_cart",
+            "int2e_yp_ipip1_spinor",
+            "int2e_yp_ipvip1_cart",
+            "int2e_yp_ipvip1_spinor",
+            "int2e_yp_ip1ip2_cart",
+            "int2e_yp_ip1ip2_spinor",
+        ];
+        for symbol in cart_spinor_symbols {
+            let err = Resolver::descriptor_by_symbol(symbol).unwrap_err();
+            assert!(
+                matches!(err, ResolverError::MissingSymbol(ref name) if name == symbol),
+                "expected cart/spinor F12 symbol to be absent from manifest inventory: {symbol}"
+            );
+        }
+    }
+
+    #[test]
+    fn source_only_symbols_are_identifiable() {
+        let source_entries = Resolver::entries_by_kind(HelperKind::SourceOnly);
+        assert!(
+            !source_entries.is_empty(),
+            "expected source-only manifest entries"
+        );
+        for entry in &source_entries {
+            assert!(matches!(entry.stability, Stability::UnstableSource));
+            assert!(matches!(entry.feature_flag, FeatureFlag::UnstableSource));
+            assert!(entry.family_name.starts_with("unstable::source::"));
+            assert!(
+                Resolver::symbol_is_source_only(entry.symbol_name).expect("source symbol lookup"),
+                "symbol {} should be source-only",
+                entry.symbol_name
+            );
+        }
     }
 }

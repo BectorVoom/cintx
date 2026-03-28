@@ -7,3 +7,28 @@ edition = "2024"
 path = "src/lib.rs"
 
 [dependencies]
+cintx-core = { path = "../cintx-core" }
+cintx-runtime = { path = "../cintx-runtime" }
+cintx-compat = { path = "../cintx-compat", default-features = false }
+cintx-ops = { path = "../cintx-ops" }
+thiserror = "2"
+
+[features]
+default = []
+# Optional families stay explicitly forwarded from the safe facade boundary.
+with-f12 = [
+    "cintx-compat/with-f12",
+]
+with-4c1e = [
+    "cintx-compat/with-4c1e",
+]
+# Source-only APIs remain opt-in until manifest/oracle release gates approve promotion.
+unstable-source-api = [
+    "cintx-compat/unstable-source-api",
+]
+
+[package.metadata.cintx]
+surface = "safe-facade"
+compat_bridge_dependency = "cintx-compat"
+forwards_optional_families = ["with-f12", "with-4c1e"]
+forwards_unstable_source_api = true

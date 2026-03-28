@@ -2,47 +2,48 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-03-21T10:50:54.272Z"
+status: ready_to_plan
+stopped_at: Phase 03 complete, ready to plan Phase 4
+last_updated: "2026-03-28T07:36:14Z"
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 9
-  completed_plans: 7
+  completed_phases: 3
+  total_plans: 15
+  completed_plans: 15
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-21)
+See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 02 — execution-compatibility-stabilization
+**Current focus:** Phase 04 — verification-&-release-automation
 
 ## Current Position
 
-Phase: 02 (execution-compatibility-stabilization) — EXECUTING
-Plan: 5 of 7
+Phase: 4
+Plan: Not started
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2
-- Average duration: 13 min
-- Total execution time: 0.5 hours
+- Total plans completed: 3
+- Average duration: 21 min
+- Total execution time: 1.0 hours
 
 **By Phase:**
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 2 | 27 min | 13.5 min |
+| 02 | 7 | 107 min | 15.3 min |
 
 **Recent Trend:**
 
-- Last 5 plans: 18 min, 9 min
-- Trend: Stable
+- Last 5 plans: 7 min, 10 min, 26 min, 8 min, 29 min
+- Trend: Improved after raw/oracle stabilization
 
 | Phase 01-manifest-planner-foundation P01 | 18min | 2 tasks | 15 files |
 | Phase 01-manifest-planner-foundation P02 | 9min | 2 tasks | 10 files |
@@ -50,6 +51,19 @@ Plan: 5 of 7
 | Phase 02 P03 | 9 min | 2 tasks | 6 files |
 | Phase 02 P04 | 7 min | 2 tasks | 5 files |
 | Phase 02 P05 | 10 min | 2 tasks | 9 files |
+| Phase 02 P06 | 26 min | 3 tasks | 3 files |
+| Phase 02 P08 | 8 min | 2 tasks | 8 files |
+| Phase 02 P07 | 29 min | 3 tasks | 9 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P01 | 3 min | 2 tasks | 9 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P02 | 11m | 2 tasks | 11 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P03 | 14 min | 2 tasks | 3 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P04 | 10m | 2 tasks | 3 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P01 | 4 min | 2 tasks | 3 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P02 | 62m | 2 tasks | 1 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P04 | 4m | 2 tasks | 3 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P03 | 9 min | 2 tasks | 1 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P05 | 34 min | 2 tasks | 4 files |
+| Phase 03-safe-surface-c-abi-shim-optional-families P06 | 8 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -74,6 +88,32 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 02-execution-compatibility-stabilization]: Pinned the initial executable CubeCL profile to CUBECL_RUNTIME_PROFILE=cpu and exposed a concrete constructor through CubeClExecutor::new.
 - [Phase 02-execution-compatibility-stabilization]: Kept backend execution fail-closed to canonical 1e/2e/2c2e registry entries and returned UnsupportedApi for follow-on families.
 - [Phase 02-execution-compatibility-stabilization]: Preserved planner output ownership as BackendStagingOnly -> CompatFinalWrite; transfer planning stages metadata/workspace/output buffers only.
+- [Phase 02]: Use symbol-backed RawApiId resolved through Resolver — Keeps raw dispatch manifest-driven and avoids hardcoding operator ids in compat.
+- [Phase 02]: Map RawOptimizerHandle workspace hints to runtime memory limits — Enables deterministic chunking and MemoryLimitExceeded validation without extending raw function signatures.
+- [Phase 02]: Enable 3c1e/3c2e in kernel registry while keeping 4c1e unsupported — Completes Phase 2 base-family execution envelope without expanding unsupported scope.
+- [Phase 02]: Extend compat optimizer coverage with `int2e_cart_optimizer`, `int2e_sph_optimizer`, and `int2e_optimizer` so helper-kind optimizer symbols remain manifest-complete.
+- [Phase 02]: Drive parity fixtures from the canonical `compiled_manifest.lock.json` and emit representation matrices plus parity reports with `/mnt/data` required-path metadata.
+- [Phase 02]: Verify family-specific tolerance envelopes and optimizer on/off equivalence through compat raw + legacy wrapper comparisons while asserting final flat-buffer and spinor interleaving contracts.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Top-level with-f12/with-4c1e gates explicitly map to libcint with_f12/with_4c1e to prevent feature-profile drift.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: cintx-rs unstable source APIs are exposed only via cfg(feature = "unstable-source-api") namespace to preserve stable defaults.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: cintx-capi remains a stable-only export boundary in plan 01 with no unstable-source C exports.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Treat optional-family availability as manifest-profile plus runtime-envelope dual gates.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Keep source-only rows manifest-visible but reject them unless unstable-source-api is enabled.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Allow runtime dispatch family 4c1e so validated with-4c1e calls can execute through the shared planner path.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Treat lockfile drift in Phase 3 wiring as correctness debt and regenerate immediately.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Keep unstable promotion policy encoded in source docs at both safe and C ABI boundaries.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Keep Task 2 as verification-only because optional/unstable runtime gates already satisfied plan contracts in this branch state.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Add explicit resolver MissingSymbol checks for F12/STG/YP cart and spinor symbols to harden sph-only manifest envelope enforcement.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Expose CINTX_STATUS_* constants so C callers can bind stable integer codes independent of Rust enum layout.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Treat (ptr == NULL && len > 0) in cintrs_eval as NullPointer to keep C ABI fail-closed semantics explicit.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Expose accessor methods on WorkspaceExecutionToken to keep contract metadata stable without exposing private fields.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Capture owned safe output directly from runtime backend staging via RecordingExecutor instead of rebuilding buffers after evaluate.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Record safe/capi feature-forwarding and stability contracts in package.metadata.cintx for manifest-level audits.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Use SessionBuilder::from_request with typed composition helpers to rebuild requests immutably while preserving query/evaluate invariants.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Keep prelude unstable exports behind cfg(feature = unstable-source-api) while expanding grouped stable re-exports.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Use cintx_compat::raw::enforce_safe_facade_policy_gate as the single UnsupportedApi policy source for safe evaluate preflight.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Run a compat-policy preflight before ExecutionPlan::new and again after plan construction so source-only families fail with compat-origin text before planner dispatch-family rejection.
+- [Phase 03-safe-surface-c-abi-shim-optional-families]: Make cintx-rs depend directly on cintx-compat and cintx-ops so resolver metadata and shared policy gates are available in all safe-facade builds.
 
 ### Pending Todos
 
@@ -85,6 +125,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-21T10:50:54.269Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-03-28T07:36:14Z
+Stopped at: Phase 03 complete, ready to plan Phase 4
 Resume file: None

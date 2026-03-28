@@ -5,12 +5,36 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
+cintx-capi = { path = "crates/cintx-capi", optional = true, default-features = false }
+cintx-rs = { path = "crates/cintx-rs", optional = true, default-features = false }
 cubecl = "0.9.0"
-libcint = { version = "0.2.2", features = ["with_4c1e"] }
+libcint = "0.2.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.18"
 tracing = "0.1.41"
+
+[features]
+default = []
+# Keep the public feature names hyphenated while mapping to upstream underscore features.
+with-f12 = [
+    "dep:cintx-rs",
+    "dep:cintx-capi",
+    "libcint/with_f12",
+    "cintx-rs/with-f12",
+    "cintx-capi/with-f12",
+]
+with-4c1e = [
+    "dep:cintx-rs",
+    "dep:cintx-capi",
+    "libcint/with_4c1e",
+    "cintx-rs/with-4c1e",
+    "cintx-capi/with-4c1e",
+]
+# Source-only APIs stay opt-in; promotion requires manifest/oracle evidence and maintainer sign-off.
+unstable-source-api = ["dep:cintx-rs", "cintx-rs/unstable-source-api"]
+# Keep the C ABI shim explicitly optional for migration/interoperability.
+capi = ["dep:cintx-capi", "cintx-capi/capi"]
 
 [build-dependencies]
 cc = "1.2.15"
@@ -23,6 +47,8 @@ members = [
     "crates/cintx-compat",
     "crates/cintx-cubecl",
     "crates/cintx-oracle",
+    "crates/cintx-rs",
+    "crates/cintx-capi",
 ]
 default-members = [
     "crates/cintx-core",
@@ -31,4 +57,6 @@ default-members = [
     "crates/cintx-compat",
     "crates/cintx-cubecl",
     "crates/cintx-oracle",
+    "crates/cintx-rs",
+    "crates/cintx-capi",
 ]

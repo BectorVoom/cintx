@@ -6,6 +6,11 @@ edition = "2024"
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+with-f12 = []
+with-4c1e = []
+
 [dependencies]
 cintx-core = { path = "../cintx-core" }
 cintx-ops = { path = "../cintx-ops" }

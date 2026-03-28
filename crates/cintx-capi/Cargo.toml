@@ -8,3 +8,19 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+cintx-compat = { path = "../cintx-compat" }
+cintx-core = { path = "../cintx-core" }
+
+[features]
+default = []
+# Keep the C ABI crate stable-only in Phase 3; no unstable-source exports here yet.
+capi = []
+# Forward optional-family gates to compat while preserving the stable C symbol boundary.
+with-f12 = ["cintx-compat/with-f12"]
+with-4c1e = ["cintx-compat/with-4c1e"]
+
+[package.metadata.cintx]
+surface = "c-abi-shim"
+stable_only = true
+forwards_optional_families = ["with-f12", "with-4c1e"]
+exports_unstable_source_api = false

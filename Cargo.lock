@@ -246,12 +246,22 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cc",
+ "cintx-capi",
+ "cintx-rs",
  "cubecl",
  "libcint",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "cintx-capi"
+version = "0.1.0"
+dependencies = [
+ "cintx-compat",
+ "cintx-core",
 ]
 
 [[package]]
@@ -307,6 +317,17 @@ dependencies = [
  "cintx-core",
  "cintx-ops",
  "serde_json",
+]
+
+[[package]]
+name = "cintx-rs"
+version = "0.1.0"
+dependencies = [
+ "cintx-compat",
+ "cintx-core",
+ "cintx-ops",
+ "cintx-runtime",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

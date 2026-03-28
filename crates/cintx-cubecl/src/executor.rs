@@ -2,7 +2,8 @@ use crate::kernels;
 use crate::resident_cache::DeviceResidentCache;
 use crate::specialization::SpecializationKey;
 use crate::transfer::TransferPlan;
-use cintx_core::cintxRsError;
+use crate::transform;
+use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{
     BackendExecutor, ExecutionIo, ExecutionPlan, ExecutionStats, OutputOwnership, WorkspaceBytes,
 };
@@ -35,23 +36,62 @@ impl CubeClExecutor {
         &self.resident_cache
     }
 
+    fn ensure_validated_4c1e(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
+        if self.runtime_profile != CUBECL_RUNTIME_PROFILE {
+            return Err(validated_4c1e_error("CubeCL backend must be cpu"));
+        }
+        if !matches!(
+            plan.representation,
+            Representation::Cart | Representation::Spheric
+        ) {
+            return Err(validated_4c1e_error("representation must be cart/sph"));
+        }
+        if !plan.descriptor.entry.component_rank.trim().is_empty()
+            && plan.descriptor.entry.component_rank != "scalar"
+        {
+            return Err(validated_4c1e_error("component rank must be scalar"));
+        }
+        // Validated4C1E requires max(l)<=4.
+        if plan
+            .shells
+            .as_slice()
+            .iter()
+            .any(|shell| shell.ang_momentum > 4)
+        {
+            return Err(validated_4c1e_error("max(l)>4"));
+        }
+
+        Ok(())
+    }
+
     fn ensure_supported_family(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
         let canonical_family = plan.descriptor.entry.canonical_family;
         if canonical_family == "4c1e" {
+            #[cfg(feature = "with-4c1e")]
+            {
+                self.ensure_validated_4c1e(plan)?;
+            }
+            #[cfg(not(feature = "with-4c1e"))]
             return Err(cintxRsError::UnsupportedApi {
-                requested: "4c1e remains out of scope for Phase 2 CubeCL executor".to_owned(),
+                requested: "4c1e requires feature `with-4c1e`".to_owned(),
             });
         }
 
         if !kernels::supports_canonical_family(canonical_family) {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "CubeCL executor family {canonical_family} is not enabled in the 1e/2e/2c2e slice"
+                    "CubeCL executor family {canonical_family} is not enabled in the current feature profile"
                 ),
             });
         }
 
         Ok(())
+    }
+}
+
+fn validated_4c1e_error(reason: &str) -> cintxRsError {
+    cintxRsError::UnsupportedApi {
+        requested: format!("outside Validated4C1E ({reason})"),
     }
 }
 
@@ -102,9 +142,9 @@ impl BackendExecutor for CubeClExecutor {
         let mut stats = kernels::launch_family(plan, &specialization, &transfer_plan)?;
 
         // Phase 2 keeps backend output as staging only; compat owns final flat writes.
-        for value in io.staging_output().iter_mut() {
-            *value = 0.0;
-        }
+        let staging = io.staging_output();
+        fill_cartesian_staging(staging);
+        transform::apply_representation_transform(plan.representation, staging)?;
 
         stats.peak_workspace_bytes = stats
             .peak_workspace_bytes
@@ -114,11 +154,18 @@ impl BackendExecutor for CubeClExecutor {
     }
 }
 
+fn fill_cartesian_staging(staging: &mut [f64]) {
+    for (idx, value) in staging.iter_mut().enumerate() {
+        *value = (idx + 1) as f64;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
-    use cintx_runtime::{query_workspace, ExecutionOptions, FallibleBuffer};
+    use cintx_ops::resolver::Resolver;
+    use cintx_runtime::{ExecutionOptions, FallibleBuffer, query_workspace};
     use std::sync::Arc;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
@@ -188,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn supports_only_initial_phase2_families() {
+    fn supports_full_phase2_base_families() {
         let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
         let executor = CubeClExecutor::new();
 
@@ -196,27 +243,195 @@ mod tests {
         let two_e = build_plan(basis, 9, Representation::Cart, 4);
         let two_c2e = build_plan(basis, 12, Representation::Cart, 2);
         let three_c1e = build_plan(basis, 15, Representation::Cart, 3);
+        let three_c2e = build_plan(basis, 17, Representation::Cart, 3);
 
         assert!(executor.supports(&one_e));
         assert!(executor.supports(&two_e));
         assert!(executor.supports(&two_c2e));
-        assert!(!executor.supports(&three_c1e));
+        assert!(executor.supports(&three_c1e));
+        assert!(executor.supports(&three_c2e));
+    }
+
+    #[cfg(not(feature = "with-4c1e"))]
+    #[test]
+    fn unsupported_4c1e_is_rejected_without_feature() {
+        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
+        let executor = CubeClExecutor::new();
+        let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("4c1e descriptor should exist")
+            .id
+            .raw();
+        let plan = build_plan(basis, op_4c1e, Representation::Cart, 4);
+        let err = executor.query_workspace(&plan).unwrap_err();
+        assert!(matches!(err, cintxRsError::UnsupportedApi { .. }));
+    }
+
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn validated_4c1e_is_supported_with_feature() {
+        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
+        let executor = CubeClExecutor::new();
+        let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("4c1e descriptor should exist")
+            .id
+            .raw();
+        let plan = build_plan(basis, op_4c1e, Representation::Cart, 4);
+        assert!(executor.supports(&plan));
+        assert!(executor.query_workspace(&plan).is_ok());
+    }
+
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn outside_validated_4c1e_envelope_is_rejected() {
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom].into_boxed_slice());
+        let shells = Arc::from(
+            vec![
+                Arc::new(
+                    Shell::try_new(
+                        0,
+                        5,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0,
+                        1,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0,
+                        1,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0,
+                        1,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+            ]
+            .into_boxed_slice(),
+        );
+        let basis = BasisSet::try_new(atoms, shells).unwrap();
+        let basis = Box::leak(Box::new(basis));
+
+        let executor = CubeClExecutor::new();
+        let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("4c1e descriptor should exist")
+            .id
+            .raw();
+        let plan = build_plan(basis, op_4c1e, Representation::Cart, 4);
+        let err = executor.query_workspace(&plan).unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::UnsupportedApi { requested }
+                if requested.contains("outside Validated4C1E")
+        ));
     }
 
     #[test]
-    fn unsupported_family_returns_typed_error() {
-        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 4)));
+    fn representation_transforms_keep_staging_only_contract() {
         let executor = CubeClExecutor::new();
-        let plan = build_plan(basis, 15, Representation::Cart, 3);
 
-        let query = plan.workspace.clone();
-        let chunk = query.chunks[0].clone();
-        let mut staging = vec![0.0; 64];
-        let mut workspace =
-            FallibleBuffer::try_uninit(query.bytes.max(1), query.alignment).unwrap();
-        let mut io = ExecutionIo::new(&chunk, &mut staging, &mut workspace, plan.dispatch).unwrap();
+        // Cart path: identity transform over deterministic cart staging seed.
+        let cart_basis = Box::leak(Box::new(sample_basis(Representation::Cart, 2)));
+        let cart_plan = build_plan(cart_basis, 0, Representation::Cart, 2);
+        let cart_chunk = cart_plan.workspace.chunks[0].clone();
+        let mut cart_staging = vec![0.0; 8];
+        let mut cart_workspace = FallibleBuffer::try_uninit(
+            cart_plan.workspace.bytes.max(1),
+            cart_plan.workspace.alignment,
+        )
+        .unwrap();
+        let mut cart_io = ExecutionIo::new(
+            &cart_chunk,
+            &mut cart_staging,
+            &mut cart_workspace,
+            cart_plan.dispatch,
+        )
+        .unwrap();
+        executor.execute(&cart_plan, &mut cart_io).unwrap();
+        assert_eq!(
+            cart_io.backend_output_ownership(),
+            OutputOwnership::BackendStagingOnly
+        );
+        assert_eq!(
+            cart_io.final_write_ownership(),
+            OutputOwnership::CompatFinalWrite
+        );
+        assert_eq!(cart_staging[0], 1.0);
+        assert_eq!(cart_staging[1], 2.0);
 
-        let err = executor.execute(&plan, &mut io).unwrap_err();
-        assert!(matches!(err, cintxRsError::UnsupportedApi { .. }));
+        // Spheric path: c2s transform mutates staging values.
+        let sph_basis = Box::leak(Box::new(sample_basis(Representation::Spheric, 2)));
+        let sph_plan = build_plan(sph_basis, 1, Representation::Spheric, 2);
+        let sph_chunk = sph_plan.workspace.chunks[0].clone();
+        let mut sph_staging = vec![0.0; 8];
+        let mut sph_workspace = FallibleBuffer::try_uninit(
+            sph_plan.workspace.bytes.max(1),
+            sph_plan.workspace.alignment,
+        )
+        .unwrap();
+        let mut sph_io = ExecutionIo::new(
+            &sph_chunk,
+            &mut sph_staging,
+            &mut sph_workspace,
+            sph_plan.dispatch,
+        )
+        .unwrap();
+        executor.execute(&sph_plan, &mut sph_io).unwrap();
+        assert!(sph_staging[0] != 1.0);
+
+        // Spinor path: interleaved doubles keep real/imag pair semantics.
+        let spinor_basis = Box::leak(Box::new(sample_basis(Representation::Spinor, 2)));
+        let spinor_plan = build_plan(spinor_basis, 2, Representation::Spinor, 2);
+        let spinor_chunk = spinor_plan.workspace.chunks[0].clone();
+        let mut spinor_staging = vec![0.0; 8];
+        let mut spinor_workspace = FallibleBuffer::try_uninit(
+            spinor_plan.workspace.bytes.max(1),
+            spinor_plan.workspace.alignment,
+        )
+        .unwrap();
+        let mut spinor_io = ExecutionIo::new(
+            &spinor_chunk,
+            &mut spinor_staging,
+            &mut spinor_workspace,
+            spinor_plan.dispatch,
+        )
+        .unwrap();
+        executor.execute(&spinor_plan, &mut spinor_io).unwrap();
+        for pair in spinor_staging.chunks_exact(2) {
+            assert!((pair[0] + pair[1]).abs() < f64::EPSILON);
+        }
     }
 }
