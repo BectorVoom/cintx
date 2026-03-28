@@ -28,3 +28,9 @@ unstable-source-api = [
     "dep:cintx-compat",
     "cintx-compat/unstable-source-api",
 ]
+
+[package.metadata.cintx]
+surface = "safe-facade"
+compat_bridge_dependency = "cintx-compat"
+forwards_optional_families = ["with-f12", "with-4c1e"]
+forwards_unstable_source_api = true
