@@ -1,1 +1,82 @@
-# Stub CI workflow.
+name: oracle-compare-template
+
+on:
+  workflow_call:
+    inputs:
+      artifact_root:
+        description: Root directory used for oracle mismatch artifact bundles.
+        required: false
+        type: string
+        default: /mnt/data/cintx/oracle
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  oracle_profile_matrix:
+    name: oracle profile matrix (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - base
+          - with-f12
+          - with-4c1e
+          - with-f12+with-4c1e
+    env:
+      CINTX_ARTIFACT_DIR: ${{ format('{0}/{1}/{2}', inputs.artifact_root, github.run_id, matrix.profile) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Show profile context
+        run: |
+          echo "profile=${{ matrix.profile }}"
+          echo "CINTX_ARTIFACT_DIR=${CINTX_ARTIFACT_DIR}"
+
+      - name: Run oracle compare gate
+        run: |
+          cargo run --locked --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${{ matrix.profile }}" --include-unstable-source false
+
+      - name: Run helper legacy parity gate
+        run: |
+          cargo run --locked --manifest-path xtask/Cargo.toml -- helper-legacy-parity --profile "${{ matrix.profile }}"
+
+      - name: Upload oracle mismatch artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-mismatch-${{ matrix.profile }}
+          if-no-files-found: warn
+          path: |
+            ${{ env.CINTX_ARTIFACT_DIR }}
+            /mnt/data
+            target/oracle/${{ matrix.profile }}
+
+  oracle_matrix_summary:
+    name: oracle matrix summary
+    if: always()
+    needs:
+      - oracle_profile_matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report matrix completion
+        run: |
+          echo "Completed oracle matrix for profiles:"
+          echo " - base"
+          echo " - with-f12"
+          echo " - with-4c1e"
+          echo " - with-f12+with-4c1e"
