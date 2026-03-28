@@ -459,6 +459,9 @@ impl BackendExecutor for CubeClExecutor {
 
 #[cfg(feature = "unstable-source-api")]
 pub mod unstable {
+    //! Source-only namespace that remains opt-in until manifest/oracle release gates and
+    //! explicit maintainer approval promote entries into the stable facade.
+
     /// Marker payload for source-only API entries that are not part of the stable facade namespace.
     #[derive(Clone, Debug, PartialEq, Eq)]
     pub struct SourceApiToken {

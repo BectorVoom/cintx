@@ -1,6 +1,7 @@
 //! C ABI shim exports for migration-focused compat callers.
 //!
-//! Phase 3 keeps this crate stable-only: no unstable source-family C symbols are exported.
+//! Phase 3 keeps this crate stable-only: no unstable source-family C symbols are exported
+//! until explicit promotion gates are approved.
 
 pub mod errors;
 pub mod shim;
