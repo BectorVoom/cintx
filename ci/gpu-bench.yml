@@ -77,6 +77,27 @@ jobs:
         run: |
           cargo run --locked --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
 
+      - name: Validate bench artifact contract
+        run: |
+          validate_artifact() {
+            local required_path="$1"
+            local fallback_path="$2"
+            local label="$3"
+            if [ -f "${required_path}" ]; then
+              echo "${label}: found required artifact at ${required_path}"
+              return 0
+            fi
+            if [ -f "${fallback_path}" ]; then
+              echo "${label}: required path missing, fallback artifact present at ${fallback_path}"
+              return 0
+            fi
+            echo "${label}: missing required and fallback artifacts (${required_path}, ${fallback_path})" >&2
+            return 1
+          }
+
+          validate_artifact "/mnt/data/cintx_phase_04_bench_report.json" "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json" "bench_report"
+          validate_artifact "/mnt/data/cintx_phase_04_runtime_diagnostics.json" "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json" "runtime_diagnostics"
+
       - name: Upload GPU benchmark artifacts
         if: always()
         uses: actions/upload-artifact@v4
