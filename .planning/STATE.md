@@ -140,6 +140,10 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Centralize required and fallback artifact paths in workflow-level env variables to reduce silent drift risk.
 - [Phase 04-verification-release-automation]: Add a dedicated release policy invariant step that inspects committed workflow markers and fails closed.
 
+### Roadmap Evolution
+
+- Phase 5 added: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
+
 ### Pending Todos
 
 None yet.
