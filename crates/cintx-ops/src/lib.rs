@@ -35,8 +35,9 @@ fn legacy_wrapper_manifest_matches_misc() {
 
     let mut expected = BTreeSet::new();
     for base_symbol in base_symbols {
-        let kind = macro_kind(&base_symbol)
-            .unwrap_or_else(|| panic!("missing misc.h wrapper macro classification for {base_symbol}"));
+        let kind = macro_kind(&base_symbol).unwrap_or_else(|| {
+            panic!("missing misc.h wrapper macro classification for {base_symbol}")
+        });
         expected.insert(format!("c{base_symbol}_cart"));
         expected.insert(format!("c{base_symbol}_sph"));
         expected.insert(format!("c{base_symbol}"));
@@ -53,5 +54,8 @@ fn legacy_wrapper_manifest_matches_misc() {
         .map(|entry| entry.symbol_name.to_owned())
         .collect();
 
-    assert_eq!(actual, expected, "legacy wrappers drifted from misc.h macro rules");
+    assert_eq!(
+        actual, expected,
+        "legacy wrappers drifted from misc.h macro rules"
+    );
 }

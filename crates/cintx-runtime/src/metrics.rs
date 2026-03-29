@@ -19,7 +19,11 @@ impl ExecutionStats {
             required_workspace_bytes: workspace.required_bytes,
             peak_workspace_bytes: 0,
             chunk_count: workspace.chunks.len(),
-            planned_batches: workspace.chunks.iter().map(|chunk| chunk.work_unit_count).sum(),
+            planned_batches: workspace
+                .chunks
+                .iter()
+                .map(|chunk| chunk.work_unit_count)
+                .sum(),
             transfer_bytes: 0,
             not0: 0,
             fallback_reason: workspace.fallback_reason,
@@ -62,7 +66,11 @@ impl RunMetrics {
             required_workspace_bytes: workspace.required_bytes,
             peak_workspace_bytes: self.peak_workspace_bytes,
             chunk_count: self.chunk_count.max(workspace.chunks.len()),
-            planned_batches: workspace.chunks.iter().map(|chunk| chunk.work_unit_count).sum(),
+            planned_batches: workspace
+                .chunks
+                .iter()
+                .map(|chunk| chunk.work_unit_count)
+                .sum(),
             transfer_bytes: self.transfer_bytes,
             not0: self.not0,
             fallback_reason: workspace.fallback_reason,

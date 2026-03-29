@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 03 complete, ready to plan Phase 4
-last_updated: "2026-03-28T07:36:14Z"
+status: unknown
+stopped_at: Completed 04-verification-release-automation-05-PLAN.md
+last_updated: "2026-03-28T12:15:37.609Z"
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 15
-  completed_plans: 15
+  completed_phases: 4
+  total_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 04 — verification-&-release-automation
+**Current focus:** Phase 04 — verification-release-automation
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 04 (verification-release-automation) — EXECUTING
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -64,6 +64,11 @@ Plan: Not started
 | Phase 03-safe-surface-c-abi-shim-optional-families P03 | 9 min | 2 tasks | 1 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P05 | 34 min | 2 tasks | 4 files |
 | Phase 03-safe-surface-c-abi-shim-optional-families P06 | 8 min | 2 tasks | 4 files |
+| Phase 04-verification-release-automation P01 | 9 min | 2 tasks | 3 files |
+| Phase 04-verification-release-automation P02 | 21m | 3 tasks | 6 files |
+| Phase 04-verification-release-automation P03 | 2m | 2 tasks | 3 files |
+| Phase 04-verification-release-automation P04 | 17min | 3 tasks | 11 files |
+| Phase 04-verification-release-automation P05 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -114,6 +119,20 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Use cintx_compat::raw::enforce_safe_facade_policy_gate as the single UnsupportedApi policy source for safe evaluate preflight.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Run a compat-policy preflight before ExecutionPlan::new and again after plan construction so source-only families fail with compat-origin text before planner dispatch-family rejection.
 - [Phase 03-safe-surface-c-abi-shim-optional-families]: Make cintx-rs depend directly on cintx-compat and cintx-ops so resolver metadata and shared policy gates are available in all safe-facade builds.
+- [Phase 04-verification-release-automation]: Promote oracle fixture generation to profile-scoped APIs backed by compiled-manifest lock profile/stability metadata.
+- [Phase 04-verification-release-automation]: Aggregate parity mismatches across the full fixture matrix, persist report artifacts first, then fail with mismatch_count.
+- [Phase 04-verification-release-automation]: Default merge-blocking parity mode keeps include_unstable_source=false, requiring explicit opt-in for unstable-source coverage.
+- [Phase 04-verification-release-automation]: Keep xtask verification gates fail-closed with non-zero exits on drift/parity/OOM regressions.
+- [Phase 04-verification-release-automation]: Scope manifest lock diffing to oracle operator/source symbols to avoid helper/legacy false positives.
+- [Phase 04-verification-release-automation]: Persist profile-specific oracle artifacts for each approved profile even when a profile fails parity.
+- [Phase 04-verification-release-automation]: Keep required PR verification as four explicit jobs: manifest_drift_gate, oracle_parity_gate, helper_legacy_parity_gate, and oom_contract_gate.
+- [Phase 04-verification-release-automation]: Resolve Rust channel from rust-toolchain.toml in each required job to avoid toolchain drift.
+- [Phase 04-verification-release-automation]: Exercise helper/legacy and OOM gates across base,with-f12,with-4c1e,with-f12+with-4c1e profiles through deterministic loop execution.
+- [Phase 04-verification-release-automation]: Bench regressions fail only when configured thresholds are exceeded.
+- [Phase 04-verification-release-automation]: Bench and runtime diagnostics artifacts must target /mnt/data with CINTX_ARTIFACT_DIR fallback metadata.
+- [Phase 04-verification-release-automation]: PR GPU/bench jobs stay advisory while release/scheduled/merge-queue jobs are required via explicit continue-on-error policy.
+- [Phase 04-verification-release-automation]: Keep pub mod compare/fixtures intact while exporting profile-aware fixture/parity APIs explicitly from crate root.
+- [Phase 04-verification-release-automation]: Preserve compile-edge export smoke coverage while expanding crate-root re-exports for Phase 4 gate consumers.
 
 ### Pending Todos
 
@@ -125,6 +144,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T07:36:14Z
-Stopped at: Phase 03 complete, ready to plan Phase 4
+Last session: 2026-03-28T12:15:37.606Z
+Stopped at: Completed 04-verification-release-automation-05-PLAN.md
 Resume file: None

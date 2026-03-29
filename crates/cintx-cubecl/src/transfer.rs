@@ -142,7 +142,7 @@ fn chunk_staging_elements(
 mod tests {
     use super::*;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
-    use cintx_runtime::{query_workspace, ExecutionOptions};
+    use cintx_runtime::{ExecutionOptions, query_workspace};
     use std::sync::Arc;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {

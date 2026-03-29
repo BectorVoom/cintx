@@ -1,7 +1,7 @@
 pub mod c2s;
 pub mod c2spinor;
 
-use cintx_core::{cintxRsError, Representation};
+use cintx_core::{Representation, cintxRsError};
 
 pub fn apply_representation_transform(
     representation: Representation,

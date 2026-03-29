@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "micro_families": {
+    "baseline_throughput": 2400.0,
+    "baseline_workspace_bytes": 229376,
+    "baseline_transfer_bytes": 65536,
+    "throughput_regression_pct": 12.0,
+    "memory_regression_pct": 15.0,
+    "transfer_regression_pct": 18.0
+  },
+  "macro_molecules": {
+    "baseline_throughput": 150.0,
+    "baseline_workspace_bytes": 8388608,
+    "baseline_transfer_bytes": 2097152,
+    "throughput_regression_pct": 10.0,
+    "memory_regression_pct": 12.0,
+    "transfer_regression_pct": 15.0
+  },
+  "crossover_cpu_gpu": {
+    "baseline_throughput": 1800.0,
+    "baseline_workspace_bytes": 3145728,
+    "baseline_transfer_bytes": 786432,
+    "baseline_crossover_shift_pct": 6.0,
+    "throughput_regression_pct": 10.0,
+    "memory_regression_pct": 15.0,
+    "transfer_regression_pct": 12.0,
+    "crossover_shift_pct": 8.0
+  }
+}

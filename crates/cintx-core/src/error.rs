@@ -146,6 +146,9 @@ mod tests {
                 provided: 128
             }
         ));
-        assert_eq!(err.to_string(), "buffer too small: required=256, provided=128");
+        assert_eq!(
+            err.to_string(),
+            "buffer too small: required=256, provided=128"
+        );
     }
 }

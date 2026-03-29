@@ -97,7 +97,7 @@ pub(crate) fn hash_shell_tuple(shells: &[Arc<Shell>]) -> u64 {
 mod tests {
     use super::*;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Shell, ShellTuple};
-    use cintx_runtime::{query_workspace, ExecutionOptions};
+    use cintx_runtime::{ExecutionOptions, query_workspace};
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_vec().into_boxed_slice())

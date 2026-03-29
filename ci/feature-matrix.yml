@@ -1,1 +1,77 @@
-# Stub CI workflow.
+name: feature-matrix-template
+
+on:
+  workflow_call:
+    inputs:
+      artifact_root:
+        description: Root directory used for feature matrix artifacts.
+        required: false
+        type: string
+        default: /mnt/data/cintx/feature-matrix
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  feature_profile_matrix:
+    name: feature profile matrix (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - base
+          - with-f12
+          - with-4c1e
+          - with-f12+with-4c1e
+    env:
+      CINTX_ARTIFACT_DIR: ${{ format('{0}/{1}/{2}', inputs.artifact_root, github.run_id, matrix.profile) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run manifest drift gate
+        run: |
+          cargo run --locked --manifest-path xtask/Cargo.toml -- manifest-audit --profiles "${{ matrix.profile }}" --check-lock
+
+      - name: Run OOM contract gate
+        run: |
+          cargo run --locked --manifest-path xtask/Cargo.toml -- oom-contract-check
+
+      - name: Upload feature matrix artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feature-matrix-${{ matrix.profile }}
+          if-no-files-found: warn
+          path: |
+            ${{ env.CINTX_ARTIFACT_DIR }}
+            /mnt/data
+            target/feature-matrix/${{ matrix.profile }}
+
+  feature_matrix_summary:
+    name: feature matrix summary
+    if: always()
+    needs:
+      - feature_profile_matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report matrix completion
+        run: |
+          echo "Completed feature matrix for profiles:"
+          echo " - base"
+          echo " - with-f12"
+          echo " - with-4c1e"
+          echo " - with-f12+with-4c1e"

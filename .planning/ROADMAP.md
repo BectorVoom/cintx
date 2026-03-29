@@ -16,7 +16,12 @@
   1. Maintainers can instantiate atoms, shells, basis sets, environment parameters, operator IDs, and tensor layouts through the typed Rust structures defined in the manifest (BASE-01).
   2. The manifest generation pipeline emits a lock that classifies stable, optional, and unstable-source families across the support matrix and becomes the canonical input for downstream gating (BASE-02).
   3. The manifest-aware registry resolves which integral families and representations are available without depending on raw symbol names, so consumers can pick kernels declaratively (BASE-03).
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [x] 01-PLAN.md - Upgrade oracle fixtures and parity reporting to required profile coverage with non-fail-fast mismatch artifacts.
+- [x] 02-PLAN.md - Implement xtask gate commands for manifest drift, oracle parity, helper/legacy parity, and OOM-contract enforcement.
+- [x] 03-PLAN.md - Wire merge-blocking PR CI gates and required profile matrix verification through the new xtask command surface.
+- [x] 04-PLAN.md - Add benchmark/diagnostics automation with threshold gating and advisory-vs-required GPU workflow policy.
 
 ### Phase 2: Execution & Compatibility Stabilization
 **Goal**: Prove the CubeCL-backed planner and compat/API surface can consume the manifest, honor workspace queries, handle memory limits, and deliver upstream-compatible outputs.
@@ -65,7 +70,13 @@ Plans:
   2. CI workflows block manifest drift, helper/legacy parity regressions, CubeCL consistency failures, and OOM contract violations before merges land (VERI-02).
   3. Benchmarks capture throughput, memory usage, and CPU-GPU crossover regressions for trend tracking (VERI-03).
   4. Tracing and diagnostics expose planner chunking, fallback, transfer, and OOM behavior for manual inspection (VERI-04).
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+- [x] 01-PLAN.md - Upgrade oracle fixtures and parity reporting to required profile coverage with non-fail-fast mismatch artifacts.
+- [x] 02-PLAN.md - Implement xtask gate commands for manifest drift, oracle parity, helper/legacy parity, and OOM-contract enforcement.
+- [x] 03-PLAN.md - Wire merge-blocking PR CI gates and required profile matrix verification through the new xtask command surface.
+- [x] 04-PLAN.md - Add benchmark/diagnostics automation with threshold gating and advisory-vs-required GPU workflow policy.
+- [x] 05-PLAN.md - Close the remaining oracle crate export-surface substance gap in `crates/cintx-oracle/src/lib.rs`.
 
 ## Progress
 | Phase | Plans Complete | Status | Completed |
@@ -73,4 +84,4 @@ Plans:
 | Phase 1: Manifest & Planner Foundation | 2/2 | Complete | 2026-03-21 |
 | Phase 2: Execution & Compatibility Stabilization | 7/7 | Complete | 2026-03-26 |
 | Phase 3: Safe Surface, C ABI Shim & Optional Families | 6/6 | Complete | 2026-03-28 |
-| Phase 4: Verification & Release Automation | 0/0 | Not started | - |
+| Phase 4: Verification & Release Automation | 4/5 | In progress | - |

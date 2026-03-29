@@ -39,6 +39,21 @@ capi = ["dep:cintx-capi", "cintx-capi/capi"]
 [build-dependencies]
 cc = "1.2.15"
 
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "micro_families"
+harness = false
+
+[[bench]]
+name = "macro_molecules"
+harness = false
+
+[[bench]]
+name = "crossover_cpu_gpu"
+harness = false
+
 [workspace]
 members = [
     "crates/cintx-core",
