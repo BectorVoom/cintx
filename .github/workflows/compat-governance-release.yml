@@ -92,7 +92,7 @@ jobs:
 
   gpu_bench_required:
     name: gpu_bench_required
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, gpu]
     continue-on-error: false
     env:
       CINTX_ARTIFACT_DIR: /mnt/data/cintx/release-gpu-bench/${{ github.run_id }}

@@ -28,7 +28,7 @@ defaults:
 jobs:
   gpu_bench_template:
     name: gpu bench template (${{ inputs.enforcement_mode }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, gpu]
     continue-on-error: ${{ inputs.continue_on_error }}
     env:
       CINTX_ARTIFACT_DIR: ${{ format('{0}/{1}/{2}', inputs.artifact_root, github.run_id, inputs.enforcement_mode) }}
