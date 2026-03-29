@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-verification-release-automation-05-PLAN.md
-last_updated: "2026-03-28T12:15:37.609Z"
+stopped_at: Completed 04-verification-release-automation-06-PLAN.md
+last_updated: "2026-03-29T00:32:00.533Z"
 progress:
   total_phases: 4
   completed_phases: 4
-  total_plans: 20
-  completed_plans: 21
+  total_plans: 21
+  completed_plans: 22
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 2 of 5
+Plan: 2 of 6
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Plan: 2 of 5
 | Phase 04-verification-release-automation P03 | 2m | 2 tasks | 3 files |
 | Phase 04-verification-release-automation P04 | 17min | 3 tasks | 11 files |
 | Phase 04-verification-release-automation P05 | 2min | 1 tasks | 1 files |
+| Phase 04-verification-release-automation P06 | 2 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: PR GPU/bench jobs stay advisory while release/scheduled/merge-queue jobs are required via explicit continue-on-error policy.
 - [Phase 04-verification-release-automation]: Keep pub mod compare/fixtures intact while exporting profile-aware fixture/parity APIs explicitly from crate root.
 - [Phase 04-verification-release-automation]: Preserve compile-edge export smoke coverage while expanding crate-root re-exports for Phase 4 gate consumers.
+- [Phase 04-verification-release-automation]: Bound gpu_bench_required and gpu_bench_template to [self-hosted, linux, x64, gpu] to enforce the required GPU runner contract.
+- [Phase 04-verification-release-automation]: Added Validate bench artifact contract checks so bench report and runtime diagnostics must exist in /mnt/data or /tmp/cintx_artifacts before artifact upload.
 
 ### Pending Todos
 
@@ -144,6 +147,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-28T12:15:37.606Z
-Stopped at: Completed 04-verification-release-automation-05-PLAN.md
+Last session: 2026-03-29T00:32:00.531Z
+Stopped at: Completed 04-verification-release-automation-06-PLAN.md
 Resume file: None

@@ -77,7 +77,7 @@ Plans:
 - [x] 03-PLAN.md - Wire merge-blocking PR CI gates and required profile matrix verification through the new xtask command surface.
 - [x] 04-PLAN.md - Add benchmark/diagnostics automation with threshold gating and advisory-vs-required GPU workflow policy.
 - [x] 05-PLAN.md - Close the remaining oracle crate export-surface substance gap in `crates/cintx-oracle/src/lib.rs`.
-- [ ] 06-PLAN.md - Close the `gpu_bench_required` runner contract and required/fallback artifact validation gap for release/scheduled GPU verification.
+- [x] 06-PLAN.md - Close the `gpu_bench_required` runner contract and required/fallback artifact validation gap for release/scheduled GPU verification.
 
 ## Progress
 | Phase | Plans Complete | Status | Completed |
