@@ -15,7 +15,7 @@ requirements:
 gap_closure: true
 must_haves:
   truths:
-    - "`.github/workflows/compat-governance-release.yml` satisfies the declared substance gate (`>=180` lines) without reverting the required release policy."
+    - "Maintainers can run the release governance workflow with explicit invariant checks that protect release benchmark and diagnostics policy from silent drift."
     - "`gpu_bench_required` remains GPU-bound and blocking while still enforcing `bench-report --mode enforce` (D-07, D-08)."
     - "Required/fallback bench and diagnostics artifact contracts remain validated and uploaded from both `/mnt/data` and `/tmp/cintx_artifacts` paths (D-12)."
   artifacts:
