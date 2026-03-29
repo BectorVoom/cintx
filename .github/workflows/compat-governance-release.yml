@@ -147,6 +147,31 @@ jobs:
           cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
           cargo run --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
 
+      - name: Validate release gate policy invariants
+        run: |
+          workflow_file=".github/workflows/compat-governance-release.yml"
+
+          assert_contains() {
+            local needle="$1"
+            local label="$2"
+            if grep -Fq "${needle}" "${workflow_file}"; then
+              echo "policy invariant satisfied: ${label}"
+              return 0
+            fi
+            echo "policy invariant missing: ${label} (${needle})" >&2
+            return 1
+          }
+
+          assert_contains "runs-on: [self-hosted, linux, x64, gpu]" "required gpu runner labels"
+          assert_contains "continue-on-error: false" "required blocking policy"
+          assert_contains "bench-report --thresholds ci/benchmark-thresholds.json --mode enforce" "required benchmark enforcement command"
+          assert_contains "Validate bench artifact contract" "artifact contract validation step"
+          assert_contains "/mnt/data/cintx_phase_04_bench_report.json" "required bench report path"
+          assert_contains "/mnt/data/cintx_phase_04_runtime_diagnostics.json" "required runtime diagnostics path"
+          assert_contains "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json" "fallback bench report path"
+          assert_contains "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json" "fallback runtime diagnostics path"
+          assert_contains "actions/upload-artifact@v4" "artifact upload action"
+
       - name: Validate bench artifact contract
         run: |
           validate_artifact() {
