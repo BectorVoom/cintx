@@ -5,6 +5,7 @@
 - [x] **Phase 2: Execution & Compatibility Stabilization** - Wire the CubeCL-backed planner to the raw compat layer, including helper/legacy transforms, workspace queries, typed errors, and shape/optimizer guarantees.
 - [x] **Phase 3: Safe Surface, C ABI Shim & Optional Families** - Layer the safe Rust façade, optional C shim, and feature-gated optional families on the stabilized runtime.
 - [ ] **Phase 4: Verification & Release Automation** - Close the manifest/oracle loop with CI, benchmarks, and diagnostics that block regressions before release.
+- [ ] **Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)** - Replace synthetic execution with a real wgpu-backed CubeCL path and capability-aware fail-closed verification.
 
 ## Phase Details
 
@@ -87,3 +88,17 @@ Plans:
 | Phase 2: Execution & Compatibility Stabilization | 7/7 | Complete | 2026-03-26 |
 | Phase 3: Safe Surface, C ABI Shim & Optional Families | 6/6 | Complete | 2026-03-28 |
 | Phase 4: Verification & Release Automation | 6/7 | In progress | - |
+
+### Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
+
+**Goal:** Re-implement the compute path so supported evaluations execute through a real CubeCL + wgpu backend with explicit capability gating, no synthetic fallback, and layered verification evidence.
+**Requirements**: EXEC-02, EXEC-03, COMP-05, VERI-02, VERI-04
+**Depends on:** Phase 4
+**Plans:** 5 plans
+
+Plans:
+- [ ] 01-PLAN.md - Add runtime backend intent/capability query-evaluate contract and fail-closed drift checks.
+- [ ] 02-PLAN.md - Implement CubeCL wgpu bootstrap + capability snapshot preflight contracts.
+- [ ] 03-PLAN.md - Replace synthetic CubeCL executor staging path with real chunked wgpu execution and unsupported taxonomy.
+- [ ] 04-PLAN.md - Align compat/raw and safe facade with shared CubeCL executor plus anti-pseudo layered tests.
+- [ ] 05-PLAN.md - Add capability-aware xtask artifacts and PR/release CI gates for wgpu regression enforcement.
