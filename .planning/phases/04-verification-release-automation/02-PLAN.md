@@ -78,12 +78,12 @@ pub fn generate_profile_parity_report(
     inputs: &OracleRawInputs,
     profile: &str,
     include_unstable_source: bool,
-) -> Result<ProfileParityReport>;
+) -> Result<Phase2ParityReport>;
 ```
 
 From `crates/cintx-oracle/src/fixtures.rs` (after Plan 01):
 ```rust
-pub fn build_required_profile_matrices(inputs: &OracleRawInputs) -> Result<Vec<ProfileFixtureMatrix>>;
+pub fn build_required_profile_matrices(inputs: &OracleRawInputs) -> Result<Vec<ProfileRepresentationMatrix>>;
 pub fn build_profile_representation_matrix(
     inputs: &OracleRawInputs,
     profile: &str,

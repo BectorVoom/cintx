@@ -16,8 +16,8 @@ requirements:
 gap_closure: true
 must_haves:
   truths:
-    - "Oracle crate lib surface is substantive (>=20 lines) and explicitly re-exports profile-aware Phase 4 entry points used by verification gates."
-    - "Profile-aware fixture/parity exports remain explicit and importable from the crate root for CI and xtask consumers."
+    - "Maintainers can import profile-aware fixture and parity entry points from the `cintx-oracle` crate root when wiring verification gates."
+    - "CI and xtask gate consumers can use explicit crate-root exports without relying on module-internal oracle paths."
   artifacts:
     - path: crates/cintx-oracle/src/lib.rs
       provides: "Non-stub oracle crate export hub with explicit profile-aware re-exports."

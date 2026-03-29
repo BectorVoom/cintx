@@ -19,10 +19,22 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  CINTX_BENCH_ROWS_REQUIRED: /mnt/data/cintx_phase_04_bench_rows.jsonl
+  CINTX_BENCH_REPORT_REQUIRED: /mnt/data/cintx_phase_04_bench_report.json
+  CINTX_BENCH_REPORT_FALLBACK: /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
+  CINTX_RUNTIME_DIAGNOSTICS_REQUIRED: /mnt/data/cintx_phase_04_runtime_diagnostics.json
+  CINTX_RUNTIME_DIAGNOSTICS_FALLBACK: /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
+
 jobs:
   helper_parity_release_gate:
     name: Release helper parity suite (COMP-02)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,6 +51,7 @@ jobs:
   manifest_release_gate:
     name: Release manifest governance suite (COMP-03, VERI-01)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,6 +71,7 @@ jobs:
   oracle_profile_release_gate:
     name: Release oracle/profile matrix gate (COMP-04, VERI-02)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,6 +91,7 @@ jobs:
   optimizer_equivalence_release_gate:
     name: Release optimizer equivalence gate (RAW-04, VERI-03)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,8 +107,9 @@ jobs:
 
   gpu_bench_required:
     name: gpu_bench_required
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, gpu]
     continue-on-error: false
+    timeout-minutes: 90
     env:
       CINTX_ARTIFACT_DIR: /mnt/data/cintx/release-gpu-bench/${{ github.run_id }}
       CINTX_BENCH_PROFILE: required-release
@@ -123,13 +139,59 @@ jobs:
         run: |
           mkdir -p /mnt/data
           mkdir -p "${CINTX_ARTIFACT_DIR}"
-          rm -f /mnt/data/cintx_phase_04_bench_rows.jsonl
+          rm -f "${CINTX_BENCH_ROWS_REQUIRED}"
 
       - name: Run GPU benchmark suites (required)
         run: |
           # Keep commands aligned with ci/gpu-bench.yml policy template.
           cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
           cargo run --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
+
+      - name: Validate release gate policy invariants
+        run: |
+          workflow_file=".github/workflows/compat-governance-release.yml"
+
+          assert_contains() {
+            local needle="$1"
+            local label="$2"
+            if grep -Fq "${needle}" "${workflow_file}"; then
+              echo "policy invariant satisfied: ${label}"
+              return 0
+            fi
+            echo "policy invariant missing: ${label} (${needle})" >&2
+            return 1
+          }
+
+          assert_contains "runs-on: [self-hosted, linux, x64, gpu]" "required gpu runner labels"
+          assert_contains "continue-on-error: false" "required blocking policy"
+          assert_contains "bench-report --thresholds ci/benchmark-thresholds.json --mode enforce" "required benchmark enforcement command"
+          assert_contains "Validate bench artifact contract" "artifact contract validation step"
+          assert_contains "/mnt/data/cintx_phase_04_bench_report.json" "required bench report path"
+          assert_contains "/mnt/data/cintx_phase_04_runtime_diagnostics.json" "required runtime diagnostics path"
+          assert_contains "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json" "fallback bench report path"
+          assert_contains "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json" "fallback runtime diagnostics path"
+          assert_contains "actions/upload-artifact@v4" "artifact upload action"
+
+      - name: Validate bench artifact contract
+        run: |
+          validate_artifact() {
+            local required_path="$1"
+            local fallback_path="$2"
+            local label="$3"
+            if [ -f "${required_path}" ]; then
+              echo "${label}: found required artifact at ${required_path}"
+              return 0
+            fi
+            if [ -f "${fallback_path}" ]; then
+              echo "${label}: required path missing, fallback artifact present at ${fallback_path}"
+              return 0
+            fi
+            echo "${label}: missing required and fallback artifacts (${required_path}, ${fallback_path})" >&2
+            return 1
+          }
+
+          validate_artifact "${CINTX_BENCH_REPORT_REQUIRED}" "${CINTX_BENCH_REPORT_FALLBACK}" "bench_report"
+          validate_artifact "${CINTX_RUNTIME_DIAGNOSTICS_REQUIRED}" "${CINTX_RUNTIME_DIAGNOSTICS_FALLBACK}" "runtime_diagnostics"
 
       - name: Upload GPU required artifacts
         if: always()
@@ -139,9 +201,9 @@ jobs:
           if-no-files-found: warn
           path: |
             ${{ env.CINTX_ARTIFACT_DIR }}
-            /mnt/data/cintx_phase_04_bench_rows.jsonl
-            /mnt/data/cintx_phase_04_bench_report.json
-            /mnt/data/cintx_phase_04_runtime_diagnostics.json
-            /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
-            /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
+            ${{ env.CINTX_BENCH_ROWS_REQUIRED }}
+            ${{ env.CINTX_BENCH_REPORT_REQUIRED }}
+            ${{ env.CINTX_RUNTIME_DIAGNOSTICS_REQUIRED }}
+            ${{ env.CINTX_BENCH_REPORT_FALLBACK }}
+            ${{ env.CINTX_RUNTIME_DIAGNOSTICS_FALLBACK }}
             target/criterion
