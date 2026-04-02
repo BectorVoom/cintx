@@ -13,7 +13,7 @@ pub mod transform;
 pub use capability::{
     CapabilityReason, WgpuCapabilitySnapshot, WgpuPreflightReport, capability_fingerprint,
 };
-pub use executor::{CUBECL_RUNTIME_PROFILE, CubeClExecutor};
+pub use executor::CubeClExecutor;
 pub use resident_cache::{DeviceResidentCache, ResidentCache};
 pub use runtime_bootstrap::bootstrap_wgpu_runtime;
 pub use specialization::{ComponentRank, SpecializationKey};
@@ -25,7 +25,7 @@ mod tests {
     fn exports_compile() {
         #[allow(unused_imports)]
         use super::{
-            CUBECL_RUNTIME_PROFILE, CapabilityReason, CubeClExecutor, DeviceResidentCache,
+            CapabilityReason, CubeClExecutor, DeviceResidentCache,
             TransferPlan, TransferWorkspaceBuffers, WgpuCapabilitySnapshot, WgpuPreflightReport,
             bootstrap_wgpu_runtime, capability, capability_fingerprint, executor, kernels,
             resident_cache, runtime_bootstrap, specialization, transfer, transform,

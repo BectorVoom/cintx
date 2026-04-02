@@ -3,7 +3,7 @@ use crate::optimizer::RawOptimizerHandle;
 use cintx_core::{
     Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple, cintxRsError,
 };
-use cintx_cubecl::{CUBECL_RUNTIME_PROFILE, CubeClExecutor};
+use cintx_cubecl::CubeClExecutor;
 use cintx_ops::resolver::{HelperKind, OperatorDescriptor, Resolver, ResolverError};
 use cintx_runtime::{
     ExecutionOptions, ExecutionPlan, HostWorkspaceAllocator, WorkspaceQuery, evaluate,
@@ -553,9 +553,8 @@ fn validate_4c1e_envelope(
     if shells.iter().any(|shell| shell.ang_momentum > 4) {
         return Err(validated_4c1e_error("max(l)>4"));
     }
-    if CUBECL_RUNTIME_PROFILE != "cpu" {
-        return Err(validated_4c1e_error("CubeCL backend must be cpu"));
-    }
+    // D-11: Validated4C1E gate requires wgpu capability — cpu-profile check removed.
+    // The executor's ensure_validated_4c1e now performs a wgpu preflight check.
 
     Ok(())
 }

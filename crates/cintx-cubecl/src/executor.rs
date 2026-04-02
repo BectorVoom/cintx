@@ -1,5 +1,6 @@
 use crate::kernels;
 use crate::resident_cache::DeviceResidentCache;
+use crate::runtime_bootstrap::bootstrap_wgpu_runtime;
 use crate::specialization::SpecializationKey;
 use crate::transfer::TransferPlan;
 use crate::transform;
@@ -8,37 +9,51 @@ use cintx_runtime::{
     BackendExecutor, ExecutionIo, ExecutionPlan, ExecutionStats, OutputOwnership, WorkspaceBytes,
 };
 
-pub const CUBECL_RUNTIME_PROFILE: &str = "cpu";
-
 #[derive(Debug, Default)]
 pub struct CubeClExecutor {
-    runtime_profile: &'static str,
     resident_cache: DeviceResidentCache,
 }
 
 impl CubeClExecutor {
     pub fn new() -> Self {
-        Self::with_runtime_profile(CUBECL_RUNTIME_PROFILE)
-    }
-
-    pub fn with_runtime_profile(runtime_profile: &'static str) -> Self {
         Self {
-            runtime_profile,
             resident_cache: DeviceResidentCache::new(),
         }
-    }
-
-    pub fn runtime_profile(&self) -> &'static str {
-        self.runtime_profile
     }
 
     pub fn resident_cache(&self) -> &DeviceResidentCache {
         &self.resident_cache
     }
 
+    /// Preflight the wgpu capability for the given plan's backend intent.
+    ///
+    /// Returns `UnsupportedApi` with a `wgpu-capability:` prefix when no adapter
+    /// is available or the adapter fails capability checks (D-01, D-02).
+    fn preflight_wgpu(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
+        let report = bootstrap_wgpu_runtime(&plan.workspace.backend_intent)?;
+        if !report.is_capable() {
+            if let Some(reason) = report.first_reason() {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: format!("wgpu-capability:{}", reason.to_reason_string()),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn ensure_validated_4c1e(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
-        if self.runtime_profile != CUBECL_RUNTIME_PROFILE {
-            return Err(validated_4c1e_error("CubeCL backend must be cpu"));
+        // D-11: Validated4C1E gate now requires wgpu capability preflight success,
+        // not a cpu-profile string check.
+        let report = bootstrap_wgpu_runtime(&plan.workspace.backend_intent)
+            .map_err(|_| validated_4c1e_error("missing_wgpu_capability: no valid wgpu adapter"))?;
+        if !report.is_capable() {
+            let reason = report
+                .first_reason()
+                .map(|r| r.to_reason_string())
+                .unwrap_or_else(|| "unknown".to_owned());
+            return Err(validated_4c1e_error(&format!(
+                "missing_wgpu_capability: {reason}"
+            )));
         }
         if !matches!(
             plan.representation,
@@ -73,15 +88,25 @@ impl CubeClExecutor {
             }
             #[cfg(not(feature = "with-4c1e"))]
             return Err(cintxRsError::UnsupportedApi {
-                requested: "4c1e requires feature `with-4c1e`".to_owned(),
+                requested: format!("unsupported_family:{canonical_family}"),
             });
         }
 
         if !kernels::supports_canonical_family(canonical_family) {
             return Err(cintxRsError::UnsupportedApi {
-                requested: format!(
-                    "CubeCL executor family {canonical_family} is not enabled in the current feature profile"
-                ),
+                requested: format!("unsupported_family:{canonical_family}"),
+            });
+        }
+
+        // Check representation support with explicit taxonomy reason (D-12).
+        if !plan
+            .descriptor
+            .entry
+            .supports_representation(plan.representation)
+        {
+            let rep = plan.representation.to_string();
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!("unsupported_representation:{rep}"),
             });
         }
 
@@ -105,6 +130,8 @@ impl BackendExecutor for CubeClExecutor {
     }
 
     fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
+        // D-01 / D-02: fail closed with capability taxonomy reason before proceeding.
+        self.preflight_wgpu(plan)?;
         self.ensure_supported_family(plan)?;
         Ok(WorkspaceBytes(plan.workspace.bytes))
     }
@@ -114,9 +141,12 @@ impl BackendExecutor for CubeClExecutor {
         plan: &ExecutionPlan<'_>,
         io: &mut ExecutionIo<'_>,
     ) -> Result<ExecutionStats, cintxRsError> {
+        // D-01 / D-02: fail closed at execute entry.
+        self.preflight_wgpu(plan)?;
         self.ensure_supported_family(plan)?;
         io.ensure_output_contract()?;
 
+        // D-06: ownership contract must be enforced before and after kernel dispatch.
         if io.backend_output_ownership() != OutputOwnership::BackendStagingOnly {
             return Err(cintxRsError::ChunkPlanFailed {
                 from: "cubecl_executor",
@@ -132,18 +162,25 @@ impl BackendExecutor for CubeClExecutor {
 
         let specialization = SpecializationKey::from_plan(plan);
         let _resident = self.resident_cache.resident_metadata(
-            self.runtime_profile,
+            plan.workspace.backend_intent.selector.as_str(),
             plan.basis,
             plan.representation,
         );
         let transfer_plan = TransferPlan::from_plan(plan, io.chunk())?;
         transfer_plan.ensure_output_contract()?;
-        let transfer = transfer_plan.stage_device_buffers(self.runtime_profile)?;
+
+        // Include adapter identifier from preflight in device OOM mapping (D-04).
+        let adapter_label = plan.workspace.backend_intent.selector.as_str();
+        let transfer = transfer_plan.stage_device_buffers(adapter_label)?;
+
+        // D-05 / D-07: real CubeCL launch path — kernel writes into staging via launch/readback.
+        // The staging slice is obtained here and passed to the representation transform step.
         let mut stats = kernels::launch_family(plan, &specialization, &transfer_plan)?;
 
-        // Phase 2 keeps backend output as staging only; compat owns final flat writes.
+        // D-06: backend output stays staging-only; compat owns final flat writes.
         let staging = io.staging_output();
-        fill_cartesian_staging(staging);
+        // No synthetic fill: staging retains the kernel readback values (zeros from stub kernels
+        // or real integral values when GPU kernels are implemented in later plans).
         transform::apply_representation_transform(plan.representation, staging)?;
 
         stats.peak_workspace_bytes = stats
@@ -151,12 +188,6 @@ impl BackendExecutor for CubeClExecutor {
             .max(transfer.workspace_bytes.max(io.workspace().len()));
         stats.planned_batches = io.chunk().work_unit_count.max(1);
         Ok(stats)
-    }
-}
-
-fn fill_cartesian_staging(staging: &mut [f64]) {
-    for (idx, value) in staging.iter_mut().enumerate() {
-        *value = (idx + 1) as f64;
     }
 }
 
@@ -225,13 +256,6 @@ mod tests {
         .unwrap();
         let query = Box::leak(Box::new(query));
         ExecutionPlan::new(OperatorId::new(operator_id), rep, basis, shells, query).unwrap()
-    }
-
-    #[test]
-    fn runtime_profile_defaults_to_cpu() {
-        let executor = CubeClExecutor::new();
-        assert_eq!(executor.runtime_profile(), "cpu");
-        assert_eq!(CUBECL_RUNTIME_PROFILE, "cpu");
     }
 
     #[test]
@@ -360,8 +384,10 @@ mod tests {
     }
 
     /// D-05: Executor must not fill staging with monotonically increasing integers.
-    /// After removing fill_cartesian_staging, staging remains zero after execute() on
-    /// Cart representation (no transform means zeros stay zeros).
+    ///
+    /// When a GPU adapter is available, staging remains zero (no synthetic fill).
+    /// When no GPU is available, execute returns a typed wgpu-capability error
+    /// (fail-closed per D-01/D-02) — staging is never touched by a synthetic fill.
     #[test]
     fn executor_no_longer_uses_monotonic_stub_sequence() {
         let executor = CubeClExecutor::new();
@@ -375,11 +401,25 @@ mod tests {
         )
         .unwrap();
         let mut io = ExecutionIo::new(&chunk, &mut staging, &mut workspace, plan.dispatch).unwrap();
-        executor.execute(&plan, &mut io).unwrap();
-        // The old stub filled staging with 1.0, 2.0, 3.0, ... If that behavior
-        // is still present, this test fails.  Post-rewrite, staging stays 0.0.
-        for &val in staging.iter() {
-            assert_eq!(val, 0.0, "stub monotonic fill must be removed; staging must stay 0.0");
+        match executor.execute(&plan, &mut io) {
+            Ok(_stats) => {
+                // GPU available: staging must remain 0.0, not 1.0/2.0/... from synthetic fill.
+                for &val in staging.iter() {
+                    assert_eq!(val, 0.0, "stub monotonic fill must be removed; staging must stay 0.0");
+                }
+            }
+            Err(cintxRsError::UnsupportedApi { requested }) => {
+                // No GPU: fail-closed means staging was never touched by any fill.
+                assert!(
+                    requested.starts_with("wgpu-capability:"),
+                    "no-GPU error must carry 'wgpu-capability:' prefix: {requested}"
+                );
+                // Staging must still be zero (no synthetic fill occurred before error).
+                for &val in staging.iter() {
+                    assert_eq!(val, 0.0, "staging must be untouched when execute fails early");
+                }
+            }
+            Err(other) => panic!("Unexpected error from execute: {other:?}"),
         }
     }
 
@@ -387,10 +427,12 @@ mod tests {
     /// a real kernel launch path instead of hardcoded values.
     ///
     /// D-01 / D-02: wgpu bootstrap is called at execute entry; a report with
-    /// capability metadata must be accessible (fingerprint non-zero).
+    /// capability metadata must be accessible (fingerprint non-zero).  On
+    /// environments without a GPU adapter the call returns a typed
+    /// `wgpu-capability:missing_adapter` error (fail-closed, not a panic).
     ///
-    /// D-06: Ownership contract checks must still enforce BackendStagingOnly and
-    /// CompatFinalWrite after real kernel launch path runs.
+    /// D-06: On GPU environments, ownership contract checks enforce BackendStagingOnly
+    /// and CompatFinalWrite after real kernel launch path runs.
     #[test]
     fn execute_uses_wgpu_bootstrap_and_preserves_output_contract() {
         let executor = CubeClExecutor::new();
@@ -404,28 +446,39 @@ mod tests {
         )
         .unwrap();
         let mut io = ExecutionIo::new(&chunk, &mut staging, &mut workspace, plan.dispatch).unwrap();
-        let stats = executor.execute(&plan, &mut io).unwrap();
-        // D-07: metrics must reflect actual kernel path
-        assert!(stats.transfer_bytes > 0, "transfer_bytes must be >0 after execute");
-        assert!(stats.chunk_count >= 1, "chunk_count must be >=1 after execute");
-        // D-06: ownership contracts must remain enforced
-        assert_eq!(
-            io.backend_output_ownership(),
-            OutputOwnership::BackendStagingOnly,
-            "Backend output ownership must remain BackendStagingOnly"
-        );
-        assert_eq!(
-            io.final_write_ownership(),
-            OutputOwnership::CompatFinalWrite,
-            "Final write ownership must remain CompatFinalWrite"
-        );
+        match executor.execute(&plan, &mut io) {
+            Ok(stats) => {
+                // GPU available: D-07 — metrics must reflect actual kernel path.
+                assert!(stats.transfer_bytes > 0, "transfer_bytes must be >0 after execute");
+                assert!(stats.chunk_count >= 1, "chunk_count must be >=1 after execute");
+                // D-06: ownership contracts must remain enforced.
+                assert_eq!(
+                    io.backend_output_ownership(),
+                    OutputOwnership::BackendStagingOnly,
+                    "Backend output ownership must remain BackendStagingOnly"
+                );
+                assert_eq!(
+                    io.final_write_ownership(),
+                    OutputOwnership::CompatFinalWrite,
+                    "Final write ownership must remain CompatFinalWrite"
+                );
+            }
+            Err(cintxRsError::UnsupportedApi { requested }) => {
+                // No GPU adapter in CI environment: D-01/D-02 — fail-closed with typed reason.
+                assert!(
+                    requested.starts_with("wgpu-capability:"),
+                    "no-GPU error must carry 'wgpu-capability:' prefix: {requested}"
+                );
+            }
+            Err(other) => panic!("Unexpected error from execute: {other:?}"),
+        }
     }
 
     #[test]
     fn representation_transforms_keep_staging_only_contract() {
         let executor = CubeClExecutor::new();
 
-        // Cart path: identity transform over deterministic cart staging seed.
+        // Cart path: identity transform over kernel-output staging values.
         let cart_basis = Box::leak(Box::new(sample_basis(Representation::Cart, 2)));
         let cart_plan = build_plan(cart_basis, 0, Representation::Cart, 2);
         let cart_chunk = cart_plan.workspace.chunks[0].clone();
@@ -442,19 +495,19 @@ mod tests {
             cart_plan.dispatch,
         )
         .unwrap();
-        executor.execute(&cart_plan, &mut cart_io).unwrap();
-        assert_eq!(
-            cart_io.backend_output_ownership(),
-            OutputOwnership::BackendStagingOnly
-        );
-        assert_eq!(
-            cart_io.final_write_ownership(),
-            OutputOwnership::CompatFinalWrite
-        );
-        // Cart: identity transform — staging stays at kernel-output values (zeros for stub kernels).
-        // We no longer assert specific values from a synthetic fill here.
+        match executor.execute(&cart_plan, &mut cart_io) {
+            Ok(_) => {
+                // GPU available: ownership must be preserved, staging untouched by synthetic fill.
+                assert_eq!(cart_io.backend_output_ownership(), OutputOwnership::BackendStagingOnly);
+                assert_eq!(cart_io.final_write_ownership(), OutputOwnership::CompatFinalWrite);
+            }
+            Err(cintxRsError::UnsupportedApi { requested }) if requested.starts_with("wgpu-capability:") => {
+                // No GPU: correct fail-closed behavior.
+            }
+            Err(other) => panic!("Unexpected error: {other:?}"),
+        }
 
-        // Spheric path: c2s transform mutates staging values.
+        // Spheric path: c2s transform applied, ownership contract preserved.
         let sph_basis = Box::leak(Box::new(sample_basis(Representation::Spheric, 2)));
         let sph_plan = build_plan(sph_basis, 1, Representation::Spheric, 2);
         let sph_chunk = sph_plan.workspace.chunks[0].clone();
@@ -471,16 +524,14 @@ mod tests {
             sph_plan.dispatch,
         )
         .unwrap();
-        executor.execute(&sph_plan, &mut sph_io).unwrap();
-        // Spheric path: c2s transform applied, ownership contract preserved.
-        assert_eq!(
-            sph_io.backend_output_ownership(),
-            OutputOwnership::BackendStagingOnly
-        );
-        assert_eq!(
-            sph_io.final_write_ownership(),
-            OutputOwnership::CompatFinalWrite
-        );
+        match executor.execute(&sph_plan, &mut sph_io) {
+            Ok(_) => {
+                assert_eq!(sph_io.backend_output_ownership(), OutputOwnership::BackendStagingOnly);
+                assert_eq!(sph_io.final_write_ownership(), OutputOwnership::CompatFinalWrite);
+            }
+            Err(cintxRsError::UnsupportedApi { requested }) if requested.starts_with("wgpu-capability:") => {}
+            Err(other) => panic!("Unexpected error: {other:?}"),
+        }
 
         // Spinor path: interleaved doubles keep real/imag pair semantics.
         let spinor_basis = Box::leak(Box::new(sample_basis(Representation::Spinor, 2)));
@@ -499,9 +550,15 @@ mod tests {
             spinor_plan.dispatch,
         )
         .unwrap();
-        executor.execute(&spinor_plan, &mut spinor_io).unwrap();
-        for pair in spinor_staging.chunks_exact(2) {
-            assert!((pair[0] + pair[1]).abs() < f64::EPSILON);
+        match executor.execute(&spinor_plan, &mut spinor_io) {
+            Ok(_) => {
+                // Spinor: interleaved doubles keep real/imag pair semantics (zeros sum to zero).
+                for pair in spinor_staging.chunks_exact(2) {
+                    assert!((pair[0] + pair[1]).abs() < f64::EPSILON);
+                }
+            }
+            Err(cintxRsError::UnsupportedApi { requested }) if requested.starts_with("wgpu-capability:") => {}
+            Err(other) => panic!("Unexpected error: {other:?}"),
         }
     }
 }
