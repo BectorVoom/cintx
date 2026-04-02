@@ -10,7 +10,7 @@ pub mod transfer;
 pub mod transform;
 
 pub use backend::ResolvedBackend;
-pub use executor::{CUBECL_RUNTIME_PROFILE, CubeClExecutor};
+pub use executor::{BackendCache, CUBECL_RUNTIME_PROFILE, CubeClExecutor, check_shader_f64_in_features};
 pub use resident_cache::{DeviceResidentCache, ResidentCache};
 pub use specialization::{ComponentRank, SpecializationKey};
 pub use transfer::{TransferPlan, TransferWorkspaceBuffers};
@@ -21,7 +21,7 @@ mod tests {
     fn exports_compile() {
         #[allow(unused_imports)]
         use super::{
-            CUBECL_RUNTIME_PROFILE, CubeClExecutor, DeviceResidentCache, ResolvedBackend,
+            BackendCache, CUBECL_RUNTIME_PROFILE, CubeClExecutor, DeviceResidentCache, ResolvedBackend,
             TransferPlan, TransferWorkspaceBuffers, backend, executor, kernels, resident_cache,
             specialization, transfer, transform,
         };
