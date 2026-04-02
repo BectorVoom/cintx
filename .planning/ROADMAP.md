@@ -95,7 +95,7 @@ Plans:
 | Phase 4: Verification & Release Automation | 7/7 | Complete | 2026-03-31 |
 | Phase 5: Re-implement detailed-design GPU path | 5/5 | Complete | 2026-04-02 |
 | Phase 6: Fix raw eval staging & fingerprint | 0/2 | Not started | - |
-| Phase 7: Executor Infrastructure Rewrite | 0/3 | Not started | - |
+| Phase 7: Executor Infrastructure Rewrite | 1/3 | In Progress | 2026-04-02 |
 | Phase 8: Gaussian Primitive Infrastructure and Boys Function | 0/TBD | Not started | - |
 | Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 0/TBD | Not started | - |
 | Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/TBD | Not started | - |
