@@ -6,7 +6,7 @@ use cintx_core::{
 use cintx_cubecl::{CUBECL_RUNTIME_PROFILE, CubeClExecutor};
 use cintx_ops::resolver::{HelperKind, OperatorDescriptor, Resolver, ResolverError};
 use cintx_runtime::{
-    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
+    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan,
     HostWorkspaceAllocator, WorkspaceAllocator, WorkspaceQuery, schedule_chunks, query_workspace,
 };
 use std::mem::size_of;
@@ -389,7 +389,6 @@ pub unsafe fn eval_raw(
     cache: Option<&mut [f64]>,
 ) -> Result<RawEvalSummary, cintxRsError> {
     let prepared = prepare_raw_call(api, dims, shls, atm, bas, env, opt)?;
-    let required_elements = prepared.compat_dims.required_elements()?;
 
     if let Some(out_buffer) = out.as_ref() {
         prepared.compat_dims.ensure_output_len(out_buffer.len())?;

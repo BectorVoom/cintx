@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Completed 04-verification-release-automation-07-PLAN.md
-last_updated: "2026-03-29T02:02:13.306Z"
+status: Ready to execute
+stopped_at: Completed 07-executor-infrastructure-rewrite-07-03-PLAN.md
+last_updated: "2026-04-02T23:11:24.885Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Plan: 2 of 7
 | Phase 04-verification-release-automation P05 | 2min | 1 tasks | 1 files |
 | Phase 04-verification-release-automation P06 | 2 min | 2 tasks | 2 files |
 | Phase 04-verification-release-automation P07 | 3 min | 2 tasks | 1 files |
+| Phase 07-executor-infrastructure-rewrite P03 | 6 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Added Validate bench artifact contract checks so bench report and runtime diagnostics must exist in /mnt/data or /tmp/cintx_artifacts before artifact upload.
 - [Phase 04-verification-release-automation]: Centralize required and fallback artifact paths in workflow-level env variables to reduce silent drift risk.
 - [Phase 04-verification-release-automation]: Add a dedicated release policy invariant step that inspects committed workflow markers and fails closed.
+- [Phase 07-executor-infrastructure-rewrite]: Replicate chunk loop at caller level to own staging buffer and read executor output directly without RecordingExecutor
+- [Phase 07-executor-infrastructure-rewrite]: Fix incorrect all-zeros test assertions in compat/capi that were artifacts of broken zero-filled staging path
 
 ### Pending Todos
 
@@ -150,6 +153,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-29T02:02:13.303Z
-Stopped at: Completed 04-verification-release-automation-07-PLAN.md
+Last session: 2026-04-02T23:11:24.882Z
+Stopped at: Completed 07-executor-infrastructure-rewrite-07-03-PLAN.md
 Resume file: None
