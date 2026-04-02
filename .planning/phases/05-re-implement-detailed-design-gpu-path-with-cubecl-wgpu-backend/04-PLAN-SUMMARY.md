@@ -165,3 +165,14 @@ None in plan 04 files. The kernel launch functions in `cintx-cubecl` still use s
 ---
 *Phase: 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend*
 *Completed: 2026-04-02*
+
+## Self-Check: PASSED
+
+- FOUND: 04-PLAN-SUMMARY.md
+- FOUND: crates/cintx-rs/src/api.rs
+- FOUND: crates/cintx-compat/src/raw.rs
+- FOUND: b61f913 (Task 1 - stub removal + backend contract fields)
+- FOUND: 00ec490 (Task 2 - anti-pseudo and taxonomy tests)
+- FOUND: 66957e7 (docs - SUMMARY + STATE + ROADMAP)
+- 13 cintx-rs tests pass
+- 30 cintx-compat tests pass
