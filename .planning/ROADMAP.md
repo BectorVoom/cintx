@@ -90,7 +90,7 @@ Plans:
 | Phase 3: Safe Surface, C ABI Shim & Optional Families | 6/6 | Complete | 2026-03-28 |
 | Phase 4: Verification & Release Automation | 7/7 | Complete | 2026-03-31 |
 | Phase 5: Re-implement detailed-design GPU path | 5/5 | Complete | 2026-04-02 |
-| Phase 6: Fix raw eval staging & fingerprint | 0/0 | Not started | - |
+| Phase 6: Fix raw eval staging & fingerprint | 0/2 | Not started | - |
 
 ### Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
 
@@ -112,3 +112,8 @@ Plans:
 **Requirements**: COMP-01, COMP-04, COMP-05, EXEC-02, EXEC-04, EXEC-05, VERI-01
 **Depends on:** Phase 5
 **Gap Closure:** Closes gaps from v1.0 milestone audit
+**Plans:** 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Fix eval_raw() staging retrieval with RecordingExecutor and propagate wgpu fingerprint in compat raw and safe facade paths.
+- [ ] 06-02-PLAN.md — Add regression tests for staging retrieval, fingerprint propagation, base family coverage, and deterministic output.
