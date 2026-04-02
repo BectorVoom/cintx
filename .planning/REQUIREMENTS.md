@@ -124,13 +124,30 @@
 | VERI-02 | Phase 4 | Complete |
 | VERI-03 | Phase 4 | Complete |
 | VERI-04 | Phase 4 | Complete |
+| EXEC-06 | Phase 7 | Pending |
+| EXEC-07 | Phase 7 | Pending |
+| EXEC-08 | Phase 7 | Pending |
+| EXEC-09 | Phase 7 | Pending |
+| VERI-06 | Phase 7 | Pending |
+| MATH-01 | Phase 8 | Pending |
+| MATH-02 | Phase 8 | Pending |
+| MATH-03 | Phase 8 | Pending |
+| MATH-04 | Phase 8 | Pending |
+| KERN-01 | Phase 9 | Pending |
+| KERN-06 | Phase 9 | Pending |
+| VERI-05 | Phase 9 | Pending |
+| KERN-02 | Phase 10 | Pending |
+| KERN-03 | Phase 10 | Pending |
+| KERN-04 | Phase 10 | Pending |
+| KERN-05 | Phase 10 | Pending |
+| VERI-07 | Phase 10 | Pending |
 
 **Coverage:**
 - v1.0 requirements: 20 total (all complete)
 - v1.1 requirements: 17 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 17
+- Mapped to phases: 17 (Phases 7-10)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-04-02 after v1.1 milestone requirements definition*
+*Last updated: 2026-04-02 after v1.1 roadmap creation*

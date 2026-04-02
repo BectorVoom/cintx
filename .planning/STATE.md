@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: CubeCL Direct Client API & Real Kernel Compute
-status: Defining requirements
+status: Roadmap defined
 stopped_at: null
 last_updated: "2026-04-02T12:00:00.000Z"
 progress:
-  total_phases: 0
-  completed_phases: 0
+  total_phases: 10
+  completed_phases: 6
   total_plans: 0
   completed_plans: 0
 ---
@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Milestone v1.1 — Defining requirements
+**Current focus:** Milestone v1.1 — Roadmap defined; ready for Phase 7
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-02 — Milestone v1.1 started
+Status: Roadmap defined
+Last activity: 2026-04-02 — v1.1 roadmap created (Phases 7-10)
 
 ## Performance Metrics
 
@@ -168,6 +168,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 ### Roadmap Evolution
 
 - Phase 5 added: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
+- v1.1 roadmap created: Phases 7-10 (executor rewrite, math infrastructure, 1e kernel, 2e+ kernels and oracle gate)
 
 ### Pending Todos
 
@@ -179,6 +180,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-02T11:42:57.448Z
-Stopped at: Completed 06-fix-raw-eval-staging-and-capability-fingerprint-02-PLAN.md
+Last session: 2026-04-02T12:00:00.000Z
+Stopped at: v1.1 roadmap written (Phases 7-10)
 Resume file: None

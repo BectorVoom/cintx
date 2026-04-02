@@ -7,6 +7,10 @@
 - [x] **Phase 4: Verification & Release Automation** - Close the manifest/oracle loop with CI, benchmarks, and diagnostics that block regressions before release.
 - [x] **Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)** - Replace synthetic execution with a real wgpu-backed CubeCL path and capability-aware fail-closed verification.
 - [ ] **Phase 6: Fix raw eval staging retrieval and capability fingerprint propagation** - Close audit gaps: wire eval_raw() staging output retrieval, propagate wgpu fingerprint into capability token, add regression tests.
+- [ ] **Phase 7: Executor Infrastructure Rewrite** - Replace executor internals with direct CubeCL client API, introduce ResolvedBackend dispatch, CPU backend feature, and f64 strategy decision — prerequisite gate for all real kernel work.
+- [ ] **Phase 8: Gaussian Primitive Infrastructure and Boys Function** - Build shared math foundation as `#[cube]` functions: Boys function, Rys roots/weights, primitive pair evaluation, and Obara-Saika recurrence.
+- [ ] **Phase 9: 1e Real Kernel and Cart-to-Sph Transform** - Implement real overlap, kinetic, and nuclear attraction kernels with correct Condon-Shortley c2s transform, validating the end-to-end compute pipeline.
+- [ ] **Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure** - Implement all remaining integral family kernels and close the oracle parity gate for all five base families, completing v1.1.
 
 ## Phase Details
 
@@ -91,6 +95,10 @@ Plans:
 | Phase 4: Verification & Release Automation | 7/7 | Complete | 2026-03-31 |
 | Phase 5: Re-implement detailed-design GPU path | 5/5 | Complete | 2026-04-02 |
 | Phase 6: Fix raw eval staging & fingerprint | 0/2 | Not started | - |
+| Phase 7: Executor Infrastructure Rewrite | 0/TBD | Not started | - |
+| Phase 8: Gaussian Primitive Infrastructure and Boys Function | 0/TBD | Not started | - |
+| Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 0/TBD | Not started | - |
+| Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/TBD | Not started | - |
 
 ### Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
 
@@ -117,3 +125,53 @@ Plans:
 Plans:
 - [x] 06-01-PLAN.md — Fix eval_raw() staging retrieval with RecordingExecutor and propagate wgpu fingerprint in compat raw and safe facade paths.
 - [ ] 06-02-PLAN.md — Add regression tests for staging retrieval, fingerprint propagation, base family coverage, and deterministic output.
+
+---
+
+## v1.1 Milestone: CubeCL Direct Client API & Real Kernel Compute
+
+### Phase 7: Executor Infrastructure Rewrite
+**Goal**: Executor internals use CubeCL client API directly, with ResolvedBackend dispatch between wgpu and CPU arms, and the f64 precision strategy resolved before any real kernel is written.
+**Depends on**: Phase 6
+**Requirements**: EXEC-06, EXEC-07, EXEC-08, EXEC-09, VERI-06
+**Success Criteria** (what must be TRUE):
+  1. Executor allocates and reads device buffers via `client.create()`, `client.empty()`, and `client.read()` — the stub host-side probe path is gone from `cintx-cubecl`.
+  2. `ResolvedBackend` enum dispatches kernel launches to either a wgpu or CPU CubeCL runtime arm; backend selection is determined by `BackendIntent` at executor init time.
+  3. `RecordingExecutor` is deleted from `cintx-compat` and `cintx-rs`; staging output flows directly from the executor's `client.read()` result into `io.staging_output()`.
+  4. CPU backend is enabled via `cpu = ["cubecl/cpu"]` feature in `cintx-cubecl` and oracle parity tests execute without GPU hardware under `--features cpu`.
+  5. f64 strategy is documented and enforced: oracle parity tests run against the CPU backend; wgpu path gates on `SHADER_F64` availability and returns `UnsupportedApi` when absent.
+**Plans**: TBD
+
+### Phase 8: Gaussian Primitive Infrastructure and Boys Function
+**Goal**: All shared math required by integral kernels exists as validated `#[cube]` functions, confirmed against libcint reference values before any kernel consumes them.
+**Depends on**: Phase 7
+**Requirements**: MATH-01, MATH-02, MATH-03, MATH-04
+**Success Criteria** (what must be TRUE):
+  1. Boys function `Fm(x, m)` produces values matching `libcint-master/src/fmt.c` reference to within 1e-12 atol across the full domain used by 1e and 2e families, using upward recurrence for small `x` and asymptotic expansion for large `x`.
+  2. Gaussian product center and pair data (`pdata`) computation produces correct overlap distribution exponents, centers, and pair weights for two-center and four-center shell pairs.
+  3. Rys quadrature roots and weights match libcint `polyfits.c` reference coefficients for all quadrature degrees needed by 2e/2c2e/3c2e, with explicit coverage bounds documented.
+  4. Obara-Saika horizontal and vertical recurrence `#[cube]` functions compile and link from inside kernel functions without E0433 errors, and produce correct auxiliary integrals for d-function test cases.
+**Plans**: TBD
+
+### Phase 9: 1e Real Kernel and Cart-to-Sph Transform
+**Goal**: Users can execute real overlap, kinetic, and nuclear attraction evaluations that produce libcint-compatible spherical outputs, validating the entire compute pipeline end-to-end.
+**Depends on**: Phase 8
+**Requirements**: KERN-01, KERN-06, VERI-05
+**Success Criteria** (what must be TRUE):
+  1. `int1e_ovlp_sph` evaluation produces non-zero output values matching upstream libcint 6.1.3 to within atol 1e-11 / rtol 1e-9 for a standard H2O STO-3G test case under the CPU backend.
+  2. `int1e_kin_sph` and `int1e_nuc_sph` evaluations pass oracle parity for the same test case at the same tolerances.
+  3. Cart-to-sph transform uses real Condon-Shortley coefficients for all angular momenta up to g-function (l=4); staging buffer sizing is updated to reflect the correct spherical component count (5 for d-shell, not 6).
+  4. Oracle parity CI gate for the 1e family passes under `--features cpu` with `mismatch_count == 0`.
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure
+**Goal**: All five base integral families produce real libcint-compatible values and the oracle parity gate closes across the full v1.1 compatibility matrix, completing the milestone.
+**Depends on**: Phase 9
+**Requirements**: KERN-02, KERN-03, KERN-04, KERN-05, VERI-05, VERI-07
+**Success Criteria** (what must be TRUE):
+  1. `int2e_sph` (four-center ERI) evaluation produces non-zero Rys quadrature results matching upstream libcint 6.1.3 to within atol 1e-12 / rtol 1e-10 for an H2O cc-pVDZ test case under the CPU backend.
+  2. `int2c2e_sph`, `int3c1e_sph`, and `int3c2e_sph` evaluations pass oracle parity at their respective family tolerances (2c2e atol 1e-9, 3c1e atol 1e-7, 3c2e atol 1e-9).
+  3. Oracle parity CI gate reports `mismatch_count == 0` for all five base families across all required profiles (base, with-f12, with-4c1e) under `--features cpu`.
+  4. The two v1.0 human UAT items are resolved: `eval_raw()` returns non-zero values for a real basis set call, and the C ABI shim returns non-error status on a real GPU evaluation.
+**Plans**: TBD
