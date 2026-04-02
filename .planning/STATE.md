@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Milestone complete
-stopped_at: Completed 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend-04-PLAN.md
-last_updated: "2026-04-02T09:34:02.483Z"
+status: Ready to execute
+stopped_at: Completed 06-fix-raw-eval-staging-and-capability-fingerprint-01-PLAN.md
+last_updated: "2026-04-02T11:34:02.849Z"
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
-  total_plans: 27
-  completed_plans: 28
+  total_plans: 29
+  completed_plans: 29
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 05 — re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend
+**Current focus:** Phase 06 — fix-raw-eval-staging-and-capability-fingerprint
 
 ## Current Position
 
-Phase: 05
-Plan: Not started
+Phase: 06 (fix-raw-eval-staging-and-capability-fingerprint) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Plan: Not started
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P02 | 7 | 2 tasks | 4 files |
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P03 | 29 | 2 tasks | 3 files |
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P04 | 25 | 2 tasks | 4 files |
+| Phase 06-fix-raw-eval-staging-and-capability-fingerprint P01 | 8 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Add cintx-cubecl as direct dep in cintx-rs so safe facade imports CubeClExecutor without indirection
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: WorkspaceExecutionToken clones backend_intent and backend_capability_token at query time for drift detection at evaluate time
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Tests for eval/evaluate paths accept wgpu-capability fail-closed errors so CI passes without GPU
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Scope RecordingExecutor locally in raw.rs rather than sharing — avoids coupling cintx-compat internals to cintx-rs internal pattern
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: execution_options_from_opt returns Result<ExecutionOptions, cintxRsError> so wgpu bootstrap failures propagate cleanly to all callers
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Bootstrap-before-query pattern: always call bootstrap_wgpu_runtime before runtime_query_workspace to ensure planning_matches has a real fingerprint anchor
 
 ### Roadmap Evolution
 
@@ -170,6 +174,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-02T09:22:33.494Z
-Stopped at: Completed 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend-04-PLAN.md
+Last session: 2026-04-02T11:34:02.846Z
+Stopped at: Completed 06-fix-raw-eval-staging-and-capability-fingerprint-01-PLAN.md
 Resume file: None

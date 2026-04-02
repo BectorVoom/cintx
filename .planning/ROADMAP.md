@@ -112,8 +112,8 @@ Plans:
 **Requirements**: COMP-01, COMP-04, COMP-05, EXEC-02, EXEC-04, EXEC-05, VERI-01
 **Depends on:** Phase 5
 **Gap Closure:** Closes gaps from v1.0 milestone audit
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] 06-01-PLAN.md — Fix eval_raw() staging retrieval with RecordingExecutor and propagate wgpu fingerprint in compat raw and safe facade paths.
+- [x] 06-01-PLAN.md — Fix eval_raw() staging retrieval with RecordingExecutor and propagate wgpu fingerprint in compat raw and safe facade paths.
 - [ ] 06-02-PLAN.md — Add regression tests for staging retrieval, fingerprint propagation, base family coverage, and deterministic output.
