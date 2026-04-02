@@ -1104,7 +1104,9 @@ mod tests {
         assert!(query.chunk_count >= 1);
 
         let mut out = vec![99.0; 3];
-        let summary = unsafe {
+        // D-05: eval now routes through real CubeClExecutor path.
+        // Accept both GPU-success and fail-closed wgpu-capability error.
+        let result = unsafe {
             eval_raw(
                 RawApiId::INT1E_OVLP_CART,
                 Some(&mut out),
@@ -1116,11 +1118,16 @@ mod tests {
                 Some(&opt),
                 None,
             )
+        };
+        match result {
+            Ok(summary) => {
+                assert!(summary.bytes_written > 0);
+            }
+            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
+                // No GPU adapter — correct fail-closed behavior (D-01/D-02).
+            }
+            Err(other) => panic!("unexpected error from eval_raw: {other:?}"),
         }
-        .expect("eval should succeed");
-
-        assert!(summary.bytes_written > 0);
-        assert!(out.iter().all(|value| *value == 0.0));
     }
 
     #[test]
@@ -1206,7 +1213,9 @@ mod tests {
         assert_eq!(query.work_units, 3);
 
         let mut out = vec![1.0; 3];
-        let summary = unsafe {
+        // D-05: eval now routes through real CubeClExecutor path.
+        // Accept both GPU-success and fail-closed wgpu-capability error.
+        let result = unsafe {
             eval_raw(
                 RawApiId::INT3C1E_P2_CART,
                 Some(&mut out),
@@ -1218,10 +1227,16 @@ mod tests {
                 None,
                 None,
             )
+        };
+        match result {
+            Ok(summary) => {
+                assert!(summary.bytes_written > 0);
+            }
+            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
+                // No GPU adapter — correct fail-closed behavior (D-01/D-02).
+            }
+            Err(other) => panic!("unexpected error from 3c eval_raw: {other:?}"),
         }
-        .expect("3c eval should succeed when kernel support is available");
-        assert!(summary.bytes_written > 0);
-        assert!(out.iter().all(|value| *value == 0.0));
     }
 
     #[test]
@@ -1456,6 +1471,35 @@ mod tests {
         ));
     }
 
+    /// D-11: Validates that cpu-profile gate is gone from validate_4c1e_envelope.
+    /// The CPU-profile check (`CUBECL_RUNTIME_PROFILE != "cpu"`) was removed in plan 03;
+    /// this test confirms validated 4c1e envelope query succeeds without that gate.
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn validate_4c1e_envelope_no_longer_references_cpu_profile_gate() {
+        // This test would have failed before plan-03 because the cpu-profile gate
+        // blocked validation even when shells were otherwise valid.
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        // With cpu-profile gate removed, valid 4c1e inputs succeed at the envelope check.
+        let result = unsafe {
+            query_workspace_raw(
+                RawApiId::INT4C1E_CART,
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        };
+        // Query must succeed — no cpu-profile gate blocking it.
+        assert!(
+            result.is_ok(),
+            "validate_4c1e_envelope should not block valid inputs with cpu-profile gate: {:?}",
+            result.err()
+        );
+    }
+
     #[cfg(not(feature = "unstable-source-api"))]
     #[test]
     fn source_only_symbol_requires_unstable_feature() {
@@ -1477,5 +1521,133 @@ mod tests {
             cintxRsError::UnsupportedApi { requested }
                 if requested.contains("requires feature `unstable-source-api`")
         ));
+    }
+
+    /// D-16: Unsupported paths must assert taxonomy prefixes in error messages.
+    /// Tests layered compat → runtime → cubecl interaction for unsupported behavior.
+    #[test]
+    fn unsupported_behavior_reports_reason_taxonomy() {
+        let (shls_4, atm_data, bas_data, env) = RawFixture::single_atom_four_shells();
+
+        // D-16: unsupported_family taxonomy via executor supports_canonical_family.
+        // An unknown family string returns false from supports_canonical_family.
+        assert!(
+            !cintx_cubecl::kernels::supports_canonical_family("nonexistent_family"),
+            "nonexistent family must not be supported (D-16 precondition)"
+        );
+        // And the executor returns UnsupportedApi with unsupported_family: prefix for it.
+        // We verify the executor unsupported-family path via the resolve path in kernels.
+        // Since resolve_family takes an ExecutionPlan, we check via executor query_workspace.
+        // Use a real operator but query via executor with an unsupported representation
+        // by checking the ensure_supported_family path through the compat executor call.
+        // The simplest verifiable check is via the f12 cart→sph envelope text (which uses
+        // explicit unsupported taxonomy from resolve_raw_api's f12 prefix check).
+        let err_f12_cart = unsafe {
+            query_workspace_raw(
+                RawApiId::Symbol("int2e_stg_cart"),
+                None,
+                &shls_4,
+                &atm_data,
+                &bas_data,
+                &env,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(
+            matches!(&err_f12_cart, cintxRsError::UnsupportedApi { requested }
+                if requested.contains("with-f12 sph envelope")),
+            "f12 cart must report sph envelope taxonomy (D-16): {err_f12_cart:?}"
+        );
+
+        // D-16: outside Validated4C1E prefix in 4c1e envelope boundary path.
+        #[cfg(feature = "with-4c1e")]
+        {
+            let (shls_4_l5, atm_l5, mut bas_l5, env_l5) = RawFixture::single_atom_four_shells();
+            bas_l5[1] = 5; // ANG_OF = 1, max(l)>4 triggers Validated4C1E boundary
+            let err_4c1e = unsafe {
+                query_workspace_raw(
+                    RawApiId::INT4C1E_CART,
+                    None,
+                    &shls_4_l5,
+                    &atm_l5,
+                    &bas_l5,
+                    &env_l5,
+                    None,
+                )
+            }
+            .unwrap_err();
+            assert!(
+                matches!(&err_4c1e, cintxRsError::UnsupportedApi { requested }
+                    if requested.contains("outside Validated4C1E")),
+                "4c1e envelope must report 'outside Validated4C1E' taxonomy (D-16): {err_4c1e:?}"
+            );
+        }
+
+        // D-16: source-only symbol unsupported path uses explicit feature text.
+        #[cfg(not(feature = "unstable-source-api"))]
+        {
+            let err_source = unsafe {
+                query_workspace_raw(
+                    RawApiId::Symbol("int2e_ipip1_sph"),
+                    None,
+                    &shls_4,
+                    &atm_data,
+                    &bas_data,
+                    &env,
+                    None,
+                )
+            }
+            .unwrap_err();
+            assert!(
+                matches!(&err_source, cintxRsError::UnsupportedApi { requested }
+                    if requested.contains("unstable-source-api")),
+                "source-only symbol must report unstable-source-api taxonomy (D-16): {err_source:?}"
+            );
+        }
+    }
+
+    /// D-13: Layered regression covering runtime + cubecl + compat interaction paths.
+    /// Verifies that backend_intent contract propagates from compat options through runtime.
+    #[test]
+    fn backend_intent_contract_propagates_through_compat_query_path() {
+        use cintx_runtime::{BackendIntent, BackendKind};
+
+        let fixture = RawFixture::single_atom_three_shells();
+        // Query workspace with explicit backend intent in options via raw path.
+        let query = unsafe {
+            query_workspace_raw(
+                RawApiId::INT1E_OVLP_CART,
+                None,
+                &fixture.shls_2,
+                &fixture.atm,
+                &fixture.bas,
+                &fixture.env,
+                None,
+            )
+        }
+        .expect("compat query should succeed");
+
+        // The query result carries backend contract from default ExecutionOptions.
+        // D-08: planning_matches must compare backend_intent and backend_capability_token.
+        // Verify by constructing options with a drifted backend kind.
+        let mut drifted_opts = cintx_runtime::ExecutionOptions::default();
+        drifted_opts.backend_intent = BackendIntent {
+            backend: BackendKind::Cpu,
+            selector: "test".to_owned(),
+        };
+
+        // planning_matches returns false on backend drift — D-08 layered compat + runtime coverage.
+        assert!(
+            !query.planning_matches(&drifted_opts),
+            "drifted backend_intent must fail planning_matches across compat→runtime boundary (D-13)"
+        );
+
+        // Matching options must succeed.
+        let default_opts = cintx_runtime::ExecutionOptions::default();
+        assert!(
+            query.planning_matches(&default_opts),
+            "matching backend_intent must pass planning_matches"
+        );
     }
 }
