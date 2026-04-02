@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 06-fix-raw-eval-staging-and-capability-fingerprint-01-PLAN.md
-last_updated: "2026-04-02T11:34:02.849Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 06-fix-raw-eval-staging-and-capability-fingerprint-02-PLAN.md
+last_updated: "2026-04-02T11:42:57.451Z"
 progress:
   total_phases: 6
   completed_phases: 5
@@ -76,6 +76,7 @@ Plan: 2 of 2
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P03 | 29 | 2 tasks | 3 files |
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P04 | 25 | 2 tasks | 4 files |
 | Phase 06-fix-raw-eval-staging-and-capability-fingerprint P01 | 8 | 2 tasks | 2 files |
+| Phase 06-fix-raw-eval-staging-and-capability-fingerprint P02 | 4 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -159,6 +160,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Scope RecordingExecutor locally in raw.rs rather than sharing — avoids coupling cintx-compat internals to cintx-rs internal pattern
 - [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: execution_options_from_opt returns Result<ExecutionOptions, cintxRsError> so wgpu bootstrap failures propagate cleanly to all callers
 - [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Bootstrap-before-query pattern: always call bootstrap_wgpu_runtime before runtime_query_workspace to ensure planning_matches has a real fingerprint anchor
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Assert bytes_written > 0 for staging path tests — query.bytes is workspace size not output size; bytes_written is output elements × sizeof(f64)
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Use INT3C1E_P2_SPH and INT3C2E_IP1_SPH as 3c1e/3c2e regression test family representatives
 
 ### Roadmap Evolution
 
@@ -174,6 +177,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-02T11:34:02.846Z
-Stopped at: Completed 06-fix-raw-eval-staging-and-capability-fingerprint-01-PLAN.md
+Last session: 2026-04-02T11:42:57.448Z
+Stopped at: Completed 06-fix-raw-eval-staging-and-capability-fingerprint-02-PLAN.md
 Resume file: None
