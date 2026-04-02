@@ -1,3 +1,4 @@
+use crate::backend::{self, ResolvedBackend};
 use crate::kernels;
 use crate::resident_cache::DeviceResidentCache;
 use crate::specialization::SpecializationKey;
@@ -5,7 +6,8 @@ use crate::transfer::TransferPlan;
 use crate::transform;
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{
-    BackendExecutor, ExecutionIo, ExecutionPlan, ExecutionStats, OutputOwnership, WorkspaceBytes,
+    BackendExecutor, BackendIntent, ExecutionIo, ExecutionPlan, ExecutionStats, OutputOwnership,
+    WorkspaceBytes,
 };
 
 pub const CUBECL_RUNTIME_PROFILE: &str = "cpu";
@@ -139,11 +141,21 @@ impl BackendExecutor for CubeClExecutor {
         let transfer_plan = TransferPlan::from_plan(plan, io.chunk())?;
         transfer_plan.ensure_output_contract()?;
         let transfer = transfer_plan.stage_device_buffers(self.runtime_profile)?;
-        let mut stats = kernels::launch_family(plan, &specialization, &transfer_plan)?;
+
+        // Resolve the backend from the environment variable for the kernel dispatch.
+        // Plan 01: stubs ignore the backend handle; real kernels use it in Plans 09/10.
+        let backend_kind = backend::resolve_backend_kind();
+        let intent = BackendIntent {
+            backend: backend_kind,
+            selector: "auto".to_owned(),
+        };
+        let resolved = ResolvedBackend::from_intent(&intent)?;
 
         // Phase 2 keeps backend output as staging only; compat owns final flat writes.
         let staging = io.staging_output();
         fill_cartesian_staging(staging);
+
+        let mut stats = kernels::launch_family(&resolved, plan, &specialization, staging)?;
         transform::apply_representation_transform(plan.representation, staging)?;
 
         stats.peak_workspace_bytes = stats
