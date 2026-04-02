@@ -80,7 +80,10 @@ pub fn query_workspace(
         "query_workspace",
         operator = %op,
         representation = %rep,
-        profile = opts.profile_label.unwrap_or("default")
+        profile = opts.profile_label.unwrap_or("default"),
+        backend = ?opts.backend_intent.backend,
+        backend_selector = %opts.backend_intent.selector,
+        capability_fingerprint = opts.backend_capability_token.capability_fingerprint,
     );
     let _entered = span.enter();
 
@@ -144,7 +147,7 @@ pub fn evaluate(
     if !plan.workspace.planning_matches(opts) {
         return Err(cintxRsError::ChunkPlanFailed {
             from: "evaluate",
-            detail: "execution options do not match the query_workspace contract".to_owned(),
+            detail: "backend contract drift detected: execution options do not match the query_workspace contract (memory_limit, chunk_size_override, backend_intent, or backend_capability_token changed)".to_owned(),
         });
     }
 
@@ -617,5 +620,161 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn query_workspace_records_backend_contract_metadata() {
+        use crate::options::{BackendCapabilityToken, BackendIntent, BackendKind};
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            backend_intent: BackendIntent {
+                backend: BackendKind::Wgpu,
+                selector: "device:0".to_owned(),
+            },
+            backend_capability_token: BackendCapabilityToken {
+                adapter_name: "Test GPU".to_owned(),
+                backend_api: "wgpu".to_owned(),
+                capability_fingerprint: 12345,
+            },
+            ..ExecutionOptions::default()
+        };
+
+        let query = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &opts,
+        )
+        .expect("workspace query should succeed");
+
+        assert_eq!(
+            query.backend_intent, opts.backend_intent,
+            "query must carry backend_intent from opts"
+        );
+        assert_eq!(
+            query.backend_capability_token, opts.backend_capability_token,
+            "query must carry backend_capability_token from opts"
+        );
+    }
+
+    #[test]
+    fn evaluate_rejects_query_workspace_backend_intent_drift() {
+        use crate::options::{BackendIntent, BackendKind};
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let query_opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            backend_intent: BackendIntent {
+                backend: BackendKind::Wgpu,
+                selector: "auto".to_owned(),
+            },
+            ..ExecutionOptions::default()
+        };
+
+        let query = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &query_opts,
+        )
+        .expect("workspace query should succeed");
+
+        let plan = ExecutionPlan::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .expect("plan should build");
+
+        // Drift: different backend kind at evaluate time
+        let eval_opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            backend_intent: BackendIntent {
+                backend: BackendKind::Cpu,
+                selector: "auto".to_owned(),
+            },
+            ..ExecutionOptions::default()
+        };
+
+        let mut allocator = HostWorkspaceAllocator::default();
+        let backend = MockBackend { supports: true };
+        let err = evaluate(plan, &eval_opts, &mut allocator, &backend).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                cintxRsError::ChunkPlanFailed {
+                    from: "evaluate",
+                    ..
+                }
+            ),
+            "backend intent drift must fail evaluate with ChunkPlanFailed"
+        );
+    }
+
+    #[test]
+    fn evaluate_rejects_query_workspace_backend_capability_token_drift() {
+        use crate::options::BackendCapabilityToken;
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let query_opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            backend_capability_token: BackendCapabilityToken {
+                adapter_name: "GPU A".to_owned(),
+                backend_api: "wgpu".to_owned(),
+                capability_fingerprint: 100,
+            },
+            ..ExecutionOptions::default()
+        };
+
+        let query = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &query_opts,
+        )
+        .expect("workspace query should succeed");
+
+        let plan = ExecutionPlan::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .expect("plan should build");
+
+        // Drift: different capability fingerprint at evaluate time
+        let eval_opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            backend_capability_token: BackendCapabilityToken {
+                adapter_name: "GPU A".to_owned(),
+                backend_api: "wgpu".to_owned(),
+                capability_fingerprint: 999,
+            },
+            ..ExecutionOptions::default()
+        };
+
+        let mut allocator = HostWorkspaceAllocator::default();
+        let backend = MockBackend { supports: true };
+        let err = evaluate(plan, &eval_opts, &mut allocator, &backend).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                cintxRsError::ChunkPlanFailed {
+                    from: "evaluate",
+                    ..
+                }
+            ),
+            "capability token drift must fail evaluate with ChunkPlanFailed"
+        );
     }
 }
