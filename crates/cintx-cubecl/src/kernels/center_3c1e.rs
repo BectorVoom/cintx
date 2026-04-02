@@ -1,12 +1,13 @@
+use crate::backend::ResolvedBackend;
 use crate::specialization::SpecializationKey;
-use crate::transfer::TransferPlan;
 use cintx_core::cintxRsError;
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
 pub fn launch_center_3c1e(
+    backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    transfer: &TransferPlan,
+    staging: &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError> {
     if specialization.canonical_family() != "3c1e" {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -17,16 +18,18 @@ pub fn launch_center_3c1e(
             ),
         });
     }
-    transfer.ensure_output_contract()?;
-    let staging = transfer.stage_output_buffer()?;
+    // Stub: staging remains zeros; real kernel implementation comes in Phase 9/10.
+    // Suppress unused variable warning until real kernel uses backend.
+    let _ = backend;
 
+    let staging_bytes = staging.len() * std::mem::size_of::<f64>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
-        peak_workspace_bytes: transfer.workspace_bytes,
+        peak_workspace_bytes: staging_bytes,
         chunk_count: 1,
         planned_batches: 1,
-        transfer_bytes: transfer.transfer_bytes,
+        transfer_bytes: staging_bytes,
         not0: i32::from(!staging.is_empty()),
         fallback_reason: plan.workspace.fallback_reason,
     })
