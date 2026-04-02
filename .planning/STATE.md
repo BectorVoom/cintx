@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Completed 04-verification-release-automation-07-PLAN.md
-last_updated: "2026-03-29T02:02:13.306Z"
+status: Ready to execute
+stopped_at: Completed 07-executor-infrastructure-rewrite-02-PLAN.md
+last_updated: "2026-04-02T22:58:29.325Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Plan: 2 of 7
 | Phase 04-verification-release-automation P05 | 2min | 1 tasks | 1 files |
 | Phase 04-verification-release-automation P06 | 2 min | 2 tasks | 2 files |
 | Phase 04-verification-release-automation P07 | 3 min | 2 tasks | 1 files |
+| Phase 07-executor-infrastructure-rewrite P02 | 15 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Added Validate bench artifact contract checks so bench report and runtime diagnostics must exist in /mnt/data or /tmp/cintx_artifacts before artifact upload.
 - [Phase 04-verification-release-automation]: Centralize required and fallback artifact paths in workflow-level env variables to reduce silent drift risk.
 - [Phase 04-verification-release-automation]: Add a dedicated release policy invariant step that inspects committed workflow markers and fails closed.
+- [Phase 07-executor-infrastructure-rewrite]: BackendCache is a newtype wrapper that calls ResolvedBackend::from_intent on each resolve() call — defer caching live client handle to a future revision
+- [Phase 07-executor-infrastructure-rewrite]: check_shader_f64_in_features is public and factored standalone so the SHADER_F64 gate is testable without GPU hardware
+- [Phase 07-executor-infrastructure-rewrite]: Remove stage_device_buffers from execute path per EXEC-06 — staging passed directly to launch_family via io.staging_output()
 
 ### Pending Todos
 
@@ -150,6 +154,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-29T02:02:13.303Z
-Stopped at: Completed 04-verification-release-automation-07-PLAN.md
+Last session: 2026-04-02T22:58:29.322Z
+Stopped at: Completed 07-executor-infrastructure-rewrite-02-PLAN.md
 Resume file: None
