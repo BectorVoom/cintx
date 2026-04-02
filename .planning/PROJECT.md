@@ -31,7 +31,7 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 
 ## Context
 
-The project is driven by `docs/design/cintx_detailed_design.md`, which defines an implementation-ready redesign for libcint in Rust. The workspace contains the multi-crate Rust layout (`crates/`, `xtask/`, `benches/`, `ci/`) plus a vendored upstream reference in `libcint-master/`, with the design document as the source of truth for scope and release gates. Phases 1 through 3 are complete: typed domain and manifest foundations are in place, runtime/compat execution is stabilized, and the safe Rust facade plus optional C ABI shim and optional-family gates are verified. The compatibility target remains libcint 6.1.3, and the next focus is Phase 4 verification/release automation (oracle loop closure, CI gates, benchmarks, diagnostics).
+The project is driven by `docs/design/cintx_detailed_design.md`, which defines an implementation-ready redesign for libcint in Rust. The workspace contains the multi-crate Rust layout (`crates/`, `xtask/`, `benches/`, `ci/`) plus a vendored upstream reference in `libcint-master/`, with the design document as the source of truth for scope and release gates. Phases 1 through 5 are complete, and Phase 6 gap closure is done: eval_raw() now retrieves real executor staging output (RecordingExecutor pattern), wgpu bootstrap fingerprint propagates into BackendCapabilityToken for drift detection in both compat raw and safe facade paths, and 5 regression tests cover the fixes. The compatibility target remains libcint 6.1.3. All v1.0 milestone phases are complete; remaining work is GPU kernel implementation for value-level oracle parity (2 human verification items deferred until kernels produce real integrals).
 
 ## Constraints
 
@@ -70,4 +70,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after Phase 5 completion — real CubeCL/wgpu GPU execution path, typed backend contracts, capability-aware CI gates*
+*Last updated: 2026-04-02 after Phase 6 completion — eval_raw staging fix, fingerprint propagation, regression coverage for v1.0 gap closure*
