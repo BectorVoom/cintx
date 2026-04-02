@@ -40,6 +40,37 @@
 - [x] **VERI-03**: Maintainer can benchmark representative workloads and track throughput, memory, and CPU-GPU crossover regressions over time.
 - [x] **VERI-04**: Maintainer can inspect planner, chunking, transfer, fallback, and OOM behavior through structured tracing and diagnostics.
 
+## v1.1 Requirements
+
+### Executor Infrastructure
+
+- [ ] **EXEC-06**: Executor internals use CubeCL client API directly (`WgpuRuntime::client()`, `client.create()`/`client.read()`/`client.empty()`, `ArrayArg::from_raw_parts`)
+- [ ] **EXEC-07**: RecordingExecutor removed from cintx-compat and cintx-rs — real kernel values flow through `io.staging_output()` directly
+- [ ] **EXEC-08**: ResolvedBackend enum dispatches between Wgpu and Cpu runtime arms with per-arm kernel launch
+- [ ] **EXEC-09**: CPU backend enabled via `cpu = ["cubecl/cpu"]` feature in cintx-cubecl for CI oracle testing without GPU
+
+### Kernel Compute
+
+- [ ] **KERN-01**: 1e family kernels (overlap, kinetic, nuclear attraction) produce real values via `#[cube(launch)]`
+- [ ] **KERN-02**: 2e ERI kernel implements Rys quadrature with real Gaussian integral evaluation
+- [ ] **KERN-03**: 2c2e two-center two-electron kernel produces real values
+- [ ] **KERN-04**: 3c1e three-center one-electron kernel produces real values
+- [ ] **KERN-05**: 3c2e three-center two-electron kernel produces real values
+- [ ] **KERN-06**: Cart-to-sph transform implements real Condon-Shortley coefficients replacing stub blend
+
+### Math Infrastructure
+
+- [ ] **MATH-01**: Boys function implemented as `#[cube]` functions with gridded Taylor expansion uploaded to device
+- [ ] **MATH-02**: Gaussian primitive pair evaluation (overlap distribution, screening) implemented as `#[cube]` functions
+- [ ] **MATH-03**: Rys quadrature roots and weights computed on-device via polynomial fit tables
+- [ ] **MATH-04**: Obara-Saika horizontal and vertical recurrence relations implemented as `#[cube]` functions
+
+### Verification (v1.1)
+
+- [ ] **VERI-05**: Oracle parity verified per family as each kernel lands (not deferred to end)
+- [ ] **VERI-06**: f64 precision strategy resolved — CPU backend as primary oracle path; wgpu SHADER_F64 tested opportunistically
+- [ ] **VERI-07**: v1.0 human UAT items (non-zero eval_raw output, C ABI shim output on real GPU) resolved
+
 ## v2 Requirements
 
 ### Expanded Coverage
@@ -63,6 +94,11 @@
 | Public Fortran wrapper reproduction | Not part of the Rust library's migration or compatibility goals |
 | Public asynchronous API | Excluded from the initial design to keep execution, allocation, and compatibility behavior predictable |
 | Best-effort partial writes on failure | Violates the OOM-safe stop and explicit-layout contract |
+| Spinor representation kernels | Differentiator, not on critical path to oracle parity — defer to v1.2 |
+| F12/STG/YP optional family kernels | Feature-gated families, defer to v1.2 |
+| CUDA/ROCm/Metal backend implementation | Architecture supports them via ResolvedBackend, but only wgpu+cpu in v1.1 |
+| Screening/batching optimizations | Performance work after correctness is proven |
+| h-function (l>=5) angular momentum | Register pressure risk, defer until g-function validated |
 
 ## Traceability
 
@@ -90,11 +126,11 @@
 | VERI-04 | Phase 4 | Complete |
 
 **Coverage:**
-- v1 requirements: 20 total
-- Satisfied: 13
-- Pending (Phase 6 gap closure): 7
-- Unmapped: 0
+- v1.0 requirements: 20 total (all complete)
+- v1.1 requirements: 17 total
+- Mapped to phases: 0 (pending roadmap)
+- Unmapped: 17
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-04-02 after v1.0 milestone audit gap closure planning*
+*Last updated: 2026-04-02 after v1.1 milestone requirements definition*
