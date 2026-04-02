@@ -4,7 +4,9 @@ use crate::runtime_bootstrap::bootstrap_wgpu_runtime;
 use crate::specialization::SpecializationKey;
 use crate::transfer::TransferPlan;
 use crate::transform;
-use cintx_core::{Representation, cintxRsError};
+use cintx_core::cintxRsError;
+#[cfg(feature = "with-4c1e")]
+use cintx_core::Representation;
 use cintx_runtime::{
     BackendExecutor, ExecutionIo, ExecutionPlan, ExecutionStats, OutputOwnership, WorkspaceBytes,
 };
@@ -41,6 +43,7 @@ impl CubeClExecutor {
         Ok(())
     }
 
+    #[cfg(feature = "with-4c1e")]
     fn ensure_validated_4c1e(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
         // D-11: Validated4C1E gate now requires wgpu capability preflight success,
         // not a cpu-profile string check.
@@ -114,6 +117,7 @@ impl CubeClExecutor {
     }
 }
 
+#[cfg(feature = "with-4c1e")]
 fn validated_4c1e_error(reason: &str) -> cintxRsError {
     cintxRsError::UnsupportedApi {
         requested: format!("outside Validated4C1E ({reason})"),
@@ -559,6 +563,94 @@ mod tests {
             }
             Err(cintxRsError::UnsupportedApi { requested }) if requested.starts_with("wgpu-capability:") => {}
             Err(other) => panic!("Unexpected error: {other:?}"),
+        }
+    }
+
+    /// D-11: 4c1e out-of-envelope failures must reference `outside Validated4C1E` with
+    /// a capability-specific suffix when wgpu is unavailable, and must NOT reference
+    /// the old `CubeCL backend must be cpu` string.
+    ///
+    /// In environments with a GPU adapter, this test uses the l>4 envelope rejection.
+    /// In no-GPU environments, the wgpu preflight fires first with `missing_wgpu_capability`.
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn outside_validated_4c1e_requires_wgpu_capability_reason() {
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom].into_boxed_slice());
+        // l=5 shell exceeds Validated4C1E max(l)<=4 envelope.
+        let shells = Arc::from(
+            vec![
+                Arc::new(
+                    Shell::try_new(
+                        0, 5, 1, 1, 0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0, 1, 1, 1, 0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0, 1, 1, 1, 0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+                Arc::new(
+                    Shell::try_new(
+                        0, 1, 1, 1, 0,
+                        Representation::Cart,
+                        arc_f64(&[1.0]),
+                        arc_f64(&[1.0]),
+                    )
+                    .unwrap(),
+                ),
+            ]
+            .into_boxed_slice(),
+        );
+        let basis = BasisSet::try_new(atoms, shells).unwrap();
+        let basis = Box::leak(Box::new(basis));
+
+        let executor = CubeClExecutor::new();
+        let op_4c1e = Resolver::descriptor_by_symbol("int4c1e_cart")
+            .expect("4c1e descriptor should exist")
+            .id
+            .raw();
+        let plan = build_plan(basis, op_4c1e, Representation::Cart, 4);
+        let err = executor.query_workspace(&plan).unwrap_err();
+
+        // Must be UnsupportedApi with `outside Validated4C1E` prefix.
+        match err {
+            cintxRsError::UnsupportedApi { requested } => {
+                assert!(
+                    requested.contains("outside Validated4C1E"),
+                    "Error must reference 'outside Validated4C1E': {requested}"
+                );
+                // Must NOT use old cpu-profile check text.
+                assert!(
+                    !requested.contains("CubeCL backend must be cpu"),
+                    "Error must not reference old cpu-profile check: {requested}"
+                );
+                // Must carry either missing_wgpu_capability (no GPU env) or max(l)>4 (GPU env).
+                let has_wgpu_reason = requested.contains("missing_wgpu_capability");
+                let has_envelope_reason = requested.contains("max(l)>4");
+                assert!(
+                    has_wgpu_reason || has_envelope_reason,
+                    "Error must carry wgpu capability reason or l>4 envelope reason: {requested}"
+                );
+            }
+            other => panic!("Expected UnsupportedApi, got {other:?}"),
         }
     }
 }
