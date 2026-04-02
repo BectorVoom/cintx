@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend-03-PLAN.md
-last_updated: "2026-04-02T09:06:24.991Z"
+stopped_at: Completed 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend-04-PLAN.md
+last_updated: "2026-04-02T09:22:33.496Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 27
-  completed_plans: 25
+  completed_plans: 26
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 05 (re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Plan: 4 of 5
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P01 | 3 | 2 tasks | 5 files |
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P02 | 7 | 2 tasks | 4 files |
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P03 | 29 | 2 tasks | 3 files |
+| Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P04 | 25 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Gate ensure_validated_4c1e and validated_4c1e_error under cfg(feature = with-4c1e) to eliminate dead_code warnings in default builds
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: kernels::resolve_family now returns UnsupportedApi with unsupported_representation:<repr> instead of UnsupportedRepresentation struct to keep D-12 taxonomy consistent across executor and kernels
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Transfer adapter label sourced from backend_intent.selector rather than static runtime_profile string per D-04 reproducibility
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Add cintx-cubecl as direct dep in cintx-rs so safe facade imports CubeClExecutor without indirection
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: WorkspaceExecutionToken clones backend_intent and backend_capability_token at query time for drift detection at evaluate time
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Tests for eval/evaluate paths accept wgpu-capability fail-closed errors so CI passes without GPU
 
 ### Roadmap Evolution
 
@@ -166,6 +170,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-02T09:06:24.988Z
-Stopped at: Completed 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend-03-PLAN.md
+Last session: 2026-04-02T09:22:33.494Z
+Stopped at: Completed 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend-04-PLAN.md
 Resume file: None
