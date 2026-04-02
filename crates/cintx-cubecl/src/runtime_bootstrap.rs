@@ -96,44 +96,70 @@ fn bootstrap_with_selector(
 
     #[cfg(not(target_family = "wasm"))]
     {
+        use std::sync::OnceLock;
+
         use cubecl::wgpu::{AutoGraphicsApi, RuntimeOptions};
 
-        let wgpu_device = selector_to_wgpu_device(&selector);
+        // CubeCL panics if init_setup is called twice for the same device
+        // ("A server is still registered for device ..."). Cache the default
+        // device report so repeated preflight calls are idempotent.
+        static DEFAULT_REPORT: OnceLock<Result<WgpuPreflightReport, CapabilityReason>> =
+            OnceLock::new();
 
-        // Use std::panic::catch_unwind to convert CubeCL's panic-based adapter
-        // failures into typed errors (Pitfall 1 from research notes).
-        let setup_result = std::panic::catch_unwind(|| {
-            cubecl::wgpu::init_setup::<AutoGraphicsApi>(&wgpu_device, RuntimeOptions::default())
-        });
+        if selector == AdapterSelector::Auto {
+            let cached = DEFAULT_REPORT.get_or_init(|| do_bootstrap::<AutoGraphicsApi>(selector));
+            return cached
+                .as_ref()
+                .map(|r| r.clone())
+                .map_err(|reason| capability_error(reason.clone()));
+        }
 
-        let setup = setup_result
-            .map_err(|_| capability_error(CapabilityReason::MissingAdapter))?;
-
-        // Collect adapter capability metadata.
-        let info = setup.adapter.get_info();
-        let backend_api = format!("{:?}", info.backend).to_lowercase();
-        let device_type = format!("{:?}", info.device_type).to_lowercase();
-
-        let snapshot = WgpuCapabilitySnapshot::new(
-            info.name.clone(),
-            backend_api,
-            device_type,
-            info.vendor,
-            info.device,
-            collect_feature_names(&setup.adapter),
-            collect_limit_entries(&setup.adapter),
-        );
-
-        let report = WgpuPreflightReport::new(snapshot, vec![]);
-        tracing::debug!(
-            adapter_name = %report.snapshot.adapter_name,
-            backend_api = %report.snapshot.backend_api,
-            device_type = %report.snapshot.device_type,
-            fingerprint = report.fingerprint,
-            "wgpu bootstrap preflight complete"
-        );
-        Ok(report)
+        // Non-default selectors are not cached (rare, and device index varies).
+        do_bootstrap::<AutoGraphicsApi>(selector)
+            .map_err(|reason| capability_error(reason))
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn do_bootstrap<G: cubecl::wgpu::GraphicsApi>(
+    selector: AdapterSelector,
+) -> Result<WgpuPreflightReport, CapabilityReason> {
+    use cubecl::wgpu::RuntimeOptions;
+
+    let wgpu_device = selector_to_wgpu_device(&selector);
+
+    // Use std::panic::catch_unwind to convert CubeCL's panic-based adapter
+    // failures into typed errors (Pitfall 1 from research notes).
+    let setup_result = std::panic::catch_unwind(|| {
+        cubecl::wgpu::init_setup::<G>(&wgpu_device, RuntimeOptions::default())
+    });
+
+    let setup = setup_result.map_err(|_| CapabilityReason::MissingAdapter)?;
+
+    // Collect adapter capability metadata.
+    let info = setup.adapter.get_info();
+    let backend_api = format!("{:?}", info.backend).to_lowercase();
+    let device_type = format!("{:?}", info.device_type).to_lowercase();
+
+    let snapshot = WgpuCapabilitySnapshot::new(
+        info.name.clone(),
+        backend_api,
+        device_type,
+        info.vendor,
+        info.device,
+        collect_feature_names(&setup.adapter),
+        collect_limit_entries(&setup.adapter),
+    );
+
+    let report = WgpuPreflightReport::new(snapshot, vec![]);
+    tracing::debug!(
+        adapter_name = %report.snapshot.adapter_name,
+        backend_api = %report.snapshot.backend_api,
+        device_type = %report.snapshot.device_type,
+        fingerprint = report.fingerprint,
+        "wgpu bootstrap preflight complete"
+    );
+    Ok(report)
 }
 
 #[cfg(not(target_family = "wasm"))]
