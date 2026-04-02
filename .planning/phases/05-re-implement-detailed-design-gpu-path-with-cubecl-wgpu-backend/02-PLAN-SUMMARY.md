@@ -146,3 +146,12 @@ Each task was committed atomically:
 ---
 *Phase: 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend*
 *Completed: 2026-04-02*
+
+## Self-Check: PASSED
+
+- FOUND: crates/cintx-cubecl/src/capability.rs
+- FOUND: crates/cintx-cubecl/src/runtime_bootstrap.rs
+- FOUND: .planning/phases/05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend/02-PLAN-SUMMARY.md
+- FOUND: 564da55 (Task 1 - capability module)
+- FOUND: 329e714 (Task 2 - runtime_bootstrap module)
+- FOUND: 732ca14 (docs - SUMMARY + STATE + ROADMAP)
