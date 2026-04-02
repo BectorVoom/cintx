@@ -333,4 +333,63 @@ mod tests {
         assert!(plan.chunks.iter().all(|chunk| chunk.work_unit_count == 2));
         assert!(plan.chunks.iter().all(|chunk| chunk.bytes <= 320));
     }
+
+    #[test]
+    fn planning_matches_checks_backend_contract() {
+        use crate::options::{BackendCapabilityToken, BackendIntent, BackendKind};
+
+        // Baseline: all contract fields match - should return true.
+        let opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            backend_intent: BackendIntent {
+                backend: BackendKind::Wgpu,
+                selector: "auto".to_owned(),
+            },
+            backend_capability_token: BackendCapabilityToken {
+                adapter_name: "test-adapter".to_owned(),
+                backend_api: "wgpu".to_owned(),
+                capability_fingerprint: 42,
+            },
+            ..ExecutionOptions::default()
+        };
+        let query = WorkspaceQuery {
+            bytes: 192,
+            alignment: DEFAULT_ALIGNMENT_BYTES,
+            required_bytes: 192,
+            chunk_count: 1,
+            work_units: 4,
+            min_chunk_bytes: 64,
+            fallback_reason: None,
+            chunks: vec![],
+            memory_limit_bytes: opts.memory_limit_bytes,
+            chunk_size_override: opts.chunk_size_override,
+            backend_intent: opts.backend_intent.clone(),
+            backend_capability_token: opts.backend_capability_token.clone(),
+        };
+        assert!(query.planning_matches(&opts), "matching contract should return true");
+
+        // Change backend_intent.backend — should return false.
+        let mut opts_different_backend = opts.clone();
+        opts_different_backend.backend_intent.backend = BackendKind::Cpu;
+        assert!(
+            !query.planning_matches(&opts_different_backend),
+            "backend kind drift must fail planning_matches"
+        );
+
+        // Change backend_intent.selector — should return false.
+        let mut opts_different_selector = opts.clone();
+        opts_different_selector.backend_intent.selector = "device:1".to_owned();
+        assert!(
+            !query.planning_matches(&opts_different_selector),
+            "selector drift must fail planning_matches"
+        );
+
+        // Change capability_fingerprint — should return false.
+        let mut opts_different_token = opts.clone();
+        opts_different_token.backend_capability_token.capability_fingerprint = 99;
+        assert!(
+            !query.planning_matches(&opts_different_token),
+            "capability token drift must fail planning_matches"
+        );
+    }
 }
