@@ -2,6 +2,39 @@ use tracing::Span;
 
 pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 
+/// Selects which CubeCL compute backend to use.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BackendKind {
+    /// wgpu-based GPU backend (default).
+    Wgpu,
+    /// CPU backend for oracle/test use and environments without GPU.
+    Cpu,
+}
+
+impl Default for BackendKind {
+    fn default() -> Self {
+        Self::Wgpu
+    }
+}
+
+/// Runtime backend selection intent carried via execution options.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BackendIntent {
+    /// Which backend kind to use.
+    pub backend: BackendKind,
+    /// Device selector string (e.g. "auto", "discrete:0", "integrated:0").
+    pub selector: String,
+}
+
+impl Default for BackendIntent {
+    fn default() -> Self {
+        Self {
+            backend: BackendKind::Wgpu,
+            selector: "auto".to_owned(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ExecutionOptions {
     pub memory_limit_bytes: Option<usize>,
