@@ -13,19 +13,19 @@
 
 ### Compatibility
 
-- [x] **COMP-01**: Compat caller can invoke raw APIs using `atm`, `bas`, `env`, `shls`, `dims`, `opt`, and `cache` inputs that match documented layout contracts.
+- [ ] **COMP-01**: Compat caller can invoke raw APIs using `atm`, `bas`, `env`, `shls`, `dims`, `opt`, and `cache` inputs that match documented layout contracts.
 - [x] **COMP-02**: Compat caller can query required output sizes and workspace requirements without performing a full evaluation or writing output buffers.
 - [x] **COMP-03**: Compat caller can use helper, transform, optimizer-lifecycle, and legacy wrapper APIs that are included in the upstream compatibility scope.
-- [x] **COMP-04**: C integrator can enable an optional C ABI shim that returns integer status codes and exposes thread-local last-error details.
-- [x] **COMP-05**: Compat caller receives typed validation failures or explicit `UnsupportedApi` errors instead of silent truncation, partial writes, or undefined behavior.
+- [ ] **COMP-04**: C integrator can enable an optional C ABI shim that returns integer status codes and exposes thread-local last-error details.
+- [ ] **COMP-05**: Compat caller receives typed validation failures or explicit `UnsupportedApi` errors instead of silent truncation, partial writes, or undefined behavior.
 
 ### Execution
 
 - [x] **EXEC-01**: Rust caller can query workspace needs separately from evaluation through the safe API.
-- [x] **EXEC-02**: Rust or compat caller can evaluate supported 1e, 2e, 2c2e, 3c1e, and 3c2e families through the shared planner and CubeCL backend.
+- [ ] **EXEC-02**: Rust or compat caller can evaluate supported 1e, 2e, 2c2e, 3c1e, and 3c2e families through the shared planner and CubeCL backend.
 - [x] **EXEC-03**: Caller can enforce memory limits so large evaluations chunk safely or fail with typed memory-limit or allocation errors and no partial writes.
-- [x] **EXEC-04**: Caller receives outputs with upstream-compatible cart, sph, and spinor shapes, ordering, and complex-layout semantics.
-- [x] **EXEC-05**: Caller gets numerically equivalent results within accepted tolerance regardless of whether optimizer support is enabled.
+- [ ] **EXEC-04**: Caller receives outputs with upstream-compatible cart, sph, and spinor shapes, ordering, and complex-layout semantics.
+- [ ] **EXEC-05**: Caller gets numerically equivalent results within accepted tolerance regardless of whether optimizer support is enabled.
 
 ### Optional Families
 
@@ -35,7 +35,7 @@
 
 ### Verification
 
-- [x] **VERI-01**: Maintainer can compare stable and enabled optional APIs against vendored upstream libcint through oracle tests with family-appropriate tolerances.
+- [ ] **VERI-01**: Maintainer can compare stable and enabled optional APIs against vendored upstream libcint through oracle tests with family-appropriate tolerances.
 - [x] **VERI-02**: CI can block manifest drift, helper/legacy parity regressions, CubeCL consistency failures, and OOM contract violations across the support matrix.
 - [x] **VERI-03**: Maintainer can benchmark representative workloads and track throughput, memory, and CPU-GPU crossover regressions over time.
 - [x] **VERI-04**: Maintainer can inspect planner, chunking, transfer, fallback, and OOM behavior through structured tracing and diagnostics.
@@ -71,29 +71,30 @@
 | BASE-01 | Phase 1 | Complete |
 | BASE-02 | Phase 1 | Complete |
 | BASE-03 | Phase 1 | Complete |
-| COMP-01 | Phase 2 | Complete |
+| COMP-01 | Phase 6 | Pending |
 | COMP-02 | Phase 2 | Complete |
 | COMP-03 | Phase 2 | Complete |
-| COMP-04 | Phase 3 | Complete |
-| COMP-05 | Phase 2 | Complete |
+| COMP-04 | Phase 6 | Pending |
+| COMP-05 | Phase 6 | Pending |
 | EXEC-01 | Phase 3 | Complete |
-| EXEC-02 | Phase 2 | Complete |
+| EXEC-02 | Phase 6 | Pending |
 | EXEC-03 | Phase 2 | Complete |
-| EXEC-04 | Phase 2 | Complete |
-| EXEC-05 | Phase 2 | Complete |
+| EXEC-04 | Phase 6 | Pending |
+| EXEC-05 | Phase 6 | Pending |
 | OPT-01 | Phase 3 | Complete |
 | OPT-02 | Phase 3 | Complete |
 | OPT-03 | Phase 3 | Complete |
-| VERI-01 | Phase 4 | Complete |
+| VERI-01 | Phase 6 | Pending |
 | VERI-02 | Phase 4 | Complete |
 | VERI-03 | Phase 4 | Complete |
 | VERI-04 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 20 total
-- Mapped to phases: 20
+- Satisfied: 13
+- Pending (Phase 6 gap closure): 7
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-03-26 after Phase 2 Plan 07*
+*Last updated: 2026-04-02 after v1.0 milestone audit gap closure planning*
