@@ -1104,7 +1104,9 @@ mod tests {
         assert!(query.chunk_count >= 1);
 
         let mut out = vec![99.0; 3];
-        let summary = unsafe {
+        // D-05: eval now routes through real CubeClExecutor path.
+        // Accept both GPU-success and fail-closed wgpu-capability error.
+        let result = unsafe {
             eval_raw(
                 RawApiId::INT1E_OVLP_CART,
                 Some(&mut out),
@@ -1116,11 +1118,16 @@ mod tests {
                 Some(&opt),
                 None,
             )
+        };
+        match result {
+            Ok(summary) => {
+                assert!(summary.bytes_written > 0);
+            }
+            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
+                // No GPU adapter — correct fail-closed behavior (D-01/D-02).
+            }
+            Err(other) => panic!("unexpected error from eval_raw: {other:?}"),
         }
-        .expect("eval should succeed");
-
-        assert!(summary.bytes_written > 0);
-        assert!(out.iter().all(|value| *value == 0.0));
     }
 
     #[test]
@@ -1206,7 +1213,9 @@ mod tests {
         assert_eq!(query.work_units, 3);
 
         let mut out = vec![1.0; 3];
-        let summary = unsafe {
+        // D-05: eval now routes through real CubeClExecutor path.
+        // Accept both GPU-success and fail-closed wgpu-capability error.
+        let result = unsafe {
             eval_raw(
                 RawApiId::INT3C1E_P2_CART,
                 Some(&mut out),
@@ -1218,10 +1227,16 @@ mod tests {
                 None,
                 None,
             )
+        };
+        match result {
+            Ok(summary) => {
+                assert!(summary.bytes_written > 0);
+            }
+            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
+                // No GPU adapter — correct fail-closed behavior (D-01/D-02).
+            }
+            Err(other) => panic!("unexpected error from 3c eval_raw: {other:?}"),
         }
-        .expect("3c eval should succeed when kernel support is available");
-        assert!(summary.bytes_written > 0);
-        assert!(out.iter().all(|value| *value == 0.0));
     }
 
     #[test]
@@ -1454,6 +1469,35 @@ mod tests {
             cintxRsError::UnsupportedApi { requested }
                 if requested.contains("requires feature `unstable-source-api`")
         ));
+    }
+
+    /// D-11: Validates that cpu-profile gate is gone from validate_4c1e_envelope.
+    /// The CPU-profile check (`CUBECL_RUNTIME_PROFILE != "cpu"`) was removed in plan 03;
+    /// this test confirms validated 4c1e envelope query succeeds without that gate.
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn validate_4c1e_envelope_no_longer_references_cpu_profile_gate() {
+        // This test would have failed before plan-03 because the cpu-profile gate
+        // blocked validation even when shells were otherwise valid.
+        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
+        // With cpu-profile gate removed, valid 4c1e inputs succeed at the envelope check.
+        let result = unsafe {
+            query_workspace_raw(
+                RawApiId::INT4C1E_CART,
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env,
+                None,
+            )
+        };
+        // Query must succeed — no cpu-profile gate blocking it.
+        assert!(
+            result.is_ok(),
+            "validate_4c1e_envelope should not block valid inputs with cpu-profile gate: {:?}",
+            result.err()
+        );
     }
 
     #[cfg(not(feature = "unstable-source-api"))]

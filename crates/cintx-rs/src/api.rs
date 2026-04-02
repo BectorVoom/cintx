@@ -3,10 +3,11 @@
 use crate::error::FacadeError;
 use cintx_compat::raw::enforce_safe_facade_policy_gate;
 use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
+use cintx_cubecl::CubeClExecutor;
 use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
-    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
-    HostWorkspaceAllocator, OutputOwnership, WorkspaceBytes,
+    BackendCapabilityToken, BackendExecutor, BackendIntent, ExecutionIo, ExecutionOptions,
+    ExecutionPlan, ExecutionStats, HostWorkspaceAllocator, WorkspaceBytes,
     WorkspaceQuery as RuntimeWorkspaceQuery, evaluate as runtime_evaluate,
     query_workspace as runtime_query_workspace,
 };
@@ -190,6 +191,10 @@ pub struct WorkspaceExecutionToken {
     required_workspace_bytes: usize,
     memory_limit_bytes: Option<usize>,
     chunk_size_override: Option<usize>,
+    /// Backend selection intent locked at query time — compared at evaluate time (D-08).
+    backend_intent: BackendIntent,
+    /// Capability token snapshotted at query time — compared at evaluate time (D-08).
+    backend_capability_token: BackendCapabilityToken,
 }
 
 impl WorkspaceExecutionToken {
@@ -217,6 +222,16 @@ impl WorkspaceExecutionToken {
         self.chunk_size_override
     }
 
+    /// Backend selection intent locked at query time (D-08).
+    pub fn backend_intent(&self) -> &BackendIntent {
+        &self.backend_intent
+    }
+
+    /// Backend capability token snapshotted at query time (D-08).
+    pub fn backend_capability_token(&self) -> &BackendCapabilityToken {
+        &self.backend_capability_token
+    }
+
     fn from_request(
         request: &SessionRequest<'_>,
         workspace: &RuntimeWorkspaceQuery,
@@ -228,6 +243,8 @@ impl WorkspaceExecutionToken {
             required_workspace_bytes: workspace.required_bytes,
             memory_limit_bytes: request.options.memory_limit_bytes,
             chunk_size_override: request.options.chunk_size_override,
+            backend_intent: request.options.backend_intent.clone(),
+            backend_capability_token: request.options.backend_capability_token.clone(),
         }
     }
 
@@ -351,104 +368,8 @@ pub fn unsupported_unstable_request(symbol: &str) -> FacadeError {
     }
 }
 
-fn fill_staging_values(representation: Representation, staging: &mut [f64]) {
-    match representation {
-        Representation::Cart => {
-            for (idx, value) in staging.iter_mut().enumerate() {
-                *value = (idx + 1) as f64;
-            }
-        }
-        Representation::Spheric => {
-            for (idx, value) in staging.iter_mut().enumerate() {
-                *value = ((idx + 1) as f64) * 0.5;
-            }
-        }
-        Representation::Spinor => {
-            let mut idx = 0usize;
-            for pair in staging.chunks_exact_mut(2) {
-                let value = (idx + 1) as f64;
-                pair[0] = value;
-                pair[1] = -value;
-                idx += 1;
-            }
-            if let [tail] = staging.chunks_exact_mut(2).into_remainder() {
-                *tail = 0.0;
-            }
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct CubeClExecutor;
-
-impl CubeClExecutor {
-    fn new() -> Self {
-        Self
-    }
-
-    fn ensure_supported(&self, _plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
-        Ok(())
-    }
-}
-
-impl BackendExecutor for CubeClExecutor {
-    fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
-        self.ensure_supported(plan).is_ok()
-            && plan
-                .descriptor
-                .entry
-                .supports_representation(plan.representation)
-    }
-
-    fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
-        self.ensure_supported(plan)?;
-        Ok(WorkspaceBytes(plan.workspace.bytes))
-    }
-
-    fn execute(
-        &self,
-        plan: &ExecutionPlan<'_>,
-        io: &mut ExecutionIo<'_>,
-    ) -> Result<ExecutionStats, cintxRsError> {
-        self.ensure_supported(plan)?;
-        io.ensure_output_contract()?;
-
-        if io.backend_output_ownership() != OutputOwnership::BackendStagingOnly {
-            return Err(cintxRsError::ChunkPlanFailed {
-                from: "safe_cubecl_executor",
-                detail: "backend_output must remain staging-only".to_owned(),
-            });
-        }
-        if io.final_write_ownership() != OutputOwnership::CompatFinalWrite {
-            return Err(cintxRsError::ChunkPlanFailed {
-                from: "safe_cubecl_executor",
-                detail: "CompatFinalWrite must remain owned by compat layout".to_owned(),
-            });
-        }
-
-        let transfer_bytes = {
-            let staging = io.staging_output();
-            fill_staging_values(plan.representation, staging);
-            staging.len().saturating_mul(size_of::<f64>())
-        };
-        let not0 = io.chunk().work_unit_count as i32;
-        let peak_workspace_bytes = io.workspace().len();
-
-        io.record_transfer_bytes(transfer_bytes);
-        io.record_not0(not0);
-
-        Ok(ExecutionStats {
-            workspace_bytes: plan.workspace.bytes,
-            required_workspace_bytes: plan.workspace.required_bytes,
-            peak_workspace_bytes,
-            chunk_count: 1,
-            planned_batches: io.chunk().work_unit_count.max(1),
-            transfer_bytes,
-            not0,
-            fallback_reason: plan.workspace.fallback_reason,
-        })
-    }
-}
+// Local stub CubeClExecutor and fill_staging_values removed (D-05).
+// cintx_cubecl::CubeClExecutor is used directly via RecordingExecutor below.
 
 #[derive(Debug)]
 struct RecordingExecutor<E> {
@@ -609,21 +530,40 @@ mod tests {
         let expected_workspace_bytes = query.workspace().bytes;
         let expected_chunk_count = query.workspace().chunk_count;
 
-        let output = query.evaluate().expect("safe evaluate should succeed");
-
-        assert!(!output.tensor.owned_values.is_empty());
-        assert_eq!(output.tensor.owned_values[0], 1.0);
-        assert_eq!(
-            output.tensor.owned_values.len(),
-            output.tensor.extents.iter().product::<usize>()
-        );
-        assert_eq!(output.workspace_bytes, expected_workspace_bytes);
-        assert_eq!(output.chunk_count, expected_chunk_count);
-        assert_eq!(
-            output.bytes_written,
-            output.tensor.owned_values.len() * std::mem::size_of::<f64>()
-        );
-        assert!(output.stats.transfer_bytes > 0);
+        // D-05: The safe facade now uses the real CubeClExecutor path.
+        // In environments without a wgpu adapter the executor returns a typed error;
+        // in environments with a GPU adapter the output contains real values.
+        match query.evaluate() {
+            Ok(output) => {
+                // Real GPU path: output is non-empty, extents match tensor dimensions.
+                assert!(!output.tensor.owned_values.is_empty());
+                // D-15: Must NOT be the monotonic synthetic sequence (1.0, 2.0, 3.0 ...).
+                // Real GPU output values should not follow the 1-indexed monotonic pattern.
+                let is_monotonic_stub = output.tensor.owned_values.iter().enumerate()
+                    .all(|(i, &v)| (v - (i + 1) as f64).abs() < f64::EPSILON);
+                assert!(
+                    !is_monotonic_stub,
+                    "evaluate output must not be the monotonic synthetic stub sequence (D-15)"
+                );
+                assert_eq!(
+                    output.tensor.owned_values.len(),
+                    output.tensor.extents.iter().product::<usize>()
+                );
+                assert_eq!(output.workspace_bytes, expected_workspace_bytes);
+                assert_eq!(output.chunk_count, expected_chunk_count);
+                assert_eq!(
+                    output.bytes_written,
+                    output.tensor.owned_values.len() * std::mem::size_of::<f64>()
+                );
+                assert!(output.stats.transfer_bytes > 0);
+            }
+            Err(FacadeError::UnsupportedApi { requested })
+                if requested.contains("wgpu-capability") =>
+            {
+                // No GPU adapter in this environment — acceptable fail-closed path (D-01/D-02).
+            }
+            Err(other) => panic!("unexpected error from evaluate: {other:?}"),
+        }
     }
 
     #[test]
@@ -742,5 +682,59 @@ mod tests {
     fn unsupported_unstable_requests_map_to_unsupported_api() {
         let err = unsupported_unstable_request("int2e_ipip1_sph");
         assert!(matches!(err, FacadeError::UnsupportedApi { .. }));
+    }
+
+    /// D-08: backend selector/capability token drift between query and evaluate must fail closed.
+    /// Also verifies WorkspaceExecutionToken exposes backend_intent and backend_capability_token
+    /// accessors so callers can inspect the backend contract without accessing private fields.
+    #[test]
+    fn query_evaluate_backend_selector_drift_is_detected_before_execution() {
+        use cintx_runtime::{BackendCapabilityToken, BackendIntent, BackendKind};
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let options = ExecutionOptions {
+            backend_intent: BackendIntent {
+                backend: BackendKind::Wgpu,
+                selector: "auto".to_owned(),
+            },
+            backend_capability_token: BackendCapabilityToken {
+                adapter_name: String::new(),
+                backend_api: "wgpu".to_owned(),
+                capability_fingerprint: 0,
+            },
+            ..ExecutionOptions::default()
+        };
+        let request = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            options,
+        );
+
+        let mut query = request.query_workspace().expect("query should succeed");
+
+        // Verify WorkspaceExecutionToken exposes backend contract fields (D-08).
+        assert_eq!(
+            query.workspace().execution_token.backend_intent().backend,
+            BackendKind::Wgpu,
+            "execution token must expose backend_intent()"
+        );
+
+        // Mutate backend selector between query and evaluate — must be rejected.
+        query.request.options.backend_intent = BackendIntent {
+            backend: BackendKind::Cpu,
+            selector: "test".to_owned(),
+        };
+
+        let err = query.evaluate().unwrap_err();
+        assert!(
+            matches!(err, FacadeError::Validation { .. }),
+            "expected Validation error for backend selector drift, got: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("contract drift") || err.to_string().contains("backend"),
+            "drift error must mention contract drift or backend, got: {err}"
+        );
     }
 }

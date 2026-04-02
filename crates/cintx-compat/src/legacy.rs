@@ -342,6 +342,8 @@ mod tests {
 
     #[test]
     fn wrappers_call_shared_eval_path() {
+        use cintx_core::cintxRsError;
+
         let atm = vec![1, 0, 1, 0, 0, 0];
         let bas = vec![
             0, 0, 1, 1, 0, 3, 4, 0, //
@@ -352,9 +354,18 @@ mod tests {
         let shls = [0, 1];
         let mut out = vec![0.0; 3];
 
-        let summary =
-            unsafe { cint1e_ovlp_cart(Some(&mut out), &shls, &atm, &bas, &env, None) }.unwrap();
-        assert!(summary.bytes_written > 0);
+        // D-05: legacy wrappers now route through real CubeClExecutor path.
+        // Accept both GPU-success and fail-closed wgpu-capability error.
+        let result = unsafe { cint1e_ovlp_cart(Some(&mut out), &shls, &atm, &bas, &env, None) };
+        match result {
+            Ok(summary) => {
+                assert!(summary.bytes_written > 0);
+            }
+            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
+                // No GPU adapter — correct fail-closed behavior (D-01/D-02).
+            }
+            Err(other) => panic!("unexpected error from legacy eval: {other:?}"),
+        }
 
         let query =
             unsafe { query_legacy(RawApiId::INT1E_OVLP_CART, &shls, &atm, &bas, &env, None) }

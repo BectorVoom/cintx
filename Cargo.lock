@@ -383,6 +383,7 @@ version = "0.1.0"
 dependencies = [
  "cintx-compat",
  "cintx-core",
+ "cintx-cubecl",
  "cintx-ops",
  "cintx-runtime",
  "thiserror 2.0.18",
