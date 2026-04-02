@@ -15,7 +15,7 @@ pub use dispatch::ExecutionIo;
 pub use dispatch::OutputOwnership;
 pub use dispatch::WorkspaceBytes;
 pub use metrics::ExecutionStats;
-pub use options::ExecutionOptions;
+pub use options::{BackendCapabilityToken, BackendIntent, BackendKind, ExecutionOptions};
 pub use planner::{ExecutionPlan, OutputLayoutMetadata, evaluate, query_workspace};
 pub use scheduler::schedule_chunks;
 pub use validator::{ValidatedShellTuple, validate_dims, validate_shell_tuple};

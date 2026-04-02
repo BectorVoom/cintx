@@ -119,6 +119,8 @@ pub fn query_workspace(
         chunks,
         memory_limit_bytes: opts.memory_limit_bytes,
         chunk_size_override: opts.chunk_size_override,
+        backend_intent: opts.backend_intent.clone(),
+        backend_capability_token: opts.backend_capability_token.clone(),
     })
 }
 

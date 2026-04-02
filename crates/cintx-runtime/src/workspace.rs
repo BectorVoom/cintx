@@ -1,4 +1,4 @@
-use crate::options::ExecutionOptions;
+use crate::options::{BackendCapabilityToken, BackendIntent, ExecutionOptions};
 use cintx_core::cintxRsError;
 use std::cmp;
 use std::mem::{MaybeUninit, size_of};
@@ -18,6 +18,10 @@ pub struct WorkspaceQuery {
     pub chunks: Vec<ChunkInfo>,
     pub memory_limit_bytes: Option<usize>,
     pub chunk_size_override: Option<usize>,
+    /// Backend selection intent captured at query time.
+    pub backend_intent: BackendIntent,
+    /// Backend capability token captured at query time.
+    pub backend_capability_token: BackendCapabilityToken,
 }
 
 impl WorkspaceQuery {
@@ -30,9 +34,15 @@ impl WorkspaceQuery {
         }
     }
 
+    /// Returns `true` only when all four contract fields match `opts`.
+    ///
+    /// Per D-08, backend policy drift between query and evaluate must be
+    /// detected here so `evaluate()` can fail closed with a typed error.
     pub fn planning_matches(&self, opts: &ExecutionOptions) -> bool {
         self.memory_limit_bytes == opts.memory_limit_bytes
             && self.chunk_size_override == opts.chunk_size_override
+            && self.backend_intent == opts.backend_intent
+            && self.backend_capability_token == opts.backend_capability_token
     }
 }
 
