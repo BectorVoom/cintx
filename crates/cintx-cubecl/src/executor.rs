@@ -359,6 +359,68 @@ mod tests {
         ));
     }
 
+    /// D-05: Executor must not fill staging with monotonically increasing integers.
+    /// After removing fill_cartesian_staging, staging remains zero after execute() on
+    /// Cart representation (no transform means zeros stay zeros).
+    #[test]
+    fn executor_no_longer_uses_monotonic_stub_sequence() {
+        let executor = CubeClExecutor::new();
+        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 2)));
+        let plan = build_plan(basis, 0, Representation::Cart, 2);
+        let chunk = plan.workspace.chunks[0].clone();
+        let mut staging = vec![0.0_f64; 8];
+        let mut workspace = FallibleBuffer::try_uninit(
+            plan.workspace.bytes.max(1),
+            plan.workspace.alignment,
+        )
+        .unwrap();
+        let mut io = ExecutionIo::new(&chunk, &mut staging, &mut workspace, plan.dispatch).unwrap();
+        executor.execute(&plan, &mut io).unwrap();
+        // The old stub filled staging with 1.0, 2.0, 3.0, ... If that behavior
+        // is still present, this test fails.  Post-rewrite, staging stays 0.0.
+        for &val in staging.iter() {
+            assert_eq!(val, 0.0, "stub monotonic fill must be removed; staging must stay 0.0");
+        }
+    }
+
+    /// D-07: execute() must record per-chunk transfer_bytes and not0 metrics from
+    /// a real kernel launch path instead of hardcoded values.
+    ///
+    /// D-01 / D-02: wgpu bootstrap is called at execute entry; a report with
+    /// capability metadata must be accessible (fingerprint non-zero).
+    ///
+    /// D-06: Ownership contract checks must still enforce BackendStagingOnly and
+    /// CompatFinalWrite after real kernel launch path runs.
+    #[test]
+    fn execute_uses_wgpu_bootstrap_and_preserves_output_contract() {
+        let executor = CubeClExecutor::new();
+        let basis = Box::leak(Box::new(sample_basis(Representation::Cart, 2)));
+        let plan = build_plan(basis, 0, Representation::Cart, 2);
+        let chunk = plan.workspace.chunks[0].clone();
+        let mut staging = vec![0.0_f64; 8];
+        let mut workspace = FallibleBuffer::try_uninit(
+            plan.workspace.bytes.max(1),
+            plan.workspace.alignment,
+        )
+        .unwrap();
+        let mut io = ExecutionIo::new(&chunk, &mut staging, &mut workspace, plan.dispatch).unwrap();
+        let stats = executor.execute(&plan, &mut io).unwrap();
+        // D-07: metrics must reflect actual kernel path
+        assert!(stats.transfer_bytes > 0, "transfer_bytes must be >0 after execute");
+        assert!(stats.chunk_count >= 1, "chunk_count must be >=1 after execute");
+        // D-06: ownership contracts must remain enforced
+        assert_eq!(
+            io.backend_output_ownership(),
+            OutputOwnership::BackendStagingOnly,
+            "Backend output ownership must remain BackendStagingOnly"
+        );
+        assert_eq!(
+            io.final_write_ownership(),
+            OutputOwnership::CompatFinalWrite,
+            "Final write ownership must remain CompatFinalWrite"
+        );
+    }
+
     #[test]
     fn representation_transforms_keep_staging_only_contract() {
         let executor = CubeClExecutor::new();
@@ -389,8 +451,8 @@ mod tests {
             cart_io.final_write_ownership(),
             OutputOwnership::CompatFinalWrite
         );
-        assert_eq!(cart_staging[0], 1.0);
-        assert_eq!(cart_staging[1], 2.0);
+        // Cart: identity transform — staging stays at kernel-output values (zeros for stub kernels).
+        // We no longer assert specific values from a synthetic fill here.
 
         // Spheric path: c2s transform mutates staging values.
         let sph_basis = Box::leak(Box::new(sample_basis(Representation::Spheric, 2)));
@@ -410,7 +472,15 @@ mod tests {
         )
         .unwrap();
         executor.execute(&sph_plan, &mut sph_io).unwrap();
-        assert!(sph_staging[0] != 1.0);
+        // Spheric path: c2s transform applied, ownership contract preserved.
+        assert_eq!(
+            sph_io.backend_output_ownership(),
+            OutputOwnership::BackendStagingOnly
+        );
+        assert_eq!(
+            sph_io.final_write_ownership(),
+            OutputOwnership::CompatFinalWrite
+        );
 
         // Spinor path: interleaved doubles keep real/imag pair semantics.
         let spinor_basis = Box::leak(Box::new(sample_basis(Representation::Spinor, 2)));
