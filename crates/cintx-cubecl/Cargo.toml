@@ -17,7 +17,9 @@ cintx-core = { path = "../cintx-core" }
 cintx-ops = { path = "../cintx-ops" }
 cintx-runtime = { path = "../cintx-runtime" }
 bytemuck = { version = "1", features = ["derive"] }
-cubecl = "0.9.0"
+cubecl = { version = "0.9.0", features = ["wgpu"] }
 cubecl-wgpu = "0.9.0"
+cubecl-runtime = "0.9.0"
 smallvec = "1"
 tracing = "0.1"
+wgpu = "26.0.1"
