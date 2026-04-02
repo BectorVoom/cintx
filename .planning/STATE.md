@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-04-02T07:34:31.753Z"
+stopped_at: Completed 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend-02-PLAN.md
+last_updated: "2026-04-02T07:45:35.436Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 05 (re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Plan: 2 of 5
 | Phase 04-verification-release-automation P06 | 2 min | 2 tasks | 2 files |
 | Phase 04-verification-release-automation P07 | 3 min | 2 tasks | 1 files |
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P01 | 3 | 2 tasks | 5 files |
+| Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P02 | 7 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: BackendIntent defaults to BackendKind::Wgpu with selector 'auto' per D-03; Cpu variant kept for oracle/test use only
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: planning_matches() compares all four contract fields (memory, chunk_size, backend_intent, capability_token) so any backend policy drift fails evaluate closed (D-08)
 - [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: BackendCapabilityToken fingerprint defaults to 0; later plans will populate with real wgpu adapter capability hash during device selection
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Use FNV-1a 64-bit hash over sorted feature/limit lists plus adapter identity fields for reproducible capability fingerprints
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Wrap cubecl init_setup with std::panic::catch_unwind to convert CubeCL panic-based adapter failures into typed UnsupportedApi errors
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Keep selector format simple (auto/discrete:N/integrated:N) aligned with CubeCL WgpuDevice enum variants
 
 ### Roadmap Evolution
 
@@ -158,6 +162,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-02T07:34:31.751Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-04-02T07:45:35.434Z
+Stopped at: Completed 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend-02-PLAN.md
 Resume file: None
