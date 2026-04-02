@@ -343,15 +343,14 @@ dependencies = [
 name = "cintx-cubecl"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cintx-core",
  "cintx-ops",
  "cintx-runtime",
  "cubecl",
- "cubecl-runtime",
  "cubecl-wgpu",
  "smallvec",
  "tracing",
- "wgpu",
 ]
 
 [[package]]
@@ -383,7 +382,6 @@ version = "0.1.0"
 dependencies = [
  "cintx-compat",
  "cintx-core",
- "cintx-cubecl",
  "cintx-ops",
  "cintx-runtime",
  "thiserror 2.0.18",

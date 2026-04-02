@@ -7,7 +7,8 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["cpu"]
+cpu = ["cubecl/cpu"]
 with-f12 = []
 with-4c1e = []
 
@@ -15,9 +16,8 @@ with-4c1e = []
 cintx-core = { path = "../cintx-core" }
 cintx-ops = { path = "../cintx-ops" }
 cintx-runtime = { path = "../cintx-runtime" }
-cubecl = { version = "0.9.0", features = ["wgpu"] }
+bytemuck = { version = "1", features = ["derive"] }
+cubecl = "0.9.0"
 cubecl-wgpu = "0.9.0"
-cubecl-runtime = "0.9.0"
 smallvec = "1"
 tracing = "0.1"
-wgpu = "26.0.1"

@@ -6,15 +6,16 @@ pub mod center_4c1e;
 pub mod one_electron;
 pub mod two_electron;
 
+use crate::backend::ResolvedBackend;
 use crate::specialization::SpecializationKey;
-use crate::transfer::TransferPlan;
 use cintx_core::cintxRsError;
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
 pub type FamilyLaunchFn = fn(
+    &ResolvedBackend,
     &ExecutionPlan<'_>,
     &SpecializationKey,
-    &TransferPlan,
+    &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError>;
 
 #[cfg(not(feature = "with-4c1e"))]
@@ -68,12 +69,13 @@ pub fn resolve_family(plan: &ExecutionPlan<'_>) -> Result<FamilyLaunchFn, cintxR
 }
 
 pub fn launch_family(
+    backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    transfer_plan: &TransferPlan,
+    staging: &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError> {
     let launch = resolve_family(plan)?;
-    launch(plan, specialization, transfer_plan)
+    launch(backend, plan, specialization, staging)
 }
 
 #[cfg(test)]
