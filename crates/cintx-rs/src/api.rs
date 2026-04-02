@@ -62,18 +62,37 @@ impl<'basis> SessionRequest<'basis> {
     }
 
     pub fn query_workspace(&self) -> Result<SessionQuery<'basis>, FacadeError> {
+        // Populate real wgpu adapter fingerprint before planning so
+        // WorkspaceQuery::backend_capability_token has a real anchor for
+        // planning_matches() drift detection (closes Bug 2 for the safe facade path).
+        let mut options = self.options.clone();
+        match cintx_cubecl::bootstrap_wgpu_runtime(&options.backend_intent) {
+            Ok(report) if report.is_capable() => {
+                options.backend_capability_token = BackendCapabilityToken {
+                    adapter_name: report.snapshot.adapter_name.clone(),
+                    backend_api: report.snapshot.backend_api.clone(),
+                    capability_fingerprint: report.fingerprint,
+                };
+            }
+            Ok(_) => {} // not capable — leave default token; will fail at execute time
+            Err(e) => return Err(FacadeError::from(e)),
+        }
+
         let runtime_workspace = runtime_query_workspace(
             self.operator,
             self.representation,
             self.basis,
             self.shells.clone(),
-            &self.options,
+            &options,
         )
         .map_err(FacadeError::from)?;
 
         let workspace = WorkspacePlan::from_runtime(self, &runtime_workspace);
         Ok(SessionQuery {
-            request: self.clone(),
+            request: SessionRequest {
+                options,
+                ..self.clone()
+            },
             workspace,
             runtime_workspace,
         })
