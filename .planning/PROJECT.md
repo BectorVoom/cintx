@@ -29,9 +29,20 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - Reproducing the upstream Fortran wrapper - not part of the Rust library's public scope.
 - Public asynchronous APIs - excluded from the initial design to keep execution and compatibility contracts tighter.
 
+## Current Milestone: v1.1 CubeCL Direct Client API & Real Kernel Compute
+
+**Goal:** Rewrite executor internals to use CubeCL client API directly, implement real GPU integral kernels, achieve oracle parity with upstream libcint 6.1.3.
+
+**Target features:**
+- Rewrite executor internals to use CubeCL client API directly (`WgpuRuntime::client()`, `client.create()`/`client.read()`, `#[cube(launch)]` with `ArrayArg`)
+- Remove RecordingExecutor — direct buffer management replaces the wrapper
+- Configurable backend switching (wgpu + cpu now; cuda/rocm/metal extensible)
+- Implement real GPU integral kernels replacing stubs (1e, 2e, 2c2e, 3c1e, 3c2e)
+- Achieve oracle parity — numerical output matching upstream libcint 6.1.3
+
 ## Context
 
-The project is driven by `docs/design/cintx_detailed_design.md`, which defines an implementation-ready redesign for libcint in Rust. The workspace contains the multi-crate Rust layout (`crates/`, `xtask/`, `benches/`, `ci/`) plus a vendored upstream reference in `libcint-master/`, with the design document as the source of truth for scope and release gates. Phases 1 through 5 are complete, and Phase 6 gap closure is done: eval_raw() now retrieves real executor staging output (RecordingExecutor pattern), wgpu bootstrap fingerprint propagates into BackendCapabilityToken for drift detection in both compat raw and safe facade paths, and 5 regression tests cover the fixes. The compatibility target remains libcint 6.1.3. All v1.0 milestone phases are complete; remaining work is GPU kernel implementation for value-level oracle parity (2 human verification items deferred until kernels produce real integrals).
+The project is driven by `docs/design/cintx_detailed_design.md`, which defines an implementation-ready redesign for libcint in Rust. The workspace contains the multi-crate Rust layout (`crates/`, `xtask/`, `benches/`, `ci/`) plus a vendored upstream reference in `libcint-master/`, with the design document as the source of truth for scope and release gates. v1.0 is complete (6 phases, 30 plans): typed domain primitives, manifest, planner, runtime, three-layer API surface (safe Rust, raw compat, C ABI shim), CI governance gates, CubeCL/wgpu GPU execution path with stub kernels, and staging/fingerprint plumbing. The compatibility target remains libcint 6.1.3. v1.1 replaces the executor abstraction layer with direct CubeCL client API usage and implements real integral kernels to achieve oracle parity.
 
 ## Constraints
 
@@ -49,7 +60,9 @@ The project is driven by `docs/design/cintx_detailed_design.md`, which defines a
 | Prioritize result compatibility over implementation compatibility | Users need libcint-equivalent outputs, not a line-by-line clone of upstream internals | Pending |
 | Use a three-layer public surface (safe Rust, raw compat, optional C ABI) | This balances Rust ergonomics with migration and interoperability needs | Validated in Phase 3 |
 | Use a generated compiled manifest lock as the API source of truth | Full API coverage must be mechanically auditable across feature profiles | Validated in Phase 1 |
-| Standardize on a shared planner plus CubeCL executor | A single compute path simplifies optimization, memory policy, and verification | Validated through Phases 1-3 for planner/runtime/compat/safe surfaces; full release gate evidence still depends on Phase 4 CI/oracle automation |
+| Standardize on a shared planner plus CubeCL executor | A single compute path simplifies optimization, memory policy, and verification | Validated through Phases 1-5; v1.1 replaces executor internals with direct CubeCL client API |
+| Use CubeCL client API directly in executor internals | Direct buffer management (`client.create`/`client.read`/`ArrayArg`) removes need for RecordingExecutor wrapper; kernels use `#[cube(launch)]` | v1.1 — user-directed architectural decision |
+| Configurable backend (wgpu + cpu; cuda/rocm/metal extensible) | Multi-backend support ensures testing on CPU and deployment on GPU; future backends require only runtime trait impl | v1.1 — Pending |
 | Centralize fallible allocation and typed OOM errors | Safe stop on memory pressure is a non-negotiable design goal | Partially validated in Phase 1 through `WorkspaceAllocator`, `ChunkPlanner`, and typed runtime errors |
 
 ## Evolution
@@ -70,4 +83,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after Phase 6 completion — eval_raw staging fix, fingerprint propagation, regression coverage for v1.0 gap closure*
+*Last updated: 2026-04-02 after v1.1 milestone start — CubeCL direct client API, real kernel compute, oracle parity*

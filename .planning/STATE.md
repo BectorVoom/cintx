@@ -1,30 +1,32 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: Milestone complete
-stopped_at: Completed 06-fix-raw-eval-staging-and-capability-fingerprint-02-PLAN.md
-last_updated: "2026-04-02T11:48:52.173Z"
+milestone: v1.1
+milestone_name: CubeCL Direct Client API & Real Kernel Compute
+status: Defining requirements
+stopped_at: null
+last_updated: "2026-04-02T12:00:00.000Z"
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 29
-  completed_plans: 30
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-28)
+See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 06 — fix-raw-eval-staging-and-capability-fingerprint
+**Current focus:** Milestone v1.1 — Defining requirements
 
 ## Current Position
 
-Phase: 06
-Plan: Not started
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-02 — Milestone v1.1 started
 
 ## Performance Metrics
 
