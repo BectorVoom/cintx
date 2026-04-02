@@ -347,8 +347,11 @@ dependencies = [
  "cintx-ops",
  "cintx-runtime",
  "cubecl",
+ "cubecl-runtime",
+ "cubecl-wgpu",
  "smallvec",
  "tracing",
+ "wgpu",
 ]
 
 [[package]]
