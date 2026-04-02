@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Completed 04-verification-release-automation-07-PLAN.md
-last_updated: "2026-03-29T02:02:13.306Z"
+status: Ready to execute
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-04-02T07:34:31.753Z"
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 22
-  completed_plans: 23
+  total_plans: 27
+  completed_plans: 24
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 04 — verification-release-automation
+**Current focus:** Phase 05 — re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend
 
 ## Current Position
 
-Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 2 of 7
+Phase: 05 (re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend) — EXECUTING
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Plan: 2 of 7
 | Phase 04-verification-release-automation P05 | 2min | 1 tasks | 1 files |
 | Phase 04-verification-release-automation P06 | 2 min | 2 tasks | 2 files |
 | Phase 04-verification-release-automation P07 | 3 min | 2 tasks | 1 files |
+| Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P01 | 3 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,13 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Added Validate bench artifact contract checks so bench report and runtime diagnostics must exist in /mnt/data or /tmp/cintx_artifacts before artifact upload.
 - [Phase 04-verification-release-automation]: Centralize required and fallback artifact paths in workflow-level env variables to reduce silent drift risk.
 - [Phase 04-verification-release-automation]: Add a dedicated release policy invariant step that inspects committed workflow markers and fails closed.
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: BackendIntent defaults to BackendKind::Wgpu with selector 'auto' per D-03; Cpu variant kept for oracle/test use only
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: planning_matches() compares all four contract fields (memory, chunk_size, backend_intent, capability_token) so any backend policy drift fails evaluate closed (D-08)
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: BackendCapabilityToken fingerprint defaults to 0; later plans will populate with real wgpu adapter capability hash during device selection
+
+### Roadmap Evolution
+
+- Phase 5 added: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
 
 ### Pending Todos
 
@@ -150,6 +158,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-29T02:02:13.303Z
-Stopped at: Completed 04-verification-release-automation-07-PLAN.md
+Last session: 2026-04-02T07:34:31.751Z
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
