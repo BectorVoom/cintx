@@ -95,7 +95,7 @@ Plans:
 | Phase 4: Verification & Release Automation | 7/7 | Complete | 2026-03-31 |
 | Phase 5: Re-implement detailed-design GPU path | 5/5 | Complete | 2026-04-02 |
 | Phase 6: Fix raw eval staging & fingerprint | 0/2 | Not started | - |
-| Phase 7: Executor Infrastructure Rewrite | 0/TBD | Not started | - |
+| Phase 7: Executor Infrastructure Rewrite | 0/3 | Not started | - |
 | Phase 8: Gaussian Primitive Infrastructure and Boys Function | 0/TBD | Not started | - |
 | Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 0/TBD | Not started | - |
 | Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/TBD | Not started | - |
@@ -140,7 +140,12 @@ Plans:
   3. `RecordingExecutor` is deleted from `cintx-compat` and `cintx-rs`; staging output flows directly from the executor's `client.read()` result into `io.staging_output()`.
   4. CPU backend is enabled via `cpu = ["cubecl/cpu"]` feature in `cintx-cubecl` and oracle parity tests execute without GPU hardware under `--features cpu`.
   5. f64 strategy is documented and enforced: oracle parity tests run against the CPU backend; wgpu path gates on `SHADER_F64` availability and returns `UnsupportedApi` when absent.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Add ResolvedBackend enum with wgpu/cpu arms, cpu feature flag, bytemuck dep, and updated FamilyLaunchFn signatures.
+- [ ] 07-02-PLAN.md — Rewrite CubeClExecutor to use ResolvedBackend dispatch, direct staging pass, and f64 SHADER_F64 capability gate.
+- [ ] 07-03-PLAN.md — Delete RecordingExecutor from cintx-compat and cintx-rs; wire eval_raw and safe facade to direct executor staging.
 
 ### Phase 8: Gaussian Primitive Infrastructure and Boys Function
 **Goal**: All shared math required by integral kernels exists as validated `#[cube]` functions, confirmed against libcint reference values before any kernel consumes them.
