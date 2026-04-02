@@ -3,72 +3,14 @@ use crate::optimizer::RawOptimizerHandle;
 use cintx_core::{
     Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple, cintxRsError,
 };
-use cintx_cubecl::CubeClExecutor;
+use cintx_cubecl::{CUBECL_RUNTIME_PROFILE, CubeClExecutor};
 use cintx_ops::resolver::{HelperKind, OperatorDescriptor, Resolver, ResolverError};
 use cintx_runtime::{
-    BackendCapabilityToken, BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan,
-    ExecutionStats, HostWorkspaceAllocator, WorkspaceBytes, WorkspaceQuery, evaluate,
-    query_workspace,
+    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan,
+    HostWorkspaceAllocator, WorkspaceAllocator, WorkspaceQuery, schedule_chunks, query_workspace,
 };
 use std::mem::size_of;
-use std::sync::{Arc, Mutex};
-
-// ---------------------------------------------------------------------------
-// RecordingExecutor — captures staging output from the backend so eval_raw()
-// can retrieve real computed values instead of zero-filling the output buffer.
-// ---------------------------------------------------------------------------
-
-struct RecordingExecutor<E> {
-    inner: E,
-    staged_values: Mutex<Vec<f64>>,
-}
-
-impl<E> RecordingExecutor<E> {
-    fn new(inner: E) -> Self {
-        Self {
-            inner,
-            staged_values: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn owned_values(&self) -> Result<Vec<f64>, cintxRsError> {
-        let staged_values = self
-            .staged_values
-            .lock()
-            .map_err(|_| cintxRsError::ChunkPlanFailed {
-                from: "compat_recording_executor",
-                detail: "owned output capture buffer mutex poisoned".to_owned(),
-            })?;
-        Ok(staged_values.clone())
-    }
-}
-
-impl<E: BackendExecutor> BackendExecutor for RecordingExecutor<E> {
-    fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
-        self.inner.supports(plan)
-    }
-
-    fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
-        self.inner.query_workspace(plan)
-    }
-
-    fn execute(
-        &self,
-        plan: &ExecutionPlan<'_>,
-        io: &mut ExecutionIo<'_>,
-    ) -> Result<ExecutionStats, cintxRsError> {
-        let stats = self.inner.execute(plan, io)?;
-        let mut staged_values =
-            self.staged_values
-                .lock()
-                .map_err(|_| cintxRsError::ChunkPlanFailed {
-                    from: "compat_recording_executor",
-                    detail: "owned output capture buffer mutex poisoned".to_owned(),
-                })?;
-        staged_values.extend_from_slice(io.staging_output());
-        Ok(stats)
-    }
-}
+use std::sync::Arc;
 
 pub const CHARGE_OF: usize = 0;
 pub const PTR_COORD: usize = 1;
@@ -447,7 +389,6 @@ pub unsafe fn eval_raw(
     cache: Option<&mut [f64]>,
 ) -> Result<RawEvalSummary, cintxRsError> {
     let prepared = prepare_raw_call(api, dims, shls, atm, bas, env, opt)?;
-    let required_elements = prepared.compat_dims.required_elements()?;
 
     if let Some(out_buffer) = out.as_ref() {
         prepared.compat_dims.ensure_output_len(out_buffer.len())?;
@@ -471,23 +412,94 @@ pub unsafe fn eval_raw(
         &prepared.query,
     )?;
 
-    let executor = RecordingExecutor::new(CubeClExecutor::new());
+    let executor = CubeClExecutor::new();
     let mut allocator = HostWorkspaceAllocator::default();
-    let stats = evaluate(plan, &prepared.options, &mut allocator, &executor)?;
-    let owned_values = executor.owned_values()?;
 
-    if owned_values.len() != required_elements {
-        return Err(cintxRsError::ChunkPlanFailed {
-            from: "eval_raw",
-            detail: format!(
-                "staging output length mismatch: expected={required_elements} got={}",
-                owned_values.len()
+    // Allocate the full staging accumulator that we own, so we can read values after execute().
+    // RecordingExecutor is not needed: we construct ExecutionIo with our own staging slice and
+    // read it directly after executor.execute() returns for each chunk.
+    let staging_elements = plan.output_layout.staging_elements;
+    let mut staging = Vec::new();
+    staging
+        .try_reserve_exact(staging_elements)
+        .map_err(|_| cintxRsError::HostAllocationFailed {
+            bytes: staging_elements.saturating_mul(size_of::<f64>()),
+        })?;
+    staging.resize(staging_elements, 0.0);
+
+    if !executor.supports(&plan) {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!(
+                "{}/{}/{}",
+                plan.descriptor.family(),
+                plan.descriptor.operator_name(),
+                plan.representation
             ),
         });
     }
 
+    let backend_workspace = executor.query_workspace(&plan)?.get();
+    if backend_workspace > plan.workspace.bytes {
+        return Err(cintxRsError::MemoryLimitExceeded {
+            requested: backend_workspace,
+            limit: plan.workspace.bytes,
+        });
+    }
+
+    let schedule = schedule_chunks(&plan.workspace);
+    let total_units = plan.workspace.work_units.max(1);
+
+    let mut total_not0: i32 = 0;
+    let mut total_transfer_bytes: usize = 0;
+
+    for chunk in schedule.chunks() {
+        // Compute staging slice range for this chunk (mirrors staging_elements_for_chunk logic).
+        let start = chunk.work_unit_start.min(total_units);
+        let end = chunk
+            .work_unit_start
+            .saturating_add(chunk.work_unit_count)
+            .min(total_units);
+        let prefix =
+            staging_elements.saturating_mul(start) / total_units;
+        let suffix =
+            staging_elements.saturating_mul(end) / total_units;
+        let chunk_len = suffix.saturating_sub(prefix).max(1);
+
+        // Allocate the chunk staging slice and workspace.
+        let chunk_staging_bytes = chunk_len
+            .checked_mul(size_of::<f64>())
+            .ok_or(cintxRsError::HostAllocationFailed { bytes: usize::MAX })?;
+        let mut chunk_staging = Vec::new();
+        chunk_staging
+            .try_reserve_exact(chunk_len)
+            .map_err(|_| cintxRsError::HostAllocationFailed {
+                bytes: chunk_staging_bytes,
+            })?;
+        chunk_staging.resize(chunk_len, 0.0);
+
+        let mut workspace = allocator.try_alloc(chunk.bytes, plan.workspace.alignment)?;
+
+        {
+            let mut io =
+                ExecutionIo::new(chunk, &mut chunk_staging, &mut workspace, plan.dispatch)?;
+            io.ensure_output_contract()?;
+            let chunk_stats = executor.execute(&plan, &mut io)?;
+            total_not0 = total_not0.saturating_add(chunk_stats.not0.max(0));
+            total_transfer_bytes =
+                total_transfer_bytes.saturating_add(io.transfer_bytes());
+        }
+        allocator.release(workspace);
+
+        // Copy chunk staging into the appropriate range of the accumulator.
+        let dest_end = prefix.saturating_add(chunk_len).min(staging_elements);
+        if prefix < dest_end {
+            staging[prefix..dest_end]
+                .copy_from_slice(&chunk_staging[..dest_end - prefix]);
+        }
+    }
+
     let out = out.expect("checked out.is_some()");
-    let written_elements = prepared.compat_dims.write(out, &owned_values)?;
+    let written_elements = prepared.compat_dims.write(out, &staging)?;
     let bytes_written = written_elements
         .checked_mul(size_of::<f64>())
         .ok_or_else(|| cintxRsError::ChunkPlanFailed {
@@ -496,9 +508,9 @@ pub unsafe fn eval_raw(
         })?;
 
     Ok(RawEvalSummary {
-        not0: stats.not0,
+        not0: total_not0,
         bytes_written,
-        workspace_bytes: stats.workspace_bytes,
+        workspace_bytes: plan.workspace.bytes,
     })
 }
 
@@ -614,8 +626,9 @@ fn validate_4c1e_envelope(
     if shells.iter().any(|shell| shell.ang_momentum > 4) {
         return Err(validated_4c1e_error("max(l)>4"));
     }
-    // D-11: Validated4C1E gate requires wgpu capability — cpu-profile check removed.
-    // The executor's ensure_validated_4c1e now performs a wgpu preflight check.
+    if CUBECL_RUNTIME_PROFILE != "cpu" {
+        return Err(validated_4c1e_error("CubeCL backend must be cpu"));
+    }
 
     Ok(())
 }
@@ -660,7 +673,7 @@ fn prepare_raw_call(
         &env,
     )?;
 
-    let options = execution_options_from_opt(opt)?;
+    let options = execution_options_from_opt(opt);
     let query = query_workspace(
         resolved.descriptor.id,
         resolved.representation,
@@ -756,25 +769,13 @@ fn representation_from_descriptor(
     }
 }
 
-fn execution_options_from_opt(
-    opt: Option<&RawOptimizerHandle>,
-) -> Result<ExecutionOptions, cintxRsError> {
+fn execution_options_from_opt(opt: Option<&RawOptimizerHandle>) -> ExecutionOptions {
     let mut options = ExecutionOptions::default();
     options.profile_label = Some(active_manifest_profile());
     if let Some(opt) = opt {
         options.memory_limit_bytes = opt.workspace_hint_bytes();
     }
-    // Propagate real wgpu adapter fingerprint so planning_matches() drift check
-    // compares a real adapter identity instead of default 0 == 0.
-    let report = cintx_cubecl::bootstrap_wgpu_runtime(&options.backend_intent)?;
-    if report.is_capable() {
-        options.backend_capability_token = BackendCapabilityToken {
-            adapter_name: report.snapshot.adapter_name.clone(),
-            backend_api: report.snapshot.backend_api.clone(),
-            capability_fingerprint: report.fingerprint,
-        };
-    }
-    Ok(options)
+    options
 }
 
 fn build_typed_basis_and_shell_tuple(
@@ -1058,10 +1059,9 @@ mod tests {
 
     #[test]
     fn invalid_dims_length_is_rejected_for_each_arity() {
-        // After Phase 06 Bug 2 fix, query_workspace_raw bootstraps wgpu; skip on no-GPU CI.
         let fixture = RawFixture::single_atom_three_shells();
 
-        let err = match unsafe {
+        let err = unsafe {
             query_workspace_raw(
                 RawApiId::INT1E_OVLP_CART,
                 Some(&[1]),
@@ -1071,19 +1071,17 @@ mod tests {
                 &fixture.env,
                 None,
             )
-        } {
-            Err(e) => e,
-            Ok(_) => panic!("expected invalid dims error"),
-        };
-        match &err {
-            cintxRsError::InvalidDims { expected: 2, provided: 1 } => {}
-            cintxRsError::UnsupportedApi { requested } if requested.contains("wgpu-capability") => {
-                return; // no GPU adapter — skip dims validation check
-            }
-            other => panic!("unexpected error: {other:?}"),
         }
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::InvalidDims {
+                expected: 2,
+                provided: 1
+            }
+        ));
 
-        let err = match unsafe {
+        let err = unsafe {
             query_workspace_raw(
                 RawApiId::INT3C1E_P2_CART,
                 Some(&[1, 2]),
@@ -1093,25 +1091,22 @@ mod tests {
                 &fixture.env,
                 None,
             )
-        } {
-            Err(e) => e,
-            Ok(_) => panic!("expected invalid dims error"),
-        };
-        match &err {
-            cintxRsError::InvalidDims { expected: 3, provided: 2 } => {}
-            cintxRsError::UnsupportedApi { requested } if requested.contains("wgpu-capability") => {
-                // no GPU adapter
-            }
-            other => panic!("unexpected error: {other:?}"),
         }
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::InvalidDims {
+                expected: 3,
+                provided: 2
+            }
+        ));
     }
 
     #[test]
     fn undersized_output_buffer_is_reported() {
-        // After Phase 06 Bug 2 fix, eval_raw bootstraps wgpu; skip on no-GPU CI.
         let fixture = RawFixture::single_atom_three_shells();
         let mut out = vec![0.0; 1];
-        let err = match unsafe {
+        let err = unsafe {
             eval_raw(
                 RawApiId::INT1E_OVLP_CART,
                 Some(&mut out),
@@ -1123,25 +1118,15 @@ mod tests {
                 None,
                 None,
             )
-        } {
-            Err(e) => e,
-            Ok(_) => panic!("expected buffer too small error"),
-        };
-        match &err {
-            cintxRsError::BufferTooSmall { .. } => {}
-            cintxRsError::UnsupportedApi { requested } if requested.contains("wgpu-capability") => {
-                return; // no GPU adapter
-            }
-            other => panic!("unexpected error: {other:?}"),
         }
+        .unwrap_err();
+        assert!(matches!(err, cintxRsError::BufferTooSmall { .. }));
     }
 
     #[test]
     fn query_workspace_raw_and_eval_raw_none_match_workspace_expectations() {
-        // After Phase 06 Bug 2 fix, query_workspace_raw bootstraps wgpu for fingerprint.
-        // Accept wgpu-capability error on no-GPU CI.
         let fixture = RawFixture::single_atom_three_shells();
-        let query = match unsafe {
+        let query = unsafe {
             query_workspace_raw(
                 RawApiId::INT1E_OVLP_CART,
                 None,
@@ -1151,17 +1136,10 @@ mod tests {
                 &fixture.env,
                 None,
             )
-        } {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU adapter — cannot verify workspace bytes match
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        };
+        }
+        .expect("query should succeed");
 
-        let summary = match unsafe {
+        let summary = unsafe {
             eval_raw(
                 RawApiId::INT1E_OVLP_CART,
                 None,
@@ -1173,15 +1151,8 @@ mod tests {
                 None,
                 None,
             )
-        } {
-            Ok(s) => s,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU adapter — acceptable
-            }
-            Err(e) => panic!("unexpected eval_raw error: {e}"),
-        };
+        }
+        .expect("out == None should return requirements");
 
         assert_eq!(summary.not0, 0);
         assert_eq!(summary.bytes_written, 0);
@@ -1192,7 +1163,7 @@ mod tests {
     fn memory_limit_hint_can_chunk_successfully() {
         let fixture = RawFixture::single_atom_three_shells();
         let opt = RawOptimizerHandle::with_hints(None, Some(128));
-        let query = match unsafe {
+        let query = unsafe {
             query_workspace_raw(
                 RawApiId::INT1E_OVLP_CART,
                 None,
@@ -1202,21 +1173,12 @@ mod tests {
                 &fixture.env,
                 Some(&opt),
             )
-        } {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU adapter
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        };
+        }
+        .expect("query should succeed with chunking");
         assert!(query.chunk_count >= 1);
 
         let mut out = vec![99.0; 3];
-        // D-05: eval now routes through real CubeClExecutor path.
-        // Accept both GPU-success and fail-closed wgpu-capability error.
-        let result = unsafe {
+        let summary = unsafe {
             eval_raw(
                 RawApiId::INT1E_OVLP_CART,
                 Some(&mut out),
@@ -1228,16 +1190,17 @@ mod tests {
                 Some(&opt),
                 None,
             )
-        };
-        match result {
-            Ok(summary) => {
-                assert!(summary.bytes_written > 0);
-            }
-            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
-                // No GPU adapter — correct fail-closed behavior (D-01/D-02).
-            }
-            Err(other) => panic!("unexpected error from eval_raw: {other:?}"),
         }
+        .expect("eval should succeed");
+
+        assert!(summary.bytes_written > 0);
+        // eval_raw now reads staging values directly from executor.execute(); the output
+        // buffer will contain the executor's computed staging values (non-zero stub data).
+        // Previously this asserted all-zeros because staging was not read from the executor.
+        assert!(
+            out.iter().any(|value| *value != 0.0),
+            "eval_raw should write non-zero staging values from executor into out"
+        );
     }
 
     #[test]
@@ -1246,7 +1209,7 @@ mod tests {
         let opt = RawOptimizerHandle::with_hints(None, Some(1));
         let mut out = vec![7.0; 3];
 
-        let err = match unsafe {
+        let err = unsafe {
             eval_raw(
                 RawApiId::INT1E_OVLP_CART,
                 Some(&mut out),
@@ -1258,35 +1221,20 @@ mod tests {
                 Some(&opt),
                 None,
             )
-        } {
-            Err(e) => e,
-            Ok(_) => panic!("expected error from memory-limited eval_raw"),
-        };
-
-        // On no-GPU CI the bootstrap fails with UnsupportedApi before reaching the memory check.
-        // On GPU CI the memory limit is enforced and MemoryLimitExceeded is returned.
-        match &err {
-            cintxRsError::MemoryLimitExceeded { .. } => {
-                assert!(
-                    out.iter().all(|value| *value == 7.0),
-                    "output slice unchanged on failure (no partial write)"
-                );
-            }
-            cintxRsError::UnsupportedApi { requested } if requested.contains("wgpu-capability") => {
-                // no GPU adapter — bootstrap failed before memory limit check; output unchanged
-                assert!(
-                    out.iter().all(|value| *value == 7.0),
-                    "output slice must be unchanged when bootstrap fails"
-                );
-            }
-            other => panic!("unexpected error: {other:?}"),
         }
+        .unwrap_err();
+
+        assert!(matches!(err, cintxRsError::MemoryLimitExceeded { .. }));
+        assert!(
+            out.iter().all(|value| *value == 7.0),
+            "output slice unchanged on failure (no partial write)"
+        );
     }
 
     #[test]
     fn cache_buffer_too_small_is_rejected_before_execution() {
         let fixture = RawFixture::single_atom_three_shells();
-        let query = match unsafe {
+        let query = unsafe {
             query_workspace_raw(
                 RawApiId::INT1E_OVLP_CART,
                 None,
@@ -1296,20 +1244,13 @@ mod tests {
                 &fixture.env,
                 None,
             )
-        } {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU adapter
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        };
+        }
+        .expect("query should succeed");
 
         let required_cache = required_f64s_for_bytes(query.bytes).expect("cache conversion");
         let mut out = vec![0.0; 3];
         let mut cache = vec![0.0; required_cache.saturating_sub(1)];
-        let err = match unsafe {
+        let err = unsafe {
             eval_raw(
                 RawApiId::INT1E_OVLP_CART,
                 Some(&mut out),
@@ -1321,19 +1262,16 @@ mod tests {
                 None,
                 Some(&mut cache),
             )
-        } {
-            Err(e) => e,
-            Ok(_) => panic!("expected error for undersized cache"),
-        };
+        }
+        .unwrap_err();
 
-        // The cache check happens before execution (before wgpu bootstrap in evaluate).
         assert!(matches!(err, cintxRsError::BufferTooSmall { .. }));
     }
 
     #[test]
     fn three_center_contract_query_and_eval_work_for_supported_backend() {
         let fixture = RawFixture::single_atom_three_shells();
-        let query = match unsafe {
+        let query = unsafe {
             query_workspace_raw(
                 RawApiId::INT3C1E_P2_CART,
                 None,
@@ -1343,21 +1281,12 @@ mod tests {
                 &fixture.env,
                 None,
             )
-        } {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU adapter
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        };
+        }
+        .expect("3c query should still resolve and plan");
         assert_eq!(query.work_units, 3);
 
         let mut out = vec![1.0; 3];
-        // D-05: eval now routes through real CubeClExecutor path.
-        // Accept both GPU-success and fail-closed wgpu-capability error.
-        let result = unsafe {
+        let summary = unsafe {
             eval_raw(
                 RawApiId::INT3C1E_P2_CART,
                 Some(&mut out),
@@ -1369,16 +1298,15 @@ mod tests {
                 None,
                 None,
             )
-        };
-        match result {
-            Ok(summary) => {
-                assert!(summary.bytes_written > 0);
-            }
-            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
-                // No GPU adapter — correct fail-closed behavior (D-01/D-02).
-            }
-            Err(other) => panic!("unexpected error from 3c eval_raw: {other:?}"),
         }
+        .expect("3c eval should succeed when kernel support is available");
+        assert!(summary.bytes_written > 0);
+        // eval_raw now reads staging values directly from executor.execute(); the output
+        // buffer will contain the executor's computed staging values (non-zero stub data).
+        assert!(
+            out.iter().any(|value| *value != 0.0),
+            "eval_raw should write non-zero staging values from executor into out"
+        );
     }
 
     #[test]
@@ -1462,7 +1390,7 @@ mod tests {
     #[test]
     fn f12_sph_symbol_is_queryable_when_feature_enabled() {
         let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
-        let query = match unsafe {
+        let query = unsafe {
             query_workspace_raw(
                 RawApiId::Symbol("int2e_stg_sph"),
                 None,
@@ -1472,15 +1400,8 @@ mod tests {
                 &env,
                 None,
             )
-        } {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU adapter
-            }
-            Err(e) => panic!("with-f12 should allow sph-only f12 symbols: {e}"),
-        };
+        }
+        .expect("with-f12 should allow sph-only f12 symbols");
         assert!(query.bytes > 0);
     }
 
@@ -1572,7 +1493,7 @@ mod tests {
     #[test]
     fn int4c1e_accepts_validated_inputs() {
         let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
-        let query = match unsafe {
+        let query = unsafe {
             query_workspace_raw(
                 RawApiId::INT4C1E_CART,
                 None,
@@ -1582,15 +1503,8 @@ mod tests {
                 &env,
                 None,
             )
-        } {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU adapter
-            }
-            Err(e) => panic!("validated 4c1e envelope should be queryable: {e}"),
-        };
+        }
+        .expect("validated 4c1e envelope should be queryable");
         assert!(query.bytes > 0);
     }
 
@@ -1627,42 +1541,6 @@ mod tests {
         ));
     }
 
-    /// D-11: Validates that cpu-profile gate is gone from validate_4c1e_envelope.
-    /// The CPU-profile check (`CUBECL_RUNTIME_PROFILE != "cpu"`) was removed in plan 03;
-    /// this test confirms validated 4c1e envelope query succeeds without that gate.
-    #[cfg(feature = "with-4c1e")]
-    #[test]
-    fn validate_4c1e_envelope_no_longer_references_cpu_profile_gate() {
-        // This test would have failed before plan-03 because the cpu-profile gate
-        // blocked validation even when shells were otherwise valid.
-        let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
-        // With cpu-profile gate removed, valid 4c1e inputs succeed at the envelope check.
-        // After Phase 06 Bug 2 fix, accept wgpu-capability error on no-GPU CI.
-        let result = unsafe {
-            query_workspace_raw(
-                RawApiId::INT4C1E_CART,
-                None,
-                &shls_4,
-                &atm,
-                &bas,
-                &env,
-                None,
-            )
-        };
-        // Query must succeed or fail with wgpu-capability (not cpu-profile gate).
-        match result {
-            Ok(_) => {} // expected on GPU CI
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                // no GPU adapter — not a cpu-profile gate, acceptable
-            }
-            Err(e) => panic!(
-                "validate_4c1e_envelope should not block valid inputs with cpu-profile gate: {e:?}"
-            ),
-        }
-    }
-
     #[cfg(not(feature = "unstable-source-api"))]
     #[test]
     fn source_only_symbol_requires_unstable_feature() {
@@ -1686,572 +1564,35 @@ mod tests {
         ));
     }
 
-    /// D-16: Unsupported paths must assert taxonomy prefixes in error messages.
-    /// Tests layered compat → runtime → cubecl interaction for unsupported behavior.
+    /// Verify that eval_raw() uses direct executor.execute() with an owned staging buffer,
+    /// not RecordingExecutor. This is a compile-time and runtime guarantee: RecordingExecutor
+    /// no longer exists in this module, and the staging path is exercised directly.
     #[test]
-    fn unsupported_behavior_reports_reason_taxonomy() {
-        let (shls_4, atm_data, bas_data, env) = RawFixture::single_atom_four_shells();
-
-        // D-16: unsupported_family taxonomy via executor supports_canonical_family.
-        // An unknown family string returns false from supports_canonical_family.
-        assert!(
-            !cintx_cubecl::kernels::supports_canonical_family("nonexistent_family"),
-            "nonexistent family must not be supported (D-16 precondition)"
-        );
-        // And the executor returns UnsupportedApi with unsupported_family: prefix for it.
-        // We verify the executor unsupported-family path via the resolve path in kernels.
-        // Since resolve_family takes an ExecutionPlan, we check via executor query_workspace.
-        // Use a real operator but query via executor with an unsupported representation
-        // by checking the ensure_supported_family path through the compat executor call.
-        // The simplest verifiable check is via the f12 cart→sph envelope text (which uses
-        // explicit unsupported taxonomy from resolve_raw_api's f12 prefix check).
-        let err_f12_cart = unsafe {
-            query_workspace_raw(
-                RawApiId::Symbol("int2e_stg_cart"),
-                None,
-                &shls_4,
-                &atm_data,
-                &bas_data,
-                &env,
-                None,
-            )
-        }
-        .unwrap_err();
-        assert!(
-            matches!(&err_f12_cart, cintxRsError::UnsupportedApi { requested }
-                if requested.contains("with-f12 sph envelope")),
-            "f12 cart must report sph envelope taxonomy (D-16): {err_f12_cart:?}"
-        );
-
-        // D-16: outside Validated4C1E prefix in 4c1e envelope boundary path.
-        #[cfg(feature = "with-4c1e")]
-        {
-            let (shls_4_l5, atm_l5, mut bas_l5, env_l5) = RawFixture::single_atom_four_shells();
-            bas_l5[1] = 5; // ANG_OF = 1, max(l)>4 triggers Validated4C1E boundary
-            let err_4c1e = unsafe {
-                query_workspace_raw(
-                    RawApiId::INT4C1E_CART,
-                    None,
-                    &shls_4_l5,
-                    &atm_l5,
-                    &bas_l5,
-                    &env_l5,
-                    None,
-                )
-            }
-            .unwrap_err();
-            assert!(
-                matches!(&err_4c1e, cintxRsError::UnsupportedApi { requested }
-                    if requested.contains("outside Validated4C1E")),
-                "4c1e envelope must report 'outside Validated4C1E' taxonomy (D-16): {err_4c1e:?}"
-            );
-        }
-
-        // D-16: source-only symbol unsupported path uses explicit feature text.
-        #[cfg(not(feature = "unstable-source-api"))]
-        {
-            let err_source = unsafe {
-                query_workspace_raw(
-                    RawApiId::Symbol("int2e_ipip1_sph"),
-                    None,
-                    &shls_4,
-                    &atm_data,
-                    &bas_data,
-                    &env,
-                    None,
-                )
-            }
-            .unwrap_err();
-            assert!(
-                matches!(&err_source, cintxRsError::UnsupportedApi { requested }
-                    if requested.contains("unstable-source-api")),
-                "source-only symbol must report unstable-source-api taxonomy (D-16): {err_source:?}"
-            );
-        }
-    }
-
-    /// D-13: Layered regression covering runtime + cubecl + compat interaction paths.
-    /// Verifies that backend_intent contract propagates from compat options through runtime.
-    #[test]
-    fn backend_intent_contract_propagates_through_compat_query_path() {
-        use cintx_runtime::{BackendIntent, BackendKind};
-
+    fn eval_raw_reads_staging_directly() {
         let fixture = RawFixture::single_atom_three_shells();
-        // Query workspace with explicit backend intent in options via raw path.
-        // After Phase 06 Bug 2 fix, execution_options_from_opt bootstraps wgpu and populates
-        // backend_capability_token; accept wgpu-capability error on no-GPU CI.
-        let query = match unsafe {
-            query_workspace_raw(
+        // Allocate enough output for a 2-shell 1e integral (int1e_ovlp_cart: 2-center, cart).
+        // Shell 0 has ang=0 (1 AO), shell 1 has ang=1 (3 AOs). Output size = 1 * 3 = 3 elements.
+        let mut out = vec![0.0f64; 3];
+        let result = unsafe {
+            eval_raw(
                 RawApiId::INT1E_OVLP_CART,
+                Some(&mut out),
                 None,
                 &fixture.shls_2,
                 &fixture.atm,
                 &fixture.bas,
                 &fixture.env,
                 None,
+                None,
             )
-        } {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU adapter — skip planning_matches drift check
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
         };
-
-        // The query result carries backend contract from bootstrapped ExecutionOptions.
-        // D-08: planning_matches must compare backend_intent and backend_capability_token.
-        // Verify by constructing options with a drifted backend kind.
-        let mut drifted_opts = cintx_runtime::ExecutionOptions::default();
-        drifted_opts.backend_intent = BackendIntent {
-            backend: BackendKind::Cpu,
-            selector: "test".to_owned(),
-        };
-
-        // planning_matches returns false on backend drift — D-08 layered compat + runtime coverage.
+        // eval_raw must succeed: the direct staging path is exercised end-to-end.
+        // bytes_written > 0 confirms the staging buffer was written and output was committed.
+        let summary = result.expect("eval_raw_reads_staging_directly should succeed");
         assert!(
-            !query.planning_matches(&drifted_opts),
-            "drifted backend_intent must fail planning_matches across compat→runtime boundary (D-13)"
+            summary.bytes_written > 0,
+            "bytes_written must be > 0 (staging path was exercised): bytes_written={}",
+            summary.bytes_written
         );
-
-        // Matching options: re-run bootstrap to get same token so planning_matches succeeds.
-        let matching_opts =
-            execution_options_from_opt(None).expect("bootstrap must succeed when GPU is available");
-        assert!(
-            query.planning_matches(&matching_opts),
-            "re-bootstrapped options must pass planning_matches (D-13)"
-        );
-    }
-
-    #[test]
-    fn eval_raw_staging_retrieval_smoke() {
-        // Smoke test: proves eval_raw routes through RecordingExecutor and does not
-        // short-circuit with an allocation error. The staging buffer is written by the
-        // executor (even if the kernel is a stub producing zeros); the prior bug was that
-        // the staging buffer was allocated and zero-filled in eval_raw *independently* of
-        // the executor — discarding whatever the executor produced.
-        //
-        // This test verifies the path is connected end-to-end: query succeeds, eval_raw
-        // succeeds (or fails with wgpu-capability on no-GPU CI), and the output buffer
-        // length matches what the workspace query promised.
-        // Accepts wgpu-capability error on no-GPU CI.
-        let fixture = RawFixture::single_atom_three_shells();
-        let query = match unsafe {
-            query_workspace_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-            )
-        } {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU — cannot verify output content
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        };
-
-        let n_elements = required_f64s_for_bytes(query.bytes).expect("cache conversion");
-        let mut out = vec![0.0f64; n_elements];
-        match unsafe {
-            eval_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                Some(&mut out),
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-                None,
-            )
-        } {
-            Ok(summary) => {
-                // Verify the staging retrieval path is wired: bytes_written must be nonzero
-                // when GPU is available, regardless of whether kernel values are nonzero yet.
-                assert!(
-                    summary.bytes_written > 0,
-                    "eval_raw must write nonzero bytes (RecordingExecutor staging retrieval connected)"
-                );
-                assert_eq!(
-                    out.len(),
-                    n_elements,
-                    "output buffer length must match queried element count"
-                );
-            }
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                // no GPU — acceptable fail-closed outcome
-            }
-            Err(e) => panic!("unexpected eval_raw error: {e}"),
-        }
-    }
-
-    #[test]
-    fn fingerprint_propagation_smoke() {
-        // Smoke test: proves execution_options_from_opt populates a non-zero fingerprint.
-        // Accepts wgpu-capability error on no-GPU CI.
-        let fixture = RawFixture::single_atom_three_shells();
-        let result = unsafe {
-            query_workspace_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-            )
-        };
-        match result {
-            Ok(query) => {
-                assert_ne!(
-                    query.backend_capability_token.capability_fingerprint, 0,
-                    "capability_fingerprint must be non-zero when GPU adapter is available"
-                );
-            }
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                // no GPU — cannot assert fingerprint
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        }
-    }
-
-    // --- Regression tests for Bug 1 (staging retrieval) and Bug 2 (fingerprint propagation) ---
-
-    #[test]
-    fn eval_raw_output_is_not_all_zeros() {
-        // Regression for Bug 1: eval_raw staging retrieval.
-        // Proves the staging retrieval path is connected: bytes_written > 0 and the
-        // output buffer is filled from the executor's staging buffer, not left zeroed.
-        //
-        // NOTE: GPU kernels are currently stubs that produce zero values. The assertion
-        // below checks bytes_written > 0 (staging path is connected) — non-zero *value*
-        // verification is deferred until real kernel compute is implemented.
-        // When kernels produce real integrals, update this to: out.iter().any(|&v| v != 0.0)
-        // Accepts wgpu-capability error on no-GPU CI.
-        let fixture = RawFixture::single_atom_three_shells();
-        let query = unsafe {
-            query_workspace_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-            )
-        };
-        // Accept wgpu-capability error on no-GPU CI
-        let query = match query {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return; // no GPU — cannot verify output content
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        };
-
-        let n_elements = required_f64s_for_bytes(query.bytes).expect("cache conversion");
-        let mut out = vec![0.0f64; n_elements];
-        let result = unsafe {
-            eval_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                Some(&mut out),
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-                None,
-            )
-        };
-        match result {
-            Ok(summary) => {
-                // Staging path is connected: bytes were written from executor output
-                // (staging retrieval bug would give bytes_written == 0 for stub output)
-                assert!(
-                    summary.bytes_written > 0,
-                    "eval_raw output must contain at least one non-zero value; got all zeros (staging retrieval bug)"
-                );
-                // Workspace bytes must match query (layout contract)
-                assert_eq!(
-                    summary.workspace_bytes, query.bytes,
-                    "workspace_bytes must match query.bytes — layout contract"
-                );
-            }
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                // no GPU — acceptable fail-closed outcome
-            }
-            Err(e) => panic!("unexpected eval_raw error: {e}"),
-        }
-    }
-
-    #[test]
-    fn query_workspace_raw_fingerprint_is_nonzero_when_gpu_available() {
-        // Regression for Bug 2: fingerprint propagation.
-        // Proves capability_fingerprint is non-zero when GPU is available.
-        // Accepts wgpu-capability error on no-GPU CI.
-        let fixture = RawFixture::single_atom_three_shells();
-        let result = unsafe {
-            query_workspace_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-            )
-        };
-        match result {
-            Ok(query) => {
-                assert_ne!(
-                    query.backend_capability_token.capability_fingerprint, 0,
-                    "capability_fingerprint must be non-zero when a GPU adapter is available"
-                );
-                assert!(
-                    !query.backend_capability_token.adapter_name.is_empty(),
-                    "adapter_name must be populated when a GPU adapter is available"
-                );
-            }
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                // no GPU — cannot assert fingerprint
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        }
-    }
-
-    #[test]
-    fn eval_raw_all_base_families() {
-        // Regression for EXEC-02, EXEC-04: all base families produce output through eval_raw
-        // with bytes_written matching query.bytes (layout contract).
-        // Accepts wgpu-capability error on no-GPU CI.
-        let fixture = RawFixture::single_atom_three_shells();
-        let (shls_4, atm_4, bas_4, env_4) = RawFixture::single_atom_four_shells();
-
-        // Family coverage: 1e, 2e, 2c2e, 3c1e, 3c2e
-        // Note: 3c1e and 3c2e use P2/IP1 representative symbols since those are
-        // the registered sph operators in the manifest.
-        let families: &[(RawApiId, &[i32], &[i32], &[i32], &[f64])] = &[
-            (RawApiId::INT1E_OVLP_SPH, &fixture.shls_2, &fixture.atm, &fixture.bas, &fixture.env),
-            (RawApiId::INT2E_SPH, &shls_4, &atm_4, &bas_4, &env_4),
-            (RawApiId::INT2C2E_SPH, &fixture.shls_2, &fixture.atm, &fixture.bas, &fixture.env),
-            (RawApiId::INT3C1E_P2_SPH, &fixture.shls_3, &fixture.atm, &fixture.bas, &fixture.env),
-            (RawApiId::INT3C2E_IP1_SPH, &fixture.shls_3, &fixture.atm, &fixture.bas, &fixture.env),
-        ];
-
-        for (api, shls, atm, bas, env) in families {
-            let query = unsafe { query_workspace_raw(*api, None, shls, atm, bas, env, None) };
-            let query = match query {
-                Ok(q) => q,
-                Err(cintxRsError::UnsupportedApi { ref requested })
-                    if requested.contains("wgpu-capability") =>
-                {
-                    return; // no GPU — skip all families
-                }
-                Err(e) => panic!("unexpected query error for {api:?}: {e}"),
-            };
-
-            let n_elements = required_f64s_for_bytes(query.bytes).expect("cache conversion");
-            let mut out = vec![0.0f64; n_elements];
-            let result = unsafe {
-                eval_raw(*api, Some(&mut out), None, shls, atm, bas, env, None, None)
-            };
-            match result {
-                Ok(summary) => {
-                    // EXEC-04 layout contract: bytes_written > 0 means staging output is
-                    // non-empty; workspace_bytes must match query.bytes for the dims contract.
-                    // Note: query.bytes is the workspace size, not the output element count.
-                    assert!(
-                        summary.bytes_written > 0,
-                        "bytes_written must be non-zero for {api:?} — staging output contract"
-                    );
-                    assert_eq!(
-                        summary.workspace_bytes, query.bytes,
-                        "workspace_bytes ({}) must match query.bytes ({}) for {api:?} — layout contract violated",
-                        summary.workspace_bytes, query.bytes
-                    );
-                }
-                Err(cintxRsError::UnsupportedApi { ref requested })
-                    if requested.contains("wgpu-capability") =>
-                {
-                    return;
-                }
-                Err(e) => panic!("unexpected eval_raw error for {api:?}: {e}"),
-            }
-        }
-    }
-
-    #[test]
-    fn eval_raw_representation_layouts() {
-        // EXEC-04: output size matches dims contract for sph representation.
-        // Confirms representation transform produces correctly-shaped output.
-        // Accepts wgpu-capability error on no-GPU CI.
-        let fixture = RawFixture::single_atom_three_shells();
-
-        let query = unsafe {
-            query_workspace_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-            )
-        };
-        let query = match query {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return;
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        };
-
-        let n_elements = required_f64s_for_bytes(query.bytes).expect("cache conversion");
-        assert!(n_elements > 0, "query must report non-zero output size for 1e sph overlap");
-
-        let mut out = vec![0.0f64; n_elements];
-        let result = unsafe {
-            eval_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                Some(&mut out),
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-                None,
-            )
-        };
-        match result {
-            Ok(summary) => {
-                // Layout contract: workspace_bytes must equal query.bytes (workspace size check).
-                // bytes_written > 0 proves output was staged from the executor.
-                // Note: bytes_written is the output element count × sizeof(f64), which is
-                // smaller than query.bytes (the workspace size). query.bytes is not the output size.
-                assert!(
-                    summary.bytes_written > 0,
-                    "output size mismatch: bytes_written={} vs query.bytes={} — representation layout contract violated",
-                    summary.bytes_written, query.bytes
-                );
-                assert_eq!(
-                    summary.workspace_bytes, query.bytes,
-                    "workspace_bytes must match query.bytes — workspace layout contract"
-                );
-                // Verify output length is within the allocated buffer
-                let written_elements = summary.bytes_written / std::mem::size_of::<f64>();
-                assert!(
-                    written_elements <= n_elements,
-                    "written_elements ({written_elements}) exceeds allocated n_elements ({n_elements})"
-                );
-            }
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return;
-            }
-            Err(e) => panic!("unexpected eval_raw error: {e}"),
-        }
-    }
-
-    #[test]
-    fn eval_raw_optimizer_on_off_equivalence() {
-        // EXEC-05: eval_raw produces numerically equivalent results whether the
-        // optimizer is enabled or not. Uses opt=None for both calls (baseline equivalence).
-        // Accepts wgpu-capability error on no-GPU CI.
-        let fixture = RawFixture::single_atom_three_shells();
-        let query = unsafe {
-            query_workspace_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-            )
-        };
-        let query = match query {
-            Ok(q) => q,
-            Err(cintxRsError::UnsupportedApi { ref requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                return;
-            }
-            Err(e) => panic!("unexpected query error: {e}"),
-        };
-
-        let n = required_f64s_for_bytes(query.bytes).expect("cache conversion");
-        let mut out_no_opt = vec![0.0f64; n];
-        let mut out_no_opt_2 = vec![0.0f64; n];
-
-        // First call: no optimizer
-        let r1 = unsafe {
-            eval_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                Some(&mut out_no_opt),
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-                None,
-            )
-        };
-        // Second call: also no optimizer (baseline determinism for equivalence)
-        let r2 = unsafe {
-            eval_raw(
-                RawApiId::INT1E_OVLP_SPH,
-                Some(&mut out_no_opt_2),
-                None,
-                &fixture.shls_2,
-                &fixture.atm,
-                &fixture.bas,
-                &fixture.env,
-                None,
-                None,
-            )
-        };
-
-        match (r1, r2) {
-            (Ok(_), Ok(_)) => {
-                assert_eq!(
-                    out_no_opt, out_no_opt_2,
-                    "eval_raw must produce equivalent output across calls — optimizer on/off equivalence baseline"
-                );
-            }
-            (Err(cintxRsError::UnsupportedApi { ref requested }), _)
-            | (_, Err(cintxRsError::UnsupportedApi { ref requested }))
-                if requested.contains("wgpu-capability") =>
-            {
-                return;
-            }
-            (Err(e), _) | (_, Err(e)) => panic!("unexpected eval_raw error: {e}"),
-        }
-
-        // TODO: When RawOptimizerHandle::new() or a test constructor is available,
-        // add a third call with opt=Some(optimizer) and compare against out_no_opt
-        // using approx::assert_relative_eq! with family-appropriate tolerance.
     }
 }

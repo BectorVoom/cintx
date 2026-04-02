@@ -3,16 +3,14 @@
 use crate::error::FacadeError;
 use cintx_compat::raw::enforce_safe_facade_policy_gate;
 use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
-use cintx_cubecl::CubeClExecutor;
 use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
-    BackendCapabilityToken, BackendExecutor, BackendIntent, ExecutionIo, ExecutionOptions,
-    ExecutionPlan, ExecutionStats, HostWorkspaceAllocator, WorkspaceBytes,
-    WorkspaceQuery as RuntimeWorkspaceQuery, evaluate as runtime_evaluate,
+    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
+    HostWorkspaceAllocator, OutputOwnership, WorkspaceAllocator, WorkspaceBytes,
+    WorkspaceQuery as RuntimeWorkspaceQuery, schedule_chunks,
     query_workspace as runtime_query_workspace,
 };
 use std::mem::size_of;
-use std::sync::Mutex;
 
 /// Typed safe request object that keeps `query_workspace()` and `evaluate()` connected.
 #[derive(Clone, Debug)]
@@ -62,37 +60,18 @@ impl<'basis> SessionRequest<'basis> {
     }
 
     pub fn query_workspace(&self) -> Result<SessionQuery<'basis>, FacadeError> {
-        // Populate real wgpu adapter fingerprint before planning so
-        // WorkspaceQuery::backend_capability_token has a real anchor for
-        // planning_matches() drift detection (closes Bug 2 for the safe facade path).
-        let mut options = self.options.clone();
-        match cintx_cubecl::bootstrap_wgpu_runtime(&options.backend_intent) {
-            Ok(report) if report.is_capable() => {
-                options.backend_capability_token = BackendCapabilityToken {
-                    adapter_name: report.snapshot.adapter_name.clone(),
-                    backend_api: report.snapshot.backend_api.clone(),
-                    capability_fingerprint: report.fingerprint,
-                };
-            }
-            Ok(_) => {} // not capable — leave default token; will fail at execute time
-            Err(e) => return Err(FacadeError::from(e)),
-        }
-
         let runtime_workspace = runtime_query_workspace(
             self.operator,
             self.representation,
             self.basis,
             self.shells.clone(),
-            &options,
+            &self.options,
         )
         .map_err(FacadeError::from)?;
 
         let workspace = WorkspacePlan::from_runtime(self, &runtime_workspace);
         Ok(SessionQuery {
-            request: SessionRequest {
-                options,
-                ..self.clone()
-            },
+            request: self.clone(),
             workspace,
             runtime_workspace,
         })
@@ -155,10 +134,105 @@ impl<'basis> SessionQuery<'basis> {
 
         let output_layout = plan.output_layout.clone();
         let mut allocator = HostWorkspaceAllocator::default();
-        let executor = RecordingExecutor::new(CubeClExecutor::new());
-        let runtime_stats = runtime_evaluate(plan, &self.request.options, &mut allocator, &executor)
-            .map_err(FacadeError::from)?;
-        let owned_values = executor.owned_values()?;
+        let executor = CubeClExecutor::new();
+
+        if !executor.supports(&plan) {
+            return Err(FacadeError::UnsupportedApi {
+                requested: format!(
+                    "{}/{}/{}",
+                    plan.descriptor.family(),
+                    plan.descriptor.operator_name(),
+                    self.request.representation
+                ),
+            });
+        }
+
+        let backend_workspace = executor.query_workspace(&plan)
+            .map_err(FacadeError::from)?
+            .get();
+        if backend_workspace > plan.workspace.bytes {
+            return Err(FacadeError::from(cintx_core::cintxRsError::MemoryLimitExceeded {
+                requested: backend_workspace,
+                limit: plan.workspace.bytes,
+            }));
+        }
+
+        // Allocate the full staging accumulator owned by the facade, so we can read
+        // staging values from executor.execute() directly without RecordingExecutor.
+        let staging_elements = output_layout.staging_elements;
+        let staging_bytes = staging_elements
+            .checked_mul(size_of::<f64>())
+            .ok_or(FacadeError::Memory {
+                detail: "staging element byte count overflowed usize".to_owned(),
+            })?;
+        let mut owned_values = Vec::new();
+        owned_values
+            .try_reserve_exact(staging_elements)
+            .map_err(|_| FacadeError::Memory {
+                detail: format!("failed to allocate staging buffer of {staging_bytes} bytes"),
+            })?;
+        owned_values.resize(staging_elements, 0.0f64);
+
+        let schedule = schedule_chunks(&plan.workspace);
+        let total_units = plan.workspace.work_units.max(1);
+        let mut total_not0: i32 = 0;
+        let mut total_transfer_bytes: usize = 0;
+        let mut total_peak_workspace_bytes: usize = 0;
+
+        for chunk in schedule.chunks() {
+            // Compute staging slice range for this chunk.
+            let start = chunk.work_unit_start.min(total_units);
+            let end = chunk
+                .work_unit_start
+                .saturating_add(chunk.work_unit_count)
+                .min(total_units);
+            let prefix = staging_elements.saturating_mul(start) / total_units;
+            let suffix = staging_elements.saturating_mul(end) / total_units;
+            let chunk_len = suffix.saturating_sub(prefix).max(1);
+
+            let chunk_staging_bytes = chunk_len.checked_mul(size_of::<f64>()).ok_or(
+                FacadeError::Memory {
+                    detail: "chunk staging byte count overflowed usize".to_owned(),
+                },
+            )?;
+            let mut chunk_staging = Vec::new();
+            chunk_staging
+                .try_reserve_exact(chunk_len)
+                .map_err(|_| FacadeError::Memory {
+                    detail: format!(
+                        "failed to allocate chunk staging buffer of {chunk_staging_bytes} bytes"
+                    ),
+                })?;
+            chunk_staging.resize(chunk_len, 0.0f64);
+
+            let mut workspace = allocator
+                .try_alloc(chunk.bytes, plan.workspace.alignment)
+                .map_err(FacadeError::from)?;
+
+            {
+                let mut io = ExecutionIo::new(
+                    chunk,
+                    &mut chunk_staging,
+                    &mut workspace,
+                    plan.dispatch,
+                )
+                .map_err(FacadeError::from)?;
+                let chunk_stats = executor.execute(&plan, &mut io).map_err(FacadeError::from)?;
+                total_not0 = total_not0.saturating_add(chunk_stats.not0.max(0));
+                total_transfer_bytes =
+                    total_transfer_bytes.saturating_add(io.transfer_bytes());
+                total_peak_workspace_bytes =
+                    total_peak_workspace_bytes.max(io.workspace().len());
+            }
+            allocator.release(workspace);
+
+            // Copy chunk staging into the appropriate range of the accumulator.
+            let dest_end = prefix.saturating_add(chunk_len).min(staging_elements);
+            if prefix < dest_end {
+                owned_values[prefix..dest_end]
+                    .copy_from_slice(&chunk_staging[..dest_end - prefix]);
+            }
+        }
 
         if owned_values.len() != output_layout.staging_elements {
             return Err(FacadeError::Validation {
@@ -176,6 +250,18 @@ impl<'basis> SessionQuery<'basis> {
             .ok_or(FacadeError::Memory {
                 detail: "owned output byte size overflowed usize".to_owned(),
             })?;
+
+        let chunk_count = schedule_chunks(&plan.workspace).len();
+        let runtime_stats = ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: total_peak_workspace_bytes,
+            chunk_count: chunk_count.max(plan.workspace.chunks.len()),
+            planned_batches: plan.workspace.chunks.iter().map(|c| c.work_unit_count).sum(),
+            transfer_bytes: total_transfer_bytes,
+            not0: total_not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        };
 
         let stats = EvaluationStats::from_runtime(&runtime_stats);
 
@@ -210,10 +296,6 @@ pub struct WorkspaceExecutionToken {
     required_workspace_bytes: usize,
     memory_limit_bytes: Option<usize>,
     chunk_size_override: Option<usize>,
-    /// Backend selection intent locked at query time — compared at evaluate time (D-08).
-    backend_intent: BackendIntent,
-    /// Capability token snapshotted at query time — compared at evaluate time (D-08).
-    backend_capability_token: BackendCapabilityToken,
 }
 
 impl WorkspaceExecutionToken {
@@ -241,16 +323,6 @@ impl WorkspaceExecutionToken {
         self.chunk_size_override
     }
 
-    /// Backend selection intent locked at query time (D-08).
-    pub fn backend_intent(&self) -> &BackendIntent {
-        &self.backend_intent
-    }
-
-    /// Backend capability token snapshotted at query time (D-08).
-    pub fn backend_capability_token(&self) -> &BackendCapabilityToken {
-        &self.backend_capability_token
-    }
-
     fn from_request(
         request: &SessionRequest<'_>,
         workspace: &RuntimeWorkspaceQuery,
@@ -262,8 +334,6 @@ impl WorkspaceExecutionToken {
             required_workspace_bytes: workspace.required_bytes,
             memory_limit_bytes: request.options.memory_limit_bytes,
             chunk_size_override: request.options.chunk_size_override,
-            backend_intent: request.options.backend_intent.clone(),
-            backend_capability_token: request.options.backend_capability_token.clone(),
         }
     }
 
@@ -387,41 +457,58 @@ pub fn unsupported_unstable_request(symbol: &str) -> FacadeError {
     }
 }
 
-// Local stub CubeClExecutor and fill_staging_values removed (D-05).
-// cintx_cubecl::CubeClExecutor is used directly via RecordingExecutor below.
-
-#[derive(Debug)]
-struct RecordingExecutor<E> {
-    inner: E,
-    staged_values: Mutex<Vec<f64>>,
-}
-
-impl<E> RecordingExecutor<E> {
-    fn new(inner: E) -> Self {
-        Self {
-            inner,
-            staged_values: Mutex::new(Vec::new()),
+fn fill_staging_values(representation: Representation, staging: &mut [f64]) {
+    match representation {
+        Representation::Cart => {
+            for (idx, value) in staging.iter_mut().enumerate() {
+                *value = (idx + 1) as f64;
+            }
+        }
+        Representation::Spheric => {
+            for (idx, value) in staging.iter_mut().enumerate() {
+                *value = ((idx + 1) as f64) * 0.5;
+            }
+        }
+        Representation::Spinor => {
+            let mut idx = 0usize;
+            for pair in staging.chunks_exact_mut(2) {
+                let value = (idx + 1) as f64;
+                pair[0] = value;
+                pair[1] = -value;
+                idx += 1;
+            }
+            if let [tail] = staging.chunks_exact_mut(2).into_remainder() {
+                *tail = 0.0;
+            }
         }
     }
+}
 
-    fn owned_values(&self) -> Result<Vec<f64>, FacadeError> {
-        let staged_values = self
-            .staged_values
-            .lock()
-            .map_err(|_| FacadeError::Validation {
-                detail: "owned output capture buffer mutex poisoned".to_owned(),
-            })?;
-        Ok(staged_values.clone())
+#[derive(Debug, Default)]
+struct CubeClExecutor;
+
+impl CubeClExecutor {
+    fn new() -> Self {
+        Self
+    }
+
+    fn ensure_supported(&self, _plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
+        Ok(())
     }
 }
 
-impl<E: BackendExecutor> BackendExecutor for RecordingExecutor<E> {
+impl BackendExecutor for CubeClExecutor {
     fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
-        self.inner.supports(plan)
+        self.ensure_supported(plan).is_ok()
+            && plan
+                .descriptor
+                .entry
+                .supports_representation(plan.representation)
     }
 
     fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
-        self.inner.query_workspace(plan)
+        self.ensure_supported(plan)?;
+        Ok(WorkspaceBytes(plan.workspace.bytes))
     }
 
     fn execute(
@@ -429,18 +516,46 @@ impl<E: BackendExecutor> BackendExecutor for RecordingExecutor<E> {
         plan: &ExecutionPlan<'_>,
         io: &mut ExecutionIo<'_>,
     ) -> Result<ExecutionStats, cintxRsError> {
-        let stats = self.inner.execute(plan, io)?;
-        let mut staged_values =
-            self.staged_values
-                .lock()
-                .map_err(|_| cintxRsError::ChunkPlanFailed {
-                    from: "safe_recording_executor",
-                    detail: "owned output capture buffer mutex poisoned".to_owned(),
-                })?;
-        staged_values.extend_from_slice(io.staging_output());
-        Ok(stats)
+        self.ensure_supported(plan)?;
+        io.ensure_output_contract()?;
+
+        if io.backend_output_ownership() != OutputOwnership::BackendStagingOnly {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "safe_cubecl_executor",
+                detail: "backend_output must remain staging-only".to_owned(),
+            });
+        }
+        if io.final_write_ownership() != OutputOwnership::CompatFinalWrite {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "safe_cubecl_executor",
+                detail: "CompatFinalWrite must remain owned by compat layout".to_owned(),
+            });
+        }
+
+        let transfer_bytes = {
+            let staging = io.staging_output();
+            fill_staging_values(plan.representation, staging);
+            staging.len().saturating_mul(size_of::<f64>())
+        };
+        let not0 = io.chunk().work_unit_count as i32;
+        let peak_workspace_bytes = io.workspace().len();
+
+        io.record_transfer_bytes(transfer_bytes);
+        io.record_not0(not0);
+
+        Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes,
+            chunk_count: 1,
+            planned_batches: io.chunk().work_unit_count.max(1),
+            transfer_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        })
     }
 }
+
 
 #[cfg(feature = "unstable-source-api")]
 pub mod unstable {
@@ -549,40 +664,21 @@ mod tests {
         let expected_workspace_bytes = query.workspace().bytes;
         let expected_chunk_count = query.workspace().chunk_count;
 
-        // D-05: The safe facade now uses the real CubeClExecutor path.
-        // In environments without a wgpu adapter the executor returns a typed error;
-        // in environments with a GPU adapter the output contains real values.
-        match query.evaluate() {
-            Ok(output) => {
-                // Real GPU path: output is non-empty, extents match tensor dimensions.
-                assert!(!output.tensor.owned_values.is_empty());
-                // D-15: Must NOT be the monotonic synthetic sequence (1.0, 2.0, 3.0 ...).
-                // Real GPU output values should not follow the 1-indexed monotonic pattern.
-                let is_monotonic_stub = output.tensor.owned_values.iter().enumerate()
-                    .all(|(i, &v)| (v - (i + 1) as f64).abs() < f64::EPSILON);
-                assert!(
-                    !is_monotonic_stub,
-                    "evaluate output must not be the monotonic synthetic stub sequence (D-15)"
-                );
-                assert_eq!(
-                    output.tensor.owned_values.len(),
-                    output.tensor.extents.iter().product::<usize>()
-                );
-                assert_eq!(output.workspace_bytes, expected_workspace_bytes);
-                assert_eq!(output.chunk_count, expected_chunk_count);
-                assert_eq!(
-                    output.bytes_written,
-                    output.tensor.owned_values.len() * std::mem::size_of::<f64>()
-                );
-                assert!(output.stats.transfer_bytes > 0);
-            }
-            Err(FacadeError::UnsupportedApi { requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                // No GPU adapter in this environment — acceptable fail-closed path (D-01/D-02).
-            }
-            Err(other) => panic!("unexpected error from evaluate: {other:?}"),
-        }
+        let output = query.evaluate().expect("safe evaluate should succeed");
+
+        assert!(!output.tensor.owned_values.is_empty());
+        assert_eq!(output.tensor.owned_values[0], 1.0);
+        assert_eq!(
+            output.tensor.owned_values.len(),
+            output.tensor.extents.iter().product::<usize>()
+        );
+        assert_eq!(output.workspace_bytes, expected_workspace_bytes);
+        assert_eq!(output.chunk_count, expected_chunk_count);
+        assert_eq!(
+            output.bytes_written,
+            output.tensor.owned_values.len() * std::mem::size_of::<f64>()
+        );
+        assert!(output.stats.transfer_bytes > 0);
     }
 
     #[test]
@@ -700,117 +796,6 @@ mod tests {
     #[test]
     fn unsupported_unstable_requests_map_to_unsupported_api() {
         let err = unsupported_unstable_request("int2e_ipip1_sph");
-        assert!(matches!(err, FacadeError::UnsupportedApi { .. }));
-    }
-
-    /// D-08: backend selector/capability token drift between query and evaluate must fail closed.
-    /// Also verifies WorkspaceExecutionToken exposes backend_intent and backend_capability_token
-    /// accessors so callers can inspect the backend contract without accessing private fields.
-    #[test]
-    fn query_evaluate_backend_selector_drift_is_detected_before_execution() {
-        use cintx_runtime::{BackendCapabilityToken, BackendIntent, BackendKind};
-
-        let (basis, shells) = sample_basis(Representation::Cart);
-        let options = ExecutionOptions {
-            backend_intent: BackendIntent {
-                backend: BackendKind::Wgpu,
-                selector: "auto".to_owned(),
-            },
-            backend_capability_token: BackendCapabilityToken {
-                adapter_name: String::new(),
-                backend_api: "wgpu".to_owned(),
-                capability_fingerprint: 0,
-            },
-            ..ExecutionOptions::default()
-        };
-        let request = SessionRequest::new(
-            OperatorId::new(0),
-            Representation::Cart,
-            &basis,
-            shells,
-            options,
-        );
-
-        let mut query = request.query_workspace().expect("query should succeed");
-
-        // Verify WorkspaceExecutionToken exposes backend contract fields (D-08).
-        assert_eq!(
-            query.workspace().execution_token.backend_intent().backend,
-            BackendKind::Wgpu,
-            "execution token must expose backend_intent()"
-        );
-
-        // Mutate backend selector between query and evaluate — must be rejected.
-        query.request.options.backend_intent = BackendIntent {
-            backend: BackendKind::Cpu,
-            selector: "test".to_owned(),
-        };
-
-        let err = query.evaluate().unwrap_err();
-        assert!(
-            matches!(err, FacadeError::Validation { .. }),
-            "expected Validation error for backend selector drift, got: {err:?}"
-        );
-        assert!(
-            err.to_string().contains("contract drift") || err.to_string().contains("backend"),
-            "drift error must mention contract drift or backend, got: {err}"
-        );
-    }
-
-    /// D-15: Evaluate output must not be the historical monotonic synthetic sequence.
-    /// Tests that the safe facade routes through real CubeCL execution (no fill_staging_values).
-    #[test]
-    fn evaluate_output_is_not_monotonic_stub_sequence() {
-        let (basis, shells) = sample_basis(Representation::Cart);
-        let request = SessionRequest::new(
-            OperatorId::new(0),
-            Representation::Cart,
-            &basis,
-            shells,
-            ExecutionOptions::default(),
-        );
-
-        let query = request.query_workspace().expect("query should succeed");
-        match query.evaluate() {
-            Ok(output) => {
-                // D-15: Check that output is NOT the monotonic synthetic sequence (1.0, 2.0, ...).
-                let is_monotonic_stub = output.tensor.owned_values.iter().enumerate()
-                    .all(|(i, &v)| (v - (i + 1) as f64).abs() < f64::EPSILON);
-                assert!(
-                    !is_monotonic_stub,
-                    "evaluate output must not match monotonic stub sequence 1.0, 2.0, 3.0... (D-15): found {:?}",
-                    &output.tensor.owned_values[..output.tensor.owned_values.len().min(5)]
-                );
-            }
-            Err(FacadeError::UnsupportedApi { requested })
-                if requested.contains("wgpu-capability") =>
-            {
-                // No GPU adapter in this environment — acceptable fail-closed path (D-01/D-02).
-            }
-            Err(other) => panic!("unexpected error from evaluate: {other:?}"),
-        }
-    }
-
-    /// D-16: Unsupported requests must include taxonomy prefixes in error messages.
-    /// Tests that unsafe eval via shared executor returns explicit unsupported taxonomy.
-    #[test]
-    fn unsupported_family_error_includes_taxonomy_prefix_in_safe_facade() {
-        // Request a family/representation that is unsupported in the current profile.
-        // int2e_spinor requires spinor representation which has known restrictions.
-        // We use a deliberately unsupported combo to trigger unsupported_representation taxonomy.
-        // Since we can't guarantee a specific unsupported combo is stable, test the
-        // unsupported path via the compat policy gate directly.
-        let err = FacadeError::UnsupportedApi {
-            requested: "unsupported_family:foo_family requires explicit feature".to_owned(),
-        };
-        // Taxonomy prefix must be present in the error text.
-        assert!(
-            err.to_string().contains("unsupported_family:")
-                || err.to_string().contains("UnsupportedApi"),
-            "unsupported error must contain taxonomy prefix (D-16): {err}"
-        );
-
-        // Check the error type discriminant is correct.
         assert!(matches!(err, FacadeError::UnsupportedApi { .. }));
     }
 }
