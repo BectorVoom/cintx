@@ -70,4 +70,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after Phase 3 completion*
+*Last updated: 2026-04-02 after Phase 5 completion — real CubeCL/wgpu GPU execution path, typed backend contracts, capability-aware CI gates*
