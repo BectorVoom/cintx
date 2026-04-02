@@ -70,24 +70,10 @@ impl CubeClExecutor {
         _plan: &ExecutionPlan<'_>,
     ) -> Result<(), cintxRsError> {
         match backend {
-            ResolvedBackend::Wgpu(_client) => {
-                // For the wgpu path we require SHADER_F64 hardware support.
-                // We surface this via a capability probe that reads the feature
-                // list. When running without a real GPU (e.g. WSL2 CI) the
-                // from_intent call will have already failed before we reach
-                // here; this check guards the case where wgpu initialises but
-                // the device lacks f64 shader support.
-                //
-                // The actual feature list comes from the runtime capabilities
-                // module. For now, query via the static capability helper.
-                // In environments without GPU this path is unreachable (wgpu
-                // from_intent returns UnsupportedApi before reaching here).
-                //
-                // We delegate to the factored helper for testability:
-                // check_shader_f64_in_features is called with the feature list
-                // from the WgpuCapabilitySnapshot.
-                Ok(()) // Wgpu client initialised, defer feature check to
-                       // check_shader_f64_in_features (used in tests).
+            ResolvedBackend::Wgpu(_client, _features) => {
+                // Gate wgpu dispatch on SHADER_F64 capability. The feature list
+                // was captured at bootstrap and stored alongside the client.
+                check_shader_f64_in_features(backend.wgpu_features())
             }
             #[cfg(feature = "cpu")]
             ResolvedBackend::Cpu(_client) => Ok(()), // CPU always supports f64 natively.

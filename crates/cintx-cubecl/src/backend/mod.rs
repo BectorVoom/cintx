@@ -17,11 +17,24 @@ use cintx_runtime::{BackendIntent, BackendKind};
 /// enabled. Since `cpu` is a default feature, both arms compile in all
 /// standard builds.
 pub enum ResolvedBackend {
-    /// wgpu GPU backend client.
-    Wgpu(cubecl::client::ComputeClient<cubecl_wgpu::WgpuRuntime>),
+    /// wgpu GPU backend client, paired with the adapter's feature names for
+    /// capability checks (e.g. SHADER_F64 gating).
+    Wgpu(cubecl::client::ComputeClient<cubecl_wgpu::WgpuRuntime>, Vec<String>),
     /// CPU backend client (requires `cpu` feature, which is enabled by default).
     #[cfg(feature = "cpu")]
     Cpu(cubecl::client::ComputeClient<cubecl::cpu::CpuRuntime>),
+}
+
+impl ResolvedBackend {
+    /// Returns the wgpu feature list if this is a Wgpu backend, or an empty
+    /// slice for CPU (which supports all features natively).
+    pub fn wgpu_features(&self) -> &[String] {
+        match self {
+            ResolvedBackend::Wgpu(_, features) => features,
+            #[cfg(feature = "cpu")]
+            ResolvedBackend::Cpu(_) => &[],
+        }
+    }
 }
 
 impl ResolvedBackend {
@@ -33,8 +46,10 @@ impl ResolvedBackend {
     pub fn from_intent(intent: &BackendIntent) -> Result<Self, cintxRsError> {
         match &intent.backend {
             BackendKind::Wgpu => {
+                let report = crate::runtime_bootstrap::bootstrap_wgpu_runtime(intent)?;
+                let features = report.snapshot.features.clone();
                 let client = wgpu_backend::resolve_wgpu_client(intent)?;
-                Ok(ResolvedBackend::Wgpu(client))
+                Ok(ResolvedBackend::Wgpu(client, features))
             }
             BackendKind::Cpu => {
                 #[cfg(feature = "cpu")]
