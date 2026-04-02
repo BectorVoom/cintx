@@ -20,7 +20,7 @@ Phase 7 rewrites executor internals to use the CubeCL client API directly, intro
 ### CPU backend integration
 - **D-03:** Both wgpu and cpu backends must pass oracle parity independently. Tests run on both. This is the strongest correctness guarantee.
 - **D-04:** Backend selection is a runtime choice made by the user via `CINTX_BACKEND=wgpu|cpu` environment variable. The executor reads this at init time to resolve which `ResolvedBackend` arm to construct.
-- **D-05:** `cubecl-cpu` is already in Cargo.lock as a transitive dependency. Both backends are always compiled — no feature gate. The env var controls which one is used at runtime.
+- **D-05:** ~~Both backends are always compiled -- no feature gate.~~ **REVISED (checker review):** EXEC-09 requires `cpu = ["cubecl/cpu"]` as a Cargo feature because `cubecl::cpu::CpuRuntime` only exists when cubecl's `cpu` feature is enabled -- the type literally does not compile without it. Resolution: the `cpu` feature exists per EXEC-09 and is declared as a **default feature** (`default = ["cpu"]`) so both backends compile by default, honoring D-05's original intent that both backends are always available. The `#[cfg(feature = "cpu")]` gate on the `Cpu` enum arm is a technical necessity (the type does not exist without the feature), not a user-facing opt-in. The env var controls which backend is *used* at runtime.
 
 ### CubeCL client API pattern
 - **D-06:** Executor internals use `WgpuRuntime::client(&device)` / `CpuRuntime::client(&device)` directly. Buffer management uses `client.create()`, `client.empty()`, `client.read()`. Kernels use `#[cube(launch)]` with `ArrayArg::from_raw_parts`. Reference pattern: `docs/manual/Cubecl/Cubecl_vector.md`.
