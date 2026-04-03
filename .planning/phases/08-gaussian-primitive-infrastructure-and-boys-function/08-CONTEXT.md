@@ -121,7 +121,7 @@ Phase 8 implements all shared mathematical primitives that integral kernels will
 <deferred>
 ## Deferred Ideas
 
-None — discussion stayed within phase scope
+- **Rys nroots>5 (Wheeler algorithm):** D-10 calls for full quadrature degree coverage. Phase 8 implements nroots=1..5 via polynomial fits (sufficient for all angular momenta up to d-functions). Full Rys coverage (nroots=6+) requiring the Wheeler algorithm from `rys_wheeler.c` is deferred to Phase 10, when f-function and higher angular momentum kernel families will need it. The `rys_roots` dispatch function stubs nroots>5 with a clear panic/TODO marker.
 
 </deferred>
 
