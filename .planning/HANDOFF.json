@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-03T11:36:32.787Z",
+  "phase": "10",
+  "phase_name": "2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure",
+  "phase_dir": ".planning/phases/10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure",
+  "plan": 4,
+  "task": 1,
+  "total_tasks": 11,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "10-01-T1", "name": "Rys root host wrappers (N=3,4,5) + dispatcher", "status": "done", "commit": "f7eb604"},
+    {"id": "10-01-T2", "name": "Multi-index c2s transforms + oracle vendor build extension", "status": "done", "commit": "2389406"},
+    {"id": "10-02-T1", "name": "2c2e kernel implementation (Rys quadrature G-tensor fill)", "status": "done", "commit": "90a0eee"},
+    {"id": "10-02-T2", "name": "2c2e oracle parity test + PTR_ENV_START fix", "status": "done", "commit": "8cbdfc7"},
+    {"id": "10-03-T1", "name": "3c1e three-center overlap kernel", "status": "done", "commit": "da2a513"},
+    {"id": "10-03-T2", "name": "3c1e oracle parity test + g_alloc fix", "status": "done", "commit": "af2ea35"}
+  ],
+  "remaining_tasks": [
+    {"id": "10-04-T1", "name": "3c2e kernel implementation", "status": "not_started"},
+    {"id": "10-04-T2", "name": "3c2e oracle parity test", "status": "not_started"},
+    {"id": "10-05-T1", "name": "2e ERI kernel implementation", "status": "not_started"},
+    {"id": "10-05-T2", "name": "2e ERI oracle parity test", "status": "not_started"},
+    {"id": "10-06-T1", "name": "Oracle gate closure + v1.0 UAT items", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "PTR_ENV_START=20 padding required for libcint env layout", "rationale": "Without padding, atom coordinates collide with reserved env slots like PTR_RANGE_OMEGA, activating range-separated Coulomb instead of standard Coulomb", "phase": "10"},
+    {"decision": "3c2e has index swap: third shell maps to l slot, not k slot", "rationale": "libcint g3c2e.c sets lk_ceil=0 and ll_ceil=k_l to reuse 2e G-tensor machinery", "phase": "10"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "Execute Wave 3: Plans 10-04 (3c2e kernel) and 10-05 (2e ERI kernel) in parallel. Both depend on Plan 10-01 shared infra which is complete.",
+  "context_notes": "Phase 10 execution in progress via auto-advance chain (discuss -> plan -> execute). Waves 1-2 complete (plans 10-01, 10-02, 10-03). Wave 3 agents (10-04, 10-05) were rejected by user before spawning. Wave 4 (10-06: oracle gate closure) depends on all kernel plans. The --no-transition flag is active. After all waves complete, verify_phase_goal runs, then returns PHASE COMPLETE to the parent plan-phase auto-advance chain."
+}
