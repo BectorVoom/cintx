@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: executing
-stopped_at: Phase 9 context gathered
-last_updated: "2026-04-03T05:24:39.393Z"
-last_activity: 2026-04-03 -- Phase 09 execution started
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-04-03T05:44:03.382Z"
+last_activity: 2026-04-03
 progress:
   total_phases: 10
   completed_phases: 8
   total_plans: 39
-  completed_plans: 37
+  completed_plans: 39
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 09 (1e-real-kernel-and-cart-to-sph-transform) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 09
-Last activity: 2026-04-03 -- Phase 09 execution started
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-04-03
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Last activity: 2026-04-03 -- Phase 09 execution started
 | Phase 08-gaussian-primitive-infrastructure-and-boys-function P01 | 8 | 2 tasks | 9 files |
 | Phase 08 P03 | 4 | 2 tasks | 3 files |
 | Phase 08 P04 | 8 | 2 tasks | 3 files |
+| Phase 09 P02 | 573 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 08]: Integration tests use host-side wrappers only (not CubeCL CPU backend launch) to avoid cond_br MLIR limitation discovered in Plan 02
 - [Phase 08]: Add rys_root1_host as a pure-Rust host wrapper replicating #[cube] rys_root1 branching logic exactly
 - [Phase 08]: Wire Rys-Boys weight-sum identity crosscheck at large/moderate/small x domains with appropriate tolerances
+- [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Applied -0.5 (not +0.5) factor in kinetic contraction: D_j^2 of Gaussian is negative, so -0.5*D_j^2 yields positive kinetic energy
+- [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Used vrr_2e_step_host for nuclear attraction VRR (root-dependent c00/b10), not vrr_step_host (which uses fixed center displacement)
 
 ### Roadmap Evolution
 
@@ -191,6 +194,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T04:50:39.792Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-1e-real-kernel-and-cart-to-sph-transform/09-CONTEXT.md
+Last session: 2026-04-03T05:44:03.377Z
+Stopped at: Completed 09-02-PLAN.md
+Resume file: None
