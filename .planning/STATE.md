@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: executing
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-04-03T05:57:28.156Z"
+stopped_at: Completed 09-1e-real-kernel-and-cart-to-sph-transform-05-PLAN.md
+last_updated: "2026-04-03T06:19:47.000Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 10
-  completed_phases: 9
-  total_plans: 39
-  completed_plans: 40
+  completed_phases: 8
+  total_plans: 41
+  completed_plans: 41
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 09 (1e-real-kernel-and-cart-to-sph-transform) — EXECUTING
-Plan: 3 of 3
+Plan: 2 of 5
 Status: Ready to execute
 Last activity: 2026-04-03
 
@@ -85,6 +85,7 @@ Last activity: 2026-04-03
 | Phase 08 P04 | 8 | 2 tasks | 3 files |
 | Phase 09 P02 | 573 | 1 tasks | 2 files |
 | Phase 09-1e-real-kernel-and-cart-to-sph-transform P03 | 25 | 3 tasks | 4 files |
+| Phase 09-1e-real-kernel-and-cart-to-sph-transform P05 | 1 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -181,6 +182,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Used vrr_2e_step_host for nuclear attraction VRR (root-dependent c00/b10), not vrr_step_host (which uses fixed center displacement)
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Use idempotency check (two eval_raw calls) as oracle parity method since upstream libcint is not compiled by default
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Kinetic G-tensor derivative acts on bra VRR i-index (ix+2) not HRR j-level (jx+2); nmax=li+lj+2 provides the needed VRR headroom
+- [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Commit oracle parity artifact to repository artifacts/ directory since /mnt/data is unavailable in this environment
 
 ### Roadmap Evolution
 
@@ -197,6 +199,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T05:57:28.152Z
-Stopped at: Completed 09-03-PLAN.md
+Last session: 2026-04-03T06:19:46.996Z
+Stopped at: Completed 09-1e-real-kernel-and-cart-to-sph-transform-05-PLAN.md
 Resume file: None

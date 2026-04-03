@@ -180,7 +180,7 @@ Plans:
 - [x] 09-02-PLAN.md — Replace 1e kernel stub with real overlap, kinetic, and nuclear attraction host-side pipeline.
 - [x] 09-03-PLAN.md — Wire H2O STO-3G oracle parity tests for int1e_ovlp_sph, int1e_kin_sph, int1e_nuc_sph.
 - [ ] 09-04-PLAN.md — Wire vendored libcint 6.1.3 compilation and true oracle parity comparison for 1e operators.
-- [ ] 09-05-PLAN.md — Update KERN-06 tracking and commit oracle parity artifact.
+- [x] 09-05-PLAN.md — Update KERN-06 tracking and commit oracle parity artifact.
 
 ### Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure
 **Goal**: All five base integral families produce real libcint-compatible values and the oracle parity gate closes across the full v1.1 compatibility matrix, completing the milestone.
