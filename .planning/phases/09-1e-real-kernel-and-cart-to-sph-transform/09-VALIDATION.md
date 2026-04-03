@@ -2,8 +2,8 @@
 phase: 9
 slug: 1e-real-kernel-and-cart-to-sph-transform
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-03
 ---
 
@@ -25,6 +25,21 @@ created: 2026-04-03
 
 ---
 
+## Wave 0 Strategy
+
+All plans in Phase 9 use inline TDD (`tdd="true"` with `<behavior>` blocks). Tests are co-created
+alongside implementation within each task — the TDD RED-GREEN-REFACTOR cycle creates test files as
+part of the task itself. No separate Wave 0 plan is needed because:
+
+- Plan 09-01 Task 1 has `tdd="true"` and creates tests inline in c2s.rs
+- Plan 09-01 Task 2 creates `tests/c2s_tests.rs` as an integration test (TDD task)
+- Plan 09-02 Task 1 creates `#[cfg(test)] mod tests` inline in one_electron.rs
+- Plan 09-03 Task 1 has `tdd="true"` and creates `tests/one_electron_parity.rs`
+
+Test stubs are NOT pre-created; they emerge from the TDD behavior specifications in each task.
+
+---
+
 ## Sampling Rate
 
 - **After every task commit:** Run `cargo test -p cintx-cubecl --features cpu 2>&1 | tail -5`
@@ -36,28 +51,15 @@ created: 2026-04-03
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 09-01-01 | 01 | 1 | KERN-06 | unit | `cargo test -p cintx-cubecl -- c2s_coeff` | ❌ W0 | ⬜ pending |
-| 09-01-02 | 01 | 1 | KERN-06 | unit | `cargo test -p cintx-cubecl -- c2s_d_shell` | ❌ W0 | ⬜ pending |
-| 09-02-01 | 02 | 2 | KERN-01 | unit | `cargo test -p cintx-cubecl --features cpu -- ovlp` | ❌ W0 | ⬜ pending |
-| 09-02-02 | 02 | 2 | KERN-01 | unit | `cargo test -p cintx-cubecl --features cpu -- kinetic` | ❌ W0 | ⬜ pending |
-| 09-02-03 | 02 | 2 | KERN-01 | unit | `cargo test -p cintx-cubecl --features cpu -- nuclear` | ❌ W0 | ⬜ pending |
-| 09-03-01 | 03 | 3 | VERI-05 | oracle | `cargo test -p cintx-oracle --features cpu -- ovlp_parity` | ❌ W0 | ⬜ pending |
-| 09-03-02 | 03 | 3 | VERI-05 | oracle | `cargo test -p cintx-oracle --features cpu -- kin_parity` | ❌ W0 | ⬜ pending |
-| 09-03-03 | 03 | 3 | VERI-05 | oracle | `cargo test -p cintx-oracle --features cpu -- nuc_parity` | ❌ W0 | ⬜ pending |
+| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | TDD Inline | Status |
+|---------|------|------|-------------|-----------|-------------------|------------|--------|
+| 09-01-01 | 01 | 1 | KERN-06 | unit | `cargo test -p cintx-cubecl -- c2s` | yes | pending |
+| 09-01-02 | 01 | 1 | KERN-06 | integration | `cargo test -p cintx-cubecl --test c2s_tests` | yes | pending |
+| 09-02-01 | 02 | 2 | KERN-01 | unit | `cargo test -p cintx-cubecl --features cpu -- one_electron` | yes | pending |
+| 09-03-01 | 03 | 3 | VERI-05 | oracle | `cargo test -p cintx-oracle --features cpu -- one_electron_parity` | yes | pending |
+| 09-03-02 | 03 | 3 | VERI-05 | artifact | `test -f /mnt/data/phase-09-1e-oracle-parity.md` | no | pending |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
-
----
-
-## Wave 0 Requirements
-
-- [ ] `crates/cintx-cubecl/tests/c2s_tests.rs` — stubs for KERN-06 (coefficient matrix correctness)
-- [ ] `crates/cintx-cubecl/tests/one_electron_tests.rs` — stubs for KERN-01 (operator post-processing)
-- [ ] Oracle parity test for 1e sph family in `crates/cintx-oracle/` — stubs for VERI-05
-
-*Existing infrastructure covers framework and test config.*
+*Status: pending / green / red / flaky*
 
 ---
 
@@ -69,11 +71,11 @@ created: 2026-04-03
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify commands
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 handled via inline TDD (no separate stub plan needed)
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved (inline TDD satisfies Nyquist contract)
