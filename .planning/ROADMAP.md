@@ -97,7 +97,7 @@ Plans:
 | Phase 6: Fix raw eval staging & fingerprint | 0/2 | Not started | - |
 | Phase 7: Executor Infrastructure Rewrite | 1/3 | In Progress | 2026-04-02 |
 | Phase 8: Gaussian Primitive Infrastructure and Boys Function | 3/4 | In Progress | - |
-| Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 0/TBD | Not started | - |
+| Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 0/3 | Not started | - |
 | Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/TBD | Not started | - |
 
 ### Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
@@ -173,8 +173,12 @@ Plans:
   2. `int1e_kin_sph` and `int1e_nuc_sph` evaluations pass oracle parity for the same test case at the same tolerances.
   3. Cart-to-sph transform uses real Condon-Shortley coefficients for all angular momenta up to g-function (l=4); staging buffer sizing is updated to reflect the correct spherical component count (5 for d-shell, not 6).
   4. Oracle parity CI gate for the 1e family passes under `--features cpu` with `mismatch_count == 0`.
-**Plans**: TBD
-**UI hint**: no
+**Plans**: 3 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Implement Condon-Shortley cart-to-sph coefficients and transform function for l=0..4.
+- [ ] 09-02-PLAN.md — Replace 1e kernel stub with real overlap, kinetic, and nuclear attraction host-side pipeline.
+- [ ] 09-03-PLAN.md — Wire H2O STO-3G oracle parity tests for int1e_ovlp_sph, int1e_kin_sph, int1e_nuc_sph.
 
 ### Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure
 **Goal**: All five base integral families produce real libcint-compatible values and the oracle parity gate closes across the full v1.1 compatibility matrix, completing the milestone.
