@@ -116,7 +116,8 @@ fn fill_g_tensor_3c1e(
     // From libcint: g_size = max(dli*dlj*dlk, dli*nmax) where nmax = li + dlj.
     // The first phase of VRR builds columns of length nmax+1 in a dli*(nmax+1) buffer.
     let vrr_nmax = li as usize + dlj; // = li + lj + lk + 1
-    let g_alloc = dli * dlj * dlk.max(vrr_nmax);
+    // CORRECT: max of the two products, not dli*dlj*(max of dlk vs vrr_nmax).
+    let g_alloc = (dli * dlj * dlk).max(dli * vrr_nmax);
 
     let mut g = vec![0.0_f64; 3 * g_alloc];
 
