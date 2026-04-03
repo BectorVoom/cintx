@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: unknown
-stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-05-PLAN.md
-last_updated: "2026-04-03T11:56:56.212Z"
+stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-04-PLAN.md
+last_updated: "2026-04-03T12:02:05.645Z"
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 47
-  completed_plans: 46
+  completed_plans: 47
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 10 (2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 
 ## Performance Metrics
 
@@ -87,6 +87,7 @@ Plan: 2 of 6
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P01 | 12 | 2 tasks | 4 files |
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P03 | 12 | 2 tasks | 5 files |
 | Phase 10 P02 | 196 | 2 tasks | 4 files |
+| Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P04 | 8m | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -193,6 +194,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 10-02]: env user data MUST start at PTR_ENV_START=20 — PTR_RANGE_OMEGA=env[8] is read by all 2e+ libcint integrals; placing H2 z-coord there caused range-separated Coulomb to activate
 - [Phase 10-02]: 2c2e kernel algorithm is correct — common_factor includes fac_sp per g2c2e.c; parity failures must be checked for env layout before kernel correctness
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use PTR_ENV_START-aligned env layout in int2e oracle tests to preserve libcint global env semantics.
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Plan 10-04 canonicalizes 3c2e ij evaluation to li>=lj and transposes back to preserve caller shell order while matching ibase behavior.
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: 3c2e oracle fixtures now reserve libcint env global slots with PTR_ENV_START for correct 2e-family reference behavior.
 
 ### Roadmap Evolution
 
@@ -209,6 +212,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T11:56:56.208Z
-Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-05-PLAN.md
+Last session: 2026-04-03T12:02:05.642Z
+Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-04-PLAN.md
 Resume file: None
