@@ -2,6 +2,7 @@
 
 pub mod backend;
 pub mod capability;
+pub mod math;
 pub mod executor;
 #[path = "kernels/mod.rs"]
 pub mod kernels;
