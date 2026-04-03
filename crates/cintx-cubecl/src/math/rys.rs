@@ -1145,6 +1145,516 @@ pub fn rys_root2_host(x: f64) -> ([f64; 2], [f64; 2]) {
     ([rt1, rt2], [ww1, ww2])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  rys_root3_host — host-side wrapper, callable from tests without GPU context
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Host-side wrapper for `rys_root3` — returns `([roots; 3], [weights; 3])`.
+///
+/// Mirrors the `rys_root3` #[cube] function logic for use in host-side integrals.
+/// Source: `rys_roots.c` `rys_root3()` lines 489-758.
+pub fn rys_root3_host(x: f64) -> ([f64; 3], [f64; 3]) {
+    let pie4 = PIE4;
+    let r13 = 1.90163509193487e-01_f64;
+    let r23 = 1.78449274854325e+00_f64;
+    let w23 = 1.77231492083829e-01_f64;
+    let r33 = 5.52534374226326e+00_f64;
+    let w33 = 5.11156880411248e-03_f64;
+
+    let mut rt1 = 0.0_f64;
+    let mut rt2 = 0.0_f64;
+    let mut rt3 = 0.0_f64;
+    let mut ww1 = 0.0_f64;
+    let mut ww2 = 0.0_f64;
+    let mut ww3 = 0.0_f64;
+
+    if x < 3.0e-7_f64 {
+        rt1 = 6.03769246832797e-02_f64 - 9.28875764357368e-03_f64 * x;
+        rt2 = 7.76823355931043e-01_f64 - 1.19511285527878e-01_f64 * x;
+        rt3 = 6.66279971938567e+00_f64 - 1.02504611068957e+00_f64 * x;
+        ww1 = 4.67913934572691e-01_f64 - 5.64876917232519e-02_f64 * x;
+        ww2 = 3.60761573048137e-01_f64 - 1.49077186455208e-01_f64 * x;
+        ww3 = 1.71324492379169e-01_f64 - 1.27768455150979e-01_f64 * x;
+    } else if x < 1.0_f64 {
+        rt1 = ((((((-5.10186691538870e-10_f64 * x + 2.40134415703450e-08_f64) * x
+            - 5.01081057744427e-07_f64) * x
+            + 7.58291285499256e-06_f64) * x
+            - 9.55085533670919e-05_f64) * x
+            + 1.02893039315878e-03_f64) * x
+            - 9.28875764374337e-03_f64) * x
+            + 6.03769246832810e-02_f64;
+        rt2 = ((((((-1.29646524960555e-08_f64 * x + 7.74602292865683e-08_f64) * x
+            + 1.56022811158727e-06_f64) * x
+            - 1.58051990661661e-05_f64) * x
+            - 3.30447806384059e-04_f64) * x
+            + 9.74266885190267e-03_f64) * x
+            - 1.19511285526388e-01_f64) * x
+            + 7.76823355931033e-01_f64;
+        rt3 = ((((((-9.28536484109606e-09_f64 * x - 3.02786290067014e-07_f64) * x
+            - 2.50734477064200e-06_f64) * x
+            - 7.32728109752881e-06_f64) * x
+            + 2.44217481700129e-04_f64) * x
+            + 4.94758452357327e-02_f64) * x
+            - 1.02504611065774e+00_f64) * x
+            + 6.66279971938553e+00_f64;
+        let f2 = ((((((((-7.60911486098850e-08_f64 * x + 1.09552870123182e-06_f64) * x
+            - 1.03463270693454e-05_f64) * x
+            + 8.16324851790106e-05_f64) * x
+            - 5.55526624875562e-04_f64) * x
+            + 3.20512054753924e-03_f64) * x
+            - 1.51515139838540e-02_f64) * x
+            + 5.55555554649585e-02_f64) * x
+            - 1.42857142854412e-01_f64) * x
+            + 1.99999999999986e-01_f64;
+        let e = f64::exp(-x);
+        let f1 = ((x + x) * f2 + e) / 3.0_f64;
+        ww1 = (x + x) * f1 + e;
+        let t1 = rt1 / (rt1 + 1.0_f64);
+        let t2 = rt2 / (rt2 + 1.0_f64);
+        let t3 = rt3 / (rt3 + 1.0_f64);
+        let a2 = f2 - t1 * f1;
+        let a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < 3.0_f64 {
+        let y = x - 2.0_f64;
+        rt1 = (((((((( 1.44687969563318e-12_f64 * y + 4.85300143926755e-12_f64) * y
+            - 6.55098264095516e-10_f64) * y
+            + 1.56592951656828e-08_f64) * y
+            - 2.60122498274734e-07_f64) * y
+            + 3.86118485517386e-06_f64) * y
+            - 5.13430986707889e-05_f64) * y
+            + 6.03194524398109e-04_f64) * y
+            - 6.11219349825090e-03_f64) * y
+            + 4.52578254679079e-02_f64;
+        rt2 = ((((((( 6.95964248788138e-10_f64 * y - 5.35281831445517e-09_f64) * y
+            - 6.745205954533e-08_f64) * y
+            + 1.502366784525e-06_f64) * y
+            + 9.923326947376e-07_f64) * y
+            - 3.89147469249594e-04_f64) * y
+            + 7.51549330892401e-03_f64) * y
+            - 8.48778120363400e-02_f64) * y
+            + 5.73928229597613e-01_f64;
+        rt3 = ((((((((-2.81496588401439e-10_f64 * y + 3.61058041895031e-09_f64) * y
+            + 4.53631789436255e-08_f64) * y
+            - 1.40971837780847e-07_f64) * y
+            - 6.05865557561067e-06_f64) * y
+            - 5.15964042227127e-05_f64) * y
+            + 3.34761560498171e-05_f64) * y
+            + 5.04871005319119e-02_f64) * y
+            - 8.24708946991557e-01_f64) * y
+            + 4.81234667357205e+00_f64;
+        let f2 = ((((((((((-1.48044231072140e-10_f64 * y + 1.78157031325097e-09_f64) * y
+            - 1.92514145088973e-08_f64) * y
+            + 1.92804632038796e-07_f64) * y
+            - 1.73806555021045e-06_f64) * y
+            + 1.39195169625425e-05_f64) * y
+            - 9.74574633246452e-05_f64) * y
+            + 5.83701488646511e-04_f64) * y
+            - 2.89955494844975e-03_f64) * y
+            + 1.13847001113810e-02_f64) * y
+            - 3.23446977320647e-02_f64) * y
+            + 5.29428148329709e-02_f64;
+        let e = f64::exp(-x);
+        let f1 = ((x + x) * f2 + e) / 3.0_f64;
+        ww1 = (x + x) * f1 + e;
+        let t1 = rt1 / (rt1 + 1.0_f64);
+        let t2 = rt2 / (rt2 + 1.0_f64);
+        let t3 = rt3 / (rt3 + 1.0_f64);
+        let a2 = f2 - t1 * f1;
+        let a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else {
+        ww1 = f64::sqrt(pie4 / x);
+        rt1 = r13 / (x - r13);
+        rt2 = r23 / (x - r23);
+        rt3 = r33 / (x - r33);
+        ww3 = w33 * ww1;
+        ww2 = w23 * ww1;
+        ww1 = ww1 - ww2 - ww3;
+    }
+
+    ([rt1, rt2, rt3], [ww1, ww2, ww3])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  rys_root4_host — host-side wrapper, callable from tests without GPU context
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Host-side wrapper for `rys_root4` — returns `([roots; 4], [weights; 4])`.
+///
+/// Mirrors the `rys_root4` #[cube] function logic for use in host-side integrals.
+/// Source: `rys_roots.c` `rys_root4()` lines 760-1124.
+pub fn rys_root4_host(x: f64) -> ([f64; 4], [f64; 4]) {
+    let pie4 = PIE4;
+    let r14 = 1.45303521503316e-01_f64;
+    let r24 = 1.33909728812636e+00_f64;
+    let w24 = 2.34479815323517e-01_f64;
+    let r34 = 3.92696350135829e+00_f64;
+    let w34 = 1.92704402415764e-02_f64;
+    let r44 = 8.58863568901199e+00_f64;
+    let w44 = 2.25229076750736e-04_f64;
+
+    let mut rt1 = 0.0_f64;
+    let mut rt2 = 0.0_f64;
+    let mut rt3 = 0.0_f64;
+    let mut rt4 = 0.0_f64;
+    let mut ww1 = 0.0_f64;
+    let mut ww2 = 0.0_f64;
+    let mut ww3 = 0.0_f64;
+    let mut ww4 = 0.0_f64;
+
+    if x <= 3.0e-7_f64 {
+        rt1 = 3.48198973061471e-02_f64 - 4.09645850660395e-03_f64 * x;
+        rt2 = 3.81567185080042e-01_f64 - 4.48902570656719e-02_f64 * x;
+        rt3 = 1.73730726945891e+00_f64 - 2.04389090547327e-01_f64 * x;
+        rt4 = 1.18463056481549e+01_f64 - 1.39368301742312e+00_f64 * x;
+        ww1 = 3.62683783378362e-01_f64 - 3.13844305713928e-02_f64 * x;
+        ww2 = 3.13706645877886e-01_f64 - 8.98046242557724e-02_f64 * x;
+        ww3 = 2.22381034453372e-01_f64 - 1.29314370958973e-01_f64 * x;
+        ww4 = 1.01228536290376e-01_f64 - 8.28299075414321e-02_f64 * x;
+    } else if x <= 1.0_f64 {
+        rt1 = ((((((-1.95309614628539e-10_f64 * x + 5.19765728707592e-09_f64) * x
+            - 1.01756452250573e-07_f64) * x
+            + 1.72365935872131e-06_f64) * x
+            - 2.61203523522184e-05_f64) * x
+            + 3.52921308769880e-04_f64) * x
+            - 4.09645850658433e-03_f64) * x
+            + 3.48198973061469e-02_f64;
+        rt2 = (((((-1.89554881382342e-08_f64 * x + 3.07583114342365e-07_f64) * x
+            + 1.270981734393e-06_f64) * x
+            - 1.417298563884e-04_f64) * x
+            + 3.226979163176e-03_f64) * x
+            - 4.48902570678178e-02_f64) * x
+            + 3.81567185080039e-01_f64;
+        rt3 = (((((( 1.77280535300416e-09_f64 * x + 3.36524958870615e-08_f64) * x
+            - 2.58341529013893e-07_f64) * x
+            - 1.13644895662320e-05_f64) * x
+            - 7.91549618884063e-05_f64) * x
+            + 1.03825827346828e-02_f64) * x
+            - 2.04389090525137e-01_f64) * x
+            + 1.73730726945889e+00_f64;
+        rt4 = (((((-5.61188882415248e-08_f64 * x - 2.49480733072460e-07_f64) * x
+            + 3.428685057114e-06_f64) * x
+            + 1.679007454539e-04_f64) * x
+            + 4.722855585715e-02_f64) * x
+            - 1.39368301737828e+00_f64) * x
+            + 1.18463056481543e+01_f64;
+        ww1 = ((((((-1.14649303201279e-08_f64 * x + 1.88015570196787e-07_f64) * x
+            - 2.33305875372323e-06_f64) * x
+            + 2.68880044371597e-05_f64) * x
+            - 2.94268428977387e-04_f64) * x
+            + 3.06548909776613e-03_f64) * x
+            - 3.13844305680096e-02_f64) * x
+            + 3.62683783378335e-01_f64;
+        ww2 = ((((((((-4.11720483772634e-09_f64 * x + 6.54963481852134e-08_f64) * x
+            - 7.20045285129626e-07_f64) * x
+            + 6.93779646721723e-06_f64) * x
+            - 6.05367572016373e-05_f64) * x
+            + 4.74241566251899e-04_f64) * x
+            - 3.26956188125316e-03_f64) * x
+            + 1.91883866626681e-02_f64) * x
+            - 8.98046242565811e-02_f64) * x
+            + 3.13706645877886e-01_f64;
+        ww3 = ((((((((-3.41688436990215e-08_f64 * x + 5.07238960340773e-07_f64) * x
+            - 5.01675628408220e-06_f64) * x
+            + 4.20363420922845e-05_f64) * x
+            - 3.08040221166823e-04_f64) * x
+            + 1.94431864731239e-03_f64) * x
+            - 1.02477820460278e-02_f64) * x
+            + 4.28670143840073e-02_f64) * x
+            - 1.29314370962569e-01_f64) * x
+            + 2.22381034453369e-01_f64;
+        ww4 = ((((((((( 4.99660550769508e-09_f64 * x - 7.94585963310120e-08_f64) * x
+            + 8.359072409485e-07_f64) * x
+            - 7.422369210610e-06_f64) * x
+            + 5.763374308160e-05_f64) * x
+            - 3.86645606718233e-04_f64) * x
+            + 2.18417516259781e-03_f64) * x
+            - 9.99791027771119e-03_f64) * x
+            + 3.48791097377370e-02_f64) * x
+            - 8.28299075413889e-02_f64) * x
+            + 1.01228536290376e-01_f64;
+    } else {
+        ww1 = f64::sqrt(pie4 / x);
+        rt1 = r14 / (x - r14);
+        rt2 = r24 / (x - r24);
+        rt3 = r34 / (x - r34);
+        rt4 = r44 / (x - r44);
+        ww4 = w44 * ww1;
+        ww3 = w34 * ww1;
+        ww2 = w24 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4;
+    }
+
+    ([rt1, rt2, rt3, rt4], [ww1, ww2, ww3, ww4])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  rys_root5_host — host-side wrapper, callable from tests without GPU context
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Host-side wrapper for `rys_root5` — returns `([roots; 5], [weights; 5])`.
+///
+/// Mirrors the `rys_root5` #[cube] function logic for use in host-side integrals.
+/// Source: `rys_roots.c` `rys_root5()` lines 1126-1628.
+pub fn rys_root5_host(x: f64) -> ([f64; 5], [f64; 5]) {
+    let pie4 = PIE4;
+    let r15 = 1.17581320211778e-01_f64;
+    let r25 = 1.07456201243690e+00_f64;
+    let w25 = 2.70967405960535e-01_f64;
+    let r35 = 3.08593744371754e+00_f64;
+    let w35 = 3.82231610015404e-02_f64;
+    let r45 = 6.41472973366203e+00_f64;
+    let w45 = 1.51614186862443e-03_f64;
+    let r55 = 1.18071894899717e+01_f64;
+    let w55 = 8.62130526143657e-06_f64;
+
+    let mut rt1 = 0.0_f64;
+    let mut rt2 = 0.0_f64;
+    let mut rt3 = 0.0_f64;
+    let mut rt4 = 0.0_f64;
+    let mut rt5 = 0.0_f64;
+    let mut ww1 = 0.0_f64;
+    let mut ww2 = 0.0_f64;
+    let mut ww3 = 0.0_f64;
+    let mut ww4 = 0.0_f64;
+    let mut ww5 = 0.0_f64;
+
+    if x < 3.0e-7_f64 {
+        rt1 = 2.26659266316985e-02_f64 - 2.15865967920897e-03_f64 * x;
+        rt2 = 2.31271692140903e-01_f64 - 2.20258754389745e-02_f64 * x;
+        rt3 = 8.57346024118836e-01_f64 - 8.16520023025515e-02_f64 * x;
+        rt4 = 2.97353038120346e+00_f64 - 2.83193369647137e-01_f64 * x;
+        rt5 = 1.84151859759051e+01_f64 - 1.75382723579439e+00_f64 * x;
+        ww1 = 2.95524224714752e-01_f64 - 1.96867576909777e-02_f64 * x;
+        ww2 = 2.69266719309995e-01_f64 - 5.61737590184721e-02_f64 * x;
+        ww3 = 2.19086362515981e-01_f64 - 9.71152726793658e-02_f64 * x;
+        ww4 = 1.49451349150580e-01_f64 - 1.02979262193565e-01_f64 * x;
+        ww5 = 6.66713443086877e-02_f64 - 5.73782817488315e-02_f64 * x;
+    } else if x < 1.0_f64 {
+        rt1 = ((((((-4.46679165328413e-11_f64 * x + 1.21879111988031e-09_f64) * x
+            - 2.62975022612104e-08_f64) * x
+            + 5.15106194905897e-07_f64) * x
+            - 9.27933625824749e-06_f64) * x
+            + 1.51794097682482e-04_f64) * x
+            - 2.15865967920301e-03_f64) * x
+            + 2.26659266316985e-02_f64;
+        rt2 = (((((( 1.93117331714174e-10_f64 * x - 4.57267589660699e-09_f64) * x
+            + 2.48339908218932e-08_f64) * x
+            + 1.50716729438474e-06_f64) * x
+            - 6.07268757707381e-05_f64) * x
+            + 1.37506939145643e-03_f64) * x
+            - 2.20258754419939e-02_f64) * x
+            + 2.31271692140905e-01_f64;
+        rt3 = ((((( 4.84989776180094e-09_f64 * x + 1.31538893944284e-07_f64) * x
+            - 2.766753852879e-06_f64) * x
+            - 7.651163510626e-05_f64) * x
+            + 4.033058545972e-03_f64) * x
+            - 8.16520022916145e-02_f64) * x
+            + 8.57346024118779e-01_f64;
+        rt4 = ((((-2.48581772214623e-07_f64 * x - 4.34482635782585e-06_f64) * x
+            - 7.46018257987630e-07_f64) * x
+            + 1.01210776517279e-02_f64) * x
+            - 2.83193369640005e-01_f64) * x
+            + 2.97353038120345e+00_f64;
+        rt5 = (((((-8.92432153868554e-09_f64 * x + 1.77288899268988e-08_f64) * x
+            + 3.040754680666e-06_f64) * x
+            + 1.058229325071e-04_f64) * x
+            + 4.596379534985e-02_f64) * x
+            - 1.75382723579114e+00_f64) * x
+            + 1.84151859759049e+01_f64;
+        ww1 = ((((((-2.03822632771791e-09_f64 * x + 3.89110229133810e-08_f64) * x
+            - 5.84914787904823e-07_f64) * x
+            + 8.30316168666696e-06_f64) * x
+            - 1.13218402310546e-04_f64) * x
+            + 1.49128888586790e-03_f64) * x
+            - 1.96867576904816e-02_f64) * x
+            + 2.95524224714749e-01_f64;
+        ww2 = ((((((( 8.62848118397570e-09_f64 * x - 1.38975551148989e-07_f64) * x
+            + 1.602894068228e-06_f64) * x
+            - 1.646364300836e-05_f64) * x
+            + 1.538445806778e-04_f64) * x
+            - 1.28848868034502e-03_f64) * x
+            + 9.38866933338584e-03_f64) * x
+            - 5.61737590178812e-02_f64) * x
+            + 2.69266719309991e-01_f64;
+        ww3 = ((((((((-9.41953204205665e-09_f64 * x + 1.47452251067755e-07_f64) * x
+            - 1.57456991199322e-06_f64) * x
+            + 1.45098401798393e-05_f64) * x
+            - 1.18858834181513e-04_f64) * x
+            + 8.53697675984210e-04_f64) * x
+            - 5.22877807397165e-03_f64) * x
+            + 2.60854524809786e-02_f64) * x
+            - 9.71152726809059e-02_f64) * x
+            + 2.19086362515979e-01_f64;
+        ww4 = ((((((((-3.84961617022042e-08_f64 * x + 5.66595396544470e-07_f64) * x
+            - 5.52351805403748e-06_f64) * x
+            + 4.53160377546073e-05_f64) * x
+            - 3.22542784865557e-04_f64) * x
+            + 1.95682017370967e-03_f64) * x
+            - 9.77232537679229e-03_f64) * x
+            + 3.79455945268632e-02_f64) * x
+            - 1.02979262192227e-01_f64) * x
+            + 1.49451349150573e-01_f64;
+        ww5 = ((((((((( 4.09594812521430e-09_f64 * x - 6.47097874264417e-08_f64) * x
+            + 6.743541482689e-07_f64) * x
+            - 5.917993920224e-06_f64) * x
+            + 4.531969237381e-05_f64) * x
+            - 2.99102856679638e-04_f64) * x
+            + 1.65695765202643e-03_f64) * x
+            - 7.40671222520653e-03_f64) * x
+            + 2.50889946832192e-02_f64) * x
+            - 5.73782817487958e-02_f64) * x
+            + 6.66713443086877e-02_f64;
+    } else {
+        ww1 = f64::sqrt(pie4 / x);
+        rt1 = r15 / (x - r15);
+        rt2 = r25 / (x - r25);
+        rt3 = r35 / (x - r35);
+        rt4 = r45 / (x - r45);
+        rt5 = r55 / (x - r55);
+        ww2 = w25 * ww1;
+        ww3 = w35 * ww1;
+        ww4 = w45 * ww1;
+        ww5 = w55 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4 - ww5;
+    }
+
+    ([rt1, rt2, rt3, rt4, rt5], [ww1, ww2, ww3, ww4, ww5])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  rys_roots_host — unified host dispatcher
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Unified host-side Rys quadrature dispatcher for nroots=1..5.
+///
+/// Returns `(roots, weights)` as `Vec<f64>` for the given number of quadrature points.
+/// Panics if nroots > 5 (Wheeler fallback deferred to Phase 10).
+pub fn rys_roots_host(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
+    match nroots {
+        1 => { let (u, w) = rys_root1_host(x); (vec![u], vec![w]) }
+        2 => { let (u, w) = rys_root2_host(x); (u.to_vec(), w.to_vec()) }
+        3 => { let (u, w) = rys_root3_host(x); (u.to_vec(), w.to_vec()) }
+        4 => { let (u, w) = rys_root4_host(x); (u.to_vec(), w.to_vec()) }
+        5 => { let (u, w) = rys_root5_host(x); (u.to_vec(), w.to_vec()) }
+        _ => panic!("rys_roots_host: nroots={nroots} > 5 not supported"),
+    }
+}
+
+#[cfg(test)]
+mod tests_rys_host {
+    use super::*;
+
+    /// Rys weight-sum identity in the asymptotic regime: sum(weights) == sqrt(PIE4/x).
+    ///
+    /// In the large-x asymptotic branches of all rys_rootN functions, the total weight
+    /// is initialized to sqrt(PIE4/x) and sub-weights are computed as fractions of it.
+    /// Therefore sum(w_i) == sqrt(PIE4/x) exactly (within floating-point precision).
+    ///
+    /// This crosscheck only applies when x is large enough that all nroots variants
+    /// enter their asymptotic branch:
+    ///   - rys_root3: x >= 3 (else branch in code)
+    ///   - rys_root4: x > 1 (else branch in code)
+    ///   - rys_root5: x >= 1 (else branch in code)
+    ///
+    /// Reference: rys_tests.rs `rys_weight_sum_identity` (uses x >= 50 for safety).
+    fn check_asym_weight_sum(weights: &[f64], x: f64, label: &str) {
+        let sum: f64 = weights.iter().sum();
+        let expected = f64::sqrt(PIE4 / x);
+        let diff = (sum - expected).abs();
+        assert!(
+            diff < 1e-10,
+            "{label} at x={x}: weight_sum={sum} expected=sqrt(PIE4/x)={expected} diff={diff}"
+        );
+    }
+
+    #[test]
+    fn rys_root3_host_weight_sum_identity() {
+        // x >= 3 puts rys_root3 in its asymptotic branch
+        for x in [5.0_f64, 50.0_f64, 100.0_f64] {
+            let (_u, w) = rys_root3_host(x);
+            check_asym_weight_sum(&w, x, "rys_root3_host");
+        }
+    }
+
+    #[test]
+    fn rys_root4_host_weight_sum_identity() {
+        // x > 1 puts rys_root4 in its asymptotic branch
+        for x in [2.0_f64, 50.0_f64, 100.0_f64] {
+            let (_u, w) = rys_root4_host(x);
+            check_asym_weight_sum(&w, x, "rys_root4_host");
+        }
+    }
+
+    #[test]
+    fn rys_root5_host_weight_sum_identity() {
+        // x >= 1 puts rys_root5 in its asymptotic branch
+        for x in [2.0_f64, 50.0_f64, 100.0_f64] {
+            let (_u, w) = rys_root5_host(x);
+            check_asym_weight_sum(&w, x, "rys_root5_host");
+        }
+    }
+
+    #[test]
+    fn rys_root3_host_small_x_finite() {
+        // Verify small-x branches produce finite values
+        for x in [0.0_f64, 1e-8_f64, 0.5_f64, 2.0_f64] {
+            let (u, w) = rys_root3_host(x);
+            for (i, (&r, &wt)) in u.iter().zip(w.iter()).enumerate() {
+                assert!(r.is_finite(), "rys_root3_host at x={x}: root[{i}]={r} not finite");
+                assert!(wt.is_finite(), "rys_root3_host at x={x}: weight[{i}]={wt} not finite");
+            }
+        }
+    }
+
+    #[test]
+    fn rys_root4_host_small_x_finite() {
+        for x in [0.0_f64, 1e-8_f64, 0.5_f64] {
+            let (u, w) = rys_root4_host(x);
+            for (i, (&r, &wt)) in u.iter().zip(w.iter()).enumerate() {
+                assert!(r.is_finite(), "rys_root4_host at x={x}: root[{i}]={r} not finite");
+                assert!(wt.is_finite(), "rys_root4_host at x={x}: weight[{i}]={wt} not finite");
+            }
+        }
+    }
+
+    #[test]
+    fn rys_root5_host_small_x_finite() {
+        for x in [0.0_f64, 1e-8_f64, 0.5_f64] {
+            let (u, w) = rys_root5_host(x);
+            for (i, (&r, &wt)) in u.iter().zip(w.iter()).enumerate() {
+                assert!(r.is_finite(), "rys_root5_host at x={x}: root[{i}]={r} not finite");
+                assert!(wt.is_finite(), "rys_root5_host at x={x}: weight[{i}]={wt} not finite");
+            }
+        }
+    }
+
+    #[test]
+    fn rys_roots_host_dispatcher_lengths() {
+        for nroots in 1_usize..=5 {
+            let (u, w) = rys_roots_host(nroots, 1.5_f64);
+            assert_eq!(u.len(), nroots, "roots length mismatch for nroots={nroots}");
+            assert_eq!(w.len(), nroots, "weights length mismatch for nroots={nroots}");
+        }
+    }
+
+    #[test]
+    fn rys_roots_host_dispatcher_asym_weight_sum() {
+        // All nroots variants are in asymptotic branch at x=50
+        for nroots in 1_usize..=5 {
+            for x in [50.0_f64, 100.0_f64] {
+                let (_u, w) = rys_roots_host(nroots, x);
+                check_asym_weight_sum(&w, x, &format!("rys_roots_host(nroots={nroots})"));
+            }
+        }
+    }
+}
+
 /// Compute Rys quadrature roots and weights.
 ///
 /// `nroots`: number of quadrature points (1..=5; higher nroots deferred to Phase 10)
