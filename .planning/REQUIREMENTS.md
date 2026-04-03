@@ -67,7 +67,7 @@
 
 ### Verification (v1.1)
 
-- [ ] **VERI-05**: Oracle parity verified per family as each kernel lands (not deferred to end)
+- [x] **VERI-05**: Oracle parity verified per family as each kernel lands (not deferred to end)
 - [ ] **VERI-06**: f64 precision strategy resolved — CPU backend as primary oracle path; wgpu SHADER_F64 tested opportunistically
 - [ ] **VERI-07**: v1.0 human UAT items (non-zero eval_raw output, C ABI shim output on real GPU) resolved
 
@@ -135,7 +135,7 @@
 | MATH-04 | Phase 8 | Complete |
 | KERN-01 | Phase 9 | Complete |
 | KERN-06 | Phase 9 | Pending |
-| VERI-05 | Phase 9 | Pending |
+| VERI-05 | Phase 9 | Complete |
 | KERN-02 | Phase 10 | Pending |
 | KERN-03 | Phase 10 | Pending |
 | KERN-04 | Phase 10 | Pending |
