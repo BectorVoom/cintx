@@ -64,6 +64,10 @@ jobs:
           mkdir -p "${CINTX_ARTIFACT_DIR}"
           rm -f /mnt/data/cintx_phase_04_bench_rows.jsonl
 
+      - name: Run wgpu capability gate
+        run: |
+          cargo run --locked --manifest-path xtask/Cargo.toml -- wgpu-capability-gate --profiles "${CINTX_REQUIRED_PROFILES:-base,with-f12,with-4c1e,with-f12+with-4c1e}" --require-adapter ${{ inputs.continue_on_error && 'false' || 'true' }}
+
       - name: GPU consistency smoke checks
         run: |
           cargo test --locked -p cintx-runtime planner::tests::query_workspace_honors_memory_limit -- --exact
@@ -111,4 +115,6 @@ jobs:
             /mnt/data/cintx_phase_04_runtime_diagnostics.json
             /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
             /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
+            /mnt/data/cintx_phase_05_wgpu_capability_gate.json
+            /tmp/cintx_artifacts/cintx_phase_05_wgpu_capability_gate.json
             target/criterion

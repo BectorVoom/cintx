@@ -40,6 +40,37 @@
 - [x] **VERI-03**: Maintainer can benchmark representative workloads and track throughput, memory, and CPU-GPU crossover regressions over time.
 - [x] **VERI-04**: Maintainer can inspect planner, chunking, transfer, fallback, and OOM behavior through structured tracing and diagnostics.
 
+## v1.1 Requirements
+
+### Executor Infrastructure
+
+- [ ] **EXEC-06**: Executor internals use CubeCL client API directly (`WgpuRuntime::client()`, `client.create()`/`client.read()`/`client.empty()`, `ArrayArg::from_raw_parts`)
+- [ ] **EXEC-07**: RecordingExecutor removed from cintx-compat and cintx-rs — real kernel values flow through `io.staging_output()` directly
+- [ ] **EXEC-08**: ResolvedBackend enum dispatches between Wgpu and Cpu runtime arms with per-arm kernel launch
+- [ ] **EXEC-09**: CPU backend enabled via `cpu = ["cubecl/cpu"]` feature in cintx-cubecl for CI oracle testing without GPU
+
+### Kernel Compute
+
+- [ ] **KERN-01**: 1e family kernels (overlap, kinetic, nuclear attraction) produce real values via `#[cube(launch)]`
+- [ ] **KERN-02**: 2e ERI kernel implements Rys quadrature with real Gaussian integral evaluation
+- [ ] **KERN-03**: 2c2e two-center two-electron kernel produces real values
+- [ ] **KERN-04**: 3c1e three-center one-electron kernel produces real values
+- [ ] **KERN-05**: 3c2e three-center two-electron kernel produces real values
+- [ ] **KERN-06**: Cart-to-sph transform implements real Condon-Shortley coefficients replacing stub blend
+
+### Math Infrastructure
+
+- [x] **MATH-01**: Boys function implemented as `#[cube]` functions with gridded Taylor expansion uploaded to device
+- [x] **MATH-02**: Gaussian primitive pair evaluation (overlap distribution, screening) implemented as `#[cube]` functions
+- [x] **MATH-03**: Rys quadrature roots and weights computed on-device via polynomial fit tables
+- [x] **MATH-04**: Obara-Saika horizontal and vertical recurrence relations implemented as `#[cube]` functions
+
+### Verification (v1.1)
+
+- [ ] **VERI-05**: Oracle parity verified per family as each kernel lands (not deferred to end)
+- [ ] **VERI-06**: f64 precision strategy resolved — CPU backend as primary oracle path; wgpu SHADER_F64 tested opportunistically
+- [ ] **VERI-07**: v1.0 human UAT items (non-zero eval_raw output, C ABI shim output on real GPU) resolved
+
 ## v2 Requirements
 
 ### Expanded Coverage
@@ -63,6 +94,11 @@
 | Public Fortran wrapper reproduction | Not part of the Rust library's migration or compatibility goals |
 | Public asynchronous API | Excluded from the initial design to keep execution, allocation, and compatibility behavior predictable |
 | Best-effort partial writes on failure | Violates the OOM-safe stop and explicit-layout contract |
+| Spinor representation kernels | Differentiator, not on critical path to oracle parity — defer to v1.2 |
+| F12/STG/YP optional family kernels | Feature-gated families, defer to v1.2 |
+| CUDA/ROCm/Metal backend implementation | Architecture supports them via ResolvedBackend, but only wgpu+cpu in v1.1 |
+| Screening/batching optimizations | Performance work after correctness is proven |
+| h-function (l>=5) angular momentum | Register pressure risk, defer until g-function validated |
 
 ## Traceability
 
@@ -71,29 +107,47 @@
 | BASE-01 | Phase 1 | Complete |
 | BASE-02 | Phase 1 | Complete |
 | BASE-03 | Phase 1 | Complete |
-| COMP-01 | Phase 2 | Complete |
+| COMP-01 | Phase 6 | Complete |
 | COMP-02 | Phase 2 | Complete |
 | COMP-03 | Phase 2 | Complete |
-| COMP-04 | Phase 3 | Complete |
-| COMP-05 | Phase 2 | Complete |
+| COMP-04 | Phase 6 | Complete |
+| COMP-05 | Phase 6 | Complete |
 | EXEC-01 | Phase 3 | Complete |
-| EXEC-02 | Phase 2 | Complete |
+| EXEC-02 | Phase 6 | Complete |
 | EXEC-03 | Phase 2 | Complete |
-| EXEC-04 | Phase 2 | Complete |
-| EXEC-05 | Phase 2 | Complete |
+| EXEC-04 | Phase 6 | Complete |
+| EXEC-05 | Phase 6 | Complete |
 | OPT-01 | Phase 3 | Complete |
 | OPT-02 | Phase 3 | Complete |
 | OPT-03 | Phase 3 | Complete |
-| VERI-01 | Phase 4 | Complete |
+| VERI-01 | Phase 6 | Complete |
 | VERI-02 | Phase 4 | Complete |
 | VERI-03 | Phase 4 | Complete |
 | VERI-04 | Phase 4 | Complete |
+| EXEC-06 | Phase 7 | Pending |
+| EXEC-07 | Phase 7 | Pending |
+| EXEC-08 | Phase 7 | Pending |
+| EXEC-09 | Phase 7 | Pending |
+| VERI-06 | Phase 7 | Pending |
+| MATH-01 | Phase 8 | Complete |
+| MATH-02 | Phase 8 | Complete |
+| MATH-03 | Phase 8 | Complete |
+| MATH-04 | Phase 8 | Complete |
+| KERN-01 | Phase 9 | Pending |
+| KERN-06 | Phase 9 | Pending |
+| VERI-05 | Phase 9 | Pending |
+| KERN-02 | Phase 10 | Pending |
+| KERN-03 | Phase 10 | Pending |
+| KERN-04 | Phase 10 | Pending |
+| KERN-05 | Phase 10 | Pending |
+| VERI-07 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 20 total
-- Mapped to phases: 20
+- v1.0 requirements: 20 total (all complete)
+- v1.1 requirements: 17 total
+- Mapped to phases: 17 (Phases 7-10)
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-03-26 after Phase 2 Plan 07*
+*Last updated: 2026-04-02 after v1.1 roadmap creation*

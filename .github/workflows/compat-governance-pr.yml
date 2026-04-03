@@ -1,209 +1,336 @@
 name: Compat Governance PR Gates
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main, master]
-    paths:
-      - ".github/workflows/compat-governance-pr.yml"
-      - ".github/workflows/compat-governance-release.yml"
-      - "ci/oracle-compare.yml"
-      - "ci/feature-matrix.yml"
-      - "ci/gpu-bench.yml"
-      - "ci/benchmark-thresholds.json"
-      - "benches/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "crates/**"
-      - "xtask/**"
-      - "docs/**"
-  workflow_dispatch:
+    pull_request:
+        types: [opened, synchronize, reopened, ready_for_review]
+        branches: [main, master]
+        paths:
+            - ".github/workflows/compat-governance-pr.yml"
+            - ".github/workflows/compat-governance-release.yml"
+            - "ci/oracle-compare.yml"
+            - "ci/feature-matrix.yml"
+            - "ci/gpu-bench.yml"
+            - "ci/api-value-baseline.sh"
+            - "ci/benchmark-thresholds.json"
+            - "benches/**"
+            - "Cargo.toml"
+            - "Cargo.lock"
+            - "rust-toolchain.toml"
+            - "crates/**"
+            - "xtask/**"
+            - "docs/**"
+    workflow_dispatch:
 
 concurrency:
-  group: compat-governance-pr-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+    group: compat-governance-pr-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
 
 permissions:
-  contents: read
+    contents: read
 
 env:
-  CINTX_REQUIRED_PROFILES: base,with-f12,with-4c1e,with-f12+with-4c1e
+    CINTX_REQUIRED_PROFILES: base,with-f12,with-4c1e,with-f12+with-4c1e
 
 jobs:
-  manifest_drift_gate:
-    name: manifest_drift_gate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    manifest_drift_gate:
+        name: manifest_drift_gate
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Resolve pinned Rust channel
-        id: rust
-        run: |
-          channel="$(grep -E '^channel\\s*=\\s*\"' rust-toolchain.toml | sed -E 's/.*\"([^\"]+)\".*/\\1/' | head -n1)"
-          if [ -z "${channel}" ]; then
-            echo "failed to resolve channel from rust-toolchain.toml" >&2
-            exit 1
-          fi
-          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
 
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.rust.outputs.channel }}
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
 
-      - name: Run manifest drift gate
-        run: |
-          cargo run --manifest-path xtask/Cargo.toml -- manifest-audit --profiles "${CINTX_REQUIRED_PROFILES}" --check-lock
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-  oracle_parity_gate:
-    name: oracle_parity_gate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+            - name: Run manifest drift gate
+              run: |
+                  cargo run --manifest-path xtask/Cargo.toml -- manifest-audit --profiles "${CINTX_REQUIRED_PROFILES}" --check-lock
 
-      - name: Resolve pinned Rust channel
-        id: rust
-        run: |
-          channel="$(grep -E '^channel\\s*=\\s*\"' rust-toolchain.toml | sed -E 's/.*\"([^\"]+)\".*/\\1/' | head -n1)"
-          if [ -z "${channel}" ]; then
-            echo "failed to resolve channel from rust-toolchain.toml" >&2
-            exit 1
-          fi
-          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+    oracle_parity_gate:
+        name: oracle_parity_gate
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.rust.outputs.channel }}
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
 
-      - name: Run oracle parity gate
-        run: |
-          cargo run --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${CINTX_REQUIRED_PROFILES}" --include-unstable-source false
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
 
-  helper_legacy_parity_gate:
-    name: helper_legacy_parity_gate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Resolve pinned Rust channel
-        id: rust
-        run: |
-          channel="$(grep -E '^channel\\s*=\\s*\"' rust-toolchain.toml | sed -E 's/.*\"([^\"]+)\".*/\\1/' | head -n1)"
-          if [ -z "${channel}" ]; then
-            echo "failed to resolve channel from rust-toolchain.toml" >&2
-            exit 1
-          fi
-          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+            - name: Run oracle parity gate
+              run: |
+                  cargo run --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${CINTX_REQUIRED_PROFILES}" --include-unstable-source false
 
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.rust.outputs.channel }}
+    helper_legacy_parity_gate:
+        name: helper_legacy_parity_gate
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
 
-      - name: Run helper legacy parity gate for required profiles
-        run: |
-          for profile in base with-f12 with-4c1e with-f12+with-4c1e; do
-            cargo run --manifest-path xtask/Cargo.toml -- helper-legacy-parity --profile "${profile}"
-          done
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
 
-  oom_contract_gate:
-    name: oom_contract_gate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
 
-      - name: Resolve pinned Rust channel
-        id: rust
-        run: |
-          channel="$(grep -E '^channel\\s*=\\s*\"' rust-toolchain.toml | sed -E 's/.*\"([^\"]+)\".*/\\1/' | head -n1)"
-          if [ -z "${channel}" ]; then
-            echo "failed to resolve channel from rust-toolchain.toml" >&2
-            exit 1
-          fi
-          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.rust.outputs.channel }}
+            - name: Run helper legacy parity gate for required profiles
+              run: |
+                  for profile in base with-f12 with-4c1e with-f12+with-4c1e; do
+                    cargo run --manifest-path xtask/Cargo.toml -- helper-legacy-parity --profile "${profile}"
+                  done
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+    oom_contract_gate:
+        name: oom_contract_gate
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Run OOM contract gate for required profiles
-        run: |
-          for profile in base with-f12 with-4c1e with-f12+with-4c1e; do
-            echo "running oom-contract-check for profile=${profile} (base,with-f12,with-4c1e,with-f12+with-4c1e)"
-            cargo run --manifest-path xtask/Cargo.toml -- oom-contract-check
-          done
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
 
-  gpu_bench_advisory:
-    name: gpu_bench_advisory
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    env:
-      CINTX_ARTIFACT_DIR: /mnt/data/cintx/pr-gpu-bench/${{ github.run_id }}
-      CINTX_BENCH_PROFILE: advisory-pr
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
 
-      - name: Resolve pinned Rust channel
-        id: rust
-        run: |
-          channel="$(grep -E '^channel\\s*=\\s*\"' rust-toolchain.toml | sed -E 's/.*\"([^\"]+)\".*/\\1/' | head -n1)"
-          if [ -z "${channel}" ]; then
-            echo "failed to resolve channel from rust-toolchain.toml" >&2
-            exit 1
-          fi
-          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
 
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.rust.outputs.channel }}
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Run OOM contract gate for required profiles
+              run: |
+                  for profile in base with-f12 with-4c1e with-f12+with-4c1e; do
+                    echo "running oom-contract-check for profile=${profile} (base,with-f12,with-4c1e,with-f12+with-4c1e)"
+                    cargo run --manifest-path xtask/Cargo.toml -- oom-contract-check
+                  done
 
-      - name: Prepare artifact directories
-        run: |
-          mkdir -p /mnt/data
-          mkdir -p "${CINTX_ARTIFACT_DIR}"
-          rm -f /mnt/data/cintx_phase_04_bench_rows.jsonl
+    api_value_baseline_gate:
+        name: api_value_baseline_gate
+        runs-on: ubuntu-latest
+        env:
+            CINTX_REQUIRED_PROFILES: base,with-f12,with-4c1e,with-f12+with-4c1e
+            CINTX_MUTANTS_SHARD: 1/30
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Run GPU benchmark suites (advisory)
-        run: |
-          # Keep commands aligned with ci/gpu-bench.yml policy template.
-          cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
-          cargo run --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
 
-      - name: Upload GPU advisory artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gpu-bench-advisory-${{ github.run_id }}
-          if-no-files-found: warn
-          path: |
-            ${{ env.CINTX_ARTIFACT_DIR }}
-            /mnt/data/cintx_phase_04_bench_rows.jsonl
-            /mnt/data/cintx_phase_04_bench_report.json
-            /mnt/data/cintx_phase_04_runtime_diagnostics.json
-            /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
-            /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
-            target/criterion
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Run API value baseline gate
+              run: ci/api-value-baseline.sh
+
+    gpu_bench_advisory:
+        name: gpu_bench_advisory
+        runs-on: ubuntu-latest
+        continue-on-error: true
+        env:
+            CINTX_ARTIFACT_DIR: /mnt/data/cintx/pr-gpu-bench/${{ github.run_id }}
+            CINTX_BENCH_PROFILE: advisory-pr
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
+
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Prepare artifact directories
+              run: |
+                  mkdir -p /mnt/data
+                  mkdir -p "${CINTX_ARTIFACT_DIR}"
+                  rm -f /mnt/data/cintx_phase_04_bench_rows.jsonl
+
+            - name: Run GPU benchmark suites (advisory)
+              run: |
+                  # Keep commands aligned with ci/gpu-bench.yml policy template.
+                  cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
+                  cargo run --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
+
+            - name: Upload GPU advisory artifacts
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: gpu-bench-advisory-${{ github.run_id }}
+                  if-no-files-found: warn
+                  path: |
+                      ${{ env.CINTX_ARTIFACT_DIR }}
+                      /mnt/data/cintx_phase_04_bench_rows.jsonl
+                      /mnt/data/cintx_phase_04_bench_report.json
+                      /mnt/data/cintx_phase_04_runtime_diagnostics.json
+                      /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
+                      /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
+                      target/criterion
+
+    wgpu_capability_advisory:
+        name: wgpu_capability_advisory
+        runs-on: ubuntu-latest
+        continue-on-error: true
+        env:
+            CINTX_ARTIFACT_DIR: /tmp/cintx_artifacts
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
+
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Prepare artifact directories
+              run: |
+                  mkdir -p "${CINTX_ARTIFACT_DIR}"
+
+            - name: Run wgpu capability gate (advisory)
+              run: |
+                  cargo run --locked --manifest-path xtask/Cargo.toml -- wgpu-capability-gate --profiles "${CINTX_REQUIRED_PROFILES}" --require-adapter false
+
+            - name: Upload phase-5 capability advisory artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: wgpu-capability-advisory-${{ github.run_id }}
+                  if-no-files-found: warn
+                  path: |
+                      /mnt/data/cintx_phase_05_wgpu_capability_gate.json
+                      /tmp/cintx_artifacts/cintx_phase_05_wgpu_capability_gate.json

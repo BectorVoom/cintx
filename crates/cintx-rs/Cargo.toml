@@ -11,6 +11,7 @@ cintx-core = { path = "../cintx-core" }
 cintx-runtime = { path = "../cintx-runtime" }
 cintx-compat = { path = "../cintx-compat", default-features = false }
 cintx-ops = { path = "../cintx-ops" }
+cintx-cubecl = { path = "../cintx-cubecl" }
 thiserror = "2"
 
 [features]

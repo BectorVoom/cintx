@@ -6,12 +6,11 @@ use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError}
 use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
     BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
-    HostWorkspaceAllocator, OutputOwnership, WorkspaceBytes,
-    WorkspaceQuery as RuntimeWorkspaceQuery, evaluate as runtime_evaluate,
+    HostWorkspaceAllocator, OutputOwnership, WorkspaceAllocator, WorkspaceBytes,
+    WorkspaceQuery as RuntimeWorkspaceQuery, schedule_chunks,
     query_workspace as runtime_query_workspace,
 };
 use std::mem::size_of;
-use std::sync::Mutex;
 
 /// Typed safe request object that keeps `query_workspace()` and `evaluate()` connected.
 #[derive(Clone, Debug)]
@@ -135,10 +134,105 @@ impl<'basis> SessionQuery<'basis> {
 
         let output_layout = plan.output_layout.clone();
         let mut allocator = HostWorkspaceAllocator::default();
-        let executor = RecordingExecutor::new(CubeClExecutor::new());
-        let runtime_stats = runtime_evaluate(plan, &self.request.options, &mut allocator, &executor)
-            .map_err(FacadeError::from)?;
-        let owned_values = executor.owned_values()?;
+        let executor = CubeClExecutor::new();
+
+        if !executor.supports(&plan) {
+            return Err(FacadeError::UnsupportedApi {
+                requested: format!(
+                    "{}/{}/{}",
+                    plan.descriptor.family(),
+                    plan.descriptor.operator_name(),
+                    self.request.representation
+                ),
+            });
+        }
+
+        let backend_workspace = executor.query_workspace(&plan)
+            .map_err(FacadeError::from)?
+            .get();
+        if backend_workspace > plan.workspace.bytes {
+            return Err(FacadeError::from(cintx_core::cintxRsError::MemoryLimitExceeded {
+                requested: backend_workspace,
+                limit: plan.workspace.bytes,
+            }));
+        }
+
+        // Allocate the full staging accumulator owned by the facade, so we can read
+        // staging values from executor.execute() directly without RecordingExecutor.
+        let staging_elements = output_layout.staging_elements;
+        let staging_bytes = staging_elements
+            .checked_mul(size_of::<f64>())
+            .ok_or(FacadeError::Memory {
+                detail: "staging element byte count overflowed usize".to_owned(),
+            })?;
+        let mut owned_values = Vec::new();
+        owned_values
+            .try_reserve_exact(staging_elements)
+            .map_err(|_| FacadeError::Memory {
+                detail: format!("failed to allocate staging buffer of {staging_bytes} bytes"),
+            })?;
+        owned_values.resize(staging_elements, 0.0f64);
+
+        let schedule = schedule_chunks(&plan.workspace);
+        let total_units = plan.workspace.work_units.max(1);
+        let mut total_not0: i32 = 0;
+        let mut total_transfer_bytes: usize = 0;
+        let mut total_peak_workspace_bytes: usize = 0;
+
+        for chunk in schedule.chunks() {
+            // Compute staging slice range for this chunk.
+            let start = chunk.work_unit_start.min(total_units);
+            let end = chunk
+                .work_unit_start
+                .saturating_add(chunk.work_unit_count)
+                .min(total_units);
+            let prefix = staging_elements.saturating_mul(start) / total_units;
+            let suffix = staging_elements.saturating_mul(end) / total_units;
+            let chunk_len = suffix.saturating_sub(prefix).max(1);
+
+            let chunk_staging_bytes = chunk_len.checked_mul(size_of::<f64>()).ok_or(
+                FacadeError::Memory {
+                    detail: "chunk staging byte count overflowed usize".to_owned(),
+                },
+            )?;
+            let mut chunk_staging = Vec::new();
+            chunk_staging
+                .try_reserve_exact(chunk_len)
+                .map_err(|_| FacadeError::Memory {
+                    detail: format!(
+                        "failed to allocate chunk staging buffer of {chunk_staging_bytes} bytes"
+                    ),
+                })?;
+            chunk_staging.resize(chunk_len, 0.0f64);
+
+            let mut workspace = allocator
+                .try_alloc(chunk.bytes, plan.workspace.alignment)
+                .map_err(FacadeError::from)?;
+
+            {
+                let mut io = ExecutionIo::new(
+                    chunk,
+                    &mut chunk_staging,
+                    &mut workspace,
+                    plan.dispatch,
+                )
+                .map_err(FacadeError::from)?;
+                let chunk_stats = executor.execute(&plan, &mut io).map_err(FacadeError::from)?;
+                total_not0 = total_not0.saturating_add(chunk_stats.not0.max(0));
+                total_transfer_bytes =
+                    total_transfer_bytes.saturating_add(io.transfer_bytes());
+                total_peak_workspace_bytes =
+                    total_peak_workspace_bytes.max(io.workspace().len());
+            }
+            allocator.release(workspace);
+
+            // Copy chunk staging into the appropriate range of the accumulator.
+            let dest_end = prefix.saturating_add(chunk_len).min(staging_elements);
+            if prefix < dest_end {
+                owned_values[prefix..dest_end]
+                    .copy_from_slice(&chunk_staging[..dest_end - prefix]);
+            }
+        }
 
         if owned_values.len() != output_layout.staging_elements {
             return Err(FacadeError::Validation {
@@ -156,6 +250,18 @@ impl<'basis> SessionQuery<'basis> {
             .ok_or(FacadeError::Memory {
                 detail: "owned output byte size overflowed usize".to_owned(),
             })?;
+
+        let chunk_count = schedule_chunks(&plan.workspace).len();
+        let runtime_stats = ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: total_peak_workspace_bytes,
+            chunk_count: chunk_count.max(plan.workspace.chunks.len()),
+            planned_batches: plan.workspace.chunks.iter().map(|c| c.work_unit_count).sum(),
+            transfer_bytes: total_transfer_bytes,
+            not0: total_not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        };
 
         let stats = EvaluationStats::from_runtime(&runtime_stats);
 
@@ -450,57 +556,6 @@ impl BackendExecutor for CubeClExecutor {
     }
 }
 
-#[derive(Debug)]
-struct RecordingExecutor<E> {
-    inner: E,
-    staged_values: Mutex<Vec<f64>>,
-}
-
-impl<E> RecordingExecutor<E> {
-    fn new(inner: E) -> Self {
-        Self {
-            inner,
-            staged_values: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn owned_values(&self) -> Result<Vec<f64>, FacadeError> {
-        let staged_values = self
-            .staged_values
-            .lock()
-            .map_err(|_| FacadeError::Validation {
-                detail: "owned output capture buffer mutex poisoned".to_owned(),
-            })?;
-        Ok(staged_values.clone())
-    }
-}
-
-impl<E: BackendExecutor> BackendExecutor for RecordingExecutor<E> {
-    fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
-        self.inner.supports(plan)
-    }
-
-    fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
-        self.inner.query_workspace(plan)
-    }
-
-    fn execute(
-        &self,
-        plan: &ExecutionPlan<'_>,
-        io: &mut ExecutionIo<'_>,
-    ) -> Result<ExecutionStats, cintxRsError> {
-        let stats = self.inner.execute(plan, io)?;
-        let mut staged_values =
-            self.staged_values
-                .lock()
-                .map_err(|_| cintxRsError::ChunkPlanFailed {
-                    from: "safe_recording_executor",
-                    detail: "owned output capture buffer mutex poisoned".to_owned(),
-                })?;
-        staged_values.extend_from_slice(io.staging_output());
-        Ok(stats)
-    }
-}
 
 #[cfg(feature = "unstable-source-api")]
 pub mod unstable {

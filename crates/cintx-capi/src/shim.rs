@@ -492,6 +492,8 @@ mod tests {
 
         assert_eq!(eval_status, 0);
         assert!(summary.bytes_written > 0);
+        // Kernel stubs write zeros to staging (real kernels come in Phase 9/10).
+        // Verify eval_raw completed successfully and staging is populated (all zeros from stubs).
         assert!(out.iter().all(|value| *value == 0.0));
     }
 

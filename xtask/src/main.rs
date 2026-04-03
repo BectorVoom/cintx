@@ -1,6 +1,7 @@
 mod bench_report;
 mod manifest_audit;
 mod oracle_update;
+mod wgpu_capability_gate;
 
 use std::collections::BTreeSet;
 
@@ -27,6 +28,10 @@ enum Command {
         profile: String,
     },
     OomContractCheck,
+    WgpuCapabilityGate {
+        profiles: Vec<String>,
+        require_adapter: bool,
+    },
     Help,
 }
 
@@ -50,6 +55,7 @@ fn run() -> Result<()> {
         "oracle-compare" => parse_oracle_compare(args)?,
         "helper-legacy-parity" => parse_helper_legacy_parity(args)?,
         "oom-contract-check" => parse_oom_contract_check(args)?,
+        "wgpu-capability-gate" => parse_wgpu_capability_gate(args)?,
         "--help" | "-h" | "help" => Command::Help,
         other => return Err(anyhow!("unknown xtask command: {other}")),
     };
@@ -73,6 +79,10 @@ fn execute(command: Command) -> Result<()> {
         } => oracle_update::run_oracle_compare(&profiles, include_unstable_source),
         Command::HelperLegacyParity { profile } => oracle_update::run_helper_legacy_parity(&profile),
         Command::OomContractCheck => oracle_update::run_oom_contract_check(),
+        Command::WgpuCapabilityGate {
+            profiles,
+            require_adapter,
+        } => wgpu_capability_gate::run_wgpu_capability_gate(&profiles, require_adapter),
         Command::Help => {
             print_help();
             Ok(())
@@ -202,6 +212,41 @@ fn parse_oom_contract_check(args: impl Iterator<Item = String>) -> Result<Comman
     Ok(Command::OomContractCheck)
 }
 
+fn parse_wgpu_capability_gate(args: impl Iterator<Item = String>) -> Result<Command> {
+    let items: Vec<String> = args.collect();
+    let mut profiles = required_profiles();
+    let mut require_adapter = false;
+    let mut index = 0;
+    while let Some(flag) = items.get(index) {
+        match flag.as_str() {
+            "--profiles" => {
+                let csv = items
+                    .get(index + 1)
+                    .context("expected csv value after --profiles")?;
+                profiles = parse_profiles_csv(csv)?;
+                index += 2;
+            }
+            "--require-adapter" => {
+                let value = items
+                    .get(index + 1)
+                    .context("expected boolean value after --require-adapter")?;
+                require_adapter = parse_boolean(value, "--require-adapter")?;
+                index += 2;
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => {
+                return Err(anyhow!(
+                    "unknown wgpu-capability-gate flag: {other}"
+                ))
+            }
+        }
+    }
+    Ok(Command::WgpuCapabilityGate {
+        profiles,
+        require_adapter,
+    })
+}
+
 fn parse_profiles_csv(csv: &str) -> Result<Vec<String>> {
     let values: Vec<String> = csv
         .split(',')
@@ -262,8 +307,10 @@ fn print_help() {
     );
     println!("  helper-legacy-parity [--profile base]");
     println!("  oom-contract-check");
+    println!("  wgpu-capability-gate [--profiles {REQUIRED_PROFILES_CSV}] [--require-adapter true|false]");
     println!();
     println!("Defaults:");
     println!("  profiles: {REQUIRED_PROFILES_CSV}");
     println!("  include_unstable_source: false");
+    println!("  require_adapter: false");
 }

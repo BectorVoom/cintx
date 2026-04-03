@@ -1,30 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: unknown
-stopped_at: Completed 04-verification-release-automation-07-PLAN.md
-last_updated: "2026-03-29T02:02:13.306Z"
+milestone: v1.1
+milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
+status: executing
+stopped_at: Phase 9 context gathered
+last_updated: "2026-04-03T05:24:39.393Z"
+last_activity: 2026-04-03 -- Phase 09 execution started
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 22
-  completed_plans: 23
+  total_phases: 10
+  completed_phases: 8
+  total_plans: 39
+  completed_plans: 37
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-28)
+See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 04 — verification-release-automation
+**Current focus:** Phase 09 — 1e-real-kernel-and-cart-to-sph-transform
 
 ## Current Position
 
-Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 2 of 7
+Phase: 09 (1e-real-kernel-and-cart-to-sph-transform) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 09
+Last activity: 2026-04-03 -- Phase 09 execution started
 
 ## Performance Metrics
 
@@ -71,6 +74,15 @@ Plan: 2 of 7
 | Phase 04-verification-release-automation P05 | 2min | 1 tasks | 1 files |
 | Phase 04-verification-release-automation P06 | 2 min | 2 tasks | 2 files |
 | Phase 04-verification-release-automation P07 | 3 min | 2 tasks | 1 files |
+| Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P01 | 3 | 2 tasks | 5 files |
+| Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P02 | 7 | 2 tasks | 4 files |
+| Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P03 | 29 | 2 tasks | 3 files |
+| Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P04 | 25 | 2 tasks | 4 files |
+| Phase 06-fix-raw-eval-staging-and-capability-fingerprint P01 | 8 | 2 tasks | 2 files |
+| Phase 06-fix-raw-eval-staging-and-capability-fingerprint P02 | 4 | 1 tasks | 1 files |
+| Phase 08-gaussian-primitive-infrastructure-and-boys-function P01 | 8 | 2 tasks | 9 files |
+| Phase 08 P03 | 4 | 2 tasks | 3 files |
+| Phase 08 P04 | 8 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -139,6 +151,35 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Added Validate bench artifact contract checks so bench report and runtime diagnostics must exist in /mnt/data or /tmp/cintx_artifacts before artifact upload.
 - [Phase 04-verification-release-automation]: Centralize required and fallback artifact paths in workflow-level env variables to reduce silent drift risk.
 - [Phase 04-verification-release-automation]: Add a dedicated release policy invariant step that inspects committed workflow markers and fails closed.
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: BackendIntent defaults to BackendKind::Wgpu with selector 'auto' per D-03; Cpu variant kept for oracle/test use only
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: planning_matches() compares all four contract fields (memory, chunk_size, backend_intent, capability_token) so any backend policy drift fails evaluate closed (D-08)
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: BackendCapabilityToken fingerprint defaults to 0; later plans will populate with real wgpu adapter capability hash during device selection
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Use FNV-1a 64-bit hash over sorted feature/limit lists plus adapter identity fields for reproducible capability fingerprints
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Wrap cubecl init_setup with std::panic::catch_unwind to convert CubeCL panic-based adapter failures into typed UnsupportedApi errors
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Keep selector format simple (auto/discrete:N/integrated:N) aligned with CubeCL WgpuDevice enum variants
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Gate ensure_validated_4c1e and validated_4c1e_error under cfg(feature = with-4c1e) to eliminate dead_code warnings in default builds
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: kernels::resolve_family now returns UnsupportedApi with unsupported_representation:<repr> instead of UnsupportedRepresentation struct to keep D-12 taxonomy consistent across executor and kernels
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Transfer adapter label sourced from backend_intent.selector rather than static runtime_profile string per D-04 reproducibility
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Add cintx-cubecl as direct dep in cintx-rs so safe facade imports CubeClExecutor without indirection
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: WorkspaceExecutionToken clones backend_intent and backend_capability_token at query time for drift detection at evaluate time
+- [Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend]: Tests for eval/evaluate paths accept wgpu-capability fail-closed errors so CI passes without GPU
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Scope RecordingExecutor locally in raw.rs rather than sharing — avoids coupling cintx-compat internals to cintx-rs internal pattern
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: execution_options_from_opt returns Result<ExecutionOptions, cintxRsError> so wgpu bootstrap failures propagate cleanly to all callers
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Bootstrap-before-query pattern: always call bootstrap_wgpu_runtime before runtime_query_workspace to ensure planning_matches has a real fingerprint anchor
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Assert bytes_written > 0 for staging path tests — query.bytes is workspace size not output size; bytes_written is output elements × sizeof(f64)
+- [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Use INT3C1E_P2_SPH and INT3C2E_IP1_SPH as 3c1e/3c2e regression test family representatives
+- [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Pass TURNOVER_POINT[m] as scalar parameter to #[cube] boys_gamma_inc to avoid runtime const array indexing ambiguity in CubeCL 0.9.x
+- [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Use as usize cast pattern for Array<f64> indexing in #[cube]: u32 loop counters with as usize at index sites — established pattern for all Phase 8+ math modules
+- [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Host wrapper + #[cube] pair pattern: every math function has *_host() counterpart callable from tests without GPU context
+- [Phase 08]: vrr_step guards nmax>=1 to avoid s-shell no-op array writes, mirrors g1e.c early return pattern
+- [Phase 08]: Integration tests use host-side wrappers only (not CubeCL CPU backend launch) to avoid cond_br MLIR limitation discovered in Plan 02
+- [Phase 08]: Add rys_root1_host as a pure-Rust host wrapper replicating #[cube] rys_root1 branching logic exactly
+- [Phase 08]: Wire Rys-Boys weight-sum identity crosscheck at large/moderate/small x domains with appropriate tolerances
+
+### Roadmap Evolution
+
+- Phase 5 added: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
+- v1.1 roadmap created: Phases 7-10 (executor rewrite, math infrastructure, 1e kernel, 2e+ kernels and oracle gate)
 
 ### Pending Todos
 
@@ -150,6 +191,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-29T02:02:13.303Z
-Stopped at: Completed 04-verification-release-automation-07-PLAN.md
-Resume file: None
+Last session: 2026-04-03T04:50:39.792Z
+Stopped at: Phase 9 context gathered
+Resume file: .planning/phases/09-1e-real-kernel-and-cart-to-sph-transform/09-CONTEXT.md

@@ -1,209 +1,334 @@
 name: Compat Governance Release Gates
 
 on:
-  release:
-    types: [published, prereleased]
-  workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"
-  merge_group:
-    types: [checks_requested]
-  push:
-    tags:
-      - "v*"
+    release:
+        types: [published, prereleased]
+    workflow_dispatch:
+    schedule:
+        - cron: "0 3 * * *"
+    merge_group:
+        types: [checks_requested]
+    push:
+        tags:
+            - "v*"
 
 concurrency:
-  group: compat-governance-release-${{ github.ref }}
-  cancel-in-progress: false
+    group: compat-governance-release-${{ github.ref }}
+    cancel-in-progress: false
 
 permissions:
-  contents: read
+    contents: read
 
 defaults:
-  run:
-    shell: bash
+    run:
+        shell: bash
 
 env:
-  CINTX_BENCH_ROWS_REQUIRED: /mnt/data/cintx_phase_04_bench_rows.jsonl
-  CINTX_BENCH_REPORT_REQUIRED: /mnt/data/cintx_phase_04_bench_report.json
-  CINTX_BENCH_REPORT_FALLBACK: /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
-  CINTX_RUNTIME_DIAGNOSTICS_REQUIRED: /mnt/data/cintx_phase_04_runtime_diagnostics.json
-  CINTX_RUNTIME_DIAGNOSTICS_FALLBACK: /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
+    CINTX_BENCH_ROWS_REQUIRED: /mnt/data/cintx_phase_04_bench_rows.jsonl
+    CINTX_BENCH_REPORT_REQUIRED: /mnt/data/cintx_phase_04_bench_report.json
+    CINTX_BENCH_REPORT_FALLBACK: /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
+    CINTX_RUNTIME_DIAGNOSTICS_REQUIRED: /mnt/data/cintx_phase_04_runtime_diagnostics.json
+    CINTX_RUNTIME_DIAGNOSTICS_FALLBACK: /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
 
 jobs:
-  helper_parity_release_gate:
-    name: Release helper parity suite (COMP-02)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    helper_parity_release_gate:
+        name: Release helper parity suite (COMP-02)
+        runs-on: ubuntu-latest
+        timeout-minutes: 25
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+            - name: Install stable Rust
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Run full helper parity test suite
-        run: cargo test --workspace --test phase3_helper_transform_parity
+            - name: Run full helper parity test suite
+              run: cargo test --workspace --test phase3_helper_transform_parity
 
-  manifest_release_gate:
-    name: Release manifest governance suite (COMP-03, VERI-01)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    manifest_release_gate:
+        name: Release manifest governance suite (COMP-03, VERI-01)
+        runs-on: ubuntu-latest
+        timeout-minutes: 25
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+            - name: Install stable Rust
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Run manifest governance suite
-        run: cargo test --workspace --test phase3_manifest_governance
+            - name: Run manifest governance suite
+              run: cargo test --workspace --test phase3_manifest_governance
 
-      - name: Audit compiled manifest lock freshness
-        run: cargo run --bin manifest_audit -- check
+            - name: Audit compiled manifest lock freshness
+              run: cargo run --bin manifest_audit -- check
 
-  oracle_profile_release_gate:
-    name: Release oracle/profile matrix gate (COMP-04, VERI-02)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    oracle_profile_release_gate:
+        name: Release oracle/profile matrix gate (COMP-04, VERI-02)
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+            - name: Install stable Rust
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Run profile-aware oracle regression matrix
-        run: cargo test --workspace --test phase3_regression_gates oracle_profile_matrix_gate
+            - name: Run profile-aware oracle regression matrix
+              run: cargo test --workspace --test phase3_regression_gates oracle_profile_matrix_gate
 
-      - name: Verify requirement traceability gate
-        run: cargo test --workspace --test phase3_regression_gates requirement_traceability_gate
+            - name: Verify requirement traceability gate
+              run: cargo test --workspace --test phase3_regression_gates requirement_traceability_gate
 
-  optimizer_equivalence_release_gate:
-    name: Release optimizer equivalence gate (RAW-04, VERI-03)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    optimizer_equivalence_release_gate:
+        name: Release optimizer equivalence gate (RAW-04, VERI-03)
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+            - name: Install stable Rust
+              uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Run optimizer equivalence suite
-        run: cargo test --workspace --test phase3_optimizer_equivalence
+            - name: Run optimizer equivalence suite
+              run: cargo test --workspace --test phase3_optimizer_equivalence
 
-  gpu_bench_required:
-    name: gpu_bench_required
-    runs-on: [self-hosted, linux, x64, gpu]
-    continue-on-error: false
-    timeout-minutes: 90
-    env:
-      CINTX_ARTIFACT_DIR: /mnt/data/cintx/release-gpu-bench/${{ github.run_id }}
-      CINTX_BENCH_PROFILE: required-release
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    api_value_baseline_release_gate:
+        name: Release API value baseline gate (VERI-01)
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        env:
+            CINTX_REQUIRED_PROFILES: base,with-f12,with-4c1e,with-f12+with-4c1e
+            CINTX_MUTANTS_SHARD: 1/20
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Resolve pinned Rust channel
-        id: rust
-        run: |
-          channel="$(grep -E '^channel\\s*=\\s*\"' rust-toolchain.toml | sed -E 's/.*\"([^\"]+)\".*/\\1/' | head -n1)"
-          if [ -z "${channel}" ]; then
-            echo "failed to resolve channel from rust-toolchain.toml" >&2
-            exit 1
-          fi
-          echo "channel=${channel}" >> "${GITHUB_OUTPUT}"
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
 
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ steps.rust.outputs.channel }}
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
 
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
 
-      - name: Prepare artifact directories
-        run: |
-          mkdir -p /mnt/data
-          mkdir -p "${CINTX_ARTIFACT_DIR}"
-          rm -f "${CINTX_BENCH_ROWS_REQUIRED}"
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Run GPU benchmark suites (required)
-        run: |
-          # Keep commands aligned with ci/gpu-bench.yml policy template.
-          cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
-          cargo run --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
+            - name: Run API value baseline gate
+              run: ci/api-value-baseline.sh
 
-      - name: Validate release gate policy invariants
-        run: |
-          workflow_file=".github/workflows/compat-governance-release.yml"
+    gpu_bench_required:
+        name: gpu_bench_required
+        runs-on: [self-hosted, linux, x64, gpu]
+        continue-on-error: false
+        timeout-minutes: 90
+        env:
+            CINTX_ARTIFACT_DIR: /mnt/data/cintx/release-gpu-bench/${{ github.run_id }}
+            CINTX_BENCH_PROFILE: required-release
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-          assert_contains() {
-            local needle="$1"
-            local label="$2"
-            if grep -Fq "${needle}" "${workflow_file}"; then
-              echo "policy invariant satisfied: ${label}"
-              return 0
-            fi
-            echo "policy invariant missing: ${label} (${needle})" >&2
-            return 1
-          }
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
 
-          assert_contains "runs-on: [self-hosted, linux, x64, gpu]" "required gpu runner labels"
-          assert_contains "continue-on-error: false" "required blocking policy"
-          assert_contains "bench-report --thresholds ci/benchmark-thresholds.json --mode enforce" "required benchmark enforcement command"
-          assert_contains "Validate bench artifact contract" "artifact contract validation step"
-          assert_contains "/mnt/data/cintx_phase_04_bench_report.json" "required bench report path"
-          assert_contains "/mnt/data/cintx_phase_04_runtime_diagnostics.json" "required runtime diagnostics path"
-          assert_contains "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json" "fallback bench report path"
-          assert_contains "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json" "fallback runtime diagnostics path"
-          assert_contains "actions/upload-artifact@v4" "artifact upload action"
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
 
-      - name: Validate bench artifact contract
-        run: |
-          validate_artifact() {
-            local required_path="$1"
-            local fallback_path="$2"
-            local label="$3"
-            if [ -f "${required_path}" ]; then
-              echo "${label}: found required artifact at ${required_path}"
-              return 0
-            fi
-            if [ -f "${fallback_path}" ]; then
-              echo "${label}: required path missing, fallback artifact present at ${fallback_path}"
-              return 0
-            fi
-            echo "${label}: missing required and fallback artifacts (${required_path}, ${fallback_path})" >&2
-            return 1
-          }
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
 
-          validate_artifact "${CINTX_BENCH_REPORT_REQUIRED}" "${CINTX_BENCH_REPORT_FALLBACK}" "bench_report"
-          validate_artifact "${CINTX_RUNTIME_DIAGNOSTICS_REQUIRED}" "${CINTX_RUNTIME_DIAGNOSTICS_FALLBACK}" "runtime_diagnostics"
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
-      - name: Upload GPU required artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gpu-bench-required-${{ github.run_id }}
-          if-no-files-found: warn
-          path: |
-            ${{ env.CINTX_ARTIFACT_DIR }}
-            ${{ env.CINTX_BENCH_ROWS_REQUIRED }}
-            ${{ env.CINTX_BENCH_REPORT_REQUIRED }}
-            ${{ env.CINTX_RUNTIME_DIAGNOSTICS_REQUIRED }}
-            ${{ env.CINTX_BENCH_REPORT_FALLBACK }}
-            ${{ env.CINTX_RUNTIME_DIAGNOSTICS_FALLBACK }}
-            target/criterion
+            - name: Prepare artifact directories
+              run: |
+                  mkdir -p /mnt/data
+                  mkdir -p "${CINTX_ARTIFACT_DIR}"
+                  rm -f "${CINTX_BENCH_ROWS_REQUIRED}"
+
+            - name: Run GPU benchmark suites (required)
+              run: |
+                  # Keep commands aligned with ci/gpu-bench.yml policy template.
+                  cargo bench -p cintx --bench micro_families --bench macro_molecules --bench crossover_cpu_gpu
+                  cargo run --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode enforce
+
+            - name: Validate release gate policy invariants
+              run: |
+                  workflow_file=".github/workflows/compat-governance-release.yml"
+
+                  assert_contains() {
+                    local needle="$1"
+                    local label="$2"
+                    if grep -Fq "${needle}" "${workflow_file}"; then
+                      echo "policy invariant satisfied: ${label}"
+                      return 0
+                    fi
+                    echo "policy invariant missing: ${label} (${needle})" >&2
+                    return 1
+                  }
+
+                  assert_contains "runs-on: [self-hosted, linux, x64, gpu]" "required gpu runner labels"
+                  assert_contains "continue-on-error: false" "required blocking policy"
+                  assert_contains "bench-report --thresholds ci/benchmark-thresholds.json --mode enforce" "required benchmark enforcement command"
+                  assert_contains "Validate bench artifact contract" "artifact contract validation step"
+                  assert_contains "/mnt/data/cintx_phase_04_bench_report.json" "required bench report path"
+                  assert_contains "/mnt/data/cintx_phase_04_runtime_diagnostics.json" "required runtime diagnostics path"
+                  assert_contains "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json" "fallback bench report path"
+                  assert_contains "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json" "fallback runtime diagnostics path"
+                  assert_contains "actions/upload-artifact@v4" "artifact upload action"
+
+            - name: Validate bench artifact contract
+              run: |
+                  validate_artifact() {
+                    local required_path="$1"
+                    local fallback_path="$2"
+                    local label="$3"
+                    if [ -f "${required_path}" ]; then
+                      echo "${label}: found required artifact at ${required_path}"
+                      return 0
+                    fi
+                    if [ -f "${fallback_path}" ]; then
+                      echo "${label}: required path missing, fallback artifact present at ${fallback_path}"
+                      return 0
+                    fi
+                    echo "${label}: missing required and fallback artifacts (${required_path}, ${fallback_path})" >&2
+                    return 1
+                  }
+
+                  validate_artifact "${CINTX_BENCH_REPORT_REQUIRED}" "${CINTX_BENCH_REPORT_FALLBACK}" "bench_report"
+                  validate_artifact "${CINTX_RUNTIME_DIAGNOSTICS_REQUIRED}" "${CINTX_RUNTIME_DIAGNOSTICS_FALLBACK}" "runtime_diagnostics"
+
+            - name: Upload GPU required artifacts
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: gpu-bench-required-${{ github.run_id }}
+                  if-no-files-found: warn
+                  path: |
+                      ${{ env.CINTX_ARTIFACT_DIR }}
+                      ${{ env.CINTX_BENCH_ROWS_REQUIRED }}
+                      ${{ env.CINTX_BENCH_REPORT_REQUIRED }}
+                      ${{ env.CINTX_RUNTIME_DIAGNOSTICS_REQUIRED }}
+                      ${{ env.CINTX_BENCH_REPORT_FALLBACK }}
+                      ${{ env.CINTX_RUNTIME_DIAGNOSTICS_FALLBACK }}
+                      target/criterion
+
+    wgpu_capability_required:
+        name: wgpu_capability_required
+        runs-on: [self-hosted, linux, x64, gpu]
+        continue-on-error: false
+        timeout-minutes: 30
+        env:
+            CINTX_ARTIFACT_DIR: /mnt/data/cintx/release-wgpu-capability/${{ github.run_id }}
+            CINTX_REQUIRED_PROFILES: base,with-f12,with-4c1e,with-f12+with-4c1e
+            CINTX_PHASE05_CAPABILITY_REQUIRED: /mnt/data/cintx_phase_05_wgpu_capability_gate.json
+            CINTX_PHASE05_CAPABILITY_FALLBACK: /tmp/cintx_artifacts/cintx_phase_05_wgpu_capability_gate.json
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
+
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Prepare artifact directories
+              run: |
+                  mkdir -p /mnt/data
+                  mkdir -p "${CINTX_ARTIFACT_DIR}"
+
+            - name: Run wgpu capability gate (required)
+              run: |
+                  cargo run --locked --manifest-path xtask/Cargo.toml -- wgpu-capability-gate --profiles "${CINTX_REQUIRED_PROFILES}" --require-adapter true
+
+            - name: Validate phase-5 capability artifact contract
+              run: |
+                  validate_artifact() {
+                    local required_path="$1"
+                    local fallback_path="$2"
+                    local label="$3"
+                    if [ -f "${required_path}" ]; then
+                      echo "${label}: found required artifact at ${required_path}"
+                      return 0
+                    fi
+                    if [ -f "${fallback_path}" ]; then
+                      echo "${label}: required path missing, fallback artifact present at ${fallback_path}"
+                      return 0
+                    fi
+                    echo "${label}: missing required and fallback artifacts (${required_path}, ${fallback_path})" >&2
+                    return 1
+                  }
+
+                  validate_artifact "${CINTX_PHASE05_CAPABILITY_REQUIRED}" "${CINTX_PHASE05_CAPABILITY_FALLBACK}" "wgpu_capability_gate"
+
+            - name: Upload phase-5 capability required artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: wgpu-capability-required-${{ github.run_id }}
+                  if-no-files-found: warn
+                  path: |
+                      ${{ env.CINTX_ARTIFACT_DIR }}
+                      ${{ env.CINTX_PHASE05_CAPABILITY_REQUIRED }}
+                      ${{ env.CINTX_PHASE05_CAPABILITY_FALLBACK }}
