@@ -28,6 +28,18 @@ pub const PTR_EXP: usize = 5;
 pub const PTR_COEFF: usize = 6;
 pub const BAS_SLOTS: usize = 8;
 
+/// First usable index in the env array for user data (coordinates, exponents, coefficients).
+///
+/// libcint reserves env[0..PTR_ENV_START] for global parameters:
+///   PTR_EXPCUTOFF = 0, PTR_COMMON_ORIG = 1..3, PTR_RINV_ORIG = 4..6,
+///   PTR_RINV_ZETA = 7, PTR_RANGE_OMEGA = 8, PTR_F12_ZETA = 9, PTR_GTG_ZETA = 10,
+///   PTR_GRIDS = 12..19.
+///
+/// User data (atom coordinates, exponents, coefficients) MUST start at env[20] or later.
+/// Placing user data at env[0..19] corrupts the global parameter fields and causes
+/// incorrect results for 2e+ integrals that read PTR_RANGE_OMEGA or PTR_EXPCUTOFF.
+pub const PTR_ENV_START: usize = 20;
+
 pub const POINT_NUC: i32 = 1;
 pub const GAUSSIAN_NUC: i32 = 2;
 pub const FRAC_CHARGE_NUC: i32 = 3;
