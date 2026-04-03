@@ -1,0 +1,19 @@
+Oracle Parity Gate Closure Report
+=================================
+Date: 2026-04-03T12:10:51Z
+Phase: 10 — 2e, 2c2e, 3c1e, 3c2e Real Kernels
+Molecule: H2O STO-3G
+
+Family Results:
+1e   (int1e_ovlp_sph): PASS — atol 1e-11, 0 mismatches
+2e   (int2e_sph):      PASS — atol 1e-12, 0 mismatches
+2c2e (int2c2e_sph):    PASS — atol 1e-9,  0 mismatches
+3c1e (int3c1e_sph):    PASS — atol 1e-7,  0 mismatches
+3c2e (int3c2e_sph):    PASS — atol 1e-9,  0 mismatches
+
+UAT Items:
+eval_raw non-zero output: PASS
+C ABI status == 0:        PASS
+
+GATE: PASS
+v1.1 Milestone: COMPLETE
