@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-04-03T00:27:37.515Z"
-last_activity: 2026-04-02
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-04-03T01:15:49.554Z"
+last_activity: 2026-04-03
 progress:
   total_phases: 10
   completed_phases: 7
-  total_plans: 32
-  completed_plans: 33
+  total_plans: 35
+  completed_plans: 34
 ---
 
 # Project State
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 07 — executor-infrastructure-rewrite
+**Current focus:** Phase 08 — gaussian-primitive-infrastructure-and-boys-function
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: Executing Phase 07
-Last activity: 2026-04-02
+Phase: 08 (gaussian-primitive-infrastructure-and-boys-function) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-04-03
 
 ## Performance Metrics
 
@@ -80,6 +80,7 @@ Last activity: 2026-04-02
 | Phase 05-re-implement-detailed-design-gpu-path-with-cubecl-wgpu-backend P04 | 25 | 2 tasks | 4 files |
 | Phase 06-fix-raw-eval-staging-and-capability-fingerprint P01 | 8 | 2 tasks | 2 files |
 | Phase 06-fix-raw-eval-staging-and-capability-fingerprint P02 | 4 | 1 tasks | 1 files |
+| Phase 08-gaussian-primitive-infrastructure-and-boys-function P01 | 8 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -165,6 +166,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Bootstrap-before-query pattern: always call bootstrap_wgpu_runtime before runtime_query_workspace to ensure planning_matches has a real fingerprint anchor
 - [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Assert bytes_written > 0 for staging path tests — query.bytes is workspace size not output size; bytes_written is output elements × sizeof(f64)
 - [Phase 06-fix-raw-eval-staging-and-capability-fingerprint]: Use INT3C1E_P2_SPH and INT3C2E_IP1_SPH as 3c1e/3c2e regression test family representatives
+- [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Pass TURNOVER_POINT[m] as scalar parameter to #[cube] boys_gamma_inc to avoid runtime const array indexing ambiguity in CubeCL 0.9.x
+- [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Use as usize cast pattern for Array<f64> indexing in #[cube]: u32 loop counters with as usize at index sites — established pattern for all Phase 8+ math modules
+- [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Host wrapper + #[cube] pair pattern: every math function has *_host() counterpart callable from tests without GPU context
 
 ### Roadmap Evolution
 
@@ -181,6 +185,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T00:27:37.504Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-gaussian-primitive-infrastructure-and-boys-function/08-CONTEXT.md
+Last session: 2026-04-03T01:15:49.551Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None

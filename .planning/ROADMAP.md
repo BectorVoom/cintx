@@ -159,7 +159,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Create math module with Boys function and PairData #[cube] implementations plus validation tests.
+- [x] 08-01-PLAN.md — Create math module with Boys function and PairData #[cube] implementations plus validation tests.
 - [ ] 08-02-PLAN.md — Implement Rys quadrature polynomial fit evaluation as #[cube] functions with validation tests.
 - [ ] 08-03-PLAN.md — Implement Obara-Saika vrr_step/hrr_step #[cube] functions and math integration test.
 
