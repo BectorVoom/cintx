@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: executing
-stopped_at: Completed 10-02-PLAN.md
-last_updated: "2026-04-03T11:17:37.291Z"
-last_activity: 2026-04-03
+status: unknown
+stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-05-PLAN.md
+last_updated: "2026-04-03T11:56:56.212Z"
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 47
-  completed_plans: 45
+  completed_plans: 46
 ---
 
 # Project State
@@ -25,9 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 10 (2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure) — EXECUTING
-Plan: 4 of 6
-Status: Ready to execute
-Last activity: 2026-04-03
+Plan: 2 of 6
 
 ## Performance Metrics
 
@@ -195,6 +192,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: g_alloc uses (dli*dlj*dlk).max(dli*vrr_nmax) matching libcint MAX formula — parentheses required for Rust operator precedence
 - [Phase 10-02]: env user data MUST start at PTR_ENV_START=20 — PTR_RANGE_OMEGA=env[8] is read by all 2e+ libcint integrals; placing H2 z-coord there caused range-separated Coulomb to activate
 - [Phase 10-02]: 2c2e kernel algorithm is correct — common_factor includes fac_sp per g2c2e.c; parity failures must be checked for env layout before kernel correctness
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use PTR_ENV_START-aligned env layout in int2e oracle tests to preserve libcint global env semantics.
 
 ### Roadmap Evolution
 
@@ -211,6 +209,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T11:17:37.288Z
-Stopped at: Completed 10-02-PLAN.md
+Last session: 2026-04-03T11:56:56.208Z
+Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-05-PLAN.md
 Resume file: None

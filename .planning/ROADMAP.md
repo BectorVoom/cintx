@@ -198,5 +198,5 @@ Plans:
 - [x] 10-02-PLAN.md — 2c2e kernel implementation and oracle parity test.
 - [x] 10-03-PLAN.md — 3c1e kernel implementation and oracle parity test.
 - [ ] 10-04-PLAN.md — 3c2e kernel implementation and oracle parity test.
-- [ ] 10-05-PLAN.md — 2e ERI kernel implementation and oracle parity test.
+- [x] 10-05-PLAN.md — 2e ERI kernel implementation and oracle parity test.
 - [ ] 10-06-PLAN.md — Oracle gate closure across all five families and v1.0 UAT item resolution.
