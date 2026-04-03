@@ -56,7 +56,7 @@
 - [ ] **KERN-03**: 2c2e two-center two-electron kernel produces real values
 - [ ] **KERN-04**: 3c1e three-center one-electron kernel produces real values
 - [ ] **KERN-05**: 3c2e three-center two-electron kernel produces real values
-- [ ] **KERN-06**: Cart-to-sph transform implements real Condon-Shortley coefficients replacing stub blend
+- [x] **KERN-06**: Cart-to-sph transform implements real Condon-Shortley coefficients replacing stub blend
 
 ### Math Infrastructure
 
@@ -134,7 +134,7 @@
 | MATH-03 | Phase 8 | Complete |
 | MATH-04 | Phase 8 | Complete |
 | KERN-01 | Phase 9 | Complete |
-| KERN-06 | Phase 9 | Pending |
+| KERN-06 | Phase 9 | Complete |
 | VERI-05 | Phase 9 | Complete |
 | KERN-02 | Phase 10 | Pending |
 | KERN-03 | Phase 10 | Pending |
