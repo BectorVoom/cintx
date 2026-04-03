@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: verifying
-stopped_at: Phase 10 context gathered
-last_updated: "2026-04-03T07:16:22.105Z"
+status: executing
+stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-01-PLAN.md
+last_updated: "2026-04-03T07:59:39.745Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 10
   completed_phases: 9
-  total_plans: 41
-  completed_plans: 42
+  total_plans: 47
+  completed_plans: 43
 ---
 
 # Project State
@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 09 — 1e-real-kernel-and-cart-to-sph-transform
+**Current focus:** Phase 10 — 2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure
 
 ## Current Position
 
-Phase: 10
-Plan: Not started
-Status: Phase complete — ready for verification
+Phase: 10 (2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
 Last activity: 2026-04-03
 
 ## Performance Metrics
@@ -87,6 +87,7 @@ Last activity: 2026-04-03
 | Phase 09-1e-real-kernel-and-cart-to-sph-transform P03 | 25 | 3 tasks | 4 files |
 | Phase 09-1e-real-kernel-and-cart-to-sph-transform P04 | 180 | 2 tasks | 7 files |
 | Phase 09-1e-real-kernel-and-cart-to-sph-transform P05 | 1 | 1 tasks | 2 files |
+| Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P01 | 12 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Commit oracle parity artifact to repository artifacts/ directory since /mnt/data is unavailable in this environment
 - [Phase 09-04]: Kinetic D_j^2 derivative steps ±2 j-levels in ket direction; formula jx*(jx-1)*g0[jx-2] - 2*aj*(2*jx+1)*g0[jx] + 4*aj^2*g0[jx+2] requires HRR to lj+2 and nmax=li+lj+2
 - [Phase 09-04]: C2S_L1 is identity matrix (px/py/pz order); CINTcommon_fac_sp normalization for s/p applied separately in primitive loop, not in transform coefficients
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Keep weight-sum identity tests at large x (asymptotic regime) where sum(w_i)==sqrt(PIE4/x) exactly; polynomial-fit branches do not satisfy this identity
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use supplemental bindgen header to declare int2c2e_sph/int3c1e_sph/int3c2e_sph which are in .c files but not in cint_funcs.h
 
 ### Roadmap Evolution
 
@@ -202,6 +205,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T07:16:22.102Z
-Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure/10-CONTEXT.md
+Last session: 2026-04-03T07:59:39.741Z
+Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-01-PLAN.md
+Resume file: None
