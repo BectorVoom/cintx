@@ -137,3 +137,11 @@ None — all three operators produce non-zero output with the real kernel implem
 ---
 *Phase: 09-1e-real-kernel-and-cart-to-sph-transform*
 *Completed: 2026-04-03*
+
+## Self-Check: PASSED
+
+- FOUND: `crates/cintx-oracle/tests/one_electron_parity.rs`
+- FOUND: `.planning/phases/09-1e-real-kernel-and-cart-to-sph-transform/09-03-SUMMARY.md`
+- FOUND: `/tmp/cintx_artifacts/phase-09-1e-oracle-parity.md` (fallback from `/mnt/data`)
+- FOUND: commit `fbaaf7d` (feat: oracle parity tests + kinetic fix)
+- FOUND: commit `0985446` (docs: metadata)
