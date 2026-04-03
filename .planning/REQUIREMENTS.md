@@ -62,7 +62,7 @@
 
 - [x] **MATH-01**: Boys function implemented as `#[cube]` functions with gridded Taylor expansion uploaded to device
 - [x] **MATH-02**: Gaussian primitive pair evaluation (overlap distribution, screening) implemented as `#[cube]` functions
-- [ ] **MATH-03**: Rys quadrature roots and weights computed on-device via polynomial fit tables
+- [x] **MATH-03**: Rys quadrature roots and weights computed on-device via polynomial fit tables
 - [x] **MATH-04**: Obara-Saika horizontal and vertical recurrence relations implemented as `#[cube]` functions
 
 ### Verification (v1.1)
@@ -131,7 +131,7 @@
 | VERI-06 | Phase 7 | Pending |
 | MATH-01 | Phase 8 | Complete |
 | MATH-02 | Phase 8 | Complete |
-| MATH-03 | Phase 8 | Pending |
+| MATH-03 | Phase 8 | Complete |
 | MATH-04 | Phase 8 | Complete |
 | KERN-01 | Phase 9 | Pending |
 | KERN-06 | Phase 9 | Pending |
