@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: executing
-stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-01-PLAN.md
-last_updated: "2026-04-03T07:59:39.745Z"
+stopped_at: Completed 10-03-PLAN.md
+last_updated: "2026-04-03T08:16:21.861Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 47
-  completed_plans: 43
+  completed_plans: 44
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 10 (2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-04-03
 
@@ -88,6 +88,7 @@ Last activity: 2026-04-03
 | Phase 09-1e-real-kernel-and-cart-to-sph-transform P04 | 180 | 2 tasks | 7 files |
 | Phase 09-1e-real-kernel-and-cart-to-sph-transform P05 | 1 | 1 tasks | 2 files |
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P01 | 12 | 2 tasks | 4 files |
+| Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P03 | 12 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -189,6 +190,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 09-04]: C2S_L1 is identity matrix (px/py/pz order); CINTcommon_fac_sp normalization for s/p applied separately in primitive loop, not in transform coefficients
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Keep weight-sum identity tests at large x (asymptotic regime) where sum(w_i)==sqrt(PIE4/x) exactly; polynomial-fit branches do not satisfy this identity
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use supplemental bindgen header to declare int2c2e_sph/int3c1e_sph/int3c2e_sph which are in .c files but not in cint_funcs.h
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Added int3c1e_sph/int3c1e_cart to manifest so eval_raw dispatches 3c1e overlap through launch_center_3c1e
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: g_alloc uses (dli*dlj*dlk).max(dli*vrr_nmax) matching libcint MAX formula — parentheses required for Rust operator precedence
 
 ### Roadmap Evolution
 
@@ -205,6 +208,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T07:59:39.741Z
-Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-01-PLAN.md
+Last session: 2026-04-03T08:16:21.857Z
+Stopped at: Completed 10-03-PLAN.md
 Resume file: None
