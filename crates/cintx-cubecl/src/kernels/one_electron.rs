@@ -149,24 +149,27 @@ fn contract_overlap(g: &[f64], li: u8, lj: u8, nmax: u32) -> Vec<f64> {
 
 /// Contract G-tensor elements for the kinetic operator.
 ///
-/// Applies the nabla_j derivative twice to produce the kinetic contribution.
-/// Reference: `intor1.c` lines 18-46, `CINTgout1e_kinetic`.
+/// Applies the nabla_j^2 derivative in the bra (VRR i-index) direction to produce
+/// the kinetic contribution. Reference: `intor1.c` lines 18-46, `CINTgout1e_kinetic`.
 ///
 /// Kinetic T_ij = -0.5 * <i| nabla_j^2 |j>
 ///
-/// The nabla_j operator on ket raises/lowers j angular momentum:
-///   D_j g[j*dj + i] = -2*aj * g[(j+1)*dj + i]  + j * g[(j-1)*dj + i]
-/// Applied twice gives:
-///   D_j^2 g[j] = 4*aj^2 * g[j+2] - 2*aj*(2j+1)*g[j] + j*(j-1)*g[j-2]
+/// In libcint, the kinetic derivative acts on the flat G-tensor n-index where
+/// n = j_level * dj + i_vrr. Since `n+2 = j_level * dj + (i_vrr + 2)`, the
+/// derivative steps in the bra (VRR i-index) direction, not the HRR j-level direction.
 ///
-/// For s-type ket (j=0): D_j^2 g[0] = 4*aj^2*g[2] - 2*aj*g[0]
-/// which is negative for Gaussians. The physical kinetic energy is
-/// T = -0.5 * (D_j^2 applied to G tensor), giving a positive result.
+/// Formula (from intor1.c CINTgout1e_kinetic, using n as the flat index):
+///   g3[n] = 4*aj^2 * g[n+2] - 2*aj*(2*jx+1)*g[n] + jx*(jx-1)*g[n-2]
+/// where jx is the ket cartesian component and n = jx*(nmax+1) + ix.
+/// So n+2 = jx*(nmax+1) + (ix+2), i.e., i-index +2 at the same j-level.
+///
+/// This requires the G-tensor to have been filled with nmax = li + lj + 2
+/// (extended by 2 in VRR direction to accommodate the ix+2 access).
 fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
     let nci = ncart(li);
     let ncj = ncart(lj);
     let g_per_axis = ((nmax + 1) * (lj as u32 + 1)) as usize;
-    let dj = (nmax + 1) as usize;
+    let dj = (nmax + 1) as usize; // stride between j-levels
 
     let ci_comps = cart_comps(li);
     let cj_comps = cart_comps(lj);
@@ -179,70 +182,39 @@ fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
 
     for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
         for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
-            // Base G-tensor values at this (i, j)
-            let vx0 = g[gx + jx as usize * dj + ix as usize];
-            let vy0 = g[gy + jy as usize * dj + iy as usize];
-            let vz0 = g[gz + jz as usize * dj + iz as usize];
+            // Flat n-index: n = j_level * dj + i_vrr
+            // Base G-tensor values at this (ix, jx): index = jx*dj + ix
+            let nx = jx as usize * dj + ix as usize;
+            let ny = jy as usize * dj + iy as usize;
+            let nz = jz as usize * dj + iz as usize;
 
-            // D_x^2 applied to x-component:
-            // D_x g[jx, ix] = -2*aj * g[jx+1, ix] + jx * g[jx-1, ix]  (if jx > 0)
-            //                = -2*aj * g[jx+1, ix]                       (if jx == 0)
-            // D_x^2 = D_x applied to (D_x g), substituting j -> j+/-1:
-            // Full kinetic: g3x = D_x D_x gx  (nabla_x^2 on ket)
-            // From intor1.c: g3[n] = aj^2 * g[n+2] - (j+0.5) * g[n]  + j*(j-1)/4/aij2 * g[n-2]
-            // Actually intor1.c formula (lines 20-35):
-            //   g3_x = 4*aj^2 * g[jx+2,ix] - 2*aj*(2*jx+1)*g[jx,ix] + jx*(jx-1)*g[jx-2,ix]
-            // But g[jx+2] uses index beyond VRR range for this tensor.
-            // We use the nabla_j operator form from research doc D-02:
-            //   D_j g[j*dj + i] = -2*aj * g[(j+1)*dj + i]  + j * g[(j-1)*dj + i]
-            // Applied twice:
-            //   D_j D_j g[j] = D_j(-2*aj*g[j+1] + j*g[j-1])
-            //                 = (-2*aj)*D_j g[j+1] + j * D_j g[j-1]
-            //                 = (-2*aj)*(-2*aj*g[j+2] + (j+1)*g[j]) + j*(-2*aj*g[j] + (j-1)*g[j-2])
-            //                 = 4*aj^2 * g[j+2] - 2*aj*(j+1)*g[j] - 2*aj*j*g[j] + j*(j-1)*g[j-2]
-            //                 = 4*aj^2 * g[j+2] - 2*aj*(2j+1)*g[j] + j*(j-1)*g[j-2]
-            // Apply 0.5 factor for kinetic operator.
+            let vx0 = g[gx + nx];
+            let vy0 = g[gy + ny];
+            let vz0 = g[gz + nz];
 
-            let j_as_f64 = jx as f64;
-            let dj_gx_2 = g[gx + (jx as usize + 2) * dj + ix as usize]; // g[jx+2]
-            let dj_gx_0 = vx0; // g[jx]
-            let dj_gx_m2 = if jx >= 2 {
-                g[gx + (jx as usize - 2) * dj + ix as usize]
-            } else {
-                0.0
-            };
-            let d2x = 4.0 * aj * aj * dj_gx_2
-                - 2.0 * aj * (2.0 * j_as_f64 + 1.0) * dj_gx_0
-                + j_as_f64 * (j_as_f64 - 1.0) * dj_gx_m2;
+            // Kinetic derivative in bra VRR direction (i-index +2, same j-level):
+            //   g3[n] = 4*aj^2 * g[n+2] - 2*aj*(2*jx+1)*g[n] + jx*(jx-1)*g[n-2]
+            // where n+2 = jx*dj + (ix+2), n-2 = jx*dj + (ix-2)
+            // n+2 is always valid because nmax = li+lj+2 ensures ix+2 ≤ nmax for ix ≤ li.
 
-            let j_as_f64 = jy as f64;
-            let dj_gy_2 = g[gy + (jy as usize + 2) * dj + iy as usize];
-            let dj_gy_0 = vy0;
-            let dj_gy_m2 = if jy >= 2 {
-                g[gy + (jy as usize - 2) * dj + iy as usize]
-            } else {
-                0.0
-            };
-            let d2y = 4.0 * aj * aj * dj_gy_2
-                - 2.0 * aj * (2.0 * j_as_f64 + 1.0) * dj_gy_0
-                + j_as_f64 * (j_as_f64 - 1.0) * dj_gy_m2;
+            let jxf = jx as f64;
+            let g3x = 4.0 * aj * aj * g[gx + nx + 2]
+                - 2.0 * aj * (2.0 * jxf + 1.0) * vx0
+                + jxf * (jxf - 1.0) * if ix >= 2 { g[gx + nx - 2] } else { 0.0 };
 
-            let j_as_f64 = jz as f64;
-            let dj_gz_2 = g[gz + (jz as usize + 2) * dj + iz as usize];
-            let dj_gz_0 = vz0;
-            let dj_gz_m2 = if jz >= 2 {
-                g[gz + (jz as usize - 2) * dj + iz as usize]
-            } else {
-                0.0
-            };
-            let d2z = 4.0 * aj * aj * dj_gz_2
-                - 2.0 * aj * (2.0 * j_as_f64 + 1.0) * dj_gz_0
-                + j_as_f64 * (j_as_f64 - 1.0) * dj_gz_m2;
+            let jyf = jy as f64;
+            let g3y = 4.0 * aj * aj * g[gy + ny + 2]
+                - 2.0 * aj * (2.0 * jyf + 1.0) * vy0
+                + jyf * (jyf - 1.0) * if iy >= 2 { g[gy + ny - 2] } else { 0.0 };
 
-            // Kinetic integral: T = -0.5 * sum_alpha D_alpha^2 gout_alpha
-            // The minus sign gives positive T for Gaussians (since D_j^2 g < 0).
-            // d2x contribution: d2x * vy0 * vz0, etc.
-            let kinetic = -0.5 * (d2x * vy0 * vz0 + vx0 * d2y * vz0 + vx0 * vy0 * d2z);
+            let jzf = jz as f64;
+            let g3z = 4.0 * aj * aj * g[gz + nz + 2]
+                - 2.0 * aj * (2.0 * jzf + 1.0) * vz0
+                + jzf * (jzf - 1.0) * if iz >= 2 { g[gz + nz - 2] } else { 0.0 };
+
+            // Kinetic integral: T = -0.5 * (g3x*gy*gz + gx*g3y*gz + gx*gy*g3z)
+            // The minus sign produces positive T for Gaussians (D^2 g < 0).
+            let kinetic = -0.5 * (g3x * vy0 * vz0 + vx0 * g3y * vz0 + vx0 * vy0 * g3z);
             out[ci_idx * ncj + cj_idx] += kinetic;
         }
     }
