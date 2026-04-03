@@ -102,9 +102,12 @@ mod tests {
 
     #[test]
     fn spherical_transform_entry_points_work() {
+        // cart_to_spheric_staging is a no-op — real c2s is done per-shell
+        // in cart_to_sph_1e(). This test verifies the compat shim copies
+        // cart data through without error.
         let mut out = vec![0.0; 4];
         CINTc2s_bra_sph(&mut out, 1, &[1.0, 2.0, 3.0, 4.0], 1).unwrap();
-        assert_eq!(out, vec![0.5, 1.5, 2.5, 3.5]);
+        assert_eq!(out, vec![1.0, 2.0, 3.0, 4.0]);
     }
 
     #[test]
