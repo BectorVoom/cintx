@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: executing
-stopped_at: Completed 09-1e-real-kernel-and-cart-to-sph-transform-05-PLAN.md
-last_updated: "2026-04-03T06:19:47.000Z"
+status: verifying
+stopped_at: Completed 09-04 and 09-05 gap closure plans
+last_updated: "2026-04-03T06:50:53.329Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 10
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 09 (1e-real-kernel-and-cart-to-sph-transform) — EXECUTING
-Plan: 2 of 5
-Status: Ready to execute
+Plan: 5 of 5
+Status: Phase complete — ready for verification
 Last activity: 2026-04-03
 
 ## Performance Metrics
@@ -85,6 +85,7 @@ Last activity: 2026-04-03
 | Phase 08 P04 | 8 | 2 tasks | 3 files |
 | Phase 09 P02 | 573 | 1 tasks | 2 files |
 | Phase 09-1e-real-kernel-and-cart-to-sph-transform P03 | 25 | 3 tasks | 4 files |
+| Phase 09-1e-real-kernel-and-cart-to-sph-transform P04 | 180 | 2 tasks | 7 files |
 | Phase 09-1e-real-kernel-and-cart-to-sph-transform P05 | 1 | 1 tasks | 2 files |
 
 ## Accumulated Context
@@ -183,6 +184,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Use idempotency check (two eval_raw calls) as oracle parity method since upstream libcint is not compiled by default
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Kinetic G-tensor derivative acts on bra VRR i-index (ix+2) not HRR j-level (jx+2); nmax=li+lj+2 provides the needed VRR headroom
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Commit oracle parity artifact to repository artifacts/ directory since /mnt/data is unavailable in this environment
+- [Phase 09-04]: Kinetic D_j^2 derivative steps ±2 j-levels in ket direction; formula jx*(jx-1)*g0[jx-2] - 2*aj*(2*jx+1)*g0[jx] + 4*aj^2*g0[jx+2] requires HRR to lj+2 and nmax=li+lj+2
+- [Phase 09-04]: C2S_L1 is identity matrix (px/py/pz order); CINTcommon_fac_sp normalization for s/p applied separately in primitive loop, not in transform coefficients
 
 ### Roadmap Evolution
 
@@ -199,6 +202,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T06:19:46.996Z
-Stopped at: Completed 09-1e-real-kernel-and-cart-to-sph-transform-05-PLAN.md
+Last session: 2026-04-03T06:50:53.326Z
+Stopped at: Completed 09-04 and 09-05 gap closure plans
 Resume file: None

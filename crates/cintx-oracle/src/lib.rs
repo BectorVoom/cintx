@@ -3,6 +3,9 @@
 pub mod compare;
 pub mod fixtures;
 
+#[cfg(has_vendor_libcint)]
+pub mod vendor_ffi;
+
 // Profile-aware parity report entrypoints surfaced for xtask/CI gate consumers.
 pub use compare::{generate_profile_parity_report, generate_phase2_parity_report, verify_helper_surface_coverage, tolerance_for_family, Phase2ParityReport, FamilyTolerance};
 // Profile-aware fixture builders and required profile/family constants for gate wiring.

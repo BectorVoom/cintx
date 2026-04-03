@@ -32,18 +32,22 @@ pub fn nsph(l: u8) -> usize {
 pub const C2S_L0: [[f64; 1]; 1] = [[1.0]];
 
 /// p-shell (l=1): 3 sph x 3 cart (px, py, pz ordering).
-/// g_trans_cart2sph offset 1, 9 elements.
-/// Rows: m = -1 (py), m = 0 (pz), m = +1 (px)
-/// Cols: (x, y, z) cartesian ordering
 ///
-/// Default libcint ordering (px, py, pz) maps to identity.
+/// From libcint `cart2sph.c` `g_trans_cart2sph[]` p-shell section (default, no PYPZPX):
+///   sph[0] = px  -> [1, 0, 0]
+///   sph[1] = py  -> [0, 1, 0]
+///   sph[2] = pz  -> [0, 0, 1]
+///
+/// Libcint uses (px, py, pz) as the spherical p ordering — this is the identity
+/// transform from Cartesian (px, py, pz) to spherical. The CINTcommon_fac_sp(1)
+/// prefactor (0.4886) is applied externally in the primitive loop, not here.
 pub const C2S_L1: [[f64; 3]; 3] = [
-    // m=-1: py  -> [0, 1, 0]
-    [0.0, 1.0, 0.0],
-    // m= 0: pz  -> [0, 0, 1]
-    [0.0, 0.0, 1.0],
-    // m=+1: px  -> [1, 0, 0]
+    // sph[0] = px
     [1.0, 0.0, 0.0],
+    // sph[1] = py
+    [0.0, 1.0, 0.0],
+    // sph[2] = pz
+    [0.0, 0.0, 1.0],
 ];
 
 /// d-shell (l=2): 5 sph x 6 cart.

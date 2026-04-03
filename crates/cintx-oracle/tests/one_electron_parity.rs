@@ -454,3 +454,190 @@ fn test_int1e_nuc_sph_h2o_sto3g_parity() {
         reference.len()
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vendored libcint 6.1.3 parity helpers and tests
+//
+// These tests are only compiled when CINTX_ORACLE_BUILD_VENDOR=1 is set during
+// the build so that default `cargo test` remains fast. They call the real
+// vendored libcint C library via cintx_oracle::vendor_ffi and compare
+// element-wise against the cintx eval_raw output at atol 1e-11 / rtol 1e-9.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Collect all shell-pair integrals for one operator using vendored libcint FFI.
+///
+/// Returns a matrix of shape (n_ao, n_ao) packed row-major.
+/// libcint 1e output is column-major (Fortran order): out[j*ni + i].
+/// This function converts to row-major when inserting into the result matrix.
+#[cfg(has_vendor_libcint)]
+fn collect_1e_sph_matrix_vendor(
+    operator: &str, // "ovlp", "kin", or "nuc"
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+) -> Vec<f64> {
+    use cintx_oracle::vendor_ffi;
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Determine AO count per shell from angular momenta
+    let ang: Vec<i32> = (0..N_SHELLS)
+        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
+        .collect();
+    let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
+    let n_ao: usize = shell_nao.iter().sum();
+
+    let mut matrix = vec![0.0_f64; n_ao * n_ao];
+
+    let mut row_offset = 0usize;
+    for si in 0..N_SHELLS {
+        let ni = shell_nao[si];
+        let mut col_offset = 0usize;
+        for sj in 0..N_SHELLS {
+            let nj = shell_nao[sj];
+            let shls = [si as i32, sj as i32];
+            let n_elem = ni * nj;
+            let mut out = vec![0.0_f64; n_elem];
+
+            let _ret = match operator {
+                "ovlp" => vendor_ffi::vendor_int1e_ovlp_sph(
+                    &mut out, &shls, atm, natm, bas, nbas, env,
+                ),
+                "kin" => vendor_ffi::vendor_int1e_kin_sph(
+                    &mut out, &shls, atm, natm, bas, nbas, env,
+                ),
+                "nuc" => vendor_ffi::vendor_int1e_nuc_sph(
+                    &mut out, &shls, atm, natm, bas, nbas, env,
+                ),
+                _ => panic!("unknown operator: {operator}"),
+            };
+
+            // libcint 1e output is column-major (Fortran order): out[j*ni + i]
+            // Convert to row-major for our matrix layout
+            for ii in 0..ni {
+                for jj in 0..nj {
+                    matrix[(row_offset + ii) * n_ao + (col_offset + jj)] = out[jj * ni + ii];
+                }
+            }
+
+            col_offset += nj;
+        }
+        row_offset += ni;
+    }
+
+    matrix
+}
+
+/// int1e_ovlp_sph H2O STO-3G vendor libcint parity test.
+///
+/// Compares cintx eval_raw output against vendored libcint 6.1.3 FFI output.
+/// This proves cintx matches upstream libcint numerically (not just idempotency).
+/// Tolerance: atol=1e-11, rtol=1e-9 (ROADMAP SC1/SC2).
+#[test]
+#[cfg(has_vendor_libcint)]
+fn test_int1e_ovlp_sph_h2o_sto3g_vendor_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let api_id = RawApiId::INT1E_OVLP_SPH;
+
+    let cintx_matrix = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let vendor_matrix = collect_1e_sph_matrix_vendor("ovlp", &atm, &bas, &env);
+
+    let n_ao = (cintx_matrix.len() as f64).sqrt() as usize;
+    println!("int1e_ovlp_sph vendor parity: {n_ao} AOs, {} elements", cintx_matrix.len());
+
+    // Print comparison for diagnostic purposes
+    for i in 0..n_ao {
+        for j in 0..n_ao {
+            let idx = i * n_ao + j;
+            let diff = (cintx_matrix[idx] - vendor_matrix[idx]).abs();
+            if diff > 1e-14 {
+                println!(
+                    "  [{i},{j}] cintx={:.15e} vendor={:.15e} diff={:.3e}",
+                    cintx_matrix[idx], vendor_matrix[idx], diff
+                );
+            }
+        }
+    }
+
+    let mismatches = count_mismatches(&vendor_matrix, &cintx_matrix, 1e-11, 1e-9);
+    assert_eq!(
+        mismatches, 0,
+        "int1e_ovlp_sph: {mismatches} elements exceed atol=1e-11/rtol=1e-9 vs vendored libcint"
+    );
+    println!("  PASS: mismatch_count=0 vs vendored libcint 6.1.3");
+}
+
+/// int1e_kin_sph H2O STO-3G vendor libcint parity test.
+///
+/// Compares cintx kinetic energy matrix against vendored libcint 6.1.3.
+/// Tolerance: atol=1e-11, rtol=1e-9.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn test_int1e_kin_sph_h2o_sto3g_vendor_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let api_id = RawApiId::INT1E_KIN_SPH;
+
+    let cintx_matrix = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let vendor_matrix = collect_1e_sph_matrix_vendor("kin", &atm, &bas, &env);
+
+    let n_ao = (cintx_matrix.len() as f64).sqrt() as usize;
+    println!("int1e_kin_sph vendor parity: {n_ao} AOs, {} elements", cintx_matrix.len());
+
+    for i in 0..n_ao {
+        for j in 0..n_ao {
+            let idx = i * n_ao + j;
+            let diff = (cintx_matrix[idx] - vendor_matrix[idx]).abs();
+            if diff > 1e-14 {
+                println!(
+                    "  [{i},{j}] cintx={:.15e} vendor={:.15e} diff={:.3e}",
+                    cintx_matrix[idx], vendor_matrix[idx], diff
+                );
+            }
+        }
+    }
+
+    let mismatches = count_mismatches(&vendor_matrix, &cintx_matrix, 1e-11, 1e-9);
+    assert_eq!(
+        mismatches, 0,
+        "int1e_kin_sph: {mismatches} elements exceed atol=1e-11/rtol=1e-9 vs vendored libcint"
+    );
+    println!("  PASS: mismatch_count=0 vs vendored libcint 6.1.3");
+}
+
+/// int1e_nuc_sph H2O STO-3G vendor libcint parity test.
+///
+/// Compares cintx nuclear attraction matrix against vendored libcint 6.1.3.
+/// Tolerance: atol=1e-11, rtol=1e-9.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn test_int1e_nuc_sph_h2o_sto3g_vendor_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let api_id = RawApiId::INT1E_NUC_SPH;
+
+    let cintx_matrix = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let vendor_matrix = collect_1e_sph_matrix_vendor("nuc", &atm, &bas, &env);
+
+    let n_ao = (cintx_matrix.len() as f64).sqrt() as usize;
+    println!("int1e_nuc_sph vendor parity: {n_ao} AOs, {} elements", cintx_matrix.len());
+
+    for i in 0..n_ao {
+        for j in 0..n_ao {
+            let idx = i * n_ao + j;
+            let diff = (cintx_matrix[idx] - vendor_matrix[idx]).abs();
+            if diff > 1e-14 {
+                println!(
+                    "  [{i},{j}] cintx={:.15e} vendor={:.15e} diff={:.3e}",
+                    cintx_matrix[idx], vendor_matrix[idx], diff
+                );
+            }
+        }
+    }
+
+    let mismatches = count_mismatches(&vendor_matrix, &cintx_matrix, 1e-11, 1e-9);
+    assert_eq!(
+        mismatches, 0,
+        "int1e_nuc_sph: {mismatches} elements exceed atol=1e-11/rtol=1e-9 vs vendored libcint"
+    );
+    println!("  PASS: mismatch_count=0 vs vendored libcint 6.1.3");
+}
