@@ -808,6 +808,113 @@ pub fn rys_root5(x: f64, u: &mut Array<f64>, w: &mut Array<f64>) {
 //  Main dispatch — rys_roots
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  rys_root1_host — host-side wrapper, callable from tests without GPU context
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Host-side wrapper for rys_root1 — callable from tests without GPU context.
+///
+/// Returns `(root, weight)` tuple for nroots=1 Rys quadrature at argument `x`.
+/// Replicates the exact branching logic from the `#[cube]` `rys_root1` function
+/// using pure Rust (no CubeCL runtime required).
+///
+/// Mirrors the host wrapper pattern established in Phase 8 (D-12) for
+/// `boys_gamma_inc_host` and `compute_pdata_host`.
+///
+/// Source: `rys_roots.c` `rys_root1()` lines 267-328.
+pub fn rys_root1_host(x: f64) -> (f64, f64) {
+    let pie4 = PIE4;
+    let mut rt1 = 0.0_f64;
+    let mut ww1 = 0.0_f64;
+
+    if x > 33.0_f64 {
+        ww1 = f64::sqrt(pie4 / x);
+        rt1 = 0.5_f64 / (x - 0.5_f64);
+    } else if x < 3.0e-7_f64 {
+        ww1 = 1.0_f64 - x / 3.0_f64;
+        rt1 = 0.5_f64 - x / 5.0_f64;
+    } else {
+        let e = f64::exp(-x);
+        if x > 15.0_f64 {
+            let y = 1.0_f64 / x;
+            let mut f1 = ((1.9623264149430e-01_f64 * y - 4.9695241464490e-01_f64) * y
+                - 6.0156581186481e-05_f64) * e
+                + f64::sqrt(pie4 / x)
+                - e;
+            f1 = f1 * y * 0.5_f64;
+            ww1 = 2.0_f64 * x * f1 + e;
+            rt1 = f1 / (ww1 - f1);
+        } else if x > 10.0_f64 {
+            let y = 1.0_f64 / x;
+            let mut f1 = (((-1.8784686463512e-01_f64 * y + 2.2991849164985e-01_f64) * y
+                - 4.9893752514047e-01_f64) * y
+                - 2.1916512131607e-05_f64) * e
+                + f64::sqrt(pie4 / x)
+                - e;
+            f1 = f1 * y * 0.5_f64;
+            ww1 = 2.0_f64 * x * f1 + e;
+            rt1 = f1 / (ww1 - f1);
+        } else if x > 5.0_f64 {
+            let y = 1.0_f64 / x;
+            let mut f1 = ((((((4.6897511375022e-01_f64 * y - 6.9955602298985e-01_f64) * y
+                + 5.3689283271887e-01_f64) * y
+                - 3.2883030418398e-01_f64) * y
+                + 2.4645596956002e-01_f64) * y
+                - 4.9984072848436e-01_f64) * y
+                - 3.1501078774085e-06_f64) * e
+                + f64::sqrt(pie4 / x)
+                - e;
+            f1 = f1 * y * 0.5_f64;
+            ww1 = 2.0_f64 * x * f1 + e;
+            rt1 = f1 / (ww1 - f1);
+        } else if x > 3.0_f64 {
+            let y = x - 4.0_f64;
+            let f1 = ((((((((((-2.62453564772299e-11_f64 * y + 3.24031041623823e-10_f64) * y
+                - 3.614965656163e-09_f64) * y
+                + 3.760256799971e-08_f64) * y
+                - 3.553558319675e-07_f64) * y
+                + 3.022556449731e-06_f64) * y
+                - 2.290098979647e-05_f64) * y
+                + 1.526537461148e-04_f64) * y
+                - 8.81947375894379e-04_f64) * y
+                + 4.33207949514611e-03_f64) * y
+                - 1.75257821619926e-02_f64) * y
+                + 5.28406320615584e-02_f64;
+            ww1 = 2.0_f64 * x * f1 + e;
+            rt1 = f1 / (ww1 - f1);
+        } else if x > 1.0_f64 {
+            let y = x - 2.0_f64;
+            let f1 = ((((((((((-1.61702782425558e-10_f64 * y + 1.96215250865776e-09_f64) * y
+                - 2.14234468198419e-08_f64) * y
+                + 2.17216556336318e-07_f64) * y
+                - 1.98850171329371e-06_f64) * y
+                + 1.62429321438911e-05_f64) * y
+                - 1.16740298039895e-04_f64) * y
+                + 7.24888732052332e-04_f64) * y
+                - 3.79490003707156e-03_f64) * y
+                + 1.61723488664661e-02_f64) * y
+                - 5.29428148329736e-02_f64) * y
+                + 1.15702180856167e-01_f64;
+            ww1 = 2.0_f64 * x * f1 + e;
+            rt1 = f1 / (ww1 - f1);
+        } else {
+            let f1 = ((((((((-8.36313918003957e-08_f64 * x + 1.21222603512827e-06_f64) * x
+                - 1.15662609053481e-05_f64) * x
+                + 9.25197374512647e-05_f64) * x
+                - 6.40994113129432e-04_f64) * x
+                + 3.78787044215009e-03_f64) * x
+                - 1.85185172458485e-02_f64) * x
+                + 7.14285713298222e-02_f64) * x
+                - 1.99999999997023e-01_f64) * x
+                + 3.33333333333318e-01_f64;
+            ww1 = 2.0_f64 * x * f1 + e;
+            rt1 = f1 / (ww1 - f1);
+        }
+    }
+
+    (rt1, ww1)
+}
+
 /// Compute Rys quadrature roots and weights.
 ///
 /// `nroots`: number of quadrature points (1..=5; higher nroots deferred to Phase 10)

@@ -12,6 +12,7 @@ use approx::assert_abs_diff_eq;
 use cintx_cubecl::math::boys::boys_gamma_inc_host;
 use cintx_cubecl::math::obara_saika::vrr_step_host;
 use cintx_cubecl::math::pdata::compute_pdata_host;
+use cintx_cubecl::math::rys::rys_root1_host;
 
 /// sqrt(pi) = 1.7724538509055159..., used in analytical Gaussian overlap formula.
 const SQRT_PI: f64 = 1.7724538509055159_f64;
@@ -200,40 +201,54 @@ fn math_integration_1e_overlap_ds() {
 ///   - Rys weight sum: rys_roots.c asymptotic formula for large x
 #[test]
 fn math_integration_rys_boys_crosscheck() {
-    // For large x, the nroots=1 Rys weight w[0] = sqrt(pi/4/x) = sqrt(PIE4/x)
-    // This equals Boys F_0(x) = SQRTPIE4/sqrt(x) = sqrt(pi/4)/sqrt(x)
-    // Both converge to the same value for large x (asymptotic regime).
+    // For nroots=1 Rys quadrature, the weight w[0] satisfies:
+    //   w[0] = F_0(x) (weight sum identity for 1D Rys quadrature)
     //
-    // Note: This identity holds exactly only in the asymptotic regime (x >> 1).
-    // For x=1 and x=5, the polynomial fit may differ from Boys by ~1e-8 (see 08-02-SUMMARY).
-    // We test at x=50 where asymptotic formulas are exact.
+    // Cross-validate by computing both sides independently:
+    //   - Boys F_0(x) via boys_gamma_inc_host
+    //   - Rys weight w[0] via rys_root1_host
+    //
+    // Source:
+    //   - Boys: fmt.c gamma_inc_like
+    //   - Rys weight sum identity: rys_roots.c
 
-    // At large x, SQRTPIE4/sqrt(x) is the correct asymptotic value
-    use cintx_cubecl::math::boys::SQRTPIE4;
-
-    let test_x_values = [50.0_f64, 75.0_f64, 100.0_f64];
-
-    for &x in &test_x_values {
-        // Boys F_0(x) via erfc branch: SQRTPIE4 * erf(sqrt(x)) / sqrt(x)
-        // For large x, erf(sqrt(x)) -> 1, so F_0(x) -> SQRTPIE4 / sqrt(x)
+    // Large x values where both asymptotic formulas converge (exact agreement)
+    let large_x_values = [50.0_f64, 75.0, 100.0];
+    for &x in &large_x_values {
         let f = boys_gamma_inc_host(x, 0);
         let boys_f0 = f[0];
+        let (_root, rys_w0) = rys_root1_host(x);
 
-        // Asymptotic value: sqrt(PIE4/x) = SQRTPIE4/sqrt(x)
-        let asymptotic_f0 = SQRTPIE4 / f64::sqrt(x);
-
-        // For x >= 50, Boys and asymptotic should agree to within 1e-10
-        // (erf(sqrt(50)) ≈ 1 - 2e-15, negligible correction)
-        assert_abs_diff_eq!(boys_f0, asymptotic_f0, epsilon = 1e-10);
+        // Boys F_0(x) and Rys w[0] must agree (weight-sum identity)
+        assert_abs_diff_eq!(boys_f0, rys_w0, epsilon = 1e-12);
     }
 
-    // Also verify that Boys F_0(x) at x=1.0 and x=5.0 is positive and reasonable
+    // Moderate x values — polynomial fit domain
+    let moderate_x_values = [1.0_f64, 5.0, 10.0, 15.0];
+    for &x in &moderate_x_values {
+        let f = boys_gamma_inc_host(x, 0);
+        let boys_f0 = f[0];
+        let (_root, rys_w0) = rys_root1_host(x);
+
+        // Weight-sum identity: w[0] = F_0(x) for nroots=1
+        // Polynomial fit may have slightly lower precision at moderate x
+        assert_abs_diff_eq!(boys_f0, rys_w0, epsilon = 1e-8);
+    }
+
+    // Small x values
+    let small_x_values = [0.001_f64, 0.1];
+    for &x in &small_x_values {
+        let f = boys_gamma_inc_host(x, 0);
+        let boys_f0 = f[0];
+        let (_root, rys_w0) = rys_root1_host(x);
+
+        assert_abs_diff_eq!(boys_f0, rys_w0, epsilon = 1e-10);
+    }
+
+    // F_0 should be monotonically decreasing with t (sanity check)
     let f1 = boys_gamma_inc_host(1.0, 0);
-    assert!(f1[0] > 0.0 && f1[0] < 1.0, "F_0(1.0) should be in (0,1)");
-
     let f5 = boys_gamma_inc_host(5.0, 0);
+    assert!(f1[0] > 0.0 && f1[0] < 1.0, "F_0(1.0) should be in (0,1)");
     assert!(f5[0] > 0.0 && f5[0] < 1.0, "F_0(5.0) should be in (0,1)");
-
-    // F_0 should be monotonically decreasing with t
     assert!(f1[0] > f5[0], "F_0 should decrease with increasing t");
 }
