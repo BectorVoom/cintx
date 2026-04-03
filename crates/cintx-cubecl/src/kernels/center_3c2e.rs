@@ -182,8 +182,11 @@ fn fill_g_tensor_3c2e(
     g
 }
 
-/// Split combined ij angular momentum with HRR:
-/// `g(i,j,...) = g(i-1,j+1,...) + (Ri-Rj) * g(i-1,j,...)`
+/// Split ij angular momentum for ibase=true layout.
+///
+/// Input `n` channel is the ij-base ladder (i-like axis) from 2e-style VRR.
+/// We recover explicit `(i,j)` channels via HRR transfer along j:
+/// `g(i,j,...) = (Ri-Rj) * g(i,j-1,...) + g(i+1,j-1,...)`.
 ///
 /// Input:  `[axis][m][n][root]` from `fill_g_tensor_3c2e`
 /// Output: `[axis][root][k][j][i]` (i fastest inside each root block).
@@ -214,25 +217,25 @@ fn split_ij_hrr(
 
         for k in 0..=mmax {
             for root in 0..nrys_roots {
-                // Work matrix: rows=i (0..li), cols=j_combined (0..li+lj)
-                let mut work = vec![0.0_f64; ni * work_stride];
-                for j in 0..=nmax {
-                    work[j] = g2d[axis_in_off + root + j * dn + k * dm];
+                // Work rows are j (0..lj), columns are i-base index (0..li+lj).
+                let mut work = vec![0.0_f64; nj * work_stride];
+                for i in 0..=nmax {
+                    work[i] = g2d[axis_in_off + root + i * dn + k * dm];
                 }
 
-                for i in 1..=li as usize {
-                    let prev = (i - 1) * work_stride;
-                    let cur = i * work_stride;
-                    let j_max = nmax - i;
-                    for j in 0..=j_max {
-                        work[cur + j] = work[prev + j + 1] + rirj[axis] * work[prev + j];
+                for j in 1..=lj as usize {
+                    let prev = (j - 1) * work_stride;
+                    let cur = j * work_stride;
+                    let i_max = nmax - j;
+                    for i in 0..=i_max {
+                        work[cur + i] = rirj[axis] * work[prev + i] + work[prev + i + 1];
                     }
                 }
 
                 for j in 0..=lj as usize {
                     for i in 0..=li as usize {
                         let out_idx = ((root * nk + k) * nj + j) * ni + i;
-                        out[axis_out_off + out_idx] = work[i * work_stride + j];
+                        out[axis_out_off + out_idx] = work[j * work_stride + i];
                     }
                 }
             }
@@ -284,6 +287,24 @@ fn contract_3c2e(g: &[f64], li: u8, lj: u8, lk: u8, nrys_roots: usize) -> Vec<f6
     out
 }
 
+/// Transpose a flat 3-index buffer from `(i,j,k)` to `(j,i,k)` ordering.
+///
+/// Input/output are both i-fastest, then j, then k slowest:
+/// `idx = (k * nj + j) * ni + i`.
+fn transpose_ij_3idx(buf: &[f64], ni: usize, nj: usize, nk: usize) -> Vec<f64> {
+    let mut out = vec![0.0_f64; buf.len()];
+    for k in 0..nk {
+        for j in 0..nj {
+            for i in 0..ni {
+                let src = (k * nj + j) * ni + i;
+                let dst = (k * ni + i) * nj + j;
+                out[dst] = buf[src];
+            }
+        }
+    }
+    out
+}
+
 pub fn launch_center_3c2e(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
@@ -314,13 +335,19 @@ pub fn launch_center_3c2e(
         });
     }
 
-    let shell_i = &shells[0];
-    let shell_j = &shells[1];
+    let shell_i_in = &shells[0];
+    let shell_j_in = &shells[1];
     let shell_k = &shells[2];
 
-    let li = shell_i.ang_momentum;
-    let lj = shell_j.ang_momentum;
+    let li_in = shell_i_in.ang_momentum;
+    let lj_in = shell_j_in.ang_momentum;
     let lk = shell_k.ang_momentum;
+    let swap_ij = li_in < lj_in;
+    let (shell_i, shell_j, li, lj) = if swap_ij {
+        (shell_j_in, shell_i_in, lj_in, li_in)
+    } else {
+        (shell_i_in, shell_j_in, li_in, lj_in)
+    };
     let nrys_roots = (li as usize + lj as usize + lk as usize) / 2 + 1;
     if nrys_roots > 5 {
         return Err(cintxRsError::UnsupportedApi {
@@ -344,8 +371,8 @@ pub fn launch_center_3c2e(
     let nci = ncart(li);
     let ncj = ncart(lj);
     let nck = ncart(lk);
-    let nsi = nsph(li);
-    let nsj = nsph(lj);
+    let nsi_in = nsph(li_in);
+    let nsj_in = nsph(lj_in);
     let nsk = nsph(lk);
 
     let mut cart_buf = vec![0.0_f64; nci * ncj * nck];
@@ -393,16 +420,24 @@ pub fn launch_center_3c2e(
         }
     }
 
+    let cart_out = if swap_ij {
+        // libcint's 3c2e recurrence chooses ibase adaptively (li > lj).
+        // We evaluate in canonical order li>=lj and transpose back when input had li<lj.
+        transpose_ij_3idx(&cart_buf, nci, ncj, nck)
+    } else {
+        cart_buf
+    };
+
     match plan.representation {
         Representation::Spheric => {
-            let sph = cart_to_sph_3c2e(&cart_buf, li, lj, lk);
-            let sph_size = nsi * nsj * nsk;
+            let sph = cart_to_sph_3c2e(&cart_out, li_in, lj_in, lk);
+            let sph_size = nsi_in * nsj_in * nsk;
             let copy_len = staging.len().min(sph.len()).min(sph_size);
             staging[..copy_len].copy_from_slice(&sph[..copy_len]);
         }
         _ => {
-            let copy_len = staging.len().min(cart_buf.len());
-            staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+            let copy_len = staging.len().min(cart_out.len());
+            staging[..copy_len].copy_from_slice(&cart_out[..copy_len]);
         }
     }
 
