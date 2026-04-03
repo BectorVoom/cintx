@@ -98,7 +98,7 @@ Plans:
 | Phase 7: Executor Infrastructure Rewrite | 1/3 | In Progress | 2026-04-02 |
 | Phase 8: Gaussian Primitive Infrastructure and Boys Function | 3/4 | In Progress | - |
 | Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 3/5 | In Progress | 2026-04-03 |
-| Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/TBD | Not started | - |
+| Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/6 | Not started | - |
 
 ### Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
 
@@ -191,4 +191,12 @@ Plans:
   2. `int2c2e_sph`, `int3c1e_sph`, and `int3c2e_sph` evaluations pass oracle parity at their respective family tolerances (2c2e atol 1e-9, 3c1e atol 1e-7, 3c2e atol 1e-9).
   3. Oracle parity CI gate reports `mismatch_count == 0` for all five base families across all required profiles (base, with-f12, with-4c1e) under `--features cpu`.
   4. The two v1.0 human UAT items are resolved: `eval_raw()` returns non-zero values for a real basis set call, and the C ABI shim returns non-error status on a real GPU evaluation.
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Shared infrastructure: rys_root3-5 host wrappers, multi-index c2s transforms, oracle vendor build extension, vendor FFI.
+- [ ] 10-02-PLAN.md — 2c2e kernel implementation and oracle parity test.
+- [ ] 10-03-PLAN.md — 3c1e kernel implementation and oracle parity test.
+- [ ] 10-04-PLAN.md — 3c2e kernel implementation and oracle parity test.
+- [ ] 10-05-PLAN.md — 2e ERI kernel implementation and oracle parity test.
+- [ ] 10-06-PLAN.md — Oracle gate closure across all five families and v1.0 UAT item resolution.
