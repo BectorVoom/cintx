@@ -8,7 +8,7 @@
 - [x] **Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)** - Replace synthetic execution with a real wgpu-backed CubeCL path and capability-aware fail-closed verification.
 - [ ] **Phase 6: Fix raw eval staging retrieval and capability fingerprint propagation** - Close audit gaps: wire eval_raw() staging output retrieval, propagate wgpu fingerprint into capability token, add regression tests.
 - [ ] **Phase 7: Executor Infrastructure Rewrite** - Replace executor internals with direct CubeCL client API, introduce ResolvedBackend dispatch, CPU backend feature, and f64 strategy decision — prerequisite gate for all real kernel work.
-- [ ] **Phase 8: Gaussian Primitive Infrastructure and Boys Function** - Build shared math foundation as `#[cube]` functions: Boys function, Rys roots/weights, primitive pair evaluation, and Obara-Saika recurrence.
+- [x] **Phase 8: Gaussian Primitive Infrastructure and Boys Function** - Build shared math foundation as `#[cube]` functions: Boys function, Rys roots/weights, primitive pair evaluation, and Obara-Saika recurrence. (completed 2026-04-03)
 - [ ] **Phase 9: 1e Real Kernel and Cart-to-Sph Transform** - Implement real overlap, kinetic, and nuclear attraction kernels with correct Condon-Shortley c2s transform, validating the end-to-end compute pipeline.
 - [ ] **Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure** - Implement all remaining integral family kernels and close the oracle parity gate for all five base families, completing v1.1.
 
@@ -160,8 +160,8 @@ Plans:
 
 Plans:
 - [x] 08-01-PLAN.md — Create math module with Boys function and PairData #[cube] implementations plus validation tests.
-- [ ] 08-02-PLAN.md — Implement Rys quadrature polynomial fit evaluation as #[cube] functions with validation tests.
-- [ ] 08-03-PLAN.md — Implement Obara-Saika vrr_step/hrr_step #[cube] functions and math integration test.
+- [x] 08-02-PLAN.md — Implement Rys quadrature polynomial fit evaluation as #[cube] functions with validation tests.
+- [x] 08-03-PLAN.md — Implement Obara-Saika vrr_step/hrr_step #[cube] functions and math integration test.
 
 ### Phase 9: 1e Real Kernel and Cart-to-Sph Transform
 **Goal**: Users can execute real overlap, kinetic, and nuclear attraction evaluations that produce libcint-compatible spherical outputs, validating the entire compute pipeline end-to-end.

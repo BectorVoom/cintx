@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: executing
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-04-03T01:15:49.554Z"
+stopped_at: Completed 08-03-PLAN.md
+last_updated: "2026-04-03T02:22:49.439Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 10
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 35
-  completed_plans: 34
+  completed_plans: 36
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 08 (gaussian-primitive-infrastructure-and-boys-function) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-04-03
 
@@ -81,6 +81,7 @@ Last activity: 2026-04-03
 | Phase 06-fix-raw-eval-staging-and-capability-fingerprint P01 | 8 | 2 tasks | 2 files |
 | Phase 06-fix-raw-eval-staging-and-capability-fingerprint P02 | 4 | 1 tasks | 1 files |
 | Phase 08-gaussian-primitive-infrastructure-and-boys-function P01 | 8 | 2 tasks | 9 files |
+| Phase 08 P03 | 4 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Pass TURNOVER_POINT[m] as scalar parameter to #[cube] boys_gamma_inc to avoid runtime const array indexing ambiguity in CubeCL 0.9.x
 - [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Use as usize cast pattern for Array<f64> indexing in #[cube]: u32 loop counters with as usize at index sites — established pattern for all Phase 8+ math modules
 - [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Host wrapper + #[cube] pair pattern: every math function has *_host() counterpart callable from tests without GPU context
+- [Phase 08]: vrr_step guards nmax>=1 to avoid s-shell no-op array writes, mirrors g1e.c early return pattern
+- [Phase 08]: Integration tests use host-side wrappers only (not CubeCL CPU backend launch) to avoid cond_br MLIR limitation discovered in Plan 02
 
 ### Roadmap Evolution
 
@@ -185,6 +188,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T01:15:49.551Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-04-03T02:22:49.435Z
+Stopped at: Completed 08-03-PLAN.md
 Resume file: None
