@@ -195,7 +195,7 @@ Plans:
 
 Plans:
 - [x] 10-01-PLAN.md — Shared infrastructure: rys_root3-5 host wrappers, multi-index c2s transforms, oracle vendor build extension, vendor FFI.
-- [ ] 10-02-PLAN.md — 2c2e kernel implementation and oracle parity test.
+- [x] 10-02-PLAN.md — 2c2e kernel implementation and oracle parity test.
 - [x] 10-03-PLAN.md — 3c1e kernel implementation and oracle parity test.
 - [ ] 10-04-PLAN.md — 3c2e kernel implementation and oracle parity test.
 - [ ] 10-05-PLAN.md — 2e ERI kernel implementation and oracle parity test.
