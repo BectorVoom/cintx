@@ -25,6 +25,27 @@ use cintx_runtime::{ExecutionPlan, ExecutionStats};
 /// Matches libcint `g1e.c` `SQRTPI = sqrt(M_PI)`.
 const SQRTPI: f64 = 1.7724538509055159_f64;
 
+/// Spherical harmonic normalization prefactor for s and p shells.
+///
+/// In libcint's `cart2sph.c` and `g1e.c`, the `CINTcommon_fac_sp(l)` function
+/// returns the normalization factor that is incorporated into the primitive loop
+/// rather than the cart-to-sph transform tables. The c2s tables for s and p use
+/// coefficient 1.0, and `CINTcommon_fac_sp` carries the actual normalization:
+///   - l=0 (s): 0.282094791773878 = 1/(2*sqrt(pi)) = Y_0^0
+///   - l=1 (p): 0.488602511902920 = sqrt(3/(4*pi))
+///   - l>=2:    1.0 (normalization is embedded in c2s coefficients)
+///
+/// This function must be applied as a post-processing scale factor to the
+/// accumulated Cartesian buffer before (or after) the cart-to-sph transform.
+/// Without it, s/p-type integrals are off by a factor of 4*pi relative to libcint.
+fn common_fac_sp(l: u8) -> f64 {
+    match l {
+        0 => 0.282094791773878143_f64, // 1/(2*sqrt(pi))
+        1 => 0.488602511902919921_f64, // sqrt(3/(4*pi))
+        _ => 1.0,
+    }
+}
+
 /// Enumerate Cartesian component triples (ix, iy, iz) with ix+iy+iz = l.
 ///
 /// Follows libcint `CINTcart_comp` ordering:
@@ -149,27 +170,45 @@ fn contract_overlap(g: &[f64], li: u8, lj: u8, nmax: u32) -> Vec<f64> {
 
 /// Contract G-tensor elements for the kinetic operator.
 ///
-/// Applies the nabla_j^2 derivative in the bra (VRR i-index) direction to produce
-/// the kinetic contribution. Reference: `intor1.c` lines 18-46, `CINTgout1e_kinetic`.
+/// Implements `CINTgout1e_int1e_kin` from `autocode/intor1.c` (lines 18-46).
 ///
-/// Kinetic T_ij = -0.5 * <i| nabla_j^2 |j>
+/// Libcint builds three derivative G-tensors via `CINTnabla1j_1e` (derivative in j,
+/// i.e., ket direction):
+///   g1 = D_j(g0)  with lj levels (used for cross terms s[1]..s[8])
+///   g2 = D_j(g0)  with lj+1 levels (intermediate for second derivative)
+///   g3 = D_j(g2)  with lj levels (second derivative = D_j^2(g0))
 ///
-/// In libcint, the kinetic derivative acts on the flat G-tensor n-index where
-/// n = j_level * dj + i_vrr. Since `n+2 = j_level * dj + (i_vrr + 2)`, the
-/// derivative steps in the bra (VRR i-index) direction, not the HRR j-level direction.
+/// `CINTnabla1j_1e` formula (stepping in j-direction with stride dj):
+///   D_j[g][j=0, i] = -2*aj * g[j=1, i]
+///   D_j[g][j>0, i] = j * g[j-1, i] + (-2*aj) * g[j+1, i]
 ///
-/// Formula (from intor1.c CINTgout1e_kinetic, using n as the flat index):
-///   g3[n] = 4*aj^2 * g[n+2] - 2*aj*(2*jx+1)*g[n] + jx*(jx-1)*g[n-2]
-/// where jx is the ket cartesian component and n = jx*(nmax+1) + ix.
-/// So n+2 = jx*(nmax+1) + (ix+2), i.e., i-index +2 at the same j-level.
+/// So `g3[jx, ix] = D_j^2(g0)[jx, ix]`:
+///   g2[jx] = D_j(g0)[jx], computed with lj+1 coverage: g2[0..lj+1]
+///   g3[jx] = D_j(g2)[jx] = jx*g2[jx-1] - 2*aj*g2[jx+1], for jx=0..lj
 ///
-/// This requires the G-tensor to have been filled with nmax = li + lj + 2
-/// (extended by 2 in VRR direction to accommodate the ix+2 access).
+/// Expanding g2:
+///   g3[jx] = jx*(jx-1)*g0[jx-2] - 2*aj*(2*jx+1)*g0[jx] + 4*aj^2*g0[jx+2]
+///
+/// Note: the derivative steps ±2 levels in j (i.e., ±2*dj in the flat index), NOT ±1.
+/// g0[jx+2] requires g2 to have lj+2 j-levels, which means HRR must be built to lj+2.
+///
+/// (where j-level steps by stride `dj = nmax+1`; ix is the bra index unchanged)
+///
+/// The kinetic kernel output:
+///   gout[n] = -(g3x*g0y*g0z + g0x*g3y*g0z + g0x*g0y*g3z)
+/// and `int1e_kin_sph` applies `common_factor *= 0.5`, giving T = -0.5 * (...).
+///
+/// Requires G-tensor built with `lj_ext = lj + 2` HRR j-levels so that `g0[jx+2]`
+/// (accessed via `jx*dj + 2*dj`) is valid. `nmax = li + lj + 2` ensures the VRR
+/// bra has enough levels for the HRR to shift two extra quanta to the ket.
 fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
     let nci = ncart(li);
     let ncj = ncart(lj);
-    let g_per_axis = ((nmax + 1) * (lj as u32 + 1)) as usize;
-    let dj = (nmax + 1) as usize; // stride between j-levels
+    // G-tensor was built with lj+2 HRR j-levels to allow jx+2 access.
+    // g_per_axis = (nmax+1) * (lj+2+1) = (nmax+1) * (lj+3)
+    let lj_ext = lj as u32 + 2;
+    let g_per_axis = ((nmax + 1) * (lj_ext + 1)) as usize;
+    let dj = (nmax + 1) as usize; // stride between j-levels within each axis block
 
     let ci_comps = cart_comps(li);
     let cj_comps = cart_comps(lj);
@@ -182,8 +221,7 @@ fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
 
     for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
         for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
-            // Flat n-index: n = j_level * dj + i_vrr
-            // Base G-tensor values at this (ix, jx): index = jx*dj + ix
+            // Index into G-tensor: base index for g0[jx, ix] = jx*dj + ix
             let nx = jx as usize * dj + ix as usize;
             let ny = jy as usize * dj + iy as usize;
             let nz = jz as usize * dj + iz as usize;
@@ -192,28 +230,28 @@ fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
             let vy0 = g[gy + ny];
             let vz0 = g[gz + nz];
 
-            // Kinetic derivative in bra VRR direction (i-index +2, same j-level):
-            //   g3[n] = 4*aj^2 * g[n+2] - 2*aj*(2*jx+1)*g[n] + jx*(jx-1)*g[n-2]
-            // where n+2 = jx*dj + (ix+2), n-2 = jx*dj + (ix-2)
-            // n+2 is always valid because nmax = li+lj+2 ensures ix+2 ≤ nmax for ix ≤ li.
-
+            // Second j-derivative of g0 at (jx, ix) (derived from two D_j applications):
+            //   g3x = jx*(jx-1)*g0[jx-2, ix] - 2*aj*(2*jx+1)*g0[jx, ix] + 4*aj^2*g0[jx+2, ix]
+            // Stepping in j-direction uses stride dj; "+2 levels" = +2*dj, "-2 levels" = -2*dj.
+            // g0[jx+2, ix] = g[gx + (jx+2)*dj + ix] = g[gx + nx + 2*dj]  (valid since lj_ext=lj+2)
+            // g0[jx-2, ix] = g[gx + (jx-2)*dj + ix] = g[gx + nx - 2*dj]  (valid only when jx >= 2)
             let jxf = jx as f64;
-            let g3x = 4.0 * aj * aj * g[gx + nx + 2]
+            let g3x = 4.0 * aj * aj * g[gx + nx + 2 * dj]
                 - 2.0 * aj * (2.0 * jxf + 1.0) * vx0
-                + jxf * (jxf - 1.0) * if ix >= 2 { g[gx + nx - 2] } else { 0.0 };
+                + jxf * (jxf - 1.0) * if jx >= 2 { g[gx + nx - 2 * dj] } else { 0.0 };
 
             let jyf = jy as f64;
-            let g3y = 4.0 * aj * aj * g[gy + ny + 2]
+            let g3y = 4.0 * aj * aj * g[gy + ny + 2 * dj]
                 - 2.0 * aj * (2.0 * jyf + 1.0) * vy0
-                + jyf * (jyf - 1.0) * if iy >= 2 { g[gy + ny - 2] } else { 0.0 };
+                + jyf * (jyf - 1.0) * if jy >= 2 { g[gy + ny - 2 * dj] } else { 0.0 };
 
             let jzf = jz as f64;
-            let g3z = 4.0 * aj * aj * g[gz + nz + 2]
+            let g3z = 4.0 * aj * aj * g[gz + nz + 2 * dj]
                 - 2.0 * aj * (2.0 * jzf + 1.0) * vz0
-                + jzf * (jzf - 1.0) * if iz >= 2 { g[gz + nz - 2] } else { 0.0 };
+                + jzf * (jzf - 1.0) * if jz >= 2 { g[gz + nz - 2 * dj] } else { 0.0 };
 
-            // Kinetic integral: T = -0.5 * (g3x*gy*gz + gx*g3y*gz + gx*gy*g3z)
-            // The minus sign produces positive T for Gaussians (D^2 g < 0).
+            // T = -0.5 * (g3x*g0y*g0z + g0x*g3y*g0z + g0x*g0y*g3z)
+            // The 0.5 factor comes from int1e_kin_sph common_factor *= 0.5.
             let kinetic = -0.5 * (g3x * vy0 * vz0 + vx0 * g3y * vz0 + vx0 * vy0 * g3z);
             out[ci_idx * ncj + cj_idx] += kinetic;
         }
@@ -478,9 +516,11 @@ pub fn launch_one_electron(
                 let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32);
                 contract_overlap(&g, li, lj, nmax)
             } else if is_kinetic {
-                // Kinetic requires nmax = li + lj + 2 (derivatives increase angular momentum)
+                // Kinetic requires two extra j-levels (lj+2) so D_j^2 can access g0[jx+2].
+                // HRR to lj+2 levels requires nmax = li + lj + 2 VRR bra levels so
+                // there are enough starting points for the two extra HRR steps.
                 let nmax = (li + lj) as u32 + 2;
-                let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32);
+                let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32 + 2);
                 contract_kinetic(&g, li, lj, nmax, aj)
             } else {
                 // Nuclear attraction
@@ -499,6 +539,21 @@ pub fn launch_one_electron(
                     }
                 }
             }
+        }
+    }
+
+    // Apply the libcint `CINTcommon_fac_sp` normalization scale to the
+    // accumulated Cartesian buffer.  libcint moves the spherical normalization
+    // for s (l=0) and p (l=1) shells out of the c2s tables and into the
+    // primitive loop (`g1e.c` line 120: `common_factor * CINTcommon_fac_sp(i_l)
+    // * CINTcommon_fac_sp(j_l)`). The c2s coefficient tables in `cart2sph.c`
+    // therefore use 1.0 for s and p, and the cintx C2S_L0/C2S_L1 constants
+    // match that convention. Without this scale factor, s/p-type integrals
+    // are off by ~4*pi relative to vendored libcint output.
+    let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+    if (sp_scale - 1.0).abs() > 1e-15 {
+        for v in cart_buf.iter_mut() {
+            *v *= sp_scale;
         }
     }
 

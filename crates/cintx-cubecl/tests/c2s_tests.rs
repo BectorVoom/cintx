@@ -52,24 +52,30 @@ fn test_c2s_l0_identity() {
 
 #[test]
 fn test_c2s_l1_coefficients() {
-    // p-shell: 3x3 matrix
+    // p-shell: 3x3 identity matrix.
+    //
+    // Libcint uses (px, py, pz) ordering for the p-shell spherical components —
+    // NOT the standard spherical harmonic (py, pz, px) = (m=-1, m=0, m=+1) ordering.
+    // The CINTcommon_fac_sp(1) normalization (0.4886) is applied in the primitive loop
+    // rather than embedded in these coefficients, so C2S_L1 is the identity transform.
+    // Reference: libcint cart2sph.c `g_trans_cart2sph[]` p-shell section.
     assert_eq!(C2S_L1.len(), 3, "L1 must have 3 rows (2*1+1)");
     assert_eq!(C2S_L1[0].len(), 3, "L1 must have 3 cols (ncart(1))");
 
-    // m=-1 (py): only y component active
-    assert_approx_eq(C2S_L1[0][0], 0.0, 1e-15, "L1[m=-1][x]");
-    assert_approx_eq(C2S_L1[0][1], 1.0, 1e-15, "L1[m=-1][y]");
-    assert_approx_eq(C2S_L1[0][2], 0.0, 1e-15, "L1[m=-1][z]");
+    // sph[0] = px: only x component active
+    assert_approx_eq(C2S_L1[0][0], 1.0, 1e-15, "L1[sph0][x] = 1 (px)");
+    assert_approx_eq(C2S_L1[0][1], 0.0, 1e-15, "L1[sph0][y] = 0");
+    assert_approx_eq(C2S_L1[0][2], 0.0, 1e-15, "L1[sph0][z] = 0");
 
-    // m=0 (pz): only z component active
-    assert_approx_eq(C2S_L1[1][0], 0.0, 1e-15, "L1[m=0][x]");
-    assert_approx_eq(C2S_L1[1][1], 0.0, 1e-15, "L1[m=0][y]");
-    assert_approx_eq(C2S_L1[1][2], 1.0, 1e-15, "L1[m=0][z]");
+    // sph[1] = py: only y component active
+    assert_approx_eq(C2S_L1[1][0], 0.0, 1e-15, "L1[sph1][x] = 0");
+    assert_approx_eq(C2S_L1[1][1], 1.0, 1e-15, "L1[sph1][y] = 1 (py)");
+    assert_approx_eq(C2S_L1[1][2], 0.0, 1e-15, "L1[sph1][z] = 0");
 
-    // m=+1 (px): only x component active
-    assert_approx_eq(C2S_L1[2][0], 1.0, 1e-15, "L1[m=+1][x]");
-    assert_approx_eq(C2S_L1[2][1], 0.0, 1e-15, "L1[m=+1][y]");
-    assert_approx_eq(C2S_L1[2][2], 0.0, 1e-15, "L1[m=+1][z]");
+    // sph[2] = pz: only z component active
+    assert_approx_eq(C2S_L1[2][0], 0.0, 1e-15, "L1[sph2][x] = 0");
+    assert_approx_eq(C2S_L1[2][1], 0.0, 1e-15, "L1[sph2][y] = 0");
+    assert_approx_eq(C2S_L1[2][2], 1.0, 1e-15, "L1[sph2][z] = 1 (pz)");
 }
 
 #[test]

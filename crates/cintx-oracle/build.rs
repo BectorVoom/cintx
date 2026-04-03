@@ -10,6 +10,10 @@ fn main() {
     let cint_funcs_h = libcint_root.join("include/cint_funcs.h");
 
     println!("cargo:rerun-if-changed=build.rs");
+    // Re-run if the vendor gate env var changes (set or unset).
+    println!("cargo:rerun-if-env-changed=CINTX_ORACLE_BUILD_VENDOR");
+    // Declare the custom cfg flag so rustc doesn't warn about unexpected_cfgs
+    println!("cargo::rustc-check-cfg=cfg(has_vendor_libcint)");
     println!("cargo:rerun-if-changed={}", cint_h_in.display());
     println!("cargo:rerun-if-changed={}", cint_funcs_h.display());
 
@@ -31,6 +35,7 @@ fn main() {
         "src/eigh.c",
         "src/fblas.c",
         "src/c2f.c",
+        "src/autocode/intor1.c",
     ] {
         println!("cargo:rerun-if-changed={}", libcint_root.join(src).display());
     }
@@ -129,6 +134,10 @@ fn main() {
         .file(libcint_root.join("src/eigh.c"))
         .file(libcint_root.join("src/fblas.c"))
         .file(libcint_root.join("src/c2f.c"))
+        // autocode/intor1.c contains the auto-generated implementations of
+        // int1e_kin_{cart,sph,spinor} and many other 1e integrals that are NOT
+        // in cint1e.c itself. This file is required for int1e_kin_sph.
+        .file(libcint_root.join("src/autocode/intor1.c"))
         .compile("cintx_oracle_vendor");
 
     println!("cargo:rustc-link-lib=static=cintx_oracle_vendor");
