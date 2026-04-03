@@ -6,6 +6,7 @@ pub mod math;
 pub mod executor;
 #[path = "kernels/mod.rs"]
 pub mod kernels;
+pub mod math;
 pub mod resident_cache;
 pub mod runtime_bootstrap;
 pub mod specialization;
