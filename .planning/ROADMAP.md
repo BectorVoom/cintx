@@ -177,7 +177,7 @@ Plans:
 
 Plans:
 - [x] 09-01-PLAN.md — Implement Condon-Shortley cart-to-sph coefficients and transform function for l=0..4.
-- [ ] 09-02-PLAN.md — Replace 1e kernel stub with real overlap, kinetic, and nuclear attraction host-side pipeline.
+- [x] 09-02-PLAN.md — Replace 1e kernel stub with real overlap, kinetic, and nuclear attraction host-side pipeline.
 - [ ] 09-03-PLAN.md — Wire H2O STO-3G oracle parity tests for int1e_ovlp_sph, int1e_kin_sph, int1e_nuc_sph.
 
 ### Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure

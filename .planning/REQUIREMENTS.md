@@ -51,7 +51,7 @@
 
 ### Kernel Compute
 
-- [ ] **KERN-01**: 1e family kernels (overlap, kinetic, nuclear attraction) produce real values via `#[cube(launch)]`
+- [x] **KERN-01**: 1e family kernels (overlap, kinetic, nuclear attraction) produce real values via `#[cube(launch)]`
 - [ ] **KERN-02**: 2e ERI kernel implements Rys quadrature with real Gaussian integral evaluation
 - [ ] **KERN-03**: 2c2e two-center two-electron kernel produces real values
 - [ ] **KERN-04**: 3c1e three-center one-electron kernel produces real values
@@ -133,7 +133,7 @@
 | MATH-02 | Phase 8 | Complete |
 | MATH-03 | Phase 8 | Complete |
 | MATH-04 | Phase 8 | Complete |
-| KERN-01 | Phase 9 | Pending |
+| KERN-01 | Phase 9 | Complete |
 | KERN-06 | Phase 9 | Pending |
 | VERI-05 | Phase 9 | Pending |
 | KERN-02 | Phase 10 | Pending |
