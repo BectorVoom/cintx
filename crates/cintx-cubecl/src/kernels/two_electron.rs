@@ -7,6 +7,7 @@
 //! 4. Cartesian contraction + optional `cart_to_sph_2e` transform.
 
 use crate::backend::ResolvedBackend;
+use crate::math::pdata::compute_pdata_host;
 use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
@@ -631,12 +632,19 @@ pub fn launch_two_electron(
         let ai = shell_i.exponents[pi];
         for pj in 0..n_prim_j {
             let aj = shell_j.exponents[pj];
+            let pdata_ij = compute_pdata_host(
+                ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+            );
             for pk in 0..n_prim_k {
                 let ak = shell_k.exponents[pk];
                 for pl in 0..n_prim_l {
                     let al = shell_l.exponents[pl];
+                    let pdata_kl = compute_pdata_host(
+                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                    );
+                    let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
-                    let g = fill_g_tensor_2e(ai, aj, ak, al, &ri, &rj, &rk, &rl, shape, common_factor);
+                    let g = fill_g_tensor_2e(ai, aj, ak, al, &ri, &rj, &rk, &rl, shape, quartet_fac);
                     let prim_cart = contract_2e_cart(&g, shape, li, lj, lk, ll);
 
                     for ci in 0..n_ctr_i {
