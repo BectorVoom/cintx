@@ -10,6 +10,7 @@ path = "src/lib.rs"
 default = []
 with-f12 = []
 with-4c1e = []
+cpu = ["cubecl/cpu"]
 
 [dependencies]
 cintx-core = { path = "../cintx-core" }
@@ -18,3 +19,6 @@ cintx-runtime = { path = "../cintx-runtime" }
 cubecl = "0.9.0"
 smallvec = "1"
 tracing = "0.1"
+
+[dev-dependencies]
+approx = "0.5"
