@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Completed 04-verification-release-automation-07-PLAN.md
-last_updated: "2026-03-29T02:02:13.306Z"
+status: Ready to execute
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-04-03T02:08:44.977Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (verification-release-automation) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Plan: 2 of 7
 | Phase 04-verification-release-automation P05 | 2min | 1 tasks | 1 files |
 | Phase 04-verification-release-automation P06 | 2 min | 2 tasks | 2 files |
 | Phase 04-verification-release-automation P07 | 3 min | 2 tasks | 1 files |
+| Phase 08 P02 | 1686 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 04-verification-release-automation]: Added Validate bench artifact contract checks so bench report and runtime diagnostics must exist in /mnt/data or /tmp/cintx_artifacts before artifact upload.
 - [Phase 04-verification-release-automation]: Centralize required and fallback artifact paths in workflow-level env variables to reduce silent drift risk.
 - [Phase 04-verification-release-automation]: Add a dedicated release policy invariant step that inspects committed workflow markers and fails closed.
+- [Phase 08]: Use per-nroots specialized kernels in CPU tests instead of runtime nroots dispatch (CubeCL 0.9 CPU backend MLIR index-type cond_br limitation)
+- [Phase 08]: Weight sum identity restricted to asymptotic regime (x>=50) — polynomial segments do not satisfy sum(w_i)=sqrt(pi/4/x)
 
 ### Pending Todos
 
@@ -150,6 +153,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-03-29T02:02:13.303Z
-Stopped at: Completed 04-verification-release-automation-07-PLAN.md
+Last session: 2026-04-03T02:08:44.975Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None
