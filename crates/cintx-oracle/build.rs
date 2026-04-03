@@ -36,6 +36,19 @@ fn main() {
         "src/fblas.c",
         "src/c2f.c",
         "src/autocode/intor1.c",
+        "src/cint2e.c",
+        "src/g2e.c",
+        "src/cint2c2e.c",
+        "src/g2c2e.c",
+        "src/cint3c1e.c",
+        "src/g3c1e.c",
+        "src/cint3c2e.c",
+        "src/g3c2e.c",
+        "src/autocode/intor2.c",
+        "src/autocode/intor3.c",
+        "src/autocode/intor4.c",
+        "src/autocode/int3c1e.c",
+        "src/autocode/int3c2e.c",
     ] {
         println!("cargo:rerun-if-changed={}", libcint_root.join(src).display());
     }
@@ -138,6 +151,20 @@ fn main() {
         // int1e_kin_{cart,sph,spinor} and many other 1e integrals that are NOT
         // in cint1e.c itself. This file is required for int1e_kin_sph.
         .file(libcint_root.join("src/autocode/intor1.c"))
+        // 2e+ integral source files (required for int2e_sph and related families).
+        .file(libcint_root.join("src/cint2e.c"))
+        .file(libcint_root.join("src/g2e.c"))
+        .file(libcint_root.join("src/cint2c2e.c"))
+        .file(libcint_root.join("src/g2c2e.c"))
+        .file(libcint_root.join("src/cint3c1e.c"))
+        .file(libcint_root.join("src/g3c1e.c"))
+        .file(libcint_root.join("src/cint3c2e.c"))
+        .file(libcint_root.join("src/g3c2e.c"))
+        .file(libcint_root.join("src/autocode/intor2.c"))
+        .file(libcint_root.join("src/autocode/intor3.c"))
+        .file(libcint_root.join("src/autocode/intor4.c"))
+        .file(libcint_root.join("src/autocode/int3c1e.c"))
+        .file(libcint_root.join("src/autocode/int3c2e.c"))
         .compile("cintx_oracle_vendor");
 
     println!("cargo:rustc-link-lib=static=cintx_oracle_vendor");
@@ -146,13 +173,30 @@ fn main() {
     // Signal to Rust code that the vendored libcint is available
     println!("cargo:rustc-cfg=has_vendor_libcint");
 
+    // Generate a supplemental header for functions declared only in .c files
+    // (not in cint_funcs.h). These are the basic sph variants of multi-center integrals.
+    // We use `extern CINTIntegralFunction` declarations matching the pattern in cint_funcs.h.
+    let suppl_h_content = format!(
+        r#"
+#include "{cint_funcs}"
+/* Supplemental declarations for sph variants not in cint_funcs.h */
+extern CINTIntegralFunction int2c2e_sph;
+extern CINTIntegralFunction int3c1e_sph;
+extern CINTIntegralFunction int3c2e_sph;
+"#,
+        cint_funcs = cint_funcs_h.display()
+    );
+    let suppl_h = out_dir.join("cintx_oracle_suppl.h");
+    fs::write(&suppl_h, &suppl_h_content)
+        .unwrap_or_else(|e| panic!("failed to write supplemental header: {e}"));
+
     // Generate FFI bindings via bindgen.
     // Use the processed cint.h from OUT_DIR so includes resolve correctly.
     let bindings = bindgen::Builder::default()
-        .header(cint_funcs_h.to_string_lossy())
+        .header(suppl_h.to_string_lossy())
         .clang_arg(format!("-I{}", out_dir.display()))
         .clang_arg(format!("-I{}", libcint_root.join("src").display()))
-        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer")
+        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c2e_sph|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer")
         .allowlist_type("CINTOpt")
         .generate()
         .expect("failed to generate oracle libcint bindings");

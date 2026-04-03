@@ -187,6 +187,218 @@ fn c2s_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
 //  Staging transform (public API compat)
 // ──────────────────────────────────────────────────────────────────────────
 
+/// Apply cart-to-sph transform for a 2-center-2-electron shell pair (li, lk).
+///
+/// Input `cart`: flat column-major array of shape `[ncart(lk) * ncart(li)]`
+///   (k is the outer/slow index, i is the inner/fast index).
+///
+/// Output: flat column-major array of shape `[nsph(lk) * nsph(li)]`.
+///
+/// Transform order: i-axis first (bra), then k-axis (ket), following the same
+/// convention as `cart_to_sph_1e`.
+pub fn cart_to_sph_2c2e(cart: &[f64], li: u8, lk: u8) -> Vec<f64> {
+    let nci = ncart(li);
+    let nck = ncart(lk);
+    let nsi = nsph(li);
+    let nsk = nsph(lk);
+
+    debug_assert_eq!(cart.len(), nci * nck);
+
+    // Step 1: Transform i-axis: T[li] @ cart column-by-column (for each k).
+    // Intermediate shape: [nck * nsi] (k is outer, i_sph is inner)
+    let mut tmp = vec![0.0f64; nck * nsi];
+    for k in 0..nck {
+        for mi in 0..nsi {
+            let mut sum = 0.0;
+            for ci in 0..nci {
+                sum += c2s_coeff(li, mi, ci) * cart[k * nci + ci];
+            }
+            tmp[k * nsi + mi] = sum;
+        }
+    }
+
+    // Step 2: Transform k-axis: T[lk] @ tmp^T row-by-row.
+    // Output shape: [nsk * nsi]
+    let mut sph = vec![0.0f64; nsk * nsi];
+    for mk in 0..nsk {
+        for mi in 0..nsi {
+            let mut sum = 0.0;
+            for ck in 0..nck {
+                sum += c2s_coeff(lk, mk, ck) * tmp[ck * nsi + mi];
+            }
+            sph[mk * nsi + mi] = sum;
+        }
+    }
+
+    sph
+}
+
+/// Apply cart-to-sph transform for a 3-center-1-electron shell triple (li, lj, lk).
+///
+/// Input `cart`: flat column-major array of shape `[ncart(lk) * ncart(lj) * ncart(li)]`
+///   (k is outermost/slowest, i is innermost/fastest).
+///
+/// Output: flat column-major array of shape `[nsph(lk) * nsph(lj) * nsph(li)]`.
+///
+/// Transform order: i-axis first, then j-axis, then k-axis.
+pub fn cart_to_sph_3c1e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+
+    debug_assert_eq!(cart.len(), nci * ncj * nck);
+
+    // Step 1: Transform i-axis. Intermediate shape: [nck * ncj * nsi]
+    let mut tmp1 = vec![0.0f64; nck * ncj * nsi];
+    for k in 0..nck {
+        for j in 0..ncj {
+            for mi in 0..nsi {
+                let mut sum = 0.0;
+                for ci in 0..nci {
+                    sum += c2s_coeff(li, mi, ci) * cart[(k * ncj + j) * nci + ci];
+                }
+                tmp1[(k * ncj + j) * nsi + mi] = sum;
+            }
+        }
+    }
+
+    // Step 2: Transform j-axis. Intermediate shape: [nck * nsj * nsi]
+    let mut tmp2 = vec![0.0f64; nck * nsj * nsi];
+    for k in 0..nck {
+        for mj in 0..nsj {
+            for mi in 0..nsi {
+                let mut sum = 0.0;
+                for cj in 0..ncj {
+                    sum += c2s_coeff(lj, mj, cj) * tmp1[(k * ncj + cj) * nsi + mi];
+                }
+                tmp2[(k * nsj + mj) * nsi + mi] = sum;
+            }
+        }
+    }
+
+    // Step 3: Transform k-axis. Output shape: [nsk * nsj * nsi]
+    let mut sph = vec![0.0f64; nsk * nsj * nsi];
+    for mk in 0..nsk {
+        for mj in 0..nsj {
+            for mi in 0..nsi {
+                let mut sum = 0.0;
+                for ck in 0..nck {
+                    sum += c2s_coeff(lk, mk, ck) * tmp2[(ck * nsj + mj) * nsi + mi];
+                }
+                sph[(mk * nsj + mj) * nsi + mi] = sum;
+            }
+        }
+    }
+
+    sph
+}
+
+/// Apply cart-to-sph transform for a 3-center-2-electron shell triple (li, lj, lk).
+///
+/// Input `cart`: flat column-major array of shape `[ncart(lk) * ncart(lj) * ncart(li)]`.
+/// Output: flat column-major array of shape `[nsph(lk) * nsph(lj) * nsph(li)]`.
+///
+/// Identical index structure to `cart_to_sph_3c1e` — same transform, different name
+/// for the 3c2e family.
+pub fn cart_to_sph_3c2e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
+    // 3c2e has the same 3-index (i, j, k) structure as 3c1e.
+    cart_to_sph_3c1e(cart, li, lj, lk)
+}
+
+/// Apply cart-to-sph transform for a 2-electron shell quartet (li, lj, lk, ll).
+///
+/// Input `cart`: flat column-major array of shape `[ncart(ll) * ncart(lk) * ncart(lj) * ncart(li)]`
+///   (l is outermost/slowest, i is innermost/fastest).
+///
+/// Output: flat column-major array of shape `[nsph(ll) * nsph(lk) * nsph(lj) * nsph(li)]`.
+///
+/// Transform order: i-axis first, then j, k, l (innermost to outermost).
+pub fn cart_to_sph_2e(cart: &[f64], li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let ncl = ncart(ll);
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+    let nsl = nsph(ll);
+
+    debug_assert_eq!(cart.len(), nci * ncj * nck * ncl);
+
+    // Step 1: Transform i-axis. Intermediate shape: [ncl * nck * ncj * nsi]
+    let mut tmp1 = vec![0.0f64; ncl * nck * ncj * nsi];
+    for l in 0..ncl {
+        for k in 0..nck {
+            for j in 0..ncj {
+                for mi in 0..nsi {
+                    let mut sum = 0.0;
+                    for ci in 0..nci {
+                        sum += c2s_coeff(li, mi, ci)
+                            * cart[((l * nck + k) * ncj + j) * nci + ci];
+                    }
+                    tmp1[((l * nck + k) * ncj + j) * nsi + mi] = sum;
+                }
+            }
+        }
+    }
+
+    // Step 2: Transform j-axis. Intermediate shape: [ncl * nck * nsj * nsi]
+    let mut tmp2 = vec![0.0f64; ncl * nck * nsj * nsi];
+    for l in 0..ncl {
+        for k in 0..nck {
+            for mj in 0..nsj {
+                for mi in 0..nsi {
+                    let mut sum = 0.0;
+                    for cj in 0..ncj {
+                        sum += c2s_coeff(lj, mj, cj)
+                            * tmp1[((l * nck + k) * ncj + cj) * nsi + mi];
+                    }
+                    tmp2[((l * nck + k) * nsj + mj) * nsi + mi] = sum;
+                }
+            }
+        }
+    }
+
+    // Step 3: Transform k-axis. Intermediate shape: [ncl * nsk * nsj * nsi]
+    let mut tmp3 = vec![0.0f64; ncl * nsk * nsj * nsi];
+    for l in 0..ncl {
+        for mk in 0..nsk {
+            for mj in 0..nsj {
+                for mi in 0..nsi {
+                    let mut sum = 0.0;
+                    for ck in 0..nck {
+                        sum += c2s_coeff(lk, mk, ck)
+                            * tmp2[((l * nck + ck) * nsj + mj) * nsi + mi];
+                    }
+                    tmp3[((l * nsk + mk) * nsj + mj) * nsi + mi] = sum;
+                }
+            }
+        }
+    }
+
+    // Step 4: Transform l-axis. Output shape: [nsl * nsk * nsj * nsi]
+    let mut sph = vec![0.0f64; nsl * nsk * nsj * nsi];
+    for ml in 0..nsl {
+        for mk in 0..nsk {
+            for mj in 0..nsj {
+                for mi in 0..nsi {
+                    let mut sum = 0.0;
+                    for cl in 0..ncl {
+                        sum += c2s_coeff(ll, ml, cl)
+                            * tmp3[((cl * nsk + mk) * nsj + mj) * nsi + mi];
+                    }
+                    sph[((ml * nsk + mk) * nsj + mj) * nsi + mi] = sum;
+                }
+            }
+        }
+    }
+
+    sph
+}
+
 /// Staging cart-to-sph transform — no-op.
 ///
 /// Real kernels (1e, 2e, etc.) handle cart-to-sph internally using
@@ -251,5 +463,102 @@ mod tests {
         let mut data = vec![1.0, 2.0, 3.0];
         cart_to_spheric_staging(&mut data).unwrap();
         assert_eq!(data, vec![1.0, 2.0, 3.0]);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Multi-index c2s transform tests
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// 2c2e ss transform: 1x1 input → 1x1 output (identity for l=0).
+    #[test]
+    fn cart_to_sph_2c2e_ss_identity() {
+        let cart = vec![1.0_f64];
+        let sph = cart_to_sph_2c2e(&cart, 0, 0);
+        assert_eq!(sph, vec![1.0]);
+    }
+
+    /// 2c2e output length check for pp (3x3 cart → 3x3 sph).
+    #[test]
+    fn cart_to_sph_2c2e_pp_length() {
+        let cart = vec![1.0_f64; ncart(1) * ncart(1)];
+        let sph = cart_to_sph_2c2e(&cart, 1, 1);
+        assert_eq!(sph.len(), nsph(1) * nsph(1));
+    }
+
+    /// 2c2e output length check for dd (6x6 cart → 5x5 sph).
+    #[test]
+    fn cart_to_sph_2c2e_dd_length() {
+        let cart = vec![0.0_f64; ncart(2) * ncart(2)];
+        let sph = cart_to_sph_2c2e(&cart, 2, 2);
+        assert_eq!(sph.len(), nsph(2) * nsph(2));
+    }
+
+    /// 3c1e sss transform: identity for l=0,0,0.
+    #[test]
+    fn cart_to_sph_3c1e_sss_identity() {
+        let cart = vec![1.0_f64];
+        let sph = cart_to_sph_3c1e(&cart, 0, 0, 0);
+        assert_eq!(sph, vec![1.0]);
+    }
+
+    /// 3c1e output length check for ppp (3x3x3 cart → 3x3x3 sph).
+    #[test]
+    fn cart_to_sph_3c1e_ppp_length() {
+        let cart = vec![0.0_f64; ncart(1) * ncart(1) * ncart(1)];
+        let sph = cart_to_sph_3c1e(&cart, 1, 1, 1);
+        assert_eq!(sph.len(), nsph(1) * nsph(1) * nsph(1));
+    }
+
+    /// 3c2e sss transform: identity for l=0,0,0.
+    #[test]
+    fn cart_to_sph_3c2e_sss_identity() {
+        let cart = vec![1.0_f64];
+        let sph = cart_to_sph_3c2e(&cart, 0, 0, 0);
+        assert_eq!(sph, vec![1.0]);
+    }
+
+    /// 3c2e output length matches 3c1e (identical index structure).
+    #[test]
+    fn cart_to_sph_3c2e_ppp_length() {
+        let cart = vec![0.0_f64; ncart(1) * ncart(1) * ncart(1)];
+        let sph = cart_to_sph_3c2e(&cart, 1, 1, 1);
+        assert_eq!(sph.len(), nsph(1) * nsph(1) * nsph(1));
+    }
+
+    /// 2e ssss transform: identity for l=0,0,0,0.
+    #[test]
+    fn cart_to_sph_2e_ssss_identity() {
+        let cart = vec![1.0_f64];
+        let sph = cart_to_sph_2e(&cart, 0, 0, 0, 0);
+        assert_eq!(sph, vec![1.0]);
+    }
+
+    /// 2e output length check for pppp (3^4 cart → 3^4 sph, same since l=1).
+    #[test]
+    fn cart_to_sph_2e_pppp_length() {
+        let cart = vec![0.0_f64; ncart(1) * ncart(1) * ncart(1) * ncart(1)];
+        let sph = cart_to_sph_2e(&cart, 1, 1, 1, 1);
+        assert_eq!(sph.len(), nsph(1) * nsph(1) * nsph(1) * nsph(1));
+    }
+
+    /// 2e output length check for dddd (6^4 cart → 5^4 sph).
+    #[test]
+    fn cart_to_sph_2e_dddd_length() {
+        let cart = vec![0.0_f64; ncart(2) * ncart(2) * ncart(2) * ncart(2)];
+        let sph = cart_to_sph_2e(&cart, 2, 2, 2, 2);
+        assert_eq!(sph.len(), nsph(2) * nsph(2) * nsph(2) * nsph(2));
+    }
+
+    /// 3c1e and 3c2e produce identical output (same transform).
+    #[test]
+    fn cart_to_sph_3c1e_3c2e_same_output() {
+        let li = 1_u8;
+        let lj = 2_u8;
+        let lk = 1_u8;
+        let n = ncart(li) * ncart(lj) * ncart(lk);
+        let cart: Vec<f64> = (0..n).map(|i| (i as f64) * 0.1 + 1.0).collect();
+        let sph_3c1e = cart_to_sph_3c1e(&cart, li, lj, lk);
+        let sph_3c2e = cart_to_sph_3c2e(&cart, li, lj, lk);
+        assert_eq!(sph_3c1e, sph_3c2e, "3c1e and 3c2e must produce identical output");
     }
 }
