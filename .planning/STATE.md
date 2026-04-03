@@ -4,12 +4,12 @@ milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: executing
 stopped_at: Phase 9 context gathered
-last_updated: "2026-04-03T04:50:39.795Z"
-last_activity: 2026-04-03
+last_updated: "2026-04-03T05:24:39.393Z"
+last_activity: 2026-04-03 -- Phase 09 execution started
 progress:
   total_phases: 10
   completed_phases: 8
-  total_plans: 36
+  total_plans: 39
   completed_plans: 37
 ---
 
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 08 — gaussian-primitive-infrastructure-and-boys-function
+**Current focus:** Phase 09 — 1e-real-kernel-and-cart-to-sph-transform
 
 ## Current Position
 
-Phase: 9
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-04-03
+Phase: 09 (1e-real-kernel-and-cart-to-sph-transform) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 09
+Last activity: 2026-04-03 -- Phase 09 execution started
 
 ## Performance Metrics
 
