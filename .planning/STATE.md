@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: executing
-stopped_at: Completed 08-03-PLAN.md
-last_updated: "2026-04-03T02:22:49.439Z"
+stopped_at: Completed 08-04-PLAN.md
+last_updated: "2026-04-03T02:44:08.473Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 10
   completed_phases: 8
-  total_plans: 35
-  completed_plans: 36
+  total_plans: 36
+  completed_plans: 37
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 08 (gaussian-primitive-infrastructure-and-boys-function) — EXECUTING
-Plan: 3 of 3
+Plan: 2 of 4
 Status: Ready to execute
 Last activity: 2026-04-03
 
@@ -82,6 +82,7 @@ Last activity: 2026-04-03
 | Phase 06-fix-raw-eval-staging-and-capability-fingerprint P02 | 4 | 1 tasks | 1 files |
 | Phase 08-gaussian-primitive-infrastructure-and-boys-function P01 | 8 | 2 tasks | 9 files |
 | Phase 08 P03 | 4 | 2 tasks | 3 files |
+| Phase 08 P04 | 8 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 08-gaussian-primitive-infrastructure-and-boys-function]: Host wrapper + #[cube] pair pattern: every math function has *_host() counterpart callable from tests without GPU context
 - [Phase 08]: vrr_step guards nmax>=1 to avoid s-shell no-op array writes, mirrors g1e.c early return pattern
 - [Phase 08]: Integration tests use host-side wrappers only (not CubeCL CPU backend launch) to avoid cond_br MLIR limitation discovered in Plan 02
+- [Phase 08]: Add rys_root1_host as a pure-Rust host wrapper replicating #[cube] rys_root1 branching logic exactly
+- [Phase 08]: Wire Rys-Boys weight-sum identity crosscheck at large/moderate/small x domains with appropriate tolerances
 
 ### Roadmap Evolution
 
@@ -188,6 +191,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T02:22:49.435Z
-Stopped at: Completed 08-03-PLAN.md
+Last session: 2026-04-03T02:44:08.468Z
+Stopped at: Completed 08-04-PLAN.md
 Resume file: None
