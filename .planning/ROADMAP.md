@@ -96,7 +96,7 @@ Plans:
 | Phase 5: Re-implement detailed-design GPU path | 5/5 | Complete | 2026-04-02 |
 | Phase 6: Fix raw eval staging & fingerprint | 0/2 | Not started | - |
 | Phase 7: Executor Infrastructure Rewrite | 1/3 | In Progress | 2026-04-02 |
-| Phase 8: Gaussian Primitive Infrastructure and Boys Function | 0/3 | Not started | - |
+| Phase 8: Gaussian Primitive Infrastructure and Boys Function | 3/4 | In Progress | - |
 | Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 0/TBD | Not started | - |
 | Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/TBD | Not started | - |
 
@@ -156,12 +156,13 @@ Plans:
   2. Gaussian product center and pair data (`pdata`) computation produces correct overlap distribution exponents, centers, and pair weights for two-center and four-center shell pairs.
   3. Rys quadrature roots and weights match libcint `polyfits.c` reference coefficients for all quadrature degrees needed by 2e/2c2e/3c2e, with explicit coverage bounds documented.
   4. Obara-Saika horizontal and vertical recurrence `#[cube]` functions compile and link from inside kernel functions without E0433 errors, and produce correct auxiliary integrals for d-function test cases.
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 08-01-PLAN.md — Create math module with Boys function and PairData #[cube] implementations plus validation tests.
 - [x] 08-02-PLAN.md — Implement Rys quadrature polynomial fit evaluation as #[cube] functions with validation tests.
 - [x] 08-03-PLAN.md — Implement Obara-Saika vrr_step/hrr_step #[cube] functions and math integration test.
+- [ ] 08-04-PLAN.md — Close verification gaps: wire Rys-Boys crosscheck in integration test and fix MATH-03 tracking.
 
 ### Phase 9: 1e Real Kernel and Cart-to-Sph Transform
 **Goal**: Users can execute real overlap, kinetic, and nuclear attraction evaluations that produce libcint-compatible spherical outputs, validating the entire compute pipeline end-to-end.
