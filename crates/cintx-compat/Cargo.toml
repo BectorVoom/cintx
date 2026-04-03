@@ -8,6 +8,7 @@ path = "src/lib.rs"
 
 [features]
 default = []
+cpu = ["cintx-cubecl/cpu"]
 with-f12 = ["cintx-cubecl/with-f12"]
 with-4c1e = ["cintx-cubecl/with-4c1e"]
 unstable-source-api = []

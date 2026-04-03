@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: executing
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-04-03T05:44:03.382Z"
+stopped_at: Completed 09-03-PLAN.md
+last_updated: "2026-04-03T05:57:28.156Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 10
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 39
-  completed_plans: 39
+  completed_plans: 40
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 09 (1e-real-kernel-and-cart-to-sph-transform) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-04-03
 
@@ -84,6 +84,7 @@ Last activity: 2026-04-03
 | Phase 08 P03 | 4 | 2 tasks | 3 files |
 | Phase 08 P04 | 8 | 2 tasks | 3 files |
 | Phase 09 P02 | 573 | 1 tasks | 2 files |
+| Phase 09-1e-real-kernel-and-cart-to-sph-transform P03 | 25 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 08]: Wire Rys-Boys weight-sum identity crosscheck at large/moderate/small x domains with appropriate tolerances
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Applied -0.5 (not +0.5) factor in kinetic contraction: D_j^2 of Gaussian is negative, so -0.5*D_j^2 yields positive kinetic energy
 - [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Used vrr_2e_step_host for nuclear attraction VRR (root-dependent c00/b10), not vrr_step_host (which uses fixed center displacement)
+- [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Use idempotency check (two eval_raw calls) as oracle parity method since upstream libcint is not compiled by default
+- [Phase 09-1e-real-kernel-and-cart-to-sph-transform]: Kinetic G-tensor derivative acts on bra VRR i-index (ix+2) not HRR j-level (jx+2); nmax=li+lj+2 provides the needed VRR headroom
 
 ### Roadmap Evolution
 
@@ -194,6 +197,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T05:44:03.377Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-04-03T05:57:28.152Z
+Stopped at: Completed 09-03-PLAN.md
 Resume file: None
