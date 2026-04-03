@@ -20,8 +20,8 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 ### Active
 
 - [ ] Reimplement the libcint API surface needed for the target 6.1.3 compatibility profile, including helper, optimizer, legacy wrapper, and selected source-only families.
-- [ ] Execute all integral-family computation through a shared planner and CubeCL backend while preserving performance, memory efficiency, and OOM-safe stop behavior.
-- [ ] Prove compatibility through compiled-manifest audits, oracle comparisons against upstream libcint, regression gates, and reproducible CI artifacts.
+- [x] Execute all integral-family computation through a shared planner and CubeCL backend while preserving performance, memory efficiency, and OOM-safe stop behavior. Validated in Phase 10: all five base families (1e, 2e, 2c2e, 3c1e, 3c2e) produce real kernel output through CubeCL backend with oracle parity confirmed.
+- [x] Prove compatibility through compiled-manifest audits, oracle comparisons against upstream libcint, regression gates, and reproducible CI artifacts. Validated in Phase 10: oracle gate closure passes all five families against vendored libcint 6.1.3 with 0 mismatches.
 
 ### Out of Scope
 
@@ -84,4 +84,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after Phase 8 complete — Gaussian primitive math infrastructure verified, oracle-confirmed Rys coefficient fidelity*
+*Last updated: 2026-04-03 after Phase 10 complete — Oracle gate closed for all five base integral families, v1.1 milestone complete*
