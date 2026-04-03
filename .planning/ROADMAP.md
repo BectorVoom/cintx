@@ -10,7 +10,7 @@
 - [ ] **Phase 7: Executor Infrastructure Rewrite** - Replace executor internals with direct CubeCL client API, introduce ResolvedBackend dispatch, CPU backend feature, and f64 strategy decision — prerequisite gate for all real kernel work.
 - [x] **Phase 8: Gaussian Primitive Infrastructure and Boys Function** - Build shared math foundation as `#[cube]` functions: Boys function, Rys roots/weights, primitive pair evaluation, and Obara-Saika recurrence. (completed 2026-04-03)
 - [ ] **Phase 9: 1e Real Kernel and Cart-to-Sph Transform** - Implement real overlap, kinetic, and nuclear attraction kernels with correct Condon-Shortley c2s transform, validating the end-to-end compute pipeline.
-- [ ] **Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure** - Implement all remaining integral family kernels and close the oracle parity gate for all five base families, completing v1.1.
+- [x] **Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure** - Implement all remaining integral family kernels and close the oracle parity gate for all five base families, completing v1.1. (completed 2026-04-03)
 
 ## Phase Details
 
@@ -199,4 +199,4 @@ Plans:
 - [x] 10-03-PLAN.md — 3c1e kernel implementation and oracle parity test.
 - [x] 10-04-PLAN.md — 3c2e kernel implementation and oracle parity test.
 - [x] 10-05-PLAN.md — 2e ERI kernel implementation and oracle parity test.
-- [ ] 10-06-PLAN.md — Oracle gate closure across all five families and v1.0 UAT item resolution.
+- [x] 10-06-PLAN.md — Oracle gate closure across all five families and v1.0 UAT item resolution.

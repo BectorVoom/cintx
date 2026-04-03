@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: unknown
-stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-04-PLAN.md
-last_updated: "2026-04-03T12:02:05.645Z"
+status: Ready to execute
+stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-06-PLAN.md
+last_updated: "2026-04-03T12:20:20.556Z"
 progress:
   total_phases: 10
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 47
-  completed_plans: 47
+  completed_plans: 48
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 10 (2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure) — EXECUTING
-Plan: 3 of 6
+Plan: 2 of 6
 
 ## Performance Metrics
 
@@ -88,6 +88,7 @@ Plan: 3 of 6
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P03 | 12 | 2 tasks | 5 files |
 | Phase 10 P02 | 196 | 2 tasks | 4 files |
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P04 | 8m | 2 tasks | 2 files |
+| Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P06 | 8 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -196,6 +197,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use PTR_ENV_START-aligned env layout in int2e oracle tests to preserve libcint global env semantics.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Plan 10-04 canonicalizes 3c2e ij evaluation to li>=lj and transposes back to preserve caller shell order while matching ibase behavior.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: 3c2e oracle fixtures now reserve libcint env global slots with PTR_ENV_START for correct 2e-family reference behavior.
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use shells (3,4,0)=H1-1s/H2-1s/O-1s for 3c1e/3c2e gate triples — same-center s-s-p is physically zero by angular symmetry
+- [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: UAT item 2 tests eval_raw kernel path (not0>0 = C ABI status==0) since cintx-capi is not directly testable from cintx-oracle integration tests
 
 ### Roadmap Evolution
 
@@ -212,6 +215,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T12:02:05.642Z
-Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-04-PLAN.md
+Last session: 2026-04-03T12:20:20.552Z
+Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-06-PLAN.md
 Resume file: None
