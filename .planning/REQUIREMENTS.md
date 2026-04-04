@@ -75,10 +75,10 @@
 
 ### Helper & Transform Completion
 
-- [ ] **HELP-01**: Oracle harness compares every helper symbol in the manifest against vendored libcint with atol=1e-12
-- [ ] **HELP-02**: Oracle harness compares every transform symbol in the manifest against vendored libcint with atol=1e-12
+- [x] **HELP-01**: Oracle harness compares every helper symbol in the manifest against vendored libcint with atol=1e-12
+- [x] **HELP-02**: Oracle harness compares every transform symbol in the manifest against vendored libcint with atol=1e-12
 - [ ] **HELP-03**: Oracle harness compares every legacy wrapper symbol in the manifest against vendored libcint with atol=1e-12
-- [ ] **HELP-04**: CI helper-legacy-parity gate passes with 0 mismatches across all four feature profiles
+- [x] **HELP-04**: CI helper-legacy-parity gate passes with 0 mismatches across all four feature profiles
 
 ### 4c1e Kernel & Oracle
 
@@ -180,10 +180,10 @@
 | VERI-05 | Phase 9 | Complete |
 | VERI-06 | Phase 7 | Complete |
 | VERI-07 | Phase 10 | Complete |
-| HELP-01 | Phase 11 | Pending |
-| HELP-02 | Phase 11 | Pending |
+| HELP-01 | Phase 11 | Complete |
+| HELP-02 | Phase 11 | Complete |
 | HELP-03 | Phase 11 | Pending |
-| HELP-04 | Phase 11 | Pending |
+| HELP-04 | Phase 11 | Complete |
 | 4C1E-01 | Phase 11 | Complete |
 | 4C1E-02 | Phase 11 | Pending |
 | 4C1E-03 | Phase 11 | Complete |
