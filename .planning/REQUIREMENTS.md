@@ -91,7 +91,7 @@
 
 - [ ] **SPIN-01**: Cart-to-spinor transform implements real Clebsch-Gordan coupling coefficients for all angular momenta up to g-function (l=4)
 - [ ] **SPIN-02**: All CINTc2s_*spinor* transform variants (ket_spinor, iket_spinor, ket_spinor_sf, ket_spinor_si) are implemented
-- [ ] **SPIN-03**: Spinor-form base family evaluations (1e, 2e, 2c2e, 3c1e, 3c2e spinor) match libcint to atol=1e-12
+- [x] **SPIN-03**: Spinor-form base family evaluations (1e, 2e, 2c2e, 3c1e, 3c2e spinor) match libcint to atol=1e-12
 - [ ] **SPIN-04**: kappa parameter is correctly interpreted and applied in spinor transform dispatch
 
 ### F12/STG/YP Kernels
@@ -190,7 +190,7 @@
 | 4C1E-04 | Phase 11 | Complete |
 | SPIN-01 | Phase 12 | Pending |
 | SPIN-02 | Phase 12 | Pending |
-| SPIN-03 | Phase 12 | Pending |
+| SPIN-03 | Phase 12 | Complete |
 | SPIN-04 | Phase 12 | Pending |
 | F12-01 | Phase 13 | Pending |
 | F12-02 | Phase 13 | Pending |
