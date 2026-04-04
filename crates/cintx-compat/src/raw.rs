@@ -621,6 +621,13 @@ fn validate_4c1e_envelope(
         return Ok(());
     }
 
+    // D-05: Spinor rejection FIRST — before feature gate check.
+    // A Spinor 4c1e request must return UnsupportedApi with "spinor" in the message
+    // regardless of whether the with-4c1e feature is enabled.
+    if matches!(representation, Representation::Spinor) {
+        return Err(validated_4c1e_error("spinor representation not supported for 4c1e"));
+    }
+
     if !cfg!(feature = "with-4c1e") {
         return Err(validated_4c1e_error("with-4c1e feature disabled"));
     }
