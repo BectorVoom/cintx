@@ -27,6 +27,7 @@ use crate::backend::ResolvedBackend;
 use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2c2e, ncart};
+use crate::transform::c2spinor::cart_to_spinor_sf_2d;
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
@@ -361,14 +362,19 @@ pub fn launch_center_2c2e(
         }
     }
 
-    // Apply cart-to-sph transform or copy Cartesian to staging
+    // Apply cart-to-sph, cart-to-spinor, or copy Cartesian to staging
     match plan.representation {
         Representation::Spheric => {
             let sph = cart_to_sph_2c2e(&cart_buf, li, lk);
             let copy_len = staging.len().min(sph.len());
             staging[..copy_len].copy_from_slice(&sph[..copy_len]);
         }
-        _ => {
+        Representation::Spinor => {
+            let kappa_i = shell_i.kappa;
+            let kappa_k = shell_k.kappa;
+            cart_to_spinor_sf_2d(staging, &cart_buf, li, kappa_i, lk, kappa_k)?;
+        }
+        Representation::Cart => {
             let copy_len = staging.len().min(cart_buf.len());
             staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
         }

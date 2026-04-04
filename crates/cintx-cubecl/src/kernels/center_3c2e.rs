@@ -16,6 +16,7 @@ use crate::math::pdata::{PairData, compute_pdata_host};
 use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_3c2e, ncart, nsph};
+use crate::transform::c2spinor::cart_to_spinor_sf_3c2e;
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
@@ -435,7 +436,16 @@ pub fn launch_center_3c2e(
             let copy_len = staging.len().min(sph.len()).min(sph_size);
             staging[..copy_len].copy_from_slice(&sph[..copy_len]);
         }
-        _ => {
+        Representation::Spinor => {
+            let kappa_i = shell_i_in.kappa;
+            let kappa_j = shell_j_in.kappa;
+            // k is the auxiliary shell — no kappa, transforms to spherical
+            cart_to_spinor_sf_3c2e(
+                staging, &cart_out,
+                li_in, kappa_i, lj_in, kappa_j, lk,
+            )?;
+        }
+        Representation::Cart => {
             let copy_len = staging.len().min(cart_out.len());
             staging[..copy_len].copy_from_slice(&cart_out[..copy_len]);
         }

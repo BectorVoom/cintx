@@ -11,6 +11,7 @@ use crate::math::pdata::compute_pdata_host;
 use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
+use crate::transform::c2spinor::cart_to_spinor_sf_4d;
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use std::f64::consts::PI;
@@ -675,7 +676,18 @@ pub fn launch_two_electron(
             let copy_len = staging.len().min(sph.len()).min(sph_size);
             staging[..copy_len].copy_from_slice(&sph[..copy_len]);
         }
-        _ => {
+        Representation::Spinor => {
+            let kappa_i = shell_i.kappa;
+            let kappa_j = shell_j.kappa;
+            let kappa_k = shell_k.kappa;
+            let kappa_l = shell_l.kappa;
+            cart_to_spinor_sf_4d(
+                staging, &cart_buf,
+                li, kappa_i, lj, kappa_j,
+                lk, kappa_k, ll, kappa_l,
+            )?;
+        }
+        Representation::Cart => {
             let copy_len = staging.len().min(cart_buf.len());
             staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
         }
