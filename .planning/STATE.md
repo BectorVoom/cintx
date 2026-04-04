@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: Milestone complete
-stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-06-PLAN.md
-last_updated: "2026-04-03T13:09:08.185Z"
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-04-04T13:36:44.456Z"
 progress:
   total_phases: 10
   completed_phases: 10
@@ -89,6 +89,7 @@ Plan: Not started
 | Phase 10 P02 | 196 | 2 tasks | 4 files |
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P04 | 8m | 2 tasks | 2 files |
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P06 | 8 | 1 tasks | 2 files |
+| Phase 12 P01 | 11 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -199,6 +200,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: 3c2e oracle fixtures now reserve libcint env global slots with PTR_ENV_START for correct 2e-family reference behavior.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use shells (3,4,0)=H1-1s/H2-1s/O-1s for 3c1e/3c2e gate triples — same-center s-s-p is physically zero by angular symmetry
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: UAT item 2 tests eval_raw kernel path (not0>0 = C ABI status==0) since cintx-capi is not directly testable from cintx-oracle integration tests
+- [Phase 12]: CG coefficient extraction from libcint g_trans_cart2jR/g_trans_cart2jI at g_c2s[] documented offsets for l=0..4, verified via Python parsing
+- [Phase 12]: Four separate c2spinor code paths (sf, iket_sf, si, iket_si) per D-03; kappa<0=GT, kappa>0=LT, kappa==0=both; iket=multiply by i: (re,im)->(-im,re)
+- [Phase 12]: cart_to_spinor_interleaved_staging kept as no-op (not deleted) for staging API compatibility; executor l/kappa wiring gap documented as TODO for Phase 12-02/03
 
 ### Roadmap Evolution
 
@@ -215,6 +219,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T12:20:20.552Z
-Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-06-PLAN.md
+Last session: 2026-04-04T13:36:44.451Z
+Stopped at: Completed 12-01-PLAN.md
 Resume file: None
