@@ -18,16 +18,8 @@ use cintx_ops::resolver::{HelperKind, Resolver};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
-const TOL_1E_ATOL: f64 = 1e-11;
-const TOL_1E_RTOL: f64 = 1e-9;
-const TOL_2E_ATOL: f64 = 1e-12;
-const TOL_2E_RTOL: f64 = 1e-10;
-const TOL_2C2E_3C2E_ATOL: f64 = 1e-9;
-const TOL_2C2E_3C2E_RTOL: f64 = 1e-7;
-const TOL_3C1E_ATOL: f64 = 1e-7;
-const TOL_3C1E_RTOL: f64 = 1e-5;
-const TOL_4C1E_ATOL: f64 = 1e-6;
-const TOL_4C1E_RTOL: f64 = 1e-5;
+const UNIFIED_ATOL: f64 = 1e-12;
+const UNIFIED_RTOL: f64 = 1e-10;
 const ZERO_THRESHOLD: f64 = 1e-18;
 
 const BASE_PROFILE: &str = "base";
@@ -133,44 +125,22 @@ pub struct Phase2ParityReport {
 }
 
 pub fn tolerance_for_family(family: &str) -> Result<FamilyTolerance> {
-    let tolerance = match family {
-        "1e" => FamilyTolerance {
-            family: "1e",
-            atol: TOL_1E_ATOL,
-            rtol: TOL_1E_RTOL,
-            zero_threshold: ZERO_THRESHOLD,
-        },
-        "2e" | "unstable::source::2e" => FamilyTolerance {
-            family: if family == "2e" {
-                "2e"
-            } else {
-                "unstable::source::2e"
-            },
-            atol: TOL_2E_ATOL,
-            rtol: TOL_2E_RTOL,
-            zero_threshold: ZERO_THRESHOLD,
-        },
-        "2c2e" | "3c2e" => FamilyTolerance {
-            family: if family == "2c2e" { "2c2e" } else { "3c2e" },
-            atol: TOL_2C2E_3C2E_ATOL,
-            rtol: TOL_2C2E_3C2E_RTOL,
-            zero_threshold: ZERO_THRESHOLD,
-        },
-        "3c1e" => FamilyTolerance {
-            family: "3c1e",
-            atol: TOL_3C1E_ATOL,
-            rtol: TOL_3C1E_RTOL,
-            zero_threshold: ZERO_THRESHOLD,
-        },
-        "4c1e" => FamilyTolerance {
-            family: "4c1e",
-            atol: TOL_4C1E_ATOL,
-            rtol: TOL_4C1E_RTOL,
-            zero_threshold: ZERO_THRESHOLD,
-        },
+    let static_family: &'static str = match family {
+        "1e" => "1e",
+        "2e" => "2e",
+        "unstable::source::2e" => "unstable::source::2e",
+        "2c2e" => "2c2e",
+        "3c2e" => "3c2e",
+        "3c1e" => "3c1e",
+        "4c1e" => "4c1e",
         other => bail!("missing family tolerance for `{other}`"),
     };
-    Ok(tolerance)
+    Ok(FamilyTolerance {
+        family: static_family,
+        atol: UNIFIED_ATOL,
+        rtol: UNIFIED_RTOL,
+        zero_threshold: ZERO_THRESHOLD,
+    })
 }
 
 fn diff_summary(reference: &[f64], observed: &[f64], tolerance: FamilyTolerance) -> DiffSummary {
@@ -886,12 +856,10 @@ fn build_profile_parity_report(
             "optimizer_symbols": IMPLEMENTED_OPTIMIZER_SYMBOLS,
         },
         "tolerance_table": {
-            "1e": {"atol": TOL_1E_ATOL, "rtol": TOL_1E_RTOL, "zero_threshold": ZERO_THRESHOLD},
-            "2e": {"atol": TOL_2E_ATOL, "rtol": TOL_2E_RTOL, "zero_threshold": ZERO_THRESHOLD},
-            "2c2e": {"atol": TOL_2C2E_3C2E_ATOL, "rtol": TOL_2C2E_3C2E_RTOL, "zero_threshold": ZERO_THRESHOLD},
-            "3c2e": {"atol": TOL_2C2E_3C2E_ATOL, "rtol": TOL_2C2E_3C2E_RTOL, "zero_threshold": ZERO_THRESHOLD},
-            "3c1e": {"atol": TOL_3C1E_ATOL, "rtol": TOL_3C1E_RTOL, "zero_threshold": ZERO_THRESHOLD},
-            "4c1e": {"atol": TOL_4C1E_ATOL, "rtol": TOL_4C1E_RTOL, "zero_threshold": ZERO_THRESHOLD},
+            "unified_atol": UNIFIED_ATOL,
+            "unified_rtol": UNIFIED_RTOL,
+            "zero_threshold": ZERO_THRESHOLD,
+            "note": "All families use unified atol=1e-12, rtol=1e-10",
         },
         "upstream_reference": "vendored upstream compatibility proxy through cintx_compat::legacy wrappers",
         "cart_spheric_spinor_flat-buffer_interleaved_assertions": true,
