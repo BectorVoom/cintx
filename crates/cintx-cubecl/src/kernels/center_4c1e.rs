@@ -555,11 +555,15 @@ pub fn launch_center_4c1e(
     // Accumulated Cartesian integral buffer.
     let mut cart_buf = vec![0.0_f64; nfi * nfj * nfk * nfl];
 
-    // Common factor from g4c1e.c / cint4c1e.c:
-    // common_factor = pi^3 * 2 / sqrt(pi) * fac_sp(li) * fac_sp(lj) * fac_sp(lk) * fac_sp(ll)
-    // This matches the 2e common_factor since both are 4-center integrals.
+    // Common factor from cint4c1e.c CINT4c1e_loop_nopt:
+    //   common_fac = envs->common_factor * SQRTPI * M_PI * sp_factors
+    // where envs->common_factor = 1 (set in CINTinit_int4c1e_EnvVars).
+    // So the 4c1e common factor is: sqrt(pi) * pi * sp_factors.
+    //
+    // NOTE: This differs from the 2e formula (pi^3 * 2 / sqrt(pi)) — do NOT use
+    // the 2e formula here. The 4c1e integral uses a different normalization.
     let sp_factor = common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk) * common_fac_sp(ll);
-    let common_factor = (PI * PI * PI) * 2.0 / SQRTPI * sp_factor;
+    let common_factor = SQRTPI * PI * sp_factor;
 
     let n_prim_i = shell_i.nprim as usize;
     let n_prim_j = shell_j.nprim as usize;
@@ -611,8 +615,19 @@ pub fn launch_center_4c1e(
                     let rr_kl = dx_kl * dx_kl + dy_kl * dy_kl + dz_kl * dz_kl;
                     let fac_kl = f64::exp(-ak * al / akl * rr_kl);
 
-                    // Quartet prefactor: common_factor * exp_ij * exp_kl
-                    let quartet_fac = common_factor * fac_ij * fac_kl;
+                    // Cross-pair exponential: exp(-a0 * |rij - rkl|^2)
+                    // where a0 = aij*akl/(aij+akl) is the reduced exponent.
+                    // This matches libcint's eijkl = eij + ekl + a0*SQUARE(rij-rkl).
+                    let aijkl = aij + akl;
+                    let a0 = aij * akl / aijkl;
+                    let dx_ijkl = rij[0] - rkl[0];
+                    let dy_ijkl = rij[1] - rkl[1];
+                    let dz_ijkl = rij[2] - rkl[2];
+                    let rr_ijkl = dx_ijkl * dx_ijkl + dy_ijkl * dy_ijkl + dz_ijkl * dz_ijkl;
+                    let fac_ijkl = f64::exp(-a0 * rr_ijkl);
+
+                    // Quartet prefactor: common_factor * exp_ij * exp_kl * exp_ijkl_cross
+                    let quartet_fac = common_factor * fac_ij * fac_kl * fac_ijkl;
 
                     // Fill G-tensor using polynomial recurrence (nroots=1).
                     let mut g = vec![0.0_f64; 3 * shape.g_size];
