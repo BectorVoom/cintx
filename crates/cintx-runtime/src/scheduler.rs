@@ -61,6 +61,8 @@ mod tests {
             ],
             memory_limit_bytes: Some(64),
             chunk_size_override: None,
+            backend_intent: crate::options::BackendIntent::default(),
+            backend_capability_token: crate::options::BackendCapabilityToken::default(),
         };
 
         let schedule = schedule_chunks(&query);

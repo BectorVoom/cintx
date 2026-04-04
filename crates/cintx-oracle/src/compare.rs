@@ -262,6 +262,8 @@ fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
         "int2c2e_cart" => Some(RawApiId::INT2C2E_CART),
         "int2c2e_sph" => Some(RawApiId::INT2C2E_SPH),
         "int2c2e_spinor" => Some(RawApiId::INT2C2E_SPINOR),
+        "int3c1e_cart" => Some(RawApiId::INT3C1E_CART),
+        "int3c1e_sph" => Some(RawApiId::INT3C1E_SPH),
         "int3c1e_p2_cart" => Some(RawApiId::INT3C1E_P2_CART),
         "int3c1e_p2_sph" => Some(RawApiId::INT3C1E_P2_SPH),
         "int3c1e_p2_spinor" => Some(RawApiId::INT3C1E_P2_SPINOR),
@@ -304,6 +306,12 @@ unsafe fn eval_legacy_symbol(
         "int2c2e_cart" => unsafe { legacy::cint2c2e_cart(Some(out), shls, atm, bas, env, None) },
         "int2c2e_sph" => unsafe { legacy::cint2c2e_sph(Some(out), shls, atm, bas, env, None) },
         "int2c2e_spinor" => unsafe { legacy::cint2c2e(Some(out), shls, atm, bas, env, None) },
+        "int3c1e_cart" => unsafe {
+            legacy::cint3c1e_cart(Some(out), shls, atm, bas, env, None)
+        },
+        "int3c1e_sph" => unsafe {
+            legacy::cint3c1e_sph(Some(out), shls, atm, bas, env, None)
+        },
         "int3c1e_p2_cart" => unsafe {
             legacy::cint3c1e_p2_cart(Some(out), shls, atm, bas, env, None)
         },

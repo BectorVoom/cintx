@@ -214,6 +214,17 @@ all_cint_wrappers!(
     RawApiId::INT3C1E_P2_SPINOR
 );
 all_cint_wrappers!(
+    cint3c1e_cart,
+    cint3c1e_sph,
+    cint3c1e,
+    cint3c1e_cart_optimizer,
+    cint3c1e_sph_optimizer,
+    cint3c1e_optimizer,
+    RawApiId::INT3C1E_CART,
+    RawApiId::INT3C1E_SPH,
+    RawApiId::INT3C1E_SPINOR
+);
+all_cint_wrappers!(
     cint3c2e_ip1_cart,
     cint3c2e_ip1_sph,
     cint3c2e_ip1,
@@ -259,6 +270,12 @@ pub const LEGACY_WRAPPER_SYMBOLS: &[&str] = &[
     "cint3c1e_p2_cart_optimizer",
     "cint3c1e_p2_sph_optimizer",
     "cint3c1e_p2_optimizer",
+    "cint3c1e_cart",
+    "cint3c1e_sph",
+    "cint3c1e",
+    "cint3c1e_cart_optimizer",
+    "cint3c1e_sph_optimizer",
+    "cint3c1e_optimizer",
     "cint3c2e_ip1_cart",
     "cint3c2e_ip1_sph",
     "cint3c2e_ip1",
@@ -292,7 +309,7 @@ mod tests {
 
     fn misc_wrapper_macro(base_symbol: &str) -> Option<MiscWrapperMacro> {
         match base_symbol {
-            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e_p2" | "int3c2e_ip1" => {
+            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e" | "int3c1e_p2" | "int3c2e_ip1" => {
                 Some(MiscWrapperMacro::AllCint)
             }
             "int1e_kin" => Some(MiscWrapperMacro::AllCint1e),
@@ -342,6 +359,8 @@ mod tests {
 
     #[test]
     fn wrappers_call_shared_eval_path() {
+        use cintx_core::cintxRsError;
+
         let atm = vec![1, 0, 1, 0, 0, 0];
         let bas = vec![
             0, 0, 1, 1, 0, 3, 4, 0, //
@@ -352,9 +371,18 @@ mod tests {
         let shls = [0, 1];
         let mut out = vec![0.0; 3];
 
-        let summary =
-            unsafe { cint1e_ovlp_cart(Some(&mut out), &shls, &atm, &bas, &env, None) }.unwrap();
-        assert!(summary.bytes_written > 0);
+        // D-05: legacy wrappers now route through real CubeClExecutor path.
+        // Accept both GPU-success and fail-closed wgpu-capability error.
+        let result = unsafe { cint1e_ovlp_cart(Some(&mut out), &shls, &atm, &bas, &env, None) };
+        match result {
+            Ok(summary) => {
+                assert!(summary.bytes_written > 0);
+            }
+            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
+                // No GPU adapter — correct fail-closed behavior (D-01/D-02).
+            }
+            Err(other) => panic!("unexpected error from legacy eval: {other:?}"),
+        }
 
         let query =
             unsafe { query_legacy(RawApiId::INT1E_OVLP_CART, &shls, &atm, &bas, &env, None) }

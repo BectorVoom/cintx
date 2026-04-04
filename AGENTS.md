@@ -114,3 +114,136 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > Profile not yet configured. Run `/gsd:profile-user` to generate your developer profile.
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
+
+## Handling `cubecl` Build Errors
+
+If a build error occurs in any Rust project that uses the `cubecl` crate, you must consult the following manual before attempting further fixes or proposing changes:
+
+`/home/chemtech/workspace/cintx/docs/cubecl_error_guideline.md`
+
+### Required Procedure
+1. Detect whether the failure is related to building, compiling, linking, dependency resolution, feature flags, toolchain configuration, or CI execution involving `cubecl`.
+2. Read `/home/chemtech/workspace/cintx/docs/cubecl_error_guideline.md`.
+3. Follow the documented troubleshooting and resolution process in that manual.
+4. When reporting the issue or proposing a fix, align the explanation with the structure and terminology defined in the manual.
+5. If the issue is resolved, document the root cause, resolution steps, verification results, and prevention measures according to the manual.
+
+### Notes
+- Do not skip the manual, even if the error appears familiar.
+- Do not provide an ad hoc fix without first checking whether the manual already covers the issue pattern.
+- If the manual does not fully cover the error, use it as the baseline format and extend the investigation accordingly.
+
+
+## Mandatory Manual for `cubecl` Implementation
+
+When implementing, modifying, or generating code that uses the Rust `cubecl` crate, the agent must first read:
+
+`/home/chemtech/workspace/cintx/docs/manual/Cubecl`
+
+This manual must be used as the primary reference for implementation patterns, architecture, configuration, and coding rules related to `cubecl`.
+
+Do not write or propose `cubecl`-based code without consulting this manual first.
+
+
+````md
+## Crawl4AI Usage
+
+When web content needs to be fetched, rendered, or extracted from dynamic pages, use the running Crawl4AI Docker service instead of writing ad hoc scraping code.
+
+### Basic rules
+- Prefer Crawl4AI for page crawling, markdown extraction, and multi-page content collection.
+- Use it for JavaScript-rendered pages when simple HTTP fetch is insufficient.
+- Save extracted results into project artifacts or intermediate files when they are used for later steps.
+- If crawling fails, report the target URL, command used, and error briefly.
+
+### Example commands
+
+Fetch one page:
+```bash
+curl -X POST http://localhost:11235/crawl \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["markdown"]
+  }'
+````
+
+Crawl multiple pages:
+
+```bash
+curl -X POST http://localhost:11235/crawl \
+  -H "Content-Type: application/json" \
+  -d '{
+    "urls": ["https://example.com", "https://example.com/docs"],
+    "formats": ["markdown"]
+  }'
+```
+
+Save result to a file:
+
+```bash
+curl -X POST http://localhost:11235/crawl \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["markdown"]
+  }' > crawl-result.json
+```
+
+## Codex MCP Server Usage Rules (Rust Crate Research and Minimal Implementation)
+
+### Objective
+If you encounter an API in a Rust crate whose implementation method is unclear, use the Codex MCP server to verify the facts, then complete the work based on up-to-date evidence rather than guesswork: from minimal implementation to validation and documentation.
+
+### General Policy
+- Do not implement unclear Rust APIs based on assumptions.
+- Always ask Codex to investigate, using the `context7` CLI and the `crawl4ai` CLI to research the target crate.
+- Use the latest stable version of the crate as the primary basis for investigation.
+- However, if the project pins a specific version, verify the differences from the latest stable version and implement against the version actually used by the project.
+- Keep changes minimal. Do not introduce unnecessary design changes, excessive abstraction, or unrelated refactoring.
+
+### Required Work for Codex
+1. Identify the target crate name, target API, current version in use, and latest stable version.
+2. Use the `context7` CLI and the `crawl4ai` CLI to investigate, prioritizing:
+   - Official documentation
+   - docs.rs
+   - The crate repository
+   - Release notes / changelog
+   - Example code, examples, and tests
+3. Organize the possible implementation approaches and choose the simplest and most maintainable one.
+4. Implement the minimal solution for the target API.
+5. Check for compile errors, type errors, and deprecated API usage, and fix them if necessary.
+6. Add or update the minimum required tests.
+7. After implementation, always run the tests and verify that the change actually works.
+8. Create a Markdown manual summarizing the investigation results and implementation details.
+
+### Testing Requirements
+- Provide at least one test that directly verifies the changed area.
+- Run `cargo test`, or the smallest appropriate test command that reasonably covers the modified scope.
+- Do not mark the work as complete if tests have not been executed.
+- If tests fail, clearly document the failure logs, the cause, and any unresolved issues.
+
+### Manual Requirements
+The Markdown file must include at least the following:
+- Target crate name
+- Investigated version information (latest stable version and, if necessary, the version used by the project)
+- Key points about the investigated API
+- The adopted implementation strategy
+- Explanation of the implementation location(s)
+- A minimal usage example
+- The test command(s) that were run
+- Test results
+- Constraints and known caveats
+
+### Definition of Done
+The work is complete only when all of the following are satisfied:
+- The unclear API has been investigated with supporting evidence
+- The minimal implementation has been completed
+- Tests have been executed successfully
+- A Markdown manual summarizing the investigation and implementation has been created
+
+### Prohibited Actions
+- Assumption-based implementation without evidence
+- Reporting completion without running tests
+- Reporting completion without creating the manual
+- Large-scale unrelated changes

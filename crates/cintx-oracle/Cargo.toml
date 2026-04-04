@@ -6,6 +6,10 @@ edition = "2024"
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+cpu = ["cintx-compat/cpu"]
+
 [dependencies]
 anyhow = "1.0.102"
 cintx-compat = { path = "../cintx-compat" }

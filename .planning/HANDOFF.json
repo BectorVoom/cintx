@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-03T12:05:38.416Z",
+  "phase": "10",
+  "phase_name": "2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure",
+  "phase_dir": ".planning/phases/10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure",
+  "plan": 6,
+  "task": 11,
+  "total_tasks": 11,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "10-01-T1", "name": "Rys root host wrappers (N=3,4,5) + dispatcher", "status": "done", "commit": "f7eb604"},
+    {"id": "10-01-T2", "name": "Multi-index c2s transforms + oracle vendor build extension", "status": "done", "commit": "2389406"},
+    {"id": "10-02-T1", "name": "2c2e kernel implementation (Rys quadrature G-tensor fill)", "status": "done", "commit": "90a0eee"},
+    {"id": "10-02-T2", "name": "2c2e oracle parity test + PTR_ENV_START fix", "status": "done", "commit": "8cbdfc7"},
+    {"id": "10-03-T1", "name": "3c1e three-center overlap kernel", "status": "done", "commit": "da2a513"},
+    {"id": "10-03-T2", "name": "3c1e oracle parity test + g_alloc fix", "status": "done", "commit": "af2ea35"},
+    {"id": "10-04-T1", "name": "3c2e kernel implementation", "status": "done", "commit": "4f9612d"},
+    {"id": "10-04-T2", "name": "3c2e oracle parity test", "status": "done", "commit": "5fce2a0"},
+    {"id": "10-05-T1", "name": "2e ERI kernel implementation", "status": "done", "commit": "0c10aee"},
+    {"id": "10-05-T2", "name": "2e ERI oracle parity test", "status": "done", "commit": "a8bdd1b"}
+  ],
+  "remaining_tasks": [
+    {"id": "10-06-T1", "name": "Oracle gate closure + v1.0 UAT items", "status": "not_started"}
+  ],
+  "blockers": [
+    {
+      "description": "Latest `cargo test` run failed in `cintx-compat` source-only gate tests before Wave 4 started.",
+      "type": "technical",
+      "workaround": "Re-run `cargo test -p cintx-compat --lib` after completing 10-06 and inspect source-only manifest gating path if failures persist."
+    }
+  ],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "PTR_ENV_START=20 padding required for libcint env layout",
+      "rationale": "Without padding, atom coordinates collide with reserved env slots like PTR_RANGE_OMEGA, activating range-separated Coulomb instead of standard Coulomb",
+      "phase": "10"
+    },
+    {
+      "decision": "3c2e has index swap: third shell maps to l slot, not k slot",
+      "rationale": "libcint g3c2e.c sets lk_ceil=0 and ll_ceil=k_l to reuse 2e G-tensor machinery",
+      "phase": "10"
+    },
+    {
+      "decision": "Canonicalize 3c2e evaluation to li>=lj and transpose outputs back to caller order",
+      "rationale": "Matches libcint ibase-style ij handling and closed asymmetric shell-pair parity gaps",
+      "phase": "10"
+    },
+    {
+      "decision": "Apply primitive-pair Gaussian prefactors (pdata_ij.fac * pdata_kl.fac) in 2e accumulation",
+      "rationale": "Required to match vendored libcint int2e magnitude during oracle parity",
+      "phase": "10"
+    }
+  ],
+  "uncommitted_files": [
+    ".claude/worktrees/agent-af2aceb9",
+    ".claude/worktrees/agent-a269eba5/",
+    ".claude/worktrees/agent-a2f83a5f/",
+    ".claude/worktrees/agent-a8603931/",
+    ".claude/worktrees/agent-ad49f465/",
+    ".claude/worktrees/agent-adea5b67/",
+    ".claude/worktrees/agent-af4ebc09/",
+    ".codex"
+  ],
+  "next_action": "Resume with `$gsd-execute-phase 10 --no-transition` to run final plan 10-06 (oracle gate closure + v1.0 UAT resolution), then verification/update routing.",
+  "context_notes": "Phase 10 Wave 3 is complete: 10-04 and 10-05 landed with summaries and parity tests. Wave 4 (10-06) was spawned but intentionally stopped during pause; no 10-06 commit or summary exists yet. Resume should start directly at 10-06."
+}

@@ -272,6 +272,36 @@
     },
     {
       "id": {
+        "family": "3c1e",
+        "operator": "overlap",
+        "representation": "cart",
+        "symbol": "int3c1e_cart"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "id": {
+        "family": "3c1e",
+        "operator": "overlap",
+        "representation": "sph",
+        "symbol": "int3c1e_sph"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "id": {
         "family": "3c2e",
         "operator": "electron-repulsion",
         "representation": "cart",
@@ -2386,6 +2416,198 @@
         "family": "3c1e",
         "operator": "cint3c1e_p2_optimizer",
         "symbol": "cint3c1e_p2_optimizer"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "category": "legacy",
+      "arity": 3,
+      "forms": [
+        "legacy-wrapper",
+        "optimizer"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "none",
+      "declared_in": "src/misc.h",
+      "oracle_covered": false,
+      "helper_kind": "legacy",
+      "canonical_family": "3c1e"
+    },
+    {
+      "id": {
+        "family": "3c1e",
+        "operator": "cint3c1e_cart",
+        "symbol": "cint3c1e_cart"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "category": "legacy",
+      "arity": 3,
+      "forms": [
+        "legacy-wrapper",
+        "cart"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "none",
+      "declared_in": "src/misc.h",
+      "oracle_covered": false,
+      "helper_kind": "legacy",
+      "canonical_family": "3c1e"
+    },
+    {
+      "id": {
+        "family": "3c1e",
+        "operator": "cint3c1e_sph",
+        "symbol": "cint3c1e_sph"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "category": "legacy",
+      "arity": 3,
+      "forms": [
+        "legacy-wrapper",
+        "sph"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "none",
+      "declared_in": "src/misc.h",
+      "oracle_covered": false,
+      "helper_kind": "legacy",
+      "canonical_family": "3c1e"
+    },
+    {
+      "id": {
+        "family": "3c1e",
+        "operator": "cint3c1e",
+        "symbol": "cint3c1e"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "category": "legacy",
+      "arity": 3,
+      "forms": [
+        "legacy-wrapper",
+        "spinor"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "none",
+      "declared_in": "src/misc.h",
+      "oracle_covered": false,
+      "helper_kind": "legacy",
+      "canonical_family": "3c1e"
+    },
+    {
+      "id": {
+        "family": "3c1e",
+        "operator": "cint3c1e_cart_optimizer",
+        "symbol": "cint3c1e_cart_optimizer"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "category": "legacy",
+      "arity": 3,
+      "forms": [
+        "legacy-wrapper",
+        "optimizer"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "none",
+      "declared_in": "src/misc.h",
+      "oracle_covered": false,
+      "helper_kind": "legacy",
+      "canonical_family": "3c1e"
+    },
+    {
+      "id": {
+        "family": "3c1e",
+        "operator": "cint3c1e_sph_optimizer",
+        "symbol": "cint3c1e_sph_optimizer"
+      },
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "category": "legacy",
+      "arity": 3,
+      "forms": [
+        "legacy-wrapper",
+        "optimizer"
+      ],
+      "component_rank": "scalar",
+      "feature_flag": "none",
+      "declared_in": "src/misc.h",
+      "oracle_covered": false,
+      "helper_kind": "legacy",
+      "canonical_family": "3c1e"
+    },
+    {
+      "id": {
+        "family": "3c1e",
+        "operator": "cint3c1e_optimizer",
+        "symbol": "cint3c1e_optimizer"
       },
       "profiles": [
         "base",
