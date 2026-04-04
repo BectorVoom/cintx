@@ -34,16 +34,22 @@ use cintx_compat::raw::{
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Absolute tolerance for 1e integrals.
+#[cfg(has_vendor_libcint)]
 const ATOL_1E: f64 = 1e-11;
 /// Absolute tolerance for 2e integrals.
+#[cfg(has_vendor_libcint)]
 const ATOL_2E: f64 = 1e-12;
 /// Relative tolerance for 2e integrals.
+#[cfg(has_vendor_libcint)]
 const RTOL_2E: f64 = 1e-10;
 /// Absolute tolerance for 2c2e integrals.
+#[cfg(has_vendor_libcint)]
 const ATOL_2C2E: f64 = 1e-9;
 /// Absolute tolerance for 3c1e integrals.
+#[cfg(has_vendor_libcint)]
 const ATOL_3C1E: f64 = 1e-7;
 /// Absolute tolerance for 3c2e integrals.
+#[cfg(has_vendor_libcint)]
 const ATOL_3C2E: f64 = 1e-9;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -175,6 +181,7 @@ fn nsph(l: i32) -> usize {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Count mismatches using absolute tolerance only.
+#[cfg(has_vendor_libcint)]
 fn count_mismatches_atol(reference: &[f64], observed: &[f64], atol: f64) -> usize {
     assert_eq!(reference.len(), observed.len(), "length mismatch");
     let mut count = 0usize;
@@ -191,6 +198,7 @@ fn count_mismatches_atol(reference: &[f64], observed: &[f64], atol: f64) -> usiz
 }
 
 /// Count mismatches using absolute + relative tolerance.
+#[cfg(has_vendor_libcint)]
 fn count_mismatches_atol_rtol(
     reference: &[f64],
     observed: &[f64],
@@ -216,6 +224,7 @@ fn count_mismatches_atol_rtol(
 // Eval helpers for each family
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[cfg(has_vendor_libcint)]
 fn eval_1e(
     api_id: RawApiId,
     si: usize,
@@ -237,6 +246,7 @@ fn eval_1e(
     out
 }
 
+#[cfg(has_vendor_libcint)]
 fn eval_2e(
     si: usize,
     sj: usize,
@@ -269,6 +279,7 @@ fn eval_2e(
     out
 }
 
+#[cfg(has_vendor_libcint)]
 fn eval_2c2e(
     si: usize,
     sk: usize,
@@ -297,6 +308,7 @@ fn eval_2c2e(
     out
 }
 
+#[cfg(has_vendor_libcint)]
 fn eval_3c1e(
     si: usize,
     sj: usize,
@@ -327,6 +339,7 @@ fn eval_3c1e(
     out
 }
 
+#[cfg(has_vendor_libcint)]
 fn eval_3c2e(
     si: usize,
     sj: usize,

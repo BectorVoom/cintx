@@ -592,6 +592,7 @@ mod tests {
     const INT4C1E_CART_OPERATOR_ID: u32 = 22;
     #[cfg(feature = "with-f12")]
     const INT2E_STG_SPH_OPERATOR_ID: u32 = 100;
+    #[cfg(not(feature = "unstable-source-api"))]
     const INT2E_IPIP1_SPH_OPERATOR_ID: u32 = 110;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {

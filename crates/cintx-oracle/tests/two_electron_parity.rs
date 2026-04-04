@@ -7,7 +7,7 @@
 //! - absolute: 1e-12
 //! - relative: 1e-10
 
-#![cfg(feature = "cpu")]
+#![cfg(all(feature = "cpu", has_vendor_libcint))]
 
 use cintx_compat::raw::{
     ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,

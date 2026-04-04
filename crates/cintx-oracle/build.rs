@@ -205,7 +205,7 @@ extern CINTIntegralFunction int4c1e_cart;
         .header(suppl_h.to_string_lossy())
         .clang_arg(format!("-I{}", out_dir.display()))
         .clang_arg(format!("-I{}", libcint_root.join("src").display()))
-        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c2e_sph|int4c1e_sph|int4c1e_cart|int1e_ovlp_cart|int1e_kin_cart|int1e_nuc_cart|int2e_cart|int2c2e_cart|int3c1e_cart|int3c1e_p2_cart|int3c2e_ip1_cart|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer|CINTlen_cart|CINTlen_spinor|CINTcgto_cart|CINTcgto_spinor|CINTtot_pgto_spheric|CINTtot_pgto_spinor|CINTtot_cgto_cart|CINTtot_cgto_spheric|CINTtot_cgto_spinor|CINTshells_cart_offset|CINTshells_spheric_offset|CINTshells_spinor_offset|CINTgto_norm|CINTc2s_bra_sph")
+        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c2e_sph|int4c1e_sph|int4c1e_cart|int1e_ovlp_cart|int1e_kin_cart|int1e_nuc_cart|int2e_cart|int2c2e_cart|int3c1e_cart|int3c1e_p2_cart|int3c2e_ip1_cart|int1e_ovlp_spinor|int1e_kin_spinor|int1e_nuc_spinor|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer|CINTlen_cart|CINTlen_spinor|CINTcgto_cart|CINTcgto_spinor|CINTtot_pgto_spheric|CINTtot_pgto_spinor|CINTtot_cgto_cart|CINTtot_cgto_spheric|CINTtot_cgto_spinor|CINTshells_cart_offset|CINTshells_spheric_offset|CINTshells_spinor_offset|CINTgto_norm|CINTc2s_bra_sph")
         .allowlist_type("CINTOpt")
         .generate()
         .expect("failed to generate oracle libcint bindings");

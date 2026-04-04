@@ -610,3 +610,96 @@ pub fn vendor_CINTc2s_bra_sph(sph: &mut [f64], nket: i32, cart: &[f64], l: i32) 
         ffi::CINTc2s_bra_sph(sph.as_mut_ptr(), nket, cart.as_ptr() as *mut f64, l);
     }
 }
+
+// ---- 1e spinor integral vendor FFI wrappers ----
+// Output buffer layout: ni_spinor * nj_spinor complex elements = ni_sp * nj_sp * 2 f64 values
+// (interleaved re/im pairs), where ni_sp = CINTcgto_spinor(shls[0]) and
+// nj_sp = CINTcgto_spinor(shls[1]).
+
+/// Evaluate int1e_ovlp_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `ni_sp * nj_sp * 2` f64 elements where
+/// ni_sp = CINTcgto_spinor(shls[0]) and nj_sp = CINTcgto_spinor(shls[1]).
+/// The layout is interleaved real/imaginary pairs for each complex element.
+///
+/// Returns the libcint status (1 for non-zero, 0 for zero by symmetry).
+pub fn vendor_int1e_ovlp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ovlp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means use default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL
+            ptr::null_mut(), // cache = NULL (let libcint allocate)
+        )
+    }
+}
+
+/// Evaluate int1e_kin_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_kin_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_kin_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_nuc_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_nuc_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_nuc_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
