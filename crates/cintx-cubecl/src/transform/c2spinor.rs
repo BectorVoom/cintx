@@ -486,6 +486,352 @@ pub fn cart_to_spinor_iket_si(
     Ok(())
 }
 
+/// Full 2D cart-to-spinor transform for 1e integrals (scalar-field, spin-free).
+///
+/// Implements libcint `c2s_sf_1e`: a two-step transform that converts the
+/// contracted Cartesian matrix `cart[nci × ncj]` into the spinor matrix
+/// stored as interleaved complex in `staging`.
+///
+/// Algorithm (matching libcint `c2s_sf_1e`):
+/// 1. Bra step (`a_bra_cart2spinor_sf`): for each ket Cartesian column, apply
+///    the bra CG transform with sign-flipped imaginary: `saI += -caI * v1`.
+///    Produces a complex intermediate `tmp[di_bra × ncj]`.
+/// 2. Ket step (`a_ket_cart2spinor`): apply the ket CG transform (complex multiply)
+///    over the 2*ncj ket-Cartesian indices (alpha+beta coefficient blocks).
+///    Produces the output `out[di_bra × dj_ket]` complex.
+/// 3. Store as column-major interleaved: `staging[(j*di + i)*2] = re`, `+1 = im`.
+///
+/// # Parameters
+/// - `staging`: output buffer, must have at least `di * dj * 2` f64 elements
+/// - `cart`: Cartesian input buffer, row-major: `cart[i_cart * ncj + j_cart]`
+/// - `li`, `kappa_i`: bra angular momentum and kappa
+/// - `lj`, `kappa_j`: ket angular momentum and kappa
+///
+/// # Kappa dispatch
+/// When kappa == 0, both GT (j=l+1/2) and LT (j=l-1/2) blocks are applied.
+/// The convention is: kappa_i < 0 → GT bra block, kappa_i > 0 → LT bra block,
+/// kappa_i == 0 → both blocks concatenated (GT first). Same for ket.
+///
+/// # Signs
+/// The bra transform uses the conjugate convention from libcint:
+///   `saI += -caI * v1` (negative imaginary part of bra coefficient).
+pub fn cart_to_spinor_sf_2d(
+    staging: &mut [f64],
+    cart: &[f64],
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+
+    if cart.len() < nci * ncj {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "c2spinor_sf_2d",
+            detail: format!(
+                "cart buffer length {} < nci*ncj = {}*{} = {}",
+                cart.len(), nci, ncj, nci * ncj
+            ),
+        });
+    }
+    let required = di * dj * 2;
+    if staging.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Step 1: Bra transform ──────────────────────────────────────────────
+    // a_bra_cart2spinor_sf: gctr[j * nci + n] → tmp[alpha|beta, j * di + i]
+    // tmp_alpha_R/I: [di × ncj] complex (interleaved separately, not interleaved re/im)
+    // tmp_beta_R/I:  [di × ncj] complex
+    // Indexing: tmp_alpha[j * di + i], tmp_beta[j * di + i]
+    //
+    // Sign convention (libcint a_bra_cart2spinor_sf):
+    //   saI += -caI * v1   (minus sign on imaginary part)
+    let mut tmp_alpha_r = vec![0.0f64; di * ncj];
+    let mut tmp_alpha_i = vec![0.0f64; di * ncj];
+    let mut tmp_beta_r = vec![0.0f64; di * ncj];
+    let mut tmp_beta_i = vec![0.0f64; di * ncj];
+
+    apply_bra_sf_block_all_kappa(
+        &mut tmp_alpha_r, &mut tmp_alpha_i,
+        &mut tmp_beta_r, &mut tmp_beta_i,
+        cart, nci, ncj, di, li, kappa_i as i32,
+    );
+
+    // ── Step 2: Ket transform ──────────────────────────────────────────────
+    // a_ket_cart2spinor: complex (cR + i*cI) applied over 2*ncj ket indices
+    // Input layout: gcartR[j + n*di] where j=bra-spinor-index, n=ket-cart-index
+    //   n ∈ [0..ncj]:    reads tmp_alpha[n*di + j]
+    //   n ∈ [ncj..2*ncj]: reads tmp_beta[(n-ncj)*di + j]
+    // coeff[ket_spinor_row][2*ncj] — first ncj = alpha, next ncj = beta
+    //
+    // Output: tmp2[di × dj] complex stored as column-major (j_ket outer, i_bra inner)
+    //   tmp2[j_sp * di + i_sp] = complex spinor value
+    let mut out_r = vec![0.0f64; di * dj];
+    let mut out_i = vec![0.0f64; di * dj];
+
+    apply_ket_transform(
+        &mut out_r, &mut out_i,
+        &tmp_alpha_r, &tmp_alpha_i,
+        &tmp_beta_r, &tmp_beta_i,
+        di, ncj, dj, lj, kappa_j as i32,
+    );
+
+    // ── Step 3: Write column-major interleaved to staging ─────────────────
+    // zcopy_ij: staging[(j*di + i)*2] = re, [(j*di+i)*2+1] = im
+    // ni=di, nj=dj: output is column-major, j-spinor outer, i-spinor inner
+    for j in 0..dj {
+        for i in 0..di {
+            let out_idx = j * di + i;
+            staging[out_idx * 2] = out_r[j * di + i];
+            staging[out_idx * 2 + 1] = out_i[j * di + i];
+        }
+    }
+
+    Ok(())
+}
+
+/// Bra step of the 2D c2spinor_sf transform for all kappa cases.
+///
+/// Matches `a_bra_cart2spinor_sf` in libcint `cart2sph.c`.
+/// For kappa==0, applies GT first (rows 0..nd_gt), then LT (rows nd_gt..nd).
+/// Sign convention: imaginary coefficient applied with MINUS: `saI += -caI * v1`.
+fn apply_bra_sf_block_all_kappa(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r: &mut [f64],
+    beta_i: &mut [f64],
+    cart: &[f64],
+    nci: usize,
+    ncj: usize,
+    di: usize,
+    li: u8,
+    kappa_i: i32,
+) {
+    let (coeff_gt_r, coeff_gt_i, coeff_lt_r, coeff_lt_i) = bra_coeff_refs(li);
+
+    if kappa_i < 0 {
+        apply_bra_block(alpha_r, alpha_i, beta_r, beta_i,
+                        cart, nci, ncj, di, coeff_gt_r, coeff_gt_i, 0);
+    } else if kappa_i > 0 {
+        apply_bra_block(alpha_r, alpha_i, beta_r, beta_i,
+                        cart, nci, ncj, di, coeff_lt_r, coeff_lt_i, 0);
+    } else {
+        // kappa == 0: GT first, LT second
+        let nd_gt = 2 * li as usize + 2;
+        apply_bra_block(alpha_r, alpha_i, beta_r, beta_i,
+                        cart, nci, ncj, nd_gt, coeff_gt_r, coeff_gt_i, 0);
+        let nd_lt = 2 * li as usize;
+        if nd_lt > 0 {
+            apply_bra_block(alpha_r, alpha_i, beta_r, beta_i,
+                            cart, nci, ncj, nd_lt, coeff_lt_r, coeff_lt_i, nd_gt);
+        }
+    }
+}
+
+/// Apply bra spinor transform for one kappa block.
+///
+/// Writes `nd` spinor rows starting at `row_offset` in the alpha/beta buffers.
+/// Each column j ∈ [0..ncj] of `cart` (the ket Cartesian index) is processed.
+/// Layout: `alpha_r[j * di_total + row_offset + i]` for i ∈ [0..nd], j ∈ [0..ncj].
+///
+/// Coefficients: `coeff_r/i[spinor_row * (2*nci) + n]` for n ∈ [0..nci] (alpha)
+///              `coeff_r/i[spinor_row * (2*nci) + nci + n]` for n ∈ [0..nci] (beta)
+/// Sign: `saI += -caI * v1` (conjugate of bra spinor).
+fn apply_bra_block(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r: &mut [f64],
+    beta_i: &mut [f64],
+    cart: &[f64],
+    nci: usize,
+    ncj: usize,
+    nd: usize,
+    coeff_r: &[f64],
+    coeff_i: &[f64],
+    row_offset: usize,
+) {
+    // di_total is the total number of bra spinor components (for indexing into output buffers)
+    let di_total = alpha_r.len() / ncj;
+    for j in 0..ncj {
+        for i in 0..nd {
+            let out_idx = j * di_total + (row_offset + i);
+            let mut sa_r = 0.0f64;
+            let mut sa_i = 0.0f64;
+            let mut sb_r = 0.0f64;
+            let mut sb_i = 0.0f64;
+            for n in 0..nci {
+                // cart is bra × ket row-major: cart[bra_n * ncj + ket_j]
+                // libcint gctr[j*nf+n] with j=ket, n=bra — so read cart[n * ncj + j]
+                let v1 = cart[n * ncj + j];
+                let ca_r = coeff_r[i * 2 * nci + n];
+                let ca_i = coeff_i[i * 2 * nci + n];
+                let cb_r = coeff_r[i * 2 * nci + nci + n];
+                let cb_i = coeff_i[i * 2 * nci + nci + n];
+                // Sign: saI += -caI * v1 (libcint conjugate convention)
+                sa_r += ca_r * v1;
+                sa_i += -ca_i * v1;
+                sb_r += cb_r * v1;
+                sb_i += -cb_i * v1;
+            }
+            alpha_r[out_idx] = sa_r;
+            alpha_i[out_idx] = sa_i;
+            beta_r[out_idx] = sb_r;
+            beta_i[out_idx] = sb_i;
+        }
+    }
+}
+
+/// Get flat coefficient slices for bra transform.
+/// Returns (gt_r, gt_i, lt_r, lt_i) as flat slices.
+fn bra_coeff_refs(l: u8) -> (&'static [f64], &'static [f64], &'static [f64], &'static [f64]) {
+    match l {
+        0 => (
+            cj::CJ_GT_L0_R.as_flattened(),
+            cj::CJ_GT_L0_I.as_flattened(),
+            cj::CJ_LT_L0_R.as_flattened(),
+            cj::CJ_LT_L0_I.as_flattened(),
+        ),
+        1 => (
+            cj::CJ_GT_L1_R.as_flattened(),
+            cj::CJ_GT_L1_I.as_flattened(),
+            cj::CJ_LT_L1_R.as_flattened(),
+            cj::CJ_LT_L1_I.as_flattened(),
+        ),
+        2 => (
+            cj::CJ_GT_L2_R.as_flattened(),
+            cj::CJ_GT_L2_I.as_flattened(),
+            cj::CJ_LT_L2_R.as_flattened(),
+            cj::CJ_LT_L2_I.as_flattened(),
+        ),
+        3 => (
+            cj::CJ_GT_L3_R.as_flattened(),
+            cj::CJ_GT_L3_I.as_flattened(),
+            cj::CJ_LT_L3_R.as_flattened(),
+            cj::CJ_LT_L3_I.as_flattened(),
+        ),
+        4 => (
+            cj::CJ_GT_L4_R.as_flattened(),
+            cj::CJ_GT_L4_I.as_flattened(),
+            cj::CJ_LT_L4_R.as_flattened(),
+            cj::CJ_LT_L4_I.as_flattened(),
+        ),
+        _ => panic!("cart_to_spinor_sf_2d: l={l} > 4 not supported"),
+    }
+}
+
+/// Ket step of the 2D c2spinor_sf transform.
+///
+/// Matches `a_ket_cart2spinor` in libcint `cart2sph.c`.
+/// Applies complex CG coefficient multiplication over the 2*ncj ket-Cartesian
+/// indices (alpha + beta blocks of the intermediate) to produce the spinor output.
+///
+/// Input layout:
+///   `alpha_r/i[n * di + j]` for ket-cart n ∈ [0..ncj], bra-spinor j ∈ [0..di]
+///   `beta_r/i[n * di + j]` for ket-cart n ∈ [0..ncj], bra-spinor j ∈ [0..di]
+///
+/// Output layout: `out_r/i[ket_sp_i * di + j]` (column-major: ket-spinor outer, bra-spinor inner)
+///
+/// Coefficient layout: `coeff[ket_spinor_row * (2*ncj) + n]`
+///   n ∈ [0..ncj]: alpha part, n ∈ [ncj..2*ncj]: beta part
+///
+/// Complex multiply: `out += (cR + i*cI) * (gR + i*gI)` for each n, j
+fn apply_ket_transform(
+    out_r: &mut [f64],
+    out_i: &mut [f64],
+    alpha_r: &[f64],
+    alpha_i: &[f64],
+    beta_r: &[f64],
+    beta_i: &[f64],
+    di: usize,
+    ncj: usize,
+    dj: usize,
+    lj: u8,
+    kappa_j: i32,
+) {
+    let nf2 = 2 * ncj; // total coefficient columns (alpha + beta)
+    let (coeff_gt_r, coeff_gt_i, coeff_lt_r, coeff_lt_i) = bra_coeff_refs(lj);
+
+    // Determine which blocks to apply and their row offsets in the output
+    let blocks: &[(&[f64], &[f64], usize, usize)] = match kappa_j.cmp(&0) {
+        std::cmp::Ordering::Less => &[(coeff_gt_r, coeff_gt_i, dj, 0)],
+        std::cmp::Ordering::Greater => &[(coeff_lt_r, coeff_lt_i, dj, 0)],
+        std::cmp::Ordering::Equal => {
+            // Use static arrays to avoid lifetime issues
+            // Apply inline for kappa==0 case
+            let nd_gt = 2 * lj as usize + 2;
+            let nd_lt = 2 * lj as usize;
+            apply_ket_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i,
+                           di, ncj, nd_gt, nf2, coeff_gt_r, coeff_gt_i, 0);
+            if nd_lt > 0 {
+                apply_ket_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i,
+                               di, ncj, nd_lt, nf2, coeff_lt_r, coeff_lt_i, nd_gt);
+            }
+            return;
+        }
+    };
+
+    for &(coeff_r, coeff_i, nd, row_off) in blocks {
+        apply_ket_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i,
+                       di, ncj, nd, nf2, coeff_r, coeff_i, row_off);
+    }
+}
+
+/// Apply one block of the ket spinor transform.
+///
+/// `nd`: number of ket spinor components in this block.
+/// `row_off`: starting row in the output for this block.
+fn apply_ket_block(
+    out_r: &mut [f64],
+    out_i: &mut [f64],
+    alpha_r: &[f64],
+    alpha_i: &[f64],
+    beta_r: &[f64],
+    beta_i: &[f64],
+    di: usize,
+    ncj: usize,
+    nd: usize,
+    nf2: usize,
+    coeff_r: &[f64],
+    coeff_i: &[f64],
+    row_off: usize,
+) {
+    for i in 0..nd {
+        // zero the output rows for this ket spinor component
+        for j in 0..di {
+            out_r[(row_off + i) * di + j] = 0.0;
+            out_i[(row_off + i) * di + j] = 0.0;
+        }
+        for n in 0..nf2 {
+            let cr = coeff_r[i * nf2 + n];
+            let ci = coeff_i[i * nf2 + n];
+            if cr == 0.0 && ci == 0.0 {
+                continue;
+            }
+            // Read from alpha (n < ncj) or beta (n >= ncj) intermediate buffer
+            let (gr_col, gi_col) = if n < ncj {
+                (&alpha_r[n * di..(n + 1) * di], &alpha_i[n * di..(n + 1) * di])
+            } else {
+                (&beta_r[(n - ncj) * di..(n - ncj + 1) * di],
+                 &beta_i[(n - ncj) * di..(n - ncj + 1) * di])
+            };
+            // Complex multiply: (cR + i*cI) * (gR + i*gI) = (cR*gR - cI*gI) + i*(cI*gR + cR*gI)
+            for j in 0..di {
+                let gr = gr_col[j];
+                let gi = gi_col[j];
+                out_r[(row_off + i) * di + j] += cr * gr - ci * gi;
+                out_i[(row_off + i) * di + j] += ci * gr + cr * gi;
+            }
+        }
+    }
+}
+
 /// Staging spinor transform (placeholder for executor path).
 ///
 /// The real per-shell transform is done via `cart_to_spinor_sf` and friends

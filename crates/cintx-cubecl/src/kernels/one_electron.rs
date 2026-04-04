@@ -17,6 +17,7 @@ use crate::math::pdata::compute_pdata_host;
 use crate::math::rys::{rys_root1_host, rys_root2_host};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
+use crate::transform::c2spinor::cart_to_spinor_sf_2d;
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
@@ -556,7 +557,7 @@ pub fn launch_one_electron(
         }
     }
 
-    // Apply cart-to-sph transform or copy Cartesian to staging
+    // Apply cart-to-sph or cart-to-spinor transform, or copy Cartesian to staging
     match plan.representation {
         Representation::Spheric => {
             // Transform cartesian buffer to spherical and write into staging
@@ -571,8 +572,16 @@ pub fn launch_one_electron(
                 staging[..copy_len].copy_from_slice(&sph_tmp[..copy_len]);
             }
         }
-        _ => {
-            // Cartesian or Spinor: copy Cartesian buffer directly to staging
+        Representation::Spinor => {
+            // Apply 2D cart-to-spinor sf transform (scalar-field, spin-free).
+            // Matches libcint c2s_sf_1e for int1e_ovlp_spinor, int1e_kin_spinor,
+            // int1e_nuc_spinor (all three 1e spinor operators use c2s_sf_1e).
+            let kappa_i = shell_i.kappa;
+            let kappa_j = shell_j.kappa;
+            cart_to_spinor_sf_2d(staging, &cart_buf, li, kappa_i, lj, kappa_j)?;
+        }
+        Representation::Cart => {
+            // Copy Cartesian buffer directly to staging
             let copy_len = staging.len().min(cart_buf.len());
             staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
         }

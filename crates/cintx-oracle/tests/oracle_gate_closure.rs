@@ -25,8 +25,8 @@
 #![cfg(feature = "cpu")]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
-    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
+    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF,
+    POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -838,4 +838,114 @@ fn oracle_gate_4c1e_nonzero_output() {
         out.len(),
         out[0]
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1e spinor family oracle gate (Phase 12 v1.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Absolute tolerance for spinor integrals: atol=1e-12 per v1.2 unified tolerance.
+#[cfg(has_vendor_libcint)]
+const ATOL_SPINOR: f64 = 1e-12;
+
+/// Oracle parity gate for 1e spinor integrals.
+///
+/// Tests int1e_ovlp_spinor, int1e_kin_spinor, and int1e_nuc_spinor against
+/// vendored libcint 6.1.3 using H2O STO-3G data at atol=1e-12.
+///
+/// Uses shells (0, 1): O-1s / O-2s — both s-type (l=0), kappa=0 (both GT+LT blocks).
+/// Spinor component count: CINTcgto_spinor(shell_idx) = spinor_len(l, kappa).
+/// Buffer size: ni_sp * nj_sp * 2 f64 (interleaved real/imaginary pairs).
+///
+/// Gate: mismatch_count == 0 and output is non-zero (transform is running).
+///
+/// Requires: cpu feature + has_vendor_libcint cfg flag.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_gate_1e_spinor() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Use shells (0, 1): O 1s and O 2s — both s-type (l=0), kappa=0
+    let (si, sj) = (0usize, 1usize);
+    let shls = [si as i32, sj as i32];
+
+    // Spinor component counts from vendored libcint (kappa=0 → spinor_len=4l+2=2 for l=0)
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si as i32, &bas) as usize;
+    let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj as i32, &bas) as usize;
+    let nelems = ni_sp * nj_sp * 2; // interleaved re/im complex elements
+
+    println!("1e spinor oracle: shells ({si},{sj}), ni_sp={ni_sp}, nj_sp={nj_sp}, nelems={nelems}");
+
+    let mut all_passed = true;
+    let mut total_mismatches = 0usize;
+
+    // Test each of the three 1e spinor operators
+    let operators: &[(&str, RawApiId)] = &[
+        ("int1e_ovlp_spinor", RawApiId::INT1E_OVLP_SPINOR),
+        ("int1e_kin_spinor",  RawApiId::INT1E_KIN_SPINOR),
+        ("int1e_nuc_spinor",  RawApiId::INT1E_NUC_SPINOR),
+    ];
+
+    for &(name, api_id) in operators {
+        let mut vendor_out = vec![0.0f64; nelems];
+        let mut cintx_out = vec![0.0f64; nelems];
+
+        // Vendor call
+        let vendor_status = match name {
+            "int1e_ovlp_spinor" => {
+                vendor_ffi::vendor_int1e_ovlp_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env)
+            }
+            "int1e_kin_spinor" => {
+                vendor_ffi::vendor_int1e_kin_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env)
+            }
+            _ => {
+                vendor_ffi::vendor_int1e_nuc_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env)
+            }
+        };
+
+        // cintx call via eval_raw with spinor RawApiId
+        let eval_result = unsafe {
+            eval_raw(api_id, Some(&mut cintx_out), None, &shls, &atm, &bas, &env, None, None)
+        };
+
+        match eval_result {
+            Ok(summary) => {
+                // Compare element-wise
+                let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
+                let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+                let _vendor_nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+
+                if mc > 0 || nonzero == 0 {
+                    eprintln!("FAIL: {name} shells ({si},{sj}): {mc} mismatches, nonzero={nonzero}/{nelems}");
+                    if nonzero == 0 {
+                        eprintln!("  ERROR: cintx output is all zeros — spinor transform not running");
+                    }
+                    all_passed = false;
+                } else {
+                    println!(
+                        "  PASS: {name} shells ({si},{sj}): mismatch_count=0, \
+                         nonzero={nonzero}/{nelems}, vendor_status={vendor_status}, \
+                         not0={}", summary.not0
+                    );
+                }
+                total_mismatches += mc;
+            }
+            Err(e) => {
+                eprintln!("FAIL: {name} eval_raw error: {e:?}");
+                all_passed = false;
+                total_mismatches += nelems; // count all as mismatches on error
+            }
+        }
+    }
+
+    assert!(
+        all_passed && total_mismatches == 0,
+        "1e spinor oracle parity FAILED: total_mismatches={total_mismatches}"
+    );
+
+    println!("oracle_gate_1e_spinor: PASS — all three 1e spinor operators match vendored libcint at atol=1e-12");
 }
