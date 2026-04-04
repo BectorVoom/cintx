@@ -1,30 +1,32 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: Milestone complete
-stopped_at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-06-PLAN.md
-last_updated: "2026-04-03T13:09:08.185Z"
+milestone: v1.2
+milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
+status: Defining requirements
+stopped_at: null
+last_updated: "2026-04-04T00:00:00.000Z"
 progress:
-  total_phases: 10
-  completed_phases: 10
-  total_plans: 47
-  completed_plans: 48
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-02)
+See: .planning/PROJECT.md (updated 2026-04-04)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 10 — 2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure
+**Current focus:** Defining requirements for v1.2
 
 ## Current Position
 
-Phase: 10
-Plan: Not started
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-04 — Milestone v1.2 started
 
 ## Performance Metrics
 

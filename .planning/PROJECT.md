@@ -16,12 +16,17 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - [x] Runtime planner/workspace scaffolding now exposes typed query/evaluate contracts, memory-limit chunking, and explicit validation failures, verified in Phase 1 Plan 02.
 - [x] The three-layer surface (safe Rust API, raw compatibility API, optional C ABI shim) is implemented with feature-gated optional/unstable families and verified in Phase 3: Safe Surface, C ABI Shim & Optional Families.
 - [x] Gaussian primitive infrastructure (Boys function, pair data, Rys quadrature, Obara-Saika recurrence) implemented as validated #[cube] functions in cintx-cubecl. Validated in Phase 8: Gaussian Primitive Infrastructure and Boys Function.
+- [x] All five base integral families (1e, 2e, 2c2e, 3c1e, 3c2e) produce real kernel output through CubeCL backend with oracle parity confirmed against vendored libcint 6.1.3. Validated in Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure.
+- [x] Oracle gate closure passes all five base families with 0 mismatches. Validated in Phase 10.
 
 ### Active
 
-- [ ] Reimplement the libcint API surface needed for the target 6.1.3 compatibility profile, including helper, optimizer, legacy wrapper, and selected source-only families.
-- [x] Execute all integral-family computation through a shared planner and CubeCL backend while preserving performance, memory efficiency, and OOM-safe stop behavior. Validated in Phase 10: all five base families (1e, 2e, 2c2e, 3c1e, 3c2e) produce real kernel output through CubeCL backend with oracle parity confirmed.
-- [x] Prove compatibility through compiled-manifest audits, oracle comparisons against upstream libcint, regression gates, and reproducible CI artifacts. Validated in Phase 10: oracle gate closure passes all five families against vendored libcint 6.1.3 with 0 mismatches.
+- [ ] Cover the full libcint API surface — helper, transform, wrapper, with-f12, with-4c1e, and unstable-source families — with unified atol=1e-12 oracle tolerance and objective CI evidence.
+- [ ] Implement with-f12 (F12/STG/YP) family kernels including cart and spinor representations with oracle parity.
+- [ ] Implement with-4c1e family kernels beyond the initial validated envelope with oracle parity.
+- [ ] Implement unstable-source family APIs behind feature gate with oracle parity.
+- [ ] Unify oracle tolerance to atol=1e-12 for every family and extend oracle harness, fixtures, and CI gates for full API coverage.
+- [ ] Resolve pending v1.1 executor infrastructure items (EXEC-06/07/08/09, VERI-06) if not already closed.
 
 ### Out of Scope
 
@@ -30,20 +35,23 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - Reproducing the upstream Fortran wrapper - not part of the Rust library's public scope.
 - Public asynchronous APIs - excluded from the initial design to keep execution and compatibility contracts tighter.
 
-## Current Milestone: v1.1 CubeCL Direct Client API & Real Kernel Compute
+## Current Milestone: v1.2 Full API Parity & Unified Oracle Gate
 
-**Goal:** Rewrite executor internals to use CubeCL client API directly, implement real GPU integral kernels, achieve oracle parity with upstream libcint 6.1.3.
+**Goal:** Close all remaining libcint API surface gaps — helper, transform, wrapper, with-f12, with-4c1e, and unstable-source families — with unified atol=1e-12 oracle tolerance across every family and objective evidence from CI gates.
 
 **Target features:**
-- Rewrite executor internals to use CubeCL client API directly (`WgpuRuntime::client()`, `client.create()`/`client.read()`, `#[cube(launch)]` with `ArrayArg`)
-- Remove RecordingExecutor — direct buffer management replaces the wrapper
-- Configurable backend switching (wgpu + cpu now; cuda/rocm/metal extensible)
-- Implement real GPU integral kernels replacing stubs (1e, 2e, 2c2e, 3c1e, 3c2e)
-- Achieve oracle parity — numerical output matching upstream libcint 6.1.3
+- Implement missing helper, transform, and wrapper APIs with oracle-backed coverage
+- Implement with-f12 (F12/STG/YP) family kernels including cart and spinor representations
+- Implement with-4c1e family kernels beyond initial validated envelope
+- Implement unstable-source family APIs behind feature gate
+- Unify oracle tolerance to atol=1e-12 for ALL families (immutable unless explicitly approved spec update)
+- Extend manifest lock to cover full API surface
+- Extend oracle harness, fixtures, and CI gates for every supported API
+- Resolve pending v1.1 executor items (EXEC-06/07/08/09, VERI-06) if not already closed
 
 ## Context
 
-The project is driven by `docs/design/cintx_detailed_design.md`, which defines an implementation-ready redesign for libcint in Rust. The workspace contains the multi-crate Rust layout (`crates/`, `xtask/`, `benches/`, `ci/`) plus a vendored upstream reference in `libcint-master/`, with the design document as the source of truth for scope and release gates. v1.0 is complete (6 phases, 30 plans): typed domain primitives, manifest, planner, runtime, three-layer API surface (safe Rust, raw compat, C ABI shim), CI governance gates, CubeCL/wgpu GPU execution path with stub kernels, and staging/fingerprint plumbing. The compatibility target remains libcint 6.1.3. v1.1 replaces the executor abstraction layer with direct CubeCL client API usage and implements real integral kernels to achieve oracle parity.
+The project is driven by `docs/design/cintx_detailed_design.md`, which defines an implementation-ready redesign for libcint in Rust. The workspace contains the multi-crate Rust layout (`crates/`, `xtask/`, `benches/`, `ci/`) plus a vendored upstream reference in `libcint-master/`, with the design document as the source of truth for scope and release gates. v1.0 is complete (6 phases, 30 plans): typed domain primitives, manifest, planner, runtime, three-layer API surface (safe Rust, raw compat, C ABI shim), CI governance gates, CubeCL/wgpu GPU execution path with stub kernels, and staging/fingerprint plumbing. v1.1 is complete (Phases 7-10): real integral kernels for all five base families (1e, 2e, 2c2e, 3c1e, 3c2e) with oracle parity against vendored libcint 6.1.3, Gaussian math infrastructure (#[cube] Boys, Rys, Obara-Saika), and cart-to-sph Condon-Shortley transforms. The compatibility target remains libcint 6.1.3. v1.2 extends coverage to the full API surface with unified tolerance.
 
 ## Constraints
 
@@ -84,4 +92,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after Phase 10 complete — Oracle gate closed for all five base integral families, v1.1 milestone complete*
+*Last updated: 2026-04-04 after milestone v1.2 started — Full API Parity & Unified Oracle Gate*
