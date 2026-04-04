@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: executing
-stopped_at: Completed 11-helper-transform-completion-4c1e-real-kernel-01-PLAN.md
-last_updated: "2026-04-04T08:19:32.842Z"
+status: verifying
+stopped_at: Completed 11-helper-transform-completion-4c1e-real-kernel-03-PLAN.md
+last_updated: "2026-04-04T08:31:58.056Z"
 last_activity: 2026-04-04
 progress:
   total_phases: 10
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-04)
 
 Phase: 11 (helper-transform-completion-4c1e-real-kernel) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-04
 
 ## Performance Metrics
@@ -94,6 +94,7 @@ Last activity: 2026-04-04
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P06 | 8 | 1 tasks | 2 files |
 | Phase 11-helper-transform-completion-4c1e-real-kernel P02 | 7 | 1 tasks | 2 files |
 | Phase 11-helper-transform-completion-4c1e-real-kernel P01 | 4 | 2 tasks | 4 files |
+| Phase 11-helper-transform-completion-4c1e-real-kernel P03 | 8 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -216,6 +217,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 11-helper-transform-completion-4c1e-real-kernel]: Spinor check placed FIRST in both ensure_validated_4c1e (center_4c1e.rs) and validate_4c1e_envelope (raw.rs) per D-05 — spinor 4c1e returns UnsupportedApi before feature gate check
 - [Phase 11-helper-transform-completion-4c1e-real-kernel]: All families use UNIFIED_ATOL=1e-12/UNIFIED_RTOL=1e-10 — per-family tolerance divergence was D-01 technical debt resolved
 - [Phase 11-helper-transform-completion-4c1e-real-kernel]: CINTgto_norm now uses correct double-factorial formula from libcint misc.c — prior approximation would fail oracle comparison at 1e-12
+- [Phase 11-helper-transform-completion-4c1e-real-kernel]: int4c1e_via_2e_trace uses unsafe eval_raw(INT2E_SPH) and traces over k=l diagonal — no new CompatDims needed
+- [Phase 11-helper-transform-completion-4c1e-real-kernel]: cintx-oracle Cargo.toml gains with-4c1e and with-f12 features forwarding to cintx-compat so CI can run helper-legacy-parity gate with all four profiles
 
 ### Roadmap Evolution
 
@@ -233,6 +236,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-04T08:19:32.838Z
-Stopped at: Completed 11-helper-transform-completion-4c1e-real-kernel-01-PLAN.md
+Last session: 2026-04-04T08:31:58.053Z
+Stopped at: Completed 11-helper-transform-completion-4c1e-real-kernel-03-PLAN.md
 Resume file: None
