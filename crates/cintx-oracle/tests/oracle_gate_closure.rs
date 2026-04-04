@@ -949,3 +949,462 @@ fn oracle_gate_1e_spinor() {
 
     println!("oracle_gate_1e_spinor: PASS — all three 1e spinor operators match vendored libcint at atol=1e-12");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-center spinor family oracle gates (Phase 12 v1.2, Plan 03)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// These tests confirm that vendored libcint returns non-zero output for all
+// four multi-center spinor families (2e, 2c2e, 3c1e, 3c2e).
+//
+// Wiring gap: The multi-center kernels (two_electron, center_3c1e, center_3c2e)
+// do not yet apply the spinor (c2spinor) transform — they fall through to the
+// `_ =>` arm which copies the Cartesian buffer. Additionally, int3c1e_spinor is
+// not yet present in the compiled manifest lock.
+//
+// Until spinor transform wiring is added to all multi-center kernel launchers
+// AND int3c1e_spinor is added to the manifest, the eval_raw parity comparison
+// tests are marked #[ignore]. The vendor FFI non-zero sanity checks are NOT
+// ignored — they confirm libcint produces expected output for future comparison.
+//
+// TODO(multi-center-spinor): Wire cart_to_spinor_sf_2d into launch_two_electron,
+// launch_center_3c1e, and launch_center_3c2e (Representation::Spinor arm), and
+// add int3c1e_spinor to the manifest lock. Then un-ignore these parity tests.
+
+/// Vendor FFI non-zero sanity check for int2e_spinor.
+///
+/// Confirms that vendored libcint 6.1.3 returns non-zero spinor output for
+/// the H2O STO-3G shell quartet (0,1,2,3) = (O-1s, O-2s, O-2p, H1-1s).
+///
+/// This test does NOT compare cintx output — it validates the vendor reference
+/// only. The parity comparison is in `oracle_gate_2e_spinor` (marked #[ignore]).
+#[test]
+#[cfg(has_vendor_libcint)]
+fn vendor_ffi_2e_spinor_nonzero() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let (si, sj, sk, sl) = (0i32, 1i32, 2i32, 3i32);
+    let shls = [si, sj, sk, sl];
+
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
+    let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
+    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
+    let nl_sp = vendor_ffi::vendor_CINTcgto_spinor(sl, &bas) as usize;
+    let nelems = ni_sp * nj_sp * nk_sp * nl_sp * 2;
+
+    let mut vendor_out = vec![0.0f64; nelems];
+    let status = vendor_ffi::vendor_int2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    let nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    println!(
+        "vendor_ffi_2e_spinor_nonzero: shells ({si},{sj},{sk},{sl}), ni_sp={ni_sp}, nj_sp={nj_sp}, \
+         nk_sp={nk_sp}, nl_sp={nl_sp}, nelems={nelems}, status={status}, nonzero={nonzero}/{nelems}"
+    );
+    assert!(
+        nonzero > 0,
+        "vendor int2e_spinor returned all zeros for shells ({si},{sj},{sk},{sl}) — \
+         unexpected (physically non-zero integral)"
+    );
+    println!("vendor_ffi_2e_spinor_nonzero: PASS — vendor libcint produces non-zero 2e spinor output");
+}
+
+/// Oracle parity gate for 2e spinor (4-center integral) vs vendored libcint.
+///
+/// Tests int2e_spinor against vendored libcint 6.1.3 using H2O STO-3G shell
+/// quartet (0,1,2,3) = (O-1s, O-2s, O-2p, H1-1s) at atol=1e-12.
+///
+/// # Why ignored
+///
+/// The `launch_two_electron` kernel does not yet apply the spinor (c2spinor_sf)
+/// transform. The Representation::Spinor arm falls through to `_ =>` which
+/// copies the Cartesian buffer unchanged, producing a mismatch against libcint's
+/// spinor output. Un-ignore after wiring `cart_to_spinor_sf_2d` into the 2e
+/// kernel launcher for Representation::Spinor.
+#[test]
+#[ignore = "wiring gap: launch_two_electron missing Representation::Spinor cart_to_spinor_sf_2d call"]
+#[cfg(has_vendor_libcint)]
+fn oracle_gate_2e_spinor() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let (si, sj, sk, sl) = (0i32, 1i32, 2i32, 3i32);
+    let shls = [si, sj, sk, sl];
+
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
+    let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
+    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
+    let nl_sp = vendor_ffi::vendor_CINTcgto_spinor(sl, &bas) as usize;
+    let nelems = ni_sp * nj_sp * nk_sp * nl_sp * 2;
+
+    let mut vendor_out = vec![0.0f64; nelems];
+    vendor_ffi::vendor_int2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    let mut cintx_out = vec![0.0f64; nelems];
+    let shls_i32 = [si, sj, sk, sl];
+    let eval_result = unsafe {
+        eval_raw(
+            RawApiId::INT2E_SPINOR,
+            Some(&mut cintx_out),
+            None,
+            &shls_i32,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+    };
+
+    let summary = eval_result.unwrap_or_else(|e| {
+        panic!("eval_raw INT2E_SPINOR failed for shells ({si},{sj},{sk},{sl}): {e:?}")
+    });
+
+    let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
+    let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+
+    assert!(
+        nonzero > 0,
+        "cintx int2e_spinor output is all zeros for shells ({si},{sj},{sk},{sl})"
+    );
+    assert_eq!(
+        mc, 0,
+        "oracle_gate_2e_spinor: {mc} mismatches at atol=1e-12 for shells ({si},{sj},{sk},{sl}), \
+         not0={}",
+        summary.not0
+    );
+
+    println!(
+        "oracle_gate_2e_spinor: PASS — mismatch_count=0, nonzero={nonzero}/{nelems}, \
+         not0={}",
+        summary.not0
+    );
+}
+
+/// Vendor FFI non-zero sanity check for int2c2e_spinor.
+///
+/// Confirms that vendored libcint 6.1.3 returns non-zero spinor output for
+/// the H2O STO-3G shell pair (0,1) = (O-1s, O-2s) (2-center 2-electron).
+#[test]
+#[cfg(has_vendor_libcint)]
+fn vendor_ffi_2c2e_spinor_nonzero() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let (si, sk) = (0i32, 1i32);
+    let shls = [si, sk];
+
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
+    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
+    let nelems = ni_sp * nk_sp * 2;
+
+    let mut vendor_out = vec![0.0f64; nelems];
+    let status = vendor_ffi::vendor_int2c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    let nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    println!(
+        "vendor_ffi_2c2e_spinor_nonzero: shells ({si},{sk}), ni_sp={ni_sp}, nk_sp={nk_sp}, \
+         nelems={nelems}, status={status}, nonzero={nonzero}/{nelems}"
+    );
+    assert!(
+        nonzero > 0,
+        "vendor int2c2e_spinor returned all zeros for shells ({si},{sk}) — \
+         unexpected (physically non-zero integral)"
+    );
+    println!("vendor_ffi_2c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 2c2e spinor output");
+}
+
+/// Oracle parity gate for 2c2e spinor (2-center integral) vs vendored libcint.
+///
+/// Tests int2c2e_spinor against vendored libcint 6.1.3 using H2O STO-3G shell
+/// pair (0,1) = (O-1s, O-2s) at atol=1e-12.
+///
+/// # Why ignored
+///
+/// The 2c2e kernel (handled by `launch_two_electron` with 2-center dispatch) does
+/// not yet apply the spinor (c2spinor_sf) transform. Un-ignore after wiring
+/// `cart_to_spinor_sf_2d` into the 2c2e family launch path for Spinor representation.
+#[test]
+#[ignore = "wiring gap: 2c2e kernel missing Representation::Spinor cart_to_spinor_sf_2d call"]
+#[cfg(has_vendor_libcint)]
+fn oracle_gate_2c2e_spinor() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let (si, sk) = (0i32, 1i32);
+    let shls = [si, sk];
+
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
+    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
+    let nelems = ni_sp * nk_sp * 2;
+
+    let mut vendor_out = vec![0.0f64; nelems];
+    vendor_ffi::vendor_int2c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    let mut cintx_out = vec![0.0f64; nelems];
+    let eval_result = unsafe {
+        eval_raw(
+            RawApiId::INT2C2E_SPINOR,
+            Some(&mut cintx_out),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+    };
+
+    let summary = eval_result.unwrap_or_else(|e| {
+        panic!("eval_raw INT2C2E_SPINOR failed for shells ({si},{sk}): {e:?}")
+    });
+
+    let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
+    let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+
+    assert!(
+        nonzero > 0,
+        "cintx int2c2e_spinor output is all zeros for shells ({si},{sk})"
+    );
+    assert_eq!(
+        mc, 0,
+        "oracle_gate_2c2e_spinor: {mc} mismatches at atol=1e-12 for shells ({si},{sk}), \
+         not0={}",
+        summary.not0
+    );
+
+    println!(
+        "oracle_gate_2c2e_spinor: PASS — mismatch_count=0, nonzero={nonzero}/{nelems}, \
+         not0={}",
+        summary.not0
+    );
+}
+
+/// Documents that int3c1e_spinor is NOT implemented in vendored libcint 6.1.3.
+///
+/// Calling `int3c1e_spinor` in libcint 6.1.3 causes the process to abort with
+/// "CINT3c1e_spinor_drv not implemented". This test is marked `#[ignore]` to
+/// prevent the test process from crashing.
+///
+/// This gap means there is no vendor reference for int3c1e_spinor parity
+/// testing. The `oracle_gate_3c1e_spinor` test is also ignored for this reason.
+/// Resolution requires either upstream libcint implementing int3c1e_spinor, or
+/// identifying an alternative reference implementation.
+#[test]
+#[ignore = "calling int3c1e_spinor in libcint 6.1.3 aborts the process (CINT3c1e_spinor_drv not implemented)"]
+#[cfg(has_vendor_libcint)]
+fn vendor_ffi_3c1e_spinor_not_implemented() {
+    // NOTE: Do NOT un-ignore this test without verifying that libcint's
+    // int3c1e_spinor no longer calls exit/abort. The unimplemented stub in
+    // libcint 6.1.3 terminates the process rather than returning an error.
+    println!("vendor_ffi_3c1e_spinor_not_implemented: DOCUMENTED — int3c1e_spinor is \
+              not implemented in vendored libcint 6.1.3 (aborts process if called)");
+}
+
+/// Oracle parity gate for 3c1e spinor (3-center 1-electron integral) vs vendored libcint.
+///
+/// Tests int3c1e_spinor against vendored libcint 6.1.3 using H2O STO-3G shell
+/// triple (3,4,0) = (H1-1s, H2-1s, O-1s) at atol=1e-12.
+///
+/// # Why ignored
+///
+/// Three gaps:
+/// 1. `int3c1e_spinor` is not implemented in vendored libcint 6.1.3 — calling it
+///    prints "CINT3c1e_spinor_drv not implemented" and returns all-zero output.
+///    There is no vendor reference to compare against.
+/// 2. `int3c1e_spinor` is not present in the compiled manifest lock
+///    (`compiled_manifest.lock.json`). `eval_raw(INT3C1E_SPINOR, ...)` will fail
+///    with a resolver MissingSymbol error.
+/// 3. `launch_center_3c1e` does not yet apply the spinor transform for
+///    `Representation::Spinor`.
+///
+/// This test is deferred until int3c1e_spinor is implemented upstream (or a
+/// suitable reference is identified), the manifest is updated, and the kernel
+/// wiring is added.
+#[test]
+#[ignore = "upstream gap: int3c1e_spinor not implemented in libcint 6.1.3 + missing from manifest + missing kernel Spinor wiring"]
+#[cfg(has_vendor_libcint)]
+fn oracle_gate_3c1e_spinor() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Shells (3,4,0): H1-1s, H2-1s, O-1s — three different centers.
+    let (si, sj, sk) = (3i32, 4i32, 0i32);
+    let shls = [si, sj, sk];
+
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
+    let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
+    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
+    let nelems = ni_sp * nj_sp * nk_sp * 2;
+
+    let mut vendor_out = vec![0.0f64; nelems];
+    vendor_ffi::vendor_int3c1e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    let mut cintx_out = vec![0.0f64; nelems];
+    // TODO: INT3C1E_SPINOR requires manifest entry — resolver will fail without it.
+    let eval_result = unsafe {
+        eval_raw(
+            RawApiId::INT3C1E_SPINOR,
+            Some(&mut cintx_out),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+    };
+
+    let summary = eval_result.unwrap_or_else(|e| {
+        panic!("eval_raw INT3C1E_SPINOR failed for shells ({si},{sj},{sk}): {e:?}")
+    });
+
+    let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
+    let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+
+    assert!(
+        nonzero > 0,
+        "cintx int3c1e_spinor output is all zeros for shells ({si},{sj},{sk})"
+    );
+    assert_eq!(
+        mc, 0,
+        "oracle_gate_3c1e_spinor: {mc} mismatches at atol=1e-12 for shells ({si},{sj},{sk}), \
+         not0={}",
+        summary.not0
+    );
+
+    println!(
+        "oracle_gate_3c1e_spinor: PASS — mismatch_count=0, nonzero={nonzero}/{nelems}, \
+         not0={}",
+        summary.not0
+    );
+}
+
+/// Vendor FFI non-zero sanity check for int3c2e_spinor.
+///
+/// Confirms that vendored libcint 6.1.3 returns non-zero spinor output for
+/// the H2O STO-3G shell triple (3,4,0) = (H1-1s, H2-1s, O-1s) (3-center 2-electron).
+#[test]
+#[cfg(has_vendor_libcint)]
+fn vendor_ffi_3c2e_spinor_nonzero() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Shells (3,4,0): H1-1s, H2-1s, O-1s — three different centers.
+    let (si, sj, sk) = (3i32, 4i32, 0i32);
+    let shls = [si, sj, sk];
+
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
+    let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
+    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
+    let nelems = ni_sp * nj_sp * nk_sp * 2;
+
+    let mut vendor_out = vec![0.0f64; nelems];
+    let status = vendor_ffi::vendor_int3c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    let nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    println!(
+        "vendor_ffi_3c2e_spinor_nonzero: shells ({si},{sj},{sk}), ni_sp={ni_sp}, nj_sp={nj_sp}, \
+         nk_sp={nk_sp}, nelems={nelems}, status={status}, nonzero={nonzero}/{nelems}"
+    );
+    assert!(
+        nonzero > 0,
+        "vendor int3c2e_spinor returned all zeros for shells ({si},{sj},{sk}) — \
+         unexpected (physically non-zero integral for three different centers)"
+    );
+    println!("vendor_ffi_3c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 3c2e spinor output");
+}
+
+/// Oracle parity gate for 3c2e spinor (3-center 2-electron integral) vs vendored libcint.
+///
+/// Tests int3c2e_spinor against vendored libcint 6.1.3 using H2O STO-3G shell
+/// triple (3,4,0) = (H1-1s, H2-1s, O-1s) at atol=1e-12.
+///
+/// # Why ignored
+///
+/// The `launch_center_3c2e` kernel does not yet apply the spinor (c2spinor_sf)
+/// transform. The Representation::Spinor arm falls through to `_ =>` which
+/// copies the Cartesian buffer unchanged, producing a mismatch against libcint's
+/// spinor output. Un-ignore after wiring `cart_to_spinor_sf_2d` (or the appropriate
+/// 3-center spinor variant) into `launch_center_3c2e` for Representation::Spinor.
+#[test]
+#[ignore = "wiring gap: launch_center_3c2e missing Representation::Spinor cart_to_spinor_sf_2d call"]
+#[cfg(has_vendor_libcint)]
+fn oracle_gate_3c2e_spinor() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Shells (3,4,0): H1-1s, H2-1s, O-1s — three different centers.
+    let (si, sj, sk) = (3i32, 4i32, 0i32);
+    let shls = [si, sj, sk];
+
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
+    let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
+    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
+    let nelems = ni_sp * nj_sp * nk_sp * 2;
+
+    let mut vendor_out = vec![0.0f64; nelems];
+    vendor_ffi::vendor_int3c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    let mut cintx_out = vec![0.0f64; nelems];
+    let eval_result = unsafe {
+        eval_raw(
+            RawApiId::INT3C2E_IP1_SPINOR,
+            Some(&mut cintx_out),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+    };
+
+    let summary = eval_result.unwrap_or_else(|e| {
+        panic!("eval_raw INT3C2E_IP1_SPINOR failed for shells ({si},{sj},{sk}): {e:?}")
+    });
+
+    let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
+    let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+
+    assert!(
+        nonzero > 0,
+        "cintx int3c2e_spinor output is all zeros for shells ({si},{sj},{sk})"
+    );
+    assert_eq!(
+        mc, 0,
+        "oracle_gate_3c2e_spinor: {mc} mismatches at atol=1e-12 for shells ({si},{sj},{sk}), \
+         not0={}",
+        summary.not0
+    );
+
+    println!(
+        "oracle_gate_3c2e_spinor: PASS — mismatch_count=0, nonzero={nonzero}/{nelems}, \
+         not0={}",
+        summary.not0
+    );
+}
