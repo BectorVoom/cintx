@@ -704,6 +704,20 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
     let size_2c2e = ni * nj; // 2c2e uses 2 shells
     let size_3 = ni * nj * nk;
 
+    // Cart sizes for cart legacy symbol comparison
+    let ni_c = CINTcgto_cart(shls2[0], bas).unwrap_or(1);
+    let nj_c = CINTcgto_cart(shls2[1], bas).unwrap_or(1);
+    let nk_c = CINTcgto_cart(shls3[2], bas).unwrap_or(1);
+    let ni4_c = CINTcgto_cart(shls4[0], bas).unwrap_or(1);
+    let nj4_c = CINTcgto_cart(shls4[1], bas).unwrap_or(1);
+    let nk4_c = CINTcgto_cart(shls4[2], bas).unwrap_or(1);
+    let nl4_c = CINTcgto_cart(shls4[3], bas).unwrap_or(1);
+
+    let size_1e_c = ni_c * nj_c;
+    let size_2e_c = ni4_c * nj4_c * nk4_c * nl4_c;
+    let size_2c2e_c = ni_c * nj_c;
+    let size_3_c = ni_c * nj_c * nk_c;
+
     // ─── int1e_ovlp_sph ───────────────────────────────────────────────────────
     {
         let mut cintx_out = vec![0.0_f64; size_1e];
@@ -815,13 +829,136 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
         mismatches += compare_buffers("cint3c2e_ip1_sph", &cintx_out, &vendor_out);
     }
 
-    // All remaining legacy symbols (cart, spinor, optimizer variants) are covered by the
-    // surface parity check in verify_helper_surface_coverage and the sph comparisons above.
-    // Spinor variants return UnsupportedApi which is the correct behavior.
-    // Optimizer symbols produce no float output and are verified through optimizer smoke tests.
+    // ─── int1e_ovlp_cart ──────────────────────────────────────────────────────
+    {
+        let mut cintx_out = vec![0.0_f64; size_1e_c];
+        unsafe {
+            eval_legacy_symbol("int1e_ovlp_cart", &mut cintx_out, shls2, atm, bas, env)?;
+        }
+        let mut vendor_out = vec![0.0_f64; size_1e_c];
+        let shls2_arr = [shls2[0], shls2[1]];
+        vendor_ffi::vendor_int1e_ovlp_cart(&mut vendor_out, &shls2_arr, atm, natm, bas, nbas, env);
+        // vendor returns column-major (j-fastest); cintx is row-major (i-fastest)
+        let mut vendor_row = vec![0.0_f64; size_1e_c];
+        for ii in 0..ni_c {
+            for jj in 0..nj_c {
+                vendor_row[ii * nj_c + jj] = vendor_out[jj * ni_c + ii];
+            }
+        }
+        mismatches += compare_buffers("cint1e_ovlp_cart", &cintx_out, &vendor_row);
+    }
+
+    // ─── int1e_kin_cart ───────────────────────────────────────────────────────
+    {
+        let mut cintx_out = vec![0.0_f64; size_1e_c];
+        unsafe {
+            eval_legacy_symbol("int1e_kin_cart", &mut cintx_out, shls2, atm, bas, env)?;
+        }
+        let mut vendor_out = vec![0.0_f64; size_1e_c];
+        let shls2_arr = [shls2[0], shls2[1]];
+        vendor_ffi::vendor_int1e_kin_cart(&mut vendor_out, &shls2_arr, atm, natm, bas, nbas, env);
+        let mut vendor_row = vec![0.0_f64; size_1e_c];
+        for ii in 0..ni_c {
+            for jj in 0..nj_c {
+                vendor_row[ii * nj_c + jj] = vendor_out[jj * ni_c + ii];
+            }
+        }
+        mismatches += compare_buffers("cint1e_kin_cart", &cintx_out, &vendor_row);
+    }
+
+    // ─── int1e_nuc_cart ───────────────────────────────────────────────────────
+    {
+        let mut cintx_out = vec![0.0_f64; size_1e_c];
+        unsafe {
+            eval_legacy_symbol("int1e_nuc_cart", &mut cintx_out, shls2, atm, bas, env)?;
+        }
+        let mut vendor_out = vec![0.0_f64; size_1e_c];
+        let shls2_arr = [shls2[0], shls2[1]];
+        vendor_ffi::vendor_int1e_nuc_cart(&mut vendor_out, &shls2_arr, atm, natm, bas, nbas, env);
+        let mut vendor_row = vec![0.0_f64; size_1e_c];
+        for ii in 0..ni_c {
+            for jj in 0..nj_c {
+                vendor_row[ii * nj_c + jj] = vendor_out[jj * ni_c + ii];
+            }
+        }
+        mismatches += compare_buffers("cint1e_nuc_cart", &cintx_out, &vendor_row);
+    }
+
+    // ─── int2e_cart ───────────────────────────────────────────────────────────
+    {
+        let mut cintx_out = vec![0.0_f64; size_2e_c];
+        unsafe {
+            eval_legacy_symbol("int2e_cart", &mut cintx_out, shls4, atm, bas, env)?;
+        }
+        let mut vendor_out = vec![0.0_f64; size_2e_c];
+        let shls4_arr = [shls4[0], shls4[1], shls4[2], shls4[3]];
+        vendor_ffi::vendor_int2e_cart(&mut vendor_out, &shls4_arr, atm, natm, bas, nbas, env);
+        mismatches += compare_buffers("cint2e_cart", &cintx_out, &vendor_out);
+    }
+
+    // ─── int2c2e_cart ─────────────────────────────────────────────────────────
+    {
+        let mut cintx_out = vec![0.0_f64; size_2c2e_c];
+        unsafe {
+            eval_legacy_symbol("int2c2e_cart", &mut cintx_out, shls2, atm, bas, env)?;
+        }
+        let mut vendor_out = vec![0.0_f64; size_2c2e_c];
+        let shls2_arr = [shls2[0], shls2[1]];
+        vendor_ffi::vendor_int2c2e_cart(&mut vendor_out, &shls2_arr, atm, natm, bas, nbas, env);
+        mismatches += compare_buffers("cint2c2e_cart", &cintx_out, &vendor_out);
+    }
+
+    // ─── int3c1e_cart ─────────────────────────────────────────────────────────
+    {
+        let mut cintx_out = vec![0.0_f64; size_3_c];
+        unsafe {
+            eval_legacy_symbol("int3c1e_cart", &mut cintx_out, shls3, atm, bas, env)?;
+        }
+        let mut vendor_out = vec![0.0_f64; size_3_c];
+        let shls3_arr = [shls3[0], shls3[1], shls3[2]];
+        vendor_ffi::vendor_int3c1e_cart(&mut vendor_out, &shls3_arr, atm, natm, bas, nbas, env);
+        mismatches += compare_buffers("cint3c1e_cart", &cintx_out, &vendor_out);
+    }
+
+    // ─── int3c1e_p2_cart ──────────────────────────────────────────────────────
+    {
+        let mut cintx_out = vec![0.0_f64; size_3_c];
+        unsafe {
+            eval_legacy_symbol("int3c1e_p2_cart", &mut cintx_out, shls3, atm, bas, env)?;
+        }
+        let mut vendor_out = vec![0.0_f64; size_3_c];
+        let shls3_arr = [shls3[0], shls3[1], shls3[2]];
+        vendor_ffi::vendor_int3c1e_p2_cart(&mut vendor_out, &shls3_arr, atm, natm, bas, nbas, env);
+        mismatches += compare_buffers("cint3c1e_p2_cart", &cintx_out, &vendor_out);
+    }
+
+    // ─── int3c2e_ip1_cart ─────────────────────────────────────────────────────
+    {
+        let mut cintx_out = vec![0.0_f64; size_3_c];
+        unsafe {
+            eval_legacy_symbol("int3c2e_ip1_cart", &mut cintx_out, shls3, atm, bas, env)?;
+        }
+        let mut vendor_out = vec![0.0_f64; size_3_c];
+        let shls3_arr = [shls3[0], shls3[1], shls3[2]];
+        vendor_ffi::vendor_int3c2e_ip1_cart(
+            &mut vendor_out,
+            &shls3_arr,
+            atm,
+            natm,
+            bas,
+            nbas,
+            env,
+        );
+        mismatches += compare_buffers("cint3c2e_ip1_cart", &cintx_out, &vendor_out);
+    }
+
+    // Remaining legacy symbols not numerically compared here:
+    // - Spinor variants (cint1e_ovlp, cint1e_kin, etc.) return UnsupportedApi — correct behavior.
+    // - Optimizer symbols (cint*_optimizer) produce no float output — verified through optimizer smoke tests.
+    // - Cart variants are NOW numerically compared above alongside sph variants.
 
     if mismatches > 0 {
-        bail!("legacy wrapper oracle comparison: {mismatches} element mismatch(es) found across integral symbols (sph variants at atol={UNIFIED_ATOL})");
+        bail!("legacy wrapper oracle comparison: {mismatches} element mismatch(es) found across integral symbols (sph and cart variants at atol={UNIFIED_ATOL})");
     }
 
     Ok(())
