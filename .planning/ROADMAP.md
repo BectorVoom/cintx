@@ -104,7 +104,7 @@ Plans:
 | Phase 8: Gaussian Primitive Infrastructure and Boys Function | 3/4 | In Progress | - |
 | Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 3/5 | In Progress | 2026-04-03 |
 | Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/6 | Not started | - |
-| Phase 11: Helper/Transform Completion & 4c1e Real Kernel | 0/3 | Not started | - |
+| Phase 11: Helper/Transform Completion & 4c1e Real Kernel | 3/4 | Gap closure | 2026-04-04 |
 | Phase 12: Real Spinor Transform (c2spinor Replacement) | 0/TBD | Not started | - |
 | Phase 13: F12/STG/YP Kernels | 0/TBD | Not started | - |
 | Phase 14: Unstable-Source-API Families | 0/TBD | Not started | - |
@@ -150,7 +150,7 @@ Plans:
   3. `RecordingExecutor` is deleted from `cintx-compat` and `cintx-rs`; staging output flows directly from the executor's `client.read()` result into `io.staging_output()`.
   4. CPU backend is enabled via `cpu = ["cubecl/cpu"]` feature in `cintx-cubecl` and oracle parity tests execute without GPU hardware under `--features cpu`.
   5. f64 strategy is documented and enforced: oracle parity tests run against the CPU backend; wgpu path gates on `SHADER_F64` availability and returns `UnsupportedApi` when absent.
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [ ] 07-01-PLAN.md — Add ResolvedBackend enum with wgpu/cpu arms, cpu feature flag, bytemuck dep, and updated FamilyLaunchFn signatures.
@@ -225,12 +225,13 @@ Plans:
   3. `int4c1e_sph` evaluation produces real Rys quadrature results matching libcint 6.1.3 to atol=1e-12 for cart/sph inputs within the Validated4C1E envelope (max(l)<=4, scalar representation) (4C1E-01).
   4. `compat::workaround::int4c1e_via_2e_trace` produces results matching direct 4c1e evaluation; oracle parity CI gate for the with-4c1e profile passes with 0 mismatches at atol=1e-12 (4C1E-02, 4C1E-04).
   5. Out-of-envelope 4c1e inputs and all spinor 4c1e requests return `UnsupportedApi` with explicit reason; the `Validated4C1E` classifier rejects spinor unconditionally before checking angular momentum (4C1E-03).
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 11-01-PLAN.md — Unify tolerance constants to atol=1e-12, fix CINTgto_norm formula, add numeric helper/transform oracle comparisons.
 - [x] 11-02-PLAN.md — Replace 4c1e stub with real polynomial-recurrence G-tensor kernel and fix spinor-first validation ordering.
 - [x] 11-03-PLAN.md — Add workaround module, legacy wrapper numeric oracle, vendor 4c1e FFI, and close all oracle gates.
+- [ ] 11-04-PLAN.md — Gap closure: add cart legacy symbol vendor FFI and numeric oracle comparison for full HELP-03 coverage.
 
 ### Phase 12: Real Spinor Transform (c2spinor Replacement)
 **Goal**: The cart-to-spinor transform applies correct Clebsch-Gordan coupling coefficients for all angular momenta up to l=4, enabling oracle-verifiable spinor outputs for every base family that supports spinor representation.
