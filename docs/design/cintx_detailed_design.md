@@ -1,6 +1,6 @@
 # Detailed Design Document for the Rust Redesign and Reimplementation of libcint (Re-review Reflected Edition)
 
-- Document version: 0.4-resolved
+- Document version: 0.5-final-unified-1e12
 - Target: A public library that redesigns and reimplements libcint in Rust
 - Target upstream: cintx 6.1.3 (`README.rst:4-5`)
 - Purpose of this document: To define a detailed design whose primary goal is result compatibility with cintx while also satisfying Rust-native type safety, speed, memory efficiency, and ease of verification
@@ -57,6 +57,7 @@ This document is the finalized design specification produced by re-reviewing the
 | Representation coverage of F12/STG/YP | In the current upstream snapshot, the supported representation for F12/STG/YP is finalized as **sph only**; cart/spinor are treated not as "missing" but as "out of scope" | Feature matrix, oracle comparison, release gate | 3.11.3, 10.1, 13.4, 16.2 |
 | Positioning of GTG | GTG is included in none of initial GA, optional, or unstable; it is **roadmap-only and out of scope**. No public feature flag is added | Scope, manifest, tests, documentation | 1.3, 3.3.1, 10.1, 16.2, 18 |
 | Parity of helper transform APIs | Helper comparison is included in the stable release gate | Helper API implementation and CI | 13.4, 14.1 |
+| Oracle tolerance policy | All oracle comparisons, regression gates, and release-blocking numerical checks use a unified `atol = 1e-12` and `rtol = 1e-12`; any exceedance is treated as a kernel bug and must block completion until fixed | Oracle harness, CI, release gate, difference analysis | 2.7, 13.8, 13.9, 14.1, 16.4, 17 |
 
 ---
 
@@ -172,7 +173,7 @@ Basis: `README.rst:11-14`, `README.rst:38-40`, `README.rst:52-70`, `README.rst:2
 ### 2.7 Testing and Verification Requirements
 - Coverage audit against the all-API manifest
 - Oracle comparison, property tests, failure-path tests, OOM tests, and CubeCL consistency tests
-- Tolerances are defined per operator category
+- All numerical oracle comparisons and regression checks shall satisfy a unified `atol = 1e-12` and `rtol = 1e-12` across all operator categories
 - Helper / legacy / transform APIs are also included in comparison coverage
 
 ---
@@ -1207,18 +1208,12 @@ The initial conservative heuristic is as follows.
 ### 13.8 Acceptance Criteria for Accuracy Differences
 | Category | atol | rtol | Basis |
 |---|---:|---:|---|
-| Basic 1e | 1e-11 | 1e-9 | `README.rst:215-229`, `testsuite/test_int1e.py` |
-| 2e plain / low derivative | 1e-12 | 1e-10 | `README.rst:217-223`, `testsuite/test_int2e.py` |
-| 2c2e / 3c2e | 1e-9 | 1e-7 | `testsuite/test_int2c2e.py`, `testsuite/test_int3c2e.py` |
-| High-order 3c1e | 1e-7 | 1e-5 | `testsuite/test_int3c1e.py` |
-| spinor / Gaunt / Breit | 1e-6 | 1e-5 | `testsuite/test_int2e.py` |
-| 4c1e | 1e-6 | 1e-5 | `testsuite/test_cint4c1e.py` |
-| F12 / STG / YP | 1e-6 | 1e-4 | `testsuite/test_int2e_f12_etc.py` |
+| All stable, optional, unstable-source, helper, transform, optimizer, legacy-wrapper, and feature-enabled comparison targets | 1e-12 | 1e-12 | Unified project mandate for release-blocking parity; any exceedance is classified as a kernel or implementation bug requiring correction before completion |
 
 ### 13.9 Floating-Point Error Evaluation
 - For `abs(ref) < zero_threshold`, compare by absolute error only
 - Adopt the default `zero_threshold = 1e-18` in compatibility mode (`README.rst:225-229`)
-- Use family-specific tolerances for short-range Coulomb and 4c1e
+- Use the same unified `atol = 1e-12` and `rtol = 1e-12` for short-range Coulomb, 4c1e, spinor, and every other supported family; no family-specific relaxation is permitted
 
 ### 13.10 Regression Detection
 - Manifest coverage diff
@@ -1246,13 +1241,13 @@ The initial conservative heuristic is as follows.
 | Implementation 5 | F12 / 4c1e / unstable source APIs | Feature CI passes | Unstable upstream parity |
 | Testing | CI matrix, OOM tests, property tests | Regressions are automatically detected | Flaky GPU CI |
 | Benchmarking | Criterion report, crossover charts | Baseline fixed | Hardware variance |
-| Difference analysis | API-by-API diff report | Zero tolerance deviations | Source-only families |
+| Difference analysis | API-by-API diff report | Zero deviations beyond the unified `1e-12` tolerance budget | Source-only families |
 | Release preparation | Semver, docs, examples | Publishable state | Feature matrix complexity |
 
 ### 14.1 Release Gate
 The following are required before release.
 1. `manifest-audit` matches header/source/compiled symbols against `compiled_manifest.lock.json` for the support matrix `{base, with-f12, with-4c1e, with-f12+with-4c1e}`
-2. All oracle comparisons for stable APIs pass
+2. All oracle comparisons for stable APIs pass with the unified `atol = 1e-12` and `rtol = 1e-12` threshold
 3. Under the `with-f12` profile, the F12/STG/YP sph-only coverage test passes and cart/spinor symbol count is zero
 4. Under the `with-4c1e` profile, `Validated4C1E` comparison and bug-envelope rejection tests pass
 5. OOM tests pass
@@ -1404,7 +1399,7 @@ cintx-rs/
 | feature fixtures | Grids, F12, 4c1e, range-separated |
 
 ### 16.4 Conditions for Acceptable Differences
-- Use the category tolerances in section 13.8
+- Use the unified `atol = 1e-12` and `rtol = 1e-12` defined in section 13.8 for every family and profile
 - For near-zero values, use absolute error only
 - For 4c1e, use oracle + identity tests together
 - Unsupported feature families are not skipped; they are surfaced as `NotImplementedByFeature`
@@ -1434,7 +1429,7 @@ cintx-rs/
 
 | ID | Type | Content | Impact | Response |
 |---|---|---|---|---|
-| R-01 | Numerical | Instability for high-l / many-roots cases | Hard to achieve parity for some families | Maintain oracle-based reference comparison and family-specific tolerances |
+| R-01 | Numerical | Instability for high-l / many-roots cases | Hard to achieve parity for some families under the stricter global threshold | Maintain oracle-based reference comparison, treat any >1e-12 deviation as a blocking bug, and iterate kernels until the unified threshold is met |
 | R-02 | Performance | GPU transfer cost can be counterproductive on small problems | No speedup may be obtained | Keep auto dispatch conservative |
 | R-03 | Memory | Deviation from stable Rust OOM-safe path policy | Could fail requirements | Enforce with allocator wrappers and lints |
 | R-04 | Maintenance | Feature matrix complexity for optional / unstable families | Higher CI operational cost | Split CI jobs |

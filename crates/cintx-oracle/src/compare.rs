@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
 const UNIFIED_ATOL: f64 = 1e-12;
-const UNIFIED_RTOL: f64 = 1e-10;
+const UNIFIED_RTOL: f64 = 1e-12;
 const ZERO_THRESHOLD: f64 = 1e-18;
 
 const BASE_PROFILE: &str = "base";
@@ -384,7 +384,7 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
         bail!("CINTgto_norm should return a positive value for positive exponent");
     }
 
-    let mut sph = vec![0.0, 0.0, 0.0, 0.0];
+    let mut sph = vec![0.0, 1.0, 0.0, 0.0];
     cintx_compat::transform::CINTc2s_bra_sph(&mut sph, 1, &[1.0, 2.0, 3.0, 4.0], 1)?;
     cintx_compat::transform::CINTc2s_ket_sph(&mut sph, 1, &[1.0, 2.0, 3.0, 4.0], 1)?;
     cintx_compat::transform::CINTc2s_ket_sph1(&mut sph, &[1.0, 2.0, 3.0, 4.0], 0, 0, 1)?;

@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: verifying
-stopped_at: Completed 11-helper-transform-completion-4c1e-real-kernel-04-PLAN.md
-last_updated: "2026-04-04T10:26:10.703Z"
-last_activity: 2026-04-04
+status: executing
+stopped_at: Completed 11-helper-transform-completion-4c1e-real-kernel-03-PLAN.md
+last_updated: "2026-04-04T10:17:46.042Z"
+last_activity: 2026-04-04 -- Phase 11 execution started
 progress:
   total_phases: 10
   completed_phases: 10
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-04)
 ## Current Position
 
 Phase: 11 (helper-transform-completion-4c1e-real-kernel) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-04-04
+Plan: 1 of 4
+Status: Executing Phase 11
+Last activity: 2026-04-04 -- Phase 11 execution started
 
 ## Performance Metrics
 
@@ -95,7 +95,6 @@ Last activity: 2026-04-04
 | Phase 11-helper-transform-completion-4c1e-real-kernel P02 | 7 | 1 tasks | 2 files |
 | Phase 11-helper-transform-completion-4c1e-real-kernel P01 | 4 | 2 tasks | 4 files |
 | Phase 11-helper-transform-completion-4c1e-real-kernel P03 | 8 | 2 tasks | 7 files |
-| Phase 11-helper-transform-completion-4c1e-real-kernel P04 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -220,8 +219,6 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 11-helper-transform-completion-4c1e-real-kernel]: CINTgto_norm now uses correct double-factorial formula from libcint misc.c — prior approximation would fail oracle comparison at 1e-12
 - [Phase 11-helper-transform-completion-4c1e-real-kernel]: int4c1e_via_2e_trace uses unsafe eval_raw(INT2E_SPH) and traces over k=l diagonal — no new CompatDims needed
 - [Phase 11-helper-transform-completion-4c1e-real-kernel]: cintx-oracle Cargo.toml gains with-4c1e and with-f12 features forwarding to cintx-compat so CI can run helper-legacy-parity gate with all four profiles
-- [Phase 11-helper-transform-completion-4c1e-real-kernel]: Cart variant supplemental header adds int2c2e_cart and int3c1e_cart only — the other 6 cart functions are already declared in cint_funcs.h
-- [Phase 11-helper-transform-completion-4c1e-real-kernel]: 1e cart comparisons transpose vendor col-major to row-major; 2e+/2c2e+/3c cart comparisons do NOT transpose — matching established sph patterns
 
 ### Roadmap Evolution
 
@@ -239,6 +236,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-04T10:26:10.699Z
-Stopped at: Completed 11-helper-transform-completion-4c1e-real-kernel-04-PLAN.md
+Last session: 2026-04-04T08:31:58.053Z
+Stopped at: Completed 11-helper-transform-completion-4c1e-real-kernel-03-PLAN.md
 Resume file: None
