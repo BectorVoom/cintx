@@ -1,15 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
-status: Roadmap defined
-stopped_at: null
-last_updated: "2026-04-04T00:00:00.000Z"
+milestone: v1.1
+milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
+status: planning
+stopped_at: Phase 11 context gathered
+last_updated: "2026-04-04T07:27:32.535Z"
+last_activity: 2026-04-04 — v1.2 roadmap created (Phases 11-15)
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 15
+  completed_phases: 10
+  total_plans: 47
+  completed_plans: 48
 ---
 
 # Project State
@@ -226,6 +227,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-04T00:00:00.000Z
-Stopped at: v1.2 roadmap created — ready to plan Phase 11
-Resume file: None
+Last session: 2026-04-04T07:27:32.530Z
+Stopped at: Phase 11 context gathered
+Resume file: .planning/phases/11-helper-transform-completion-4c1e-real-kernel/11-CONTEXT.md
