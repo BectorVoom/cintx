@@ -316,14 +316,18 @@ pub fn cart_to_spinor_sf(
         let (rr, ri) = lt_coeff_rows(l);
         apply_sf_block(gsp, cart, &rr, &ri, nd, nf, nd, 0);
     } else {
-        // kappa == 0: GT first, then LT
-        let nd_gt = 2 * l as usize + 2;
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
+        // Matches libcint: CINTc2s_ket_spinor_sf1 uses LT pointer which over-reads
+        // into the GT table for kappa=0. LT immediately precedes GT in g_trans memory.
         let nd_lt = 2 * l as usize;
+        let nd_gt = 2 * l as usize + 2;
         debug_assert_eq!(nd, nd_gt + nd_lt);
         let (rr_gt, ri_gt) = gt_coeff_rows(l);
         let (rr_lt, ri_lt) = lt_coeff_rows(l);
-        apply_sf_block(gsp, cart, &rr_gt, &ri_gt, nd_gt, nf, nd, 0);
-        apply_sf_block(gsp, cart, &rr_lt, &ri_lt, nd_lt, nf, nd, nd_gt);
+        if nd_lt > 0 {
+            apply_sf_block(gsp, cart, &rr_lt, &ri_lt, nd_lt, nf, nd, 0);
+        }
+        apply_sf_block(gsp, cart, &rr_gt, &ri_gt, nd_gt, nf, nd, nd_lt);
     }
     Ok(())
 }
@@ -362,13 +366,16 @@ pub fn cart_to_spinor_iket_sf(
         let (rr, ri) = lt_coeff_rows(l);
         apply_iket_sf_block(gsp, cart, &rr, &ri, nd, nf, nd, 0);
     } else {
-        let nd_gt = 2 * l as usize + 2;
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
         let nd_lt = 2 * l as usize;
+        let nd_gt = 2 * l as usize + 2;
         debug_assert_eq!(nd, nd_gt + nd_lt);
         let (rr_gt, ri_gt) = gt_coeff_rows(l);
         let (rr_lt, ri_lt) = lt_coeff_rows(l);
-        apply_iket_sf_block(gsp, cart, &rr_gt, &ri_gt, nd_gt, nf, nd, 0);
-        apply_iket_sf_block(gsp, cart, &rr_lt, &ri_lt, nd_lt, nf, nd, nd_gt);
+        if nd_lt > 0 {
+            apply_iket_sf_block(gsp, cart, &rr_lt, &ri_lt, nd_lt, nf, nd, 0);
+        }
+        apply_iket_sf_block(gsp, cart, &rr_gt, &ri_gt, nd_gt, nf, nd, nd_lt);
     }
     Ok(())
 }
@@ -421,13 +428,16 @@ pub fn cart_to_spinor_si(
         let (rr, ri) = lt_coeff_rows(l);
         apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr, &ri, nd, nf, nd, 0);
     } else {
-        let nd_gt = 2 * l as usize + 2;
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
         let nd_lt = 2 * l as usize;
+        let nd_gt = 2 * l as usize + 2;
         debug_assert_eq!(nd, nd_gt + nd_lt);
         let (rr_gt, ri_gt) = gt_coeff_rows(l);
         let (rr_lt, ri_lt) = lt_coeff_rows(l);
-        apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_gt, &ri_gt, nd_gt, nf, nd, 0);
-        apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_lt, &ri_lt, nd_lt, nf, nd, nd_gt);
+        if nd_lt > 0 {
+            apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_lt, &ri_lt, nd_lt, nf, nd, 0);
+        }
+        apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_gt, &ri_gt, nd_gt, nf, nd, nd_lt);
     }
     Ok(())
 }
@@ -475,13 +485,16 @@ pub fn cart_to_spinor_iket_si(
         let (rr, ri) = lt_coeff_rows(l);
         apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr, &ri, nd, nf, nd, 0);
     } else {
-        let nd_gt = 2 * l as usize + 2;
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
         let nd_lt = 2 * l as usize;
+        let nd_gt = 2 * l as usize + 2;
         debug_assert_eq!(nd, nd_gt + nd_lt);
         let (rr_gt, ri_gt) = gt_coeff_rows(l);
         let (rr_lt, ri_lt) = lt_coeff_rows(l);
-        apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_gt, &ri_gt, nd_gt, nf, nd, 0);
-        apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_lt, &ri_lt, nd_lt, nf, nd, nd_gt);
+        if nd_lt > 0 {
+            apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_lt, &ri_lt, nd_lt, nf, nd, 0);
+        }
+        apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_gt, &ri_gt, nd_gt, nf, nd, nd_lt);
     }
     Ok(())
 }
@@ -600,7 +613,12 @@ pub fn cart_to_spinor_sf_2d(
 /// Bra step of the 2D c2spinor_sf transform for all kappa cases.
 ///
 /// Matches `a_bra_cart2spinor_sf` in libcint `cart2sph.c`.
-/// For kappa==0, applies GT first (rows 0..nd_gt), then LT (rows nd_gt..nd).
+///
+/// Kappa==0 ordering: LT first (rows 0..nd_lt), then GT (rows nd_lt..nd).
+/// This mirrors libcint's memory-layout trick: for kappa>=0, `a_bra_cart2spinor_sf`
+/// uses the LT coeff pointer which for kappa=0 reads LT rows 0..nd_lt first, then
+/// continues reading into the GT table (which immediately follows LT in memory).
+///
 /// Sign convention: imaginary coefficient applied with MINUS: `saI += -caI * v1`.
 fn apply_bra_sf_block_all_kappa(
     alpha_r: &mut [f64],
@@ -623,15 +641,17 @@ fn apply_bra_sf_block_all_kappa(
         apply_bra_block(alpha_r, alpha_i, beta_r, beta_i,
                         cart, nci, ncj, di, coeff_lt_r, coeff_lt_i, 0);
     } else {
-        // kappa == 0: GT first, LT second
-        let nd_gt = 2 * li as usize + 2;
-        apply_bra_block(alpha_r, alpha_i, beta_r, beta_i,
-                        cart, nci, ncj, nd_gt, coeff_gt_r, coeff_gt_i, 0);
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
+        // This matches libcint's implicit memory ordering where kappa=0 uses
+        // the LT pointer and over-reads into the GT table region.
         let nd_lt = 2 * li as usize;
+        let nd_gt = 2 * li as usize + 2;
         if nd_lt > 0 {
             apply_bra_block(alpha_r, alpha_i, beta_r, beta_i,
-                            cart, nci, ncj, nd_lt, coeff_lt_r, coeff_lt_i, nd_gt);
+                            cart, nci, ncj, nd_lt, coeff_lt_r, coeff_lt_i, 0);
         }
+        apply_bra_block(alpha_r, alpha_i, beta_r, beta_i,
+                        cart, nci, ncj, nd_gt, coeff_gt_r, coeff_gt_i, nd_lt);
     }
 }
 
@@ -763,16 +783,16 @@ fn apply_ket_transform(
         std::cmp::Ordering::Less => &[(coeff_gt_r, coeff_gt_i, dj, 0)],
         std::cmp::Ordering::Greater => &[(coeff_lt_r, coeff_lt_i, dj, 0)],
         std::cmp::Ordering::Equal => {
-            // Use static arrays to avoid lifetime issues
-            // Apply inline for kappa==0 case
-            let nd_gt = 2 * lj as usize + 2;
+            // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
+            // Matches libcint ordering via memory layout: LT pointer over-reads into GT.
             let nd_lt = 2 * lj as usize;
-            apply_ket_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i,
-                           di, ncj, nd_gt, nf2, coeff_gt_r, coeff_gt_i, 0);
+            let nd_gt = 2 * lj as usize + 2;
             if nd_lt > 0 {
                 apply_ket_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i,
-                               di, ncj, nd_lt, nf2, coeff_lt_r, coeff_lt_i, nd_gt);
+                               di, ncj, nd_lt, nf2, coeff_lt_r, coeff_lt_i, 0);
             }
+            apply_ket_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i,
+                           di, ncj, nd_gt, nf2, coeff_gt_r, coeff_gt_i, nd_lt);
             return;
         }
     };
@@ -975,14 +995,19 @@ pub fn cart_to_spinor_sf_4d(
     Ok(())
 }
 
-/// Apply 2D spinor transform using complex (zf) convention on both bra and ket.
+/// Apply 2D spinor transform matching libcint `c2s_sf_2e2` step 2 algorithm.
 ///
-/// Used in step 2 of `cart_to_spinor_sf_4d` where input is already complex
-/// (output of step 1). Both bra and ket use complex multiply:
-///   `out_R += cR * vR - cI * vI`
-///   `out_I += cR * vI + cI * vR`
+/// Used in step 2 of `cart_to_spinor_sf_4d` where the input is complex (from
+/// the step-1 spinor transform on the (i,j) pair).
 ///
-/// This matches libcint `a_bra1_cart2spinor_zf` (complex multiply, not conjugate).
+/// Algorithm:
+/// 1. `bra1_zf` on k: for each k_sp, apply `conj(coeff_k) * v` to each k_cart
+///    independently for each l_cart column. Produces alpha and beta spinor-k
+///    outputs: `tmp_alpha[k_sp, l_cart]` and `tmp_beta[k_sp, l_cart]`.
+/// 2. `ket1` on l: for each l_sp, combine alpha and beta from step 1 using
+///    `coeff_l_alpha * tmp_alpha + coeff_l_beta * tmp_beta`. Regular complex multiply.
+///
+/// This exactly mirrors `a_bra1_cart2spinor_zf` + `a_ket1_cart2spinor` in libcint.
 #[allow(clippy::too_many_arguments)]
 fn apply_2d_spinor_zf(
     out_r: &mut [f64],
@@ -1000,38 +1025,49 @@ fn apply_2d_spinor_zf(
     for v in out_r.iter_mut() { *v = 0.0; }
     for v in out_i.iter_mut() { *v = 0.0; }
 
-    // Step 1 of zf 2D: bra transform on k index (complex input)
-    // Intermediate: tmp[(l_cart, dk)] complex
-    let mut tmp_r = vec![0.0f64; dk * ncl];
-    let mut tmp_i = vec![0.0f64; dk * ncl];
+    // Step 1: bra1_zf on k — produces alpha and beta k-spinor blocks.
+    // tmp_alpha/beta: [dk * ncl] each — indexed as [k_sp * ncl + l_cart]
+    let mut tmp_alpha_r = vec![0.0f64; dk * ncl];
+    let mut tmp_alpha_i = vec![0.0f64; dk * ncl];
+    let mut tmp_beta_r  = vec![0.0f64; dk * ncl];
+    let mut tmp_beta_i  = vec![0.0f64; dk * ncl];
 
     let (coeff_k_gt_r, coeff_k_gt_i, coeff_k_lt_r, coeff_k_lt_i) = bra_coeff_refs(lk);
-    apply_bra_zf_block_all_kappa(
-        &mut tmp_r, &mut tmp_i,
+    apply_bra1_zf_block_all_kappa(
+        &mut tmp_alpha_r, &mut tmp_alpha_i,
+        &mut tmp_beta_r,  &mut tmp_beta_i,
         kl_re, kl_im,
         nck, ncl, dk, lk, kappa_k,
         coeff_k_gt_r, coeff_k_gt_i, coeff_k_lt_r, coeff_k_lt_i,
     );
 
-    // Step 2 of zf 2D: ket transform on l index (complex input)
-    // Apply ket transform (complex multiply) over the ncl ket-cart columns
+    // Step 2: ket1 on l — combines alpha and beta, transforms l_cart → l_sp.
     let (coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i) = bra_coeff_refs(ll);
-    apply_ket_zf_block_all_kappa(
+    apply_ket1_block_all_kappa(
         out_r, out_i,
-        &tmp_r, &tmp_i,
+        &tmp_alpha_r, &tmp_alpha_i,
+        &tmp_beta_r,  &tmp_beta_i,
         dk, ncl, dl, ll, kappa_l,
         coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i,
     );
 }
 
-/// Bra-zf block: apply complex spinor coefficient transform on k-index.
-/// Input kl_re/kl_im: [ncl * nck] complex (l outer, k inner).
-/// Output: tmp_r/i: [ncl * dk] complex (l outer, k_spinor inner).
-/// Uses complex multiply (NOT conjugate): out_R += cR*vR - cI*vI, out_I += cR*vI + cI*vR.
+/// bra1_zf block: apply `conj(coeff) * v` to transform k_cart → k_spinor for each l_cart.
+///
+/// Mirrors `a_bra1_cart2spinor_zf` in libcint: for each k_sp row, multiply complex input
+/// by CONJUGATE of the CG coefficient. Produces separate alpha and beta outputs.
+///
+/// Convention (conjugate multiply): `re += cR*vR + cI*vI`, `im += cR*vI - cI*vR`
+/// (i.e., `conj(c) * v` not `c * v`).
+///
+/// Input `kl_re/im`: complex [ncl * nck] (l_cart outer, k_cart inner) — indexing [l*nck+k].
+/// Output `alpha/beta_r/i`: [dk * ncl] (k_spinor outer, l_cart inner) — indexing [k_sp*ncl+l].
 #[allow(clippy::too_many_arguments)]
-fn apply_bra_zf_block_all_kappa(
-    tmp_r: &mut [f64],
-    tmp_i: &mut [f64],
+fn apply_bra1_zf_block_all_kappa(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r:  &mut [f64],
+    beta_i:  &mut [f64],
     kl_re: &[f64],
     kl_im: &[f64],
     nck: usize,
@@ -1044,27 +1080,48 @@ fn apply_bra_zf_block_all_kappa(
     coeff_lt_r: &[f64],
     coeff_lt_i: &[f64],
 ) {
+    // Initialize outputs to zero
+    for v in alpha_r.iter_mut() { *v = 0.0; }
+    for v in alpha_i.iter_mut() { *v = 0.0; }
+    for v in beta_r.iter_mut()  { *v = 0.0; }
+    for v in beta_i.iter_mut()  { *v = 0.0; }
+
     if kappa_k < 0 {
-        apply_bra_zf_block(tmp_r, tmp_i, kl_re, kl_im, nck, ncl, dk, coeff_gt_r, coeff_gt_i, 0);
+        apply_bra1_zf_block(alpha_r, alpha_i, beta_r, beta_i, kl_re, kl_im, nck, ncl, dk,
+                            coeff_gt_r, coeff_gt_i, 0);
     } else if kappa_k > 0 {
-        apply_bra_zf_block(tmp_r, tmp_i, kl_re, kl_im, nck, ncl, dk, coeff_lt_r, coeff_lt_i, 0);
+        apply_bra1_zf_block(alpha_r, alpha_i, beta_r, beta_i, kl_re, kl_im, nck, ncl, dk,
+                            coeff_lt_r, coeff_lt_i, 0);
     } else {
-        let nd_gt = 2 * lk as usize + 2;
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
+        // Matches libcint ordering: a_bra1_cart2spinor_zf uses LT pointer which
+        // over-reads into the GT table in memory for kappa=0.
         let nd_lt = 2 * lk as usize;
-        apply_bra_zf_block(tmp_r, tmp_i, kl_re, kl_im, nck, ncl, nd_gt, coeff_gt_r, coeff_gt_i, 0);
+        let nd_gt = 2 * lk as usize + 2;
         if nd_lt > 0 {
-            apply_bra_zf_block(tmp_r, tmp_i, kl_re, kl_im, nck, ncl, nd_lt, coeff_lt_r, coeff_lt_i, nd_gt);
+            apply_bra1_zf_block(alpha_r, alpha_i, beta_r, beta_i, kl_re, kl_im, nck, ncl, nd_lt,
+                                coeff_lt_r, coeff_lt_i, 0);
         }
+        apply_bra1_zf_block(alpha_r, alpha_i, beta_r, beta_i, kl_re, kl_im, nck, ncl, nd_gt,
+                            coeff_gt_r, coeff_gt_i, nd_lt);
     }
 }
 
-/// Apply one bra-zf spinor block: complex multiply of coeff with complex input.
-/// Maps nck k-cart indices to nd k-spinor indices for all ncl l-cart columns.
-/// Input: kl_re/i[l_cart * nck + k_cart], Output: tmp[l_cart * dk_total + row_off + k_sp].
+/// bra1_zf block for one kappa sub-block: conj(coeff) * v, maps k_cart → k_spinor per l_cart.
+///
+/// Mirrors libcint `a_bra1_cart2spinor_zf` for one (alpha or beta) sub-block.
+/// Convention: `re += cR*vR + cI*vI`, `im += cR*vI - cI*vR` (conjugate of coeff).
+///
+/// Input `kl_re/im`: [ncl * nck] complex (l_cart outer, k_cart inner).
+/// Output `alpha/beta_r/i`: [dk_total * ncl] (k_spinor outer, l_cart inner), k_spinor written
+///   starting at row_off, for nd k-spinor rows.
+///   Index: `alpha_r[k_sp * ncl + l_cart]` for k_sp in [row_off..row_off+nd].
 #[allow(clippy::too_many_arguments)]
-fn apply_bra_zf_block(
-    tmp_r: &mut [f64],
-    tmp_i: &mut [f64],
+fn apply_bra1_zf_block(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r:  &mut [f64],
+    beta_i:  &mut [f64],
     kl_re: &[f64],
     kl_im: &[f64],
     nck: usize,
@@ -1074,39 +1131,54 @@ fn apply_bra_zf_block(
     coeff_i: &[f64],
     row_off: usize,
 ) {
-    let dk_total = tmp_r.len() / ncl;
+    // dk_total = alpha_r.len() / ncl  (total k_spinor rows)
+    let dk_total = if ncl > 0 { alpha_r.len() / ncl } else { 0 };
     for l_cart in 0..ncl {
         for k_sp in 0..nd {
-            let out_idx = l_cart * dk_total + row_off + k_sp;
-            let mut re = 0.0f64;
-            let mut im = 0.0f64;
+            let out_idx = (row_off + k_sp) * ncl + l_cart;
+            let mut sa_r = 0.0f64;
+            let mut sa_i = 0.0f64;
+            let mut sb_r = 0.0f64;
+            let mut sb_i = 0.0f64;
             for n in 0..nck {
-                // coeff has 2*nck entries per row: [0..nck] = alpha, [nck..] = beta
-                // For bra-zf, we use only the alpha half (k-index transform — no spinor doubling here)
-                // The coefficient matrix is nck → nd spinor, using first nck columns.
-                let cr = coeff_r[k_sp * 2 * nck + n];
-                let ci = coeff_i[k_sp * 2 * nck + n];
+                // coeff layout: [k_sp][2*nck] where first nck = alpha, next nck = beta
+                let ca_r = coeff_r[k_sp * 2 * nck + n];
+                let ca_i = coeff_i[k_sp * 2 * nck + n];
+                let cb_r = coeff_r[k_sp * 2 * nck + nck + n];
+                let cb_i = coeff_i[k_sp * 2 * nck + nck + n];
                 let vr = kl_re[l_cart * nck + n];
                 let vi = kl_im[l_cart * nck + n];
-                // Complex multiply: (cR + i*cI) * (vR + i*vI) = (cR*vR - cI*vI) + i*(cR*vI + cI*vR)
-                re += cr * vr - ci * vi;
-                im += cr * vi + ci * vr;
+                // Conjugate multiply: conj(c) * v = (cR*vR + cI*vI) + i*(cR*vI - cI*vR)
+                sa_r += ca_r * vr + ca_i * vi;
+                sa_i += ca_r * vi - ca_i * vr;
+                sb_r += cb_r * vr + cb_i * vi;
+                sb_i += cb_r * vi - cb_i * vr;
             }
-            tmp_r[out_idx] = re;
-            tmp_i[out_idx] = im;
+            alpha_r[out_idx] = sa_r;
+            alpha_i[out_idx] = sa_i;
+            beta_r[out_idx]  = sb_r;
+            beta_i[out_idx]  = sb_i;
         }
     }
+    let _ = dk_total; // suppress warning if unused
 }
 
-/// Ket-zf block: apply complex ket spinor transform on l-index.
-/// Input: tmp_r/i [ncl * dk] complex (l_cart outer, k_spinor inner).
-/// Output: out_r/i [dl * dk] complex (l_spinor outer, k_spinor inner).
+/// ket1 transform: combine alpha and beta from bra1_zf output, transform l_cart → l_sp.
+///
+/// Mirrors libcint `a_ket1_cart2spinor`: for each l_sp, sum over l_cart:
+///   `out += coeff_alpha[l_sp, l_cart] * alpha[k_sp, l_cart] + coeff_beta[l_sp, l_cart] * beta[k_sp, l_cart]`
+/// Uses regular complex multiply for both terms.
+///
+/// Input `alpha/beta_r/i`: [dk * ncl] (k_sp outer, l_cart inner) — index [k_sp*ncl + l_cart].
+/// Output `out_r/i`: [dl * dk] (l_sp outer, k_sp inner) — index [(row_off+l_sp)*dk + k_sp].
 #[allow(clippy::too_many_arguments)]
-fn apply_ket_zf_block_all_kappa(
+fn apply_ket1_block_all_kappa(
     out_r: &mut [f64],
     out_i: &mut [f64],
-    tmp_r: &[f64],
-    tmp_i: &[f64],
+    alpha_r: &[f64],
+    alpha_i: &[f64],
+    beta_r:  &[f64],
+    beta_i:  &[f64],
     dk: usize,
     ncl: usize,
     dl: usize,
@@ -1117,27 +1189,44 @@ fn apply_ket_zf_block_all_kappa(
     coeff_lt_r: &[f64],
     coeff_lt_i: &[f64],
 ) {
+    // Zero output
+    for v in out_r.iter_mut() { *v = 0.0; }
+    for v in out_i.iter_mut() { *v = 0.0; }
     if kappa_l < 0 {
-        apply_ket_zf_block(out_r, out_i, tmp_r, tmp_i, dk, ncl, dl, coeff_gt_r, coeff_gt_i, 0);
+        apply_ket1_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i, dk, ncl, dl,
+                         coeff_gt_r, coeff_gt_i, 0);
     } else if kappa_l > 0 {
-        apply_ket_zf_block(out_r, out_i, tmp_r, tmp_i, dk, ncl, dl, coeff_lt_r, coeff_lt_i, 0);
+        apply_ket1_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i, dk, ncl, dl,
+                         coeff_lt_r, coeff_lt_i, 0);
     } else {
-        let nd_gt = 2 * ll as usize + 2;
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
+        // Matches libcint ordering: a_ket1_cart2spinor uses LT pointer which
+        // over-reads into the GT table in memory for kappa=0.
         let nd_lt = 2 * ll as usize;
-        apply_ket_zf_block(out_r, out_i, tmp_r, tmp_i, dk, ncl, nd_gt, coeff_gt_r, coeff_gt_i, 0);
+        let nd_gt = 2 * ll as usize + 2;
         if nd_lt > 0 {
-            apply_ket_zf_block(out_r, out_i, tmp_r, tmp_i, dk, ncl, nd_lt, coeff_lt_r, coeff_lt_i, nd_gt);
+            apply_ket1_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i, dk, ncl, nd_lt,
+                             coeff_lt_r, coeff_lt_i, 0);
         }
+        apply_ket1_block(out_r, out_i, alpha_r, alpha_i, beta_r, beta_i, dk, ncl, nd_gt,
+                         coeff_gt_r, coeff_gt_i, nd_lt);
     }
 }
 
-/// Apply one ket-zf block: complex multiply of coeff with complex input.
+/// ket1 block for one kappa sub-block: combines alpha+beta, transforms l_cart → l_spinor.
+///
+/// For each l_sp and k_sp:
+///   out += ca*alpha[k_sp, l_cart] + cb*beta[k_sp, l_cart]  (regular c*v multiply)
+///
+/// Coefficients are [nd][2*ncl]: rows 0..nd for l-spinor rows, columns: first ncl = alpha, next ncl = beta.
 #[allow(clippy::too_many_arguments)]
-fn apply_ket_zf_block(
+fn apply_ket1_block(
     out_r: &mut [f64],
     out_i: &mut [f64],
-    tmp_r: &[f64],
-    tmp_i: &[f64],
+    alpha_r: &[f64],
+    alpha_i: &[f64],
+    beta_r:  &[f64],
+    beta_i:  &[f64],
     dk: usize,
     ncl: usize,
     nd: usize,
@@ -1145,27 +1234,26 @@ fn apply_ket_zf_block(
     coeff_i: &[f64],
     row_off: usize,
 ) {
-    // tmp is [ncl * dk]: l_cart outer, k_spinor inner
-    // out is [dl * dk]: l_spinor outer (at row_off+l_sp), k_spinor inner
-    let nf2 = 2 * ncl; // total coefficient columns for ket (alpha+beta halves)
     for l_sp in 0..nd {
         for k_sp in 0..dk {
             let mut re = 0.0f64;
             let mut im = 0.0f64;
             for n in 0..ncl {
-                // Use alpha half of ket coefficient (n < ncl columns)
-                let cr = coeff_r[l_sp * nf2 + n];
-                let ci = coeff_i[l_sp * nf2 + n];
-                if cr == 0.0 && ci == 0.0 {
-                    continue;
-                }
-                let vr = tmp_r[n * dk + k_sp];
-                let vi = tmp_i[n * dk + k_sp];
-                re += cr * vr - ci * vi;
-                im += cr * vi + ci * vr;
+                // Coefficient columns: first ncl = alpha, next ncl = beta
+                let ca_r = coeff_r[l_sp * 2 * ncl + n];
+                let ca_i = coeff_i[l_sp * 2 * ncl + n];
+                let cb_r = coeff_r[l_sp * 2 * ncl + ncl + n];
+                let cb_i = coeff_i[l_sp * 2 * ncl + ncl + n];
+                let ga_r = alpha_r[k_sp * ncl + n];
+                let ga_i = alpha_i[k_sp * ncl + n];
+                let gb_r = beta_r[k_sp * ncl + n];
+                let gb_i = beta_i[k_sp * ncl + n];
+                // Regular complex multiply: ca*ga + cb*gb
+                re += ca_r * ga_r - ca_i * ga_i + cb_r * gb_r - cb_i * gb_i;
+                im += ca_r * ga_i + ca_i * ga_r + cb_r * gb_i + cb_i * gb_r;
             }
-            out_r[(row_off + l_sp) * dk + k_sp] = re;
-            out_i[(row_off + l_sp) * dk + k_sp] = im;
+            out_r[(row_off + l_sp) * dk + k_sp] += re;
+            out_i[(row_off + l_sp) * dk + k_sp] += im;
         }
     }
 }

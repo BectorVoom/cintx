@@ -207,7 +207,12 @@ impl BackendExecutor for CubeClExecutor {
         let mut stats = kernels::launch_family(&backend, plan, &specialization, staging)?;
 
         // Backend output stays staging-only; compat owns final flat writes.
-        transform::apply_representation_transform(plan.representation, staging)?;
+        // Spinor transforms are applied inside each kernel launcher (Plan 04+) because
+        // they require per-shell l and kappa. apply_representation_transform only handles
+        // Cart (no-op) and Spheric (c2s). Skip for Spinor to avoid double-transform.
+        if !matches!(plan.representation, cintx_core::Representation::Spinor) {
+            transform::apply_representation_transform(plan.representation, staging)?;
+        }
 
         stats.peak_workspace_bytes = stats.peak_workspace_bytes.max(io.workspace().len());
         stats.planned_batches = io.chunk().work_unit_count.max(1);

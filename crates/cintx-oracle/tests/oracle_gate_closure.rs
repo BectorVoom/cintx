@@ -951,25 +951,20 @@ fn oracle_gate_1e_spinor() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Multi-center spinor family oracle gates (Phase 12 v1.2, Plan 03)
+// Multi-center spinor family oracle gates (Phase 12 v1.2, Plans 03-05)
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // These tests confirm that vendored libcint returns non-zero output for all
-// four multi-center spinor families (2e, 2c2e, 3c1e, 3c2e).
+// four multi-center spinor families (2e, 2c2e, 3c1e, 3c2e) and that cintx
+// oracle parity holds for the three implemented families.
 //
-// Wiring gap: The multi-center kernels (two_electron, center_3c1e, center_3c2e)
-// do not yet apply the spinor (c2spinor) transform — they fall through to the
-// `_ =>` arm which copies the Cartesian buffer. Additionally, int3c1e_spinor is
-// not yet present in the compiled manifest lock.
+// Status (Plan 05):
+//   - oracle_gate_2e_spinor:   ACTIVE — Representation::Spinor arm wired in Plan 04
+//   - oracle_gate_2c2e_spinor: ACTIVE — Representation::Spinor arm wired in Plan 04
+//   - oracle_gate_3c2e_spinor: ACTIVE — Representation::Spinor arm wired in Plan 04
+//   - oracle_gate_3c1e_spinor: IGNORED — int3c1e_spinor not implemented in libcint 6.1.3
 //
-// Until spinor transform wiring is added to all multi-center kernel launchers
-// AND int3c1e_spinor is added to the manifest, the eval_raw parity comparison
-// tests are marked #[ignore]. The vendor FFI non-zero sanity checks are NOT
-// ignored — they confirm libcint produces expected output for future comparison.
-//
-// TODO(multi-center-spinor): Wire cart_to_spinor_sf_2d into launch_two_electron,
-// launch_center_3c1e, and launch_center_3c2e (Representation::Spinor arm), and
-// add int3c1e_spinor to the manifest lock. Then un-ignore these parity tests.
+// The vendor FFI non-zero sanity checks confirm libcint produces expected output.
 
 /// Vendor FFI non-zero sanity check for int2e_spinor.
 ///
@@ -1017,15 +1012,9 @@ fn vendor_ffi_2e_spinor_nonzero() {
 /// Tests int2e_spinor against vendored libcint 6.1.3 using H2O STO-3G shell
 /// quartet (0,1,2,3) = (O-1s, O-2s, O-2p, H1-1s) at atol=1e-12.
 ///
-/// # Why ignored
-///
-/// The `launch_two_electron` kernel does not yet apply the spinor (c2spinor_sf)
-/// transform. The Representation::Spinor arm falls through to `_ =>` which
-/// copies the Cartesian buffer unchanged, producing a mismatch against libcint's
-/// spinor output. Un-ignore after wiring `cart_to_spinor_sf_2d` into the 2e
-/// kernel launcher for Representation::Spinor.
+/// Spinor wiring status: Representation::Spinor arm wired in Plan 04 via
+/// `cart_to_spinor_sf_4d`. Parity test active as of Plan 05.
 #[test]
-#[ignore = "wiring gap: launch_two_electron missing Representation::Spinor cart_to_spinor_sf_2d call"]
 #[cfg(has_vendor_libcint)]
 fn oracle_gate_2e_spinor() {
     use cintx_oracle::vendor_ffi;
@@ -1128,13 +1117,9 @@ fn vendor_ffi_2c2e_spinor_nonzero() {
 /// Tests int2c2e_spinor against vendored libcint 6.1.3 using H2O STO-3G shell
 /// pair (0,1) = (O-1s, O-2s) at atol=1e-12.
 ///
-/// # Why ignored
-///
-/// The 2c2e kernel (handled by `launch_two_electron` with 2-center dispatch) does
-/// not yet apply the spinor (c2spinor_sf) transform. Un-ignore after wiring
-/// `cart_to_spinor_sf_2d` into the 2c2e family launch path for Spinor representation.
+/// Spinor wiring status: Representation::Spinor arm wired in Plan 04 via
+/// `cart_to_spinor_sf_4d`. Parity test active as of Plan 05.
 #[test]
-#[ignore = "wiring gap: 2c2e kernel missing Representation::Spinor cart_to_spinor_sf_2d call"]
 #[cfg(has_vendor_libcint)]
 fn oracle_gate_2c2e_spinor() {
     use cintx_oracle::vendor_ffi;
@@ -1340,15 +1325,9 @@ fn vendor_ffi_3c2e_spinor_nonzero() {
 /// Tests int3c2e_spinor against vendored libcint 6.1.3 using H2O STO-3G shell
 /// triple (3,4,0) = (H1-1s, H2-1s, O-1s) at atol=1e-12.
 ///
-/// # Why ignored
-///
-/// The `launch_center_3c2e` kernel does not yet apply the spinor (c2spinor_sf)
-/// transform. The Representation::Spinor arm falls through to `_ =>` which
-/// copies the Cartesian buffer unchanged, producing a mismatch against libcint's
-/// spinor output. Un-ignore after wiring `cart_to_spinor_sf_2d` (or the appropriate
-/// 3-center spinor variant) into `launch_center_3c2e` for Representation::Spinor.
+/// Spinor wiring status: Representation::Spinor arm wired in Plan 04 via
+/// `cart_to_spinor_sf_3c2e`. Parity test active as of Plan 05.
 #[test]
-#[ignore = "wiring gap: launch_center_3c2e missing Representation::Spinor cart_to_spinor_sf_2d call"]
 #[cfg(has_vendor_libcint)]
 fn oracle_gate_3c2e_spinor() {
     use cintx_oracle::vendor_ffi;
