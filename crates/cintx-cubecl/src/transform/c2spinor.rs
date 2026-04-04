@@ -832,16 +832,439 @@ fn apply_ket_block(
     }
 }
 
-/// Staging spinor transform (placeholder for executor path).
+/// Full 4D cart-to-spinor scalar-field transform for 2e (4-center) integrals.
 ///
-/// The real per-shell transform is done via `cart_to_spinor_sf` and friends
-/// with explicit l and kappa parameters. This staging function is kept for
-/// API compatibility; it performs no transformation (no-op).
+/// Implements the two-step libcint `c2s_sf_2e1` + `c2s_sf_2e2` transform that
+/// converts a contracted Cartesian 4-center integral buffer to spinor form.
 ///
-/// TODO: Wire executor to pass l and kappa so this can call the correct variant.
-pub fn cart_to_spinor_interleaved_staging(staging: &mut [f64]) -> Result<(), cintxRsError> {
-    let _ = staging;
+/// Algorithm:
+/// Step 1 (`c2s_sf_2e1`): Transform (i,j) bra/ket pair to spinor, keeping (k,l) Cartesian.
+///   - Input: `cart[nck * ncl * nci * ncj]` with (i innermost, j next, k and l outermost).
+///     NOTE: In libcint the cart buffer is indexed as `gctr[kl_idx * nci * ncj + ij_idx]`
+///     (k,l outer, i,j inner).
+///   - For each (k,l) pair: apply bra transform on i, ket transform on j.
+///   - Intermediate: `opij[dk * dl * di * dj]` complex interleaved, where
+///     di = spinor_len(li, kappa_i), dj = spinor_len(lj, kappa_j).
+///
+/// Step 2 (`c2s_sf_2e2`): Transform (k,l) pair to spinor on the complex intermediate.
+///   - For each (i_sp, j_sp) spinor pair: apply bra-zf transform on k, ket transform on l.
+///   - Output layout: `staging[(((l_sp * dk + k_sp) * dj + j_sp) * di + i_sp) * 2]` = re, +1 = im.
+///     (i innermost, l outermost — column-major matching `zcopy_iklj`)
+///
+/// # Parameters
+/// - `staging`: output buffer, size `di * dj * dk * dl * 2`
+/// - `cart`: Cartesian input, size `nci * ncj * nck * ncl`
+///   Layout: i innermost, l outermost: `cart[((l*nck+k)*ncj+j)*nci+i]`
+pub fn cart_to_spinor_sf_4d(
+    staging: &mut [f64],
+    cart: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, kappa_k: i16,
+    ll: u8, kappa_l: i16,
+) -> Result<(), cintxRsError> {
+    use super::c2s::ncart;
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let ncl = ncart(ll);
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let dk = spinor_len(lk, kappa_k as i32);
+    let dl = spinor_len(ll, kappa_l as i32);
+
+    let expected_cart = nci * ncj * nck * ncl;
+    if cart.len() < expected_cart {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "c2spinor_sf_4d",
+            detail: format!(
+                "cart buffer length {} < nci*ncj*nck*ncl = {}*{}*{}*{} = {}",
+                cart.len(), nci, ncj, nck, ncl, expected_cart
+            ),
+        });
+    }
+    let required = di * dj * dk * dl * 2;
+    if staging.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Step 1: transform (i,j) pair for each (k,l) Cartesian combination ─
+    // For each kl slice of size [nci * ncj], apply cart_to_spinor_sf_2d.
+    // Result: opij[nck * ncl * di * dj * 2] complex interleaved
+    // Index: opij[((l * nck + k) * dj * di + j_sp * di + i_sp) * 2] = re, +1 = im
+    let mut opij = vec![0.0f64; nck * ncl * di * dj * 2];
+
+    let ij_stride = di * dj; // complex elements per (k,l) slice
+    for l_cart in 0..ncl {
+        for k_cart in 0..nck {
+            let kl_offset = (l_cart * nck + k_cart) * nci * ncj;
+            let cart_slice = &cart[kl_offset..kl_offset + nci * ncj];
+            let opij_offset = (l_cart * nck + k_cart) * ij_stride * 2;
+            let opij_slice = &mut opij[opij_offset..opij_offset + ij_stride * 2];
+            cart_to_spinor_sf_2d(opij_slice, cart_slice, li, kappa_i, lj, kappa_j)?;
+        }
+    }
+
+    // ── Step 2: transform (k,l) pair over the complex intermediate ──────────
+    // The intermediate opij has shape [ncl * nck * dj * di] complex elements
+    // For each spinor pair (i_sp, j_sp), apply bra-zf on k and ket on l.
+    //
+    // libcint c2s_sf_2e2: a_bra1_cart2spinor_zf for k, a_ket1_cart2spinor for l
+    // The "1" variants have stride arguments, treating the (i,j) spinor block as columns.
+    //
+    // Output: staging[(((l_sp * dk + k_sp) * dj + j_sp) * di + i_sp) * 2]
+    // We iterate: for each ij_sp in [0..di*dj], apply 2D transform to complex kl data.
+
+    // Zero out staging
+    for v in staging[..required].iter_mut() {
+        *v = 0.0;
+    }
+
+    // For each (j_sp, i_sp) spinor pair from step 1, build a complex [nck * ncl] vector
+    // and apply the 2D spinor transform (k,l) → (dk, dl) complex.
+    // The opij buffer is indexed as: opij[((l_cart * nck + k_cart) * dj * di + j_sp * di + i_sp) * 2]
+    // We want: for each (i_sp, j_sp) — a complex-valued [nck][ncl] "Cartesian" matrix.
+    //
+    // cart2spinor step 2 uses a_bra1_cart2spinor_zf (ZF = zero-field complex version)
+    // which multiplies a complex input by a complex coefficient:
+    //   out_R += cR * vR - cI * vI
+    //   out_I += cR * vI + cI * vR
+    // This differs from step 1's conjugate convention (saI += -caI * v1).
+
+    let mut kl_re = vec![0.0f64; nck * ncl];
+    let mut kl_im = vec![0.0f64; nck * ncl];
+    let mut spinor_out_r = vec![0.0f64; dk * dl];
+    let mut spinor_out_i = vec![0.0f64; dk * dl];
+
+    for j_sp in 0..dj {
+        for i_sp in 0..di {
+            // Extract complex [nck * ncl] slice for this (i_sp, j_sp) pair
+            for l_cart in 0..ncl {
+                for k_cart in 0..nck {
+                    let src_idx = ((l_cart * nck + k_cart) * dj * di + j_sp * di + i_sp) * 2;
+                    kl_re[l_cart * nck + k_cart] = opij[src_idx];
+                    kl_im[l_cart * nck + k_cart] = opij[src_idx + 1];
+                }
+            }
+
+            // Apply bra-zf on k (2D transform with complex coefficients)
+            // Then ket on l — both using complex multiply convention.
+            // This mirrors apply_bra_sf (but complex input) then apply_ket.
+            apply_2d_spinor_zf(
+                &mut spinor_out_r, &mut spinor_out_i,
+                &kl_re, &kl_im,
+                nck, ncl, dk, dl, lk, kappa_k as i32, ll, kappa_l as i32,
+            );
+
+            // Store result: staging[(((l_sp * dk + k_sp) * dj + j_sp) * di + i_sp) * 2]
+            for l_sp in 0..dl {
+                for k_sp in 0..dk {
+                    let dst_idx = (((l_sp * dk + k_sp) * dj + j_sp) * di + i_sp) * 2;
+                    staging[dst_idx] = spinor_out_r[l_sp * dk + k_sp];
+                    staging[dst_idx + 1] = spinor_out_i[l_sp * dk + k_sp];
+                }
+            }
+        }
+    }
+
     Ok(())
+}
+
+/// Apply 2D spinor transform using complex (zf) convention on both bra and ket.
+///
+/// Used in step 2 of `cart_to_spinor_sf_4d` where input is already complex
+/// (output of step 1). Both bra and ket use complex multiply:
+///   `out_R += cR * vR - cI * vI`
+///   `out_I += cR * vI + cI * vR`
+///
+/// This matches libcint `a_bra1_cart2spinor_zf` (complex multiply, not conjugate).
+#[allow(clippy::too_many_arguments)]
+fn apply_2d_spinor_zf(
+    out_r: &mut [f64],
+    out_i: &mut [f64],
+    kl_re: &[f64],
+    kl_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    dk: usize,
+    dl: usize,
+    lk: u8, kappa_k: i32,
+    ll: u8, kappa_l: i32,
+) {
+    // Zero output
+    for v in out_r.iter_mut() { *v = 0.0; }
+    for v in out_i.iter_mut() { *v = 0.0; }
+
+    // Step 1 of zf 2D: bra transform on k index (complex input)
+    // Intermediate: tmp[(l_cart, dk)] complex
+    let mut tmp_r = vec![0.0f64; dk * ncl];
+    let mut tmp_i = vec![0.0f64; dk * ncl];
+
+    let (coeff_k_gt_r, coeff_k_gt_i, coeff_k_lt_r, coeff_k_lt_i) = bra_coeff_refs(lk);
+    apply_bra_zf_block_all_kappa(
+        &mut tmp_r, &mut tmp_i,
+        kl_re, kl_im,
+        nck, ncl, dk, lk, kappa_k,
+        coeff_k_gt_r, coeff_k_gt_i, coeff_k_lt_r, coeff_k_lt_i,
+    );
+
+    // Step 2 of zf 2D: ket transform on l index (complex input)
+    // Apply ket transform (complex multiply) over the ncl ket-cart columns
+    let (coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i) = bra_coeff_refs(ll);
+    apply_ket_zf_block_all_kappa(
+        out_r, out_i,
+        &tmp_r, &tmp_i,
+        dk, ncl, dl, ll, kappa_l,
+        coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i,
+    );
+}
+
+/// Bra-zf block: apply complex spinor coefficient transform on k-index.
+/// Input kl_re/kl_im: [ncl * nck] complex (l outer, k inner).
+/// Output: tmp_r/i: [ncl * dk] complex (l outer, k_spinor inner).
+/// Uses complex multiply (NOT conjugate): out_R += cR*vR - cI*vI, out_I += cR*vI + cI*vR.
+#[allow(clippy::too_many_arguments)]
+fn apply_bra_zf_block_all_kappa(
+    tmp_r: &mut [f64],
+    tmp_i: &mut [f64],
+    kl_re: &[f64],
+    kl_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    dk: usize,
+    lk: u8,
+    kappa_k: i32,
+    coeff_gt_r: &[f64],
+    coeff_gt_i: &[f64],
+    coeff_lt_r: &[f64],
+    coeff_lt_i: &[f64],
+) {
+    if kappa_k < 0 {
+        apply_bra_zf_block(tmp_r, tmp_i, kl_re, kl_im, nck, ncl, dk, coeff_gt_r, coeff_gt_i, 0);
+    } else if kappa_k > 0 {
+        apply_bra_zf_block(tmp_r, tmp_i, kl_re, kl_im, nck, ncl, dk, coeff_lt_r, coeff_lt_i, 0);
+    } else {
+        let nd_gt = 2 * lk as usize + 2;
+        let nd_lt = 2 * lk as usize;
+        apply_bra_zf_block(tmp_r, tmp_i, kl_re, kl_im, nck, ncl, nd_gt, coeff_gt_r, coeff_gt_i, 0);
+        if nd_lt > 0 {
+            apply_bra_zf_block(tmp_r, tmp_i, kl_re, kl_im, nck, ncl, nd_lt, coeff_lt_r, coeff_lt_i, nd_gt);
+        }
+    }
+}
+
+/// Apply one bra-zf spinor block: complex multiply of coeff with complex input.
+/// Maps nck k-cart indices to nd k-spinor indices for all ncl l-cart columns.
+/// Input: kl_re/i[l_cart * nck + k_cart], Output: tmp[l_cart * dk_total + row_off + k_sp].
+#[allow(clippy::too_many_arguments)]
+fn apply_bra_zf_block(
+    tmp_r: &mut [f64],
+    tmp_i: &mut [f64],
+    kl_re: &[f64],
+    kl_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    nd: usize,
+    coeff_r: &[f64],
+    coeff_i: &[f64],
+    row_off: usize,
+) {
+    let dk_total = tmp_r.len() / ncl;
+    for l_cart in 0..ncl {
+        for k_sp in 0..nd {
+            let out_idx = l_cart * dk_total + row_off + k_sp;
+            let mut re = 0.0f64;
+            let mut im = 0.0f64;
+            for n in 0..nck {
+                // coeff has 2*nck entries per row: [0..nck] = alpha, [nck..] = beta
+                // For bra-zf, we use only the alpha half (k-index transform — no spinor doubling here)
+                // The coefficient matrix is nck → nd spinor, using first nck columns.
+                let cr = coeff_r[k_sp * 2 * nck + n];
+                let ci = coeff_i[k_sp * 2 * nck + n];
+                let vr = kl_re[l_cart * nck + n];
+                let vi = kl_im[l_cart * nck + n];
+                // Complex multiply: (cR + i*cI) * (vR + i*vI) = (cR*vR - cI*vI) + i*(cR*vI + cI*vR)
+                re += cr * vr - ci * vi;
+                im += cr * vi + ci * vr;
+            }
+            tmp_r[out_idx] = re;
+            tmp_i[out_idx] = im;
+        }
+    }
+}
+
+/// Ket-zf block: apply complex ket spinor transform on l-index.
+/// Input: tmp_r/i [ncl * dk] complex (l_cart outer, k_spinor inner).
+/// Output: out_r/i [dl * dk] complex (l_spinor outer, k_spinor inner).
+#[allow(clippy::too_many_arguments)]
+fn apply_ket_zf_block_all_kappa(
+    out_r: &mut [f64],
+    out_i: &mut [f64],
+    tmp_r: &[f64],
+    tmp_i: &[f64],
+    dk: usize,
+    ncl: usize,
+    dl: usize,
+    ll: u8,
+    kappa_l: i32,
+    coeff_gt_r: &[f64],
+    coeff_gt_i: &[f64],
+    coeff_lt_r: &[f64],
+    coeff_lt_i: &[f64],
+) {
+    if kappa_l < 0 {
+        apply_ket_zf_block(out_r, out_i, tmp_r, tmp_i, dk, ncl, dl, coeff_gt_r, coeff_gt_i, 0);
+    } else if kappa_l > 0 {
+        apply_ket_zf_block(out_r, out_i, tmp_r, tmp_i, dk, ncl, dl, coeff_lt_r, coeff_lt_i, 0);
+    } else {
+        let nd_gt = 2 * ll as usize + 2;
+        let nd_lt = 2 * ll as usize;
+        apply_ket_zf_block(out_r, out_i, tmp_r, tmp_i, dk, ncl, nd_gt, coeff_gt_r, coeff_gt_i, 0);
+        if nd_lt > 0 {
+            apply_ket_zf_block(out_r, out_i, tmp_r, tmp_i, dk, ncl, nd_lt, coeff_lt_r, coeff_lt_i, nd_gt);
+        }
+    }
+}
+
+/// Apply one ket-zf block: complex multiply of coeff with complex input.
+#[allow(clippy::too_many_arguments)]
+fn apply_ket_zf_block(
+    out_r: &mut [f64],
+    out_i: &mut [f64],
+    tmp_r: &[f64],
+    tmp_i: &[f64],
+    dk: usize,
+    ncl: usize,
+    nd: usize,
+    coeff_r: &[f64],
+    coeff_i: &[f64],
+    row_off: usize,
+) {
+    // tmp is [ncl * dk]: l_cart outer, k_spinor inner
+    // out is [dl * dk]: l_spinor outer (at row_off+l_sp), k_spinor inner
+    let nf2 = 2 * ncl; // total coefficient columns for ket (alpha+beta halves)
+    for l_sp in 0..nd {
+        for k_sp in 0..dk {
+            let mut re = 0.0f64;
+            let mut im = 0.0f64;
+            for n in 0..ncl {
+                // Use alpha half of ket coefficient (n < ncl columns)
+                let cr = coeff_r[l_sp * nf2 + n];
+                let ci = coeff_i[l_sp * nf2 + n];
+                if cr == 0.0 && ci == 0.0 {
+                    continue;
+                }
+                let vr = tmp_r[n * dk + k_sp];
+                let vi = tmp_i[n * dk + k_sp];
+                re += cr * vr - ci * vi;
+                im += cr * vi + ci * vr;
+            }
+            out_r[(row_off + l_sp) * dk + k_sp] = re;
+            out_i[(row_off + l_sp) * dk + k_sp] = im;
+        }
+    }
+}
+
+/// Full 3D cart-to-spinor transform for 3c2e integrals.
+///
+/// Implements libcint `c2s_sf_3c2e1`: sph transform on auxiliary k, then
+/// spinor bra+ket transform on (i, j).
+///
+/// Algorithm:
+/// 1. Apply cart-to-sph on k-index: `cart[nci * ncj * nck]` → `tmp[nci * ncj * nsk]`.
+/// 2. Apply bra spinor transform on i-index (over nsk * ncj "columns").
+/// 3. Apply ket spinor transform on j-index.
+/// 4. Store as column-major interleaved: `staging[(k_sph * dj * di + j_sp * di + i_sp) * 2]`.
+///
+/// # Parameters
+/// - `staging`: output buffer, size `di * dj * nsk * 2` (nsk = 2*lk+1 spherical k components)
+/// - `cart`: Cartesian input `[nck * ncj * nci]` (k outermost, i innermost)
+/// - `li`, `kappa_i`: bra shell angular momentum and kappa
+/// - `lj`, `kappa_j`: ket shell angular momentum and kappa
+/// - `lk`: auxiliary shell angular momentum (no kappa — transforms to spherical)
+pub fn cart_to_spinor_sf_3c2e(
+    staging: &mut [f64],
+    cart: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8,
+) -> Result<(), cintxRsError> {
+    use super::c2s::{ncart, nsph};
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let nsk = nsph(lk);
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+
+    let expected_cart = nci * ncj * nck;
+    if cart.len() < expected_cart {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "c2spinor_sf_3c2e",
+            detail: format!(
+                "cart buffer length {} < nci*ncj*nck = {}*{}*{} = {}",
+                cart.len(), nci, ncj, nck, expected_cart
+            ),
+        });
+    }
+    let required = di * dj * nsk * 2;
+    if staging.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Step 1: cart-to-sph on k-index ──────────────────────────────────────
+    // Input: cart[nck * ncj * nci] (k outermost, i innermost)
+    // Output: sph_k[nsk * ncj * nci]
+    // For each (j, i) pair, apply c2s on k-axis.
+    let mut sph_k = vec![0.0f64; nsk * ncj * nci];
+    for j in 0..ncj {
+        for i in 0..nci {
+            for mk in 0..nsk {
+                let mut sum = 0.0f64;
+                for ck in 0..nck {
+                    let cart_idx = (ck * ncj + j) * nci + i;
+                    sum += c2s_k_coeff(lk, mk, ck) * cart[cart_idx];
+                }
+                sph_k[(mk * ncj + j) * nci + i] = sum;
+            }
+        }
+    }
+
+    // ── Step 2+3: apply 2D spinor transform (i,j) for each k_sph slice ────
+    // Input per k: sph_k[(mk * ncj + j) * nci + i] — layout: k outer, j middle, i inner
+    // For each k_sph, extract the [nci * ncj] slice and apply cart_to_spinor_sf_2d.
+    for mk in 0..nsk {
+        let slice_start = mk * ncj * nci;
+        let cart_slice = &sph_k[slice_start..slice_start + ncj * nci];
+        let staging_start = mk * di * dj * 2;
+        let staging_slice = &mut staging[staging_start..staging_start + di * dj * 2];
+        cart_to_spinor_sf_2d(staging_slice, cart_slice, li, kappa_i, lj, kappa_j)?;
+    }
+
+    Ok(())
+}
+
+/// Retrieve a single cart-to-sph coefficient for the k auxiliary index transform.
+fn c2s_k_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
+    use super::c2s::{C2S_L0, C2S_L1, C2S_L2, C2S_L3, C2S_L4};
+    match l {
+        0 => C2S_L0[m_row][cart_col],
+        1 => C2S_L1[m_row][cart_col],
+        2 => C2S_L2[m_row][cart_col],
+        3 => C2S_L3[m_row][cart_col],
+        4 => C2S_L4[m_row][cart_col],
+        _ => 0.0,
+    }
 }
 
 #[cfg(test)]
@@ -1092,13 +1515,112 @@ mod tests {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    //  staging no-op
+    //  cart_to_spinor_sf_4d tests
     // ──────────────────────────────────────────────────────────────────────────
 
+    /// All s-shells (l=0, kappa=-1): simplest 4-center case.
+    /// nci=ncj=nck=ncl=1, di=dj=dk=dl=2. Output size = 2*2*2*2*2 = 32 f64.
     #[test]
-    fn staging_is_noop() {
-        let mut data = vec![1.0, 2.0, 3.0, 4.0];
-        cart_to_spinor_interleaved_staging(&mut data).unwrap();
-        assert_eq!(data, vec![1.0, 2.0, 3.0, 4.0]);
+    fn sf_4d_ssss_kappa_neg1_output_size() {
+        let cart = vec![1.0f64]; // 1*1*1*1 = 1 element
+        let di = spinor_len(0, -1); // 2
+        let dj = spinor_len(0, -1);
+        let dk = spinor_len(0, -1);
+        let dl = spinor_len(0, -1);
+        let required = di * dj * dk * dl * 2; // 32
+        let mut staging = vec![0.0f64; required];
+        cart_to_spinor_sf_4d(
+            &mut staging, &cart,
+            0, -1, 0, -1, 0, -1, 0, -1,
+        ).expect("4d ssss kappa=-1 should succeed");
+        assert_eq!(staging.len(), required);
+    }
+
+    /// 4d ssss with all kappa=-1 and cart=[1.0]: output should be non-zero.
+    #[test]
+    fn sf_4d_ssss_kappa_neg1_nonzero() {
+        let cart = vec![1.0f64];
+        let required = spinor_len(0, -1).pow(4) * 2;
+        let mut staging = vec![0.0f64; required];
+        cart_to_spinor_sf_4d(
+            &mut staging, &cart,
+            0, -1, 0, -1, 0, -1, 0, -1,
+        ).expect("sf_4d should succeed");
+        let nonzero = staging.iter().filter(|&&v| v.abs() > 1e-15).count();
+        assert!(nonzero > 0, "4d ssss spinor output should be non-zero, got all zeros");
+    }
+
+    /// Output size for p-shell quartet (l=1, kappa=-1): di=dj=dk=dl=4, size=4^4*2=512.
+    #[test]
+    fn sf_4d_pppp_kappa_neg1_output_size() {
+        let nci: usize = 3; // ncart(1)
+        let cart = vec![0.1f64; nci * nci * nci * nci]; // random non-zero
+        let di = spinor_len(1, -1); // 4
+        let required = di.pow(4) * 2; // 512
+        let mut staging = vec![0.0f64; required];
+        cart_to_spinor_sf_4d(
+            &mut staging, &cart,
+            1, -1, 1, -1, 1, -1, 1, -1,
+        ).expect("sf_4d pppp should succeed");
+        assert_eq!(staging.len(), required);
+        let nonzero = staging.iter().filter(|&&v| v.abs() > 1e-15).count();
+        assert!(nonzero > 0, "pppp spinor output should be non-zero");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  cart_to_spinor_sf_3c2e tests
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// s-shells for i,j (l=0 kappa=-1) and s-shell for k (l=0): output size = 2*2*1*2 = 8 f64.
+    #[test]
+    fn sf_3c2e_sss_output_size() {
+        use super::super::c2s::nsph;
+        let cart = vec![1.0f64]; // nci*ncj*nck = 1
+        let di = spinor_len(0, -1); // 2
+        let dj = spinor_len(0, -1); // 2
+        let nsk = nsph(0);          // 1
+        let required = di * dj * nsk * 2; // 8
+        let mut staging = vec![0.0f64; required];
+        cart_to_spinor_sf_3c2e(
+            &mut staging, &cart,
+            0, -1, 0, -1, 0,
+        ).expect("3c2e sss should succeed");
+        assert_eq!(staging.len(), required);
+    }
+
+    /// sss with cart=[1.0]: output should be non-zero.
+    #[test]
+    fn sf_3c2e_sss_nonzero() {
+        use super::super::c2s::nsph;
+        let cart = vec![1.0f64];
+        let di = spinor_len(0, -1);
+        let dj = spinor_len(0, -1);
+        let nsk = nsph(0);
+        let required = di * dj * nsk * 2;
+        let mut staging = vec![0.0f64; required];
+        cart_to_spinor_sf_3c2e(
+            &mut staging, &cart,
+            0, -1, 0, -1, 0,
+        ).expect("3c2e sss should succeed");
+        let nonzero = staging.iter().filter(|&&v| v.abs() > 1e-15).count();
+        assert!(nonzero > 0, "3c2e sss spinor output should be non-zero");
+    }
+
+    /// p-shell k: output has nsk=3 k-sph components, each with di*dj complex spinors.
+    #[test]
+    fn sf_3c2e_ssp_k_output_size() {
+        use super::super::c2s::nsph;
+        let nci: usize = 1; let ncj: usize = 1; let nck: usize = 3; // ncart(1)
+        let cart = vec![0.5f64; nci * ncj * nck];
+        let di = spinor_len(0, -1); // 2
+        let dj = spinor_len(0, -1); // 2
+        let nsk = nsph(1); // 3
+        let required = di * dj * nsk * 2; // 24
+        let mut staging = vec![0.0f64; required];
+        cart_to_spinor_sf_3c2e(
+            &mut staging, &cart,
+            0, -1, 0, -1, 1,
+        ).expect("3c2e s,s,p should succeed");
+        assert_eq!(staging.len(), required);
     }
 }
