@@ -1,211 +1,205 @@
 # Project Research Summary
 
-**Project:** cintx v1.1
-**Domain:** GPU quantum chemistry integral evaluation — CubeCL direct client API, real kernel compute, oracle parity
-**Researched:** 2026-04-02
-**Confidence:** HIGH (codebase + CubeCL API evidence); MEDIUM (numerical precision, multi-backend scheduling)
+**Project:** cintx v1.2 — Full API Parity & Unified Oracle Gate
+**Domain:** Rust reimplementation of libcint 6.1.3 — quantum chemistry integral library
+**Researched:** 2026-04-04
+**Confidence:** HIGH
 
 ## Executive Summary
 
-cintx v1.1 transitions from stub infrastructure to real GPU compute. The v1.0 baseline delivered a complete execution pipeline — safe Rust API, raw compat layer, planner, chunking, staging/fingerprint propagation, and oracle harness — but all kernel family launch functions return zeros. The v1.1 goal is to replace those stubs with real `#[cube(launch)]` kernels that produce libcint 6.1.3-compatible results, validated against the oracle harness at per-family numerical tolerances. The architecture is already correct; the work is purely inside `cintx-cubecl`.
+cintx v1.2 is a targeted completion milestone for an already-functional Rust reimplementation of libcint. The five base integral families (1e, 2e, 2c2e, 3c1e, 3c2e) are live with oracle CI parity at v1.1. v1.2 closes the remaining gaps to claim full API parity: F12/STG/YP short-range correlation kernels, real spinor Clebsch-Gordan transforms (replacing a provably-wrong placeholder), extended 4c1e oracle coverage, helper/transform API oracle wiring, unstable-source-api families, and manifest lock regeneration across all four feature profiles. No new external crates are required — all new math (STG roots, Clebsch-Gordan coefficient tables) follows the same embedded-static-table strategy already used for Rys roots and Condon-Shortley transforms.
 
-The recommended implementation approach is: (1) rewrite the executor to use CubeCL's direct client API (`client.create`, `client.empty`, `client.read`) with the `ResolvedBackend` enum pattern, (2) implement a CPU backend path so oracle parity tests run in CI without GPU hardware, (3) build Gaussian primitive infrastructure and Boys function in-house as `#[cube]` functions (no viable Rust crate exists), then (4) implement kernel families in dependency order — 1e first, 2e next, then 2c2e/3c1e/3c2e. The only algorithm decision with lasting consequences is choosing Rys quadrature for 2e/2c2e/3c2e and McMurchie-Davidson for 1e/3c1e, which matches the memory footprint and GPU thread structure constraints established by GPU4PySCF and similar production GPU integral codes.
+The recommended build order is strictly dependency-ordered: complete helper/transform API oracle wiring first (pure host-side, no kernel risk), then 4c1e real kernel (same Rys infrastructure as 2e), then the spinor Clebsch-Gordan transform replacement (prerequisite for spinor oracle coverage), then F12/STG/YP kernels (reuse Rys/pdata infrastructure verified in the 4c1e step), then unstable-source-api families, and finally a unified oracle tolerance audit across all profiles. This sequencing ensures each step builds on a verified foundation rather than compounding undetected errors across the dispatch chain.
 
-The dominant risk is the f64 / wgpu `SHADER_F64` constraint: WGSL does not support 64-bit shader arithmetic on Metal or WebGPU targets, and the 1e oracle tolerance is 1e-11. This must be resolved before writing a single kernel — the decision is to run oracle parity tests against the CubeCL CPU backend (which supports f64 natively) rather than depending on hardware `SHADER_F64`. A second critical risk is that all Boys function helpers and Obara-Saika/Rys recurrence helpers must be annotated `#[cube]` — calling plain Rust functions from inside `#[cube]` produces a hard compile error (E0433). Both risks are fully characterized and have clear mitigations.
+The primary risks are: (a) the unified atol=1e-12 goal conflicting with numerically-achievable precision floors for 3c1e/4c1e/F12 — the design doc explicitly caps these at 1e-6 to 1e-7, so the correct interpretation is "no family exempt from oracle comparison" rather than "every family at 1e-12"; (b) the spinor transform stub shipping as a real transform because existing tests only check buffer length, not correctness; and (c) silent wrong-result paths for F12 when `env[PTR_F12_ZETA]` is zero. All three risks are mitigated by gating oracle comparison against the real upstream reference before advancing each phase.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is locked for v1.1. No new workspace-level crate additions are needed. Two crate-level changes are required in `crates/cintx-cubecl/Cargo.toml`: promote `bytemuck` from transitive to direct dependency (for `cast_slice` in client buffer I/O), and add a `cpu = ["cubecl/cpu"]` feature flag to enable `CpuRuntime` for CI test paths. All Boys function, Rys quadrature, and Obara-Saika recurrence math is implemented in-house as `#[cube]` functions — there are no viable Rust crates for this domain on crates.io as of 2026-04-02.
+The v1.2 stack requires no new external crates. All additions are internal: a new `math/stg.rs` sub-module in `cintx-cubecl` for STG root evaluation via Clenshaw/DCT recurrence (embedding `roots_xw.dat` table as static arrays), a new `transform/c2spinor_coeffs.rs` module with real/imaginary Clebsch-Gordan tables extracted from `libcint-master/src/cart2sph.c` lines 809-3535, and an `operator_env_params` field extension on `ExecutionPlan` in `cintx-runtime` to carry `PTR_F12_ZETA` (env[9]) to kernel launchers. The one dependency change is promoting `num-complex 0.4.6` (already a transitive lockfile entry via cubecl) to a direct dependency in `cintx-core` and `cintx-cubecl`.
 
-**Core technologies:**
-- `cubecl 0.9.0` (locked): GPU+CPU compute backend — `#[cube(launch)]` macro generates backend-generic kernel launchers; the same kernel compiles for wgpu and cpu runtime without code changes.
-- `cubecl-wgpu 0.9.0`: default GPU backend — requires `SHADER_F64` check before any double-precision kernel dispatch.
-- `cubecl/cpu` feature: CPU runtime backend — runs real `#[cube]` kernels on host; primary oracle parity path when GPU `SHADER_F64` is unavailable.
-- `bytemuck 1.25.0` (promote to direct dep): zero-copy `cast_slice` for `client.create(&[u8])` and `client.read` output deserialization.
-- `thiserror 2.0.18`: typed public error surface — `UnsupportedApi` with structured reasons such as `missing_shader_f64`.
-- `Rust 1.94.0` (pinned in `rust-toolchain.toml`): reproducible compiler for oracle baseline and manifest audits.
+**Core technologies (unchanged from v1.1):**
+- `cubecl 0.9.0` (locked): GPU+CPU compute backend — backend-agnostic public API; CPU path provides oracle parity CI without GPU hardware
+- `thiserror 2.0.18`: Public typed error surface — library-facing error enums without leaking implementation details
+- `anyhow 1.0.102`: App-boundary errors in xtask, oracle harness, benchmarks
+- `bindgen 0.71.1`: Oracle binding generation — upgrade deliberately, not automatically
+- `num-complex 0.4.6` (new direct dep): Typed `Complex<f64>` for spinor output path — already in lockfile, zero cost to promote
 
-**Critical kernel constraint:** Every function called from inside a `#[cube]` function must itself be annotated `#[cube]`. Standard library math (`f64::sqrt`, `f64::erf`) is host-side only; use CubeCL's built-in Float primitives inside kernels. Violating this produces compile error E0433 with no useful source location.
+**New internal modules (no new crates):**
+- `cintx-cubecl/src/math/stg.rs`: Clenshaw/DCT port of `CINTstg_roots`; embeds `roots_xw.dat` table as static arrays indexed by `nroots * 196 * (iu + it * 10)`
+- `cintx-cubecl/src/transform/c2spinor_coeffs.rs`: Real and imaginary Clebsch-Gordan tables for l=0..8, extracted from `cart2sph.c`
+- `cintx-runtime`: `ExecutionPlan` extended with `operator_env_params: Option<OperatorEnvParams>` for F12 zeta routing
 
 ### Expected Features
 
-See `.planning/research/FEATURES.md` for full detail.
+**Must have (P1 — v1.2 release gate requires these):**
+- F12/STG/YP real kernels: 10 sph-only symbols (`int2e_stg_sph`, `int2e_yp_sph`, and four derivative variants each) plus matching optimizer symbols; oracle gate at atol=1e-6 under `with-f12` profile
+- F12 sph-only enforcement CI gate: "cart/spinor symbol count is zero" verified in `with-f12` profile; this is itself a pass condition, not merely a restriction
+- 4c1e full oracle coverage: `int4c1e_cart` and `int4c1e_sph` passing oracle within `Validated4C1E` envelope (cart/sph, scalar, max(l)<=4); bug-envelope rejection tests verify `UnsupportedApi` for out-of-envelope inputs including all spinor requests
+- 4c1e workaround path: `compat::workaround::int4c1e_via_2e_trace` for callers needing 4c1e outside the validated envelope
+- Full cart-to-spinor transforms: all four `CINTc2s_*spinor*` variants with correct Clebsch-Gordan coupling (current stub is provably wrong); spinor oracle gate for 1e family
+- Helper API oracle CI gate: count/offset/norm functions verified against upstream libcint 6.1.3 using exact integer equality (not float tolerance)
+- Legacy wrapper oracle CI gate: `cNAME_sph` legacy symbols verified against upstream
+- Manifest lock regenerated for full support matrix: `compiled_manifest.lock.json` covering all four profiles `{base, with-f12, with-4c1e, with-f12+with-4c1e}`
+- Unified oracle tolerance: base scalar families (1e, 2e, 2c2e, 3c1e, 3c2e) verified at atol=1e-12 where achievable; per-design-doc exceptions for 4c1e/F12/spinor (atol=1e-6)
 
-**Must have (table stakes for v1.1):**
-- CubeCL direct client API rewrite — prerequisite for all real kernel work; removes the `RecordingExecutor` wrapper from `cintx-compat`.
-- Configurable multi-backend support (wgpu + cpu) — CPU backend required for GPU-free CI oracle parity.
-- 1e real kernel (overlap, kinetic, nuclear attraction) — simplest family; validates the end-to-end pipeline.
-- 2e real kernel (ERI core, Rys quadrature) — most complex; tightest oracle tolerance (1e-12 atol, 1e-10 rtol).
-- 2c2e, 3c1e, and 3c2e real kernels — build on Boys/Rys infrastructure from 2e.
-- Gaussian primitive evaluation and contraction infrastructure — shared scaffolding all kernels depend on.
-- Cart-to-spherical transform (real Condon-Shortley convention, not the current placeholder) — required for any caller requesting `Representation::Spheric`.
-- Oracle parity gate passing for all five base families across the family-specific tolerances.
+**Should have (P2 — unstable-source-api coverage):**
+- origi/origk families: `int1e_r2_origi`, `int1e_r4_origi`, `int3c1e_r*_origk` variants behind `unstable-source-api`; needed for magnetic property calculations (GIAO, London orbitals)
+- `int1e_grids` family: DFT numerical grid integration behind `unstable-source-api`; requires `NGRIDS`/`PTR_GRIDS` env slot parsing and GPU coordinate upload
+- Spinor oracle coverage for 2e/2c2e families: after 1e spinor is proven correct
 
-**Should have (competitive differentiators, after oracle parity):**
-- Exponential screening (Schwarz / `pdata.cceij` pair pre-filtering) — performance optimization, does not affect correctness.
-- Optimizer cache non-zero contraction index lists — throughput improvement for contracted basis sets.
-- Batched shell-quartet kernel dispatch — reduces launch overhead for large basis sets.
+**Defer to v1.2.x or v1.3 (P3):**
+- Breit integral kernels (`int2e_breit_r1p2`, `int2e_breit_r2p2`): high-accuracy relativistic only; new 2e Breit-Pauli operator variant; ship as documented `UnsupportedApi` stubs initially
+- `int3c2e_ssc`: spin-orbit coupling; new 3c2e variant
+- Feature-matrix CI evidence report: tooling quality improvement, not a correctness gate
+- `int1e_r4_origi_ip2` / `int1e_r2_origi_ip2`: higher-derivative origi variants
 
-**Defer to post-v1.1:**
-- Spinor representation kernels (complex interleaved output, c2spinor transform).
-- F12/STG/YP range-separated operator kernels.
-- GTG family — excluded entirely (upstream has known bugs; `resolve_family_name` must never match `"gtg"`).
-- Asynchronous public API — all public APIs remain synchronous.
-- Host-CPU integral computation outside the CubeCL CPU backend — explicitly excluded by the architecture constraint.
+**Anti-features (do not implement):**
+- GTG integrals: upstream explicitly documents "bugs in gtg type integrals" in CMakeLists.txt; no valid oracle exists; classify as `planned-excluded`
+- F12 cart/spinor variants: do not exist in compiled upstream library; return `UnsupportedRepresentation`
+- 4c1e beyond `Validated4C1E` envelope: upstream has known bugs; return `UnsupportedApi` with explicit reason
+- Async `evaluate()` API: explicitly rejected by design doc section 1.3
+- Bitwise-identical libcint internals: makes GPU backend impossible; oracle tolerance contract is the correct compatibility claim
 
 ### Architecture Approach
 
-The architecture does not change for external callers. All v1.1 changes are strictly inside `cintx-cubecl`. The `BackendExecutor` trait, `ExecutionIo` staging contract, `DispatchDecision` ownership model, and all `cintx-rs` / `cintx-compat` public surfaces are frozen. The internal change is: replace the stub `TransferPlan::stage_device_buffers` probe with a real `client.create` / kernel launch / `client.read` cycle inside each kernel family module. Backend dispatch uses a `ResolvedBackend` enum (`Wgpu(ComputeClient<WgpuRuntime>)` / `Cpu(ComputeClient<CpuRuntime>)`) that preserves object safety for `&dyn BackendExecutor` without introducing generics into the public crate boundary.
+The v1.2 architecture is additive: the core dispatch chain (manifest resolver -> runtime planner -> cubecl dispatcher -> kernel) is unchanged. F12/STG/YP slots in as a new `canonical_family: "f12"` entry resolving to a new `kernels/f12.rs` file with the same `FamilyLaunchFn` signature. Spinor support is a pure math change inside `c2spinor.rs` with no dispatch modifications. 4c1e replaces the zero-fill stub inside the existing `center_4c1e.rs` with real Rys/Obara-Saika computation. Helper/transform completions are pure host-side Rust in `cintx-compat` with no kernel involvement. The manifest `oracle_covered` field flips from `false` to `true` as each symbol gains CI comparison — this is the primary v1.2 tracking mechanism.
 
-**Major components:**
-1. `backend/mod.rs` (new in `cintx-cubecl`) — `ResolvedBackend` enum, `from_intent` factory, `Mutex<HashMap<BackendIntentKey, ResolvedBackend>>` cache to prevent double-init panics.
-2. `kernels/{family}.rs` (rewrite stubs) — each family module owns its buffer lifecycle: `client.create` inputs, `client.empty` output, `launch::<R>`, `client.read`, copy into staging slice.
-3. `kernels/mod.rs` (signature update) — `FamilyLaunchFn` gains `&ResolvedBackend` and `&mut [f64]` staging; `TransferPlan` is retained for metrics but stops allocating device buffers.
-4. `cintx-compat/src/raw.rs` (deletion) — `RecordingExecutor` is removed once executor writes real values into staging before returning.
-5. `math/` module (new in `cintx-cubecl`) — Boys function + Rys roots/weights as `#[cube]` functions using CubeCL built-in Float primitives; no `libm` inside kernel code.
+**Major components and their v1.2 changes:**
+1. `cintx-cubecl/src/kernels/f12.rs` (new): STG and YP 2e kernel variants sharing pdata/Rys infrastructure from `two_electron.rs`; `kernels/mod.rs` gains `"f12"` dispatch arm
+2. `cintx-cubecl/src/transform/c2spinor.rs` (rewrite): replace amplitude-averaging stub with real Clebsch-Gordan coupling matrix application per (l, kappa); add `c2spinor_coeffs.rs` with coefficient tables
+3. `cintx-cubecl/src/kernels/center_4c1e.rs` (complete stub): replace zero-fill with real Rys quadrature plus Obara-Saika recurrence within `Validated4C1E` envelope
+4. `cintx-compat/src/helpers.rs`, `transform.rs`, `optimizer.rs` (complete): add remaining helper symbols, remaining transform symbols (spinor-dependent ones unblocked after component 2), F12 optimizer init
+5. `cintx-oracle/src/compare.rs`, `fixtures.rs` (extend): add F12/4c1e/spinor tolerance entries, new fixtures with proper `env[PTR_F12_ZETA]` population, integer-equality path for helper APIs
+6. `cintx-ops/src/generated/api_manifest.rs` (update): flip `oracle_covered: false` to `true` as each symbol gains CI coverage
+7. `cintx-runtime/ExecutionPlan` (extend): add `operator_env_params` field for F12 zeta routing
 
-**Data flow (v1.1 target):**
-```
-Caller -> cintx-rs -> cintx-runtime (plan + chunk)
-  -> CubeClExecutor::execute
-    -> ResolvedBackend::from_intent (singleton per selector)
-    -> kernels::launch_family(&backend, plan, &spec, staging)
-      -> client.create(input_bytes)       // H2D
-      -> client.empty(output_bytes)       // GPU buffer
-      -> kernel::launch::<R>(...)         // execute
-      -> client.read([output_buf])        // D2H
-      -> staging.copy_from_slice(values)  // commit
-    -> transform::apply_representation_transform(staging)
-  -> cintx-compat layout writer (Cartesian or Spheric final write)
-```
+**Unchanged (do not touch):**
+- `cintx-core` domain types, `cintxRsError` variants, `Representation` enum
+- `cintx-runtime` planner, validator, scheduler, `BackendExecutor` trait
+- `cintx-rs` safe facade public surface
+- `cintx-capi` C ABI shim surface
+- CI workflow YAML structure, artifact paths, job topology
 
 ### Critical Pitfalls
 
-See `.planning/research/PITFALLS.md` for full detail on all 16 pitfalls.
+1. **Flat atol=1e-12 applied to 3c1e/4c1e/F12 before empirical calibration**: Rys quadrature for high-order 3c1e accumulates 1e-8 to 1e-9 rounding; upstream testsuite uses 1e-7 for high-order 3c1e. Apply per-family tolerances per design doc section 13.8; "unified 1e-12" applies to base scalar families only. Run the full oracle sweep and measure the empirical error distribution before writing any CI gates with 1e-12.
 
-1. **`ArrayArg` handle lifetime / use-after-free on GPU** (Pitfall 1) — bind every handle to a named `let` before any `ArrayArg` construction; never pass a temporary expression. Silent wrong results (zeros or garbage) with no Rust safety error surfaced.
+2. **The spinor transform stub ships as a real implementation**: `c2spinor.rs` computes `(|re|+|im|)*0.5`, which is not a Clebsch-Gordan transform. Current tests only check buffer length. Spinor oracle comparisons will fail completely with this stub in place. Treat it as equivalent to `todo!()` and rewrite entirely before authoring any spinor oracle fixtures.
 
-2. **CubeCL device double-initialization panic** (Pitfall 2) — all device initialization must go through the existing `bootstrap_wgpu_runtime` singleton guard; never call `init_setup` directly from kernel modules. Cache `ResolvedBackend` in a `Mutex<HashMap>` keyed on `(BackendKind, selector)`.
+3. **F12 `env[PTR_F12_ZETA]=0` silently falls back to plain Coulomb**: `CINTstg_roots` is only called when `zeta > 0`. When zero, the code calls `CINTrys_roots` (plain 2e path), producing integrals that look correct but are not testing STG physics at all. The validator must reject F12/STG/YP calls where `env[9] == 0.0` with a typed error.
 
-3. **f64 unavailable in WGSL shaders** (Pitfall 3) — `SHADER_F64` is absent on Metal and WebGPU targets; all oracle parity tests must run against the CPU backend (`--features cpu`), not wgpu. Add explicit `UnsupportedApi` gate when f64 is required and `SHADER_F64` is absent; never silently fall back to f32.
+4. **4c1e spinor path is unimplemented upstream and must return `UnsupportedApi`**: `int4c1e_spinor` in upstream contains only `fprintf(stderr, "int4c1e_spinor not implemented\n"); return 0;`. Oracle comparison trivially passes (both sides zero). The `Validated4C1E` classifier must check representation before angular momentum and must explicitly reject spinor.
 
-4. **Boys function numerical breakdown on GPU** (Pitfall 4) — use upward recurrence only (downward recurrence is unstable for small `x`); validate Boys function standalone against CPU oracle before embedding in any kernel. Nuclear attraction oracle failures while overlap passes is the diagnostic signal.
+5. **YP and STG have distinct 4D recurrence routing for ibase/kbase combinations**: The `f_g0_2d4d` function pointer differs for YP vs STG when `ibase=true` or `kbase=true`. If both are implemented as a shared CubeCL kernel with a runtime zeta flag, the ibase/kbase routing diverges and YP produces wrong results for the majority of shell combinations. Implement as separate kernel entry points.
 
-5. **Recurrence cancellation for l >= 2 shells** (Pitfall 5) — OS recurrence accumulates errors for f-function and higher angular momentum. Use McMurchie-Davidson for `l >= 2`; test near-nuclear geometries explicitly. Failures are geometry-dependent, not random.
+6. **Manifest lock regeneration must follow oracle parity, not precede it**: If the lock is regenerated without passing oracle first, the audit gate silently accepts incorrect coverage. Run `cargo xtask manifest-audit` immediately after adding each new symbol, treat failures as blocking, and do not regenerate the lock as a CI workaround.
 
-6. **Cart-to-sph staging size mismatch** (Pitfall 6) — spherical shells have fewer components than Cartesian (d-shell: 5 sph vs 6 cart). `TransferPlan::chunk_staging_elements` must be updated in lockstep with the real c2s transform; validate staging sizing before replacing the c2s placeholder or oracle reports `INFINITY` error silently.
-
-7. **`RecordingExecutor` removal timing** (Pitfall 7) — do not remove before the inner executor reliably populates staging on return; do not leave it in place after real values flow into staging, as the double-capture path produces silently wrong results in the raw API.
+7. **Helper API oracle comparison must use exact integer equality**: Count/offset helpers return integers. Float atol comparison masks off-by-one errors for shell sizes. Add a separate integer comparison path in the oracle harness before authoring helper fixtures.
 
 ## Implications for Roadmap
 
-Based on combined research, the natural phase structure follows the feature dependency graph in FEATURES.md: infrastructure first, simplest kernel family second, most complex family third, remaining families in parallel, oracle gate closure last.
+Based on combined research, the dependency chain enforces a natural 7-phase structure. Each phase gates the next via oracle comparison.
 
-### Phase 1: Executor Infrastructure Rewrite
+### Phase 1: Helper and Transform API Completion
+**Rationale:** Pure host-side Rust in `cintx-compat` with no kernel dependency. Delivers expanded oracle coverage without touching the GPU dispatch chain, providing a clean CI baseline before any kernel work begins. Unblocks `helper-legacy-parity` CI gate items blocking release gate item 7. Non-spinor transform symbols can be completed now; spinor-dependent transform symbols are deferred to Phase 3.
+**Delivers:** All non-spinor helper/transform/optimizer symbols wired to oracle CI; `helper-legacy-parity` gate passing; integer-equality comparison path added to oracle harness
+**Addresses features:** Helper API oracle CI gate, legacy wrapper oracle CI gate (P1 table stakes)
+**Avoids pitfalls:** Pitfall 7 (integer vs float comparison — add integer path first, then author fixtures)
 
-**Rationale:** All real kernel work is blocked until the executor uses the direct client API. This is the prerequisite gate — no kernel can write real values into staging until `client.create`/`client.read` replace the stub host-side probe. `RecordingExecutor` removal is synchronized here because its removal depends on the executor reliably populating staging.
-**Delivers:** `ResolvedBackend` enum, wgpu and CPU backend bootstrap, `FamilyLaunchFn` signature update (`&ResolvedBackend` + `&mut [f64]` staging), stub kernels still return zeros but now through the real buffer lifecycle path. `RecordingExecutor` deleted from `cintx-compat`.
-**Addresses:** TS1 (direct client API), TS2 (configurable multi-backend).
-**Avoids:** Pitfalls 1, 2, 7 (handle lifetime, double-init panic, RecordingExecutor capture ordering).
-**Research flag:** Standard patterns — CubeCL client API is fully documented in project reference files; `ResolvedBackend` enum pattern is specified in ARCHITECTURE.md. No research-phase needed.
+### Phase 2: 4c1e Real Kernel Within Validated4C1E Envelope
+**Rationale:** 4c1e uses the same Rys quadrature infrastructure as 2e. Completing it before F12 stress-tests the four-center Rys path at maximum complexity before adding the operator-kernel change that F12 introduces. This phase also adds the 4c1e identity test and the `int4c1e_via_2e_trace` workaround path.
+**Delivers:** `int4c1e_cart` and `int4c1e_sph` passing oracle within Validated4C1E; bug-envelope rejection tests; `compat::workaround::int4c1e_via_2e_trace`; 4c1e spinor explicitly returning `UnsupportedApi`
+**Uses:** Existing `rys_roots_host`, `compute_pdata_host`, Obara-Saika recurrences — no new dependencies
+**Avoids pitfalls:** Pitfall 4 (4c1e spinor must return `UnsupportedApi`), Pitfall 8 (4c1e identity relation index permutation — copy from upstream testsuite verbatim, do not simplify)
 
-### Phase 2: Gaussian Primitive Infrastructure and Boys Function
+### Phase 3: Real Spinor Transform (c2spinor Replacement)
+**Rationale:** Spinor support is a prerequisite for oracle coverage of any spinor-form integral and for the spinor-dependent transform symbols deferred from Phase 1. The `c2spinor.rs` rewrite is a pure math change with no dispatch-chain risk — isolated to one file plus the new coefficients module. Completing it here unblocks Phase 5 spinor oracle coverage.
+**Delivers:** Correct Clebsch-Gordan coupling matrix application in `c2spinor.rs`; `c2spinor_coeffs.rs` with real/imaginary tables for l=0..8; spinor oracle gate for 1e family; spinor-dependent transform symbols wired to oracle CI; `num-complex` promoted to direct dependency in `cintx-core` and `cintx-cubecl`
+**Avoids pitfalls:** Pitfall 2 (stub cannot be tested with length checks alone), Pitfall 7 (spinor staging buffer must be sized `spinor_component_count * 2` for interleaved re/im doubles)
 
-**Rationale:** Every kernel family depends on correct primitive evaluation, pair data computation, contraction accumulation, and Boys function. Building this as a validated standalone layer before any family kernel prevents repeated debugging of shared math. The Boys function domain boundaries and Rys polynomial fit table coverage must be confirmed against `libcint-master/src/fmt.c` and `polyfits.c` before any kernel uses them.
-**Delivers:** `#[cube]` Boys function (upward recurrence + asymptotic expansion), Rys root/weight polynomial fit tables, Gaussian product center and pair data computation, contraction accumulation loop, `DeviceResidentCache` entries for Boys table and transform matrices.
-**Addresses:** TS8 (Gaussian primitive infrastructure), Boys function component of TS4.
-**Avoids:** Pitfall 4 (Boys function domain branching instability), Pitfall 14 (CubeCL type inference failures in `#[cube]` helpers).
-**Research flag:** Needs `/gsd:research-phase` — Boys function GPU domain branching strategy, Rys polynomial coefficient table coverage limits, and `#[cube]` math primitive constraints need a locked design before implementation. Source: `libcint-master/src/fmt.c`, `polyfits.c`, and CubeCL Float built-in API.
+### Phase 4: F12/STG/YP Kernel Implementation
+**Rationale:** F12 reuses the Rys/pdata infrastructure validated in Phase 2. The operator change (Coulomb kernel swap to STG/YP geminal) is the only new physics. Sph-only restriction simplifies testing since c2s is already validated. All 10 F12 sph symbols plus matching optimizer symbols must land in this phase.
+**Delivers:** `kernels/f12.rs` with STG and YP variants as separate kernel entry points; `math/stg.rs` with embedded `roots_xw.dat` tables; `ExecutionPlan.operator_env_params` carrying `PTR_F12_ZETA`; F12 oracle gate under `with-f12` profile at atol=1e-6; "cart/spinor count is zero" CI enforcement; F12 optimizer coverage in `cintx-compat/src/optimizer.rs`
+**Avoids pitfalls:** Pitfall 3 (validator must reject `env[PTR_F12_ZETA]==0.0`), Pitfall 5 (STG roots must replicate `t = min(t, 19682.99)` clamp), Pitfall 6 (YP and STG must be separate kernel paths for ibase/kbase routing divergence)
 
-### Phase 3: 1e Real Kernel and Cart-to-Sph Transform
+### Phase 5: Unstable-Source-API Families
+**Rationale:** Source-only families have the weakest upstream specification and benefit from all previous infrastructure being stable. Oracle strategy differs: requires `dlsym`-based dynamic lookup rather than bindgen-generated bindings for source-only symbols not in headers. origi/origk and `int1e_grids` are P2; Breit/ssc are P3 and ship as `UnsupportedApi` stubs.
+**Delivers:** `int1e_r2_origi`, `int1e_r4_origi`, `int3c1e_r*_origk` kernels behind `#[cfg(feature = "unstable-source-api")]`; `int1e_grids` with `NGRIDS`/`PTR_GRIDS` env parsing; oracle gate in nightly extended CI with `--include-unstable-source true`; Breit/ssc as documented `UnsupportedApi` stubs
+**Avoids pitfalls:** Pitfall 11 (unstable-source oracle requires dlsym, not bindgen — verify harness can call upstream reference before writing any kernels)
 
-**Rationale:** The 1e family (overlap, kinetic, nuclear attraction) is the simplest kernel family and the fastest path to a real end-to-end pipeline validation. Overlap does not require Boys function — it catches contraction and transform bugs in isolation. Nuclear attraction adds Boys function — it catches Boys precision bugs as a separate signal. Cart-to-sph transform must be implemented alongside 1e because spherical output is the primary representation used by callers, and the staging size contract must be locked before any other family can use spheric output.
-**Delivers:** Real `#[cube(launch)]` kernels for `int1e_ovlp`, `int1e_kin`, `int1e_nuc`. Real Condon-Shortley c2s transform with correct staging buffer sizing for `Representation::Spheric`. Oracle parity gate passing for 1e family (atol 1e-11, rtol 1e-9).
-**Addresses:** TS3 (1e real kernel), TS9 (cart-to-sph transform).
-**Avoids:** Pitfall 3 (f64/WGSL — oracle must run under CPU backend), Pitfall 5 (OS recurrence breakdown for l >= 2), Pitfall 6 (staging size mismatch after real c2s).
-**Research flag:** Needs `/gsd:research-phase` — Obara-Saika vs. McMurchie-Davidson algorithm choice for l >= 2, f64 precision strategy for the wgpu path, and c2s coefficient sourcing from `libcint-master/src/cart2sph.c` all need confirmation before coding starts.
+### Phase 6: Manifest Lock Regeneration — Full Support Matrix
+**Rationale:** After all feature-gated families have oracle coverage, regenerate `compiled_manifest.lock.json` for all four profiles in one coordinated operation. This must follow oracle parity, not precede it. The four-profile libcint build driven by `xtask manifest-audit` closes release gate item 1.
+**Delivers:** `compiled_manifest.lock.json` covering `{base, with-f12, with-4c1e, with-f12+with-4c1e}`; `manifest-audit` CI gate passing with zero diff; all `oracle_covered` fields set to `true` for their respective profiles
+**Avoids pitfalls:** Pitfall 10 (lock regeneration must follow oracle parity; F12 `with-f12` profile must have zero cart/spinor symbols verified by `nm -D`)
 
-### Phase 4: 2e ERI Real Kernel (Rys Quadrature)
-
-**Rationale:** The 2e kernel is the most complex and most computationally important. Implementing it after the 1e pipeline is validated ensures the Boys function, Rys root infrastructure, and staging path are proven in a simpler context first. The 2e kernel has the tightest oracle tolerance (1e-12 atol) and is the most likely to require iteration.
-**Delivers:** Real `#[cube(launch)]` kernel for four-center ERI (`int2e_sph`) using Rys quadrature. Boys function from Phase 2 reused directly. Oracle parity gate passing for 2e family.
-**Addresses:** TS4 (2e real kernel).
-**Avoids:** Pitfall 5 (recurrence cancellation for high-l shells), Pitfall 13 (nondeterministic reduction order breaking oracle flakiness), Pitfall 10 (transfer_bytes undercount in ExecutionStats).
-**Research flag:** Strongly recommend `/gsd:research-phase` — Rys quadrature GPU recurrence for four-center ERIs, shell quartet thread mapping, workgroup sizing strategy, and angular momentum specialization for the 2e kernel are complex enough to warrant a dedicated research pass before coding starts.
-
-### Phase 5: 2c2e, 3c1e, and 3c2e Real Kernels and Oracle Gate Closure
-
-**Rationale:** These three families share Boys function and Rys infrastructure from Phases 2 and 4. They have lower individual complexity than the 2e kernel (fewer indices, smaller recurrence, looser oracle tolerances) and can be implemented in parallel after Phase 4 confirms the shared infrastructure is correct. Oracle parity gate closure for all five base families completes v1.1.
-**Delivers:** Real kernels for `int2c2e_sph`, `int3c1e_sph`, `int3c2e_sph`. Oracle parity gates passing for all five base families (2c2e/3c2e atol 1e-9, 3c1e atol 1e-7). `Phase2ParityReport` with `mismatch_count == 0` across the compatibility matrix.
-**Addresses:** TS5, TS6, TS7 (2c2e, 3c1e, 3c2e real kernels), TS10 (oracle parity gate).
-**Avoids:** Pitfall 11 (near-zero oracle tolerance path for symmetry-forbidden integrals), Pitfall 16 (oracle fixture sync — fixtures must be added per family before the family PR is merged).
-**Research flag:** Standard patterns — algorithms are straightforward simplifications of the 4c ERI case, building directly on Phase 4 infrastructure. No separate research-phase anticipated unless 3c1e three-center geometry adds unexpected recurrence complexity.
+### Phase 7: Unified Oracle Tolerance Audit
+**Rationale:** After all families have real kernels and oracle coverage, run a full tolerance audit across all profiles to confirm no family is exempt from comparison and per-family tolerances match design doc section 13.8. This is a verification and documentation phase, not an implementation phase.
+**Delivers:** Per-family atol/rtol constants in `compare.rs` verified against empirical oracle sweep data; base scalar families (1e, 2e, 2c2e, 3c1e, 3c2e) at atol=1e-12 where achievable; 4c1e/F12/spinor exceptions documented with measurement evidence; every `stability: Stable` manifest entry has `oracle_covered: true` with a passing CI record
+**Avoids pitfalls:** Pitfall 1 (3c1e has an empirical floor of 1e-7 for high-order shells; do not set 1e-12 without measurement; run sweep first, then set constants)
 
 ### Phase Ordering Rationale
 
-- Phases 1-2 establish the execution path and shared math before any family kernel is written; this prevents each family from independently re-implementing or debugging the same infrastructure and avoids the same numerical pitfalls being rediscovered five times.
-- Phase 3 (1e) before Phase 4 (2e) exploits the fact that 1e overlap has no Boys function dependency, isolating contraction and c2s bugs from precision bugs. The debugging signal from the oracle is cleanest when one variable changes at a time.
-- Phases 4 and 5 follow the feature dependency graph exactly: 2e must precede 2c2e/3c2e because the Boys function table and Rys infrastructure are developed and empirically validated for 2e first, then reused.
-- The f64 / CPU backend oracle parity strategy threads through all phases: every oracle comparison test must be gated on `--features cpu` until wgpu `SHADER_F64` support is empirically confirmed on CI hardware. This is not optional — silently running f32 with oracle tolerances written for f64 produces an always-failing CI gate.
+- Phases 1-2 first because they have no unsolved math dependencies and deliver measurable CI progress (passing oracle gates) immediately, without touching the GPU kernel dispatch chain.
+- Phase 3 (spinor) before Phase 4 (F12) because spinor Clebsch-Gordan completes the deferred transform symbols from Phase 1 and is lower-risk in isolation. F12 is sph-only and does not depend on spinor, but the spinor rewrite is fully bounded to one file.
+- Phase 5 (unstable-source) last among kernel phases because source-only families have weaker upstream specification and benefit from the full oracle infrastructure being proven on well-documented families first.
+- Phase 6 (manifest lock) must follow all kernel phases because the lock covers all four profiles; regenerating it early risks accepting incorrect coverage.
+- Phase 7 (tolerance audit) last because it requires complete oracle coverage across all families to measure empirical error distributions.
 
 ### Research Flags
 
-Phases requiring `/gsd:research-phase` during planning:
-- **Phase 2 (Boys function / primitive infrastructure):** Boys function GPU domain branching strategy, Rys polynomial coefficient table coverage, and `#[cube]` math primitive constraints need a locked design document before implementation begins.
-- **Phase 4 (2e ERI kernel):** Rys quadrature GPU recurrence for four-center ERIs, shell quartet thread mapping, and angular momentum specialization are complex enough to warrant a research pass to avoid costly rework.
+Phases likely needing deeper research during planning:
+- **Phase 4 (F12/STG/YP):** The STG roots Clenshaw/DCT port requires careful embedding of `roots_xw.dat` as Rust static arrays and exact replication of the t-clamp behavior. YP vs STG routing for ibase/kbase is a subtle correctness risk. Recommend `/gsd:research-phase` to lock the kernel design before coding.
+- **Phase 5 (unstable-source-api):** Requires verifying at the start of phase planning that the oracle harness can call source-only upstream symbols via `dlsym`. If it cannot, the harness must be extended before any kernel is written.
+- **Phase 7 (tolerance audit):** The 3c1e empirical precision floor for high angular momentum shells is not yet measured empirically against the cintx GPU path. Phase planning must include a measurement run before setting any new tolerance constants.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1 (executor rewrite):** CubeCL client API is fully documented in project reference files; `ResolvedBackend` enum pattern is specified in ARCHITECTURE.md with code examples.
-- **Phase 3 (1e kernel):** Overlap and kinetic integrals are well-documented in the quantum chemistry literature; c2s coefficients are in `libcint-master/src/cart2sph.c`. A research-phase is warranted only if the f64/wgpu decision needs hardware data from Phase 1 before proceeding.
-- **Phase 5 (2c2e/3c1e/3c2e):** Builds on validated Phase 4 infrastructure; algorithm extensions are straightforward simplifications of the 4c ERI case.
+- **Phase 1 (helper/transform completion):** Pure host-side Rust; patterns are established in `helpers.rs` and `transform.rs`; oracle harness extension follows the existing `IMPLEMENTED_HELPER_SYMBOLS` pattern.
+- **Phase 2 (4c1e kernel):** Same Rys/pdata/Obara-Saika infrastructure as 2e; `center_4c1e.rs` already has the correct envelope classifier; implementation follows `two_electron.rs` as template.
+- **Phase 3 (spinor transform):** Coefficient tables are directly extractable from `cart2sph.c` lines 809-3535; the transform call sites already accept `(l, kappa)` parameters; the rewrite is isolated to one file.
+- **Phase 6 (manifest lock):** `xtask manifest-audit` command already exists; the four-profile build procedure is documented in design doc section 3.3.1.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | CubeCL 0.9.0 API confirmed from project reference files and crates.io; `bytemuck` and `cubecl-cpu` already in lockfile as transitive deps; no new workspace crates needed; `bytemuck::Pod` trait bounds confirmed for f32/f64. |
-| Features | HIGH | Oracle tolerances sourced directly from `compare.rs` lines 21-31; feature dependency graph confirmed from codebase inspection; algorithm selection (Rys vs. OS vs. McMurchie-Davidson) supported by multiple peer-reviewed GPU quantum chemistry papers. |
-| Architecture | HIGH | `ResolvedBackend` enum pattern, `FamilyLaunchFn` signature change, and `RecordingExecutor` deletion all derived from direct codebase inspection of `executor.rs`, `raw.rs`, `transfer.rs`, and `dispatch.rs`. |
-| Pitfalls | HIGH (CubeCL-specific), MEDIUM (numerical) | Handle lifetime, double-init panic, and RecordingExecutor timing pitfalls confirmed from codebase. Boys function and recurrence breakdown pitfalls are literature-sourced and require empirical validation during kernel development. |
+| Stack | HIGH | All technology choices verified by direct codebase inspection; no new external crates required; `num-complex` already in lockfile as transitive dep |
+| Features | HIGH | Feature scope derived from direct inspection of `libcint-master/src/`, design doc section 14.1, and `api_manifest.csv`; what ships vs defers is unambiguous |
+| Architecture | HIGH | v1.1 architecture is verified working; v1.2 changes are additive with clear component boundaries; dispatch chain unchanged |
+| Pitfalls | HIGH (code-derived) / MEDIUM (precision) | Critical pitfalls for spinor stub, F12 zeta, 4c1e spinor, and YP routing are from direct code inspection; precision floor claims for 3c1e/STG quadrature are from algorithm analysis and require empirical measurement during Phase 7 |
 
-**Overall confidence:** HIGH for the execution path and infrastructure design; MEDIUM for the numerical precision outcomes on real hardware until oracle parity is empirically confirmed.
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **wgpu f64 on CI hardware:** Whether the CI GPU adapter supports `SHADER_F64` is unknown. The CPU backend oracle path is the primary mitigation, but empirical confirmation on CI hardware is needed in Phase 1. Until confirmed, treat the wgpu backend as f32-only for oracle purposes.
-- **Boys function boundary conditions:** The exact domain boundaries for upward recurrence vs. asymptotic expansion per order n are not locked down in research. These must be sourced from `libcint-master/src/fmt.c` during Phase 2 and validated standalone before any kernel uses Boys function output.
-- **Rys polynomial fit table coverage:** The `libcint-master/src/polyfits.c` polynomial fits cover roots/weights up to a maximum quadrature degree. If any kernel family requires roots beyond the table, a fallback (numerical root-finding on CPU, uploaded once to `DeviceResidentCache`) is needed. Must be verified during Phase 2 research.
-- **Workgroup sizing strategy:** The conservative `CubeDim::new(64, 1, 1)` baseline is used for all Phases 1-5. Per-family and per-angular-momentum specialization is deferred to post-v1.1, but `SpecializationKey` must be designed in Phase 1 to accommodate it without API changes later.
+- **3c1e empirical precision floor:** Current oracle tolerance for 3c1e is 1e-7 based on upstream empirical evidence. Whether existing `cintx-cubecl` 3c1e kernels can achieve 1e-12 for low-order shells has not been measured against the GPU path. Phase 7 planning must include a measurement sweep before setting any new constants.
+- **Unstable-source oracle harness capability:** It is not yet verified that `cintx-oracle` can call source-only symbols via `dlsym`. This must be confirmed as the first action of Phase 5 planning before any unstable-source kernel work begins.
+- **STG t-clamp GPU behavior:** The `t = min(t, 19682.99)` clamp in `CINTstg_roots` must be replicated exactly in the CubeCL implementation. Whether GPU floating-point handling of the clamp produces bit-identical results to the CPU path requires explicit fixture testing at the boundary (Phase 4).
+- **"Unified atol=1e-12" interpretation:** PROJECT.md states atol=1e-12 as a v1.2 goal; ARCHITECTURE.md and PITFALLS.md both indicate this means "no family exempt from oracle comparison" rather than "every family achieves 1e-12." This interpretation should be locked in phase planning before the Phase 7 tolerance audit is written, to avoid writing gates that permanently fail for 3c1e/4c1e/F12.
 
 ## Sources
 
-### Primary (HIGH confidence)
-- CubeCL 0.9.0 client API — `docs/manual/Cubecl/Cubecl_vector.md`, `Cubecl_shared_memory.md`, `Cubecl_multi_compute.md`, `cubecl_reduce_sum.md` (project reference files).
-- `#[cube]` constraint (no plain Rust calls from kernel, error E0433) — `docs/manual/Cubecl/cubecl_error_solution_guide/` (project reference file).
-- `BackendExecutor` / `ExecutionIo` contract — `crates/cintx-runtime/src/dispatch.rs` (codebase).
-- `CubeClExecutor` current implementation — `crates/cintx-cubecl/src/executor.rs` (codebase).
-- `RecordingExecutor` — `crates/cintx-compat/src/raw.rs` lines 21-71 (codebase).
-- Oracle tolerance constants — `crates/cintx-oracle/src/compare.rs` lines 21-31 (codebase).
-- libcint Boys function reference — `libcint-master/src/fmt.c`, `rys_roots.c`, `rys_wheeler.c` (vendored source).
-- `cubecl-cpu 0.9.0` and `bytemuck 1.25.0` in lockfile — `Cargo.lock` (local evidence).
-- wgpu `SHADER_F64` feature status — https://github.com/gfx-rs/wgpu/issues/1143.
-- CubeCL 0.9.0 feature list (`cpu`, `wgpu`, `cuda`, `hip`) — crates.io API.
+### Primary (HIGH confidence — direct code inspection)
+- `libcint-master/src/stg_roots.c` — STG root algorithm: Clenshaw/DCT over `roots_xw.dat`, t-clamp at 19682.99, no external dep
+- `libcint-master/src/g2e_f12.c` lines 113-127 — F12 kernel structure and YP vs STG ibase/kbase routing divergence; `PTR_F12_ZETA = env[9]`
+- `libcint-master/src/cart2sph.c` lines 809-3535 — real/imaginary spinor Clebsch-Gordan tables for sf (j=l+1/2) and si (j=l-1/2)
+- `libcint-master/src/cint4c1e.c:349-353` — `int4c1e_spinor` is explicitly unimplemented upstream (fprintf + return 0)
+- `crates/cintx-cubecl/src/transform/c2spinor.rs` — confirmed amplitude-averaging stub, not a valid Clebsch-Gordan transform
+- `crates/cintx-oracle/src/compare.rs` lines 21-31 — per-family tolerance constants; no `"f12"` arm in `tolerance_for_family`
+- `crates/cintx-ops/src/generated/api_manifest.rs` — `ManifestEntry` schema with `oracle_covered`, `canonical_family`, `feature_flag`, `stability`
+- `crates/cintx-compat/src/helpers.rs` — `len_spinor`, `len_spheric`, `len_cartesian` confirmed implementations
+- `.planning/PROJECT.md` — v1.1 oracle gate closure confirmed; v1.2 requirements list
+- `.planning/REQUIREMENTS.md` — v1.1 deferred items confirmed; spinor, F12, unstable-source deferred explicitly
+- `libcint-master/include/cint.h.in` line 40 — `PTR_F12_ZETA = 9` confirmed
 
-### Secondary (MEDIUM confidence)
-- GPU4PySCF Rys quadrature GPU implementation — https://arxiv.org/html/2407.09700v1.
-- GPU Boys function gridded Taylor expansion — https://onlinelibrary.wiley.com/doi/full/10.1002/cpe.8328.
-- McMurchie-Davidson GPU ERI — https://www.mdpi.com/2076-3417/15/5/2572.
-- 3-center ERI GPU implementation — https://www.researchgate.net/publication/396374573.
-- TeraChem f-function McMurchie-Davidson GPU — https://arxiv.org/html/2406.14920v1.
-- Multi-backend generic dispatch — derived from CubeCL matmul example (`docs/manual/Cubecl/cubecl_matmul_gemm_example.md`).
-- libcint paper (DRK algorithm, cart2sph) — https://ar5iv.labs.arxiv.org/html/1412.0649.
+### Secondary (MEDIUM confidence — algorithm analysis)
+- Design doc section 13.8 — per-family tolerance table; atol=1e-6 for F12/spinor/4c1e is the upstream empirical floor
+- crates.io survey as of 2026-04-04 — no external Rust crate exists for STG roots, YP correlation factor, or 2j-spinor CG coefficients; in-house port confirmed as the only viable strategy
 
-### Tertiary (LOW confidence)
-- CUDA/Metal/ROCm backend gotchas — insufficient hardware coverage to verify; no CI hardware validation done. Address during backend expansion post-v1.1.
-- Boys function crate (`boys` on crates.io) — confirmed non-viable (depends on GSL via `rgsl`, experimental at 0.1.0); in-house implementation is the correct path.
+### Tertiary (LOW confidence — inference)
+- CUDA/Metal backend spinor behavior under floating-point reordering — GPU implementations typically show 2-5 ULP divergence relative to sequential CPU for Rys quadrature; not yet measured for spinor path on any backend
 
 ---
-*Research completed: 2026-04-02*
+*Research completed: 2026-04-04*
 *Ready for roadmap: yes*
