@@ -180,41 +180,41 @@
 | VERI-05 | Phase 9 | Complete |
 | VERI-06 | Phase 7 | Complete |
 | VERI-07 | Phase 10 | Complete |
-| HELP-01 | TBD | Pending |
-| HELP-02 | TBD | Pending |
-| HELP-03 | TBD | Pending |
-| HELP-04 | TBD | Pending |
-| 4C1E-01 | TBD | Pending |
-| 4C1E-02 | TBD | Pending |
-| 4C1E-03 | TBD | Pending |
-| 4C1E-04 | TBD | Pending |
-| SPIN-01 | TBD | Pending |
-| SPIN-02 | TBD | Pending |
-| SPIN-03 | TBD | Pending |
-| SPIN-04 | TBD | Pending |
-| F12-01 | TBD | Pending |
-| F12-02 | TBD | Pending |
-| F12-03 | TBD | Pending |
-| F12-04 | TBD | Pending |
-| F12-05 | TBD | Pending |
-| USRC-01 | TBD | Pending |
-| USRC-02 | TBD | Pending |
-| USRC-03 | TBD | Pending |
-| USRC-04 | TBD | Pending |
-| USRC-05 | TBD | Pending |
-| USRC-06 | TBD | Pending |
-| ORAC-01 | TBD | Pending |
-| ORAC-02 | TBD | Pending |
-| ORAC-03 | TBD | Pending |
-| ORAC-04 | TBD | Pending |
+| HELP-01 | Phase 11 | Pending |
+| HELP-02 | Phase 11 | Pending |
+| HELP-03 | Phase 11 | Pending |
+| HELP-04 | Phase 11 | Pending |
+| 4C1E-01 | Phase 11 | Pending |
+| 4C1E-02 | Phase 11 | Pending |
+| 4C1E-03 | Phase 11 | Pending |
+| 4C1E-04 | Phase 11 | Pending |
+| SPIN-01 | Phase 12 | Pending |
+| SPIN-02 | Phase 12 | Pending |
+| SPIN-03 | Phase 12 | Pending |
+| SPIN-04 | Phase 12 | Pending |
+| F12-01 | Phase 13 | Pending |
+| F12-02 | Phase 13 | Pending |
+| F12-03 | Phase 13 | Pending |
+| F12-04 | Phase 13 | Pending |
+| F12-05 | Phase 13 | Pending |
+| USRC-01 | Phase 14 | Pending |
+| USRC-02 | Phase 14 | Pending |
+| USRC-03 | Phase 14 | Pending |
+| USRC-04 | Phase 14 | Pending |
+| USRC-05 | Phase 14 | Pending |
+| USRC-06 | Phase 14 | Pending |
+| ORAC-01 | Phase 15 | Pending |
+| ORAC-02 | Phase 15 | Pending |
+| ORAC-03 | Phase 15 | Pending |
+| ORAC-04 | Phase 15 | Pending |
 
 **Coverage:**
 - v1.0 requirements: 20 total (all complete)
 - v1.1 requirements: 17 total (all complete)
-- v1.2 requirements: 30 total
-- Mapped to phases: 0 (awaiting roadmap)
-- Unmapped: 30
+- v1.2 requirements: 27 total (note: coverage line previously stated 30; actual count from requirement IDs is 27)
+- Mapped to phases: 27/27 (Phases 11-15)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-04-04 after v1.2 milestone requirements definition*
+*Last updated: 2026-04-04 after v1.2 roadmap creation — all 27 v1.2 requirements mapped to Phases 11-15*

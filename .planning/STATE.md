@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
-status: Defining requirements
+status: Roadmap defined
 stopped_at: null
 last_updated: "2026-04-04T00:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-04)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Defining requirements for v1.2
+**Current focus:** v1.2 — Full API Parity & Unified Oracle Gate (Phases 11-15)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 11 (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-04 — Milestone v1.2 started
+Status: Roadmap defined, ready to plan Phase 11
+Last activity: 2026-04-04 — v1.2 roadmap created (Phases 11-15)
 
 ## Performance Metrics
 
@@ -201,11 +201,20 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: 3c2e oracle fixtures now reserve libcint env global slots with PTR_ENV_START for correct 2e-family reference behavior.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use shells (3,4,0)=H1-1s/H2-1s/O-1s for 3c1e/3c2e gate triples — same-center s-s-p is physically zero by angular symmetry
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: UAT item 2 tests eval_raw kernel path (not0>0 = C ABI status==0) since cintx-capi is not directly testable from cintx-oracle integration tests
+- [v1.2 Roadmap]: Oracle tolerance is unified atol=1e-12 for every family with no exceptions. If a family fails at 1e-12, the kernel is buggy and must be fixed — the tolerance is immutable unless the user explicitly approves a tracked spec update.
+- [v1.2 Roadmap]: 4c1e spinor is unconditionally UnsupportedApi — upstream int4c1e_spinor is unimplemented (fprintf+return 0); Validated4C1E classifier must check representation before angular momentum.
+- [v1.2 Roadmap]: c2spinor.rs stub (amplitude-averaging) is provably wrong and must be treated as todo!() before any spinor oracle fixtures are written.
+- [v1.2 Roadmap]: F12 validator must reject env[PTR_F12_ZETA]==0.0 with typed InvalidEnvParam error; silent fallback to plain Coulomb is a wrong-result path.
+- [v1.2 Roadmap]: STG and YP must be separate kernel entry points; ibase/kbase routing diverges between them and a shared path produces wrong YP results for most shell combinations.
+- [v1.2 Roadmap]: Manifest lock regeneration must follow oracle parity confirmation, not precede it; regenerating early silently accepts incorrect coverage.
+- [v1.2 Roadmap]: Helper API oracle comparison uses exact integer equality, not float atol; count/offset helpers return integers and float comparison masks off-by-one errors.
+- [v1.2 Roadmap]: Unstable-source oracle requires dlsym-based dynamic lookup, not bindgen bindings, for symbols not exported in headers; verify harness capability before writing any unstable-source kernels.
 
 ### Roadmap Evolution
 
 - Phase 5 added: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
 - v1.1 roadmap created: Phases 7-10 (executor rewrite, math infrastructure, 1e kernel, 2e+ kernels and oracle gate)
+- v1.2 roadmap created: Phases 11-15 (helper/transform + 4c1e, spinor transform, F12/STG/YP, unstable-source, oracle tolerance unification)
 
 ### Pending Todos
 
@@ -217,6 +226,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-03T12:20:20.552Z
-Stopped at: Completed 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure-06-PLAN.md
+Last session: 2026-04-04T00:00:00.000Z
+Stopped at: v1.2 roadmap created — ready to plan Phase 11
 Resume file: None

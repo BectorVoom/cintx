@@ -11,6 +11,11 @@
 - [x] **Phase 8: Gaussian Primitive Infrastructure and Boys Function** - Build shared math foundation as `#[cube]` functions: Boys function, Rys roots/weights, primitive pair evaluation, and Obara-Saika recurrence. (completed 2026-04-03)
 - [ ] **Phase 9: 1e Real Kernel and Cart-to-Sph Transform** - Implement real overlap, kinetic, and nuclear attraction kernels with correct Condon-Shortley c2s transform, validating the end-to-end compute pipeline.
 - [x] **Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure** - Implement all remaining integral family kernels and close the oracle parity gate for all five base families, completing v1.1. (completed 2026-04-03)
+- [ ] **Phase 11: Helper/Transform Completion & 4c1e Real Kernel** - Wire all helper, transform, and wrapper symbols to oracle CI; replace the 4c1e stub with real Rys quadrature within the Validated4C1E envelope.
+- [ ] **Phase 12: Real Spinor Transform (c2spinor Replacement)** - Rewrite c2spinor.rs with correct Clebsch-Gordan coupling; unblock spinor oracle coverage for all families that depend on it.
+- [ ] **Phase 13: F12/STG/YP Kernels** - Implement STG and YP geminal 2e kernels with separate dispatch paths, PTR_F12_ZETA env plumbing, and sph-only oracle gate under the with-f12 profile.
+- [ ] **Phase 14: Unstable-Source-API Families** - Implement origi, grids, Breit (stub), origk, and ssc (stub) families behind the unstable-source-api gate with oracle parity in nightly CI.
+- [ ] **Phase 15: Oracle Tolerance Unification & Manifest Lock Closure** - Audit every family's empirical precision floor, set per-family atol/rtol constants, regenerate the four-profile manifest lock, and close the unified oracle CI gate.
 
 ## Phase Details
 
@@ -99,6 +104,11 @@ Plans:
 | Phase 8: Gaussian Primitive Infrastructure and Boys Function | 3/4 | In Progress | - |
 | Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 3/5 | In Progress | 2026-04-03 |
 | Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/6 | Not started | - |
+| Phase 11: Helper/Transform Completion & 4c1e Real Kernel | 0/TBD | Not started | - |
+| Phase 12: Real Spinor Transform (c2spinor Replacement) | 0/TBD | Not started | - |
+| Phase 13: F12/STG/YP Kernels | 0/TBD | Not started | - |
+| Phase 14: Unstable-Source-API Families | 0/TBD | Not started | - |
+| Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | 0/TBD | Not started | - |
 
 ### Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
 
@@ -200,3 +210,66 @@ Plans:
 - [x] 10-04-PLAN.md — 3c2e kernel implementation and oracle parity test.
 - [x] 10-05-PLAN.md — 2e ERI kernel implementation and oracle parity test.
 - [x] 10-06-PLAN.md — Oracle gate closure across all five families and v1.0 UAT item resolution.
+
+---
+
+## v1.2 Milestone: Full API Parity & Unified Oracle Gate
+
+### Phase 11: Helper/Transform Completion & 4c1e Real Kernel
+**Goal**: Every helper, transform, and wrapper symbol in the manifest is oracle-wired and returns libcint-compatible values; the 4c1e stub is replaced with a real Rys quadrature kernel within the Validated4C1E envelope.
+**Depends on**: Phase 10
+**Requirements**: HELP-01, HELP-02, HELP-03, HELP-04, 4C1E-01, 4C1E-02, 4C1E-03, 4C1E-04
+**Success Criteria** (what must be TRUE):
+  1. Oracle harness runs every helper symbol (count, offset, norm) against vendored libcint 6.1.3 using exact integer equality — not float tolerance — and reports 0 mismatches across all four feature profiles (HELP-01, HELP-04).
+  2. Oracle harness runs every transform symbol and every legacy wrapper symbol against vendored libcint 6.1.3 at atol=1e-12 and reports 0 mismatches; the helper-legacy-parity CI gate passes (HELP-02, HELP-03, HELP-04).
+  3. `int4c1e_sph` evaluation produces real Rys quadrature results matching libcint 6.1.3 to atol=1e-12 for cart/sph inputs within the Validated4C1E envelope (max(l)<=4, scalar representation) (4C1E-01).
+  4. `compat::workaround::int4c1e_via_2e_trace` produces results matching direct 4c1e evaluation; oracle parity CI gate for the with-4c1e profile passes with 0 mismatches at atol=1e-12 (4C1E-02, 4C1E-04).
+  5. Out-of-envelope 4c1e inputs and all spinor 4c1e requests return `UnsupportedApi` with explicit reason; the `Validated4C1E` classifier rejects spinor unconditionally before checking angular momentum (4C1E-03).
+**Plans**: TBD
+
+### Phase 12: Real Spinor Transform (c2spinor Replacement)
+**Goal**: The cart-to-spinor transform applies correct Clebsch-Gordan coupling coefficients for all angular momenta up to l=4, enabling oracle-verifiable spinor outputs for every base family that supports spinor representation.
+**Depends on**: Phase 11
+**Requirements**: SPIN-01, SPIN-02, SPIN-03, SPIN-04
+**Success Criteria** (what must be TRUE):
+  1. `c2spinor.rs` applies the correct Clebsch-Gordan coupling matrix from `c2spinor_coeffs.rs` for all (l, kappa) combinations up to l=4; the amplitude-averaging stub is fully removed and the old tests that only checked buffer length are replaced with value-correctness tests (SPIN-01).
+  2. All four `CINTc2s_*spinor*` variants (ket_spinor, iket_spinor, ket_spinor_sf, ket_spinor_si) are implemented and reachable through the manifest dispatch; `kappa` parameter is correctly interpreted in transform selection (SPIN-02, SPIN-04).
+  3. Spinor-form evaluations for the 1e family pass oracle parity against libcint 6.1.3 with 0 mismatches; spinor staging buffers are sized `spinor_component_count * 2` to accommodate interleaved real/imaginary doubles (SPIN-03).
+  4. Spinor-form evaluations for 2e, 2c2e, 3c1e, and 3c2e families pass oracle parity against libcint 6.1.3 with 0 mismatches at family-appropriate tolerances (SPIN-03).
+**Plans**: TBD
+**UI hint**: no
+
+### Phase 13: F12/STG/YP Kernels
+**Goal**: STG and YP geminal two-electron kernels are implemented as separate dispatch paths with PTR_F12_ZETA env plumbing, covering all 10 with-f12 sph symbols at oracle parity.
+**Depends on**: Phase 12
+**Requirements**: F12-01, F12-02, F12-03, F12-04, F12-05
+**Success Criteria** (what must be TRUE):
+  1. `kernels/f12.rs` implements STG and YP as separate kernel entry points; the ibase/kbase routing divergence between STG and YP is handled without a shared code path; STG roots replicate the `t = min(t, 19682.99)` clamp from `CINTstg_roots` exactly (F12-01, F12-02).
+  2. `ExecutionPlan` carries `operator_env_params` with `PTR_F12_ZETA` (env[9]); the validator rejects F12/STG/YP calls where `env[9] == 0.0` with a typed `InvalidEnvParam` error rather than silently falling back to plain Coulomb (F12-04, F12-05).
+  3. All 10 with-f12 sph symbols pass oracle parity against libcint 6.1.3 at the family-appropriate tolerance; the oracle harness confirms that cart and spinor symbol counts for the with-f12 profile are zero (F12-03).
+  4. Oracle fixtures validate that a call with `zeta=0` is either rejected by the validator or produces an explicit Coulomb-equivalent result with a documented contract — not a silent wrong result (F12-05).
+**Plans**: TBD
+
+### Phase 14: Unstable-Source-API Families
+**Goal**: All unstable-source families — origi, grids, Breit, origk, and ssc — are fully implemented behind the unstable-source-api gate with oracle parity at atol=1e-12 in nightly CI.
+**Depends on**: Phase 13
+**Requirements**: USRC-01, USRC-02, USRC-03, USRC-04, USRC-05, USRC-06
+**Success Criteria** (what must be TRUE):
+  1. `int1e_r2_origi` and `int1e_r4_origi` (origi family, 4 symbols total) are implemented behind `#[cfg(feature = "unstable-source-api")]` and pass oracle parity at atol=1e-12 (USRC-01).
+  2. `int1e_grids` family is implemented with correct `NGRIDS`/`PTR_GRIDS` env slot parsing and coordinate upload; oracle parity passes at atol=1e-12 (USRC-02).
+  3. Breit family (`int2e_breit_r1p2`, `int2e_breit_r2p2`) is fully implemented behind the unstable-source-api gate and passes oracle parity at atol=1e-12 (USRC-03).
+  4. `int3c1e_r*_origk` variants (origk family, 6 symbols) are implemented behind the unstable-source-api gate and pass oracle parity at atol=1e-12 (USRC-04).
+  5. ssc family (`int3c2e_ssc`) is fully implemented behind the unstable-source-api gate and passes oracle parity at atol=1e-12 (USRC-05).
+  6. Nightly CI runs the oracle with `--include-unstable-source=true` and reports 0 mismatches for all unstable-source symbols (USRC-06).
+**Plans**: TBD
+
+### Phase 15: Oracle Tolerance Unification & Manifest Lock Closure
+**Goal**: Every family passes oracle at the unified atol=1e-12 threshold; the four-profile manifest lock is regenerated after oracle parity is confirmed; and every `stability: Stable` manifest entry has `oracle_covered: true` with a passing CI record.
+**Depends on**: Phase 14
+**Requirements**: ORAC-01, ORAC-02, ORAC-03, ORAC-04
+**Success Criteria** (what must be TRUE):
+  1. The single oracle tolerance constant in `compare.rs` is atol=1e-12 for every family — no per-family exceptions, no design-doc overrides. Any family that fails at 1e-12 is treated as a kernel bug to be fixed, not a tolerance to be loosened (ORAC-01).
+  2. All families — 1e, 2e, 2c2e, 3c1e, 3c2e, 4c1e, F12/STG/YP, and all unstable-source families — pass oracle at atol=1e-12. No existing base family regresses from the tolerance tightening (ORAC-04).
+  3. `compiled_manifest.lock.json` is regenerated for all four profiles (base, with-f12, with-4c1e, with-f12+with-4c1e) after oracle parity is confirmed — not before; `manifest-audit` CI gate passes with zero diff (ORAC-02).
+  4. CI oracle-parity gate passes all four profiles at atol=1e-12 under `--features cpu` with `mismatch_count == 0`; every `stability: Stable` manifest entry has `oracle_covered: true` (ORAC-03).
+**Plans**: TBD
