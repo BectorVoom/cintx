@@ -226,6 +226,71 @@ pub fn vendor_int3c2e_sph(
     }
 }
 
+/// Evaluate int4c1e_sph for a single shell quartet using vendored libcint.
+///
+/// `out` must be pre-allocated with ni*nj elements where
+/// nX = CINTcgto_spheric(shls[X], bas). The 4c1e integral traces over the
+/// k=l auxiliary center, so the output dimension is ni*nj not ni*nj*nk*nl.
+///
+/// `shls` is `[i, j, k, l]` — four shell indices (4-center 1-electron integral).
+///
+/// Returns the libcint status (1 for non-zero, 0 for zero by symmetry).
+pub fn vendor_int4c1e_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int4c1e_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means use default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL
+            ptr::null_mut(), // cache = NULL (let libcint allocate)
+        )
+    }
+}
+
+/// Evaluate int4c1e_cart for a single shell quartet using vendored libcint.
+///
+/// `out` must be pre-allocated with ni*nj elements where
+/// nX = CINTcgto_cart(shls[X], bas).
+///
+/// `shls` is `[i, j, k, l]` — four shell indices (4-center 1-electron integral).
+pub fn vendor_int4c1e_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int4c1e_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 // ---- Helper symbol vendor FFI wrappers ----
 // Integer-returning helpers (exact equality comparison per D-02).
 

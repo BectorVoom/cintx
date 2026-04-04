@@ -49,6 +49,8 @@ fn main() {
         "src/autocode/intor4.c",
         "src/autocode/int3c1e.c",
         "src/autocode/int3c2e.c",
+        "src/cint4c1e.c",
+        "src/g4c1e.c",
     ] {
         println!("cargo:rerun-if-changed={}", libcint_root.join(src).display());
     }
@@ -165,6 +167,9 @@ fn main() {
         .file(libcint_root.join("src/autocode/intor4.c"))
         .file(libcint_root.join("src/autocode/int3c1e.c"))
         .file(libcint_root.join("src/autocode/int3c2e.c"))
+        // 4c1e integral source files (required for int4c1e_sph and int4c1e_cart).
+        .file(libcint_root.join("src/cint4c1e.c"))
+        .file(libcint_root.join("src/g4c1e.c"))
         .compile("cintx_oracle_vendor");
 
     println!("cargo:rustc-link-lib=static=cintx_oracle_vendor");
@@ -183,6 +188,8 @@ fn main() {
 extern CINTIntegralFunction int2c2e_sph;
 extern CINTIntegralFunction int3c1e_sph;
 extern CINTIntegralFunction int3c2e_sph;
+extern CINTIntegralFunction int4c1e_sph;
+extern CINTIntegralFunction int4c1e_cart;
 "#,
         cint_funcs = cint_funcs_h.display()
     );
@@ -196,7 +203,7 @@ extern CINTIntegralFunction int3c2e_sph;
         .header(suppl_h.to_string_lossy())
         .clang_arg(format!("-I{}", out_dir.display()))
         .clang_arg(format!("-I{}", libcint_root.join("src").display()))
-        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c2e_sph|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer|CINTlen_cart|CINTlen_spinor|CINTcgto_cart|CINTcgto_spinor|CINTtot_pgto_spheric|CINTtot_pgto_spinor|CINTtot_cgto_cart|CINTtot_cgto_spheric|CINTtot_cgto_spinor|CINTshells_cart_offset|CINTshells_spheric_offset|CINTshells_spinor_offset|CINTgto_norm|CINTc2s_bra_sph")
+        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c2e_sph|int4c1e_sph|int4c1e_cart|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer|CINTlen_cart|CINTlen_spinor|CINTcgto_cart|CINTcgto_spinor|CINTtot_pgto_spheric|CINTtot_pgto_spinor|CINTtot_cgto_cart|CINTtot_cgto_spheric|CINTtot_cgto_spinor|CINTshells_cart_offset|CINTshells_spheric_offset|CINTshells_spinor_offset|CINTgto_norm|CINTc2s_bra_sph")
         .allowlist_type("CINTOpt")
         .generate()
         .expect("failed to generate oracle libcint bindings");

@@ -707,3 +707,122 @@ fn uat_cabi_returns_status_zero() {
         out[0]
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4c1e family oracle gate (with-4c1e feature profile)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Oracle parity gate for the 4c1e integral family.
+///
+/// Tests int4c1e_sph against vendored libcint 6.1.3 using H2O STO-3G data.
+/// Uses shells (0, 1, 0, 1): O-1s / O-2s / O-1s / O-2s — s-type shells only.
+///
+/// Tolerances: atol=1e-12 (UNIFIED_ATOL per v1.2 roadmap).
+/// Gate: mismatch_count == 0.
+///
+/// Requires: cpu feature + has_vendor_libcint cfg flag.
+#[test]
+#[cfg(feature = "with-4c1e")]
+#[cfg(has_vendor_libcint)]
+fn oracle_gate_4c1e_parity() {
+    use cintx_oracle::vendor_ffi;
+    use cintx_compat::helpers::CINTcgto_spheric;
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Use shells (0, 1, 0, 1): O 1s and O 2s — both s-type (l=0), ni=nj=nk=nl=1
+    let (si, sj, sk, sl) = (0usize, 1usize, 0usize, 1usize);
+    let shls = [si as i32, sj as i32, sk as i32, sl as i32];
+
+    let ni = CINTcgto_spheric(si as i32, &bas).expect("CINTcgto_spheric failed for shell 0");
+    let nj = CINTcgto_spheric(sj as i32, &bas).expect("CINTcgto_spheric failed for shell 1");
+
+    let out_size = ni * nj;
+    let mut cintx_out = vec![0.0_f64; out_size];
+
+    // Evaluate via eval_raw (4c1e real kernel path)
+    unsafe {
+        eval_raw(
+            RawApiId::INT4C1E_SPH,
+            Some(&mut cintx_out),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+        .expect("eval_raw INT4C1E_SPH failed for H2O STO-3G");
+    }
+
+    // Compare against vendored libcint
+    let mut vendor_out = vec![0.0_f64; out_size];
+    vendor_ffi::vendor_int4c1e_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    // int4c1e output: ni*nj elements (trace over k=l diagonal)
+    const ATOL_4C1E: f64 = 1e-12;
+    let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_4C1E);
+
+    let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    assert!(
+        nonzero > 0,
+        "4c1e output is all zeros for shells ({si},{sj},{sk},{sl}) — kernel not implemented"
+    );
+
+    assert!(
+        mc == 0,
+        "4c1e oracle gate FAILED: {mc} mismatches at atol={ATOL_4C1E:.1e} for shells ({si},{sj},{sk},{sl})"
+    );
+
+    println!("  PASS: 4c1e (int4c1e_sph) shells ({si},{sj},{sk},{sl}): mismatch_count=0");
+}
+
+/// Non-vendor 4c1e smoke test: verify eval_raw returns non-zero for 4c1e
+/// with simple s-type shells (does not require vendored libcint).
+#[test]
+#[cfg(feature = "with-4c1e")]
+fn oracle_gate_4c1e_nonzero_output() {
+    let (atm, bas, env) = build_h2o_sto3g();
+
+    let (si, sj, sk, sl) = (0usize, 1usize, 0usize, 1usize);
+    let shls = [si as i32, sj as i32, sk as i32, sl as i32];
+    let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
+    let nj = nsph(bas[sj * BAS_SLOTS + ANG_OF]);
+    let mut out = vec![0.0_f64; ni * nj];
+
+    let summary = unsafe {
+        eval_raw(
+            RawApiId::INT4C1E_SPH,
+            Some(&mut out),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+        .expect("eval_raw INT4C1E_SPH failed for H2O STO-3G")
+    };
+
+    let nonzero = out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    assert!(
+        nonzero > 0,
+        "4c1e output is all zeros — kernel not implemented or shells are symmetry-zero"
+    );
+    assert!(
+        summary.not0 > 0,
+        "eval_raw 4c1e returned not0={} — expected > 0",
+        summary.not0
+    );
+
+    println!(
+        "oracle_gate_4c1e_nonzero_output: PASS — not0={}, nonzero={nonzero}/{}, out[0]={:.6e}",
+        summary.not0,
+        out.len(),
+        out[0]
+    );
+}
