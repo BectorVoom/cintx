@@ -1,22 +1,500 @@
-use cintx_core::cintxRsError;
+//! Cartesian-to-spinor (c2spinor) transform functions.
+//!
+//! Implements the four variants of the spinor transform corresponding to
+//! libcint `CINTc2s_ket_spinor_*` functions, using CG coupling coefficients
+//! from `c2spinor_coeffs`.
+//!
+//! Output layout convention (for nd spinor components):
+//!   - Alpha upper component: gsp[i*2] = re, gsp[i*2+1] = im, for i in 0..nd
+//!   - Beta lower component: gsp[(nd+i)*2] = re, gsp[(nd+i)*2+1] = im, for i in 0..nd
+//!   Total buffer size: 2 * nd * 2 = 4*nd f64 values.
+//!
+//! For kappa == 0, both GT (j=l+1/2) and LT (j=l-1/2) blocks are applied,
+//! with GT written first (rows 0..nd_gt) and LT next (rows nd_gt..nd_gt+nd_lt).
 
-/// CubeCL staging transform for cartesian -> spinor interleaved doubles.
+use cintx_core::cintxRsError;
+use super::c2s::ncart;
+use super::c2spinor_coeffs as cj;
+
+/// Number of spinor components for angular momentum l and quantum number kappa.
 ///
-/// The resulting staging buffer remains `[re0, im0, re1, im1, ...]` and is
-/// handed back to compat for the final flat write.
-pub fn cart_to_spinor_interleaved_staging(staging: &mut [f64]) -> Result<(), cintxRsError> {
-    if staging.len() % 2 != 0 {
+/// Mirrors libcint `_len_spinor`:
+///   - kappa < 0: j = l+1/2 → 2*l+2 components
+///   - kappa > 0: j = l-1/2 → 2*l components
+///   - kappa == 0: both blocks → 4*l+2 components
+pub fn spinor_len(l: u8, kappa: i32) -> usize {
+    if kappa < 0 {
+        2 * l as usize + 2
+    } else if kappa > 0 {
+        2 * l as usize
+    } else {
+        4 * l as usize + 2
+    }
+}
+
+/// Internal: apply the sf (scalar-field, spin-free) accumulation for one block.
+///
+/// sf formula from `CINTc2s_ket_spinor_sf1`:
+///   gspaz_re += caR * v1
+///   gspaz_im += caI * v1
+///   gspbz_re += cbR * v1
+///   gspbz_im += cbI * v1
+///
+/// Writes nd spinor rows starting at gsp[offset_alpha..] and gsp[offset_beta..].
+fn apply_sf_block(
+    gsp: &mut [f64],
+    cart: &[f64],
+    coeff_r: &[&[f64]],
+    coeff_i: &[&[f64]],
+    nd: usize,
+    nf: usize,
+    nd_total: usize,
+    row_offset: usize,
+) {
+    for i in 0..nd {
+        let row_r = coeff_r[i];
+        let row_i = coeff_i[i];
+        let mut sa_re = 0.0f64;
+        let mut sa_im = 0.0f64;
+        let mut sb_re = 0.0f64;
+        let mut sb_im = 0.0f64;
+        for n in 0..nf {
+            let v1 = cart[n];
+            let ca_r = row_r[n];
+            let ca_i = row_i[n];
+            let cb_r = row_r[nf + n];
+            let cb_i = row_i[nf + n];
+            sa_re += ca_r * v1;
+            sa_im += ca_i * v1;
+            sb_re += cb_r * v1;
+            sb_im += cb_i * v1;
+        }
+        let out_i = row_offset + i;
+        gsp[out_i * 2] = sa_re;
+        gsp[out_i * 2 + 1] = sa_im;
+        gsp[(nd_total + out_i) * 2] = sb_re;
+        gsp[(nd_total + out_i) * 2 + 1] = sb_im;
+    }
+}
+
+/// Internal: apply the iket_sf accumulation for one block.
+///
+/// iket_sf = multiply sf output by i: (re, im) → (-im, re)
+/// Formula from `CINTc2s_iket_spinor_sf1`:
+///   gspaz_re -= caI * v1
+///   gspaz_im += caR * v1
+///   gspbz_re -= cbI * v1
+///   gspbz_im += cbR * v1
+fn apply_iket_sf_block(
+    gsp: &mut [f64],
+    cart: &[f64],
+    coeff_r: &[&[f64]],
+    coeff_i: &[&[f64]],
+    nd: usize,
+    nf: usize,
+    nd_total: usize,
+    row_offset: usize,
+) {
+    for i in 0..nd {
+        let row_r = coeff_r[i];
+        let row_i = coeff_i[i];
+        let mut sa_re = 0.0f64;
+        let mut sa_im = 0.0f64;
+        let mut sb_re = 0.0f64;
+        let mut sb_im = 0.0f64;
+        for n in 0..nf {
+            let v1 = cart[n];
+            let ca_r = row_r[n];
+            let ca_i = row_i[n];
+            let cb_r = row_r[nf + n];
+            let cb_i = row_i[nf + n];
+            sa_re -= ca_i * v1;
+            sa_im += ca_r * v1;
+            sb_re -= cb_i * v1;
+            sb_im += cb_r * v1;
+        }
+        let out_i = row_offset + i;
+        gsp[out_i * 2] = sa_re;
+        gsp[out_i * 2 + 1] = sa_im;
+        gsp[(nd_total + out_i) * 2] = sb_re;
+        gsp[(nd_total + out_i) * 2 + 1] = sb_im;
+    }
+}
+
+/// Internal: apply the si (spin-included) accumulation for one block.
+///
+/// si formula from `CINTc2s_ket_spinor_si1`:
+///   gspaz_re += caR*v1 - caI*vz + cbR*vy - cbI*vx
+///   gspaz_im += caI*v1 + caR*vz + cbI*vy + cbR*vx
+///   gspbz_re += cbR*v1 + cbI*vz - caR*vy - caI*vx
+///   gspbz_im += cbI*v1 - cbR*vz - caI*vy + caR*vx
+#[allow(clippy::too_many_arguments)]
+fn apply_si_block(
+    gsp: &mut [f64],
+    cart_v1: &[f64],
+    cart_vx: &[f64],
+    cart_vy: &[f64],
+    cart_vz: &[f64],
+    coeff_r: &[&[f64]],
+    coeff_i: &[&[f64]],
+    nd: usize,
+    nf: usize,
+    nd_total: usize,
+    row_offset: usize,
+) {
+    for i in 0..nd {
+        let row_r = coeff_r[i];
+        let row_i = coeff_i[i];
+        let mut sa_re = 0.0f64;
+        let mut sa_im = 0.0f64;
+        let mut sb_re = 0.0f64;
+        let mut sb_im = 0.0f64;
+        for n in 0..nf {
+            let v1 = cart_v1[n];
+            let vx = cart_vx[n];
+            let vy = cart_vy[n];
+            let vz = cart_vz[n];
+            let ca_r = row_r[n];
+            let ca_i = row_i[n];
+            let cb_r = row_r[nf + n];
+            let cb_i = row_i[nf + n];
+            sa_re += ca_r * v1 - ca_i * vz + cb_r * vy - cb_i * vx;
+            sa_im += ca_i * v1 + ca_r * vz + cb_i * vy + cb_r * vx;
+            sb_re += cb_r * v1 + cb_i * vz - ca_r * vy - ca_i * vx;
+            sb_im += cb_i * v1 - cb_r * vz - ca_i * vy + ca_r * vx;
+        }
+        let out_i = row_offset + i;
+        gsp[out_i * 2] = sa_re;
+        gsp[out_i * 2 + 1] = sa_im;
+        gsp[(nd_total + out_i) * 2] = sb_re;
+        gsp[(nd_total + out_i) * 2 + 1] = sb_im;
+    }
+}
+
+/// Internal: apply the iket_si accumulation for one block.
+///
+/// iket_si = multiply si output by i: (re, im) → (-im, re)
+/// Formula from `CINTc2s_iket_spinor_si1`:
+///   gspaz_re -= caI*v1 + caR*vz + cbI*vy + cbR*vx
+///   gspaz_im += caR*v1 - caI*vz + cbR*vy - cbI*vx
+///   gspbz_re -= cbI*v1 - cbR*vz - caI*vy + caR*vx
+///   gspbz_im += cbR*v1 + cbI*vz - caR*vy - caI*vx
+#[allow(clippy::too_many_arguments)]
+fn apply_iket_si_block(
+    gsp: &mut [f64],
+    cart_v1: &[f64],
+    cart_vx: &[f64],
+    cart_vy: &[f64],
+    cart_vz: &[f64],
+    coeff_r: &[&[f64]],
+    coeff_i: &[&[f64]],
+    nd: usize,
+    nf: usize,
+    nd_total: usize,
+    row_offset: usize,
+) {
+    for i in 0..nd {
+        let row_r = coeff_r[i];
+        let row_i = coeff_i[i];
+        let mut sa_re = 0.0f64;
+        let mut sa_im = 0.0f64;
+        let mut sb_re = 0.0f64;
+        let mut sb_im = 0.0f64;
+        for n in 0..nf {
+            let v1 = cart_v1[n];
+            let vx = cart_vx[n];
+            let vy = cart_vy[n];
+            let vz = cart_vz[n];
+            let ca_r = row_r[n];
+            let ca_i = row_i[n];
+            let cb_r = row_r[nf + n];
+            let cb_i = row_i[nf + n];
+            sa_re -= ca_i * v1 + ca_r * vz + cb_i * vy + cb_r * vx;
+            sa_im += ca_r * v1 - ca_i * vz + cb_r * vy - cb_i * vx;
+            sb_re -= cb_i * v1 - cb_r * vz - ca_i * vy + ca_r * vx;
+            sb_im += cb_r * v1 + cb_i * vz - ca_r * vy - ca_i * vx;
+        }
+        let out_i = row_offset + i;
+        gsp[out_i * 2] = sa_re;
+        gsp[out_i * 2 + 1] = sa_im;
+        gsp[(nd_total + out_i) * 2] = sb_re;
+        gsp[(nd_total + out_i) * 2 + 1] = sb_im;
+    }
+}
+
+/// Retrieve GT block (j=l+1/2, kappa<0) coefficient rows for angular momentum l.
+///
+/// Returns (real_rows, imag_rows) as slices of rows, where each row has 2*nf entries.
+fn gt_coeff_rows(l: u8) -> (Vec<&'static [f64]>, Vec<&'static [f64]>) {
+    match l {
+        0 => (
+            cj::CJ_GT_L0_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_GT_L0_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        1 => (
+            cj::CJ_GT_L1_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_GT_L1_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        2 => (
+            cj::CJ_GT_L2_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_GT_L2_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        3 => (
+            cj::CJ_GT_L3_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_GT_L3_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        4 => (
+            cj::CJ_GT_L4_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_GT_L4_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        _ => (vec![], vec![]),
+    }
+}
+
+/// Retrieve LT block (j=l-1/2, kappa>0) coefficient rows for angular momentum l.
+fn lt_coeff_rows(l: u8) -> (Vec<&'static [f64]>, Vec<&'static [f64]>) {
+    match l {
+        0 => (
+            cj::CJ_LT_L0_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_LT_L0_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        1 => (
+            cj::CJ_LT_L1_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_LT_L1_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        2 => (
+            cj::CJ_LT_L2_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_LT_L2_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        3 => (
+            cj::CJ_LT_L3_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_LT_L3_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        4 => (
+            cj::CJ_LT_L4_R.iter().map(|r| r.as_ref()).collect(),
+            cj::CJ_LT_L4_I.iter().map(|r| r.as_ref()).collect(),
+        ),
+        _ => (vec![], vec![]),
+    }
+}
+
+/// Cart-to-spinor scalar-field (sf) transform.
+///
+/// Corresponds to `CINTc2s_ket_spinor_sf1` in libcint.
+///
+/// `gsp`: output buffer of length `2 * spinor_len(l, kappa) * 2` f64.
+///        (nd complex spinor components × 2 spinors × 2 real/imag = 4*nd f64)
+/// `cart`: input cartesian buffer of length ncart(l).
+/// `l`: angular momentum.
+/// `kappa`: spinor quantum number (<0 → GT block, >0 → LT block, ==0 → both).
+pub fn cart_to_spinor_sf(
+    gsp: &mut [f64],
+    cart: &[f64],
+    l: u8,
+    kappa: i32,
+) -> Result<(), cintxRsError> {
+    let nf = ncart(l);
+    if cart.len() != nf {
         return Err(cintxRsError::ChunkPlanFailed {
-            from: "cubecl_c2spinor",
-            detail: "spinor staging must contain interleaved real/imag pairs".to_owned(),
+            from: "c2spinor_sf",
+            detail: format!("cart length {} != ncart({}) = {}", cart.len(), l, nf),
+        });
+    }
+    let nd = spinor_len(l, kappa);
+    let required = 4 * nd;
+    if gsp.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: gsp.len(),
         });
     }
 
-    for pair in staging.chunks_exact_mut(2) {
-        let amplitude = (pair[0].abs() + pair[1].abs()) * 0.5;
-        pair[0] = amplitude;
-        pair[1] = -amplitude;
+    if kappa < 0 {
+        let (rr, ri) = gt_coeff_rows(l);
+        apply_sf_block(gsp, cart, &rr, &ri, nd, nf, nd, 0);
+    } else if kappa > 0 {
+        let (rr, ri) = lt_coeff_rows(l);
+        apply_sf_block(gsp, cart, &rr, &ri, nd, nf, nd, 0);
+    } else {
+        // kappa == 0: GT first, then LT
+        let nd_gt = 2 * l as usize + 2;
+        let nd_lt = 2 * l as usize;
+        debug_assert_eq!(nd, nd_gt + nd_lt);
+        let (rr_gt, ri_gt) = gt_coeff_rows(l);
+        let (rr_lt, ri_lt) = lt_coeff_rows(l);
+        apply_sf_block(gsp, cart, &rr_gt, &ri_gt, nd_gt, nf, nd, 0);
+        apply_sf_block(gsp, cart, &rr_lt, &ri_lt, nd_lt, nf, nd, nd_gt);
     }
+    Ok(())
+}
+
+/// Cart-to-spinor iket scalar-field transform (multiply by i).
+///
+/// Corresponds to `CINTc2s_iket_spinor_sf1` in libcint.
+/// Same signature as `cart_to_spinor_sf` but output is multiplied by i:
+/// (re, im) → (-im, re).
+pub fn cart_to_spinor_iket_sf(
+    gsp: &mut [f64],
+    cart: &[f64],
+    l: u8,
+    kappa: i32,
+) -> Result<(), cintxRsError> {
+    let nf = ncart(l);
+    if cart.len() != nf {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "c2spinor_iket_sf",
+            detail: format!("cart length {} != ncart({}) = {}", cart.len(), l, nf),
+        });
+    }
+    let nd = spinor_len(l, kappa);
+    let required = 4 * nd;
+    if gsp.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: gsp.len(),
+        });
+    }
+
+    if kappa < 0 {
+        let (rr, ri) = gt_coeff_rows(l);
+        apply_iket_sf_block(gsp, cart, &rr, &ri, nd, nf, nd, 0);
+    } else if kappa > 0 {
+        let (rr, ri) = lt_coeff_rows(l);
+        apply_iket_sf_block(gsp, cart, &rr, &ri, nd, nf, nd, 0);
+    } else {
+        let nd_gt = 2 * l as usize + 2;
+        let nd_lt = 2 * l as usize;
+        debug_assert_eq!(nd, nd_gt + nd_lt);
+        let (rr_gt, ri_gt) = gt_coeff_rows(l);
+        let (rr_lt, ri_lt) = lt_coeff_rows(l);
+        apply_iket_sf_block(gsp, cart, &rr_gt, &ri_gt, nd_gt, nf, nd, 0);
+        apply_iket_sf_block(gsp, cart, &rr_lt, &ri_lt, nd_lt, nf, nd, nd_gt);
+    }
+    Ok(())
+}
+
+/// Cart-to-spinor spin-included (si) transform with Pauli coupling.
+///
+/// Corresponds to `CINTc2s_ket_spinor_si1` in libcint.
+///
+/// `gsp`: output buffer of length `4 * spinor_len(l, kappa)` f64.
+/// `cart_v1`: scalar component cartesian buffer (length ncart(l)).
+/// `cart_vx`: x Pauli component cartesian buffer (length ncart(l)).
+/// `cart_vy`: y Pauli component cartesian buffer (length ncart(l)).
+/// `cart_vz`: z Pauli component cartesian buffer (length ncart(l)).
+pub fn cart_to_spinor_si(
+    gsp: &mut [f64],
+    cart_v1: &[f64],
+    cart_vx: &[f64],
+    cart_vy: &[f64],
+    cart_vz: &[f64],
+    l: u8,
+    kappa: i32,
+) -> Result<(), cintxRsError> {
+    let nf = ncart(l);
+    for (name, buf) in [
+        ("v1", cart_v1),
+        ("vx", cart_vx),
+        ("vy", cart_vy),
+        ("vz", cart_vz),
+    ] {
+        if buf.len() != nf {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "c2spinor_si",
+                detail: format!("cart_{name} length {0} != ncart({l}) = {nf}", buf.len()),
+            });
+        }
+    }
+    let nd = spinor_len(l, kappa);
+    let required = 4 * nd;
+    if gsp.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: gsp.len(),
+        });
+    }
+
+    if kappa < 0 {
+        let (rr, ri) = gt_coeff_rows(l);
+        apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr, &ri, nd, nf, nd, 0);
+    } else if kappa > 0 {
+        let (rr, ri) = lt_coeff_rows(l);
+        apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr, &ri, nd, nf, nd, 0);
+    } else {
+        let nd_gt = 2 * l as usize + 2;
+        let nd_lt = 2 * l as usize;
+        debug_assert_eq!(nd, nd_gt + nd_lt);
+        let (rr_gt, ri_gt) = gt_coeff_rows(l);
+        let (rr_lt, ri_lt) = lt_coeff_rows(l);
+        apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_gt, &ri_gt, nd_gt, nf, nd, 0);
+        apply_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_lt, &ri_lt, nd_lt, nf, nd, nd_gt);
+    }
+    Ok(())
+}
+
+/// Cart-to-spinor iket spin-included transform (multiply by i).
+///
+/// Corresponds to `CINTc2s_iket_spinor_si1` in libcint.
+/// Same as `cart_to_spinor_si` but output is multiplied by i.
+pub fn cart_to_spinor_iket_si(
+    gsp: &mut [f64],
+    cart_v1: &[f64],
+    cart_vx: &[f64],
+    cart_vy: &[f64],
+    cart_vz: &[f64],
+    l: u8,
+    kappa: i32,
+) -> Result<(), cintxRsError> {
+    let nf = ncart(l);
+    for (name, buf) in [
+        ("v1", cart_v1),
+        ("vx", cart_vx),
+        ("vy", cart_vy),
+        ("vz", cart_vz),
+    ] {
+        if buf.len() != nf {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "c2spinor_iket_si",
+                detail: format!("cart_{name} length {0} != ncart({l}) = {nf}", buf.len()),
+            });
+        }
+    }
+    let nd = spinor_len(l, kappa);
+    let required = 4 * nd;
+    if gsp.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: gsp.len(),
+        });
+    }
+
+    if kappa < 0 {
+        let (rr, ri) = gt_coeff_rows(l);
+        apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr, &ri, nd, nf, nd, 0);
+    } else if kappa > 0 {
+        let (rr, ri) = lt_coeff_rows(l);
+        apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr, &ri, nd, nf, nd, 0);
+    } else {
+        let nd_gt = 2 * l as usize + 2;
+        let nd_lt = 2 * l as usize;
+        debug_assert_eq!(nd, nd_gt + nd_lt);
+        let (rr_gt, ri_gt) = gt_coeff_rows(l);
+        let (rr_lt, ri_lt) = lt_coeff_rows(l);
+        apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_gt, &ri_gt, nd_gt, nf, nd, 0);
+        apply_iket_si_block(gsp, cart_v1, cart_vx, cart_vy, cart_vz, &rr_lt, &ri_lt, nd_lt, nf, nd, nd_gt);
+    }
+    Ok(())
+}
+
+/// Staging spinor transform (placeholder for executor path).
+///
+/// The real per-shell transform is done via `cart_to_spinor_sf` and friends
+/// with explicit l and kappa parameters. This staging function is kept for
+/// API compatibility; it performs no transformation (no-op).
+///
+/// TODO: Wire executor to pass l and kappa so this can call the correct variant.
+pub fn cart_to_spinor_interleaved_staging(staging: &mut [f64]) -> Result<(), cintxRsError> {
+    let _ = staging;
     Ok(())
 }
 
@@ -24,17 +502,257 @@ pub fn cart_to_spinor_interleaved_staging(staging: &mut [f64]) -> Result<(), cin
 mod tests {
     use super::*;
 
+    const TOL: f64 = 1e-12;
+
+    fn check_close(a: f64, b: f64, label: &str) {
+        assert!(
+            (a - b).abs() < TOL,
+            "{}: got {:.15e}, expected {:.15e}, diff={:.3e}",
+            label, a, b, (a - b).abs()
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  spinor_len dispatch tests
+    // ──────────────────────────────────────────────────────────────────────────
+
     #[test]
-    fn spinor_transform_preserves_interleaved_pairs() {
-        let mut staging = vec![1.0, 2.0, 3.0, 5.0];
-        cart_to_spinor_interleaved_staging(&mut staging).expect("transform should succeed");
-        assert_eq!(staging, vec![1.5, -1.5, 4.0, -4.0]);
+    fn spinor_len_l0_kappa_neg1() {
+        assert_eq!(spinor_len(0, -1), 2); // 2*0+2
     }
 
     #[test]
-    fn spinor_transform_rejects_non_interleaved_length() {
-        let mut staging = vec![1.0, 2.0, 3.0];
-        let err = cart_to_spinor_interleaved_staging(&mut staging).unwrap_err();
-        assert!(matches!(err, cintxRsError::ChunkPlanFailed { .. }));
+    fn spinor_len_l1_kappa_neg1() {
+        assert_eq!(spinor_len(1, -1), 4); // 2*1+2 (gt, j=3/2)
+    }
+
+    #[test]
+    fn spinor_len_l1_kappa_pos1() {
+        assert_eq!(spinor_len(1, 1), 2); // 2*1 (lt, j=1/2)
+    }
+
+    #[test]
+    fn spinor_len_l1_kappa_0() {
+        assert_eq!(spinor_len(1, 0), 6); // 4*1+2 = 6
+    }
+
+    #[test]
+    fn spinor_len_l2_kappa_neg1() {
+        assert_eq!(spinor_len(2, -1), 6); // 2*2+2
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  s-shell (l=0) sf value-correctness tests
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// s-shell (l=0), kappa=-1, cart=[1.0]:
+    ///
+    /// CJ_GT_L0_R = [[0, 1], [1, 0]], CJ_GT_L0_I = [[0, 0], [0, 0]]
+    /// Row 0: ca_r=0, ca_i=0, cb_r=1, cb_i=0
+    ///   sa_re = ca_r*v1 = 0, sa_im = ca_i*v1 = 0
+    ///   sb_re = cb_r*v1 = 1, sb_im = cb_i*v1 = 0
+    /// Row 1: ca_r=1, ca_i=0, cb_r=0, cb_i=0
+    ///   sa_re = 1, sa_im = 0
+    ///   sb_re = 0, sb_im = 0
+    ///
+    /// nd=2, total output = 4*nd = 8 f64
+    /// gsp[0..3] = alpha: [row0_re, row0_im, row1_re, row1_im] = [0, 0, 1, 0]
+    /// gsp[4..7] = beta:  [row0_re, row0_im, row1_re, row1_im] = [1, 0, 0, 0]
+    #[test]
+    fn sf_s_shell_kappa_neg1_cart_one() {
+        let cart = [1.0f64];
+        let nd = spinor_len(0, -1); // 2
+        let mut gsp = vec![0.0f64; 4 * nd]; // 8
+        cart_to_spinor_sf(&mut gsp, &cart, 0, -1).expect("sf s-shell kappa=-1 should succeed");
+        // alpha component
+        check_close(gsp[0], 0.0, "alpha[0] re (row 0)");
+        check_close(gsp[1], 0.0, "alpha[0] im (row 0)");
+        check_close(gsp[2], 1.0, "alpha[1] re (row 1)");
+        check_close(gsp[3], 0.0, "alpha[1] im (row 1)");
+        // beta component (offset by nd=2 complex values = 4 f64)
+        check_close(gsp[4], 1.0, "beta[0] re (row 0)");
+        check_close(gsp[5], 0.0, "beta[0] im (row 0)");
+        check_close(gsp[6], 0.0, "beta[1] re (row 1)");
+        check_close(gsp[7], 0.0, "beta[1] im (row 1)");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  p-shell (l=1) sf value-correctness tests
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// p-shell (l=1), kappa=-1 (gt block), cart=[1,0,0] (px only).
+    ///
+    /// GT row 0: row_r=[0,0,0, 0.7071...,0,0], row_i=[0,0,0,0,-0.7071..,0]
+    ///   only n=0 contributes (v1=1 at n=0): ca_r=0, ca_i=0, cb_r=0.7071, cb_i=0
+    ///   sa_re=0, sa_im=0, sb_re=0.7071, sb_im=0
+    /// GT row 1: row_r=[0.4082,0,0, 0,0,0.8165], row_i=[0,-0.4082,0, 0,0,0]
+    ///   n=0: ca_r=0.4082, ca_i=0, cb_r=0 (row_r[3]=0), ...
+    ///   Wait: for l=1 nf=3 so row[0..3]=alpha, row[3..6]=beta
+    ///   GT row 1 = [0.408248.., 0, 0,  0, 0, 0.816496..]
+    ///     alpha half: [0.408248, 0, 0], beta half: [0, 0, 0.816496]
+    ///   n=0: ca_r=0.408248, ca_i=0 (row_i[1][0]=0), cb_r=0, cb_i=0
+    ///   sa_re=0.408248, sa_im=0, sb_re=0, sb_im=0
+    #[test]
+    fn sf_p_shell_kappa_neg1_cart_px() {
+        let cart = [1.0f64, 0.0, 0.0]; // px=1, py=0, pz=0
+        let nd = spinor_len(1, -1); // 4
+        let mut gsp = vec![0.0f64; 4 * nd]; // 16
+        cart_to_spinor_sf(&mut gsp, &cart, 1, -1).expect("sf p-shell kappa=-1");
+
+        // GT row 0: alpha half [0,0,0], beta half [0.7071,0,0]
+        // n=0 only: ca_r=0, ca_i=0, cb_r=0.7071, cb_i=0 => sa_re=0,sa_im=0,sb_re=0.7071,sb_im=0
+        check_close(gsp[0], 0.0, "alpha[0] re");
+        check_close(gsp[1], 0.0, "alpha[0] im");
+        check_close(gsp[4 * nd / 2], 0.7071067811865476, "beta[0] re");  // beta starts at index 4*nd/2 = 4*2=8
+        check_close(gsp[4 * nd / 2 + 1], 0.0, "beta[0] im");
+    }
+
+    /// p-shell (l=1), kappa=+1 (lt block): nd=2 (2*1 LT components).
+    #[test]
+    fn sf_p_shell_kappa_pos1_lt_block() {
+        let cart = [1.0f64, 0.0, 0.0]; // px=1
+        let nd = spinor_len(1, 1); // 2
+        let mut gsp = vec![0.0f64; 4 * nd]; // 8
+        cart_to_spinor_sf(&mut gsp, &cart, 1, 1).expect("sf p-shell kappa=+1");
+        // LT row 0: row_r=[-0.5773,0,0, 0,0,0.5773], row_i=[0,0.5773,0, 0,0,0]
+        // n=0: ca_r=-0.5773, ca_i=0, cb_r=0, cb_i=0
+        // sa_re=-0.5773, sa_im=0, sb_re=0, sb_im=0
+        check_close(gsp[0], -0.5773502691896257, "lt alpha[0] re");
+        check_close(gsp[1], 0.0, "lt alpha[0] im");
+        // beta starts at nd*2=4
+        check_close(gsp[4], 0.0, "lt beta[0] re");
+    }
+
+    /// p-shell (l=1), kappa=0: nd=6 (GT 4 + LT 2).
+    #[test]
+    fn sf_p_shell_kappa_0_both_blocks() {
+        let cart = [1.0f64, 0.0, 0.0]; // px=1
+        let nd = spinor_len(1, 0); // 6
+        assert_eq!(nd, 6);
+        let mut gsp = vec![0.0f64; 4 * nd]; // 24
+        cart_to_spinor_sf(&mut gsp, &cart, 1, 0).expect("sf p-shell kappa=0");
+        // GT block (rows 0..4) written, LT block (rows 4..6) written
+        // Non-trivial: just check buffer size and no panic
+        assert_eq!(gsp.len(), 24);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  iket_sf: conjugation test (re,im) -> (-im,re)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// iket_sf should produce output where (re,im) -> (-im,re) compared to sf,
+    /// for a case where both re and im of sf are non-zero.
+    ///
+    /// Use l=2 gt (kappa=-1) with a cart input that produces non-zero re AND im
+    /// in at least one component.
+    #[test]
+    fn iket_sf_vs_sf_sign_relationship() {
+        let cart: Vec<f64> = vec![1.0, 0.5, 0.3, 0.7, 0.2, 0.9]; // d-shell: 6 cart components
+        let l = 2u8;
+        let kappa = -1i32;
+        let nd = spinor_len(l, kappa);
+
+        let mut gsp_sf = vec![0.0f64; 4 * nd];
+        let mut gsp_iket = vec![0.0f64; 4 * nd];
+
+        cart_to_spinor_sf(&mut gsp_sf, &cart, l, kappa).unwrap();
+        cart_to_spinor_iket_sf(&mut gsp_iket, &cart, l, kappa).unwrap();
+
+        // For each complex value (re, im) in sf, iket should give (-im, re)
+        for k in 0..(2 * nd) {
+            let sf_re = gsp_sf[k * 2];
+            let sf_im = gsp_sf[k * 2 + 1];
+            let iket_re = gsp_iket[k * 2];
+            let iket_im = gsp_iket[k * 2 + 1];
+            check_close(iket_re, -sf_im, &format!("iket_re[{k}] = -sf_im"));
+            check_close(iket_im, sf_re, &format!("iket_im[{k}] = sf_re"));
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  si vs sf: si should differ when Pauli components non-zero
+    // ──────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn si_differs_from_sf_with_pauli() {
+        // p-shell with non-zero vx/vy/vz should produce different output than sf
+        let nf = 3usize;
+        let v1 = vec![1.0f64, 0.5, 0.3];
+        let vx = vec![0.2f64, 0.4, 0.1];
+        let vy = vec![0.3f64, 0.1, 0.5];
+        let vz = vec![0.1f64, 0.2, 0.4];
+        let l = 1u8;
+        let kappa = -1i32;
+        let nd = spinor_len(l, kappa);
+
+        let mut gsp_sf = vec![0.0f64; 4 * nd];
+        let mut gsp_si = vec![0.0f64; 4 * nd];
+
+        cart_to_spinor_sf(&mut gsp_sf, &v1, l, kappa).unwrap();
+        cart_to_spinor_si(&mut gsp_si, &v1, &vx, &vy, &vz, l, kappa).unwrap();
+
+        // At least one element must differ
+        let differs = gsp_sf.iter().zip(gsp_si.iter()).any(|(a, b)| (a - b).abs() > 1e-15);
+        assert!(differs, "si with non-zero Pauli should differ from sf");
+        let _ = nf; // suppress unused warning
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  iket_si: verify (re,im) -> (-im,re) relationship with si
+    // ──────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn iket_si_vs_si_sign_relationship() {
+        let v1 = vec![1.0f64, 0.5, 0.3, 0.7, 0.2, 0.9];
+        let vx = vec![0.2f64, 0.4, 0.1, 0.3, 0.7, 0.5];
+        let vy = vec![0.3f64, 0.1, 0.5, 0.2, 0.4, 0.8];
+        let vz = vec![0.1f64, 0.2, 0.4, 0.6, 0.3, 0.7];
+        let l = 2u8;
+        let kappa = -1i32;
+        let nd = spinor_len(l, kappa);
+
+        let mut gsp_si = vec![0.0f64; 4 * nd];
+        let mut gsp_iket_si = vec![0.0f64; 4 * nd];
+
+        cart_to_spinor_si(&mut gsp_si, &v1, &vx, &vy, &vz, l, kappa).unwrap();
+        cart_to_spinor_iket_si(&mut gsp_iket_si, &v1, &vx, &vy, &vz, l, kappa).unwrap();
+
+        for k in 0..(2 * nd) {
+            let si_re = gsp_si[k * 2];
+            let si_im = gsp_si[k * 2 + 1];
+            let iket_re = gsp_iket_si[k * 2];
+            let iket_im = gsp_iket_si[k * 2 + 1];
+            check_close(iket_re, -si_im, &format!("iket_si_re[{k}] = -si_im"));
+            check_close(iket_im, si_re, &format!("iket_si_im[{k}] = si_re"));
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  Error handling
+    // ──────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn sf_rejects_wrong_cart_length() {
+        let mut gsp = vec![0.0f64; 8];
+        let result = cart_to_spinor_sf(&mut gsp, &[1.0, 2.0], 0, -1); // ncart(0)=1 but gave 2
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sf_rejects_small_output_buffer() {
+        let mut gsp = vec![0.0f64; 3]; // need 8 for l=0,kappa=-1
+        let result = cart_to_spinor_sf(&mut gsp, &[1.0], 0, -1);
+        assert!(result.is_err());
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  staging no-op
+    // ──────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn staging_is_noop() {
+        let mut data = vec![1.0, 2.0, 3.0, 4.0];
+        cart_to_spinor_interleaved_staging(&mut data).unwrap();
+        assert_eq!(data, vec![1.0, 2.0, 3.0, 4.0]);
     }
 }

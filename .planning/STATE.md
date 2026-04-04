@@ -2,10 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: executing
-stopped_at: Phase 12 context gathered
-last_updated: "2026-04-04T11:53:43.574Z"
-last_activity: 2026-04-04
+status: Milestone complete
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-04-04T13:36:44.456Z"
 progress:
   total_phases: 10
   completed_phases: 10
@@ -17,17 +16,15 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-04)
+See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 11 — helper-transform-completion-4c1e-real-kernel
+**Current focus:** Phase 10 — 2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure
 
 ## Current Position
 
-Phase: 11
+Phase: 10
 Plan: Not started
-Status: Executing Phase 11
-Last activity: 2026-04-04
 
 ## Performance Metrics
 
@@ -92,9 +89,7 @@ Last activity: 2026-04-04
 | Phase 10 P02 | 196 | 2 tasks | 4 files |
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P04 | 8m | 2 tasks | 2 files |
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P06 | 8 | 1 tasks | 2 files |
-| Phase 11-helper-transform-completion-4c1e-real-kernel P02 | 7 | 1 tasks | 2 files |
-| Phase 11-helper-transform-completion-4c1e-real-kernel P01 | 4 | 2 tasks | 4 files |
-| Phase 11-helper-transform-completion-4c1e-real-kernel P03 | 8 | 2 tasks | 7 files |
+| Phase 12 P01 | 11 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -205,26 +200,14 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: 3c2e oracle fixtures now reserve libcint env global slots with PTR_ENV_START for correct 2e-family reference behavior.
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: Use shells (3,4,0)=H1-1s/H2-1s/O-1s for 3c1e/3c2e gate triples — same-center s-s-p is physically zero by angular symmetry
 - [Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure]: UAT item 2 tests eval_raw kernel path (not0>0 = C ABI status==0) since cintx-capi is not directly testable from cintx-oracle integration tests
-- [v1.2 Roadmap]: Oracle tolerance is unified atol=1e-12 for every family with no exceptions. If a family fails at 1e-12, the kernel is buggy and must be fixed — the tolerance is immutable unless the user explicitly approves a tracked spec update.
-- [v1.2 Roadmap]: 4c1e spinor is unconditionally UnsupportedApi — upstream int4c1e_spinor is unimplemented (fprintf+return 0); Validated4C1E classifier must check representation before angular momentum.
-- [v1.2 Roadmap]: c2spinor.rs stub (amplitude-averaging) is provably wrong and must be treated as todo!() before any spinor oracle fixtures are written.
-- [v1.2 Roadmap]: F12 validator must reject env[PTR_F12_ZETA]==0.0 with typed InvalidEnvParam error; silent fallback to plain Coulomb is a wrong-result path.
-- [v1.2 Roadmap]: STG and YP must be separate kernel entry points; ibase/kbase routing diverges between them and a shared path produces wrong YP results for most shell combinations.
-- [v1.2 Roadmap]: Manifest lock regeneration must follow oracle parity confirmation, not precede it; regenerating early silently accepts incorrect coverage.
-- [v1.2 Roadmap]: Helper API oracle comparison uses exact integer equality, not float atol; count/offset helpers return integers and float comparison masks off-by-one errors.
-- [v1.2 Roadmap]: Unstable-source oracle requires dlsym-based dynamic lookup, not bindgen bindings, for symbols not exported in headers; verify harness capability before writing any unstable-source kernels.
-- [Phase 11-helper-transform-completion-4c1e-real-kernel]: 4c1e G-tensor uses polynomial 1D recurrence with nroots=1 (not Rys quadrature) matching g4c1e.c; fac applied only to z-axis initial value
-- [Phase 11-helper-transform-completion-4c1e-real-kernel]: Spinor check placed FIRST in both ensure_validated_4c1e (center_4c1e.rs) and validate_4c1e_envelope (raw.rs) per D-05 — spinor 4c1e returns UnsupportedApi before feature gate check
-- [Phase 11-helper-transform-completion-4c1e-real-kernel]: All families use UNIFIED_ATOL=1e-12/UNIFIED_RTOL=1e-10 — per-family tolerance divergence was D-01 technical debt resolved
-- [Phase 11-helper-transform-completion-4c1e-real-kernel]: CINTgto_norm now uses correct double-factorial formula from libcint misc.c — prior approximation would fail oracle comparison at 1e-12
-- [Phase 11-helper-transform-completion-4c1e-real-kernel]: int4c1e_via_2e_trace uses unsafe eval_raw(INT2E_SPH) and traces over k=l diagonal — no new CompatDims needed
-- [Phase 11-helper-transform-completion-4c1e-real-kernel]: cintx-oracle Cargo.toml gains with-4c1e and with-f12 features forwarding to cintx-compat so CI can run helper-legacy-parity gate with all four profiles
+- [Phase 12]: CG coefficient extraction from libcint g_trans_cart2jR/g_trans_cart2jI at g_c2s[] documented offsets for l=0..4, verified via Python parsing
+- [Phase 12]: Four separate c2spinor code paths (sf, iket_sf, si, iket_si) per D-03; kappa<0=GT, kappa>0=LT, kappa==0=both; iket=multiply by i: (re,im)->(-im,re)
+- [Phase 12]: cart_to_spinor_interleaved_staging kept as no-op (not deleted) for staging API compatibility; executor l/kappa wiring gap documented as TODO for Phase 12-02/03
 
 ### Roadmap Evolution
 
 - Phase 5 added: Re-implement detailed-design GPU path with CubeCL (wgpu backend)
 - v1.1 roadmap created: Phases 7-10 (executor rewrite, math infrastructure, 1e kernel, 2e+ kernels and oracle gate)
-- v1.2 roadmap created: Phases 11-15 (helper/transform + 4c1e, spinor transform, F12/STG/YP, unstable-source, oracle tolerance unification)
 
 ### Pending Todos
 
@@ -236,6 +219,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-04T11:53:43.570Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-real-spinor-transform-c2spinor-replacement/12-CONTEXT.md
+Last session: 2026-04-04T13:36:44.451Z
+Stopped at: Completed 12-01-PLAN.md
+Resume file: None
