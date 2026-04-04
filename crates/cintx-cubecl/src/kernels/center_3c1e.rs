@@ -106,7 +106,6 @@ fn fill_g_tensor_3c1e(
     let dli = (li + 1) as usize;
     let dlj = (lj + lk + 1) as usize; // combined j+k dimension
     let dlk = (lk + 1) as usize;
-    let g_size = dli * dlj * dlk;
 
     // Combined angular momentum counters
     let nmax = (li + lj + lk) as usize; // total VRR length in combined dimension

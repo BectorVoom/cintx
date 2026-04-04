@@ -1,5 +1,5 @@
 use crate::dispatch::{
-    BackendExecutor, DispatchDecision, DispatchFamily, ExecutionIo, OutputOwnership, WorkspaceBytes,
+    BackendExecutor, DispatchDecision, ExecutionIo, OutputOwnership,
 };
 use crate::metrics::{ExecutionStats, RunMetrics};
 use crate::options::ExecutionOptions;
@@ -12,6 +12,9 @@ use crate::workspace::{
 use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
 use cintx_ops::resolver::{OperatorDescriptor, Resolver, ResolverError};
 use tracing::{debug, info_span};
+
+#[cfg(test)]
+use crate::dispatch::{DispatchFamily, WorkspaceBytes};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutputLayoutMetadata {

@@ -98,7 +98,7 @@ fn bootstrap_with_selector(
     {
         use std::sync::OnceLock;
 
-        use cubecl::wgpu::{AutoGraphicsApi, RuntimeOptions};
+        use cubecl::wgpu::AutoGraphicsApi;
 
         // CubeCL panics if init_setup is called twice for the same device
         // ("A server is still registered for device ..."). Cache the default

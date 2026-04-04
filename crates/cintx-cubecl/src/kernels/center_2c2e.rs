@@ -26,7 +26,7 @@
 use crate::backend::ResolvedBackend;
 use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
-use crate::transform::c2s::{cart_to_sph_2c2e, ncart, nsph};
+use crate::transform::c2s::{cart_to_sph_2c2e, ncart};
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 

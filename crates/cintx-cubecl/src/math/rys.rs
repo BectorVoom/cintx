@@ -9,6 +9,8 @@
 //! Algorithm: Piecewise Horner polynomial evaluation per domain segment.
 //! Higher nroots (6+) via Wheeler fallback deferred to Phase 10.
 
+#![allow(unused_assignments)]
+
 use cubecl::prelude::*;
 
 /// PIE4 = pi/4, used in large-x asymptotic formula.

@@ -476,6 +476,7 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
     Ok(())
 }
 
+#[allow(unused_assignments)]
 fn build_profile_parity_report(
     inputs: &OracleRawInputs,
     profile: &str,

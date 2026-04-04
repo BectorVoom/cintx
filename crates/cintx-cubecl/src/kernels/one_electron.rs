@@ -12,7 +12,6 @@
 //! 5. Apply cart-to-sph transform if representation is Spheric.
 
 use crate::backend::ResolvedBackend;
-use crate::math::boys::boys_gamma_inc_host;
 use crate::math::obara_saika::{hrr_step_host, vrr_step_host};
 use crate::math::pdata::compute_pdata_host;
 use crate::math::rys::{rys_root1_host, rys_root2_host};

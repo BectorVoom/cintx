@@ -112,7 +112,7 @@ struct PreparedRawCall {
     shells: ShellTuple,
     query: WorkspaceQuery,
     compat_dims: CompatDims,
-    options: ExecutionOptions,
+    _options: ExecutionOptions,
 }
 
 /// Raw atom view over libcint-style `atm` slots.
@@ -734,7 +734,7 @@ fn prepare_raw_call(
         shells,
         query,
         compat_dims,
-        options,
+        _options: options,
     })
 }
 

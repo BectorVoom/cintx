@@ -3,7 +3,9 @@ use crate::kernels;
 use crate::resident_cache::DeviceResidentCache;
 use crate::specialization::SpecializationKey;
 use crate::transform;
-use cintx_core::{Representation, cintxRsError};
+use cintx_core::cintxRsError;
+#[cfg(feature = "with-4c1e")]
+use cintx_core::Representation;
 use cintx_runtime::{
     BackendExecutor, BackendIntent, ExecutionIo, ExecutionPlan, ExecutionStats, OutputOwnership,
     WorkspaceBytes,
@@ -80,6 +82,7 @@ impl CubeClExecutor {
         }
     }
 
+    #[cfg(feature = "with-4c1e")]
     fn ensure_validated_4c1e(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
         if !matches!(
             plan.representation,
@@ -130,6 +133,7 @@ impl CubeClExecutor {
     }
 }
 
+#[cfg(feature = "with-4c1e")]
 fn validated_4c1e_error(reason: &str) -> cintxRsError {
     cintxRsError::UnsupportedApi {
         requested: format!("outside Validated4C1E ({reason})"),
