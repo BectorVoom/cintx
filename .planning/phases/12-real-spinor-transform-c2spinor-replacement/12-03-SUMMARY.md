@@ -120,3 +120,13 @@ These stubs do NOT prevent SPIN-03's goal of extending spinor oracle infrastruct
 ---
 *Phase: 12-real-spinor-transform-c2spinor-replacement*
 *Completed: 2026-04-04*
+
+## Self-Check: PASSED
+
+- FOUND: crates/cintx-oracle/tests/oracle_gate_closure.rs (modified with multi-center spinor tests)
+- FOUND: .planning/phases/12-real-spinor-transform-c2spinor-replacement/12-03-SUMMARY.md
+- FOUND: commit c5cadf0 (Task 2 — oracle parity gate tests)
+- FOUND: commit 50bcdc1 (Task 1 — vendor FFI wrappers, from main)
+- FOUND: vendor_int2e_spinor, vendor_int2c2e_spinor, vendor_int3c1e_spinor, vendor_int3c2e_spinor in vendor_ffi.rs
+- FOUND: oracle_gate_2e_spinor, oracle_gate_2c2e_spinor, oracle_gate_3c1e_spinor, oracle_gate_3c2e_spinor in oracle_gate_closure.rs
+- Test result: 4 passed, 0 failed, 5 ignored (expected)
