@@ -18,10 +18,11 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - [x] Gaussian primitive infrastructure (Boys function, pair data, Rys quadrature, Obara-Saika recurrence) implemented as validated #[cube] functions in cintx-cubecl. Validated in Phase 8: Gaussian Primitive Infrastructure and Boys Function.
 - [x] All five base integral families (1e, 2e, 2c2e, 3c1e, 3c2e) produce real kernel output through CubeCL backend with oracle parity confirmed against vendored libcint 6.1.3. Validated in Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure.
 - [x] Oracle gate closure passes all five base families with 0 mismatches. Validated in Phase 10.
+- [x] Every helper, transform, and wrapper symbol in the manifest is oracle-wired with unified atol=1e-12 tolerance; 4c1e stub replaced with real polynomial recurrence kernel matching vendored libcint. Validated in Phase 11: Helper/Transform Completion & 4c1e Real Kernel.
 
 ### Active
 
-- [ ] Cover the full libcint API surface — helper, transform, wrapper, with-f12, with-4c1e, and unstable-source families — with unified atol=1e-12 oracle tolerance and objective CI evidence.
+- [ ] Cover the full libcint API surface — with-f12, with-4c1e (beyond validated envelope), and unstable-source families — with unified atol=1e-12 oracle tolerance and objective CI evidence.
 - [ ] Implement with-f12 (F12/STG/YP) family kernels including cart and spinor representations with oracle parity.
 - [ ] Implement with-4c1e family kernels beyond the initial validated envelope with oracle parity.
 - [ ] Implement unstable-source family APIs behind feature gate with oracle parity.
