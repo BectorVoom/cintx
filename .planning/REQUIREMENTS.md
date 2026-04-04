@@ -82,9 +82,9 @@
 
 ### 4c1e Kernel & Oracle
 
-- [ ] **4C1E-01**: int4c1e_sph evaluation produces real Rys quadrature results matching libcint 6.1.3 to atol=1e-12 within Validated4C1E envelope
+- [x] **4C1E-01**: int4c1e_sph evaluation produces real Rys quadrature results matching libcint 6.1.3 to atol=1e-12 within Validated4C1E envelope
 - [ ] **4C1E-02**: int4c1e_via_2e_trace workaround path produces results matching direct 4c1e evaluation
-- [ ] **4C1E-03**: Out-of-envelope 4c1e inputs return UnsupportedApi; spinor 4c1e returns UnsupportedApi unconditionally
+- [x] **4C1E-03**: Out-of-envelope 4c1e inputs return UnsupportedApi; spinor 4c1e returns UnsupportedApi unconditionally
 - [ ] **4C1E-04**: Oracle parity CI gate for with-4c1e profile passes with 0 mismatches at atol=1e-12
 
 ### Spinor Representation
@@ -184,9 +184,9 @@
 | HELP-02 | Phase 11 | Pending |
 | HELP-03 | Phase 11 | Pending |
 | HELP-04 | Phase 11 | Pending |
-| 4C1E-01 | Phase 11 | Pending |
+| 4C1E-01 | Phase 11 | Complete |
 | 4C1E-02 | Phase 11 | Pending |
-| 4C1E-03 | Phase 11 | Pending |
+| 4C1E-03 | Phase 11 | Complete |
 | 4C1E-04 | Phase 11 | Pending |
 | SPIN-01 | Phase 12 | Pending |
 | SPIN-02 | Phase 12 | Pending |
