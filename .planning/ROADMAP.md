@@ -105,7 +105,7 @@ Plans:
 | Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 3/5 | In Progress | 2026-04-03 |
 | Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/6 | Not started | - |
 | Phase 11: Helper/Transform Completion & 4c1e Real Kernel | 3/4 | Gap closure | 2026-04-04 |
-| Phase 12: Real Spinor Transform (c2spinor Replacement) | 0/TBD | Not started | - |
+| Phase 12: Real Spinor Transform (c2spinor Replacement) | 0/3 | Not started | - |
 | Phase 13: F12/STG/YP Kernels | 0/TBD | Not started | - |
 | Phase 14: Unstable-Source-API Families | 0/TBD | Not started | - |
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | 0/TBD | Not started | - |
@@ -242,8 +242,12 @@ Plans:
   2. All four `CINTc2s_*spinor*` variants (ket_spinor, iket_spinor, ket_spinor_sf, ket_spinor_si) are implemented and reachable through the manifest dispatch; `kappa` parameter is correctly interpreted in transform selection (SPIN-02, SPIN-04).
   3. Spinor-form evaluations for the 1e family pass oracle parity against libcint 6.1.3 with 0 mismatches; spinor staging buffers are sized `spinor_component_count * 2` to accommodate interleaved real/imaginary doubles (SPIN-03).
   4. Spinor-form evaluations for 2e, 2c2e, 3c1e, and 3c2e families pass oracle parity against libcint 6.1.3 with 0 mismatches at family-appropriate tolerances (SPIN-03).
-**Plans**: TBD
-**UI hint**: no
+**Plans**: 3 plans
+
+Plans:
+- [ ] 12-01-PLAN.md — Extract CG coefficient tables from libcint cart2sph.c, implement four spinor transform variants, rewire compat entry points.
+- [ ] 12-02-PLAN.md — Add vendor FFI wrappers for 1e spinor integrals and oracle parity gate test.
+- [ ] 12-03-PLAN.md — Add vendor FFI wrappers for multi-center spinor integrals and oracle parity gate tests.
 
 ### Phase 13: F12/STG/YP Kernels
 **Goal**: STG and YP geminal two-electron kernels are implemented as separate dispatch paths with PTR_F12_ZETA env plumbing, covering all 10 with-f12 sph symbols at oracle parity.
