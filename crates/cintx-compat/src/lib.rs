@@ -7,6 +7,9 @@ pub mod optimizer;
 pub mod raw;
 pub mod transform;
 
+#[cfg(feature = "with-4c1e")]
+pub mod workaround;
+
 pub use layout::{CompatDims, ensure_cache_len, required_elems_from_dims, required_f64s_for_bytes};
 pub use optimizer::RawOptimizerHandle;
 pub use raw::{
