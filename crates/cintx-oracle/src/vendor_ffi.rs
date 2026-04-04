@@ -703,3 +703,143 @@ pub fn vendor_int1e_nuc_spinor(
         )
     }
 }
+
+// ---- Multi-center spinor integral vendor FFI wrappers ----
+// Output buffer layout: product of spinor component counts × 2 f64 values
+// (interleaved re/im pairs), where each nX_sp = CINTcgto_spinor(shls[X]).
+
+/// Evaluate int2e_spinor for a single shell quartet using vendored libcint.
+///
+/// `out` must be pre-allocated with `ni_sp * nj_sp * nk_sp * nl_sp * 2` f64 elements
+/// where nX_sp = CINTcgto_spinor(shls[X]).
+/// The layout is interleaved real/imaginary pairs for each complex element.
+///
+/// `shls` is `[i, j, k, l]` — four shell indices (4-center 2-electron spinor integral).
+///
+/// Returns the libcint status (1 for non-zero, 0 for zero by symmetry).
+pub fn vendor_int2e_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means use default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL
+            ptr::null_mut(), // cache = NULL (let libcint allocate)
+        )
+    }
+}
+
+/// Evaluate int2c2e_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `ni_sp * nj_sp * 2` f64 elements
+/// where ni_sp = CINTcgto_spinor(shls[0]) and nj_sp = CINTcgto_spinor(shls[1]).
+/// The layout is interleaved real/imaginary pairs for each complex element.
+///
+/// `shls` is `[i, k]` — two shell indices (2-center 2-electron spinor integral).
+///
+/// Returns the libcint status (1 for non-zero, 0 for zero by symmetry).
+pub fn vendor_int2c2e_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_spinor for a single shell triple using vendored libcint.
+///
+/// `out` must be pre-allocated with `ni_sp * nj_sp * nk_sp * 2` f64 elements
+/// where nX_sp = CINTcgto_spinor(shls[X]).
+/// The layout is interleaved real/imaginary pairs for each complex element.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 1-electron spinor integral).
+///
+/// Returns the libcint status (1 for non-zero, 0 for zero by symmetry).
+pub fn vendor_int3c1e_spinor(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c2e_spinor for a single shell triple using vendored libcint.
+///
+/// `out` must be pre-allocated with `ni_sp * nj_sp * nk_sp * 2` f64 elements
+/// where nX_sp = CINTcgto_spinor(shls[X]).
+/// The layout is interleaved real/imaginary pairs for each complex element.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron spinor integral).
+///
+/// Returns the libcint status (1 for non-zero, 0 for zero by symmetry).
+pub fn vendor_int3c2e_spinor(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
