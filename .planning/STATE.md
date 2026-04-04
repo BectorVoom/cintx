@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: Executing Phase 12
-stopped_at: Completed 12-real-spinor-transform-c2spinor-replacement-02-PLAN.md
-last_updated: "2026-04-04T22:03:23.099Z"
+status: Ready to execute
+stopped_at: Completed 12-05-PLAN.md
+last_updated: "2026-04-04T23:58:54.474Z"
 progress:
   total_phases: 10
   completed_phases: 10
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 ## Current Position
 
 Phase: 12 (real-spinor-transform-c2spinor-replacement) — EXECUTING
-Plan: 1 of 3
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -91,6 +91,7 @@ Plan: 1 of 3
 | Phase 10-2e-2c2e-3c1e-3c2e-real-kernels-and-oracle-gate-closure P06 | 8 | 1 tasks | 2 files |
 | Phase 12 P01 | 11 | 2 tasks | 4 files |
 | Phase 12 P02 | 5 | 2 tasks | 5 files |
+| Phase 12-real-spinor-transform-c2spinor-replacement P05 | 90 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -206,6 +207,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 12]: cart_to_spinor_interleaved_staging kept as no-op (not deleted) for staging API compatibility; executor l/kappa wiring gap documented as TODO for Phase 12-02/03
 - [Phase 12]: 2D c2spinor sf transform bra step uses conjugate convention (saI += -caI * v1) matching libcint a_bra_cart2spinor_sf; ket step uses complex multiply matching a_ket_cart2spinor
 - [Phase 12]: Spinor buffer layout: column-major interleaved (j_spinor outer, i_spinor inner), staging[(j*di+i)*2] = re, +1 = im — matches libcint zcopy_ij
+- [Phase 12]: kappa=0 spinor ordering: LT block first then GT, matching libcint implicit memory layout convention
+- [Phase 12]: executor.rs skips apply_representation_transform for Spinor representation: kernel launchers own spinor transforms per Plan 04 design
 
 ### Roadmap Evolution
 
@@ -222,6 +225,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-04T14:12:40.296Z
-Stopped at: Completed 12-real-spinor-transform-c2spinor-replacement-02-PLAN.md
+Last session: 2026-04-04T23:58:54.471Z
+Stopped at: Completed 12-05-PLAN.md
 Resume file: None
