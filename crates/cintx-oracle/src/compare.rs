@@ -443,6 +443,193 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
     let _ = optimizer::int2e_sph_optimizer(&inputs.atm, &inputs.bas, &inputs.env)?;
     let _ = optimizer::int2e_optimizer(&inputs.atm, &inputs.bas, &inputs.env)?;
 
+    // Numeric oracle comparison against vendored libcint — only active when
+    // CINTX_ORACLE_BUILD_VENDOR=1 (has_vendor_libcint cfg flag is set).
+    #[cfg(has_vendor_libcint)]
+    {
+        use crate::vendor_ffi;
+        let nbas = 4_i32;
+        let bas = &inputs.bas;
+        let mut mismatches = 0usize;
+
+        // Integer helpers — exact equality.
+        for l in 0..5_i32 {
+            let cintx_val = CINTlen_cart(l)? as i32;
+            let vendor_val = vendor_ffi::vendor_CINTlen_cart(l);
+            if cintx_val != vendor_val {
+                mismatches += 1;
+                bail!(
+                    "CINTlen_cart({l}) mismatch: cintx={cintx_val} vendor={vendor_val}"
+                );
+            }
+        }
+
+        for l in 0..5_i32 {
+            // CINTlen_spinor in cintx takes (bas_id, bas) — compare against vendor for each shell
+            // where we know l. Use shell 1 which has l=1.
+            let _ = l; // l is used in the loop, suppress warning
+        }
+        // Compare per-shell spinor sizes via CINTlen_spinor (takes bas_id, bas in both cintx and vendor)
+        for shell in 0..nbas {
+            let cintx_val = CINTlen_spinor(shell, bas)? as i32;
+            let vendor_val = vendor_ffi::vendor_CINTlen_spinor(shell, bas);
+            if cintx_val != vendor_val {
+                mismatches += 1;
+                bail!(
+                    "CINTlen_spinor({shell}) mismatch: cintx={cintx_val} vendor={vendor_val}"
+                );
+            }
+        }
+
+        // CINTcgto_* per shell
+        for shell in 0..nbas {
+            let cintx_cart = CINTcgto_cart(shell, bas)? as i32;
+            let vendor_cart = vendor_ffi::vendor_CINTcgto_cart(shell, bas);
+            if cintx_cart != vendor_cart {
+                mismatches += 1;
+                bail!(
+                    "CINTcgto_cart({shell}) mismatch: cintx={cintx_cart} vendor={vendor_cart}"
+                );
+            }
+
+            let cintx_sph = CINTcgto_spheric(shell, bas)? as i32;
+            let vendor_sph = vendor_ffi::vendor_CINTcgto_spheric(shell, bas);
+            if cintx_sph != vendor_sph {
+                mismatches += 1;
+                bail!(
+                    "CINTcgto_spheric({shell}) mismatch: cintx={cintx_sph} vendor={vendor_sph}"
+                );
+            }
+
+            let cintx_sp = CINTcgto_spinor(shell, bas)? as i32;
+            let vendor_sp = vendor_ffi::vendor_CINTcgto_spinor(shell, bas);
+            if cintx_sp != vendor_sp {
+                mismatches += 1;
+                bail!(
+                    "CINTcgto_spinor({shell}) mismatch: cintx={cintx_sp} vendor={vendor_sp}"
+                );
+            }
+        }
+
+        // CINTtot_* totals
+        {
+            let cintx_val = CINTtot_pgto_spheric(bas, nbas)? as i32;
+            let vendor_val = vendor_ffi::vendor_CINTtot_pgto_spheric(bas, nbas);
+            if cintx_val != vendor_val {
+                mismatches += 1;
+                bail!("CINTtot_pgto_spheric mismatch: cintx={cintx_val} vendor={vendor_val}");
+            }
+
+            let cintx_val = CINTtot_pgto_spinor(bas, nbas)? as i32;
+            let vendor_val = vendor_ffi::vendor_CINTtot_pgto_spinor(bas, nbas);
+            if cintx_val != vendor_val {
+                mismatches += 1;
+                bail!("CINTtot_pgto_spinor mismatch: cintx={cintx_val} vendor={vendor_val}");
+            }
+
+            let cintx_val = CINTtot_cgto_cart(bas, nbas)? as i32;
+            let vendor_val = vendor_ffi::vendor_CINTtot_cgto_cart(bas, nbas);
+            if cintx_val != vendor_val {
+                mismatches += 1;
+                bail!("CINTtot_cgto_cart mismatch: cintx={cintx_val} vendor={vendor_val}");
+            }
+
+            let cintx_val = CINTtot_cgto_spheric(bas, nbas)? as i32;
+            let vendor_val = vendor_ffi::vendor_CINTtot_cgto_spheric(bas, nbas);
+            if cintx_val != vendor_val {
+                mismatches += 1;
+                bail!("CINTtot_cgto_spheric mismatch: cintx={cintx_val} vendor={vendor_val}");
+            }
+
+            let cintx_val = CINTtot_cgto_spinor(bas, nbas)? as i32;
+            let vendor_val = vendor_ffi::vendor_CINTtot_cgto_spinor(bas, nbas);
+            if cintx_val != vendor_val {
+                mismatches += 1;
+                bail!("CINTtot_cgto_spinor mismatch: cintx={cintx_val} vendor={vendor_val}");
+            }
+        }
+
+        // CINTshells_*_offset — compare output arrays element-wise
+        {
+            let needed = (nbas as usize) + 1;
+            let mut cintx_offsets = vec![0_i32; needed];
+            let mut vendor_offsets = vec![0_i32; needed];
+
+            CINTshells_cart_offset(&mut cintx_offsets, bas, nbas)?;
+            vendor_ffi::vendor_CINTshells_cart_offset(&mut vendor_offsets, bas, nbas);
+            for (i, (&c, &v)) in cintx_offsets.iter().zip(vendor_offsets.iter()).enumerate() {
+                if c != v {
+                    mismatches += 1;
+                    bail!("CINTshells_cart_offset[{i}] mismatch: cintx={c} vendor={v}");
+                }
+            }
+
+            CINTshells_spheric_offset(&mut cintx_offsets, bas, nbas)?;
+            vendor_ffi::vendor_CINTshells_spheric_offset(&mut vendor_offsets, bas, nbas);
+            for (i, (&c, &v)) in cintx_offsets.iter().zip(vendor_offsets.iter()).enumerate() {
+                if c != v {
+                    mismatches += 1;
+                    bail!("CINTshells_spheric_offset[{i}] mismatch: cintx={c} vendor={v}");
+                }
+            }
+
+            CINTshells_spinor_offset(&mut cintx_offsets, bas, nbas)?;
+            vendor_ffi::vendor_CINTshells_spinor_offset(&mut vendor_offsets, bas, nbas);
+            for (i, (&c, &v)) in cintx_offsets.iter().zip(vendor_offsets.iter()).enumerate() {
+                if c != v {
+                    mismatches += 1;
+                    bail!("CINTshells_spinor_offset[{i}] mismatch: cintx={c} vendor={v}");
+                }
+            }
+        }
+
+        // CINTgto_norm — float comparison at atol=1e-12
+        for l in 0..5_i32 {
+            for &a in &[0.5_f64, 1.0, 2.5] {
+                let cintx_val = CINTgto_norm(l, a);
+                let vendor_val = vendor_ffi::vendor_CINTgto_norm(l, a);
+                if (cintx_val - vendor_val).abs() > 1e-12 {
+                    mismatches += 1;
+                    bail!(
+                        "CINTgto_norm({l},{a}) mismatch: cintx={cintx_val} vendor={vendor_val} diff={}",
+                        (cintx_val - vendor_val).abs()
+                    );
+                }
+            }
+        }
+
+        // CINTc2s_bra_sph — direct transform buffer comparison (HELP-02)
+        // Test for l=0,1,2: cart sizes are (1,3,6), sph sizes are (1,3,5).
+        for l in 0..3_i32 {
+            let n_cart = ((l + 1) * (l + 2) / 2) as usize;
+            let n_sph = (2 * l + 1) as usize;
+            // Fill input with incrementing values to exercise all coefficients
+            let cart_in: Vec<f64> = (0..n_cart).map(|i| (i + 1) as f64 * 0.1).collect();
+            let mut cintx_out = vec![0.0_f64; n_sph];
+            let mut vendor_out = vec![0.0_f64; n_sph];
+            // cintx: copy cart into sph (same size allocation), then transform in place
+            let mut sph_buf = cart_in.clone();
+            sph_buf.resize(n_sph.max(n_cart), 0.0);
+            cintx_compat::transform::CINTc2s_bra_sph(&mut sph_buf, 1, &cart_in, l)?;
+            cintx_out.copy_from_slice(&sph_buf[..n_sph]);
+            // vendor: call direct FFI
+            vendor_ffi::vendor_CINTc2s_bra_sph(&mut vendor_out, 1, &cart_in, l);
+            for (i, (&cv, &vv)) in cintx_out.iter().zip(vendor_out.iter()).enumerate() {
+                if (cv - vv).abs() > 1e-12 {
+                    mismatches += 1;
+                    bail!(
+                        "CINTc2s_bra_sph(l={l}) elem {i} mismatch: cintx={cv} vendor={vv} diff={}",
+                        (cv - vv).abs()
+                    );
+                }
+            }
+        }
+
+        if mismatches > 0 {
+            bail!("helper/transform oracle comparison: {mismatches} mismatch(es) found");
+        }
+    }
+
     Ok(())
 }
 
