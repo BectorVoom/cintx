@@ -313,7 +313,7 @@ mod tests {
 
     fn misc_wrapper_macro(base_symbol: &str) -> Option<MiscWrapperMacro> {
         match base_symbol {
-            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e_p2" | "int3c2e_ip1" => {
+            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e" | "int3c1e_p2" | "int3c2e_ip1" => {
                 Some(MiscWrapperMacro::AllCint)
             }
             "int1e_kin" => Some(MiscWrapperMacro::AllCint1e),

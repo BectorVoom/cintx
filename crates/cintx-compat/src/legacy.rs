@@ -214,6 +214,17 @@ all_cint_wrappers!(
     RawApiId::INT3C1E_P2_SPINOR
 );
 all_cint_wrappers!(
+    cint3c1e_cart,
+    cint3c1e_sph,
+    cint3c1e,
+    cint3c1e_cart_optimizer,
+    cint3c1e_sph_optimizer,
+    cint3c1e_optimizer,
+    RawApiId::INT3C1E_CART,
+    RawApiId::INT3C1E_SPH,
+    RawApiId::INT3C1E_SPINOR
+);
+all_cint_wrappers!(
     cint3c2e_ip1_cart,
     cint3c2e_ip1_sph,
     cint3c2e_ip1,
@@ -259,6 +270,12 @@ pub const LEGACY_WRAPPER_SYMBOLS: &[&str] = &[
     "cint3c1e_p2_cart_optimizer",
     "cint3c1e_p2_sph_optimizer",
     "cint3c1e_p2_optimizer",
+    "cint3c1e_cart",
+    "cint3c1e_sph",
+    "cint3c1e",
+    "cint3c1e_cart_optimizer",
+    "cint3c1e_sph_optimizer",
+    "cint3c1e_optimizer",
     "cint3c2e_ip1_cart",
     "cint3c2e_ip1_sph",
     "cint3c2e_ip1",
@@ -292,7 +309,7 @@ mod tests {
 
     fn misc_wrapper_macro(base_symbol: &str) -> Option<MiscWrapperMacro> {
         match base_symbol {
-            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e_p2" | "int3c2e_ip1" => {
+            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e" | "int3c1e_p2" | "int3c2e_ip1" => {
                 Some(MiscWrapperMacro::AllCint)
             }
             "int1e_kin" => Some(MiscWrapperMacro::AllCint1e),

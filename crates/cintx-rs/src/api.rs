@@ -589,10 +589,10 @@ mod tests {
     use std::sync::Arc;
 
     #[cfg(feature = "with-4c1e")]
-    const INT4C1E_CART_OPERATOR_ID: u32 = 20;
+    const INT4C1E_CART_OPERATOR_ID: u32 = 22;
     #[cfg(feature = "with-f12")]
-    const INT2E_STG_SPH_OPERATOR_ID: u32 = 92;
-    const INT2E_IPIP1_SPH_OPERATOR_ID: u32 = 102;
+    const INT2E_STG_SPH_OPERATOR_ID: u32 = 100;
+    const INT2E_IPIP1_SPH_OPERATOR_ID: u32 = 110;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_vec().into_boxed_slice())

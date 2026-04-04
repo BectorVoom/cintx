@@ -54,7 +54,14 @@ pub(crate) fn init_optimizer_with_symbol(
     env: &[f64],
 ) -> Result<RawOptimizerHandle, cintxRsError> {
     validate_optimizer_inputs(atm, bas, env)?;
-    Ok(RawOptimizerHandle::with_hints(Some(symbol_hint), Some(256)))
+    // workspace_hint_bytes is None: the optimizer does not yet compute a workspace
+    // estimate, so no memory limit is imposed. A non-None value here propagates to
+    // ExecutionOptions::memory_limit_bytes via execution_options_from_opt, which
+    // causes ChunkPlanner to split the output into multiple chunks. The kernels
+    // (launch_two_electron, etc.) always produce the full output starting at index 0
+    // regardless of chunk offset, so any chunking other than a single full-output
+    // chunk would scatter wrong values into the accumulator.
+    Ok(RawOptimizerHandle::with_hints(Some(symbol_hint), None))
 }
 
 pub fn CINTinit_2e_optimizer(
@@ -121,7 +128,9 @@ mod tests {
         let (atm, bas, env) = sample_raw();
         let handle = CINTinit_optimizer(&atm, &bas, &env).unwrap();
         assert_eq!(handle.symbol_hint(), Some("CINTinit_optimizer"));
-        assert_eq!(handle.workspace_hint_bytes(), Some(256));
+        // workspace_hint_bytes is None: the optimizer does not yet compute a workspace
+        // estimate, so it imposes no memory limit on the chunk planner.
+        assert_eq!(handle.workspace_hint_bytes(), None);
 
         let mut slot = Some(handle);
         CINTdel_optimizer(&mut slot);
