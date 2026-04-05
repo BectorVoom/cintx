@@ -115,6 +115,31 @@ pub fn validate_shell_tuple(
     })
 }
 
+/// Validates that grids operator env params are correct.
+///
+/// Returns `InvalidEnvParam` if `grids_params` is `None` or `ngrids == 0` for a grids-family plan.
+/// Called before kernel launch to reject invalid configurations early (D-05).
+pub fn validate_grids_env_params(
+    canonical_family: &str,
+    params: &OperatorEnvParams,
+) -> Result<(), cintxRsError> {
+    if canonical_family != "grids" {
+        return Ok(());
+    }
+    match &params.grids_params {
+        None => Err(cintxRsError::InvalidEnvParam {
+            param: "NGRIDS",
+            reason: "grids family requires GridsEnvParams with NGRIDS > 0 and valid PTR_GRIDS"
+                .to_owned(),
+        }),
+        Some(gp) if gp.ngrids == 0 => Err(cintxRsError::InvalidEnvParam {
+            param: "NGRIDS",
+            reason: "NGRIDS must be > 0 for grids integrals".to_owned(),
+        }),
+        _ => Ok(()),
+    }
+}
+
 /// Validates that F12/STG/YP operator env params are correct.
 ///
 /// Returns `InvalidEnvParam` if `f12_zeta` is `None` or `0.0` for an f12-family plan.
@@ -150,6 +175,7 @@ mod tests {
     use super::*;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell};
     use cintx_ops::resolver::Resolver;
+    use crate::planner::GridsEnvParams;
     use std::sync::Arc;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
@@ -252,7 +278,7 @@ mod tests {
 
     #[test]
     fn f12_env_params_zeta_zero_is_rejected() {
-        let params = OperatorEnvParams { f12_zeta: Some(0.0_f64) };
+        let params = OperatorEnvParams { f12_zeta: Some(0.0_f64), ..OperatorEnvParams::default() };
         let err = validate_f12_env_params("f12", &params).unwrap_err();
         assert!(
             matches!(err, cintxRsError::InvalidEnvParam { param: "PTR_F12_ZETA", .. }),
@@ -262,7 +288,7 @@ mod tests {
 
     #[test]
     fn f12_env_params_zeta_none_is_rejected() {
-        let params = OperatorEnvParams { f12_zeta: None };
+        let params = OperatorEnvParams { f12_zeta: None, ..OperatorEnvParams::default() };
         let err = validate_f12_env_params("f12", &params).unwrap_err();
         assert!(
             matches!(err, cintxRsError::InvalidEnvParam { param: "PTR_F12_ZETA", .. }),
@@ -272,7 +298,7 @@ mod tests {
 
     #[test]
     fn f12_env_params_valid_zeta_passes() {
-        let params = OperatorEnvParams { f12_zeta: Some(1.2_f64) };
+        let params = OperatorEnvParams { f12_zeta: Some(1.2_f64), ..OperatorEnvParams::default() };
         validate_f12_env_params("f12", &params).expect("valid zeta should pass");
     }
 
@@ -282,5 +308,48 @@ mod tests {
         let params = OperatorEnvParams::default();
         validate_f12_env_params("2e", &params).expect("non-f12 family should not be checked");
         validate_f12_env_params("1e", &params).expect("non-f12 family should not be checked");
+    }
+
+    #[test]
+    fn validate_grids_env_params_none_is_rejected() {
+        let params = OperatorEnvParams::default(); // grids_params: None
+        let err = validate_grids_env_params("grids", &params).unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param: "NGRIDS", .. }),
+            "expected InvalidEnvParam(NGRIDS), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_grids_env_params_ngrids_zero_is_rejected() {
+        let params = OperatorEnvParams {
+            grids_params: Some(GridsEnvParams { ngrids: 0, ptr_grids: 20 }),
+            ..OperatorEnvParams::default()
+        };
+        let err = validate_grids_env_params("grids", &params).unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param: "NGRIDS", .. }),
+            "expected InvalidEnvParam(NGRIDS), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_grids_env_params_valid_passes() {
+        let params = OperatorEnvParams {
+            grids_params: Some(GridsEnvParams { ngrids: 5, ptr_grids: 20 }),
+            ..OperatorEnvParams::default()
+        };
+        validate_grids_env_params("grids", &params)
+            .expect("valid grids params should pass");
+    }
+
+    #[test]
+    fn validate_grids_env_params_non_grids_family_skips_check() {
+        // Non-grids families should not be gated even with no grids_params.
+        let params = OperatorEnvParams::default();
+        validate_grids_env_params("1e", &params)
+            .expect("non-grids family should not be checked");
+        validate_grids_env_params("origi", &params)
+            .expect("non-grids family should not be checked");
     }
 }

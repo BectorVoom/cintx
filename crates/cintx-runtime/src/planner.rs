@@ -16,6 +16,19 @@ use tracing::{debug, info_span};
 #[cfg(test)]
 use crate::dispatch::{DispatchFamily, WorkspaceBytes};
 
+/// Parameters for grid-based integrals (int1e_grids family).
+///
+/// NGRIDS = env[11] (count of grid points), PTR_GRIDS = env[12] (offset into env
+/// where grid coordinates start). Validator rejects grids family when NGRIDS=0.
+/// Per D-05/D-06: output shape is (ncomp * NGRIDS * di * dj) matching libcint g1e_grids.c.
+#[derive(Clone, Debug)]
+pub struct GridsEnvParams {
+    /// Number of grid points (from env[11]).
+    pub ngrids: usize,
+    /// Offset into env array where grid coordinates start (from env[12]).
+    pub ptr_grids: usize,
+}
+
 /// Operator-specific env parameters extracted from the raw `env[]` array.
 ///
 /// These are populated by the caller (raw compat reads from env[], safe API
@@ -25,6 +38,9 @@ pub struct OperatorEnvParams {
     /// PTR_F12_ZETA value (env[9]) for F12/STG/YP kernels.
     /// Must be non-zero when canonical_family == "f12".
     pub f12_zeta: Option<f64>,
+    /// For grids integrals: NGRIDS (env[11]) and PTR_GRIDS (env[12]) parameters.
+    /// Validator rejects grids family when grids_params is None or ngrids == 0.
+    pub grids_params: Option<GridsEnvParams>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

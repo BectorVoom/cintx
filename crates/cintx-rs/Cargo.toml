@@ -26,6 +26,7 @@ with-4c1e = [
 # Source-only APIs remain opt-in until manifest/oracle release gates approve promotion.
 unstable-source-api = [
     "cintx-compat/unstable-source-api",
+    "cintx-cubecl/unstable-source-api",
 ]
 
 [package.metadata.cintx]

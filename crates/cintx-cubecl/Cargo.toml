@@ -11,6 +11,7 @@ default = ["cpu"]
 cpu = ["cubecl/cpu"]
 with-f12 = []
 with-4c1e = []
+unstable-source-api = []
 
 [dependencies]
 cintx-core = { path = "../cintx-core" }

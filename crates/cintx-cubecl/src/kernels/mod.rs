@@ -7,6 +7,8 @@ pub mod center_4c1e;
 pub mod f12;
 pub mod one_electron;
 pub mod two_electron;
+#[cfg(feature = "unstable-source-api")]
+pub mod unstable;
 
 use crate::backend::ResolvedBackend;
 use crate::specialization::SpecializationKey;
@@ -20,15 +22,6 @@ pub type FamilyLaunchFn = fn(
     &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError>;
 
-#[cfg(not(any(feature = "with-4c1e", feature = "with-f12")))]
-const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["center_4c1e", "f12"];
-#[cfg(all(feature = "with-4c1e", not(feature = "with-f12")))]
-const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["f12"];
-#[cfg(all(feature = "with-f12", not(feature = "with-4c1e")))]
-const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["center_4c1e"];
-#[cfg(all(feature = "with-4c1e", feature = "with-f12"))]
-const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &[];
-
 fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
     match canonical_family {
         "1e" => Some(one_electron::launch_one_electron as FamilyLaunchFn),
@@ -40,6 +33,16 @@ fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
         "4c1e" => Some(center_4c1e::launch_center_4c1e as FamilyLaunchFn),
         #[cfg(feature = "with-f12")]
         "f12" => Some(f12::launch_f12 as FamilyLaunchFn),
+        #[cfg(feature = "unstable-source-api")]
+        "origi" => Some(unstable::launch_origi as FamilyLaunchFn),
+        #[cfg(feature = "unstable-source-api")]
+        "grids" => Some(unstable::launch_grids as FamilyLaunchFn),
+        #[cfg(feature = "unstable-source-api")]
+        "breit" => Some(unstable::launch_breit as FamilyLaunchFn),
+        #[cfg(feature = "unstable-source-api")]
+        "origk" => Some(unstable::launch_origk as FamilyLaunchFn),
+        #[cfg(feature = "unstable-source-api")]
+        "ssc" => Some(unstable::launch_ssc as FamilyLaunchFn),
         _ => None,
     }
 }
@@ -49,12 +52,25 @@ pub fn supports_canonical_family(canonical_family: &str) -> bool {
         "1e" | "2e" | "2c2e" | "3c1e" | "3c2e" => true,
         "4c1e" => cfg!(feature = "with-4c1e"),
         "f12" => cfg!(feature = "with-f12"),
+        "origi" | "grids" | "breit" | "origk" | "ssc" => cfg!(feature = "unstable-source-api"),
         _ => false,
     }
 }
 
-pub fn unresolved_families() -> &'static [&'static str] {
-    UNSUPPORTED_FOLLOW_ON_FAMILIES
+/// Returns the list of optional/unstable families that are not supported in the current
+/// feature configuration. Used by compat layers to report unsupported follow-on families.
+pub fn unresolved_families() -> Vec<&'static str> {
+    let mut unsupported = Vec::new();
+    if !cfg!(feature = "with-4c1e") {
+        unsupported.push("center_4c1e");
+    }
+    if !cfg!(feature = "with-f12") {
+        unsupported.push("f12");
+    }
+    if !cfg!(feature = "unstable-source-api") {
+        unsupported.extend_from_slice(&["origi", "grids", "breit", "origk", "ssc"]);
+    }
+    unsupported
 }
 
 pub fn resolve_family(plan: &ExecutionPlan<'_>) -> Result<FamilyLaunchFn, cintxRsError> {
