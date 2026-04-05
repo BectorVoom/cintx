@@ -388,10 +388,15 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
     cintx_compat::transform::CINTc2s_bra_sph(&mut sph, 1, &[1.0, 2.0, 3.0, 4.0], 1)?;
     cintx_compat::transform::CINTc2s_ket_sph(&mut sph, 1, &[1.0, 2.0, 3.0, 4.0], 1)?;
     cintx_compat::transform::CINTc2s_ket_sph1(&mut sph, &[1.0, 2.0, 3.0, 4.0], 0, 0, 1)?;
-    let mut spinor = vec![0.0, 0.0, 0.0, 0.0];
+    // l=1, kappa=0: spinor_len=6, output needs 4*6=24 f64s
+    // sf/iket_sf: gcart needs ncart(1)=3 elements
+    // si/iket_si: gcart needs 4*ncart(1)=12 elements (v1,vx,vy,vz)
+    let mut spinor = vec![0.0_f64; 24];
+    let gcart_sf: Vec<f64> = (1..=4).map(|i| i as f64).collect();
+    let gcart_si: Vec<f64> = (1..=12).map(|i| i as f64).collect();
     cintx_compat::transform::CINTc2s_ket_spinor_sf1(
         &mut spinor,
-        &[1.0, 2.0, 3.0, 4.0],
+        &gcart_sf,
         0,
         0,
         1,
@@ -400,7 +405,7 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
     )?;
     cintx_compat::transform::CINTc2s_iket_spinor_sf1(
         &mut spinor,
-        &[1.0, 2.0, 3.0, 4.0],
+        &gcart_sf,
         0,
         0,
         1,
@@ -409,7 +414,7 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
     )?;
     cintx_compat::transform::CINTc2s_ket_spinor_si1(
         &mut spinor,
-        &[1.0, 2.0, 3.0, 4.0],
+        &gcart_si,
         0,
         0,
         1,
@@ -418,7 +423,7 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
     )?;
     cintx_compat::transform::CINTc2s_iket_spinor_si1(
         &mut spinor,
-        &[1.0, 2.0, 3.0, 4.0],
+        &gcart_si,
         0,
         0,
         1,
