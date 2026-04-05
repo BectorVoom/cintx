@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
-status: Ready to plan
-stopped_at: Phase 15 context gathered
-last_updated: "2026-04-05T23:26:33.887Z"
+status: Ready to execute
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-04-05T23:53:50.214Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 18
-  completed_plans: 18
+  total_plans: 21
+  completed_plans: 19
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 14 — unstable-source-api-families
+**Current focus:** Phase 15 — oracle-tolerance-unification-manifest-lock-closure
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
+Phase: 15 (oracle-tolerance-unification-manifest-lock-closure) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -98,6 +98,7 @@ Plan: Not started
 | Phase 13-f12-stg-yp-kernels P04 | 90 | 2 tasks | 6 files |
 | Phase 14-unstable-source-api-families P01 | 16 | 2 tasks | 13 files |
 | Phase 14-unstable-source-api-families P05 | 5 | 2 tasks | 6 files |
+| Phase 15-oracle-tolerance-unification-manifest-lock-closure P01 | 8 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -229,6 +230,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 14-unstable-source-api-families]: Grids FFI wrappers use [i32; 4] shls to match libcint cint1e_grids.c signature (i, j, grid_start, grid_end)
 - [Phase 14-unstable-source-api-families]: unstable-source profile runs standalone, never combined with standard profiles
 - [Phase 14-unstable-source-api-families]: Nightly CI is advisory-only, not a merge blocker
+- [Phase 15-oracle-tolerance-unification-manifest-lock-closure]: tolerance_for_family drops Result wrapper: catch-all arm with Box::leak ensures any family gets unified atol=1e-12 without bail
+- [Phase 15-oracle-tolerance-unification-manifest-lock-closure]: manifest_oracle_families() reads compiled_manifest.lock.json at runtime — replaces hardcoded PHASE4_ORACLE_FAMILIES for oracle eligibility checks in fixtures and xtask
 
 ### Roadmap Evolution
 
@@ -245,6 +248,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T23:26:33.881Z
-Stopped at: Phase 15 context gathered
-Resume file: .planning/phases/15-oracle-tolerance-unification-manifest-lock-closure/15-CONTEXT.md
+Last session: 2026-04-05T23:53:50.184Z
+Stopped at: Completed 15-01-PLAN.md
+Resume file: None

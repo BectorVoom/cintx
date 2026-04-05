@@ -41,14 +41,14 @@
 - [x] **USRC-03**: Breit family (2 symbols, 2e) implemented behind unstable-source-api with oracle parity at atol=1e-12
 - [x] **USRC-04**: origk family (6 symbols, 3c1e) implemented behind unstable-source-api with oracle parity at atol=1e-12
 - [x] **USRC-05**: ssc family (1 symbol, 3c2e) implemented behind unstable-source-api with oracle parity at atol=1e-12
-- [ ] **USRC-06**: Nightly CI job runs oracle with --include-unstable-source=true and 0 mismatches
+- [x] **USRC-06**: Nightly CI job runs oracle with --include-unstable-source=true and 0 mismatches
 
 ### Oracle & Tolerance Unification
 
-- [ ] **ORAC-01**: Oracle tolerance unified to atol=1e-12 for every family with no per-family exceptions
+- [x] **ORAC-01**: Oracle tolerance unified to atol=1e-12 for every family with no per-family exceptions
 - [ ] **ORAC-02**: Four-profile manifest lock regenerated covering all implemented APIs
 - [ ] **ORAC-03**: CI oracle-parity gate passes all four profiles (base, with-f12, with-4c1e, with-f12+with-4c1e) at atol=1e-12
-- [ ] **ORAC-04**: Existing base families (1e, 2e, 2c2e, 3c1e, 3c2e) pass oracle at tightened atol=1e-12
+- [x] **ORAC-04**: Existing base families (1e, 2e, 2c2e, 3c1e, 3c2e) pass oracle at tightened atol=1e-12
 
 ## v2 Requirements
 
@@ -97,11 +97,11 @@
 | USRC-03 | Phase 14 | Complete |
 | USRC-04 | Phase 14 | Complete |
 | USRC-05 | Phase 14 | Complete |
-| USRC-06 | Phase 14 | Pending |
-| ORAC-01 | Phase 15 | Pending |
+| USRC-06 | Phase 14 | Complete |
+| ORAC-01 | Phase 15 | Complete |
 | ORAC-02 | Phase 15 | Pending |
 | ORAC-03 | Phase 15 | Pending |
-| ORAC-04 | Phase 15 | Pending |
+| ORAC-04 | Phase 15 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 27 total (Phases 11-15)
