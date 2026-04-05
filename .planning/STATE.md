@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
 status: In progress
-stopped_at: "Completed 14-01-PLAN.md"
-last_updated: "2026-04-05T00:00:00.000Z"
+stopped_at: "Completed 14-04-PLAN.md"
+last_updated: "2026-04-05T09:17:41Z"
 progress:
   total_phases: 5
   completed_phases: 3
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 14
-Plan: 01 (completed)
+Plan: 04 (completed)
 
 ## Performance Metrics
 
@@ -97,6 +97,7 @@ Plan: 01 (completed)
 | Phase 13-f12-stg-yp-kernels P03 | 45 | 2 tasks | 9 files |
 | Phase 13-f12-stg-yp-kernels P04 | 90 | 2 tasks | 6 files |
 | Phase 14-unstable-source-api-families P01 | 16 | 2 tasks | 13 files |
+| Phase 14-unstable-source-api-families P04 | 90 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -226,6 +227,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 14-unstable-source-api-families]: Convert unresolved_families() from static &[&str] to Vec<&str> to support dynamic 3-feature combination without 8 cfg variants
 - [Phase 14-unstable-source-api-families]: Use compact single-line ManifestEntry format for Phase 14 entries to avoid another very large Edit operation
 - [Phase 14-unstable-source-api-families]: Grids FFI wrappers use [i32; 4] shls to match libcint cint1e_grids.c signature (i, j, grid_start, grid_end)
+- [Phase 14-unstable-source-api-families]: int2e_breit_r1p2/r2p2 use single-pass gout (not BREIT0 composite); iket phase i^2=-1 requires negating cart_buf after cart_to_spinor_sf_4d
+- [Phase 14-unstable-source-api-families]: Phase 14 family_name uses "unstable::source::{name}" prefix; canonical_family stays short for dispatch routing via kernels/mod.rs
+- [Phase 14-unstable-source-api-families]: cintx-compat unstable-source-api feature must propagate to cintx-cubecl/unstable-source-api for kernel dispatch to be compiled in
 
 ### Roadmap Evolution
 
@@ -242,6 +246,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T00:00:00.000Z
-Stopped at: Completed 14-01-PLAN.md
-Resume file: .planning/phases/14-unstable-source-api-families/14-01-SUMMARY.md
+Last session: 2026-04-05T09:17:41Z
+Stopped at: Completed 14-04-PLAN.md
+Resume file: .planning/phases/14-unstable-source-api-families/14-04-SUMMARY.md
