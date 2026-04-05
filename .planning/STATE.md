@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
 status: In progress
-stopped_at: "Completed 14-01-PLAN.md"
-last_updated: "2026-04-05T00:00:00.000Z"
+stopped_at: Completed 14-03-PLAN.md
+last_updated: "2026-04-05T09:41:19.209Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 14
+  total_plans: 18
   completed_plans: 14
 ---
 
@@ -97,6 +97,7 @@ Plan: 01 (completed)
 | Phase 13-f12-stg-yp-kernels P03 | 45 | 2 tasks | 9 files |
 | Phase 13-f12-stg-yp-kernels P04 | 90 | 2 tasks | 6 files |
 | Phase 14-unstable-source-api-families P01 | 16 | 2 tasks | 13 files |
+| Phase 14 P03 | 90 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -226,6 +227,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 14-unstable-source-api-families]: Convert unresolved_families() from static &[&str] to Vec<&str> to support dynamic 3-feature combination without 8 cfg variants
 - [Phase 14-unstable-source-api-families]: Use compact single-line ManifestEntry format for Phase 14 entries to avoid another very large Edit operation
 - [Phase 14-unstable-source-api-families]: Grids FFI wrappers use [i32; 4] shls to match libcint cint1e_grids.c signature (i, j, grid_start, grid_end)
+- [Phase 14]: grids kernel uses GridsEnvParams.grid_coords (env-independent), DispatchFamily::UnstableSource for all 5 families, validate_profile_and_source_gate bypasses profile check for source-only symbols
 
 ### Roadmap Evolution
 
@@ -242,6 +244,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T00:00:00.000Z
-Stopped at: Completed 14-01-PLAN.md
-Resume file: .planning/phases/14-unstable-source-api-families/14-01-SUMMARY.md
+Last session: 2026-04-05T09:41:19.205Z
+Stopped at: Completed 14-03-PLAN.md
+Resume file: None

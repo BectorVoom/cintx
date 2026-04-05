@@ -12,6 +12,9 @@ pub enum DispatchFamily {
     Center3c1e,
     Center3c2e,
     Center4c1e,
+    /// Unstable-source families (grids, origi, breit, origk, ssc).
+    /// Gated behind the `unstable-source-api` feature at the kernel level.
+    UnstableSource,
 }
 
 impl DispatchFamily {
@@ -23,6 +26,9 @@ impl DispatchFamily {
             "3c1e" => Ok(Self::Center3c1e),
             "3c2e" => Ok(Self::Center3c2e),
             "4c1e" => Ok(Self::Center4c1e),
+            // Unstable-source families — resolved to a single enum variant at the planner level.
+            // Actual kernel routing uses the canonical_family string in cintx-cubecl::kernels::mod.
+            "grids" | "origi" | "breit" | "origk" | "ssc" => Ok(Self::UnstableSource),
             _ => Err(cintxRsError::UnsupportedApi {
                 requested: format!("unsupported dispatch family {family}"),
             }),

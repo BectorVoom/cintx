@@ -21,12 +21,20 @@ use crate::dispatch::{DispatchFamily, WorkspaceBytes};
 /// NGRIDS = env[11] (count of grid points), PTR_GRIDS = env[12] (offset into env
 /// where grid coordinates start). Validator rejects grids family when NGRIDS=0.
 /// Per D-05/D-06: output shape is (ncomp * NGRIDS * di * dj) matching libcint g1e_grids.c.
+///
+/// The `grid_coords` field carries the actual grid coordinates extracted from env,
+/// so the kernel can access them without needing the full env array.
+/// Each element is `[x, y, z]` for one grid point.
 #[derive(Clone, Debug)]
 pub struct GridsEnvParams {
     /// Number of grid points (from env[11]).
     pub ngrids: usize,
     /// Offset into env array where grid coordinates start (from env[12]).
+    /// This is kept for reference but the kernel uses `grid_coords` directly.
     pub ptr_grids: usize,
+    /// Grid point coordinates, extracted from env at call time.
+    /// Length must equal `ngrids`. Each element is `[x, y, z]` in Bohr.
+    pub grid_coords: Vec<[f64; 3]>,
 }
 
 /// Operator-specific env parameters extracted from the raw `env[]` array.
