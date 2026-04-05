@@ -582,17 +582,28 @@ fn validated_4c1e_error(reason: &str) -> cintxRsError {
 
 fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(), cintxRsError> {
     let symbol = descriptor.operator_symbol();
+
+    // Source-only symbols use the "unstable-source" profile and are gated by the
+    // unstable-source-api feature. When the feature is enabled, skip the profile
+    // check (the source gate below handles authorization). When the feature is
+    // disabled, reject with a clear message regardless of the base profile.
+    if descriptor.is_source_only() {
+        if !unstable_source_api_enabled() {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "source-only symbol {symbol} requires feature `unstable-source-api`"
+                ),
+            });
+        }
+        // Feature is enabled: source gate passed, skip profile check.
+        return Ok(());
+    }
+
+    // Non-source-only symbols: check the active compiled profile.
     let profile = active_manifest_profile();
     if !descriptor.is_compiled_in_profile(profile) {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("raw api {symbol} is not compiled in active profile {profile}"),
-        });
-    }
-    if descriptor.is_source_only() && !unstable_source_api_enabled() {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: format!(
-                "source-only symbol {symbol} requires feature `unstable-source-api`"
-            ),
         });
     }
 

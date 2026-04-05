@@ -3172,6 +3172,474 @@
       "oracle_covered": false,
       "helper_kind": "source",
       "canonical_family": "unstable::source::2e"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origi",
+        "operator": "r2_origi",
+        "representation": "sph",
+        "symbol": "int1e_r2_origi_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origi"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origi",
+        "operator": "r4_origi",
+        "representation": "sph",
+        "symbol": "int1e_r4_origi_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origi"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origi",
+        "operator": "r2_origi_ip2",
+        "representation": "sph",
+        "symbol": "int1e_r2_origi_ip2_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "1",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origi"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origi",
+        "operator": "r4_origi_ip2",
+        "representation": "sph",
+        "symbol": "int1e_r4_origi_ip2_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "1",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origi"
+    },
+    {
+      "id": {
+        "family": "unstable::source::grids",
+        "operator": "grids",
+        "representation": "sph",
+        "symbol": "int1e_grids_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "grids"
+    },
+    {
+      "id": {
+        "family": "unstable::source::grids",
+        "operator": "grids_ip",
+        "representation": "sph",
+        "symbol": "int1e_grids_ip_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "1",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "grids"
+    },
+    {
+      "id": {
+        "family": "unstable::source::grids",
+        "operator": "grids_ipvip",
+        "representation": "sph",
+        "symbol": "int1e_grids_ipvip_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "1",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "grids"
+    },
+    {
+      "id": {
+        "family": "unstable::source::grids",
+        "operator": "grids_spvsp",
+        "representation": "sph",
+        "symbol": "int1e_grids_spvsp_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "grids"
+    },
+    {
+      "id": {
+        "family": "unstable::source::grids",
+        "operator": "grids_ipip",
+        "representation": "sph",
+        "symbol": "int1e_grids_ipip_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 2,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "2",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "grids"
+    },
+    {
+      "id": {
+        "family": "unstable::source::breit",
+        "operator": "breit_r1p2",
+        "representation": "spinor",
+        "symbol": "int2e_breit_r1p2_spinor"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 4,
+      "forms": [
+        "spinor"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "breit"
+    },
+    {
+      "id": {
+        "family": "unstable::source::breit",
+        "operator": "breit_r2p2",
+        "representation": "spinor",
+        "symbol": "int2e_breit_r2p2_spinor"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 4,
+      "forms": [
+        "spinor"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "breit"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origk",
+        "operator": "r2_origk",
+        "representation": "sph",
+        "symbol": "int3c1e_r2_origk_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 3,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origk"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origk",
+        "operator": "r4_origk",
+        "representation": "sph",
+        "symbol": "int3c1e_r4_origk_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 3,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origk"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origk",
+        "operator": "r6_origk",
+        "representation": "sph",
+        "symbol": "int3c1e_r6_origk_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 3,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origk"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origk",
+        "operator": "ip1_r2_origk",
+        "representation": "sph",
+        "symbol": "int3c1e_ip1_r2_origk_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 3,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "1",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origk"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origk",
+        "operator": "ip1_r4_origk",
+        "representation": "sph",
+        "symbol": "int3c1e_ip1_r4_origk_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 3,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "1",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origk"
+    },
+    {
+      "id": {
+        "family": "unstable::source::origk",
+        "operator": "ip1_r6_origk",
+        "representation": "sph",
+        "symbol": "int3c1e_ip1_r6_origk_sph"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 3,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "1",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "origk"
+    },
+    {
+      "id": {
+        "family": "unstable::source::ssc",
+        "operator": "ssc",
+        "representation": "sph",
+        "symbol": "int3c2e_sph_ssc"
+      },
+      "profiles": [
+        "unstable-source"
+      ],
+      "compiled_in_profiles": [
+        "unstable-source"
+      ],
+      "stability": "unstable_source",
+      "category": "unstable-source",
+      "arity": 3,
+      "forms": [
+        "sph"
+      ],
+      "component_rank": "",
+      "feature_flag": "unstable_source",
+      "declared_in": "src/source/unstable",
+      "oracle_covered": false,
+      "helper_kind": "source",
+      "canonical_family": "ssc"
     }
   ]
 }

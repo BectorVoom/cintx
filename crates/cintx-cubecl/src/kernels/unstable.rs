@@ -1100,6 +1100,12 @@ pub fn launch_breit(
     }
 
     // Apply spinor transform (Breit is spinor-only per D-07)
+    //
+    // libcint int2e_breit_r1p2_spinor and int2e_breit_r2p2_spinor use c2s_sf_2e1i + c2s_sf_2e2i
+    // (iket variants), which apply a phase of i to both the j-ket (step 1) and l-ket (step 2).
+    // The combined phase is i_j * i_l = i^2 = -1 relative to the regular c2s_sf_2e1 + c2s_sf_2e2
+    // transform used by ordinary 2e integrals. We apply cart_to_spinor_sf_4d (regular) and then
+    // negate, matching the iket phase convention.
     cart_to_spinor_sf_4d(
         staging,
         &cart_buf,
@@ -1112,6 +1118,10 @@ pub fn launch_breit(
         ll as u8,
         shell_l.kappa,
     )?;
+    // Negate to account for c2s_sf_2e1i + c2s_sf_2e2i phase convention.
+    for v in staging.iter_mut() {
+        *v = -*v;
+    }
 
     let not0 = staging
         .iter()
