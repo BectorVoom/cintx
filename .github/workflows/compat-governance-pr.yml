@@ -20,6 +20,8 @@ on:
             - "xtask/**"
             - "docs/**"
     workflow_dispatch:
+    schedule:
+        - cron: "0 4 * * *"
 
 concurrency:
     group: compat-governance-pr-${{ github.event.pull_request.number || github.ref }}
@@ -334,3 +336,67 @@ jobs:
                   path: |
                       /mnt/data/cintx_phase_05_wgpu_capability_gate.json
                       /tmp/cintx_artifacts/cintx_phase_05_wgpu_capability_gate.json
+
+    unstable_source_oracle:
+        name: "unstable_source_oracle (nightly)"
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        runs-on: ubuntu-latest
+        env:
+            CINTX_ORACLE_BUILD_VENDOR: "1"
+            CINTX_ARTIFACT_DIR: /tmp/cintx_artifacts
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
+
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache cargo
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      target
+                  key: ${{ runner.os }}-cargo-unstable-${{ hashFiles('**/Cargo.lock') }}
+
+            - name: Run unstable-source oracle parity
+              run: |
+                  cargo test -p cintx-oracle --features cpu,unstable-source-api -- unstable_source_parity --test-threads=1
+
+            - name: Run xtask unstable-source oracle-compare
+              run: |
+                  cargo run --manifest-path xtask/Cargo.toml -- oracle-compare \
+                    --profiles "unstable-source" \
+                    --include-unstable-source true
+
+            - name: Upload unstable-source oracle artifacts
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: unstable-source-oracle-${{ github.run_id }}
+                  if-no-files-found: warn
+                  path: |
+                      /mnt/data/cintx_phase_04_oracle_compare_unstable_source.json
+                      /mnt/data/cintx_phase_04_oracle_matrix_unstable_source.json
+                      /tmp/cintx_artifacts/cintx_phase_04_oracle_compare_unstable_source.json
+                      /tmp/cintx_artifacts/cintx_phase_04_oracle_matrix_unstable_source.json
