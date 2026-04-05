@@ -47,20 +47,6 @@ pub const PTR_ENV_START: usize = 20;
 /// extract the zeta value from the env array without hardcoding the magic index.
 pub const PTR_F12_ZETA: usize = 9;
 
-/// Index into env array where the grid point count is stored.
-///
-/// libcint defines `NGRIDS = 11` in `cint_bas.h`. Raw callers set `env[11] = ngrids_count`
-/// before calling any int1e_grids* integral. This constant allows raw compat code to
-/// extract the grid count from the env array without hardcoding the magic index.
-pub const NGRIDS: usize = 11;
-
-/// Index into env array where the grid coordinates offset is stored.
-///
-/// libcint defines `PTR_GRIDS = 12` in `cint_bas.h`. Raw callers set `env[12] = grid_offset`
-/// where grid_offset is the index into env where the grid coordinate data starts.
-/// Grid coordinates are stored as `env[grid_offset + g*3 .. g*3+3]` for grid point g.
-pub const PTR_GRIDS: usize = 12;
-
 pub const POINT_NUC: i32 = 1;
 pub const GAUSSIAN_NUC: i32 = 2;
 pub const FRAC_CHARGE_NUC: i32 = 3;
@@ -409,13 +395,7 @@ pub unsafe fn query_workspace_raw(
     env: &[f64],
     opt: Option<&RawOptimizerHandle>,
 ) -> Result<WorkspaceQuery, cintxRsError> {
-    // For grids family, shls is [i, j, grid_start, grid_end]; pass only [i, j] to prepare.
-    let effective_shls = if is_grids_family_symbol(api.symbol()) && shls.len() >= 2 {
-        &shls[..2]
-    } else {
-        shls
-    };
-    let prepared = prepare_raw_call(api, dims, effective_shls, atm, bas, env, opt)?;
+    let prepared = prepare_raw_call(api, dims, shls, atm, bas, env, opt)?;
     Ok(prepared.query)
 }
 
@@ -431,50 +411,16 @@ pub unsafe fn eval_raw(
     opt: Option<&RawOptimizerHandle>,
     cache: Option<&mut [f64]>,
 ) -> Result<RawEvalSummary, cintxRsError> {
-    // For grids family (int1e_grids*), shls is [i, j, grid_start, grid_end].
-    // Only shls[0..2] are shell indices; shls[2..4] encode the grid range.
-    // Detect grids family early and extract the grid range before prepare_raw_call,
-    // which validates shls.len() == arity (2 for grids).
-    let (effective_shls, grids_range): (&[i32], Option<(i32, i32)>) =
-        if is_grids_family_symbol(api.symbol()) {
-            if shls.len() < 4 {
-                return Err(cintxRsError::InvalidShellTuple {
-                    expected: 4,
-                    got: shls.len(),
-                });
-            }
-            let grid_start = shls[2];
-            let grid_end = shls[3];
-            if grid_end <= grid_start {
-                return Err(cintxRsError::InvalidEnvParam {
-                    param: "NGRIDS",
-                    reason: format!(
-                        "grids range is empty: grid_start={grid_start} grid_end={grid_end}"
-                    ),
-                });
-            }
-            (&shls[..2], Some((grid_start, grid_end)))
-        } else {
-            (shls, None)
-        };
+    let prepared = prepare_raw_call(api, dims, shls, atm, bas, env, opt)?;
 
-    let prepared = prepare_raw_call(api, dims, effective_shls, atm, bas, env, opt)?;
-
-    // For grids family, the output buffer is ngrids * di * dj * ncomp.
-    // compat_dims only tracks di * dj (without ngrids), so we skip the standard check
-    // and do a custom size validation after ngrids is known.
-    let is_grids = grids_range.is_some();
-    if out.is_none() {
+    if let Some(out_buffer) = out.as_ref() {
+        prepared.compat_dims.ensure_output_len(out_buffer.len())?;
+    } else {
         return Ok(RawEvalSummary {
             not0: 0,
             bytes_written: 0,
             workspace_bytes: prepared.query.bytes,
         });
-    }
-    if !is_grids {
-        if let Some(out_buffer) = out.as_ref() {
-            prepared.compat_dims.ensure_output_len(out_buffer.len())?;
-        }
     }
 
     if let Some(cache) = cache {
@@ -503,61 +449,13 @@ pub unsafe fn eval_raw(
         )?;
     }
 
-    // Populate grids_params for int1e_grids* family (raw compat path).
-    // grids_range was extracted from shls[2..4] above (grid_start, grid_end).
-    // ptr_grids_base comes from env[PTR_GRIDS] (env[12]).
-    // ngrids is grid_end - grid_start (the number of grid points in this call range).
-    // Grid coordinates are extracted from env[ptr_grids_base + g*3..] for g in grid_start..grid_end
-    // and stored in grid_coords so the kernel can access them without the full env array.
-    if let Some((grid_start, grid_end)) = grids_range {
-        let ngrids = (grid_end - grid_start) as usize;
-        let ptr_grids_base = env.get(PTR_GRIDS).copied().unwrap_or(0.0) as usize;
-        let ptr_grids = ptr_grids_base + grid_start as usize * 3;
-
-        // Extract grid coordinates for the range [grid_start, grid_end)
-        let mut grid_coords = Vec::with_capacity(ngrids);
-        for g in 0..ngrids {
-            let base = ptr_grids + g * 3;
-            if base + 2 >= env.len() {
-                return Err(cintxRsError::InvalidEnvParam {
-                    param: "PTR_GRIDS",
-                    reason: format!(
-                        "grid point {} coordinate offset {} exceeds env length {}",
-                        g, base, env.len()
-                    ),
-                });
-            }
-            grid_coords.push([env[base], env[base + 1], env[base + 2]]);
-        }
-
-        plan.operator_env_params.grids_params = Some(
-            cintx_runtime::planner::GridsEnvParams { ngrids, ptr_grids, grid_coords },
-        );
-        cintx_runtime::validator::validate_grids_env_params(
-            "grids",
-            &plan.operator_env_params,
-        )?;
-    }
-
     let executor = CubeClExecutor::new();
     let mut allocator = HostWorkspaceAllocator::default();
-
-    // For grids family, the output buffer is ngrids * di * dj * ncomp, but
-    // plan.output_layout.staging_elements only accounts for di * dj * ncomp.
-    // Multiply by ngrids when grids_params is populated.
-    let ngrids_multiplier = plan
-        .operator_env_params
-        .grids_params
-        .as_ref()
-        .map(|gp| gp.ngrids)
-        .unwrap_or(1);
 
     // Allocate the full staging accumulator that we own, so we can read values after execute().
     // RecordingExecutor is not needed: we construct ExecutionIo with our own staging slice and
     // read it directly after executor.execute() returns for each chunk.
-    let staging_elements = plan.output_layout.staging_elements
-        .checked_mul(ngrids_multiplier)
-        .ok_or(cintxRsError::HostAllocationFailed { bytes: usize::MAX })?;
+    let staging_elements = plan.output_layout.staging_elements;
     let mut staging = Vec::new();
     staging
         .try_reserve_exact(staging_elements)
@@ -638,21 +536,7 @@ pub unsafe fn eval_raw(
     }
 
     let out = out.expect("checked out.is_some()");
-    let written_elements = if is_grids {
-        // For grids family, staging contains ngrids * di * dj * ncomp elements.
-        // Write directly without going through compat_dims (which doesn't know about ngrids).
-        let required = staging_elements;
-        if out.len() < required {
-            return Err(cintxRsError::BufferTooSmall {
-                required,
-                provided: out.len(),
-            });
-        }
-        out[..required].copy_from_slice(&staging[..required]);
-        required
-    } else {
-        prepared.compat_dims.write(out, &staging)?
-    };
+    let written_elements = prepared.compat_dims.write(out, &staging)?;
     let bytes_written = written_elements
         .checked_mul(size_of::<f64>())
         .ok_or_else(|| cintxRsError::ChunkPlanFailed {
@@ -684,10 +568,6 @@ fn is_f12_family_symbol(symbol: &str) -> bool {
     symbol.starts_with("int2e_stg") || symbol.starts_with("int2e_yp")
 }
 
-fn is_grids_family_symbol(symbol: &str) -> bool {
-    symbol.starts_with("int1e_grids")
-}
-
 fn f12_sph_envelope_error(symbol: &str) -> cintxRsError {
     cintxRsError::UnsupportedApi {
         requested: format!("{symbol} is outside with-f12 sph envelope"),
@@ -703,9 +583,10 @@ fn validated_4c1e_error(reason: &str) -> cintxRsError {
 fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(), cintxRsError> {
     let symbol = descriptor.operator_symbol();
 
-    // Unstable-source symbols are gated by the unstable-source-api feature, not by the
-    // regular compiled_in_profiles mechanism. When the feature is enabled they are
-    // available regardless of the current f12/4c1e profile combination.
+    // Source-only symbols use the "unstable-source" profile and are gated by the
+    // unstable-source-api feature. When the feature is enabled, skip the profile
+    // check (the source gate below handles authorization). When the feature is
+    // disabled, reject with a clear message regardless of the base profile.
     if descriptor.is_source_only() {
         if !unstable_source_api_enabled() {
             return Err(cintxRsError::UnsupportedApi {
@@ -714,10 +595,11 @@ fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(
                 ),
             });
         }
-        // Feature is on: skip the profile check for source-only symbols.
+        // Feature is enabled: source gate passed, skip profile check.
         return Ok(());
     }
 
+    // Non-source-only symbols: check the active compiled profile.
     let profile = active_manifest_profile();
     if !descriptor.is_compiled_in_profile(profile) {
         return Err(cintxRsError::UnsupportedApi {

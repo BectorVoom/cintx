@@ -12,9 +12,14 @@ pub enum DispatchFamily {
     Center3c1e,
     Center3c2e,
     Center4c1e,
-    /// Unstable-source families (grids, origi, breit, origk, ssc).
-    /// Gated behind the `unstable-source-api` feature at the kernel level.
-    UnstableSource,
+    /// Unstable-source families (gated by `unstable-source-api` feature).
+    /// All five unstable families share this variant; operator_name
+    /// disambiguates within the kernel dispatch.
+    Origi,
+    Grids,
+    Breit,
+    Origk,
+    Ssc,
 }
 
 impl DispatchFamily {
@@ -26,9 +31,14 @@ impl DispatchFamily {
             "3c1e" => Ok(Self::Center3c1e),
             "3c2e" => Ok(Self::Center3c2e),
             "4c1e" => Ok(Self::Center4c1e),
-            // Unstable-source families — resolved to a single enum variant at the planner level.
-            // Actual kernel routing uses the canonical_family string in cintx-cubecl::kernels::mod.
-            "grids" | "origi" | "breit" | "origk" | "ssc" => Ok(Self::UnstableSource),
+            // Unstable-source families (Phase 14).
+            // family_name uses "unstable::source::{name}" prefix; canonical_family is the short name.
+            // DispatchDecision is built from descriptor.family() = entry.family_name.
+            "unstable::source::origi" => Ok(Self::Origi),
+            "unstable::source::grids" => Ok(Self::Grids),
+            "unstable::source::breit" => Ok(Self::Breit),
+            "unstable::source::origk" => Ok(Self::Origk),
+            "unstable::source::ssc" => Ok(Self::Ssc),
             _ => Err(cintxRsError::UnsupportedApi {
                 requested: format!("unsupported dispatch family {family}"),
             }),
