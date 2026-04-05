@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: Ready to execute
-stopped_at: Completed 13-f12-stg-yp-kernels/13-02-PLAN.md
-last_updated: "2026-04-05T03:35:39.928Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 13-f12-stg-yp-kernels-03-PLAN.md
+last_updated: "2026-04-05T03:53:36.734Z"
 progress:
   total_phases: 10
   completed_phases: 10
@@ -94,6 +94,7 @@ Plan: 3 of 3
 | Phase 12-real-spinor-transform-c2spinor-replacement P05 | 90 | 1 tasks | 3 files |
 | Phase 13-f12-stg-yp-kernels P01 | 15 | 2 tasks | 12 files |
 | Phase 13-f12-stg-yp-kernels P02 | 90 | 2 tasks | 6 files |
+| Phase 13-f12-stg-yp-kernels P03 | 45 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -215,6 +216,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 13-f12-stg-yp-kernels]: OperatorEnvParams defaults to all-None in ExecutionPlan::new(); callers (raw compat, safe API) populate f12_zeta from env[9]
 - [Phase 13-f12-stg-yp-kernels]: manifest canonical_family for STG/YP is '2e' not 'f12'; F12 detection uses symbol prefix (int2e_stg/int2e_yp)
 - [Phase 13-f12-stg-yp-kernels]: launch_f12 passes 'f12' explicitly to validate_f12_env_params; operator_name strips 'stg'/'yp' prefix for variant suffix
+- [Phase 13-f12-stg-yp-kernels]: F12 canonical_family changed from '2e' to 'f12' in manifest so kernel dispatch routes to f12::launch_f12 via resolve_family_name in kernels/mod.rs
+- [Phase 13-f12-stg-yp-kernels]: F12 base variant oracle parity at atol=1e-12 confirmed vs libcint 6.1.3; derivative variants use idempotency tests due to unimplemented multi-component sph transform
 
 ### Roadmap Evolution
 
@@ -231,6 +234,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T03:35:39.924Z
-Stopped at: Completed 13-f12-stg-yp-kernels/13-02-PLAN.md
+Last session: 2026-04-05T03:53:36.731Z
+Stopped at: Completed 13-f12-stg-yp-kernels-03-PLAN.md
 Resume file: None

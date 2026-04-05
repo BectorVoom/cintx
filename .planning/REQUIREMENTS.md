@@ -98,7 +98,7 @@
 
 - [x] **F12-01**: STG (Slater-type geminal) kernel implements modified Rys quadrature with tabulated polynomial roots matching libcint
 - [x] **F12-02**: YP (Yukawa potential) kernel implements correct routing distinct from STG path
-- [ ] **F12-03**: All 10 with-f12 sph symbols pass oracle parity against libcint at atol=1e-12
+- [x] **F12-03**: All 10 with-f12 sph symbols pass oracle parity against libcint at atol=1e-12
 - [x] **F12-04**: PTR_F12_ZETA (env[9]) is correctly plumbed through ExecutionPlan to kernel launchers
 - [x] **F12-05**: Oracle fixtures validate that zeta=0 is rejected or produces Coulomb-equivalent results explicitly
 
@@ -194,7 +194,7 @@
 | SPIN-04 | Phase 12 | Pending |
 | F12-01 | Phase 13 | Complete |
 | F12-02 | Phase 13 | Complete |
-| F12-03 | Phase 13 | Pending |
+| F12-03 | Phase 13 | Complete |
 | F12-04 | Phase 13 | Complete |
 | F12-05 | Phase 13 | Complete |
 | USRC-01 | Phase 14 | Pending |
