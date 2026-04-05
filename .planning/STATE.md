@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
 status: In progress
-stopped_at: Phase 14 context gathered
-last_updated: "2026-04-05T05:54:10.198Z"
+stopped_at: "Completed 14-01-PLAN.md"
+last_updated: "2026-04-05T00:00:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 14
+  completed_plans: 14
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 14
-Plan: Not started
+Plan: 01 (completed)
 
 ## Performance Metrics
 
@@ -96,6 +96,7 @@ Plan: Not started
 | Phase 13-f12-stg-yp-kernels P02 | 90 | 2 tasks | 6 files |
 | Phase 13-f12-stg-yp-kernels P03 | 45 | 2 tasks | 9 files |
 | Phase 13-f12-stg-yp-kernels P04 | 90 | 2 tasks | 6 files |
+| Phase 14-unstable-source-api-families P01 | 16 | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -222,6 +223,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 13-f12-stg-yp-kernels]: nabla1i_2e uses ceil angular momenta for G tensor headroom; base used for gout loops and sph transforms
 - [Phase 13-f12-stg-yp-kernels]: gout_ipip1 applies column-major transposition matching libcint autocode; ipvip1/ip1ip2 do not
 - [Phase 13-f12-stg-yp-kernels]: grad2.c and hess.c required in oracle build.rs — cint2e_f12.c only declares extern forward references
+- [Phase 14-unstable-source-api-families]: Convert unresolved_families() from static &[&str] to Vec<&str> to support dynamic 3-feature combination without 8 cfg variants
+- [Phase 14-unstable-source-api-families]: Use compact single-line ManifestEntry format for Phase 14 entries to avoid another very large Edit operation
+- [Phase 14-unstable-source-api-families]: Grids FFI wrappers use [i32; 4] shls to match libcint cint1e_grids.c signature (i, j, grid_start, grid_end)
 
 ### Roadmap Evolution
 
@@ -238,6 +242,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T05:54:10.195Z
-Stopped at: Phase 14 context gathered
-Resume file: .planning/phases/14-unstable-source-api-families/14-CONTEXT.md
+Last session: 2026-04-05T00:00:00.000Z
+Stopped at: Completed 14-01-PLAN.md
+Resume file: .planning/phases/14-unstable-source-api-families/14-01-SUMMARY.md

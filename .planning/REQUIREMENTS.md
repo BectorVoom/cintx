@@ -36,11 +36,11 @@
 
 ### Unstable-Source API
 
-- [ ] **USRC-01**: origi family (4 symbols, 1e) implemented behind unstable-source-api gate with oracle parity at atol=1e-12
-- [ ] **USRC-02**: grids family (1e grid-based integrals) implemented with NGRIDS/PTR_GRIDS env parsing and oracle parity at atol=1e-12
-- [ ] **USRC-03**: Breit family (2 symbols, 2e) implemented behind unstable-source-api with oracle parity at atol=1e-12
-- [ ] **USRC-04**: origk family (6 symbols, 3c1e) implemented behind unstable-source-api with oracle parity at atol=1e-12
-- [ ] **USRC-05**: ssc family (1 symbol, 3c2e) implemented behind unstable-source-api with oracle parity at atol=1e-12
+- [x] **USRC-01**: origi family (4 symbols, 1e) implemented behind unstable-source-api gate with oracle parity at atol=1e-12
+- [x] **USRC-02**: grids family (1e grid-based integrals) implemented with NGRIDS/PTR_GRIDS env parsing and oracle parity at atol=1e-12
+- [x] **USRC-03**: Breit family (2 symbols, 2e) implemented behind unstable-source-api with oracle parity at atol=1e-12
+- [x] **USRC-04**: origk family (6 symbols, 3c1e) implemented behind unstable-source-api with oracle parity at atol=1e-12
+- [x] **USRC-05**: ssc family (1 symbol, 3c2e) implemented behind unstable-source-api with oracle parity at atol=1e-12
 - [ ] **USRC-06**: Nightly CI job runs oracle with --include-unstable-source=true and 0 mismatches
 
 ### Oracle & Tolerance Unification
@@ -92,11 +92,11 @@
 | F12-03 | Phase 13 | Complete |
 | F12-04 | Phase 13 | Complete |
 | F12-05 | Phase 13 | Complete |
-| USRC-01 | Phase 14 | Pending |
-| USRC-02 | Phase 14 | Pending |
-| USRC-03 | Phase 14 | Pending |
-| USRC-04 | Phase 14 | Pending |
-| USRC-05 | Phase 14 | Pending |
+| USRC-01 | Phase 14 | Complete |
+| USRC-02 | Phase 14 | Complete |
+| USRC-03 | Phase 14 | Complete |
+| USRC-04 | Phase 14 | Complete |
+| USRC-05 | Phase 14 | Complete |
 | USRC-06 | Phase 14 | Pending |
 | ORAC-01 | Phase 15 | Pending |
 | ORAC-02 | Phase 15 | Pending |
