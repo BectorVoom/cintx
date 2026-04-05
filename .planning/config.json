@@ -1,4 +1,6 @@
 {
+  "milestone_version": "v1.2",
+  "milestone_name": "Full API Parity & Unified Oracle Gate",
   "model_profile": "balanced",
   "commit_docs": true,
   "parallelization": true,

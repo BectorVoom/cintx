@@ -3,74 +3,6 @@
 **Defined:** 2026-03-21
 **Core Value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.
 
-## v1 Requirements
-
-### Foundations
-
-- [x] **BASE-01**: Rust caller can model atoms, shells, basis sets, environment parameters, operators, and tensor layouts through explicit typed domain structures.
-- [x] **BASE-02**: Maintainer can generate and lock a manifest-backed API inventory that classifies stable, optional, and unstable-source families across the supported feature matrix.
-- [x] **BASE-03**: Rust caller can resolve supported integral families and representations through a manifest-aware registry without relying on raw symbol names.
-
-### Compatibility
-
-- [x] **COMP-01**: Compat caller can invoke raw APIs using `atm`, `bas`, `env`, `shls`, `dims`, `opt`, and `cache` inputs that match documented layout contracts.
-- [x] **COMP-02**: Compat caller can query required output sizes and workspace requirements without performing a full evaluation or writing output buffers.
-- [x] **COMP-03**: Compat caller can use helper, transform, optimizer-lifecycle, and legacy wrapper APIs that are included in the upstream compatibility scope.
-- [x] **COMP-04**: C integrator can enable an optional C ABI shim that returns integer status codes and exposes thread-local last-error details.
-- [x] **COMP-05**: Compat caller receives typed validation failures or explicit `UnsupportedApi` errors instead of silent truncation, partial writes, or undefined behavior.
-
-### Execution
-
-- [x] **EXEC-01**: Rust caller can query workspace needs separately from evaluation through the safe API.
-- [x] **EXEC-02**: Rust or compat caller can evaluate supported 1e, 2e, 2c2e, 3c1e, and 3c2e families through the shared planner and CubeCL backend.
-- [x] **EXEC-03**: Caller can enforce memory limits so large evaluations chunk safely or fail with typed memory-limit or allocation errors and no partial writes.
-- [x] **EXEC-04**: Caller receives outputs with upstream-compatible cart, sph, and spinor shapes, ordering, and complex-layout semantics.
-- [x] **EXEC-05**: Caller gets numerically equivalent results within accepted tolerance regardless of whether optimizer support is enabled.
-
-### Optional Families
-
-- [x] **OPT-01**: Caller can enable sph-only F12, STG, and YP families behind `with-f12`, and unsupported representations fail explicitly.
-- [x] **OPT-02**: Caller can enable 4c1e behind `with-4c1e` only within the validated bug envelope, and out-of-envelope cases fail explicitly.
-- [x] **OPT-03**: Maintainer can expose approved source-only families behind `unstable-source-api` without changing the stable GA surface.
-
-### Verification
-
-- [x] **VERI-01**: Maintainer can compare stable and enabled optional APIs against vendored upstream libcint through oracle tests with family-appropriate tolerances.
-- [x] **VERI-02**: CI can block manifest drift, helper/legacy parity regressions, CubeCL consistency failures, and OOM contract violations across the support matrix.
-- [x] **VERI-03**: Maintainer can benchmark representative workloads and track throughput, memory, and CPU-GPU crossover regressions over time.
-- [x] **VERI-04**: Maintainer can inspect planner, chunking, transfer, fallback, and OOM behavior through structured tracing and diagnostics.
-
-## v1.1 Requirements
-
-### Executor Infrastructure
-
-- [x] **EXEC-06**: Executor internals use CubeCL client API directly (`WgpuRuntime::client()`, `client.create()`/`client.read()`/`client.empty()`, `ArrayArg::from_raw_parts`)
-- [x] **EXEC-07**: RecordingExecutor removed from cintx-compat and cintx-rs — real kernel values flow through `io.staging_output()` directly
-- [x] **EXEC-08**: ResolvedBackend enum dispatches between Wgpu and Cpu runtime arms with per-arm kernel launch
-- [x] **EXEC-09**: CPU backend enabled via `cpu = ["cubecl/cpu"]` feature in cintx-cubecl for CI oracle testing without GPU
-
-### Kernel Compute
-
-- [x] **KERN-01**: 1e family kernels (overlap, kinetic, nuclear attraction) produce real values via `#[cube(launch)]`
-- [x] **KERN-02**: 2e ERI kernel implements Rys quadrature with real Gaussian integral evaluation
-- [x] **KERN-03**: 2c2e two-center two-electron kernel produces real values
-- [x] **KERN-04**: 3c1e three-center one-electron kernel produces real values
-- [x] **KERN-05**: 3c2e three-center two-electron kernel produces real values
-- [x] **KERN-06**: Cart-to-sph transform implements real Condon-Shortley coefficients replacing stub blend
-
-### Math Infrastructure
-
-- [x] **MATH-01**: Boys function implemented as `#[cube]` functions with gridded Taylor expansion uploaded to device
-- [x] **MATH-02**: Gaussian primitive pair evaluation (overlap distribution, screening) implemented as `#[cube]` functions
-- [x] **MATH-03**: Rys quadrature roots and weights computed on-device via polynomial fit tables
-- [x] **MATH-04**: Obara-Saika horizontal and vertical recurrence relations implemented as `#[cube]` functions
-
-### Verification (v1.1)
-
-- [x] **VERI-05**: Oracle parity verified per family as each kernel lands (not deferred to end)
-- [x] **VERI-06**: f64 precision strategy resolved — CPU backend as primary oracle path; wgpu SHADER_F64 tested opportunistically
-- [x] **VERI-07**: v1.0 human UAT items (non-zero eval_raw output, C ABI shim output on real GPU) resolved
-
 ## v1.2 Requirements
 
 ### Helper & Transform Completion
@@ -143,43 +75,6 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BASE-01 | Phase 1 | Complete |
-| BASE-02 | Phase 1 | Complete |
-| BASE-03 | Phase 1 | Complete |
-| COMP-01 | Phase 6 | Complete |
-| COMP-02 | Phase 2 | Complete |
-| COMP-03 | Phase 2 | Complete |
-| COMP-04 | Phase 6 | Complete |
-| COMP-05 | Phase 6 | Complete |
-| EXEC-01 | Phase 3 | Complete |
-| EXEC-02 | Phase 6 | Complete |
-| EXEC-03 | Phase 2 | Complete |
-| EXEC-04 | Phase 6 | Complete |
-| EXEC-05 | Phase 6 | Complete |
-| OPT-01 | Phase 3 | Complete |
-| OPT-02 | Phase 3 | Complete |
-| OPT-03 | Phase 3 | Complete |
-| VERI-01 | Phase 6 | Complete |
-| VERI-02 | Phase 4 | Complete |
-| VERI-03 | Phase 4 | Complete |
-| VERI-04 | Phase 4 | Complete |
-| EXEC-06 | Phase 7 | Complete |
-| EXEC-07 | Phase 7 | Complete |
-| EXEC-08 | Phase 7 | Complete |
-| EXEC-09 | Phase 7 | Complete |
-| MATH-01 | Phase 8 | Complete |
-| MATH-02 | Phase 8 | Complete |
-| MATH-03 | Phase 8 | Complete |
-| MATH-04 | Phase 8 | Complete |
-| KERN-01 | Phase 9 | Complete |
-| KERN-02 | Phase 10 | Complete |
-| KERN-03 | Phase 10 | Complete |
-| KERN-04 | Phase 10 | Complete |
-| KERN-05 | Phase 10 | Complete |
-| KERN-06 | Phase 9 | Complete |
-| VERI-05 | Phase 9 | Complete |
-| VERI-06 | Phase 7 | Complete |
-| VERI-07 | Phase 10 | Complete |
 | HELP-01 | Phase 11 | Complete |
 | HELP-02 | Phase 11 | Complete |
 | HELP-03 | Phase 11 | Complete |
@@ -209,12 +104,10 @@
 | ORAC-04 | Phase 15 | Pending |
 
 **Coverage:**
-- v1.0 requirements: 20 total (all complete)
-- v1.1 requirements: 17 total (all complete)
-- v1.2 requirements: 27 total (note: coverage line previously stated 30; actual count from requirement IDs is 27)
-- Mapped to phases: 27/27 (Phases 11-15)
-- Unmapped: 0
+- v1.2 requirements: 27 total (Phases 11-15)
+- Complete: 17/27
+- Pending: 10/27
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-04-04 after v1.2 roadmap creation — all 27 v1.2 requirements mapped to Phases 11-15*
+*Last updated: 2026-04-05 after v1.1 milestone complete — v1.0/v1.1 requirements archived to milestones/*

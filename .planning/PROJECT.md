@@ -19,15 +19,15 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - [x] All five base integral families (1e, 2e, 2c2e, 3c1e, 3c2e) produce real kernel output through CubeCL backend with oracle parity confirmed against vendored libcint 6.1.3. Validated in Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure.
 - [x] Oracle gate closure passes all five base families with 0 mismatches. Validated in Phase 10.
 - [x] Every helper, transform, and wrapper symbol in the manifest is oracle-wired with unified atol=1e-12 tolerance; 4c1e stub replaced with real polynomial recurrence kernel matching vendored libcint. Validated in Phase 11: Helper/Transform Completion & 4c1e Real Kernel.
+- [x] Real spinor transforms with correct Clebsch-Gordan coupling; spinor oracle coverage unblocked for all families. Validated in Phase 12: Real Spinor Transform.
+- [x] F12/STG/YP family kernels — all 10 sph symbols at oracle parity (atol=1e-12). Cart and spinor remain unsupported (sph-only enforcement). Validated in Phase 13: F12/STG/YP Kernels.
+- [x] v1.1 executor infrastructure (EXEC-06/07/08/09, VERI-06) fully resolved — direct CubeCL client API, ResolvedBackend dispatch, CPU backend, f64 strategy. Validated in Phase 7.
 
 ### Active
 
-- [ ] Cover the full libcint API surface — with-f12, with-4c1e (beyond validated envelope), and unstable-source families — with unified atol=1e-12 oracle tolerance and objective CI evidence.
-- [x] Implement with-f12 (F12/STG/YP) family kernels — all 10 sph symbols at oracle parity (atol=1e-12). Cart and spinor remain unsupported (sph-only enforcement). Validated in Phase 13.
-- [ ] Implement with-4c1e family kernels beyond the initial validated envelope with oracle parity.
-- [ ] Implement unstable-source family APIs behind feature gate with oracle parity.
+- [ ] Cover the full libcint API surface — with-4c1e (beyond validated envelope) and unstable-source families — with unified atol=1e-12 oracle tolerance and objective CI evidence.
+- [ ] Implement unstable-source family APIs (origi, grids, Breit, origk, ssc) behind feature gate with oracle parity.
 - [ ] Unify oracle tolerance to atol=1e-12 for every family and extend oracle harness, fixtures, and CI gates for full API coverage.
-- [ ] Resolve pending v1.1 executor infrastructure items (EXEC-06/07/08/09, VERI-06) if not already closed.
 
 ### Out of Scope
 
@@ -72,7 +72,7 @@ The project is driven by `docs/design/cintx_detailed_design.md`, which defines a
 | Use a generated compiled manifest lock as the API source of truth | Full API coverage must be mechanically auditable across feature profiles | Validated in Phase 1 |
 | Standardize on a shared planner plus CubeCL executor | A single compute path simplifies optimization, memory policy, and verification | Validated through Phases 1-5; v1.1 replaces executor internals with direct CubeCL client API |
 | Use CubeCL client API directly in executor internals | Direct buffer management (`client.create`/`client.read`/`ArrayArg`) removes need for RecordingExecutor wrapper; kernels use `#[cube(launch)]` | v1.1 — user-directed architectural decision |
-| Configurable backend (wgpu + cpu; cuda/rocm/metal extensible) | Multi-backend support ensures testing on CPU and deployment on GPU; future backends require only runtime trait impl | v1.1 — Pending |
+| Configurable backend (wgpu + cpu; cuda/rocm/metal extensible) | Multi-backend support ensures testing on CPU and deployment on GPU; future backends require only runtime trait impl | v1.1 — Validated |
 | Centralize fallible allocation and typed OOM errors | Safe stop on memory pressure is a non-negotiable design goal | Partially validated in Phase 1 through `WorkspaceAllocator`, `ChunkPlanner`, and typed runtime errors |
 
 ## Evolution
@@ -93,4 +93,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after Phase 13 complete — F12/STG/YP kernels with oracle parity for all 10 sph symbols*
+*Last updated: 2026-04-05 after v1.1 milestone complete — CubeCL Direct Client API & Real Kernel Compute archived*
