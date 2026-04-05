@@ -93,4 +93,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after milestone v1.2 started — Full API Parity & Unified Oracle Gate*
+*Last updated: 2026-04-05 after Phase 6 complete — raw eval staging retrieval and capability fingerprint propagation fixed*
