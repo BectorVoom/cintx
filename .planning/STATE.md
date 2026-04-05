@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.2
-milestone_name: "Full API Parity & Unified Oracle Gate"
+milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
 status: In progress
-stopped_at: v1.1 milestone archived, starting v1.2
-last_updated: "2026-04-05T12:00:00.000Z"
+stopped_at: Phase 14 context gathered
+last_updated: "2026-04-05T05:54:10.198Z"
 progress:
   total_phases: 5
   completed_phases: 3
@@ -238,6 +238,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05
-Stopped at: v1.1 milestone archived — ready for Phase 14
-Resume file: None
+Last session: 2026-04-05T05:54:10.195Z
+Stopped at: Phase 14 context gathered
+Resume file: .planning/phases/14-unstable-source-api-families/14-CONTEXT.md
