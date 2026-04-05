@@ -379,8 +379,37 @@ fn dims_for_arity(
         .collect()
 }
 
+/// Derive oracle-eligible families from the manifest lock.
+/// Any entry with stability "stable" or "optional" is oracle-eligible.
+/// Replaces the hardcoded PHASE4_ORACLE_FAMILIES constant.
+pub fn manifest_oracle_families() -> BTreeSet<String> {
+    let root: Value = serde_json::from_str(COMPILED_MANIFEST_LOCK_JSON)
+        .expect("compiled manifest lock JSON parse");
+    root["entries"]
+        .as_array()
+        .unwrap_or(&Vec::new())
+        .iter()
+        .filter_map(|e| {
+            let stab = e.get("stability").and_then(Value::as_str).unwrap_or("");
+            if matches!(stab, "stable" | "optional") {
+                e.get("id")
+                    .and_then(|id| id.get("family"))
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_owned())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Check if a family is oracle-eligible based on manifest or unstable-source prefix.
+pub fn is_oracle_eligible_family(family: &str) -> bool {
+    manifest_oracle_families().contains(family) || family.starts_with("unstable::source::")
+}
+
 fn is_phase4_oracle_family(family: &str) -> bool {
-    PHASE4_ORACLE_FAMILIES.contains(&family) || family.starts_with("unstable::source::")
+    is_oracle_eligible_family(family)
 }
 
 fn stability_is_included(stability: &str, include_unstable_source: bool) -> bool {
@@ -661,7 +690,7 @@ fn build_matrix_artifact_json(
         "required_path": REQUIRED_MATRIX_ARTIFACT,
         "compiled_manifest": "crates/cintx-ops/generated/compiled_manifest.lock.json",
         "approved_profiles": PHASE4_APPROVED_PROFILES,
-        "oracle_families": PHASE4_ORACLE_FAMILIES,
+        "oracle_families": manifest_oracle_families().into_iter().collect::<Vec<_>>(),
         "matrix_families": matrix_families,
     }))
 }
