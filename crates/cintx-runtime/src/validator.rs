@@ -2,6 +2,8 @@ use cintx_core::{BasisSet, Representation, Shell, ShellTuple, cintxRsError};
 use cintx_ops::resolver::OperatorDescriptor;
 use std::sync::Arc;
 
+use crate::planner::OperatorEnvParams;
+
 #[derive(Clone, Debug)]
 pub struct ValidatedShellTuple {
     shells: Vec<Arc<Shell>>,
@@ -113,6 +115,36 @@ pub fn validate_shell_tuple(
     })
 }
 
+/// Validates that F12/STG/YP operator env params are correct.
+///
+/// Returns `InvalidEnvParam` if `f12_zeta` is `None` or `0.0` for an f12-family plan.
+/// This is called before kernel launch to reject invalid configurations early (D-01, D-02, F12-05).
+pub fn validate_f12_env_params(
+    canonical_family: &str,
+    params: &OperatorEnvParams,
+) -> Result<(), cintxRsError> {
+    if canonical_family == "f12" {
+        match params.f12_zeta {
+            None => {
+                return Err(cintxRsError::InvalidEnvParam {
+                    param: "PTR_F12_ZETA",
+                    reason: "env[9] (PTR_F12_ZETA) must be non-zero for F12/STG/YP integrals"
+                        .to_owned(),
+                });
+            }
+            Some(z) if z == 0.0_f64 => {
+                return Err(cintxRsError::InvalidEnvParam {
+                    param: "PTR_F12_ZETA",
+                    reason: "env[9] (PTR_F12_ZETA) must be non-zero for F12/STG/YP integrals"
+                        .to_owned(),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,5 +248,39 @@ mod tests {
                 atom_count: 1,
             }
         ));
+    }
+
+    #[test]
+    fn f12_env_params_zeta_zero_is_rejected() {
+        let params = OperatorEnvParams { f12_zeta: Some(0.0_f64) };
+        let err = validate_f12_env_params("f12", &params).unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param: "PTR_F12_ZETA", .. }),
+            "expected InvalidEnvParam(PTR_F12_ZETA), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn f12_env_params_zeta_none_is_rejected() {
+        let params = OperatorEnvParams { f12_zeta: None };
+        let err = validate_f12_env_params("f12", &params).unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param: "PTR_F12_ZETA", .. }),
+            "expected InvalidEnvParam(PTR_F12_ZETA), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn f12_env_params_valid_zeta_passes() {
+        let params = OperatorEnvParams { f12_zeta: Some(1.2_f64) };
+        validate_f12_env_params("f12", &params).expect("valid zeta should pass");
+    }
+
+    #[test]
+    fn f12_env_params_non_f12_family_skips_check() {
+        // Non-f12 families should not be gated even with no f12_zeta.
+        let params = OperatorEnvParams::default();
+        validate_f12_env_params("2e", &params).expect("non-f12 family should not be checked");
+        validate_f12_env_params("1e", &params).expect("non-f12 family should not be checked");
     }
 }

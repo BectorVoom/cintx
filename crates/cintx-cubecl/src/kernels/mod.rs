@@ -3,6 +3,8 @@ pub mod center_3c1e;
 pub mod center_3c2e;
 #[cfg(feature = "with-4c1e")]
 pub mod center_4c1e;
+#[cfg(feature = "with-f12")]
+pub mod f12;
 pub mod one_electron;
 pub mod two_electron;
 
@@ -18,9 +20,13 @@ pub type FamilyLaunchFn = fn(
     &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError>;
 
-#[cfg(not(feature = "with-4c1e"))]
+#[cfg(not(any(feature = "with-4c1e", feature = "with-f12")))]
+const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["center_4c1e", "f12"];
+#[cfg(all(feature = "with-4c1e", not(feature = "with-f12")))]
+const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["f12"];
+#[cfg(all(feature = "with-f12", not(feature = "with-4c1e")))]
 const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &["center_4c1e"];
-#[cfg(feature = "with-4c1e")]
+#[cfg(all(feature = "with-4c1e", feature = "with-f12"))]
 const UNSUPPORTED_FOLLOW_ON_FAMILIES: &[&str] = &[];
 
 fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
@@ -32,6 +38,8 @@ fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
         "3c2e" => Some(center_3c2e::launch_center_3c2e as FamilyLaunchFn),
         #[cfg(feature = "with-4c1e")]
         "4c1e" => Some(center_4c1e::launch_center_4c1e as FamilyLaunchFn),
+        #[cfg(feature = "with-f12")]
+        "f12" => Some(f12::launch_f12 as FamilyLaunchFn),
         _ => None,
     }
 }
@@ -40,6 +48,7 @@ pub fn supports_canonical_family(canonical_family: &str) -> bool {
     match canonical_family {
         "1e" | "2e" | "2c2e" | "3c1e" | "3c2e" => true,
         "4c1e" => cfg!(feature = "with-4c1e"),
+        "f12" => cfg!(feature = "with-f12"),
         _ => false,
     }
 }
@@ -257,6 +266,33 @@ mod tests {
                 assert!(requested.contains("4c1e"));
             }
             other => panic!("Expected UnsupportedApi for 4c1e, got {other:?}"),
+        }
+    }
+
+    /// f12 family: supports_canonical_family returns true when with-f12 feature is enabled.
+    #[test]
+    fn f12_supports_and_resolves_under_with_f12_feature() {
+        #[cfg(feature = "with-f12")]
+        {
+            assert!(
+                supports_canonical_family("f12"),
+                "supports_canonical_family must return true for 'f12' with with-f12 feature"
+            );
+            assert!(
+                resolve_family_name("f12").is_some(),
+                "resolve_family_name must return Some for 'f12' with with-f12 feature"
+            );
+        }
+        #[cfg(not(feature = "with-f12"))]
+        {
+            assert!(
+                !supports_canonical_family("f12"),
+                "supports_canonical_family must return false for 'f12' without with-f12 feature"
+            );
+            assert!(
+                resolve_family_name("f12").is_none(),
+                "resolve_family_name must return None for 'f12' without with-f12 feature"
+            );
         }
     }
 

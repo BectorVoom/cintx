@@ -1721,7 +1721,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1738,7 +1738,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1755,7 +1755,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1772,7 +1772,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1789,7 +1789,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1806,7 +1806,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1823,7 +1823,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1840,7 +1840,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1857,7 +1857,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
@@ -1874,7 +1874,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         compiled_in_profiles: &["with-f12", "with-f12+with-4c1e"],
         oracle_covered: false,
         helper_kind: HelperKind::Operator,
-        canonical_family: "2e",
+        canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {

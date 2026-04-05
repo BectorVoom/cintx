@@ -66,6 +66,8 @@ pub enum cintxRsError {
     DeviceOutOfMemory { bytes: usize, device: String },
     #[error("chunk plan failed in {from}: {detail}")]
     ChunkPlanFailed { from: &'static str, detail: String },
+    #[error("invalid env parameter {param}: {reason}")]
+    InvalidEnvParam { param: &'static str, reason: String },
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;
@@ -73,6 +75,25 @@ pub type CoreResult<T> = Result<T, CoreError>;
 #[cfg(test)]
 mod tests {
     use super::cintxRsError;
+
+    #[test]
+    fn invalid_env_param_formats_and_matches() {
+        let err = cintxRsError::InvalidEnvParam {
+            param: "PTR_F12_ZETA",
+            reason: "must be non-zero".to_owned(),
+        };
+        assert!(matches!(
+            err,
+            cintxRsError::InvalidEnvParam {
+                param: "PTR_F12_ZETA",
+                ..
+            }
+        ));
+        assert_eq!(
+            err.to_string(),
+            "invalid env parameter PTR_F12_ZETA: must be non-zero"
+        );
+    }
 
     #[test]
     fn invalid_atm_layout_formats_and_matches() {
