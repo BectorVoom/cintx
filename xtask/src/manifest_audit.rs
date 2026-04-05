@@ -1,8 +1,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use cintx_ops::resolver::{HelperKind, Resolver, Stability};
 use cintx_oracle::fixtures::{
-    build_profile_representation_matrix, build_required_profile_matrices, write_pretty_json_artifact,
-    OracleRawInputs, PHASE4_APPROVED_PROFILES, PHASE4_ORACLE_FAMILIES,
+    build_profile_representation_matrix, build_required_profile_matrices, is_oracle_eligible_family,
+    write_pretty_json_artifact, OracleRawInputs, PHASE4_APPROVED_PROFILES,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -239,7 +239,7 @@ fn stability_is_included(stability: &str) -> bool {
 }
 
 fn is_phase4_oracle_family(family: &str) -> bool {
-    PHASE4_ORACLE_FAMILIES.contains(&family) || family.starts_with("unstable::source::")
+    is_oracle_eligible_family(family)
 }
 
 fn set_difference(left: &BTreeSet<String>, right: &BTreeSet<String>) -> Vec<String> {
