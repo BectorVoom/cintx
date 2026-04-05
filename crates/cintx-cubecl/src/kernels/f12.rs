@@ -572,6 +572,502 @@ fn fill_g_tensor_inner(
     g
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Nabla derivative operators (ported from libcint g2e.c CINTnabla1{i,j,k}_2e)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Apply the `\nabla_i` operator to the G tensor.
+///
+/// Corresponds to `CINTnabla1i_2e` in libcint/g2e.c.
+///
+/// Both `f` and `g` have layout `[gx | gy | gz]` with each axis of size `g_size`.
+/// The operator reads up to index `i = li` in g (which requires `li+1` levels to be
+/// present in the G tensor), matching the headroom built by using `li_ceil = li + 1`.
+///
+/// Formula (per axis):
+///   f[n @ i=0] = -2*ai * g[n+di]
+///   f[n @ i>=1] = i * g[n-di] + (-2*ai) * g[n+di]
+fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ai: f64, shape: &F12Shape) {
+    let ai2 = -2.0 * ai;
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        for j in 0..=lj {
+            for l in 0..=ll {
+                for k in 0..=lk {
+                    // i=0: f[n] = ai2 * g[n+di]
+                    let ptr = dj * j + dl * l + dk * k;
+                    for n in ptr..ptr + nroots {
+                        f[off + n] = ai2 * g[off + n + di];
+                    }
+                    // i>=1: f[n] = i*g[n-di] + ai2*g[n+di]
+                    for i in 1..=li {
+                        let ptr = dj * j + dl * l + dk * k + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = i as f64 * g[off + n - di] + ai2 * g[off + n + di];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Apply the `\nabla_j` operator to the G tensor.
+///
+/// Corresponds to `CINTnabla1j_2e` in libcint/g2e.c.
+///
+/// Formula (per axis):
+///   f[n @ j=0] = -2*aj * g[n+dj]
+///   f[n @ j>=1] = j * g[n-dj] + (-2*aj) * g[n+dj]
+fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, aj: f64, shape: &F12Shape) {
+    let aj2 = -2.0 * aj;
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        // j=0: outer loop over l,k,i
+        for l in 0..=ll {
+            for k in 0..=lk {
+                let base = dl * l + dk * k;
+                for i in 0..=li {
+                    let ptr = base + di * i;
+                    for n in ptr..ptr + nroots {
+                        f[off + n] = aj2 * g[off + n + dj];
+                    }
+                }
+            }
+        }
+        // j>=1
+        for j in 1..=lj {
+            for l in 0..=ll {
+                for k in 0..=lk {
+                    let base = dj * j + dl * l + dk * k;
+                    for i in 0..=li {
+                        let ptr = base + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = j as f64 * g[off + n - dj] + aj2 * g[off + n + dj];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Apply the `\nabla_k` operator to the G tensor.
+///
+/// Corresponds to `CINTnabla1k_2e` in libcint/g2e.c.
+///
+/// Formula (per axis):
+///   f[n @ k=0] = -2*ak * g[n+dk]
+///   f[n @ k>=1] = k * g[n-dk] + (-2*ak) * g[n+dk]
+fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ak: f64, shape: &F12Shape) {
+    let ak2 = -2.0 * ak;
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        for j in 0..=lj {
+            for l in 0..=ll {
+                // k=0: all i
+                let base = dj * j + dl * l;
+                for i in 0..=li {
+                    let ptr = base + di * i;
+                    for n in ptr..ptr + nroots {
+                        f[off + n] = ak2 * g[off + n + dk];
+                    }
+                }
+                // k>=1
+                for k in 1..=lk {
+                    let base = dj * j + dl * l + dk * k;
+                    for i in 0..=li {
+                        let ptr = base + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = k as f64 * g[off + n - dk] + ak2 * g[off + n + dk];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-variant gout contraction functions
+//
+// Each function takes the G tensor (per-primitive, layout [gx|gy|gz]) and produces
+// ncomp * nf Cartesian values where nf = ncart(li)*ncart(lj)*ncart(lk)*ncart(ll).
+// The BASE angular momenta (li, lj, lk, ll) are used for loop bounds; the G tensor
+// was built with ceiling angular momenta providing the nabla headroom.
+//
+// These match the libcint autocode patterns in autocode/grad2.c and autocode/hess.c.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Compute gout for the ip1 variant (ncomp=3): `\nabla_i` on electron 1.
+///
+/// Matches `CINTgout2e_int2e_ip1` in autocode/grad2.c.
+/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z).
+fn gout_ip1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    // nabla1i at li+0 (base li); g was built with li_ceil = li+1
+    nabla1i_2e(&mut g1, g, li, lj, lk, ll, ai, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 3 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 3];
+                    for irys in 0..shape.nroots {
+                        // s[0] = g1x * g0y * g0z
+                        s[0] += g1[gx_off + ix_base + irys] * g[gy_off + iy_base + irys] * g[gz_off + iz_base + irys];
+                        // s[1] = g0x * g1y * g0z
+                        s[1] += g[gx_off + ix_base + irys] * g1[gy_off + iy_base + irys] * g[gz_off + iz_base + irys];
+                        // s[2] = g0x * g0y * g1z
+                        s[2] += g[gx_off + ix_base + irys] * g[gy_off + iy_base + irys] * g1[gz_off + iz_base + irys];
+                    }
+                    out[n * 3 + 0] = s[0];
+                    out[n * 3 + 1] = s[1];
+                    out[n * 3 + 2] = s[2];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Compute gout for the ipip1 variant (ncomp=9): `\nabla_i \nabla_i` on electron 1.
+///
+/// Matches `CINTgout2e_int2e_ipip1` in autocode/hess.c.
+/// CRITICAL: output has column-major reordering of the 3×3 Hessian.
+/// Output layout: gout[n*9+{0,1,2,3,4,5,6,7,8}] = {s0,s3,s6,s1,s4,s7,s2,s5,s8}
+fn gout_ipip1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // g1 = nabla1i at li+1 (elevated)
+    nabla1i_2e(&mut g1, g, li + 1, lj, lk, ll, ai, shape);
+    // g2 = nabla1i at li+0 (base)
+    nabla1i_2e(&mut g2, g, li, lj, lk, ll, ai, shape);
+    // g3 = nabla1i(g1) at li+0
+    nabla1i_2e(&mut g3, &g1, li, lj, lk, ll, ai, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for irys in 0..shape.nroots {
+                        let r = irys;
+                        // g0 = original G tensor; g1 = nabla(g0,li+1); g2 = nabla(g0,li+0); g3 = nabla(g1,li+0)
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        // Matches libcint CINTgout2e_int2e_ipip1 exactly
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // Column-major reordering: gout[n*9+{0..8}] = {s0,s3,s6,s1,s4,s7,s2,s5,s8}
+                    out[n * 9 + 0] = s[0];
+                    out[n * 9 + 1] = s[3];
+                    out[n * 9 + 2] = s[6];
+                    out[n * 9 + 3] = s[1];
+                    out[n * 9 + 4] = s[4];
+                    out[n * 9 + 5] = s[7];
+                    out[n * 9 + 6] = s[2];
+                    out[n * 9 + 7] = s[5];
+                    out[n * 9 + 8] = s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Compute gout for the ipvip1 variant (ncomp=9): `\nabla_i \nabla_j` on electron 1.
+///
+/// Matches `CINTgout2e_int2e_ipvip1` in autocode/hess.c.
+/// No column-major reordering (unlike ipip1).
+fn gout_ipvip1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // g1 = nabla1j at (li+1, lj+0): j-derivative at elevated i
+    nabla1j_2e(&mut g1, g, li + 1, lj, lk, ll, aj, shape);
+    // g2 = nabla1i at (li+0): i-derivative at base
+    nabla1i_2e(&mut g2, g, li, lj, lk, ll, ai, shape);
+    // g3 = nabla1i(g1) at (li+0): mixed i,j second derivative
+    nabla1i_2e(&mut g3, &g1, li, lj, lk, ll, ai, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for irys in 0..shape.nroots {
+                        let r = irys;
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // No reordering for ipvip1
+                    out[n * 9 + 0] = s[0];
+                    out[n * 9 + 1] = s[1];
+                    out[n * 9 + 2] = s[2];
+                    out[n * 9 + 3] = s[3];
+                    out[n * 9 + 4] = s[4];
+                    out[n * 9 + 5] = s[5];
+                    out[n * 9 + 6] = s[6];
+                    out[n * 9 + 7] = s[7];
+                    out[n * 9 + 8] = s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Compute gout for the ip1ip2 variant (ncomp=9): `\nabla_i` on e1 and `\nabla_k` on e2.
+///
+/// Matches `CINTgout2e_int2e_ip1ip2` in autocode/hess.c.
+/// No column-major reordering.
+fn gout_ip1ip2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    ak: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // g1 = nabla1k at (li+1, lj+0, lk+0): k-derivative at elevated i
+    nabla1k_2e(&mut g1, g, li + 1, lj, lk, ll, ak, shape);
+    // g2 = nabla1i at (li+0): i-derivative at base
+    nabla1i_2e(&mut g2, g, li, lj, lk, ll, ai, shape);
+    // g3 = nabla1i(g1) at (li+0): mixed i,k second derivative
+    nabla1i_2e(&mut g3, &g1, li, lj, lk, ll, ai, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for irys in 0..shape.nroots {
+                        let r = irys;
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // No reordering for ip1ip2
+                    out[n * 9 + 0] = s[0];
+                    out[n * 9 + 1] = s[1];
+                    out[n * 9 + 2] = s[2];
+                    out[n * 9 + 3] = s[3];
+                    out[n * 9 + 4] = s[4];
+                    out[n * 9 + 5] = s[5];
+                    out[n * 9 + 6] = s[6];
+                    out[n * 9 + 7] = s[7];
+                    out[n * 9 + 8] = s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Contract [gx|gy|gz] into Cartesian 2e tensor for F12 (identical to two_electron version).
 fn contract_f12_cart(g: &[f64], shape: F12Shape, li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> {
     let nfi = ncart(li);
@@ -677,28 +1173,43 @@ fn f12_kernel_core(
     let rk = atoms[shell_k.atom_index as usize].coord_bohr;
     let rl = atoms[shell_l.atom_index as usize].coord_bohr;
 
+    // Angular momenta for the sph transform use BASE (not ceil) values.
+    let li_base_u8 = li as u8;
+    let lj_base_u8 = lj as u8;
+    let lk_base_u8 = lk as u8;
+    let ll_base_u8 = ll as u8;
+
+    // Ceil values needed for the G tensor shape and gout internal loops.
     let li_u8 = li_ceil as u8;
     let lj_u8 = lj_ceil as u8;
     let lk_u8 = lk_ceil as u8;
     let ll_u8 = ll_ceil as u8;
 
-    let nfi = ncart(li_u8);
-    let nfj = ncart(lj_u8);
-    let nfk = ncart(lk_u8);
-    let nfl = ncart(ll_u8);
+    // ncart at CEIL angular momenta — used for contract_f12_cart (base variant only)
+    let nfi_ceil = ncart(li_u8);
+    let nfj_ceil = ncart(lj_u8);
+    let nfk_ceil = ncart(lk_u8);
+    let nfl_ceil = ncart(ll_u8);
 
-    let nsi = nsph(li as u8);
-    let nsj = nsph(lj as u8);
-    let nsk = nsph(lk as u8);
-    let nsl = nsph(ll as u8);
+    // ncart/nsph at BASE angular momenta — used for gout and sph transforms
+    let nfi_base = ncart(li_base_u8);
+    let nfj_base = ncart(lj_base_u8);
+    let nfk_base = ncart(lk_base_u8);
+    let nfl_base = ncart(ll_base_u8);
+    let nf_base = nfi_base * nfj_base * nfk_base * nfl_base;
 
-    let mut cart_buf = vec![0.0_f64; nfi * nfj * nfk * nfl];
+    let nsi = nsph(li_base_u8);
+    let nsj = nsph(lj_base_u8);
+    let nsk = nsph(lk_base_u8);
+    let nsl = nsph(ll_base_u8);
+
+    let ncomp = variant.ncomp;
 
     // Common factor: same as two_electron (fac_sp for all four shells)
-    let sp_factor = common_fac_sp(li as u8)
-        * common_fac_sp(lj as u8)
-        * common_fac_sp(lk as u8)
-        * common_fac_sp(ll as u8);
+    let sp_factor = common_fac_sp(li_base_u8)
+        * common_fac_sp(lj_base_u8)
+        * common_fac_sp(lk_base_u8)
+        * common_fac_sp(ll_base_u8);
     let common_factor = (PI * PI * PI) * 2.0 / SQRTPI * sp_factor;
 
     let n_prim_i = shell_i.nprim as usize;
@@ -711,39 +1222,45 @@ fn f12_kernel_core(
     let n_ctr_k = shell_k.nctr as usize;
     let n_ctr_l = shell_l.nctr as usize;
 
-    for pi in 0..n_prim_i {
-        let ai = shell_i.exponents[pi];
-        for pj in 0..n_prim_j {
-            let aj = shell_j.exponents[pj];
-            let pdata_ij = compute_pdata_host(
-                ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-            );
-            for pk in 0..n_prim_k {
-                let ak = shell_k.exponents[pk];
-                for pl in 0..n_prim_l {
-                    let al = shell_l.exponents[pl];
-                    let pdata_kl = compute_pdata_host(
-                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
-                    );
-                    let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+    if ncomp == 1 {
+        // ── Base variant: single Cartesian contraction and one sph transform ──
+        // The cart_buf uses CEIL angular momenta (matching the G tensor shape).
+        let mut cart_buf = vec![0.0_f64; nfi_ceil * nfj_ceil * nfk_ceil * nfl_ceil];
 
-                    let g = fill_g_tensor_f12(
-                        ai, aj, ak, al, &ri, &rj, &rk, &rl,
-                        shape, quartet_fac, zeta, is_stg,
-                    );
-                    let prim_cart = contract_f12_cart(&g, shape, li_u8, lj_u8, lk_u8, ll_u8);
+        for pi in 0..n_prim_i {
+            let ai = shell_i.exponents[pi];
+            for pj in 0..n_prim_j {
+                let aj = shell_j.exponents[pj];
+                let pdata_ij = compute_pdata_host(
+                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+                );
+                for pk in 0..n_prim_k {
+                    let ak = shell_k.exponents[pk];
+                    for pl in 0..n_prim_l {
+                        let al = shell_l.exponents[pl];
+                        let pdata_kl = compute_pdata_host(
+                            ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                        );
+                        let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
-                    for ci in 0..n_ctr_i {
-                        let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
-                        for cj in 0..n_ctr_j {
-                            let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
-                            for ck in 0..n_ctr_k {
-                                let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
-                                for cl in 0..n_ctr_l {
-                                    let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
-                                    let weight = coeff_i * coeff_j * coeff_k * coeff_l;
-                                    for idx in 0..cart_buf.len() {
-                                        cart_buf[idx] += weight * prim_cart[idx];
+                        let g = fill_g_tensor_f12(
+                            ai, aj, ak, al, &ri, &rj, &rk, &rl,
+                            shape, quartet_fac, zeta, is_stg,
+                        );
+                        let prim_cart = contract_f12_cart(&g, shape, li_u8, lj_u8, lk_u8, ll_u8);
+
+                        for ci in 0..n_ctr_i {
+                            let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                            for cj in 0..n_ctr_j {
+                                let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                                for ck in 0..n_ctr_k {
+                                    let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                                    for cl in 0..n_ctr_l {
+                                        let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
+                                        let weight = coeff_i * coeff_j * coeff_k * coeff_l;
+                                        for idx in 0..cart_buf.len() {
+                                            cart_buf[idx] += weight * prim_cart[idx];
+                                        }
                                     }
                                 }
                             }
@@ -752,36 +1269,124 @@ fn f12_kernel_core(
                 }
             }
         }
-    }
 
-    // For derivative variants, we have a multi-component output.
-    // The base variant (ncomp=1) uses the original li/lj/lk/ll for the sph transform.
-    // Derivative variants (ncomp > 1) are not fully wired through the sph transform
-    // in this implementation; we output the Cartesian result.
-    // This matches the plan intent for base variant oracle parity.
-    match plan.representation {
-        Representation::Spheric => {
-            // Use non-ceil angular momenta for the sph transform (the cart_buf is in ceil space
-            // but the transform maps to the original shell dimensions).
-            let sph = cart_to_sph_2e(&cart_buf, li_u8, lj_u8, lk_u8, ll_u8);
-            let sph_size = nsi * nsj * nsk * nsl;
-            let copy_len = staging.len().min(sph.len()).min(sph_size);
-            staging[..copy_len].copy_from_slice(&sph[..copy_len]);
+        match plan.representation {
+            Representation::Spheric => {
+                // Use base angular momenta for sph transform
+                let sph = cart_to_sph_2e(&cart_buf, li_base_u8, lj_base_u8, lk_base_u8, ll_base_u8);
+                let sph_size = nsi * nsj * nsk * nsl;
+                let copy_len = staging.len().min(sph.len()).min(sph_size);
+                staging[..copy_len].copy_from_slice(&sph[..copy_len]);
+            }
+            Representation::Spinor => {
+                let kappa_i = shell_i.kappa;
+                let kappa_j = shell_j.kappa;
+                let kappa_k = shell_k.kappa;
+                let kappa_l = shell_l.kappa;
+                cart_to_spinor_sf_4d(
+                    staging, &cart_buf,
+                    li_base_u8, kappa_i, lj_base_u8, kappa_j,
+                    lk_base_u8, kappa_k, ll_base_u8, kappa_l,
+                )?;
+            }
+            Representation::Cart => {
+                let copy_len = staging.len().min(cart_buf.len());
+                staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+            }
         }
-        Representation::Spinor => {
-            let kappa_i = shell_i.kappa;
-            let kappa_j = shell_j.kappa;
-            let kappa_k = shell_k.kappa;
-            let kappa_l = shell_l.kappa;
-            cart_to_spinor_sf_4d(
-                staging, &cart_buf,
-                li as u8, kappa_i, lj as u8, kappa_j,
-                lk as u8, kappa_k, ll as u8, kappa_l,
-            )?;
+    } else {
+        // ── Derivative variant: per-primitive gout contraction, then per-component sph ──
+        //
+        // The gout functions produce ncomp * nf_base values per primitive.
+        // These are accumulated (contracted) across primitives, then sph-transformed
+        // per component. The nabla operators read into the ceil headroom of the G tensor.
+        let mut gout_contracted = vec![0.0_f64; ncomp * nf_base];
+
+        for pi in 0..n_prim_i {
+            let ai = shell_i.exponents[pi];
+            for pj in 0..n_prim_j {
+                let aj = shell_j.exponents[pj];
+                let pdata_ij = compute_pdata_host(
+                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+                );
+                for pk in 0..n_prim_k {
+                    let ak = shell_k.exponents[pk];
+                    for pl in 0..n_prim_l {
+                        let al = shell_l.exponents[pl];
+                        let pdata_kl = compute_pdata_host(
+                            ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                        );
+                        let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+
+                        let g = fill_g_tensor_f12(
+                            ai, aj, ak, al, &ri, &rj, &rk, &rl,
+                            shape, quartet_fac, zeta, is_stg,
+                        );
+
+                        // Apply the variant-specific gout function to get ncomp * nf_base values.
+                        // The gout functions use BASE angular momenta for the loop bounds.
+                        let prim_gout = match ncomp {
+                            3 => gout_ip1(&g, &shape, li, lj, lk, ll, ai),
+                            9 => match (variant.j_inc, variant.k_inc) {
+                                (0, 0) => gout_ipip1(&g, &shape, li, lj, lk, ll, ai),
+                                (1, 0) => gout_ipvip1(&g, &shape, li, lj, lk, ll, ai, aj),
+                                (0, 1) => gout_ip1ip2(&g, &shape, li, lj, lk, ll, ai, ak),
+                                _ => return Err(cintxRsError::UnsupportedApi {
+                                    requested: format!("f12 derivative: unknown 9-component variant j_inc={} k_inc={}", variant.j_inc, variant.k_inc),
+                                }),
+                            },
+                            _ => return Err(cintxRsError::UnsupportedApi {
+                                requested: format!("f12 derivative: unsupported ncomp={ncomp}"),
+                            }),
+                        };
+
+                        // Accumulate with contraction weights
+                        for ci in 0..n_ctr_i {
+                            let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                            for cj in 0..n_ctr_j {
+                                let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                                for ck in 0..n_ctr_k {
+                                    let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                                    for cl in 0..n_ctr_l {
+                                        let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
+                                        let weight = coeff_i * coeff_j * coeff_k * coeff_l;
+                                        for idx in 0..gout_contracted.len() {
+                                            gout_contracted[idx] += weight * prim_gout[idx];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-        Representation::Cart => {
-            let copy_len = staging.len().min(cart_buf.len());
-            staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+
+        // Apply sph transform per component and write to staging.
+        // staging layout: [comp0_sph | comp1_sph | ... | comp{ncomp-1}_sph]
+        match plan.representation {
+            Representation::Spheric => {
+                let sph_size = nsi * nsj * nsk * nsl;
+                for comp in 0..ncomp {
+                    let cart_slice = &gout_contracted[comp * nf_base..(comp + 1) * nf_base];
+                    let sph = cart_to_sph_2e(cart_slice, li_base_u8, lj_base_u8, lk_base_u8, ll_base_u8);
+                    let stage_off = comp * sph_size;
+                    let copy_len = (staging.len() - stage_off).min(sph.len()).min(sph_size);
+                    if stage_off < staging.len() {
+                        staging[stage_off..stage_off + copy_len].copy_from_slice(&sph[..copy_len]);
+                    }
+                }
+            }
+            Representation::Cart => {
+                let copy_len = staging.len().min(gout_contracted.len());
+                staging[..copy_len].copy_from_slice(&gout_contracted[..copy_len]);
+            }
+            Representation::Spinor => {
+                // Derivative F12 spinor not implemented; return empty
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "F12 derivative spinor representation not supported".to_owned(),
+                });
+            }
         }
     }
 

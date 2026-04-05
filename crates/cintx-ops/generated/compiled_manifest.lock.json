@@ -2876,7 +2876,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "",
+      "component_rank": "3",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": true,
@@ -2904,7 +2904,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "",
+      "component_rank": "9",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": true,
@@ -2932,7 +2932,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "",
+      "component_rank": "9",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": true,
@@ -2960,7 +2960,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "",
+      "component_rank": "9",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": true,
@@ -3016,7 +3016,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "",
+      "component_rank": "3",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": true,
@@ -3044,7 +3044,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "",
+      "component_rank": "9",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": true,
@@ -3072,7 +3072,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "",
+      "component_rank": "9",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": true,
@@ -3100,7 +3100,7 @@
       "forms": [
         "sph"
       ],
-      "component_rank": "",
+      "component_rank": "9",
       "feature_flag": "with-f12",
       "declared_in": "src/cint2e_f12.c",
       "oracle_covered": true,
