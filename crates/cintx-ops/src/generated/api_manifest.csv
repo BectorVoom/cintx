@@ -117,7 +117,7 @@ family_name,operator_name,symbol_name,category,arity,forms,component_rank,featur
 "origi","r4_origi_ip2","int1e_r4_origi_ip2_sph","unstable-source",2,"sph","1","unstable_source","unstable_source","src/source/unstable","unstable-source",false,"source","origi"
 "grids","grids","int1e_grids_sph","unstable-source",2,"sph","","unstable_source","unstable_source","src/source/unstable","unstable-source",false,"source","grids"
 "grids","grids_ip","int1e_grids_ip_sph","unstable-source",2,"sph","1","unstable_source","unstable_source","src/source/unstable","unstable-source",false,"source","grids"
-"grids","grids_ipvip","int1e_grids_ipvip_sph","unstable-source",2,"sph","1","unstable_source","unstable_source","src/source/unstable","unstable-source",false,"source","grids"
+"grids","grids_ipvip","int1e_grids_ipvip_sph","unstable-source",2,"sph","2","unstable_source","unstable_source","src/source/unstable","unstable-source",false,"source","grids"
 "grids","grids_spvsp","int1e_grids_spvsp_sph","unstable-source",2,"sph","","unstable_source","unstable_source","src/source/unstable","unstable-source",false,"source","grids"
 "grids","grids_ipip","int1e_grids_ipip_sph","unstable-source",2,"sph","2","unstable_source","unstable_source","src/source/unstable","unstable-source",false,"source","grids"
 "breit","breit_r1p2","int2e_breit_r1p2_spinor","unstable-source",4,"spinor","","unstable_source","unstable_source","src/source/unstable","unstable-source",false,"source","breit"

@@ -4,7 +4,7 @@ use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 
-const EXPECTED_PROFILES: &[&str] = &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"];
+const EXPECTED_PROFILES: &[&str] = &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e", "unstable-source"];
 
 fn main() {
     if let Err(err) = try_generate_manifest() {

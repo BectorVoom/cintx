@@ -264,6 +264,7 @@ dependencies = [
 name = "cintx-cubecl"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cintx-core",
  "cintx-ops",
  "cintx-runtime",

@@ -12,6 +12,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const REQUIRED_PROFILE_CSV: &str = "base,with-f12,with-4c1e,with-f12+with-4c1e";
+
+/// All profiles the xtask tooling recognises (standard 4 + unstable-source nightly).
+const ALL_KNOWN_PROFILES: &[&str] = &[
+    "base",
+    "with-f12",
+    "with-4c1e",
+    "with-f12+with-4c1e",
+    "unstable-source",
+];
 const FALLBACK_ARTIFACT_DIR_ENV: &str = "CINTX_ARTIFACT_DIR";
 const FALLBACK_ARTIFACT_DIR_DEFAULT: &str = "/tmp/cintx_artifacts";
 
@@ -184,6 +193,23 @@ fn run_cargo_command(args: &[&str]) -> Result<()> {
 }
 
 fn validate_required_profile_scope(profiles: &[String]) -> Result<Vec<String>> {
+    // Validate all requested profiles are known
+    for p in profiles {
+        if !ALL_KNOWN_PROFILES.contains(&p.as_str()) {
+            bail!(
+                "unknown profile `{p}`, expected one of: {}",
+                ALL_KNOWN_PROFILES.join(", ")
+            );
+        }
+    }
+    // If requesting unstable-source, it runs standalone (per D-02)
+    if profiles.iter().any(|p| p == "unstable-source") {
+        if profiles.len() != 1 || profiles[0] != "unstable-source" {
+            bail!("unstable-source profile must be run standalone, not combined with other profiles");
+        }
+        return Ok(vec!["unstable-source".to_owned()]);
+    }
+    // Standard 4-profile validation
     let requested: BTreeSet<String> = profiles.iter().cloned().collect();
     let required: BTreeSet<String> = PHASE4_APPROVED_PROFILES
         .iter()
@@ -205,11 +231,12 @@ fn validate_required_profile_scope(profiles: &[String]) -> Result<Vec<String>> {
 }
 
 fn ensure_known_profile(profile: &str) -> Result<()> {
-    if PHASE4_APPROVED_PROFILES.contains(&profile) {
+    if ALL_KNOWN_PROFILES.contains(&profile) {
         return Ok(());
     }
     bail!(
-        "unsupported profile `{profile}`, expected one of `{REQUIRED_PROFILE_CSV}`"
+        "unsupported profile `{profile}`, expected one of: {}",
+        ALL_KNOWN_PROFILES.join(", ")
     )
 }
 
