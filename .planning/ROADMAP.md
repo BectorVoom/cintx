@@ -1,42 +1,21 @@
 # Roadmap
 
-## Milestones
-
-- ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-04-02)
-- ✅ **v1.1 CubeCL Direct Client API & Real Kernel Compute** — Phases 7-10 (shipped 2026-04-05)
-- 🚧 **v1.2 Full API Parity & Unified Oracle Gate** — Phases 11-15 (in progress)
-
 ## Phases
-
-<details>
-<summary>✅ v1.0 MVP (Phases 1-6) — SHIPPED 2026-04-02</summary>
-
-- [x] **Phase 1: Manifest & Planner Foundation** — completed 2026-03-21
-- [x] **Phase 2: Execution & Compatibility Stabilization** — completed 2026-03-26
-- [x] **Phase 3: Safe Surface, C ABI Shim & Optional Families** — completed 2026-03-28
-- [x] **Phase 4: Verification & Release Automation** — completed 2026-03-31
-- [x] **Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)** — completed 2026-04-02
-- [x] **Phase 6: Fix raw eval staging retrieval and capability fingerprint propagation** — completed 2026-04-05
-
-</details>
-
-<details>
-<summary>✅ v1.1 CubeCL Direct Client API & Real Kernel Compute (Phases 7-10) — SHIPPED 2026-04-05</summary>
-
-- [x] **Phase 7: Executor Infrastructure Rewrite** (3/3 plans) — completed 2026-04-05
-- [x] **Phase 8: Gaussian Primitive Infrastructure and Boys Function** (4/4 plans) — completed 2026-04-05
-- [x] **Phase 9: 1e Real Kernel and Cart-to-Sph Transform** (5/5 plans) — completed 2026-04-05
-- [x] **Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure** (6/6 plans) — completed 2026-04-05
-
-</details>
-
-### 🚧 v1.2 Full API Parity & Unified Oracle Gate (In Progress)
-
-- [x] **Phase 11: Helper/Transform Completion & 4c1e Real Kernel** (4/4 plans) — completed 2026-04-05
-- [x] **Phase 12: Real Spinor Transform (c2spinor Replacement)** (5/5 plans) — completed 2026-04-05
-- [x] **Phase 13: F12/STG/YP Kernels** (4/4 plans) — completed 2026-04-05
-- [ ] **Phase 14: Unstable-Source-API Families** — Implement origi, grids, Breit, origk, and ssc families behind the unstable-source-api gate with oracle parity in nightly CI.
-- [ ] **Phase 15: Oracle Tolerance Unification & Manifest Lock Closure** — Audit every family's empirical precision floor, set per-family atol/rtol constants, regenerate the four-profile manifest lock, and close the unified oracle CI gate.
+- [x] **Phase 1: Manifest & Planner Foundation** - Lock down typed domain models, manifest registry, and planner scaffolding so everything else has a deterministic catalog to build against. (v1.0, completed 2026-03-21)
+- [x] **Phase 2: Execution & Compatibility Stabilization** - Wire the CubeCL-backed planner to the raw compat layer, including helper/legacy transforms, workspace queries, typed errors, and shape/optimizer guarantees. (v1.0, completed 2026-03-26)
+- [x] **Phase 3: Safe Surface, C ABI Shim & Optional Families** - Layer the safe Rust facade, optional C shim, and feature-gated optional families on the stabilized runtime. (v1.0, completed 2026-03-28)
+- [x] **Phase 4: Verification & Release Automation** - Close the manifest/oracle loop with CI, benchmarks, and diagnostics that block regressions before release. (v1.0, completed 2026-03-31)
+- [x] **Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)** - Replace synthetic execution with a real wgpu-backed CubeCL path and capability-aware fail-closed verification. (v1.0, completed 2026-04-02)
+- [x] **Phase 6: Fix raw eval staging retrieval and capability fingerprint propagation** - Close audit gaps: wire eval_raw() staging output retrieval, propagate wgpu fingerprint into capability token, add regression tests. (v1.0, completed 2026-04-05)
+- [x] **Phase 7: Executor Infrastructure Rewrite** - Replace executor internals with direct CubeCL client API, introduce ResolvedBackend dispatch, CPU backend feature, and f64 strategy decision. (v1.1, completed 2026-04-05)
+- [x] **Phase 8: Gaussian Primitive Infrastructure and Boys Function** - Build shared math foundation as `#[cube]` functions: Boys function, Rys roots/weights, primitive pair evaluation, and Obara-Saika recurrence. (v1.1, completed 2026-04-05)
+- [x] **Phase 9: 1e Real Kernel and Cart-to-Sph Transform** - Implement real overlap, kinetic, and nuclear attraction kernels with correct Condon-Shortley c2s transform, validating the end-to-end compute pipeline. (v1.1, completed 2026-04-05)
+- [x] **Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure** - Implement all remaining integral family kernels and close the oracle parity gate for all five base families. (v1.1, completed 2026-04-05)
+- [x] **Phase 11: Helper/Transform Completion & 4c1e Real Kernel** - Wire all helper, transform, and wrapper symbols to oracle CI; replace the 4c1e stub with real Rys quadrature within the Validated4C1E envelope. (completed 2026-04-05)
+- [x] **Phase 12: Real Spinor Transform (c2spinor Replacement)** - Rewrite c2spinor.rs with correct Clebsch-Gordan coupling; unblock spinor oracle coverage for all families that depend on it. (completed 2026-04-05)
+- [x] **Phase 13: F12/STG/YP Kernels** - Implement STG and YP geminal 2e kernels with separate dispatch paths, PTR_F12_ZETA env plumbing, and sph-only oracle gate under the with-f12 profile. (completed 2026-04-05)
+- [ ] **Phase 14: Unstable-Source-API Families** - Implement origi, grids, Breit, origk, and ssc families behind the unstable-source-api gate with oracle parity in nightly CI.
+- [ ] **Phase 15: Oracle Tolerance Unification & Manifest Lock Closure** - Audit every family's empirical precision floor, set per-family atol/rtol constants, regenerate the four-profile manifest lock, and close the unified oracle CI gate.
 
 ## Progress
 
