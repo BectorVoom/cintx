@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
 status: Ready to execute
-stopped_at: Completed 13-f12-stg-yp-kernels-01-PLAN.md
-last_updated: "2026-04-05T03:09:43.963Z"
+stopped_at: Completed 13-f12-stg-yp-kernels/13-02-PLAN.md
+last_updated: "2026-04-05T03:35:39.928Z"
 progress:
   total_phases: 10
   completed_phases: 10
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 13 (f12-stg-yp-kernels) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -93,6 +93,7 @@ Plan: 2 of 3
 | Phase 12 P02 | 5 | 2 tasks | 5 files |
 | Phase 12-real-spinor-transform-c2spinor-replacement P05 | 90 | 1 tasks | 3 files |
 | Phase 13-f12-stg-yp-kernels P01 | 15 | 2 tasks | 12 files |
+| Phase 13-f12-stg-yp-kernels P02 | 90 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -212,6 +213,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 12]: executor.rs skips apply_representation_transform for Spinor representation: kernel launchers own spinor transforms per Plan 04 design
 - [Phase 13-f12-stg-yp-kernels]: Use include_bytes! with AlignedBytes wrapper for roots_xw.dat binary tables: include! macro rejects comma-separated expressions, binary + bytemuck is correct approach for 1.7M-element f64 tables
 - [Phase 13-f12-stg-yp-kernels]: OperatorEnvParams defaults to all-None in ExecutionPlan::new(); callers (raw compat, safe API) populate f12_zeta from env[9]
+- [Phase 13-f12-stg-yp-kernels]: manifest canonical_family for STG/YP is '2e' not 'f12'; F12 detection uses symbol prefix (int2e_stg/int2e_yp)
+- [Phase 13-f12-stg-yp-kernels]: launch_f12 passes 'f12' explicitly to validate_f12_env_params; operator_name strips 'stg'/'yp' prefix for variant suffix
 
 ### Roadmap Evolution
 
@@ -228,6 +231,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T03:09:43.960Z
-Stopped at: Completed 13-f12-stg-yp-kernels-01-PLAN.md
+Last session: 2026-04-05T03:35:39.924Z
+Stopped at: Completed 13-f12-stg-yp-kernels/13-02-PLAN.md
 Resume file: None
