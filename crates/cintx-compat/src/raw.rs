@@ -47,6 +47,14 @@ pub const PTR_ENV_START: usize = 20;
 /// extract the zeta value from the env array without hardcoding the magic index.
 pub const PTR_F12_ZETA: usize = 9;
 
+/// Number of grid points for grids-family integrals.
+/// Stored at env[11] by convention (libcint NGRIDS = 11).
+pub const NGRIDS: usize = 11;
+
+/// Start index for grid coordinate data in env array.
+/// Grid coordinates are packed as env[PTR_GRIDS..PTR_GRIDS + 3*ngrids] (libcint PTR_GRIDS = 12).
+pub const PTR_GRIDS: usize = 12;
+
 pub const POINT_NUC: i32 = 1;
 pub const GAUSSIAN_NUC: i32 = 2;
 pub const FRAC_CHARGE_NUC: i32 = 3;
