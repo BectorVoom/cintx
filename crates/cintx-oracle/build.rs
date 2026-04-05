@@ -59,6 +59,11 @@ fn main() {
         // CINTgout2e_int2e_ip1 is in grad2.c; ipip1/ipvip1/ip1ip2 are in hess.c.
         "src/autocode/grad2.c",
         "src/autocode/hess.c",
+        // Phase 14 unstable-source family source files.
+        "src/cint1e_grids.c",
+        "src/g1e_grids.c",
+        "src/breit.c",
+        "src/cint3c1e_a.c",
     ] {
         println!("cargo:rerun-if-changed={}", libcint_root.join(src).display());
     }
@@ -188,6 +193,16 @@ fn main() {
         // extern in cint2e_f12.c but defined in the autocode files.
         .file(libcint_root.join("src/autocode/grad2.c"))
         .file(libcint_root.join("src/autocode/hess.c"))
+        // Phase 14 unstable-source family source files.
+        // cint1e_grids.c + g1e_grids.c: int1e_grids* (NGRIDS/PTR_GRIDS env handling).
+        // breit.c: int2e_breit_r1p2_spinor and int2e_breit_r2p2_spinor.
+        // cint3c1e_a.c: int3c1e_r2/r4/r6_origk and ip1 derivatives (origk family).
+        // cint1e_a.c already present above (origi family symbols defined there).
+        // cint3c2e.c already present above (ssc family).
+        .file(libcint_root.join("src/cint1e_grids.c"))
+        .file(libcint_root.join("src/g1e_grids.c"))
+        .file(libcint_root.join("src/breit.c"))
+        .file(libcint_root.join("src/cint3c1e_a.c"))
         .compile("cintx_oracle_vendor");
 
     println!("cargo:rustc-link-lib=static=cintx_oracle_vendor");
@@ -227,6 +242,30 @@ extern CINTIntegralFunction int2e_yp_ip1_sph;
 extern CINTIntegralFunction int2e_yp_ipip1_sph;
 extern CINTIntegralFunction int2e_yp_ipvip1_sph;
 extern CINTIntegralFunction int2e_yp_ip1ip2_sph;
+/* Phase 14 unstable-source family declarations */
+/* origi (1e) — in cint1e_a.c, not in cint_funcs.h */
+extern CINTIntegralFunction int1e_r2_origi_sph;
+extern CINTIntegralFunction int1e_r4_origi_sph;
+extern CINTIntegralFunction int1e_r2_origi_ip2_sph;
+extern CINTIntegralFunction int1e_r4_origi_ip2_sph;
+/* grids (1e) — int1e_grids_sph NOT in cint_funcs.h (Pitfall 4) */
+extern CINTIntegralFunction int1e_grids_sph;
+extern CINTIntegralFunction int1e_grids_ip_sph;
+extern CINTIntegralFunction int1e_grids_ipvip_sph;
+extern CINTIntegralFunction int1e_grids_spvsp_sph;
+extern CINTIntegralFunction int1e_grids_ipip_sph;
+/* breit (2e spinor) — in breit.c */
+extern CINTIntegralFunction int2e_breit_r1p2_spinor;
+extern CINTIntegralFunction int2e_breit_r2p2_spinor;
+/* origk (3c1e) — in cint3c1e_a.c */
+extern CINTIntegralFunction int3c1e_r2_origk_sph;
+extern CINTIntegralFunction int3c1e_r4_origk_sph;
+extern CINTIntegralFunction int3c1e_r6_origk_sph;
+extern CINTIntegralFunction int3c1e_ip1_r2_origk_sph;
+extern CINTIntegralFunction int3c1e_ip1_r4_origk_sph;
+extern CINTIntegralFunction int3c1e_ip1_r6_origk_sph;
+/* ssc (3c2e) — in cint3c2e.c */
+extern CINTIntegralFunction int3c2e_sph_ssc;
 "#,
         cint_funcs = cint_funcs_h.display()
     );
@@ -240,7 +279,7 @@ extern CINTIntegralFunction int2e_yp_ip1ip2_sph;
         .header(suppl_h.to_string_lossy())
         .clang_arg(format!("-I{}", out_dir.display()))
         .clang_arg(format!("-I{}", libcint_root.join("src").display()))
-        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c2e_sph|int4c1e_sph|int4c1e_cart|int1e_ovlp_cart|int1e_kin_cart|int1e_nuc_cart|int2e_cart|int2c2e_cart|int3c1e_cart|int3c1e_p2_cart|int3c2e_ip1_cart|int1e_ovlp_spinor|int1e_kin_spinor|int1e_nuc_spinor|int2e_spinor|int2c2e_spinor|int3c1e_spinor|int3c2e_spinor|int2e_stg_sph|int2e_stg_ip1_sph|int2e_stg_ipip1_sph|int2e_stg_ipvip1_sph|int2e_stg_ip1ip2_sph|int2e_yp_sph|int2e_yp_ip1_sph|int2e_yp_ipip1_sph|int2e_yp_ipvip1_sph|int2e_yp_ip1ip2_sph|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer|CINTlen_cart|CINTlen_spinor|CINTcgto_cart|CINTcgto_spinor|CINTtot_pgto_spheric|CINTtot_pgto_spinor|CINTtot_cgto_cart|CINTtot_cgto_spheric|CINTtot_cgto_spinor|CINTshells_cart_offset|CINTshells_spheric_offset|CINTshells_spinor_offset|CINTgto_norm|CINTc2s_bra_sph")
+        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c2e_sph|int4c1e_sph|int4c1e_cart|int1e_ovlp_cart|int1e_kin_cart|int1e_nuc_cart|int2e_cart|int2c2e_cart|int3c1e_cart|int3c1e_p2_cart|int3c2e_ip1_cart|int1e_ovlp_spinor|int1e_kin_spinor|int1e_nuc_spinor|int2e_spinor|int2c2e_spinor|int3c1e_spinor|int3c2e_spinor|int2e_stg_sph|int2e_stg_ip1_sph|int2e_stg_ipip1_sph|int2e_stg_ipvip1_sph|int2e_stg_ip1ip2_sph|int2e_yp_sph|int2e_yp_ip1_sph|int2e_yp_ipip1_sph|int2e_yp_ipvip1_sph|int2e_yp_ip1ip2_sph|int1e_r2_origi_sph|int1e_r4_origi_sph|int1e_r2_origi_ip2_sph|int1e_r4_origi_ip2_sph|int1e_grids_sph|int1e_grids_ip_sph|int1e_grids_ipvip_sph|int1e_grids_spvsp_sph|int1e_grids_ipip_sph|int2e_breit_r1p2_spinor|int2e_breit_r2p2_spinor|int3c1e_r2_origk_sph|int3c1e_r4_origk_sph|int3c1e_r6_origk_sph|int3c1e_ip1_r2_origk_sph|int3c1e_ip1_r4_origk_sph|int3c1e_ip1_r6_origk_sph|int3c2e_sph_ssc|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer|CINTlen_cart|CINTlen_spinor|CINTcgto_cart|CINTcgto_spinor|CINTtot_pgto_spheric|CINTtot_pgto_spinor|CINTtot_cgto_cart|CINTtot_cgto_spheric|CINTtot_cgto_spinor|CINTshells_cart_offset|CINTshells_spheric_offset|CINTshells_spinor_offset|CINTgto_norm|CINTc2s_bra_sph")
         .allowlist_type("CINTOpt")
         .generate()
         .expect("failed to generate oracle libcint bindings");
