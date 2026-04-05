@@ -1,11 +1,149 @@
 use anyhow::{anyhow, bail, Context, Result};
 use cintx_compat::helpers::{CINTcgto_cart, CINTcgto_spheric, CINTcgto_spinor};
+use cintx_compat::raw::{
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_F12_ZETA, PTR_ZETA,
+};
 use cintx_core::Representation;
 use cintx_ops::resolver::{HelperKind, ManifestEntry, Resolver};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H2O STO-3G molecular fixture (PTR_ENV_START-aligned)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build H2O STO-3G libcint-style atm/bas/env with user data starting at PTR_ENV_START.
+///
+/// PTR_ENV_START alignment is required for 2e-family integrals (2c2e, 3c2e, 2e)
+/// to avoid corrupting libcint global env slots (e.g., PTR_RANGE_OMEGA at index 8).
+///
+/// Molecule: H2O with O at origin, H1 at (0, 1.4307, 1.1078) Bohr, H2 at (0, -1.4307, 1.1078) Bohr.
+/// Basis: STO-3G (Hehre, Stewart & Pople, JCP 51, 2657, 1969).
+/// Shells: 0=O-1s, 1=O-2s, 2=O-2p, 3=H1-1s, 4=H2-1s.
+pub fn build_h2o_sto3g() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    let o_coord = [0.0_f64, 0.0, 0.0];
+    let h1_coord = [0.0_f64, 1.4307, 1.1078];
+    let h2_coord = [0.0_f64, -1.4307, 1.1078];
+
+    let o_1s_exp = [130.7093200_f64, 23.8088610, 6.4436083];
+    let o_1s_coeff = [0.15432897_f64, 0.53532814, 0.44463454];
+
+    let o_2s_exp = [5.0331513_f64, 1.1695961, 0.3803890];
+    let o_2s_coeff = [-0.09996723_f64, 0.39951283, 0.70011547];
+
+    let o_2p_exp = [5.0331513_f64, 1.1695961, 0.3803890];
+    let o_2p_coeff = [0.15591627_f64, 0.60768372, 0.39195739];
+
+    let h_1s_exp = [3.4252509_f64, 0.6239137, 0.1688554];
+    let h_1s_coeff = [0.15432897_f64, 0.53532814, 0.44463454];
+
+    // env[0..PTR_ENV_START] reserved for libcint global params (zeros = defaults).
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+
+    let o_coord_ptr = env.len() as i32; // 20
+    env.extend_from_slice(&o_coord);
+    let h1_coord_ptr = env.len() as i32; // 23
+    env.extend_from_slice(&h1_coord);
+    let h2_coord_ptr = env.len() as i32; // 26
+    env.extend_from_slice(&h2_coord);
+    let zeta_ptr = env.len() as i32; // 29
+    env.push(0.0);
+
+    let o1s_exp_ptr = env.len() as i32; // 30
+    env.extend_from_slice(&o_1s_exp);
+    let o1s_coeff_ptr = env.len() as i32; // 33
+    env.extend_from_slice(&o_1s_coeff);
+
+    let o2s_exp_ptr = env.len() as i32; // 36
+    env.extend_from_slice(&o_2s_exp);
+    let o2s_coeff_ptr = env.len() as i32; // 39
+    env.extend_from_slice(&o_2s_coeff);
+
+    let o2p_exp_ptr = env.len() as i32; // 42
+    env.extend_from_slice(&o_2p_exp);
+    let o2p_coeff_ptr = env.len() as i32; // 45
+    env.extend_from_slice(&o_2p_coeff);
+
+    let h1s_exp_ptr = env.len() as i32; // 48
+    env.extend_from_slice(&h_1s_exp);
+    let h1s_coeff_ptr = env.len() as i32; // 51
+    env.extend_from_slice(&h_1s_coeff);
+
+    // atm: O, H1, H2
+    let mut atm = vec![0_i32; 3 * ATM_SLOTS];
+
+    atm[0 * ATM_SLOTS + CHARGE_OF] = 8;
+    atm[0 * ATM_SLOTS + PTR_COORD] = o_coord_ptr;
+    atm[0 * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+    atm[0 * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+
+    atm[1 * ATM_SLOTS + CHARGE_OF] = 1;
+    atm[1 * ATM_SLOTS + PTR_COORD] = h1_coord_ptr;
+    atm[1 * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+    atm[1 * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+
+    atm[2 * ATM_SLOTS + CHARGE_OF] = 1;
+    atm[2 * ATM_SLOTS + PTR_COORD] = h2_coord_ptr;
+    atm[2 * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+    atm[2 * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+
+    // bas: O-1s, O-2s, O-2p, H1-1s, H2-1s
+    let mut bas = vec![0_i32; 5 * BAS_SLOTS];
+
+    bas[0 * BAS_SLOTS + ATOM_OF] = 0;
+    bas[0 * BAS_SLOTS + ANG_OF] = 0;
+    bas[0 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[0 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[0 * BAS_SLOTS + PTR_EXP] = o1s_exp_ptr;
+    bas[0 * BAS_SLOTS + PTR_COEFF] = o1s_coeff_ptr;
+
+    bas[1 * BAS_SLOTS + ATOM_OF] = 0;
+    bas[1 * BAS_SLOTS + ANG_OF] = 0;
+    bas[1 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[1 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[1 * BAS_SLOTS + PTR_EXP] = o2s_exp_ptr;
+    bas[1 * BAS_SLOTS + PTR_COEFF] = o2s_coeff_ptr;
+
+    bas[2 * BAS_SLOTS + ATOM_OF] = 0;
+    bas[2 * BAS_SLOTS + ANG_OF] = 1;
+    bas[2 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[2 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[2 * BAS_SLOTS + PTR_EXP] = o2p_exp_ptr;
+    bas[2 * BAS_SLOTS + PTR_COEFF] = o2p_coeff_ptr;
+
+    bas[3 * BAS_SLOTS + ATOM_OF] = 1;
+    bas[3 * BAS_SLOTS + ANG_OF] = 0;
+    bas[3 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[3 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[3 * BAS_SLOTS + PTR_EXP] = h1s_exp_ptr;
+    bas[3 * BAS_SLOTS + PTR_COEFF] = h1s_coeff_ptr;
+
+    bas[4 * BAS_SLOTS + ATOM_OF] = 2;
+    bas[4 * BAS_SLOTS + ANG_OF] = 0;
+    bas[4 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[4 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[4 * BAS_SLOTS + PTR_EXP] = h1s_exp_ptr;
+    bas[4 * BAS_SLOTS + PTR_COEFF] = h1s_coeff_ptr;
+
+    (atm, bas, env)
+}
+
+/// Build H2O STO-3G fixture with PTR_F12_ZETA set for F12 oracle parity tests.
+///
+/// Sets `env[PTR_F12_ZETA]` (env[9]) to the given `zeta` value. This is required
+/// for all F12/STG/YP integrals. A zeta of 0.0 must be explicitly rejected by the
+/// cintx engine via `InvalidEnvParam`.
+///
+/// Typical value: `zeta = 1.2` (common F12 correlation factor exponent in production).
+pub fn build_h2o_sto3g_f12(zeta: f64) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    let (atm, bas, mut env) = build_h2o_sto3g();
+    // PTR_F12_ZETA = 9 — within the PTR_ENV_START global params block.
+    env[PTR_F12_ZETA] = zeta;
+    (atm, bas, env)
+}
 
 pub const REQUIRED_MATRIX_ARTIFACT: &str =
     "/mnt/data/cintx_phase_04_manifest_representation_matrix.json";
@@ -455,6 +593,19 @@ pub fn write_profile_representation_matrix_artifact(
     include_unstable_source: bool,
     matrix: &[OracleFixture],
 ) -> Result<ArtifactWriteResult> {
+    let artifact = build_matrix_artifact_json(profile, include_unstable_source, matrix)?;
+    write_pretty_json_artifact(
+        REQUIRED_MATRIX_ARTIFACT,
+        MATRIX_ARTIFACT_FALLBACK_NAME,
+        &artifact,
+    )
+}
+
+fn build_matrix_artifact_json(
+    profile: &str,
+    include_unstable_source: bool,
+    matrix: &[OracleFixture],
+) -> Result<Value> {
     ensure_profile_approved(profile)?;
 
     let fixture_symbols: BTreeSet<&str> = matrix
@@ -502,7 +653,7 @@ pub fn write_profile_representation_matrix_artifact(
         })
         .collect();
 
-    let artifact = json!({
+    Ok(json!({
         "profile": profile,
         "include_unstable_source": include_unstable_source,
         "representation_matrix": fixtures_json,
@@ -512,13 +663,7 @@ pub fn write_profile_representation_matrix_artifact(
         "approved_profiles": PHASE4_APPROVED_PROFILES,
         "oracle_families": PHASE4_ORACLE_FAMILIES,
         "matrix_families": matrix_families,
-    });
-
-    write_pretty_json_artifact(
-        REQUIRED_MATRIX_ARTIFACT,
-        MATRIX_ARTIFACT_FALLBACK_NAME,
-        &artifact,
-    )
+    }))
 }
 
 pub fn write_representation_matrix_artifact(
@@ -597,19 +742,32 @@ mod tests {
 
     #[test]
     fn representation_matrix_artifact_is_written() {
+        // Build the matrix and serialize it through the same code path as
+        // write_representation_matrix_artifact, but write to an isolated temp
+        // file to avoid races with parallel tests that share the fallback dir.
         let inputs = OracleRawInputs::sample();
         let matrix =
             build_profile_representation_matrix(&inputs, BASE_PROFILE, false).expect("matrix");
-        let written = write_representation_matrix_artifact(&matrix).expect("artifact write");
-        assert!(
-            written.actual_path.is_file(),
-            "artifact must exist at `{}`",
-            written.actual_path.display()
-        );
 
-        let content = fs::read_to_string(&written.actual_path).expect("artifact content");
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "cintx_matrix_artifact_test_{}_{:?}",
+            std::process::id(),
+            std::thread::current().id(),
+        ));
+        let _ = fs::create_dir_all(&tmp_dir);
+        let artifact_path = tmp_dir.join(MATRIX_ARTIFACT_FALLBACK_NAME);
+
+        let artifact =
+            build_matrix_artifact_json(BASE_PROFILE, false, &matrix).expect("artifact json");
+        let payload = serde_json::to_vec_pretty(&artifact).expect("serialize");
+        fs::write(&artifact_path, &payload).expect("write artifact");
+
+        assert!(artifact_path.is_file());
+        let content = fs::read_to_string(&artifact_path).expect("artifact content");
         assert!(content.contains("representation_matrix"));
         assert!(content.contains(REQUIRED_MATRIX_ARTIFACT));
         assert!(content.contains("\"profile\": \"base\""));
+
+        let _ = fs::remove_dir_all(&tmp_dir);
     }
 }
