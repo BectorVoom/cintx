@@ -270,9 +270,10 @@ fn contract_origi_r2_ip2(
             let g6x = g0[gx + bx + 2]; let g6y = g0[gy + by + 2]; let g6z = g0[gz + bz + 2];
             let g7x = g1[gx + bx + 2]; let g7y = g1[gy + by + 2]; let g7z = g1[gz + bz + 2];
 
-            out[n * ncomp + 0] += g7x * g0y * g0z + g1x * g6y * g0z + g1x * g0y * g6z;
-            out[n * ncomp + 1] += g6x * g1y * g0z + g0x * g7y * g0z + g0x * g1y * g6z;
-            out[n * ncomp + 2] += g6x * g0y * g1z + g0x * g6y * g1z + g0x * g0y * g7z;
+            let cart_size = nci * ncj;
+            out[0 * cart_size + n] += g7x * g0y * g0z + g1x * g6y * g0z + g1x * g0y * g6z;
+            out[1 * cart_size + n] += g6x * g1y * g0z + g0x * g7y * g0z + g0x * g1y * g6z;
+            out[2 * cart_size + n] += g6x * g0y * g1z + g0x * g6y * g1z + g0x * g0y * g7z;
         }
     }
     out
@@ -362,9 +363,10 @@ fn contract_origi_r4_ip2(
                 + 2.0 * g0v(gx, bx, 0) * g0v(gy, by, 2) * g1v(gz, bz, 2)
                 + g0v(gx, bx, 0) * g0v(gy, by, 0) * g1v(gz, bz, 4);
 
-            out[n * ncomp + 0] += s0;
-            out[n * ncomp + 1] += s1;
-            out[n * ncomp + 2] += s2;
+            let cart_size = nci * ncj;
+            out[0 * cart_size + n] += s0;
+            out[1 * cart_size + n] += s1;
+            out[2 * cart_size + n] += s2;
         }
     }
     out
@@ -716,17 +718,9 @@ fn contract_origk(
 
 /// Contract origk ip1 variants (ncomp=3): nabla on i + r^n on k.
 ///
-/// ip1_r2: G1E_D_I + G1E_R_K^2
-/// From cint3c1e_a.c lines 304-317:
-///   g1 = g0 + dk (R_K, k+1)
-///   g3 = g1 + dk = g0 + 2dk (R_K^2, k+0)
-///   g4 = D_I(g0)
-///   g7 = D_I(g3) = D_I(g0 + 2dk)
-///   s[0] = g7x*g0y*g0z + g4x*g3y*g0z + g4x*g0y*g3z
-///   s[1] = g3x*g4y*g0z + g0x*g7y*g0z + g0x*g4y*g3z
-///   s[2] = g3x*g0y*g4z + g0x*g3y*g4z + g0x*g0y*g7z
-///
-/// where g3 = g0+2dk, g4 = D_I(g0), g7 = D_I(g0+2dk)
+/// Each r_power level has a specific gout formula from cint3c1e_a.c.
+/// D_I and R_K commute since they operate on different indices, so
+/// D_I(g0 + n*dk) = g_di + n*dk.
 fn contract_origk_ip1(
     g0: &[f64],
     g_alloc: usize,
@@ -755,17 +749,10 @@ fn contract_origk_ip1(
     let gy = g_alloc;
     let gz = 2 * g_alloc;
 
-    // Build D_I(g0) — nabla in i-direction
+    // Build D_I(g0): nabla in i-direction on the full g0 tensor (including elevated k)
     let g_di = g1e_d_i_3c1e(g0, g_alloc, li as usize, lj as usize, (lk as usize) + (r_power as usize), dj, dk, ai);
 
-    // For ip1_r2: g3 = g0 + 2dk, g7 = D_I(g0 + 2dk) = g_di + 2dk
-    // For ip1_r4: g3 = g0 + 2dk, g7 = g0 + 4dk, etc...
-    // Actually for ip1 variants, the R_K and D_I operations commute, so
-    // D_I(g0 + n*dk) = g_di + n*dk (D_I is linear and doesn't touch k-indices).
-
-    let rp = r_power as usize;
-    // g_rk = g0 shifted by rp*dk (the r^n R_K result)
-    // g_di_rk = g_di shifted by rp*dk (D_I applied to the r^n R_K result)
+    let cart_size = nci * ncj * nck;
 
     for (k_idx, &(kx, ky, kz)) in ck_comps.iter().enumerate() {
         for (j_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
@@ -776,23 +763,89 @@ fn contract_origk_ip1(
 
                 let n = (k_idx * ncj + j_idx) * nci + i_idx;
 
-                // g0 values at various k-shifts
-                let g0x = g0[gx + bx]; let g0y = g0[gy + by]; let g0z = g0[gz + bz];
-                let g3x = g0[gx + bx + rp * dk]; let g3y = g0[gy + by + rp * dk]; let g3z = g0[gz + bz + rp * dk];
-                // D_I values at base and at k-shift
-                let g4x = g_di[gx + bx]; let g4y = g_di[gy + by]; let g4z = g_di[gz + bz];
-                let g7x = g_di[gx + bx + rp * dk]; let g7y = g_di[gy + by + rp * dk]; let g7z = g_di[gz + bz + rp * dk];
+                // Helper closures for readability
+                let g = |axis: usize, base: usize, k_shift: usize| g0[axis * g_alloc + base + k_shift * dk];
+                let di = |axis: usize, base: usize, k_shift: usize| g_di[axis * g_alloc + base + k_shift * dk];
 
-                // s[0] = g7x*g0y*g0z + g4x*g3y*g0z + g4x*g0y*g3z
-                let s0 = g7x * g0y * g0z + g4x * g3y * g0z + g4x * g0y * g3z;
-                // s[1] = g3x*g4y*g0z + g0x*g7y*g0z + g0x*g4y*g3z
-                let s1 = g3x * g4y * g0z + g0x * g7y * g0z + g0x * g4y * g3z;
-                // s[2] = g3x*g0y*g4z + g0x*g3y*g4z + g0x*g0y*g7z
-                let s2 = g3x * g0y * g4z + g0x * g3y * g4z + g0x * g0y * g7z;
+                let (s0, s1, s2) = match r_power {
+                    2 => {
+                        // ip1_r2: g3=+2dk, g4=D_I, g7=D_I+2dk
+                        let s0 = di(0, bx, 2) * g(1, by, 0) * g(2, bz, 0)
+                            + di(0, bx, 0) * g(1, by, 2) * g(2, bz, 0)
+                            + di(0, bx, 0) * g(1, by, 0) * g(2, bz, 2);
+                        let s1 = g(0, bx, 2) * di(1, by, 0) * g(2, bz, 0)
+                            + g(0, bx, 0) * di(1, by, 2) * g(2, bz, 0)
+                            + g(0, bx, 0) * di(1, by, 0) * g(2, bz, 2);
+                        let s2 = g(0, bx, 2) * g(1, by, 0) * di(2, bz, 0)
+                            + g(0, bx, 0) * g(1, by, 2) * di(2, bz, 0)
+                            + g(0, bx, 0) * g(1, by, 0) * di(2, bz, 2);
+                        (s0, s1, s2)
+                    }
+                    4 => {
+                        // ip1_r4 from cint3c1e_a.c lines 415-420:
+                        // g3=+2dk, g12=+2dk, g15=+4dk, g16=D_I, g19=D_I+2dk, g28=D_I+2dk, g31=D_I+4dk
+                        let s0 = di(0, bx, 4) * g(1, by, 0) * g(2, bz, 0)
+                            + 2.0 * di(0, bx, 2) * g(1, by, 2) * g(2, bz, 0)
+                            + 2.0 * di(0, bx, 2) * g(1, by, 0) * g(2, bz, 2)
+                            + di(0, bx, 0) * g(1, by, 4) * g(2, bz, 0)
+                            + 2.0 * di(0, bx, 0) * g(1, by, 2) * g(2, bz, 2)
+                            + di(0, bx, 0) * g(1, by, 0) * g(2, bz, 4);
+                        let s1 = g(0, bx, 4) * di(1, by, 0) * g(2, bz, 0)
+                            + 2.0 * g(0, bx, 2) * di(1, by, 2) * g(2, bz, 0)
+                            + 2.0 * g(0, bx, 2) * di(1, by, 0) * g(2, bz, 2)
+                            + g(0, bx, 0) * di(1, by, 4) * g(2, bz, 0)
+                            + 2.0 * g(0, bx, 0) * di(1, by, 2) * g(2, bz, 2)
+                            + g(0, bx, 0) * di(1, by, 0) * g(2, bz, 4);
+                        let s2 = g(0, bx, 4) * g(1, by, 0) * di(2, bz, 0)
+                            + 2.0 * g(0, bx, 2) * g(1, by, 2) * di(2, bz, 0)
+                            + 2.0 * g(0, bx, 2) * g(1, by, 0) * di(2, bz, 2)
+                            + g(0, bx, 0) * g(1, by, 4) * di(2, bz, 0)
+                            + 2.0 * g(0, bx, 0) * g(1, by, 2) * di(2, bz, 2)
+                            + g(0, bx, 0) * g(1, by, 0) * di(2, bz, 4);
+                        (s0, s1, s2)
+                    }
+                    6 => {
+                        // ip1_r6: D_I applied to the r^6 expansion
+                        // Each component: D_I on one axis, r^6 polynomial on the other two axes
+                        // The r^6 polynomial is the same as contract_origk r6 but with D_I on one axis
+                        let s0 = di(0, bx, 6) * g(1, by, 0) * g(2, bz, 0)
+                            + 3.0 * di(0, bx, 4) * g(1, by, 2) * g(2, bz, 0)
+                            + 3.0 * di(0, bx, 4) * g(1, by, 0) * g(2, bz, 2)
+                            + 3.0 * di(0, bx, 2) * g(1, by, 4) * g(2, bz, 0)
+                            + 6.0 * di(0, bx, 2) * g(1, by, 2) * g(2, bz, 2)
+                            + 3.0 * di(0, bx, 2) * g(1, by, 0) * g(2, bz, 4)
+                            + di(0, bx, 0) * g(1, by, 6) * g(2, bz, 0)
+                            + 3.0 * di(0, bx, 0) * g(1, by, 4) * g(2, bz, 2)
+                            + 3.0 * di(0, bx, 0) * g(1, by, 2) * g(2, bz, 4)
+                            + di(0, bx, 0) * g(1, by, 0) * g(2, bz, 6);
+                        let s1 = g(0, bx, 6) * di(1, by, 0) * g(2, bz, 0)
+                            + 3.0 * g(0, bx, 4) * di(1, by, 2) * g(2, bz, 0)
+                            + 3.0 * g(0, bx, 4) * di(1, by, 0) * g(2, bz, 2)
+                            + 3.0 * g(0, bx, 2) * di(1, by, 4) * g(2, bz, 0)
+                            + 6.0 * g(0, bx, 2) * di(1, by, 2) * g(2, bz, 2)
+                            + 3.0 * g(0, bx, 2) * di(1, by, 0) * g(2, bz, 4)
+                            + g(0, bx, 0) * di(1, by, 6) * g(2, bz, 0)
+                            + 3.0 * g(0, bx, 0) * di(1, by, 4) * g(2, bz, 2)
+                            + 3.0 * g(0, bx, 0) * di(1, by, 2) * g(2, bz, 4)
+                            + g(0, bx, 0) * di(1, by, 0) * g(2, bz, 6);
+                        let s2 = g(0, bx, 6) * g(1, by, 0) * di(2, bz, 0)
+                            + 3.0 * g(0, bx, 4) * g(1, by, 2) * di(2, bz, 0)
+                            + 3.0 * g(0, bx, 4) * g(1, by, 0) * di(2, bz, 2)
+                            + 3.0 * g(0, bx, 2) * g(1, by, 4) * di(2, bz, 0)
+                            + 6.0 * g(0, bx, 2) * g(1, by, 2) * di(2, bz, 2)
+                            + 3.0 * g(0, bx, 2) * g(1, by, 0) * di(2, bz, 4)
+                            + g(0, bx, 0) * g(1, by, 6) * di(2, bz, 0)
+                            + 3.0 * g(0, bx, 0) * g(1, by, 4) * di(2, bz, 2)
+                            + 3.0 * g(0, bx, 0) * g(1, by, 2) * di(2, bz, 4)
+                            + g(0, bx, 0) * g(1, by, 0) * di(2, bz, 6);
+                        (s0, s1, s2)
+                    }
+                    _ => (0.0, 0.0, 0.0),
+                };
 
-                out[n * ncomp + 0] += s0;
-                out[n * ncomp + 1] += s1;
-                out[n * ncomp + 2] += s2;
+                out[0 * cart_size + n] += s0;
+                out[1 * cart_size + n] += s1;
+                out[2 * cart_size + n] += s2;
             }
         }
     }

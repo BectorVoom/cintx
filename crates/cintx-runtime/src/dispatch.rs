@@ -18,11 +18,18 @@ impl DispatchFamily {
     pub fn from_manifest_family(family: &str) -> Result<Self, cintxRsError> {
         match family {
             "1e" => Ok(Self::OneElectron),
-            "2e" => Ok(Self::TwoElectron),
+            "2e" | "f12" => Ok(Self::TwoElectron),
             "2c2e" => Ok(Self::Center2c2e),
             "3c1e" => Ok(Self::Center3c1e),
             "3c2e" => Ok(Self::Center3c2e),
             "4c1e" => Ok(Self::Center4c1e),
+            // Unstable-source families map to their base dispatch families for planning:
+            // origi uses 1e infrastructure, origk uses 3c1e, ssc uses 3c2e
+            _ if family.ends_with("::origi") || family == "origi" => Ok(Self::OneElectron),
+            _ if family.ends_with("::origk") || family == "origk" => Ok(Self::Center3c1e),
+            _ if family.ends_with("::ssc") || family == "ssc" => Ok(Self::Center3c2e),
+            _ if family.ends_with("::grids") || family == "grids" => Ok(Self::OneElectron),
+            _ if family.ends_with("::breit") || family == "breit" => Ok(Self::TwoElectron),
             _ => Err(cintxRsError::UnsupportedApi {
                 requested: format!("unsupported dispatch family {family}"),
             }),
