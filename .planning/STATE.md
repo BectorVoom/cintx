@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: Ready to plan
-stopped_at: Phase 13 context gathered
-last_updated: "2026-04-05T02:26:22.568Z"
+status: Ready to execute
+stopped_at: Completed 13-f12-stg-yp-kernels-01-PLAN.md
+last_updated: "2026-04-05T03:09:43.963Z"
 progress:
-  total_phases: 15
-  completed_phases: 12
-  total_plans: 56
-  completed_plans: 57
+  total_phases: 10
+  completed_phases: 10
+  total_plans: 47
+  completed_plans: 48
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 13 — F12/STG/YP Kernels
+**Current focus:** Phase 13 — f12-stg-yp-kernels
 
 ## Current Position
 
-Phase: 13
-Plan: Not started
+Phase: 13 (f12-stg-yp-kernels) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -92,6 +92,7 @@ Plan: Not started
 | Phase 12 P01 | 11 | 2 tasks | 4 files |
 | Phase 12 P02 | 5 | 2 tasks | 5 files |
 | Phase 12-real-spinor-transform-c2spinor-replacement P05 | 90 | 1 tasks | 3 files |
+| Phase 13-f12-stg-yp-kernels P01 | 15 | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -209,6 +210,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 12]: Spinor buffer layout: column-major interleaved (j_spinor outer, i_spinor inner), staging[(j*di+i)*2] = re, +1 = im — matches libcint zcopy_ij
 - [Phase 12]: kappa=0 spinor ordering: LT block first then GT, matching libcint implicit memory layout convention
 - [Phase 12]: executor.rs skips apply_representation_transform for Spinor representation: kernel launchers own spinor transforms per Plan 04 design
+- [Phase 13-f12-stg-yp-kernels]: Use include_bytes! with AlignedBytes wrapper for roots_xw.dat binary tables: include! macro rejects comma-separated expressions, binary + bytemuck is correct approach for 1.7M-element f64 tables
+- [Phase 13-f12-stg-yp-kernels]: OperatorEnvParams defaults to all-None in ExecutionPlan::new(); callers (raw compat, safe API) populate f12_zeta from env[9]
 
 ### Roadmap Evolution
 
@@ -225,6 +228,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T02:26:22.564Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-f12-stg-yp-kernels/13-CONTEXT.md
+Last session: 2026-04-05T03:09:43.960Z
+Stopped at: Completed 13-f12-stg-yp-kernels-01-PLAN.md
+Resume file: None
