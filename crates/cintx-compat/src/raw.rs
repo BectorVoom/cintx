@@ -601,6 +601,26 @@ fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(
 
     // Non-source-only symbols: check the active compiled profile.
     let profile = active_manifest_profile();
+
+    // Source-only symbols require the unstable-source-api feature gate and are
+    // compiled in the "unstable-source" manifest profile, not the base/with-* profiles.
+    if descriptor.is_source_only() {
+        if !unstable_source_api_enabled() {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "source-only symbol {symbol} requires feature `unstable-source-api`"
+                ),
+            });
+        }
+        // Source-only entries use "unstable-source" profile — check that instead of active profile
+        if !descriptor.is_compiled_in_profile("unstable-source") {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!("raw api {symbol} is not compiled in unstable-source profile"),
+            });
+        }
+        return Ok(());
+    }
+
     if !descriptor.is_compiled_in_profile(profile) {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("raw api {symbol} is not compiled in active profile {profile}"),
