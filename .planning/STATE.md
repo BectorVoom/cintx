@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
-status: Executing Phase 14
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-04-05T21:28:17.165Z"
+status: Ready to plan
+stopped_at: Completed 14-05-PLAN.md
+last_updated: "2026-04-05T22:52:52.973Z"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 18
 ---
 
 # Project State
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 14 (unstable-source-api-families) — EXECUTING
-Plan: 1 of 5
+Phase: 15
+Plan: Not started
 
 ## Performance Metrics
 
@@ -97,6 +97,7 @@ Plan: 1 of 5
 | Phase 13-f12-stg-yp-kernels P03 | 45 | 2 tasks | 9 files |
 | Phase 13-f12-stg-yp-kernels P04 | 90 | 2 tasks | 6 files |
 | Phase 14-unstable-source-api-families P01 | 16 | 2 tasks | 13 files |
+| Phase 14-unstable-source-api-families P05 | 5 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -226,6 +227,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 14-unstable-source-api-families]: Convert unresolved_families() from static &[&str] to Vec<&str> to support dynamic 3-feature combination without 8 cfg variants
 - [Phase 14-unstable-source-api-families]: Use compact single-line ManifestEntry format for Phase 14 entries to avoid another very large Edit operation
 - [Phase 14-unstable-source-api-families]: Grids FFI wrappers use [i32; 4] shls to match libcint cint1e_grids.c signature (i, j, grid_start, grid_end)
+- [Phase 14-unstable-source-api-families]: unstable-source profile runs standalone, never combined with standard profiles
+- [Phase 14-unstable-source-api-families]: Nightly CI is advisory-only, not a merge blocker
 
 ### Roadmap Evolution
 
@@ -242,6 +245,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T00:00:00.000Z
-Stopped at: Completed 14-01-PLAN.md
-Resume file: .planning/phases/14-unstable-source-api-families/14-01-SUMMARY.md
+Last session: 2026-04-05T22:40:35.720Z
+Stopped at: Completed 14-05-PLAN.md
+Resume file: None
