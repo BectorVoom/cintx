@@ -1,7 +1,7 @@
 // Generated manifest; do not edit.
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const PROFILE_SCOPE_APPROVED: &[&str] =
-    &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"];
+    &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e", "unstable-source"];
 use crate::resolver::{
     FeatureFlag, HelperKind, ManifestEntry, OperatorDescriptor, RepresentationSupport, Stability,
 };
@@ -2020,7 +2020,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         category: "unstable-source",
         arity: 2,
         forms: &["sph"],
-        component_rank: "1",
+        component_rank: "2",
         feature_flag: FeatureFlag::UnstableSource,
         stability: Stability::UnstableSource,
         declared_in: "src/source/unstable",
