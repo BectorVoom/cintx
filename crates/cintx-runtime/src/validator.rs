@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn validate_grids_env_params_ngrids_zero_is_rejected() {
         let params = OperatorEnvParams {
-            grids_params: Some(GridsEnvParams { ngrids: 0, ptr_grids: 20 }),
+            grids_params: Some(GridsEnvParams { ngrids: 0, ptr_grids: 20, grid_coords: vec![] }),
             ..OperatorEnvParams::default()
         };
         let err = validate_grids_env_params("grids", &params).unwrap_err();
@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn validate_grids_env_params_valid_passes() {
         let params = OperatorEnvParams {
-            grids_params: Some(GridsEnvParams { ngrids: 5, ptr_grids: 20 }),
+            grids_params: Some(GridsEnvParams { ngrids: 5, ptr_grids: 20, grid_coords: vec![[0.0,0.0,0.0]; 5] }),
             ..OperatorEnvParams::default()
         };
         validate_grids_env_params("grids", &params)
