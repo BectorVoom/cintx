@@ -437,7 +437,7 @@ pub unsafe fn eval_raw(
 
     // Extract f12_zeta from env[PTR_F12_ZETA] for F12/STG/YP integrals (raw compat path).
     // Raw callers are expected to set env[9] = zeta before calling any F12 integral.
-    // The manifest canonical_family for STG/YP operators is "2e"; operator_name is "stg"/"yp".
+    // The manifest canonical_family for STG/YP operators is "f12"; operator_name is "stg"/"yp".
     // We detect F12 symbols by their full symbol name prefix (int2e_stg / int2e_yp).
     if is_f12_family_symbol(plan.descriptor.operator_symbol()) {
         let zeta = env.get(PTR_F12_ZETA).copied().unwrap_or(0.0);

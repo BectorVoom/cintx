@@ -113,6 +113,7 @@ pub fn status_from_core_error(error: &cintxRsError) -> CintxStatus {
             CintxStatus::AllocationFailed
         }
         cintxRsError::ChunkPlanFailed { .. } => CintxStatus::ExecutionFailed,
+        cintxRsError::InvalidEnvParam { .. } => CintxStatus::InvalidInput,
     }
 }
 

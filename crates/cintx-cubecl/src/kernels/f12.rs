@@ -916,7 +916,7 @@ pub fn launch_f12(
     staging: &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError> {
     // Validate and extract f12_zeta.
-    // canonical_family for STG/YP operators in the manifest is "2e", not "f12"; we pass
+    // canonical_family for STG/YP operators in the manifest is "f12"; we pass
     // "f12" explicitly so validate_f12_env_params performs the zeta gate unconditionally.
     validate_f12_env_params("f12", &plan.operator_env_params)?;
 
