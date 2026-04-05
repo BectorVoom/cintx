@@ -6,10 +6,10 @@
 - [x] **Phase 3: Safe Surface, C ABI Shim & Optional Families** - Layer the safe Rust facade, optional C shim, and feature-gated optional families on the stabilized runtime.
 - [x] **Phase 4: Verification & Release Automation** - Close the manifest/oracle loop with CI, benchmarks, and diagnostics that block regressions before release.
 - [x] **Phase 5: Re-implement detailed-design GPU path with CubeCL (wgpu backend)** - Replace synthetic execution with a real wgpu-backed CubeCL path and capability-aware fail-closed verification.
-- [ ] **Phase 6: Fix raw eval staging retrieval and capability fingerprint propagation** - Close audit gaps: wire eval_raw() staging output retrieval, propagate wgpu fingerprint into capability token, add regression tests.
-- [ ] **Phase 7: Executor Infrastructure Rewrite** - Replace executor internals with direct CubeCL client API, introduce ResolvedBackend dispatch, CPU backend feature, and f64 strategy decision — prerequisite gate for all real kernel work.
+- [x] **Phase 6: Fix raw eval staging retrieval and capability fingerprint propagation** - Close audit gaps: wire eval_raw() staging output retrieval, propagate wgpu fingerprint into capability token, add regression tests.
+- [x] **Phase 7: Executor Infrastructure Rewrite** - Replace executor internals with direct CubeCL client API, introduce ResolvedBackend dispatch, CPU backend feature, and f64 strategy decision — prerequisite gate for all real kernel work.
 - [x] **Phase 8: Gaussian Primitive Infrastructure and Boys Function** - Build shared math foundation as `#[cube]` functions: Boys function, Rys roots/weights, primitive pair evaluation, and Obara-Saika recurrence. (completed 2026-04-03)
-- [ ] **Phase 9: 1e Real Kernel and Cart-to-Sph Transform** - Implement real overlap, kinetic, and nuclear attraction kernels with correct Condon-Shortley c2s transform, validating the end-to-end compute pipeline.
+- [x] **Phase 9: 1e Real Kernel and Cart-to-Sph Transform** - Implement real overlap, kinetic, and nuclear attraction kernels with correct Condon-Shortley c2s transform, validating the end-to-end compute pipeline.
 - [x] **Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure** - Implement all remaining integral family kernels and close the oracle parity gate for all five base families, completing v1.1. (completed 2026-04-03)
 - [x] **Phase 11: Helper/Transform Completion & 4c1e Real Kernel** - Wire all helper, transform, and wrapper symbols to oracle CI; replace the 4c1e stub with real Rys quadrature within the Validated4C1E envelope. (completed 2026-04-04)
 - [x] **Phase 12: Real Spinor Transform (c2spinor Replacement)** - Rewrite c2spinor.rs with correct Clebsch-Gordan coupling; unblock spinor oracle coverage for all families that depend on it. (completed 2026-04-05)
@@ -99,13 +99,13 @@ Plans:
 | Phase 3: Safe Surface, C ABI Shim & Optional Families | 6/6 | Complete | 2026-03-28 |
 | Phase 4: Verification & Release Automation | 7/7 | Complete | 2026-03-31 |
 | Phase 5: Re-implement detailed-design GPU path | 5/5 | Complete | 2026-04-02 |
-| Phase 6: Fix raw eval staging & fingerprint | 0/2 | Not started | - |
-| Phase 7: Executor Infrastructure Rewrite | 1/3 | In Progress | 2026-04-02 |
-| Phase 8: Gaussian Primitive Infrastructure and Boys Function | 3/4 | In Progress | - |
-| Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 3/5 | In Progress | 2026-04-03 |
-| Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 0/6 | Not started | - |
-| Phase 11: Helper/Transform Completion & 4c1e Real Kernel | 3/4 | Gap closure | 2026-04-04 |
-| Phase 12: Real Spinor Transform (c2spinor Replacement) | 3/5 | Gap closure | - |
+| Phase 6: Fix raw eval staging & fingerprint | 2/2 | Complete | 2026-04-05 |
+| Phase 7: Executor Infrastructure Rewrite | 3/3 | Complete | 2026-04-05 |
+| Phase 8: Gaussian Primitive Infrastructure and Boys Function | 4/4 | Complete | 2026-04-05 |
+| Phase 9: 1e Real Kernel and Cart-to-Sph Transform | 5/5 | Complete | 2026-04-05 |
+| Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 6/6 | Complete | 2026-04-05 |
+| Phase 11: Helper/Transform Completion & 4c1e Real Kernel | 4/4 | Complete | 2026-04-05 |
+| Phase 12: Real Spinor Transform (c2spinor Replacement) | 5/5 | Complete | 2026-04-05 |
 | Phase 13: F12/STG/YP Kernels | 0/TBD | Not started | - |
 | Phase 14: Unstable-Source-API Families | 0/TBD | Not started | - |
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | 0/TBD | Not started | - |
@@ -130,11 +130,11 @@ Plans:
 **Requirements**: COMP-01, COMP-04, COMP-05, EXEC-02, EXEC-04, EXEC-05, VERI-01
 **Depends on:** Phase 5
 **Gap Closure:** Closes gaps from v1.0 milestone audit
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 Plans:
 - [x] 06-01-PLAN.md — Fix eval_raw() staging retrieval with RecordingExecutor and propagate wgpu fingerprint in compat raw and safe facade paths.
-- [ ] 06-02-PLAN.md — Add regression tests for staging retrieval, fingerprint propagation, base family coverage, and deterministic output.
+- [x] 06-02-PLAN.md — Add regression tests for staging retrieval, fingerprint propagation, base family coverage, and deterministic output.
 
 ---
 
@@ -150,12 +150,12 @@ Plans:
   3. `RecordingExecutor` is deleted from `cintx-compat` and `cintx-rs`; staging output flows directly from the executor's `client.read()` result into `io.staging_output()`.
   4. CPU backend is enabled via `cpu = ["cubecl/cpu"]` feature in `cintx-cubecl` and oracle parity tests execute without GPU hardware under `--features cpu`.
   5. f64 strategy is documented and enforced: oracle parity tests run against the CPU backend; wgpu path gates on `SHADER_F64` availability and returns `UnsupportedApi` when absent.
-**Plans**: 4 plans
+**Plans**: 3/3 plans executed
 
 Plans:
-- [ ] 07-01-PLAN.md — Add ResolvedBackend enum with wgpu/cpu arms, cpu feature flag, bytemuck dep, and updated FamilyLaunchFn signatures.
-- [ ] 07-02-PLAN.md — Rewrite CubeClExecutor to use ResolvedBackend dispatch, direct staging pass, and f64 SHADER_F64 capability gate.
-- [ ] 07-03-PLAN.md — Delete RecordingExecutor from cintx-compat and cintx-rs; wire eval_raw and safe facade to direct executor staging.
+- [x] 07-01-PLAN.md — Add ResolvedBackend enum with wgpu/cpu arms, cpu feature flag, bytemuck dep, and updated FamilyLaunchFn signatures.
+- [x] 07-02-PLAN.md — Rewrite CubeClExecutor to use ResolvedBackend dispatch, direct staging pass, and f64 SHADER_F64 capability gate.
+- [x] 07-03-PLAN.md — Delete RecordingExecutor from cintx-compat and cintx-rs; wire eval_raw and safe facade to direct executor staging.
 
 ### Phase 8: Gaussian Primitive Infrastructure and Boys Function
 **Goal**: All shared math required by integral kernels exists as validated `#[cube]` functions, confirmed against libcint reference values before any kernel consumes them.
@@ -249,7 +249,7 @@ Plans:
 - [x] 12-02-PLAN.md — Add vendor FFI wrappers for 1e spinor integrals and oracle parity gate test.
 - [x] 12-03-PLAN.md — Add vendor FFI wrappers for multi-center spinor integrals and oracle parity gate tests.
 - [x] 12-04-PLAN.md — Gap closure: implement multi-center spinor transforms and wire Spinor arms in 2e, 2c2e, 3c2e kernel launchers.
-- [ ] 12-05-PLAN.md — Gap closure: un-ignore multi-center spinor oracle parity tests and verify end-to-end.
+- [x] 12-05-PLAN.md — Gap closure: un-ignore multi-center spinor oracle parity tests and verify end-to-end.
 
 ### Phase 13: F12/STG/YP Kernels
 **Goal**: STG and YP geminal two-electron kernels are implemented as separate dispatch paths with PTR_F12_ZETA env plumbing, covering all 10 with-f12 sph symbols at oracle parity.
