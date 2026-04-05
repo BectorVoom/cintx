@@ -22,11 +22,11 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - [x] Real spinor transforms with correct Clebsch-Gordan coupling; spinor oracle coverage unblocked for all families. Validated in Phase 12: Real Spinor Transform.
 - [x] F12/STG/YP family kernels — all 10 sph symbols at oracle parity (atol=1e-12). Cart and spinor remain unsupported (sph-only enforcement). Validated in Phase 13: F12/STG/YP Kernels.
 - [x] v1.1 executor infrastructure (EXEC-06/07/08/09, VERI-06) fully resolved — direct CubeCL client API, ResolvedBackend dispatch, CPU backend, f64 strategy. Validated in Phase 7.
+- [x] Unstable-source family APIs (origi, grids, Breit, origk, ssc) implemented behind feature gate with oracle parity in nightly CI. Validated in Phase 14: Unstable-Source-API Families.
 
 ### Active
 
 - [ ] Cover the full libcint API surface — with-4c1e (beyond validated envelope) and unstable-source families — with unified atol=1e-12 oracle tolerance and objective CI evidence.
-- [ ] Implement unstable-source family APIs (origi, grids, Breit, origk, ssc) behind feature gate with oracle parity.
 - [ ] Unify oracle tolerance to atol=1e-12 for every family and extend oracle harness, fixtures, and CI gates for full API coverage.
 
 ### Out of Scope
@@ -93,4 +93,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after v1.1 milestone complete — CubeCL Direct Client API & Real Kernel Compute archived*
+*Last updated: 2026-04-06 after Phase 14 complete — Unstable-Source-API Families*
