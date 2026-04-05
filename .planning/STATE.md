@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: Milestone complete
-stopped_at: Phase 06 complete, ready to plan Phase 07
+milestone: v1.2
+milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
+status: Ready to plan
+stopped_at: Phases 6-12 complete, ready to plan Phase 13
 last_updated: "2026-04-05T02:10:20.604Z"
 progress:
   total_phases: 10
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 07 — executor-infrastructure-rewrite
+**Current focus:** Phase 13 — F12/STG/YP Kernels
 
 ## Current Position
 
-Phase: 12
+Phase: 13
 Plan: Not started
 
 ## Performance Metrics
@@ -226,5 +226,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-04-05
-Stopped at: Phase 06 complete, ready to plan Phase 07
+Stopped at: Phases 6-12 complete, ready to discuss/plan Phase 13
 Resume file: None
