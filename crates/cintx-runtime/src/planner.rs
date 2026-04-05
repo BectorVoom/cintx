@@ -16,6 +16,17 @@ use tracing::{debug, info_span};
 #[cfg(test)]
 use crate::dispatch::{DispatchFamily, WorkspaceBytes};
 
+/// Operator-specific env parameters extracted from the raw `env[]` array.
+///
+/// These are populated by the caller (raw compat reads from env[], safe API
+/// passes via ExecutionOptions). Default is all None (no extra params).
+#[derive(Clone, Debug, Default)]
+pub struct OperatorEnvParams {
+    /// PTR_F12_ZETA value (env[9]) for F12/STG/YP kernels.
+    /// Must be non-zero when canonical_family == "f12".
+    pub f12_zeta: Option<f64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutputLayoutMetadata {
     pub extents: Vec<usize>,
@@ -34,6 +45,9 @@ pub struct ExecutionPlan<'a> {
     pub dispatch: DispatchDecision,
     pub component_count: usize,
     pub output_layout: OutputLayoutMetadata,
+    /// Operator-specific env parameters (e.g. f12_zeta for F12/STG/YP).
+    /// Populated by the caller; default is all None.
+    pub operator_env_params: OperatorEnvParams,
 }
 
 impl<'a> ExecutionPlan<'a> {
@@ -67,6 +81,9 @@ impl<'a> ExecutionPlan<'a> {
             dispatch,
             component_count,
             output_layout,
+            // Note: f12_zeta is populated by the caller (raw compat reads env[9],
+            // safe API passes it via ExecutionOptions). Default is None.
+            operator_env_params: OperatorEnvParams::default(),
         })
     }
 }
