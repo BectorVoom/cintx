@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: "Milestone: CubeCL Direct Client API & Real Kernel Compute"
-status: Phase complete — ready for verification
-stopped_at: Completed 13-f12-stg-yp-kernels-03-PLAN.md
-last_updated: "2026-04-05T03:53:36.734Z"
+status: Ready to execute
+stopped_at: Completed 13-f12-stg-yp-kernels-13-04-PLAN.md
+last_updated: "2026-04-05T04:57:33.191Z"
 progress:
   total_phases: 10
   completed_phases: 10
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 13 (f12-stg-yp-kernels) — EXECUTING
-Plan: 3 of 3
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -95,6 +95,7 @@ Plan: 3 of 3
 | Phase 13-f12-stg-yp-kernels P01 | 15 | 2 tasks | 12 files |
 | Phase 13-f12-stg-yp-kernels P02 | 90 | 2 tasks | 6 files |
 | Phase 13-f12-stg-yp-kernels P03 | 45 | 2 tasks | 9 files |
+| Phase 13-f12-stg-yp-kernels P04 | 90 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 13-f12-stg-yp-kernels]: launch_f12 passes 'f12' explicitly to validate_f12_env_params; operator_name strips 'stg'/'yp' prefix for variant suffix
 - [Phase 13-f12-stg-yp-kernels]: F12 canonical_family changed from '2e' to 'f12' in manifest so kernel dispatch routes to f12::launch_f12 via resolve_family_name in kernels/mod.rs
 - [Phase 13-f12-stg-yp-kernels]: F12 base variant oracle parity at atol=1e-12 confirmed vs libcint 6.1.3; derivative variants use idempotency tests due to unimplemented multi-component sph transform
+- [Phase 13-f12-stg-yp-kernels]: nabla1i_2e uses ceil angular momenta for G tensor headroom; base used for gout loops and sph transforms
+- [Phase 13-f12-stg-yp-kernels]: gout_ipip1 applies column-major transposition matching libcint autocode; ipvip1/ip1ip2 do not
+- [Phase 13-f12-stg-yp-kernels]: grad2.c and hess.c required in oracle build.rs — cint2e_f12.c only declares extern forward references
 
 ### Roadmap Evolution
 
@@ -234,6 +238,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-05T03:53:36.731Z
-Stopped at: Completed 13-f12-stg-yp-kernels-03-PLAN.md
+Last session: 2026-04-05T04:57:33.184Z
+Stopped at: Completed 13-f12-stg-yp-kernels-13-04-PLAN.md
 Resume file: None
