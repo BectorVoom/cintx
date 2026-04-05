@@ -106,7 +106,7 @@ Plans:
 | Phase 10: 2e, 2c2e, 3c1e, 3c2e Real Kernels and Oracle Gate Closure | 6/6 | Complete | 2026-04-05 |
 | Phase 11: Helper/Transform Completion & 4c1e Real Kernel | 4/4 | Complete | 2026-04-05 |
 | Phase 12: Real Spinor Transform (c2spinor Replacement) | 5/5 | Complete | 2026-04-05 |
-| Phase 13: F12/STG/YP Kernels | 0/TBD | Not started | - |
+| Phase 13: F12/STG/YP Kernels | 0/3 | Not started | - |
 | Phase 14: Unstable-Source-API Families | 0/TBD | Not started | - |
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | 0/TBD | Not started | - |
 
@@ -260,7 +260,12 @@ Plans:
   2. `ExecutionPlan` carries `operator_env_params` with `PTR_F12_ZETA` (env[9]); the validator rejects F12/STG/YP calls where `env[9] == 0.0` with a typed `InvalidEnvParam` error rather than silently falling back to plain Coulomb (F12-04, F12-05).
   3. All 10 with-f12 sph symbols pass oracle parity against libcint 6.1.3 at the family-appropriate tolerance; the oracle harness confirms that cart and spinor symbol counts for the with-f12 profile are zero (F12-03).
   4. Oracle fixtures validate that a call with `zeta=0` is either rejected by the validator or produces an explicit Coulomb-equivalent result with a documented contract — not a silent wrong result (F12-05).
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 13-01-PLAN.md — Port CINTstg_roots math, add InvalidEnvParam error, update manifest canonical_family, extend ExecutionPlan, wire f12 dispatch.
+- [ ] 13-02-PLAN.md — Implement 10 F12 kernel entry points (5 STG + 5 YP) with distinct weight post-processing and raw compat zeta plumbing.
+- [ ] 13-03-PLAN.md — Add vendor FFI, oracle parity tests for all 10 symbols at atol=1e-12, zeta=0 rejection test, mark oracle_covered.
 
 ### Phase 14: Unstable-Source-API Families
 **Goal**: All unstable-source families — origi, grids, Breit, origk, and ssc — are fully implemented behind the unstable-source-api gate with oracle parity at atol=1e-12 in nightly CI.
@@ -273,7 +278,12 @@ Plans:
   4. `int3c1e_r*_origk` variants (origk family, 6 symbols) are implemented behind the unstable-source-api gate and pass oracle parity at atol=1e-12 (USRC-04).
   5. ssc family (`int3c2e_ssc`) is fully implemented behind the unstable-source-api gate and passes oracle parity at atol=1e-12 (USRC-05).
   6. Nightly CI runs the oracle with `--include-unstable-source=true` and reports 0 mismatches for all unstable-source symbols (USRC-06).
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 13-01-PLAN.md — Port CINTstg_roots math, add InvalidEnvParam error, update manifest canonical_family, extend ExecutionPlan, wire f12 dispatch.
+- [ ] 13-02-PLAN.md — Implement 10 F12 kernel entry points (5 STG + 5 YP) with distinct weight post-processing and raw compat zeta plumbing.
+- [ ] 13-03-PLAN.md — Add vendor FFI, oracle parity tests for all 10 symbols at atol=1e-12, zeta=0 rejection test, mark oracle_covered.
 
 ### Phase 15: Oracle Tolerance Unification & Manifest Lock Closure
 **Goal**: Every family passes oracle at the unified atol=1e-12 threshold; the four-profile manifest lock is regenerated after oracle parity is confirmed; and every `stability: Stable` manifest entry has `oracle_covered: true` with a passing CI record.
@@ -284,4 +294,9 @@ Plans:
   2. All families — 1e, 2e, 2c2e, 3c1e, 3c2e, 4c1e, F12/STG/YP, and all unstable-source families — pass oracle at atol=1e-12. No existing base family regresses from the tolerance tightening (ORAC-04).
   3. `compiled_manifest.lock.json` is regenerated for all four profiles (base, with-f12, with-4c1e, with-f12+with-4c1e) after oracle parity is confirmed — not before; `manifest-audit` CI gate passes with zero diff (ORAC-02).
   4. CI oracle-parity gate passes all four profiles at atol=1e-12 under `--features cpu` with `mismatch_count == 0`; every `stability: Stable` manifest entry has `oracle_covered: true` (ORAC-03).
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 13-01-PLAN.md — Port CINTstg_roots math, add InvalidEnvParam error, update manifest canonical_family, extend ExecutionPlan, wire f12 dispatch.
+- [ ] 13-02-PLAN.md — Implement 10 F12 kernel entry points (5 STG + 5 YP) with distinct weight post-processing and raw compat zeta plumbing.
+- [ ] 13-03-PLAN.md — Add vendor FFI, oracle parity tests for all 10 symbols at atol=1e-12, zeta=0 rejection test, mark oracle_covered.
