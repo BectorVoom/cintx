@@ -55,6 +55,10 @@ fn main() {
         "src/cint2e_f12.c",
         "src/g2e_f12.c",
         "src/stg_roots.c",
+        // Derivative gout implementations required by cint2e_f12.c.
+        // CINTgout2e_int2e_ip1 is in grad2.c; ipip1/ipvip1/ip1ip2 are in hess.c.
+        "src/autocode/grad2.c",
+        "src/autocode/hess.c",
     ] {
         println!("cargo:rerun-if-changed={}", libcint_root.join(src).display());
     }
@@ -179,6 +183,11 @@ fn main() {
         .file(libcint_root.join("src/cint2e_f12.c"))
         .file(libcint_root.join("src/g2e_f12.c"))
         .file(libcint_root.join("src/stg_roots.c"))
+        // Derivative gout implementations: CINTgout2e_int2e_ip1 (grad2.c),
+        // CINTgout2e_int2e_ipip1/ipvip1/ip1ip2 (hess.c). These are declared
+        // extern in cint2e_f12.c but defined in the autocode files.
+        .file(libcint_root.join("src/autocode/grad2.c"))
+        .file(libcint_root.join("src/autocode/hess.c"))
         .compile("cintx_oracle_vendor");
 
     println!("cargo:rustc-link-lib=static=cintx_oracle_vendor");

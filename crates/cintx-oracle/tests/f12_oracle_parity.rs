@@ -1,26 +1,21 @@
-//! Oracle parity gate for F12/STG/YP kernels — Phase 13.
+//! Oracle parity gate for F12/STG/YP kernels — Phase 13 Plan 04.
 //!
-//! Proves the 2 base with-f12 sph symbols (int2e_stg_sph, int2e_yp_sph) produce
-//! libcint-compatible values on H2O STO-3G data with PTR_F12_ZETA = 1.2.
-//!
-//! The 8 derivative variants (ip1, ipip1, ipvip1, ip1ip2) have a known implementation
-//! limitation: the kernel outputs Cartesian data for derivative operators, and the manifest
-//! component_rank is set to "" (scalar/1) rather than the correct "3" or "9". These
-//! variants are tested for idempotency and non-zero output only.
+//! All 10 with-f12 sph symbols now have full oracle parity tests against
+//! vendored libcint 6.1.3 at atol=1e-12. This closes F12-03.
 //!
 //! Gate summary:
 //!   Symbol                   | Test mode      | Tolerance
 //!   -------------------------|----------------|----------
 //!   int2e_stg_sph            | Oracle parity  | atol 1e-12
 //!   int2e_yp_sph             | Oracle parity  | atol 1e-12
-//!   int2e_stg_ip1_sph        | Idempotency    | exact
-//!   int2e_stg_ipip1_sph      | Idempotency    | exact
-//!   int2e_stg_ipvip1_sph     | Idempotency    | exact
-//!   int2e_stg_ip1ip2_sph     | Idempotency    | exact
-//!   int2e_yp_ip1_sph         | Idempotency    | exact
-//!   int2e_yp_ipip1_sph       | Idempotency    | exact
-//!   int2e_yp_ipvip1_sph      | Idempotency    | exact
-//!   int2e_yp_ip1ip2_sph      | Idempotency    | exact
+//!   int2e_stg_ip1_sph        | Oracle parity  | atol 1e-12
+//!   int2e_stg_ipip1_sph      | Oracle parity  | atol 1e-12
+//!   int2e_stg_ipvip1_sph     | Oracle parity  | atol 1e-12
+//!   int2e_stg_ip1ip2_sph     | Oracle parity  | atol 1e-12
+//!   int2e_yp_ip1_sph         | Oracle parity  | atol 1e-12
+//!   int2e_yp_ipip1_sph       | Oracle parity  | atol 1e-12
+//!   int2e_yp_ipvip1_sph      | Oracle parity  | atol 1e-12
+//!   int2e_yp_ip1ip2_sph      | Oracle parity  | atol 1e-12
 //!
 //! Additional tests:
 //!   - zeta=0 produces InvalidEnvParam for all 10 symbols
@@ -32,9 +27,9 @@
 #![cfg(feature = "cpu")]
 #![cfg(feature = "with-f12")]
 
-use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, BAS_SLOTS, PTR_F12_ZETA, RawApiId, eval_raw,
-};
+use cintx_compat::raw::{ANG_OF, BAS_SLOTS, RawApiId, eval_raw};
+#[cfg(has_vendor_libcint)]
+use cintx_compat::raw::ATM_SLOTS;
 use cintx_oracle::fixtures::{build_h2o_sto3g_f12};
 
 /// Absolute tolerance for F12 base operator oracle parity (per D-10, F12-03).
@@ -49,6 +44,11 @@ const SHLS_4_SS: [i32; 4] = [0, 1, 0, 1];
 /// Tests three-center separation (different atom positions).
 const SHLS_4_HH: [i32; 4] = [3, 4, 3, 4];
 
+/// Shell quartet [0, 2, 0, 2]: O-1s / O-2p / O-1s / O-2p — mixed s/p angular momentum.
+/// Tests derivative operators on non-trivial angular momentum (O-2p has l=1).
+#[cfg(has_vendor_libcint)]
+const SHLS_4_SP: [i32; 4] = [0, 2, 0, 2];
+
 fn nsph_for_l(l: i32) -> usize {
     (2 * l + 1) as usize
 }
@@ -62,7 +62,7 @@ fn n_sph_elements(shls: &[i32; 4], bas: &[i32]) -> usize {
 
 /// Evaluate a 4-center integral via cintx eval_raw and return the output buffer.
 ///
-/// Panics if eval_raw returns an error.
+/// Uses ncomp=1 (single-component). Panics if eval_raw returns an error.
 fn eval_f12_sph(
     symbol: &'static str,
     shls: &[i32; 4],
@@ -70,7 +70,22 @@ fn eval_f12_sph(
     bas: &[i32],
     env: &[f64],
 ) -> Vec<f64> {
-    let n = n_sph_elements(shls, bas);
+    eval_f12_sph_ncomp(symbol, shls, atm, bas, env, 1)
+}
+
+/// Evaluate a 4-center integral via cintx eval_raw with multi-component output.
+///
+/// The output buffer is sized `ncomp * n_sph_elements(shls, bas)`.
+/// Panics if eval_raw returns an error.
+fn eval_f12_sph_ncomp(
+    symbol: &'static str,
+    shls: &[i32; 4],
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+    ncomp: usize,
+) -> Vec<f64> {
+    let n = ncomp * n_sph_elements(shls, bas);
     let mut out = vec![0.0_f64; n];
     unsafe {
         eval_raw(
@@ -185,35 +200,188 @@ fn f12_yp_base_nonzero() {
     assert!(nonzero > 0, "int2e_yp_sph output is all zeros — kernel not computing");
 }
 
-// ──────────────────────��──────────────────────────────────────────────────────
-// Idempotency tests for derivative variants
-// Two successive calls must return identical values.
-// ───────────────────────────────────────────────────────────────────────���─────
+// ─────────────────────────────────────────────────────────────────────────────
+// Oracle parity tests for derivative F12 variants (ip1: ncomp=3, rest: ncomp=9)
+//
+// These replace the previous idempotency-only tests and provide real comparison
+// against vendored libcint 6.1.3. F12-03 is fully satisfied by these tests.
+// ─────────────────────────────────────────────────────────────────────────────
 
-macro_rules! idempotency_test {
-    ($name:ident, $symbol:expr) => {
-        #[test]
-        fn $name() {
-            let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
-            // Two identical eval_raw calls must produce identical results.
-            let out1 = eval_f12_sph($symbol, &SHLS_4_SS, &atm, &bas, &env);
-            let out2 = eval_f12_sph($symbol, &SHLS_4_SS, &atm, &bas, &env);
-            assert_eq!(out1, out2, "{} idempotency FAIL: calls diverge", $symbol);
-            // Output must not be empty.
-            assert!(!out1.is_empty(), "{} produced empty output", $symbol);
-            println!("  PASS: {} idempotency, len={}", $symbol, out1.len());
-        }
-    };
+/// Oracle parity gate for int2e_stg_ip1_sph — STG gradient on electron 1.
+///
+/// ip1 variant: ncomp=3 (d/dx, d/dy, d/dz of STG on center 1).
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_parity_int2e_stg_ip1_sph() {
+    use cintx_oracle::vendor_ffi;
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ncomp = 3;
+    for shls in [SHLS_4_SS, SHLS_4_HH, SHLS_4_SP] {
+        let n = ncomp * n_sph_elements(&shls, &bas);
+        let cintx_out = eval_f12_sph_ncomp("int2e_stg_ip1_sph", &shls, &atm, &bas, &env, ncomp);
+        let mut vendor_out = vec![0.0_f64; n];
+        vendor_ffi::vendor_int2e_stg_ip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
+        assert_eq!(mc, 0, "int2e_stg_ip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        println!("  PASS: int2e_stg_ip1_sph shls {shls:?}: n={n}");
+    }
 }
 
-idempotency_test!(f12_stg_ip1_idempotent, "int2e_stg_ip1_sph");
-idempotency_test!(f12_stg_ipip1_idempotent, "int2e_stg_ipip1_sph");
-idempotency_test!(f12_stg_ipvip1_idempotent, "int2e_stg_ipvip1_sph");
-idempotency_test!(f12_stg_ip1ip2_idempotent, "int2e_stg_ip1ip2_sph");
-idempotency_test!(f12_yp_ip1_idempotent, "int2e_yp_ip1_sph");
-idempotency_test!(f12_yp_ipip1_idempotent, "int2e_yp_ipip1_sph");
-idempotency_test!(f12_yp_ipvip1_idempotent, "int2e_yp_ipvip1_sph");
-idempotency_test!(f12_yp_ip1ip2_idempotent, "int2e_yp_ip1ip2_sph");
+/// Oracle parity gate for int2e_stg_ipip1_sph — STG second gradient (i,i) on electron 1.
+///
+/// ipip1 variant: ncomp=9.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_parity_int2e_stg_ipip1_sph() {
+    use cintx_oracle::vendor_ffi;
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ncomp = 9;
+    for shls in [SHLS_4_SS, SHLS_4_HH, SHLS_4_SP] {
+        let n = ncomp * n_sph_elements(&shls, &bas);
+        let cintx_out = eval_f12_sph_ncomp("int2e_stg_ipip1_sph", &shls, &atm, &bas, &env, ncomp);
+        let mut vendor_out = vec![0.0_f64; n];
+        vendor_ffi::vendor_int2e_stg_ipip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
+        assert_eq!(mc, 0, "int2e_stg_ipip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        println!("  PASS: int2e_stg_ipip1_sph shls {shls:?}: n={n}");
+    }
+}
+
+/// Oracle parity gate for int2e_stg_ipvip1_sph — STG cross gradient (i,j) on electron 1.
+///
+/// ipvip1 variant: ncomp=9.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_parity_int2e_stg_ipvip1_sph() {
+    use cintx_oracle::vendor_ffi;
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ncomp = 9;
+    for shls in [SHLS_4_SS, SHLS_4_HH, SHLS_4_SP] {
+        let n = ncomp * n_sph_elements(&shls, &bas);
+        let cintx_out = eval_f12_sph_ncomp("int2e_stg_ipvip1_sph", &shls, &atm, &bas, &env, ncomp);
+        let mut vendor_out = vec![0.0_f64; n];
+        vendor_ffi::vendor_int2e_stg_ipvip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
+        assert_eq!(mc, 0, "int2e_stg_ipvip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        println!("  PASS: int2e_stg_ipvip1_sph shls {shls:?}: n={n}");
+    }
+}
+
+/// Oracle parity gate for int2e_stg_ip1ip2_sph — STG gradient on e1 and e2.
+///
+/// ip1ip2 variant: ncomp=9.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_parity_int2e_stg_ip1ip2_sph() {
+    use cintx_oracle::vendor_ffi;
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ncomp = 9;
+    for shls in [SHLS_4_SS, SHLS_4_HH, SHLS_4_SP] {
+        let n = ncomp * n_sph_elements(&shls, &bas);
+        let cintx_out = eval_f12_sph_ncomp("int2e_stg_ip1ip2_sph", &shls, &atm, &bas, &env, ncomp);
+        let mut vendor_out = vec![0.0_f64; n];
+        vendor_ffi::vendor_int2e_stg_ip1ip2_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
+        assert_eq!(mc, 0, "int2e_stg_ip1ip2_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        println!("  PASS: int2e_stg_ip1ip2_sph shls {shls:?}: n={n}");
+    }
+}
+
+/// Oracle parity gate for int2e_yp_ip1_sph — YP gradient on electron 1.
+///
+/// ip1 variant: ncomp=3.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_parity_int2e_yp_ip1_sph() {
+    use cintx_oracle::vendor_ffi;
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ncomp = 3;
+    for shls in [SHLS_4_SS, SHLS_4_HH, SHLS_4_SP] {
+        let n = ncomp * n_sph_elements(&shls, &bas);
+        let cintx_out = eval_f12_sph_ncomp("int2e_yp_ip1_sph", &shls, &atm, &bas, &env, ncomp);
+        let mut vendor_out = vec![0.0_f64; n];
+        vendor_ffi::vendor_int2e_yp_ip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
+        assert_eq!(mc, 0, "int2e_yp_ip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        println!("  PASS: int2e_yp_ip1_sph shls {shls:?}: n={n}");
+    }
+}
+
+/// Oracle parity gate for int2e_yp_ipip1_sph — YP second gradient (i,i) on electron 1.
+///
+/// ipip1 variant: ncomp=9.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_parity_int2e_yp_ipip1_sph() {
+    use cintx_oracle::vendor_ffi;
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ncomp = 9;
+    for shls in [SHLS_4_SS, SHLS_4_HH, SHLS_4_SP] {
+        let n = ncomp * n_sph_elements(&shls, &bas);
+        let cintx_out = eval_f12_sph_ncomp("int2e_yp_ipip1_sph", &shls, &atm, &bas, &env, ncomp);
+        let mut vendor_out = vec![0.0_f64; n];
+        vendor_ffi::vendor_int2e_yp_ipip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
+        assert_eq!(mc, 0, "int2e_yp_ipip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        println!("  PASS: int2e_yp_ipip1_sph shls {shls:?}: n={n}");
+    }
+}
+
+/// Oracle parity gate for int2e_yp_ipvip1_sph — YP cross gradient (i,j) on electron 1.
+///
+/// ipvip1 variant: ncomp=9.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_parity_int2e_yp_ipvip1_sph() {
+    use cintx_oracle::vendor_ffi;
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ncomp = 9;
+    for shls in [SHLS_4_SS, SHLS_4_HH, SHLS_4_SP] {
+        let n = ncomp * n_sph_elements(&shls, &bas);
+        let cintx_out = eval_f12_sph_ncomp("int2e_yp_ipvip1_sph", &shls, &atm, &bas, &env, ncomp);
+        let mut vendor_out = vec![0.0_f64; n];
+        vendor_ffi::vendor_int2e_yp_ipvip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
+        assert_eq!(mc, 0, "int2e_yp_ipvip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        println!("  PASS: int2e_yp_ipvip1_sph shls {shls:?}: n={n}");
+    }
+}
+
+/// Oracle parity gate for int2e_yp_ip1ip2_sph — YP gradient on e1 and e2.
+///
+/// ip1ip2 variant: ncomp=9.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_parity_int2e_yp_ip1ip2_sph() {
+    use cintx_oracle::vendor_ffi;
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ncomp = 9;
+    for shls in [SHLS_4_SS, SHLS_4_HH, SHLS_4_SP] {
+        let n = ncomp * n_sph_elements(&shls, &bas);
+        let cintx_out = eval_f12_sph_ncomp("int2e_yp_ip1ip2_sph", &shls, &atm, &bas, &env, ncomp);
+        let mut vendor_out = vec![0.0_f64; n];
+        vendor_ffi::vendor_int2e_yp_ip1ip2_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
+        assert_eq!(mc, 0, "int2e_yp_ip1ip2_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        println!("  PASS: int2e_yp_ip1ip2_sph shls {shls:?}: n={n}");
+    }
+}
 
 // ───────────────────────���─────────────────────────���───────────────────────────
 // zeta=0 rejection test (D-01, F12-05): all 10 symbols must return InvalidEnvParam
@@ -241,8 +409,10 @@ fn f12_zeta_zero_rejected_all_10() {
     let (atm, bas, env_zero) = build_h2o_sto3g_f12(0.0); // zeta=0
 
     for symbol in f12_symbols {
+        // Allocate 9x the 1-component size to accommodate any derivative variant (max ncomp=9).
+        // This ensures BufferTooSmall does not mask the InvalidEnvParam zeta gate.
         let n = n_sph_elements(&SHLS_4_SS, &bas);
-        let mut out = vec![0.0_f64; n.max(1)];
+        let mut out = vec![0.0_f64; (9 * n).max(1)];
         let result = unsafe {
             eval_raw(
                 RawApiId::Symbol(symbol),
@@ -272,8 +442,6 @@ fn f12_zeta_zero_rejected_all_10() {
 /// Backward-compat: the original single-symbol zeta rejection test from the plan.
 #[test]
 fn f12_zeta_zero_rejected() {
-    use cintx_core::cintxRsError;
-
     let (atm, bas, env) = build_h2o_sto3g_f12(0.0);
     let shls = SHLS_4_SS;
     let n = n_sph_elements(&shls, &bas);
