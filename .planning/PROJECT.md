@@ -23,7 +23,7 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 ### Active
 
 - [ ] Cover the full libcint API surface — with-f12, with-4c1e (beyond validated envelope), and unstable-source families — with unified atol=1e-12 oracle tolerance and objective CI evidence.
-- [ ] Implement with-f12 (F12/STG/YP) family kernels including cart and spinor representations with oracle parity.
+- [x] Implement with-f12 (F12/STG/YP) family kernels — all 10 sph symbols at oracle parity (atol=1e-12). Cart and spinor remain unsupported (sph-only enforcement). Validated in Phase 13.
 - [ ] Implement with-4c1e family kernels beyond the initial validated envelope with oracle parity.
 - [ ] Implement unstable-source family APIs behind feature gate with oracle parity.
 - [ ] Unify oracle tolerance to atol=1e-12 for every family and extend oracle harness, fixtures, and CI gates for full API coverage.
@@ -93,4 +93,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after Phase 6 complete — raw eval staging retrieval and capability fingerprint propagation fixed*
+*Last updated: 2026-04-05 after Phase 13 complete — F12/STG/YP kernels with oracle parity for all 10 sph symbols*
