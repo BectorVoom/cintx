@@ -115,7 +115,7 @@ impl<'basis> SessionQuery<'basis> {
         )
         .map_err(FacadeError::from)?;
 
-        let plan = ExecutionPlan::new(
+        let mut plan = ExecutionPlan::new(
             self.request.operator,
             self.request.representation,
             self.request.basis,
@@ -123,6 +123,11 @@ impl<'basis> SessionQuery<'basis> {
             &self.runtime_workspace,
         )
         .map_err(FacadeError::from)?;
+
+        // Propagate f12_zeta from ExecutionOptions to operator_env_params (safe API path).
+        if let Some(zeta) = self.request.options().f12_zeta {
+            plan.operator_env_params.f12_zeta = Some(zeta);
+        }
 
         enforce_safe_facade_policy_gate(
             plan.descriptor,

@@ -93,6 +93,9 @@ impl From<cintxRsError> for FacadeError {
             cintxRsError::ChunkPlanFailed { from, detail } => Self::Validation {
                 detail: format!("ChunkPlanFailed from={from} detail={detail}"),
             },
+            cintxRsError::InvalidEnvParam { param, reason } => Self::Validation {
+                detail: format!("InvalidEnvParam param={param} reason={reason}"),
+            },
         }
     }
 }

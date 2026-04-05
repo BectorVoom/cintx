@@ -84,6 +84,15 @@ impl<'basis> SessionBuilder<'basis> {
         self
     }
 
+    /// Set the F12/STG/YP zeta parameter.
+    ///
+    /// When set, `operator_env_params.f12_zeta` is populated on the `ExecutionPlan`
+    /// for F12-family operators. Must be non-zero for F12 calls.
+    pub fn f12_zeta(mut self, zeta: f64) -> Self {
+        self.options.f12_zeta = Some(zeta);
+        self
+    }
+
     pub fn build(self) -> SessionRequest<'basis> {
         SessionRequest::new(
             self.operator,
@@ -182,5 +191,22 @@ mod tests {
         assert_eq!(rebuilt.representation(), original.representation());
         assert_eq!(rebuilt.shells().len(), original.shells().len());
         assert!(std::ptr::eq(rebuilt.basis(), original.basis()));
+    }
+
+    /// Verify that the f12_zeta builder method propagates the zeta value into
+    /// ExecutionOptions so the safe API can pass it through to operator_env_params.
+    #[test]
+    fn builder_f12_zeta_propagates_into_options() {
+        let (basis, shells) = sample_basis(Representation::Spheric);
+
+        let request = SessionBuilder::new(OperatorId::new(3), Representation::Spheric, &basis, shells)
+            .f12_zeta(1.5)
+            .build();
+
+        assert_eq!(
+            request.options().f12_zeta,
+            Some(1.5),
+            "f12_zeta must be carried in ExecutionOptions after builder call"
+        );
     }
 }

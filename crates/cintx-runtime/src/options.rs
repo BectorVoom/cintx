@@ -80,6 +80,10 @@ pub struct ExecutionOptions {
     pub backend_intent: BackendIntent,
     /// Capability token snapshotted at query time; compared at evaluate time.
     pub backend_capability_token: BackendCapabilityToken,
+    /// F12/STG/YP zeta parameter. When set, populates `operator_env_params.f12_zeta`
+    /// on the `ExecutionPlan` for F12-family operators.
+    /// Must be non-zero for F12 calls (validated by `validate_f12_env_params` before kernel launch).
+    pub f12_zeta: Option<f64>,
 }
 
 impl ExecutionOptions {

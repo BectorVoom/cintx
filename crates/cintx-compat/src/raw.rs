@@ -40,6 +40,13 @@ pub const BAS_SLOTS: usize = 8;
 /// incorrect results for 2e+ integrals that read PTR_RANGE_OMEGA or PTR_EXPCUTOFF.
 pub const PTR_ENV_START: usize = 20;
 
+/// Index of the F12/STG/YP zeta parameter in the libcint env array.
+///
+/// libcint defines `PTR_F12_ZETA = 9` in `cint_bas.h`. Raw callers set `env[9] = zeta`
+/// before calling any F12/STG/YP integral. This constant allows raw compat code to
+/// extract the zeta value from the env array without hardcoding the magic index.
+pub const PTR_F12_ZETA: usize = 9;
+
 pub const POINT_NUC: i32 = 1;
 pub const GAUSSIAN_NUC: i32 = 2;
 pub const FRAC_CHARGE_NUC: i32 = 3;
@@ -420,13 +427,27 @@ pub unsafe fn eval_raw(
         ensure_cache_len(prepared.query.bytes, cache.len())?;
     }
 
-    let plan = ExecutionPlan::new(
+    let mut plan = ExecutionPlan::new(
         prepared.op,
         prepared.representation,
         &prepared.basis,
         prepared.shells.clone(),
         &prepared.query,
     )?;
+
+    // Extract f12_zeta from env[PTR_F12_ZETA] for F12/STG/YP integrals (raw compat path).
+    // Raw callers are expected to set env[9] = zeta before calling any F12 integral.
+    // The manifest canonical_family for STG/YP operators is "2e"; operator_name is "stg"/"yp".
+    // We detect F12 symbols by their full symbol name prefix (int2e_stg / int2e_yp).
+    if is_f12_family_symbol(plan.descriptor.operator_symbol()) {
+        let zeta = env.get(PTR_F12_ZETA).copied().unwrap_or(0.0);
+        plan.operator_env_params.f12_zeta = Some(zeta);
+        // Validate before dispatch so we return a typed error on bad input.
+        cintx_runtime::validator::validate_f12_env_params(
+            "f12",
+            &plan.operator_env_params,
+        )?;
+    }
 
     let executor = CubeClExecutor::new();
     let mut allocator = HostWorkspaceAllocator::default();
@@ -1608,6 +1629,68 @@ mod tests {
             summary.bytes_written > 0,
             "bytes_written must be > 0 (staging path was exercised): bytes_written={}",
             summary.bytes_written
+        );
+    }
+
+    /// Verify that eval_raw returns InvalidEnvParam when env[PTR_F12_ZETA] is 0.0
+    /// for an F12 symbol. This tests that the raw compat path calls validate_f12_env_params.
+    #[cfg(feature = "with-f12")]
+    #[test]
+    fn eval_raw_f12_symbol_with_zero_zeta_returns_invalid_env_param() {
+        let (shls_4, atm, bas, _env) = RawFixture::single_atom_four_shells();
+        // Construct env with env[PTR_F12_ZETA=9] = 0.0 (invalid zeta).
+        // The error fires before execution, so we only need valid enough env for
+        // descriptor lookup and plan construction. Use the four-shell env layout
+        // with zeta forced to 0 at index 9.
+        let mut env_full = vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.9, 0.8, 0.7, 0.6, 0.0, 0.4];
+        env_full[PTR_F12_ZETA] = 0.0;
+        let mut out = vec![0.0f64; 16]; // 2x2x2x2 output upper bound
+        let err = unsafe {
+            eval_raw(
+                RawApiId::Symbol("int2e_stg_sph"),
+                Some(&mut out),
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env_full,
+                None,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "PTR_F12_ZETA"),
+            "expected InvalidEnvParam(PTR_F12_ZETA) for zero zeta, got: {err:?}"
+        );
+    }
+
+    /// Verify that eval_raw passes env param validation (no InvalidEnvParam) when
+    /// env[PTR_F12_ZETA] is non-zero for an F12 symbol. The call may fail later at
+    /// UnsupportedApi or executor level (no GPU in test), but the zeta gate must pass.
+    #[cfg(feature = "with-f12")]
+    #[test]
+    fn eval_raw_f12_symbol_with_valid_zeta_passes_env_param_validation() {
+        let (shls_4, atm, bas, mut env_full) = RawFixture::single_atom_four_shells();
+        env_full[PTR_F12_ZETA] = 1.2; // valid non-zero zeta
+        let mut out = vec![0.0f64; 16];
+        let result = unsafe {
+            eval_raw(
+                RawApiId::Symbol("int2e_stg_sph"),
+                Some(&mut out),
+                None,
+                &shls_4,
+                &atm,
+                &bas,
+                &env_full,
+                None,
+                None,
+            )
+        };
+        // Must not be InvalidEnvParam — that would mean our validation is wrong.
+        assert!(
+            !matches!(result, Err(cintxRsError::InvalidEnvParam { .. })),
+            "eval_raw should not return InvalidEnvParam when zeta=1.2: {result:?}"
         );
     }
 }

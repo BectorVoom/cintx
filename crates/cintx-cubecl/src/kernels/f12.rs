@@ -915,39 +915,29 @@ pub fn launch_f12(
     specialization: &SpecializationKey,
     staging: &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError> {
-    // Validate and extract f12_zeta
-    validate_f12_env_params(
-        plan.descriptor.entry.canonical_family,
-        &plan.operator_env_params,
-    )?;
+    // Validate and extract f12_zeta.
+    // canonical_family for STG/YP operators in the manifest is "2e", not "f12"; we pass
+    // "f12" explicitly so validate_f12_env_params performs the zeta gate unconditionally.
+    validate_f12_env_params("f12", &plan.operator_env_params)?;
 
     let zeta = plan
         .operator_env_params
         .f12_zeta
         .expect("validate_f12_env_params guarantees Some non-zero zeta");
 
+    // operator_name() returns "stg", "stg_ip1", "yp", "yp_ip1", etc. (no "int2e_" prefix).
     let operator_name = plan.descriptor.operator_name();
 
-    // Determine prefix (stg vs yp) and variant suffix
-    let is_stg = if operator_name.starts_with("int2e_stg") {
-        true
-    } else if operator_name.starts_with("int2e_yp") {
-        false
+    // Determine STG vs YP and variant suffix from operator_name.
+    let (is_stg, variant_suffix) = if let Some(suffix) = operator_name.strip_prefix("stg") {
+        (true, suffix)
+    } else if let Some(suffix) = operator_name.strip_prefix("yp") {
+        (false, suffix)
     } else {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("f12 launch: unrecognized operator_name: {operator_name}"),
         });
     };
-
-    // Extract variant suffix: strip the base part ("int2e_stg" or "int2e_yp") and then "_sph"
-    let base_prefix = if is_stg { "int2e_stg" } else { "int2e_yp" };
-    let after_prefix = operator_name.strip_prefix(base_prefix).unwrap_or("");
-    // Remove trailing representation suffix (_sph, _cart, _spinor) if present
-    let variant_suffix = after_prefix
-        .strip_suffix("_sph")
-        .or_else(|| after_prefix.strip_suffix("_cart"))
-        .or_else(|| after_prefix.strip_suffix("_spinor"))
-        .unwrap_or(after_prefix);
 
     if is_stg {
         match variant_suffix {
