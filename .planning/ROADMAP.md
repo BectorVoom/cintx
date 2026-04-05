@@ -34,7 +34,7 @@
 | Phase 11: Helper/Transform Completion & 4c1e Real Kernel | v1.2 | 4/4 | Complete | 2026-04-05 |
 | Phase 12: Real Spinor Transform (c2spinor Replacement) | v1.2 | 5/5 | Complete | 2026-04-05 |
 | Phase 13: F12/STG/YP Kernels | v1.2 | 4/4 | Complete | 2026-04-05 |
-| Phase 14: Unstable-Source-API Families | v1.2 | 0/TBD | Not started | - |
+| Phase 14: Unstable-Source-API Families | v1.2 | 0/5 | Planned | - |
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | v1.2 | 0/TBD | Not started | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
@@ -87,7 +87,14 @@ Plans:
   4. `int3c1e_r*_origk` variants (origk family, 6 symbols) are implemented behind the unstable-source-api gate and pass oracle parity at atol=1e-12 (USRC-04).
   5. ssc family (`int3c2e_ssc`) is fully implemented behind the unstable-source-api gate and passes oracle parity at atol=1e-12 (USRC-05).
   6. Nightly CI runs the oracle with `--include-unstable-source=true` and reports 0 mismatches for all unstable-source symbols (USRC-06).
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 14-01-PLAN.md — Infrastructure: feature gates, manifest entries, GridsEnvParams, oracle build/FFI/scaffold, kernel dispatch stubs.
+- [ ] 14-02-PLAN.md — Implement origi, origk, and ssc kernels with oracle parity tests (11 symbols).
+- [ ] 14-03-PLAN.md — Implement grids kernel with NGRIDS handling and oracle parity tests (5 symbols).
+- [ ] 14-04-PLAN.md — Implement Breit composite kernel (Gaunt+gauge) with spinor oracle parity tests (2 symbols).
+- [ ] 14-05-PLAN.md — CI nightly job, xtask profile validation fix, manifest lock regeneration.
 
 ### Phase 15: Oracle Tolerance Unification & Manifest Lock Closure
 **Goal**: Every family passes oracle at the unified atol=1e-12 threshold; the four-profile manifest lock is regenerated after oracle parity is confirmed; and every `stability: Stable` manifest entry has `oracle_covered: true` with a passing CI record.
