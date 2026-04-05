@@ -3116,6 +3116,7 @@ fn fill_g_tensor_3c1e_origk(
     }
 
     g
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SSC family: spin-spin contact 3c2e integral
