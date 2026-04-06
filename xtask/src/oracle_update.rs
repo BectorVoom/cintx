@@ -1,11 +1,10 @@
 use anyhow::{bail, Context, Result};
 use cintx_oracle::compare::{generate_profile_parity_report, verify_helper_surface_coverage};
 use cintx_oracle::fixtures::{
-    MATRIX_ARTIFACT_FALLBACK_NAME, OracleRawInputs, PHASE4_APPROVED_PROFILES,
+    MATRIX_ARTIFACT_FALLBACK_NAME, OracleRawInputs,
     REPORT_ARTIFACT_FALLBACK_NAME, REQUIRED_MATRIX_ARTIFACT, REQUIRED_REPORT_ARTIFACT,
 };
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -209,25 +208,12 @@ fn validate_required_profile_scope(profiles: &[String]) -> Result<Vec<String>> {
         }
         return Ok(vec!["unstable-source".to_owned()]);
     }
-    // Standard 4-profile validation
-    let requested: BTreeSet<String> = profiles.iter().cloned().collect();
-    let required: BTreeSet<String> = PHASE4_APPROVED_PROFILES
-        .iter()
-        .map(|profile| (*profile).to_owned())
-        .collect();
-    let missing: Vec<String> = required.difference(&requested).cloned().collect();
-    let extra: Vec<String> = requested.difference(&required).cloned().collect();
-    if !missing.is_empty() || !extra.is_empty() {
-        bail!(
-            "profile scope mismatch, expected exactly `{REQUIRED_PROFILE_CSV}` (missing: {:?}, extra: {:?})",
-            missing,
-            extra
-        );
+    // Accept any non-empty subset of standard profiles.
+    // The CI matrix ensures all four are covered across parallel jobs.
+    if profiles.is_empty() {
+        bail!("at least one profile must be specified");
     }
-    Ok(PHASE4_APPROVED_PROFILES
-        .iter()
-        .map(|profile| (*profile).to_owned())
-        .collect())
+    Ok(profiles.to_vec())
 }
 
 fn ensure_known_profile(profile: &str) -> Result<()> {
