@@ -46,8 +46,8 @@
 ### Oracle & Tolerance Unification
 
 - [x] **ORAC-01**: Oracle tolerance unified to atol=1e-12 for every family with no per-family exceptions
-- [ ] **ORAC-02**: Four-profile manifest lock regenerated covering all implemented APIs
-- [ ] **ORAC-03**: CI oracle-parity gate passes all four profiles (base, with-f12, with-4c1e, with-f12+with-4c1e) at atol=1e-12
+- [x] **ORAC-02**: Four-profile manifest lock regenerated covering all implemented APIs
+- [x] **ORAC-03**: CI oracle-parity gate passes all four profiles (base, with-f12, with-4c1e, with-f12+with-4c1e) at atol=1e-12
 - [x] **ORAC-04**: Existing base families (1e, 2e, 2c2e, 3c1e, 3c2e) pass oracle at tightened atol=1e-12
 
 ## v2 Requirements
@@ -99,8 +99,8 @@
 | USRC-05 | Phase 14 | Complete |
 | USRC-06 | Phase 14 | Complete |
 | ORAC-01 | Phase 15 | Complete |
-| ORAC-02 | Phase 15 | Pending |
-| ORAC-03 | Phase 15 | Pending |
+| ORAC-02 | Phase 15 | Complete |
+| ORAC-03 | Phase 15 | Complete |
 | ORAC-04 | Phase 15 | Complete |
 
 **Coverage:**
