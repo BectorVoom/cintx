@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
-status: Ready to execute
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-04-06T00:03:45.914Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 15-03-PLAN.md
+last_updated: "2026-04-06T00:06:46.341Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 21
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -100,6 +100,7 @@ Plan: 3 of 3
 | Phase 14-unstable-source-api-families P05 | 5 | 2 tasks | 6 files |
 | Phase 15-oracle-tolerance-unification-manifest-lock-closure P01 | 8 | 2 tasks | 4 files |
 | Phase 15 P02 | 7 | 2 tasks | 4 files |
+| Phase 15-oracle-tolerance-unification-manifest-lock-closure P03 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -235,6 +236,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 15-oracle-tolerance-unification-manifest-lock-closure]: manifest_oracle_families() reads compiled_manifest.lock.json at runtime — replaces hardcoded PHASE4_ORACLE_FAMILIES for oracle eligibility checks in fixtures and xtask
 - [Phase 15]: oracle-covered-update stamps helper/transform/optimizer/legacy entries unconditionally as covered because verify_helper_surface_coverage passes as part of generate_profile_parity_report
 - [Phase 15]: manifest-audit check_oracle_coverage only checks stability=stable entries per D-07; should_fail now includes !uncovered_stable.is_empty() for hard CI gate
+- [Phase 15-oracle-tolerance-unification-manifest-lock-closure]: Accept any non-empty subset of standard profiles in validate_required_profile_scope; CI matrix covers full coverage across parallel jobs
+- [Phase 15-oracle-tolerance-unification-manifest-lock-closure]: Use fail-fast: false in oracle_parity_gate matrix so all four profile jobs report independently even when one fails (D-09)
 
 ### Roadmap Evolution
 
@@ -251,6 +254,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-06T00:03:45.909Z
-Stopped at: Completed 15-02-PLAN.md
+Last session: 2026-04-06T00:06:46.337Z
+Stopped at: Completed 15-03-PLAN.md
 Resume file: None

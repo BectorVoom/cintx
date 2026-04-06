@@ -15,7 +15,7 @@
 - [x] **Phase 12: Real Spinor Transform (c2spinor Replacement)** - Rewrite c2spinor.rs with correct Clebsch-Gordan coupling; unblock spinor oracle coverage for all families that depend on it. (completed 2026-04-05)
 - [x] **Phase 13: F12/STG/YP Kernels** - Implement STG and YP geminal 2e kernels with separate dispatch paths, PTR_F12_ZETA env plumbing, and sph-only oracle gate under the with-f12 profile. (completed 2026-04-05)
 - [x] **Phase 14: Unstable-Source-API Families** - Implement origi, grids, Breit, origk, and ssc families behind the unstable-source-api gate with oracle parity in nightly CI. (completed 2026-04-05)
-- [ ] **Phase 15: Oracle Tolerance Unification & Manifest Lock Closure** - Audit every family's empirical precision floor, set per-family atol/rtol constants, regenerate the four-profile manifest lock, and close the unified oracle CI gate.
+- [x] **Phase 15: Oracle Tolerance Unification & Manifest Lock Closure** - Audit every family's empirical precision floor, set per-family atol/rtol constants, regenerate the four-profile manifest lock, and close the unified oracle CI gate. (completed 2026-04-06)
 
 ## Progress
 
@@ -110,4 +110,4 @@ Plans:
 Plans:
 - [x] 15-01-PLAN.md — Refactor tolerance_for_family to catch-all and replace PHASE4_ORACLE_FAMILIES with manifest-driven derivation.
 - [x] 15-02-PLAN.md — Create oracle-covered-update xtask, add oracle_covered check to manifest-audit, stamp and regenerate lock.
-- [ ] 15-03-PLAN.md — Switch CI oracle_parity_gate to matrix strategy over four profiles.
+- [x] 15-03-PLAN.md — Switch CI oracle_parity_gate to matrix strategy over four profiles.
