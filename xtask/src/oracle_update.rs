@@ -23,11 +23,11 @@ const ALL_KNOWN_PROFILES: &[&str] = &[
 const FALLBACK_ARTIFACT_DIR_ENV: &str = "CINTX_ARTIFACT_DIR";
 const FALLBACK_ARTIFACT_DIR_DEFAULT: &str = "/tmp/cintx_artifacts";
 
-const ORACLE_SUMMARY_REQUIRED_PATH: &str = "/mnt/data/cintx_phase_04_oracle_compare_summary.json";
+const ORACLE_SUMMARY_REQUIRED_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_oracle_compare_summary.json";
 const ORACLE_SUMMARY_FALLBACK_NAME: &str = "cintx_phase_04_oracle_compare_summary.json";
-const HELPER_SUMMARY_REQUIRED_PATH: &str = "/mnt/data/cintx_phase_04_helper_legacy_parity.json";
+const HELPER_SUMMARY_REQUIRED_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_helper_legacy_parity.json";
 const HELPER_SUMMARY_FALLBACK_NAME: &str = "cintx_phase_04_helper_legacy_parity.json";
-const OOM_SUMMARY_REQUIRED_PATH: &str = "/mnt/data/cintx_phase_04_oom_contract_check.json";
+const OOM_SUMMARY_REQUIRED_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_oom_contract_check.json";
 const OOM_SUMMARY_FALLBACK_NAME: &str = "cintx_phase_04_oom_contract_check.json";
 
 pub fn run_oracle_compare(profiles: &[String], include_unstable_source: bool) -> Result<()> {
@@ -53,9 +53,9 @@ pub fn run_oracle_compare(profiles: &[String], include_unstable_source: bool) ->
         )
         .context("resolve parity artifact source path")?;
 
-        let matrix_required = format!("/mnt/data/cintx_phase_04_oracle_matrix_{profile_slug}.json");
+        let matrix_required = format!("/tmp/cintx_artifacts/cintx_phase_04_oracle_matrix_{profile_slug}.json");
         let matrix_fallback = format!("cintx_phase_04_oracle_matrix_{profile_slug}.json");
-        let parity_required = format!("/mnt/data/cintx_phase_04_oracle_compare_{profile_slug}.json");
+        let parity_required = format!("/tmp/cintx_artifacts/cintx_phase_04_oracle_compare_{profile_slug}.json");
         let parity_fallback = format!("cintx_phase_04_oracle_compare_{profile_slug}.json");
 
         let matrix_persisted =

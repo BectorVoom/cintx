@@ -14,7 +14,7 @@ cintx is a public Rust library that redesigns and reimplements libcint with resu
 - **API Surface**: Safe Rust API first, raw compatibility API second, optional C ABI shim third - this ordering drives module boundaries and migration strategy.
 - **Error Handling**: Public library errors use `thiserror` v2, while CLI, xtask, benchmarks, and oracle harness code use `anyhow`.
 - **Verification**: Full API coverage claims must be backed by the compiled manifest lock, feature-matrix CI, and helper/transform parity checks.
-- **Artifacts**: Deliverables written to `/mnt/data` remain a mandatory part of the design and verification workflow.
+- **Artifacts**: Deliverables written to `/tmp/cintx_artifacts` remain a mandatory part of the design and verification workflow.
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:research/STACK.md -->

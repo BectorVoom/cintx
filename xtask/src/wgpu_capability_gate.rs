@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 // ── artifact paths ─────────────────────────────────────────────────────────
 
 const CAPABILITY_GATE_REQUIRED_PATH: &str =
-    "/mnt/data/cintx_phase_05_wgpu_capability_gate.json";
+    "/tmp/cintx_artifacts/cintx_phase_05_wgpu_capability_gate.json";
 const CAPABILITY_GATE_FALLBACK_NAME: &str = "cintx_phase_05_wgpu_capability_gate.json";
 
 const FALLBACK_ARTIFACT_DIR_ENV: &str = "CINTX_ARTIFACT_DIR";

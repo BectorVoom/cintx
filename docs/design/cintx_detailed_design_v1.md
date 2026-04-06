@@ -29,14 +29,14 @@ This document is the finalized design specification produced by re-reviewing the
 | `src/*.c` | Implementations, source-only APIs, optional build conditions |
 | `testsuite/*` | Tolerances and covered families |
 | `examples/*` | Usage patterns |
-| `/mnt/data/cintx_rust_api_manifest.csv` | Manifest snapshot at design time |
+| `/tmp/cintx_artifacts/cintx_rust_api_manifest.csv` | Manifest snapshot at design time |
 
 ### 0.3 Premises
 1. The compatibility target includes the integral APIs declared in `include/cint_funcs.h`, the helper / optimizer / legacy wrapper APIs in `include/cint.h.in`, and source-only / optional APIs that are implemented in `src` and reachable through build options or tests. Basis: entire `include/cint_funcs.h`, `include/cint.h.in:227-291`, `src/cint2e_f12.c:12-201`, `src/cint4c1e.c:324-357`
 2. The primary measure of compatibility is **equivalence of computed results**; equality of internal implementation, internal scratch layout, and intermediate representations is not required. Basis: `README.rst:38-40`, `README.rst:208-235`
 3. The GPU backend assumes CubeCL. This is a design constraint and is not part of upstream cintx itself.
 4. The public library returns typed errors using `thiserror v2`, while CLI / benchmark / oracle harness / CI glue use `anyhow`.
-5. Writing deliverables to `/mnt/data` is mandatory.
+5. Writing deliverables to `/tmp/cintx_artifacts` is mandatory.
 
 ### 0.4 Assumptions
 | ID | Assumption | Rationale |
@@ -188,7 +188,7 @@ Basis: `README.rst:11-14`, `README.rst:38-40`, `README.rst:52-70`, `README.rst:2
 | Internal-ish but reachable API | Source-only families, optional 4c1e/F12 | Managed via feature gates + stability levels |
 
 ### 3.2 Definition of API Inventory
-The design-time inventory is based on `/mnt/data/cintx_rust_api_manifest.csv`.
+The design-time inventory is based on `/tmp/cintx_artifacts/cintx_rust_api_manifest.csv`.
 
 | Scope | Count | Basis |
 |---|---:|---|

@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const COMPILED_MANIFEST_LOCK_JSON: &str = "crates/cintx-ops/generated/compiled_manifest.lock.json";
-const REQUIRED_AUDIT_ARTIFACT: &str = "/mnt/data/cintx_phase_04_manifest_audit.json";
+const REQUIRED_AUDIT_ARTIFACT: &str = "/tmp/cintx_artifacts/cintx_phase_04_manifest_audit.json";
 const AUDIT_ARTIFACT_FALLBACK_NAME: &str = "cintx_phase_04_manifest_audit.json";
 const FALLBACK_ARTIFACT_DIR_ENV: &str = "CINTX_ARTIFACT_DIR";
 const REQUIRED_PROFILE_CSV: &str = "base,with-f12,with-4c1e,with-f12+with-4c1e";
