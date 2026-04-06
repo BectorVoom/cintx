@@ -146,10 +146,10 @@ pub fn build_h2o_sto3g_f12(zeta: f64) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
 }
 
 pub const REQUIRED_MATRIX_ARTIFACT: &str =
-    "/mnt/data/cintx_phase_04_manifest_representation_matrix.json";
+    "/tmp/cintx_artifacts/cintx_phase_04_manifest_representation_matrix.json";
 pub const MATRIX_ARTIFACT_FALLBACK_NAME: &str =
     "cintx_phase_04_manifest_representation_matrix.json";
-pub const REQUIRED_REPORT_ARTIFACT: &str = "/mnt/data/cintx_phase_04_compat_parity_report.json";
+pub const REQUIRED_REPORT_ARTIFACT: &str = "/tmp/cintx_artifacts/cintx_phase_04_compat_parity_report.json";
 pub const REPORT_ARTIFACT_FALLBACK_NAME: &str = "cintx_phase_04_compat_parity_report.json";
 pub const PHASE4_APPROVED_PROFILES: &[&str] =
     &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"];

@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 
 const FALLBACK_ARTIFACT_DIR_ENV: &str = "CINTX_ARTIFACT_DIR";
 const FALLBACK_ARTIFACT_DIR_DEFAULT: &str = "/tmp/cintx_artifacts";
-const REQUIRED_BENCH_REPORT_PATH: &str = "/mnt/data/cintx_phase_04_bench_report.json";
+const REQUIRED_BENCH_REPORT_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json";
 const BENCH_REPORT_FALLBACK_NAME: &str = "cintx_phase_04_bench_report.json";
-const REQUIRED_RUNTIME_DIAGNOSTICS_PATH: &str = "/mnt/data/cintx_phase_04_runtime_diagnostics.json";
+const REQUIRED_RUNTIME_DIAGNOSTICS_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json";
 const RUNTIME_DIAGNOSTICS_FALLBACK_NAME: &str = "cintx_phase_04_runtime_diagnostics.json";
-const REQUIRED_BENCH_ROWS_PATH: &str = "/mnt/data/cintx_phase_04_bench_rows.jsonl";
+const REQUIRED_BENCH_ROWS_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_bench_rows.jsonl";
 const BENCH_ROWS_FILE_NAME: &str = "cintx_phase_04_bench_rows.jsonl";
 const SUITE_IDS: [&str; 3] = ["micro_families", "macro_molecules", "crossover_cpu_gpu"];
 

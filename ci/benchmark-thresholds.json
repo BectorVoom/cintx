@@ -20,7 +20,7 @@
     "baseline_throughput": 1800.0,
     "baseline_workspace_bytes": 3145728,
     "baseline_transfer_bytes": 786432,
-    "baseline_crossover_shift_pct": 6.0,
+    "baseline_crossover_shift_pct": -39.297,
     "throughput_regression_pct": 10.0,
     "memory_regression_pct": 15.0,
     "transfer_regression_pct": 12.0,

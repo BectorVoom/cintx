@@ -34,7 +34,7 @@ struct BenchSummaryRow<'a> {
 fn artifact_file() -> PathBuf {
     let dir = std::env::var_os("CINTX_ARTIFACT_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/mnt/data"));
+        .unwrap_or_else(|| PathBuf::from("/tmp/cintx_artifacts"));
     dir.join("cintx_phase_04_bench_rows.jsonl")
 }
 

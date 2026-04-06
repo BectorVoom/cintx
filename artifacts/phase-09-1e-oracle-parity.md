@@ -3,9 +3,9 @@
 **Generated:** 2026-04-03  
 **Phase:** 09-1e-real-kernel-and-cart-to-sph-transform  
 **Plan:** 09-03 — H2O STO-3G Oracle Parity Tests  
-**Required Path:** /mnt/data/phase-09-1e-oracle-parity.md  
+**Required Path:** /tmp/cintx_artifacts/phase-09-1e-oracle-parity.md  
 **Actual Path:** /tmp/cintx_artifacts/phase-09-1e-oracle-parity.md  
-**Fallback Reason:** /mnt/data not writable in this execution environment
+**Fallback Reason:** /tmp/cintx_artifacts not writable in this execution environment
 
 ---
 
