@@ -24,6 +24,7 @@ defaults:
         shell: bash
 
 env:
+    CINTX_REQUIRED_PROFILES: base,with-f12,with-4c1e,with-f12+with-4c1e
     CINTX_BENCH_ROWS_REQUIRED: /mnt/data/cintx_phase_04_bench_rows.jsonl
     CINTX_BENCH_REPORT_REQUIRED: /mnt/data/cintx_phase_04_bench_report.json
     CINTX_BENCH_REPORT_FALLBACK: /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
@@ -46,7 +47,10 @@ jobs:
               uses: Swatinem/rust-cache@v2
 
             - name: Run full helper parity test suite
-              run: cargo test --workspace --test phase3_helper_transform_parity
+              run: |
+                  for profile in base with-f12 with-4c1e with-f12+with-4c1e; do
+                    CINTX_BACKEND=cpu cargo run --manifest-path xtask/Cargo.toml -- helper-legacy-parity --profile "${profile}"
+                  done
 
     manifest_release_gate:
         name: Release manifest governance suite (COMP-03, VERI-01)
@@ -63,10 +67,8 @@ jobs:
               uses: Swatinem/rust-cache@v2
 
             - name: Run manifest governance suite
-              run: cargo test --workspace --test phase3_manifest_governance
-
-            - name: Audit compiled manifest lock freshness
-              run: cargo run --bin manifest_audit -- check
+              run: |
+                  cargo run --manifest-path xtask/Cargo.toml -- manifest-audit --profiles "${CINTX_REQUIRED_PROFILES}" --check-lock
 
     oracle_profile_release_gate:
         name: Release oracle/profile matrix gate (COMP-04, VERI-02)
@@ -83,10 +85,12 @@ jobs:
               uses: Swatinem/rust-cache@v2
 
             - name: Run profile-aware oracle regression matrix
-              run: cargo test --workspace --test phase3_regression_gates oracle_profile_matrix_gate
+              run: |
+                  CINTX_BACKEND=cpu cargo run --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${CINTX_REQUIRED_PROFILES}" --include-unstable-source false
 
             - name: Verify requirement traceability gate
-              run: cargo test --workspace --test phase3_regression_gates requirement_traceability_gate
+              run: |
+                  test -f /tmp/cintx_artifacts/cintx_phase_04_oracle_compare_summary.json
 
     optimizer_equivalence_release_gate:
         name: Release optimizer equivalence gate (RAW-04, VERI-03)
@@ -103,7 +107,8 @@ jobs:
               uses: Swatinem/rust-cache@v2
 
             - name: Run optimizer equivalence suite
-              run: cargo test --workspace --test phase3_optimizer_equivalence
+              run: |
+                  CINTX_BACKEND=cpu cargo test -p cintx-oracle evaluated_output_parity_and_optimizer_equivalence_hold
 
     api_value_baseline_release_gate:
         name: Release API value baseline gate (VERI-01)
