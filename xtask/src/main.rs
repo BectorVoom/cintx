@@ -1,5 +1,6 @@
 mod bench_report;
 mod manifest_audit;
+mod oracle_covered_update;
 mod oracle_update;
 mod wgpu_capability_gate;
 
@@ -28,6 +29,7 @@ enum Command {
         profile: String,
     },
     OomContractCheck,
+    OracleCoveredUpdate,
     WgpuCapabilityGate {
         profiles: Vec<String>,
         require_adapter: bool,
@@ -55,6 +57,7 @@ fn run() -> Result<()> {
         "oracle-compare" => parse_oracle_compare(args)?,
         "helper-legacy-parity" => parse_helper_legacy_parity(args)?,
         "oom-contract-check" => parse_oom_contract_check(args)?,
+        "oracle-covered-update" => Command::OracleCoveredUpdate,
         "wgpu-capability-gate" => parse_wgpu_capability_gate(args)?,
         "--help" | "-h" | "help" => Command::Help,
         other => return Err(anyhow!("unknown xtask command: {other}")),
@@ -79,6 +82,7 @@ fn execute(command: Command) -> Result<()> {
         } => oracle_update::run_oracle_compare(&profiles, include_unstable_source),
         Command::HelperLegacyParity { profile } => oracle_update::run_helper_legacy_parity(&profile),
         Command::OomContractCheck => oracle_update::run_oom_contract_check(),
+        Command::OracleCoveredUpdate => oracle_covered_update::run_oracle_covered_update(),
         Command::WgpuCapabilityGate {
             profiles,
             require_adapter,
@@ -307,6 +311,7 @@ fn print_help() {
     );
     println!("  helper-legacy-parity [--profile base]");
     println!("  oom-contract-check");
+    println!("  oracle-covered-update                      Run oracle parity for all 4 profiles and stamp oracle_covered=true in manifest lock");
     println!("  wgpu-capability-gate [--profiles {REQUIRED_PROFILES_CSV}] [--require-adapter true|false]");
     println!();
     println!("Defaults:");

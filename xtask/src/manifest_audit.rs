@@ -61,6 +61,12 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
         .unwrap_or(true);
     let has_required_matrix_scope_mismatch = generated_required_profiles != required_profiles;
 
+    let uncovered_stable = if check_lock {
+        check_oracle_coverage(&lock_root)
+    } else {
+        Vec::new()
+    };
+
     let mut report = json!({
         "compiled_manifest_lock": COMPILED_MANIFEST_LOCK_JSON,
         "required_path": REQUIRED_AUDIT_ARTIFACT,
@@ -84,10 +90,17 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
             "fallback_env_var": FALLBACK_ARTIFACT_DIR_ENV,
             "fallback_file_name": AUDIT_ARTIFACT_FALLBACK_NAME,
         },
+        "oracle_coverage": {
+            "uncovered_stable_entries": &uncovered_stable,
+            "uncovered_count": uncovered_stable.len(),
+        },
     });
 
     let should_fail = check_lock
-        && (has_symbol_drift || has_profile_scope_mismatch || has_required_matrix_scope_mismatch);
+        && (has_symbol_drift
+            || has_profile_scope_mismatch
+            || has_required_matrix_scope_mismatch
+            || !uncovered_stable.is_empty());
     report["status"] = if should_fail {
         json!("failed")
     } else {
@@ -232,6 +245,36 @@ fn write_manifest_audit_report(mut report: Value) -> Result<PathBuf> {
         )
     })?;
     Ok(artifact.actual_path)
+}
+
+fn check_oracle_coverage(lock_root: &Value) -> Vec<String> {
+    let entries = match lock_root["entries"].as_array() {
+        Some(e) => e,
+        None => return Vec::new(),
+    };
+    let mut uncovered = Vec::new();
+    for entry in entries {
+        let stability = entry
+            .get("stability")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if stability != "stable" {
+            continue;
+        }
+        let covered = entry
+            .get("oracle_covered")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !covered {
+            let sym = entry
+                .get("id")
+                .and_then(|id| id.get("symbol"))
+                .and_then(Value::as_str)
+                .unwrap_or("?");
+            uncovered.push(sym.to_owned());
+        }
+    }
+    uncovered
 }
 
 fn stability_is_included(stability: &str) -> bool {
