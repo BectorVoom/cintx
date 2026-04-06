@@ -23,11 +23,11 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - [x] F12/STG/YP family kernels — all 10 sph symbols at oracle parity (atol=1e-12). Cart and spinor remain unsupported (sph-only enforcement). Validated in Phase 13: F12/STG/YP Kernels.
 - [x] v1.1 executor infrastructure (EXEC-06/07/08/09, VERI-06) fully resolved — direct CubeCL client API, ResolvedBackend dispatch, CPU backend, f64 strategy. Validated in Phase 7.
 - [x] Unstable-source family APIs (origi, grids, Breit, origk, ssc) implemented behind feature gate with oracle parity in nightly CI. Validated in Phase 14: Unstable-Source-API Families.
+- [x] Oracle tolerance unified to atol=1e-12 for every family with catch-all tolerance and manifest-driven oracle eligibility; four-profile manifest lock regenerated with oracle_covered=true on all 110 stable/optional entries; CI oracle gate uses matrix strategy. Validated in Phase 15: Oracle Tolerance Unification & Manifest Lock Closure.
 
 ### Active
 
-- [ ] Cover the full libcint API surface — with-4c1e (beyond validated envelope) and unstable-source families — with unified atol=1e-12 oracle tolerance and objective CI evidence.
-- [ ] Unify oracle tolerance to atol=1e-12 for every family and extend oracle harness, fixtures, and CI gates for full API coverage.
+None — all v1.2 requirements validated.
 
 ### Out of Scope
 
@@ -93,4 +93,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after Phase 14 complete — Unstable-Source-API Families*
+*Last updated: 2026-04-06 after Phase 15 complete — Oracle Tolerance Unification & Manifest Lock Closure*
