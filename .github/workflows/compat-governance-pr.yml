@@ -71,8 +71,12 @@ jobs:
                   cargo run --manifest-path xtask/Cargo.toml -- manifest-audit --profiles "${CINTX_REQUIRED_PROFILES}" --check-lock
 
     oracle_parity_gate:
-        name: oracle_parity_gate
+        name: oracle_parity_gate (${{ matrix.profile }})
         runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                profile: [base, with-f12, with-4c1e, "with-f12+with-4c1e"]
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -102,9 +106,9 @@ jobs:
             - name: Cache Rust artifacts
               uses: Swatinem/rust-cache@v2
 
-            - name: Run oracle parity gate
+            - name: Run oracle parity gate for ${{ matrix.profile }}
               run: |
-                  cargo run --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${CINTX_REQUIRED_PROFILES}" --include-unstable-source false
+                  CINTX_BACKEND=cpu cargo run --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${{ matrix.profile }}" --include-unstable-source false
 
     helper_legacy_parity_gate:
         name: helper_legacy_parity_gate
