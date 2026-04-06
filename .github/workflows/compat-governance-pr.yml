@@ -230,7 +230,7 @@ jobs:
         runs-on: ubuntu-latest
         continue-on-error: true
         env:
-            CINTX_ARTIFACT_DIR: /mnt/data/cintx/pr-gpu-bench/${{ github.run_id }}
+            CINTX_ARTIFACT_DIR: /tmp/cintx_artifacts/cintx/pr-gpu-bench/${{ github.run_id }}
             CINTX_BENCH_PROFILE: advisory-pr
         steps:
             - name: Checkout
@@ -263,9 +263,8 @@ jobs:
 
             - name: Prepare artifact directories
               run: |
-                  mkdir -p /mnt/data
                   mkdir -p "${CINTX_ARTIFACT_DIR}"
-                  rm -f /mnt/data/cintx_phase_04_bench_rows.jsonl
+                  rm -f /tmp/cintx_artifacts/cintx_phase_04_bench_rows.jsonl
 
             - name: Run GPU benchmark suites (advisory)
               run: |

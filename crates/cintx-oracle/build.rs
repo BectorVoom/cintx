@@ -62,6 +62,7 @@ fn main() {
         // Phase 14 unstable-source family source files.
         "src/cint1e_grids.c",
         "src/g1e_grids.c",
+        "src/autocode/int1e_grids1.c",
         "src/breit.c",
         "src/cint3c1e_a.c",
     ] {
@@ -195,12 +196,14 @@ fn main() {
         .file(libcint_root.join("src/autocode/hess.c"))
         // Phase 14 unstable-source family source files.
         // cint1e_grids.c + g1e_grids.c: int1e_grids* (NGRIDS/PTR_GRIDS env handling).
+        // autocode/int1e_grids1.c: int1e_grids_ip/ipvip/spvsp/ipip derivative wrappers.
         // breit.c: int2e_breit_r1p2_spinor and int2e_breit_r2p2_spinor.
         // cint3c1e_a.c: int3c1e_r2/r4/r6_origk and ip1 derivatives (origk family).
         // cint1e_a.c already present above (origi family symbols defined there).
         // cint3c2e.c already present above (ssc family).
         .file(libcint_root.join("src/cint1e_grids.c"))
         .file(libcint_root.join("src/g1e_grids.c"))
+        .file(libcint_root.join("src/autocode/int1e_grids1.c"))
         .file(libcint_root.join("src/breit.c"))
         .file(libcint_root.join("src/cint3c1e_a.c"))
         .compile("cintx_oracle_vendor");
