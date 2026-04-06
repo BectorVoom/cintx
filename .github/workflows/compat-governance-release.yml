@@ -38,7 +38,7 @@ jobs:
         timeout-minutes: 25
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Install stable Rust
               uses: dtolnay/rust-toolchain@stable
@@ -58,7 +58,7 @@ jobs:
         timeout-minutes: 25
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Install stable Rust
               uses: dtolnay/rust-toolchain@stable
@@ -76,7 +76,7 @@ jobs:
         timeout-minutes: 30
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Install stable Rust
               uses: dtolnay/rust-toolchain@stable
@@ -98,7 +98,7 @@ jobs:
         timeout-minutes: 30
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Install stable Rust
               uses: dtolnay/rust-toolchain@stable
@@ -119,7 +119,7 @@ jobs:
             CINTX_MUTANTS_SHARD: 1/20
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -159,7 +159,7 @@ jobs:
             CINTX_BENCH_PROFILE: required-release
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -271,7 +271,7 @@ jobs:
             CINTX_PHASE05_CAPABILITY_FALLBACK: /tmp/cintx_artifacts/cintx_phase_05_wgpu_capability_gate.json
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust

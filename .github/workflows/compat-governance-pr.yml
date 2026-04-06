@@ -39,7 +39,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -79,7 +79,7 @@ jobs:
                 profile: [base, with-f12, with-4c1e, "with-f12+with-4c1e"]
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -115,7 +115,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -153,7 +153,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -195,7 +195,7 @@ jobs:
             CINTX_MUTANTS_SHARD: 1/30
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -234,7 +234,7 @@ jobs:
             CINTX_BENCH_PROFILE: advisory-pr
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -280,9 +280,9 @@ jobs:
                   if-no-files-found: warn
                   path: |
                       ${{ env.CINTX_ARTIFACT_DIR }}
-                      /mnt/data/cintx_phase_04_bench_rows.jsonl
-                      /mnt/data/cintx_phase_04_bench_report.json
-                      /mnt/data/cintx_phase_04_runtime_diagnostics.json
+                      /tmp/cintx_artifacts/cintx_phase_04_bench_rows.jsonl
+                      /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
+                      /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
                       /tmp/cintx_artifacts/cintx_phase_04_bench_report.json
                       /tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json
                       target/criterion
@@ -295,7 +295,7 @@ jobs:
             CINTX_ARTIFACT_DIR: /tmp/cintx_artifacts
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
@@ -337,7 +337,7 @@ jobs:
                   name: wgpu-capability-advisory-${{ github.run_id }}
                   if-no-files-found: warn
                   path: |
-                      /mnt/data/cintx_phase_05_wgpu_capability_gate.json
+                      /tmp/cintx_artifacts/cintx_phase_05_wgpu_capability_gate.json
                       /tmp/cintx_artifacts/cintx_phase_05_wgpu_capability_gate.json
 
     unstable_source_oracle:
@@ -349,7 +349,7 @@ jobs:
             CINTX_ARTIFACT_DIR: /tmp/cintx_artifacts
         steps:
             - name: Checkout
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Resolve pinned Rust channel
               id: rust
