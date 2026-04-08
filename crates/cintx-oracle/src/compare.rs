@@ -1,10 +1,9 @@
 use crate::fixtures::{
-    build_profile_representation_matrix, write_pretty_json_artifact,
-    write_profile_representation_matrix_artifact, ArtifactWriteResult, OracleFixture,
-    OracleRawInputs, REPORT_ARTIFACT_FALLBACK_NAME, REQUIRED_MATRIX_ARTIFACT,
-    REQUIRED_REPORT_ARTIFACT,
+    ArtifactWriteResult, OracleFixture, OracleRawInputs, REPORT_ARTIFACT_FALLBACK_NAME,
+    REQUIRED_MATRIX_ARTIFACT, REQUIRED_REPORT_ARTIFACT, build_profile_representation_matrix,
+    write_pretty_json_artifact, write_profile_representation_matrix_artifact,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use cintx_compat::helpers::{
     CINTcgto_cart, CINTcgto_spheric, CINTcgto_spinor, CINTcgtos_cart, CINTcgtos_spheric,
     CINTcgtos_spinor, CINTgto_norm, CINTlen_cart, CINTlen_spinor, CINTshells_cart_offset,
@@ -15,7 +14,7 @@ use cintx_compat::legacy;
 use cintx_compat::optimizer;
 use cintx_compat::raw::{self, RawApiId};
 use cintx_ops::resolver::{HelperKind, Resolver};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 const UNIFIED_ATOL: f64 = 1e-12;
@@ -253,6 +252,29 @@ fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
     }
 }
 
+fn source_only_raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
+    let descriptor = Resolver::descriptor_by_symbol(symbol).ok()?;
+    if !matches!(descriptor.entry.helper_kind, HelperKind::SourceOnly) {
+        return None;
+    }
+
+    // RawApiId currently holds &'static str symbols; source-only symbols come from
+    // the manifest at runtime, so we pin the symbol for process lifetime.
+    Some(RawApiId::Symbol(Box::leak(
+        symbol.to_owned().into_boxed_str(),
+    )))
+}
+
+fn raw_api_for_fixture(fixture: &OracleFixture) -> Option<RawApiId> {
+    raw_api_for_symbol(&fixture.symbol).or_else(|| {
+        if fixture.family.starts_with("unstable::source::") {
+            source_only_raw_api_for_symbol(&fixture.symbol)
+        } else {
+            None
+        }
+    })
+}
+
 unsafe fn eval_legacy_symbol(
     symbol: &str,
     out: &mut [f64],
@@ -283,12 +305,8 @@ unsafe fn eval_legacy_symbol(
         "int2c2e_cart" => unsafe { legacy::cint2c2e_cart(Some(out), shls, atm, bas, env, None) },
         "int2c2e_sph" => unsafe { legacy::cint2c2e_sph(Some(out), shls, atm, bas, env, None) },
         "int2c2e_spinor" => unsafe { legacy::cint2c2e(Some(out), shls, atm, bas, env, None) },
-        "int3c1e_cart" => unsafe {
-            legacy::cint3c1e_cart(Some(out), shls, atm, bas, env, None)
-        },
-        "int3c1e_sph" => unsafe {
-            legacy::cint3c1e_sph(Some(out), shls, atm, bas, env, None)
-        },
+        "int3c1e_cart" => unsafe { legacy::cint3c1e_cart(Some(out), shls, atm, bas, env, None) },
+        "int3c1e_sph" => unsafe { legacy::cint3c1e_sph(Some(out), shls, atm, bas, env, None) },
         "int3c1e_p2_cart" => unsafe {
             legacy::cint3c1e_p2_cart(Some(out), shls, atm, bas, env, None)
         },
@@ -321,7 +339,12 @@ unsafe fn eval_legacy_symbol(
             let api = raw_api_for_symbol(symbol).expect("optional symbol must map to RawApiId");
             raw::eval_raw(api, Some(out), None, shls, atm, bas, env, None, None)
         },
-        other => bail!("missing legacy wrapper mapping for `{other}`"),
+        other => {
+            let Some(api) = source_only_raw_api_for_symbol(other) else {
+                bail!("missing legacy wrapper mapping for `{other}`");
+            };
+            unsafe { raw::eval_raw(api, Some(out), None, shls, atm, bas, env, None, None) }
+        }
     };
     result.map_err(anyhow::Error::from)
 }
@@ -418,42 +441,10 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
     let mut spinor = vec![0.0_f64; 24];
     let gcart_sf: Vec<f64> = (1..=4).map(|i| i as f64).collect();
     let gcart_si: Vec<f64> = (1..=12).map(|i| i as f64).collect();
-    cintx_compat::transform::CINTc2s_ket_spinor_sf1(
-        &mut spinor,
-        &gcart_sf,
-        0,
-        0,
-        1,
-        1,
-        0,
-    )?;
-    cintx_compat::transform::CINTc2s_iket_spinor_sf1(
-        &mut spinor,
-        &gcart_sf,
-        0,
-        0,
-        1,
-        1,
-        0,
-    )?;
-    cintx_compat::transform::CINTc2s_ket_spinor_si1(
-        &mut spinor,
-        &gcart_si,
-        0,
-        0,
-        1,
-        1,
-        0,
-    )?;
-    cintx_compat::transform::CINTc2s_iket_spinor_si1(
-        &mut spinor,
-        &gcart_si,
-        0,
-        0,
-        1,
-        1,
-        0,
-    )?;
+    cintx_compat::transform::CINTc2s_ket_spinor_sf1(&mut spinor, &gcart_sf, 0, 0, 1, 1, 0)?;
+    cintx_compat::transform::CINTc2s_iket_spinor_sf1(&mut spinor, &gcart_sf, 0, 0, 1, 1, 0)?;
+    cintx_compat::transform::CINTc2s_ket_spinor_si1(&mut spinor, &gcart_si, 0, 0, 1, 1, 0)?;
+    cintx_compat::transform::CINTc2s_iket_spinor_si1(&mut spinor, &gcart_si, 0, 0, 1, 1, 0)?;
 
     let mut opt = Some(optimizer::CINTinit_optimizer(
         &inputs.atm,
@@ -487,9 +478,7 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             let vendor_val = vendor_ffi::vendor_CINTlen_cart(l);
             if cintx_val != vendor_val {
                 mismatches += 1;
-                bail!(
-                    "CINTlen_cart({l}) mismatch: cintx={cintx_val} vendor={vendor_val}"
-                );
+                bail!("CINTlen_cart({l}) mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
         }
 
@@ -504,9 +493,7 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             let vendor_val = vendor_ffi::vendor_CINTlen_spinor(shell, bas);
             if cintx_val != vendor_val {
                 mismatches += 1;
-                bail!(
-                    "CINTlen_spinor({shell}) mismatch: cintx={cintx_val} vendor={vendor_val}"
-                );
+                bail!("CINTlen_spinor({shell}) mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
         }
 
@@ -516,27 +503,21 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             let vendor_cart = vendor_ffi::vendor_CINTcgto_cart(shell, bas);
             if cintx_cart != vendor_cart {
                 mismatches += 1;
-                bail!(
-                    "CINTcgto_cart({shell}) mismatch: cintx={cintx_cart} vendor={vendor_cart}"
-                );
+                bail!("CINTcgto_cart({shell}) mismatch: cintx={cintx_cart} vendor={vendor_cart}");
             }
 
             let cintx_sph = CINTcgto_spheric(shell, bas)? as i32;
             let vendor_sph = vendor_ffi::vendor_CINTcgto_spheric(shell, bas);
             if cintx_sph != vendor_sph {
                 mismatches += 1;
-                bail!(
-                    "CINTcgto_spheric({shell}) mismatch: cintx={cintx_sph} vendor={vendor_sph}"
-                );
+                bail!("CINTcgto_spheric({shell}) mismatch: cintx={cintx_sph} vendor={vendor_sph}");
             }
 
             let cintx_sp = CINTcgto_spinor(shell, bas)? as i32;
             let vendor_sp = vendor_ffi::vendor_CINTcgto_spinor(shell, bas);
             if cintx_sp != vendor_sp {
                 mismatches += 1;
-                bail!(
-                    "CINTcgto_spinor({shell}) mismatch: cintx={cintx_sp} vendor={vendor_sp}"
-                );
+                bail!("CINTcgto_spinor({shell}) mismatch: cintx={cintx_sp} vendor={vendor_sp}");
             }
         }
 
@@ -843,14 +824,7 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
     {
         let mut cintx_out = vec![0.0_f64; size_3];
         unsafe {
-            eval_legacy_symbol(
-                "int3c2e_ip1_sph",
-                &mut cintx_out,
-                shls3,
-                atm,
-                bas,
-                env,
-            )?;
+            eval_legacy_symbol("int3c2e_ip1_sph", &mut cintx_out, shls3, atm, bas, env)?;
         }
         let mut vendor_out = vec![0.0_f64; size_3];
         let shls3_arr = [shls3[0], shls3[1], shls3[2]];
@@ -969,15 +943,7 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
         }
         let mut vendor_out = vec![0.0_f64; size_3_c];
         let shls3_arr = [shls3[0], shls3[1], shls3[2]];
-        vendor_ffi::vendor_int3c2e_ip1_cart(
-            &mut vendor_out,
-            &shls3_arr,
-            atm,
-            natm,
-            bas,
-            nbas,
-            env,
-        );
+        vendor_ffi::vendor_int3c2e_ip1_cart(&mut vendor_out, &shls3_arr, atm, natm, bas, nbas, env);
         mismatches += compare_buffers("cint3c2e_ip1_cart", &cintx_out, &vendor_out);
     }
 
@@ -987,7 +953,9 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
     // - Cart variants are NOW numerically compared above alongside sph variants.
 
     if mismatches > 0 {
-        bail!("legacy wrapper oracle comparison: {mismatches} element mismatch(es) found across integral symbols (sph and cart variants at atol={UNIFIED_ATOL})");
+        bail!(
+            "legacy wrapper oracle comparison: {mismatches} element mismatch(es) found across integral symbols (sph and cart variants at atol={UNIFIED_ATOL})"
+        );
     }
 
     Ok(())
@@ -999,7 +967,9 @@ fn build_profile_parity_report(
     profile: &str,
     include_unstable_source: bool,
 ) -> Result<Phase2ParityReport> {
-    verify_helper_surface_coverage(inputs)?;
+    if profile != "unstable-source" {
+        verify_helper_surface_coverage(inputs)?;
+    }
 
     let matrix = build_profile_representation_matrix(inputs, profile, include_unstable_source)?;
     let matrix_artifact =
@@ -1020,7 +990,7 @@ fn build_profile_parity_report(
 
         let tolerance = tolerance_for_family(&fixture.family);
 
-        let Some(api) = raw_api_for_symbol(&fixture.symbol) else {
+        let Some(api) = raw_api_for_fixture(fixture) else {
             push_mismatch(
                 fixture,
                 "missing_raw_api_mapping",
@@ -1121,7 +1091,7 @@ fn build_profile_parity_report(
                 push_mismatch(
                     fixture,
                     "raw_eval",
-                    error.to_string(),
+                    format!("{error:#}"),
                     &mut fixture_mismatches,
                     &mut mismatches,
                 );
@@ -1485,6 +1455,13 @@ mod tests {
         assert!(
             report.mismatch_count > 0,
             "enabling unstable_source should surface mismatch entries until upstream proxy mappings are expanded"
+        );
+        assert!(
+            report
+                .mismatches
+                .iter()
+                .all(|mismatch| mismatch.kind != "missing_raw_api_mapping"),
+            "source-only fixtures should route through raw symbol dispatch, not missing mapping placeholders"
         );
 
         let error =

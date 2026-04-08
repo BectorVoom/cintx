@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use cintx_compat::helpers::{CINTcgto_cart, CINTcgto_spheric, CINTcgto_spinor};
 use cintx_compat::raw::{
     ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
@@ -6,7 +6,7 @@ use cintx_compat::raw::{
 };
 use cintx_core::Representation;
 use cintx_ops::resolver::{HelperKind, ManifestEntry, Resolver};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -149,10 +149,18 @@ pub const REQUIRED_MATRIX_ARTIFACT: &str =
     "/tmp/cintx_artifacts/cintx_phase_04_manifest_representation_matrix.json";
 pub const MATRIX_ARTIFACT_FALLBACK_NAME: &str =
     "cintx_phase_04_manifest_representation_matrix.json";
-pub const REQUIRED_REPORT_ARTIFACT: &str = "/tmp/cintx_artifacts/cintx_phase_04_compat_parity_report.json";
+pub const REQUIRED_REPORT_ARTIFACT: &str =
+    "/tmp/cintx_artifacts/cintx_phase_04_compat_parity_report.json";
 pub const REPORT_ARTIFACT_FALLBACK_NAME: &str = "cintx_phase_04_compat_parity_report.json";
 pub const PHASE4_APPROVED_PROFILES: &[&str] =
     &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"];
+const ORACLE_COMPARE_APPROVED_PROFILES: &[&str] = &[
+    "base",
+    "with-f12",
+    "with-4c1e",
+    "with-f12+with-4c1e",
+    "unstable-source",
+];
 pub const PHASE4_ORACLE_FAMILIES: &[&str] = &["1e", "2e", "2c2e", "3c1e", "3c2e", "4c1e"];
 pub const PHASE2_FAMILIES: &[&str] = &["1e", "2e", "2c2e", "3c1e", "3c2e"];
 pub const COMPILED_MANIFEST_LOCK_JSON: &str =
@@ -208,12 +216,16 @@ impl OracleRawInputs {
     pub fn sample() -> Self {
         // env layout:
         // 0..3 coordinates, then (exp, coeff) scalar pairs for 4 shells.
+        // 11 = NGRIDS, 12 = PTR_GRIDS, followed by one grid point (x,y,z).
         let env = vec![
             0.0, 0.0, 0.0, // coord
             1.0, 1.0, // shell 0
             0.9, 0.8, // shell 1
             0.7, 0.6, // shell 2
-            0.5, 0.4, // shell 3
+            0.5, 0.4,  // shell 3
+            1.0,  // NGRIDS (one point)
+            13.0, // PTR_GRIDS (index of first grid coordinate triple)
+            0.0, 0.0, 0.0, // grid point at origin
         ];
         let atm = vec![
             1, // charge / atomic number
@@ -354,6 +366,23 @@ fn parse_component_count(component_rank: &str) -> Result<usize> {
     Ok(count)
 }
 
+fn oracle_component_count(entry: &ManifestEntry) -> Result<usize> {
+    // Grids derivatives are emitted with source-manifest component_rank values that
+    // do not directly equal runtime component multiplicity. Oracle fixtures must
+    // use the runtime output contract (ncomp) to size raw buffers correctly.
+    let overridden = match entry.symbol_name {
+        "int1e_grids_sph" => Some(1),
+        "int1e_grids_ip_sph" => Some(3),
+        "int1e_grids_ipvip_sph" | "int1e_grids_ipip_sph" => Some(9),
+        "int1e_grids_spvsp_sph" => Some(4),
+        _ => None,
+    };
+    if let Some(value) = overridden {
+        return Ok(value);
+    }
+    parse_component_count(entry.component_rank)
+}
+
 fn ao_count_for_rep(shell: i32, representation: Representation, bas: &[i32]) -> Result<usize> {
     match representation {
         Representation::Cart => {
@@ -421,12 +450,12 @@ fn stability_is_included(stability: &str, include_unstable_source: bool) -> bool
 }
 
 fn ensure_profile_approved(profile: &str) -> Result<()> {
-    if PHASE4_APPROVED_PROFILES.contains(&profile) {
+    if ORACLE_COMPARE_APPROVED_PROFILES.contains(&profile) {
         return Ok(());
     }
     bail!(
         "unsupported profile `{profile}`; expected one of {:?}",
-        PHASE4_APPROVED_PROFILES
+        ORACLE_COMPARE_APPROVED_PROFILES
     )
 }
 
@@ -583,7 +612,7 @@ pub fn build_profile_representation_matrix(
             representation: representation_name(representation).to_owned(),
             arity: usize::from(entry.arity),
             dims,
-            component_count: parse_component_count(entry.component_rank)
+            component_count: oracle_component_count(entry)
                 .with_context(|| format!("component_count for `{}`", entry.symbol_name))?,
             complex_interleaved: matches!(representation, Representation::Spinor),
         });
@@ -767,6 +796,42 @@ mod tests {
                 .any(|fixture| fixture.family.starts_with("unstable::source::")),
             "explicit unstable_source mode should include source-only fixtures"
         );
+    }
+
+    #[test]
+    fn unstable_source_profile_is_accepted_when_enabled() {
+        let inputs = OracleRawInputs::sample();
+        let matrix = build_profile_representation_matrix(&inputs, "unstable-source", true)
+            .expect("unstable-source profile should be accepted with opt-in");
+        assert!(
+            !matrix.is_empty(),
+            "unstable-source profile should include oracle fixtures"
+        );
+        assert!(
+            matrix
+                .iter()
+                .all(|fixture| fixture.family.starts_with("unstable::source::")),
+            "unstable-source profile should only include unstable families"
+        );
+    }
+
+    #[test]
+    fn unstable_source_grids_component_counts_match_runtime_contract() {
+        let inputs = OracleRawInputs::sample();
+        let matrix = build_profile_representation_matrix(&inputs, "unstable-source", true)
+            .expect("unstable-source profile matrix");
+        let component_for = |symbol: &str| -> usize {
+            matrix
+                .iter()
+                .find(|fixture| fixture.symbol == symbol)
+                .expect("symbol in unstable-source matrix")
+                .component_count
+        };
+        assert_eq!(component_for("int1e_grids_sph"), 1);
+        assert_eq!(component_for("int1e_grids_ip_sph"), 3);
+        assert_eq!(component_for("int1e_grids_ipvip_sph"), 9);
+        assert_eq!(component_for("int1e_grids_spvsp_sph"), 4);
+        assert_eq!(component_for("int1e_grids_ipip_sph"), 9);
     }
 
     #[test]
