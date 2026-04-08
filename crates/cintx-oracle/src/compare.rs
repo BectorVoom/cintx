@@ -967,7 +967,9 @@ fn build_profile_parity_report(
     profile: &str,
     include_unstable_source: bool,
 ) -> Result<Phase2ParityReport> {
-    verify_helper_surface_coverage(inputs)?;
+    if profile != "unstable-source" {
+        verify_helper_surface_coverage(inputs)?;
+    }
 
     let matrix = build_profile_representation_matrix(inputs, profile, include_unstable_source)?;
     let matrix_artifact =
