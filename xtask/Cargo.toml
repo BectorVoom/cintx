@@ -9,9 +9,9 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"
-cintx-compat = { path = "../crates/cintx-compat", features = ["with-f12", "with-4c1e"] }
+cintx-compat = { path = "../crates/cintx-compat", features = ["with-f12", "with-4c1e", "unstable-source-api"] }
 cintx-ops = { path = "../crates/cintx-ops" }
-cintx-oracle = { path = "../crates/cintx-oracle" }
+cintx-oracle = { path = "../crates/cintx-oracle", features = ["unstable-source-api"] }
 serde_json = "1.0.145"
 
 [workspace]

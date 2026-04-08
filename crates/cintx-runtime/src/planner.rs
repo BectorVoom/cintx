@@ -1,6 +1,4 @@
-use crate::dispatch::{
-    BackendExecutor, DispatchDecision, ExecutionIo, OutputOwnership,
-};
+use crate::dispatch::{BackendExecutor, DispatchDecision, ExecutionIo, OutputOwnership};
 use crate::metrics::{ExecutionStats, RunMetrics};
 use crate::options::ExecutionOptions;
 use crate::scheduler::schedule_chunks;
@@ -93,7 +91,7 @@ impl<'a> ExecutionPlan<'a> {
         }
 
         let dispatch = DispatchDecision::from_manifest_family(descriptor.family())?;
-        let component_count = parse_component_multiplier(descriptor.entry.component_rank)?;
+        let component_count = component_multiplier_for_descriptor(descriptor)?;
         let output_layout = build_output_layout(&shells, rep, component_count)?;
 
         Ok(Self {
@@ -334,7 +332,7 @@ fn estimate_workspace_request(
     basis: &BasisSet,
     shells: &ValidatedShellTuple,
 ) -> Result<WorkspaceRequest, cintxRsError> {
-    let component_multiplier = parse_component_multiplier(descriptor.entry.component_rank)?;
+    let component_multiplier = component_multiplier_for_descriptor(descriptor)?;
     let output_bytes = shells
         .output_elements()
         .checked_mul(component_multiplier)
@@ -414,6 +412,21 @@ fn parse_component_multiplier(component_rank: &str) -> Result<usize, cintxRsErro
             detail: format!("component rank {component_rank:?} has no numeric dimensions"),
         })
     }
+}
+
+fn component_multiplier_for_descriptor(
+    descriptor: &OperatorDescriptor,
+) -> Result<usize, cintxRsError> {
+    if descriptor.entry.canonical_family == "grids" {
+        return Ok(match descriptor.operator_name() {
+            "grids" => 1,
+            "grids_ip" => 3,
+            "grids_ipvip" | "grids_ipip" => 9,
+            "grids_spvsp" => 4,
+            _ => 1,
+        });
+    }
+    parse_component_multiplier(descriptor.entry.component_rank)
 }
 
 fn map_resolver_error(op: OperatorId, err: ResolverError) -> cintxRsError {
@@ -513,6 +526,40 @@ mod tests {
         .unwrap();
         let shells = ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
         (basis, shells)
+    }
+
+    #[test]
+    fn grids_component_multiplier_matches_runtime_contract() {
+        let grids = Resolver::descriptor_by_symbol("int1e_grids_sph").expect("grids descriptor");
+        let grids_ip =
+            Resolver::descriptor_by_symbol("int1e_grids_ip_sph").expect("grids_ip descriptor");
+        let grids_ipvip = Resolver::descriptor_by_symbol("int1e_grids_ipvip_sph")
+            .expect("grids_ipvip descriptor");
+        let grids_spvsp = Resolver::descriptor_by_symbol("int1e_grids_spvsp_sph")
+            .expect("grids_spvsp descriptor");
+        let grids_ipip =
+            Resolver::descriptor_by_symbol("int1e_grids_ipip_sph").expect("grids_ipip descriptor");
+
+        assert_eq!(
+            component_multiplier_for_descriptor(grids).expect("multiplier"),
+            1
+        );
+        assert_eq!(
+            component_multiplier_for_descriptor(grids_ip).expect("multiplier"),
+            3
+        );
+        assert_eq!(
+            component_multiplier_for_descriptor(grids_ipvip).expect("multiplier"),
+            9
+        );
+        assert_eq!(
+            component_multiplier_for_descriptor(grids_spvsp).expect("multiplier"),
+            4
+        );
+        assert_eq!(
+            component_multiplier_for_descriptor(grids_ipip).expect("multiplier"),
+            9
+        );
     }
 
     #[test]

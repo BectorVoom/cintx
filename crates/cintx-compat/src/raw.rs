@@ -6,8 +6,8 @@ use cintx_core::{
 use cintx_cubecl::{CUBECL_RUNTIME_PROFILE, CubeClExecutor};
 use cintx_ops::resolver::{HelperKind, OperatorDescriptor, Resolver, ResolverError};
 use cintx_runtime::{
-    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan,
-    HostWorkspaceAllocator, WorkspaceAllocator, WorkspaceQuery, schedule_chunks, query_workspace,
+    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, GridsEnvParams,
+    HostWorkspaceAllocator, WorkspaceAllocator, WorkspaceQuery, query_workspace, schedule_chunks,
 };
 use std::mem::size_of;
 use std::sync::Arc;
@@ -451,10 +451,11 @@ pub unsafe fn eval_raw(
         let zeta = env.get(PTR_F12_ZETA).copied().unwrap_or(0.0);
         plan.operator_env_params.f12_zeta = Some(zeta);
         // Validate before dispatch so we return a typed error on bad input.
-        cintx_runtime::validator::validate_f12_env_params(
-            "f12",
-            &plan.operator_env_params,
-        )?;
+        cintx_runtime::validator::validate_f12_env_params("f12", &plan.operator_env_params)?;
+    }
+    if plan.descriptor.entry.canonical_family == "grids" {
+        plan.operator_env_params.grids_params = Some(extract_grids_env_params(env)?);
+        cintx_runtime::validator::validate_grids_env_params("grids", &plan.operator_env_params)?;
     }
 
     let executor = CubeClExecutor::new();
@@ -465,11 +466,11 @@ pub unsafe fn eval_raw(
     // read it directly after executor.execute() returns for each chunk.
     let staging_elements = plan.output_layout.staging_elements;
     let mut staging = Vec::new();
-    staging
-        .try_reserve_exact(staging_elements)
-        .map_err(|_| cintxRsError::HostAllocationFailed {
+    staging.try_reserve_exact(staging_elements).map_err(|_| {
+        cintxRsError::HostAllocationFailed {
             bytes: staging_elements.saturating_mul(size_of::<f64>()),
-        })?;
+        }
+    })?;
     staging.resize(staging_elements, 0.0);
 
     if !executor.supports(&plan) {
@@ -504,10 +505,8 @@ pub unsafe fn eval_raw(
             .work_unit_start
             .saturating_add(chunk.work_unit_count)
             .min(total_units);
-        let prefix =
-            staging_elements.saturating_mul(start) / total_units;
-        let suffix =
-            staging_elements.saturating_mul(end) / total_units;
+        let prefix = staging_elements.saturating_mul(start) / total_units;
+        let suffix = staging_elements.saturating_mul(end) / total_units;
         let chunk_len = suffix.saturating_sub(prefix).max(1);
 
         // Allocate the chunk staging slice and workspace.
@@ -515,11 +514,11 @@ pub unsafe fn eval_raw(
             .checked_mul(size_of::<f64>())
             .ok_or(cintxRsError::HostAllocationFailed { bytes: usize::MAX })?;
         let mut chunk_staging = Vec::new();
-        chunk_staging
-            .try_reserve_exact(chunk_len)
-            .map_err(|_| cintxRsError::HostAllocationFailed {
+        chunk_staging.try_reserve_exact(chunk_len).map_err(|_| {
+            cintxRsError::HostAllocationFailed {
                 bytes: chunk_staging_bytes,
-            })?;
+            }
+        })?;
         chunk_staging.resize(chunk_len, 0.0);
 
         let mut workspace = allocator.try_alloc(chunk.bytes, plan.workspace.alignment)?;
@@ -530,16 +529,14 @@ pub unsafe fn eval_raw(
             io.ensure_output_contract()?;
             let chunk_stats = executor.execute(&plan, &mut io)?;
             total_not0 = total_not0.saturating_add(chunk_stats.not0.max(0));
-            total_transfer_bytes =
-                total_transfer_bytes.saturating_add(io.transfer_bytes());
+            total_transfer_bytes = total_transfer_bytes.saturating_add(io.transfer_bytes());
         }
         allocator.release(workspace);
 
         // Copy chunk staging into the appropriate range of the accumulator.
         let dest_end = prefix.saturating_add(chunk_len).min(staging_elements);
         if prefix < dest_end {
-            staging[prefix..dest_end]
-                .copy_from_slice(&chunk_staging[..dest_end - prefix]);
+            staging[prefix..dest_end].copy_from_slice(&chunk_staging[..dest_end - prefix]);
         }
     }
 
@@ -574,6 +571,102 @@ fn unstable_source_api_enabled() -> bool {
 
 fn is_f12_family_symbol(symbol: &str) -> bool {
     symbol.starts_with("int2e_stg") || symbol.starts_with("int2e_yp")
+}
+
+fn parse_env_usize_param(
+    env: &[f64],
+    index: usize,
+    param: &'static str,
+) -> Result<usize, cintxRsError> {
+    let value = *env
+        .get(index)
+        .ok_or_else(|| cintxRsError::InvalidEnvParam {
+            param,
+            reason: format!("env[{index}] is missing"),
+        })?;
+    if !value.is_finite() {
+        return Err(cintxRsError::InvalidEnvParam {
+            param,
+            reason: format!("env[{index}] must be finite, got {value}"),
+        });
+    }
+    if value < 0.0 {
+        return Err(cintxRsError::InvalidEnvParam {
+            param,
+            reason: format!("env[{index}] must be >= 0, got {value}"),
+        });
+    }
+    if value.fract() != 0.0 {
+        return Err(cintxRsError::InvalidEnvParam {
+            param,
+            reason: format!("env[{index}] must be an integer, got {value}"),
+        });
+    }
+    if value > (usize::MAX as f64) {
+        return Err(cintxRsError::InvalidEnvParam {
+            param,
+            reason: format!("env[{index}] exceeds usize::MAX: {value}"),
+        });
+    }
+    Ok(value as usize)
+}
+
+fn extract_grids_env_params(env: &[f64]) -> Result<GridsEnvParams, cintxRsError> {
+    let ngrids = parse_env_usize_param(env, NGRIDS, "NGRIDS")?;
+    if ngrids == 0 {
+        return Err(cintxRsError::InvalidEnvParam {
+            param: "NGRIDS",
+            reason: "NGRIDS must be > 0 for grids integrals".to_owned(),
+        });
+    }
+    let ptr_grids = parse_env_usize_param(env, PTR_GRIDS, "PTR_GRIDS")?;
+    let coord_len = ngrids
+        .checked_mul(3)
+        .ok_or_else(|| cintxRsError::InvalidEnvParam {
+            param: "PTR_GRIDS",
+            reason: format!("NGRIDS={ngrids} overflows when expanded to xyz coordinates"),
+        })?;
+    let coord_end =
+        ptr_grids
+            .checked_add(coord_len)
+            .ok_or_else(|| cintxRsError::InvalidEnvParam {
+                param: "PTR_GRIDS",
+                reason: format!("PTR_GRIDS={ptr_grids} + 3*NGRIDS={coord_len} overflowed"),
+            })?;
+    if coord_end > env.len() {
+        return Err(cintxRsError::InvalidEnvParam {
+            param: "PTR_GRIDS",
+            reason: format!(
+                "grid coordinate range [{ptr_grids}..{coord_end}) exceeds env length {}",
+                env.len()
+            ),
+        });
+    }
+
+    let mut grid_coords = Vec::new();
+    grid_coords
+        .try_reserve_exact(ngrids)
+        .map_err(|_| cintxRsError::HostAllocationFailed {
+            bytes: ngrids.saturating_mul(size_of::<[f64; 3]>()),
+        })?;
+    for (index, chunk) in env[ptr_grids..coord_end].chunks_exact(3).enumerate() {
+        if !chunk.iter().all(|value| value.is_finite()) {
+            return Err(cintxRsError::InvalidEnvParam {
+                param: "PTR_GRIDS",
+                reason: format!(
+                    "grid coordinate {index} contains non-finite values: [{}, {}, {}]",
+                    chunk[0], chunk[1], chunk[2]
+                ),
+            });
+        }
+        grid_coords.push([chunk[0], chunk[1], chunk[2]]);
+    }
+
+    Ok(GridsEnvParams {
+        ngrids,
+        ptr_grids,
+        grid_coords,
+    })
 }
 
 fn f12_sph_envelope_error(symbol: &str) -> cintxRsError {
@@ -685,7 +778,9 @@ fn validate_4c1e_envelope(
     // A Spinor 4c1e request must return UnsupportedApi with "spinor" in the message
     // regardless of whether the with-4c1e feature is enabled.
     if matches!(representation, Representation::Spinor) {
-        return Err(validated_4c1e_error("spinor representation not supported for 4c1e"));
+        return Err(validated_4c1e_error(
+            "spinor representation not supported for 4c1e",
+        ));
     }
 
     if !cfg!(feature = "with-4c1e") {
@@ -1730,6 +1825,64 @@ mod tests {
         assert!(
             !matches!(result, Err(cintxRsError::InvalidEnvParam { .. })),
             "eval_raw should not return InvalidEnvParam when zeta=1.2: {result:?}"
+        );
+    }
+
+    #[cfg(feature = "unstable-source-api")]
+    #[test]
+    fn eval_raw_grids_symbol_with_missing_grids_params_returns_invalid_env_param() {
+        let fixture = RawFixture::single_atom_three_shells();
+        let mut out = vec![0.0_f64; 256];
+        let err = unsafe {
+            eval_raw(
+                RawApiId::Symbol("int1e_grids_sph"),
+                Some(&mut out),
+                None,
+                &fixture.shls_2,
+                &fixture.atm,
+                &fixture.bas,
+                &fixture.env,
+                None,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "NGRIDS"),
+            "expected InvalidEnvParam(NGRIDS), got: {err:?}"
+        );
+    }
+
+    #[cfg(feature = "unstable-source-api")]
+    #[test]
+    fn eval_raw_grids_symbol_with_valid_grids_params_passes_env_validation() {
+        let fixture = RawFixture::single_atom_three_shells();
+        let mut env_full = fixture.env.clone();
+        if env_full.len() <= PTR_GRIDS {
+            env_full.resize(PTR_GRIDS + 1, 0.0);
+        }
+        let ptr_grids = env_full.len();
+        env_full[NGRIDS] = 1.0;
+        env_full[PTR_GRIDS] = ptr_grids as f64;
+        env_full.extend_from_slice(&[0.0, 0.0, 0.0]);
+
+        let mut out = vec![0.0_f64; 256];
+        let result = unsafe {
+            eval_raw(
+                RawApiId::Symbol("int1e_grids_sph"),
+                Some(&mut out),
+                None,
+                &fixture.shls_2,
+                &fixture.atm,
+                &fixture.bas,
+                &env_full,
+                None,
+                None,
+            )
+        };
+        assert!(
+            !matches!(result, Err(cintxRsError::InvalidEnvParam { .. })),
+            "eval_raw grids path should not fail env validation when grids params are set: {result:?}"
         );
     }
 }
