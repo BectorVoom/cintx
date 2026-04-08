@@ -10,6 +10,15 @@ use anyhow::{anyhow, bail, Context, Result};
 
 const REQUIRED_PROFILES_CSV: &str = "base,with-f12,with-4c1e,with-f12+with-4c1e";
 const REQUIRED_PROFILES: [&str; 4] = ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"];
+const ORACLE_COMPARE_PROFILES_CSV: &str =
+    "base,with-f12,with-4c1e,with-f12+with-4c1e,unstable-source";
+const ORACLE_COMPARE_PROFILES: [&str; 5] = [
+    "base",
+    "with-f12",
+    "with-4c1e",
+    "with-f12+with-4c1e",
+    "unstable-source",
+];
 
 #[derive(Debug)]
 enum Command {
@@ -133,7 +142,7 @@ fn parse_oracle_compare(args: impl Iterator<Item = String>) -> Result<Command> {
                 let csv = items
                     .get(index + 1)
                     .context("expected csv value after --profiles")?;
-                profiles = parse_profiles_csv(csv)?;
+                profiles = parse_oracle_compare_profiles_csv(csv)?;
                 index += 2;
             }
             "--include-unstable-source" => {
@@ -252,6 +261,22 @@ fn parse_wgpu_capability_gate(args: impl Iterator<Item = String>) -> Result<Comm
 }
 
 fn parse_profiles_csv(csv: &str) -> Result<Vec<String>> {
+    parse_profiles_csv_with_allowlist(csv, &REQUIRED_PROFILES, REQUIRED_PROFILES_CSV)
+}
+
+fn parse_oracle_compare_profiles_csv(csv: &str) -> Result<Vec<String>> {
+    parse_profiles_csv_with_allowlist(
+        csv,
+        &ORACLE_COMPARE_PROFILES,
+        ORACLE_COMPARE_PROFILES_CSV,
+    )
+}
+
+fn parse_profiles_csv_with_allowlist(
+    csv: &str,
+    known_profiles: &[&str],
+    known_profiles_csv: &str,
+) -> Result<Vec<String>> {
     let values: Vec<String> = csv
         .split(',')
         .map(str::trim)
@@ -266,17 +291,25 @@ fn parse_profiles_csv(csv: &str) -> Result<Vec<String>> {
         bail!("profiles list contains duplicates: {csv}");
     }
     for value in &values {
-        ensure_known_profile(value)?;
+        ensure_known_profile_with_allowlist(value, known_profiles, known_profiles_csv)?;
     }
     Ok(values)
 }
 
 fn ensure_known_profile(profile: &str) -> Result<()> {
-    if REQUIRED_PROFILES.contains(&profile) {
+    ensure_known_profile_with_allowlist(profile, &REQUIRED_PROFILES, REQUIRED_PROFILES_CSV)
+}
+
+fn ensure_known_profile_with_allowlist(
+    profile: &str,
+    known_profiles: &[&str],
+    known_profiles_csv: &str,
+) -> Result<()> {
+    if known_profiles.contains(&profile) {
         return Ok(());
     }
     Err(anyhow!(
-        "unsupported profile '{profile}', expected one of: {REQUIRED_PROFILES_CSV}"
+        "unsupported profile '{profile}', expected one of: {known_profiles_csv}"
     ))
 }
 
@@ -307,7 +340,7 @@ fn print_help() {
     println!("  manifest-audit [--profiles {REQUIRED_PROFILES_CSV}] [--check-lock]");
     println!("  bench-report [--thresholds ci/benchmark-thresholds.json] [--mode enforce|calibration]");
     println!(
-        "  oracle-compare [--profiles {REQUIRED_PROFILES_CSV}] [--include-unstable-source true|false]"
+        "  oracle-compare [--profiles {ORACLE_COMPARE_PROFILES_CSV}] [--include-unstable-source true|false]"
     );
     println!("  helper-legacy-parity [--profile base]");
     println!("  oom-contract-check");
@@ -318,4 +351,52 @@ fn print_help() {
     println!("  profiles: {REQUIRED_PROFILES_CSV}");
     println!("  include_unstable_source: false");
     println!("  require_adapter: false");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oracle_compare_accepts_unstable_source_profile() {
+        let command = parse_oracle_compare(
+            vec![
+                "--profiles".to_owned(),
+                "unstable-source".to_owned(),
+                "--include-unstable-source".to_owned(),
+                "true".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("oracle-compare parser should accept unstable-source profile");
+
+        match command {
+            Command::OracleCompare {
+                profiles,
+                include_unstable_source,
+            } => {
+                assert_eq!(profiles, vec!["unstable-source".to_owned()]);
+                assert!(include_unstable_source);
+            }
+            other => panic!("unexpected command variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn manifest_audit_still_rejects_unstable_source_profile() {
+        let error = parse_manifest_audit(
+            vec!["--profiles".to_owned(), "unstable-source".to_owned()].into_iter(),
+        )
+        .expect_err("manifest-audit parser should reject unstable-source profile");
+
+        let text = error.to_string();
+        assert!(
+            text.contains("unsupported profile 'unstable-source'"),
+            "unexpected error text: {text}"
+        );
+        assert!(
+            text.contains(REQUIRED_PROFILES_CSV),
+            "error should point to required profile allowlist: {text}"
+        );
+    }
 }
