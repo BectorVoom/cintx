@@ -213,6 +213,19 @@ pub fn resolve_backend_kind() -> Result<BackendKind, cintxRsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    /// Serialize all `CINTX_BACKEND` env-var mutations across this test mod.
+    ///
+    /// `std::env::set_var` / `remove_var` are process-global and unsafe under
+    /// concurrent use. RESEARCH §12 / §13 [A6] recommended the `serial_test`
+    /// dev-dependency, but to avoid pulling a new external crate we use an
+    /// in-tree `OnceLock<Mutex<()>>`: every test in this mod that touches
+    /// `CINTX_BACKEND` must take this guard.
+    fn env_mutex() -> &'static Mutex<()> {
+        static M: OnceLock<Mutex<()>> = OnceLock::new();
+        M.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     #[cfg(feature = "cpu")]
@@ -235,10 +248,117 @@ mod tests {
         );
     }
 
-    // The full BACK-05 contract suite (env-unset → Cpu, empty-string → Cpu,
-    // unrecognized → InvalidEnvParam, recognized-not-compiled →
-    // BackendNotCompiled, recognized-compiled → that kind) lands in Task 2 of
-    // this plan along with the in-tree env-mutex guard. Keeping the test mod
-    // intentionally minimal here so Task 1's commit covers only the
-    // structural surface.
+    // BACK-05a: An unset CINTX_BACKEND resolves to the BackendKind default
+    // (Cpu per D-11).
+    #[test]
+    fn env_unset_resolves_to_cpu() {
+        let _guard = env_mutex().lock().unwrap_or_else(|p| p.into_inner());
+        // SAFETY: serialized via env_mutex; no other test in this mod
+        // mutates CINTX_BACKEND without the same guard.
+        unsafe {
+            std::env::remove_var("CINTX_BACKEND");
+        }
+        let kind = resolve_backend_kind().expect("unset env must resolve to default");
+        assert_eq!(kind, BackendKind::Cpu);
+    }
+
+    // Empty-string CINTX_BACKEND is treated identically to unset.
+    #[test]
+    fn empty_string_resolves_to_cpu() {
+        let _guard = env_mutex().lock().unwrap_or_else(|p| p.into_inner());
+        unsafe {
+            std::env::set_var("CINTX_BACKEND", "");
+        }
+        let kind = resolve_backend_kind().expect("empty env must resolve to default");
+        assert_eq!(kind, BackendKind::Cpu);
+        unsafe {
+            std::env::remove_var("CINTX_BACKEND");
+        }
+    }
+
+    // BACK-05c: An unrecognized CINTX_BACKEND value yields InvalidEnvParam
+    // (D-02). No silent fallback.
+    #[test]
+    fn unknown_backend_errors_invalid_env_param() {
+        let _guard = env_mutex().lock().unwrap_or_else(|p| p.into_inner());
+        unsafe {
+            std::env::set_var("CINTX_BACKEND", "foobar");
+        }
+        let err = resolve_backend_kind().expect_err("unknown backend must error");
+        match err {
+            cintxRsError::InvalidEnvParam { param, ref reason } => {
+                assert_eq!(param, "CINTX_BACKEND");
+                assert!(
+                    reason.contains("foobar"),
+                    "reason must mention requested value: {reason}"
+                );
+            }
+            other => panic!("expected InvalidEnvParam, got {other:?}"),
+        }
+        unsafe {
+            std::env::remove_var("CINTX_BACKEND");
+        }
+    }
+
+    // CINTX_BACKEND=cpu always resolves to BackendKind::Cpu (cpu is default-on
+    // per D-06).
+    #[test]
+    fn cpu_backend_resolves_when_compiled() {
+        let _guard = env_mutex().lock().unwrap_or_else(|p| p.into_inner());
+        unsafe {
+            std::env::set_var("CINTX_BACKEND", "cpu");
+        }
+        let kind = resolve_backend_kind().expect("cpu must resolve when feature is on");
+        assert_eq!(kind, BackendKind::Cpu);
+        unsafe {
+            std::env::remove_var("CINTX_BACKEND");
+        }
+    }
+
+    // BACK-05b: A recognized but compile-time-disabled backend errors with
+    // BackendNotCompiled (D-01). cuda is typically OFF on the dev host, so
+    // this exercises the contract there. Mirror tests for rocm/metal would
+    // run under their own negative cfg.
+    #[test]
+    #[cfg(not(feature = "cuda"))]
+    fn not_compiled_cuda_errors_backend_not_compiled() {
+        let _guard = env_mutex().lock().unwrap_or_else(|p| p.into_inner());
+        unsafe {
+            std::env::set_var("CINTX_BACKEND", "cuda");
+        }
+        let err = resolve_backend_kind().expect_err("cuda must error when not compiled in");
+        match err {
+            cintxRsError::BackendNotCompiled {
+                ref requested,
+                ref compiled_in,
+            } => {
+                assert_eq!(requested, "cuda");
+                assert!(
+                    !compiled_in.is_empty(),
+                    "compiled_in must list at least cpu"
+                );
+            }
+            other => panic!("expected BackendNotCompiled, got {other:?}"),
+        }
+        unsafe {
+            std::env::remove_var("CINTX_BACKEND");
+        }
+    }
+
+    // BACK-05d: A compiled-in non-cpu backend resolves when its env-var name
+    // is set. Wgpu is the most likely "extra" backend on a dev host so we use
+    // it as the conditional canary; runs only when --features wgpu is active.
+    #[test]
+    #[cfg(feature = "wgpu")]
+    fn compiled_in_wgpu_backend_resolves() {
+        let _guard = env_mutex().lock().unwrap_or_else(|p| p.into_inner());
+        unsafe {
+            std::env::set_var("CINTX_BACKEND", "wgpu");
+        }
+        let kind = resolve_backend_kind().expect("wgpu must resolve when feature is on");
+        assert_eq!(kind, BackendKind::Wgpu);
+        unsafe {
+            std::env::remove_var("CINTX_BACKEND");
+        }
+    }
 }

@@ -37,16 +37,11 @@ pub enum BackendKind {
 
 impl Default for BackendKind {
     fn default() -> Self {
-        // D-11 default flip happens in Task 2 of this plan. For now keep the
-        // historical Wgpu default; this line is rewritten by the next commit.
-        #[cfg(feature = "wgpu")]
-        {
-            Self::Wgpu
-        }
-        #[cfg(not(feature = "wgpu"))]
-        {
-            Self::Cpu
-        }
+        // D-11: Cpu is the typed default — always, infallibly. Aligns with
+        // resolve_backend_kind()'s unset-env-var behavior and ROADMAP success
+        // criterion 5. Wave 0 (16-01) audited every implicit
+        // BackendIntent::default() callsite so this flip is mechanically safe.
+        Self::Cpu
     }
 }
 
@@ -65,12 +60,11 @@ pub struct BackendIntent {
 
 impl Default for BackendIntent {
     fn default() -> Self {
-        // D-11 default flip happens in Task 2 of this plan; for now the
-        // backend default tracks BackendKind::default() which still resolves
-        // to Wgpu when that feature is on. Task 2 rewrites this to literal
-        // BackendKind::Cpu.
+        // D-11: backend default flipped from Wgpu to Cpu. Wave 0 (16-01)
+        // audited every implicit BackendIntent::default() callsite in
+        // 16-01-SUMMARY.md so this flip is mechanically safe.
         Self {
-            backend: BackendKind::default(),
+            backend: BackendKind::Cpu,
             selector: "auto".to_owned(),
         }
     }
@@ -95,13 +89,12 @@ pub struct BackendCapabilityToken {
 
 impl Default for BackendCapabilityToken {
     fn default() -> Self {
-        // RESEARCH §8.7: backend_api flips to "cpu" alongside the
-        // BackendIntent flip. Task 2 of this plan owns that change; for now
-        // keep the historical "wgpu" default so the Task 1 commit is
-        // structurally additive only.
+        // RESEARCH §8.7: backend_api must flip to "cpu" alongside the
+        // BackendIntent::default() flip so drift detection at workspace.rs
+        // (planning_matches) stays symmetric.
         Self {
             adapter_name: String::new(),
-            backend_api: "wgpu".to_owned(),
+            backend_api: "cpu".to_owned(),
             capability_fingerprint: 0,
         }
     }
