@@ -117,7 +117,7 @@ Plans:
 ### Phase 16: Multi-Backend Support (cuda / rocm / metal) with Feature + Env-Var Selection
 **Goal**: `cintx-cubecl` exposes additive Cargo features `cuda`, `rocm`, `metal` alongside the existing `wgpu`, with `cpu` becoming unconditionally compiled; the `CINTX_BACKEND` env var selects among compiled-in backends at runtime, defaulting to `cpu`, and requesting an un-compiled backend produces a typed hard error rather than a silent fallback.
 **Depends on**: Phase 15
-**Requirements**: TBD — to be derived during `/gsd:plan-phase` (likely BACK-01 through BACK-06).
+**Requirements**: BACK-01, BACK-02, BACK-03, BACK-04, BACK-05, BACK-06, BACK-07 (derived from success criteria 1-7 during `/gsd:plan-phase`).
 **Success Criteria** (what must be TRUE):
   1. `cintx-cubecl/Cargo.toml` exposes additive features `cuda`, `rocm`, `metal`, `wgpu`; `cpu` is unconditional (no longer a feature flag) and the `cubecl-cpu` runtime is always linked.
   2. `BackendKind` (in `cintx-runtime`) and `ResolvedBackend` (in `cintx-cubecl`) are extended with `Cuda`, `Rocm`, and `Metal` variants, each gated behind its respective `#[cfg(feature = "...")]`.
@@ -126,7 +126,12 @@ Plans:
   5. `CINTX_BACKEND=<name>` selects the named backend at runtime when its feature is enabled; an unset env var resolves to `cpu`; a value naming a backend whose feature is **not** compiled in returns a typed `cintxRsError` (`UnsupportedApi` or new `BackendNotCompiled` variant) — never a silent fallback.
   6. `cuda` and `metal` are documented in module-level docs as **"compile-only on this host; runtime behavior delegated to upstream cubecl"** with a link to `notes/cuda-metal-verification-gap.md`. No oracle parity gate is added for cuda or metal in this phase.
   7. The feature matrix is exercised in CI (at minimum `cargo check` per feature combo on the existing CI runners — no new GPU runners required for this phase).
-**Plans**: 0 plans (to be created in `/gsd:plan-phase`)
+**Plans**: 4 plans
+Plans:
+- [ ] 16-01-PLAN.md — Wave 0: migration audit (D-12, 30 callsites) + BackendNotCompiled error variant + CINTX_STATUS_BACKEND_NOT_COMPILED C-ABI code + CHANGELOG pre-announce.
+- [ ] 16-02-PLAN.md — Wave 1: Cargo feature wiring (cuda/rocm/metal/wgpu per D-07 with M1 metal-as-wgpu-alias amendment) + per-backend modules + per-variant cfg gating on BackendKind/ResolvedBackend (D-10) + fallible resolve_backend_kind (D-03) + BackendIntent::default flip to Cpu (D-11) + compiled_backends() introspection helper.
+- [ ] 16-03-PLAN.md — Wave 2: feature_matrix_gate CI job (3-cell: cpu-only / cpu+wgpu / all-features) added inside compat-governance-pr.yml; ROCm install on the all-features cell; manual branch-protection registration of three new required-status-check entries.
+- [ ] 16-04-PLAN.md — Wave 3: ROCm full base-family oracle suite (7 #[ignore]'d tests across 5 files at atol=1e-12, env-gated by CINTX_ROCM_ORACLE=1) + xtask rocm-oracle wrapper command + cuda/metal verification-gap doc citations (BACK-06 closure). No CI gate added (D-15).
 **Notes**:
   - See `.planning/notes/cuda-metal-verification-gap.md` for the explicit risk-accept on cuda/metal runtime verification.
   - See `.planning/seeds/gpu-ci-runners.md` for the follow-up that would close the gap when hardware/CI is available.
