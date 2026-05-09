@@ -16,6 +16,7 @@
 - [x] **Phase 13: F12/STG/YP Kernels** - Implement STG and YP geminal 2e kernels with separate dispatch paths, PTR_F12_ZETA env plumbing, and sph-only oracle gate under the with-f12 profile. (completed 2026-04-05)
 - [x] **Phase 14: Unstable-Source-API Families** - Implement origi, grids, Breit, origk, and ssc families behind the unstable-source-api gate with oracle parity in nightly CI. (completed 2026-04-05)
 - [x] **Phase 15: Oracle Tolerance Unification & Manifest Lock Closure** - Audit every family's empirical precision floor, set per-family atol/rtol constants, regenerate the four-profile manifest lock, and close the unified oracle CI gate. (completed 2026-04-06)
+- [ ] **Phase 16: Multi-Backend Support (cuda / rocm / metal) with Feature + Env-Var Selection** - Add additive Cargo feature flags for cuda, rocm (cubecl-hip), and metal alongside the existing wgpu and unconditional cpu backends; wire `CINTX_BACKEND` env-var runtime selection across compiled-in backends with hard-error on missing-feature mismatch.
 
 ## Progress
 
@@ -36,6 +37,7 @@
 | Phase 13: F12/STG/YP Kernels | v1.2 | 4/4 | Complete | 2026-04-05 |
 | Phase 14: Unstable-Source-API Families | v1.2 | 0/5 | Planned | - |
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | v1.2 | 0/3 | Planned | - |
+| Phase 16: Multi-Backend Support (cuda / rocm / metal) | — | 0/0 | Planned | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -111,3 +113,21 @@ Plans:
 - [x] 15-01-PLAN.md — Refactor tolerance_for_family to catch-all and replace PHASE4_ORACLE_FAMILIES with manifest-driven derivation.
 - [x] 15-02-PLAN.md — Create oracle-covered-update xtask, add oracle_covered check to manifest-audit, stamp and regenerate lock.
 - [x] 15-03-PLAN.md — Switch CI oracle_parity_gate to matrix strategy over four profiles.
+
+### Phase 16: Multi-Backend Support (cuda / rocm / metal) with Feature + Env-Var Selection
+**Goal**: `cintx-cubecl` exposes additive Cargo features `cuda`, `rocm`, `metal` alongside the existing `wgpu`, with `cpu` becoming unconditionally compiled; the `CINTX_BACKEND` env var selects among compiled-in backends at runtime, defaulting to `cpu`, and requesting an un-compiled backend produces a typed hard error rather than a silent fallback.
+**Depends on**: Phase 15
+**Requirements**: TBD — to be derived during `/gsd:plan-phase` (likely BACK-01 through BACK-06).
+**Success Criteria** (what must be TRUE):
+  1. `cintx-cubecl/Cargo.toml` exposes additive features `cuda`, `rocm`, `metal`, `wgpu`; `cpu` is unconditional (no longer a feature flag) and the `cubecl-cpu` runtime is always linked.
+  2. `BackendKind` (in `cintx-runtime`) and `ResolvedBackend` (in `cintx-cubecl`) are extended with `Cuda`, `Rocm`, and `Metal` variants, each gated behind its respective `#[cfg(feature = "...")]`.
+  3. `cargo check` with every non-empty subset of `{cuda, rocm, metal, wgpu}` builds cleanly on this dev host (Linux, AMD ROCm); `cargo test --features cpu` (the default) passes the existing oracle suite with zero mismatches.
+  4. `cargo test --features rocm` runs at least one oracle smoke test under `CINTX_BACKEND=rocm` on AMD/ROCm-capable hosts and matches existing parity tolerances.
+  5. `CINTX_BACKEND=<name>` selects the named backend at runtime when its feature is enabled; an unset env var resolves to `cpu`; a value naming a backend whose feature is **not** compiled in returns a typed `cintxRsError` (`UnsupportedApi` or new `BackendNotCompiled` variant) — never a silent fallback.
+  6. `cuda` and `metal` are documented in module-level docs as **"compile-only on this host; runtime behavior delegated to upstream cubecl"** with a link to `notes/cuda-metal-verification-gap.md`. No oracle parity gate is added for cuda or metal in this phase.
+  7. The feature matrix is exercised in CI (at minimum `cargo check` per feature combo on the existing CI runners — no new GPU runners required for this phase).
+**Plans**: 0 plans (to be created in `/gsd:plan-phase`)
+**Notes**:
+  - See `.planning/notes/cuda-metal-verification-gap.md` for the explicit risk-accept on cuda/metal runtime verification.
+  - See `.planning/seeds/gpu-ci-runners.md` for the follow-up that would close the gap when hardware/CI is available.
+  - Open research question to resolve before planning: do `cubecl-cuda 0.10.0`, `cubecl-hip 0.10.0`, `cubecl-metal 0.10.0`, and `cubecl-wgpu 0.10.0` resolve cleanly together? See `.planning/research/questions.md`.
