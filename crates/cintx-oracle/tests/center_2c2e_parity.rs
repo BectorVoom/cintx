@@ -19,7 +19,11 @@
 //! These tests require the `cpu` feature to be enabled (cubecl cpu backend).
 //! Vendor parity tests require CINTX_ORACLE_BUILD_VENDOR=1.
 
-#![cfg(feature = "cpu")]
+// Module gate widened to allow `--features rocm` (without cpu) for the
+// Phase 16-04 ROCm oracle suite (D-15). Cpu tests remain unconditional under
+// the (cpu OR rocm) gate; rocm tests inside are individually gated
+// `#[cfg(feature = "rocm")]` + `#[ignore]` + env-gated.
+#![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
     ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, PTR_COEFF, PTR_COORD,
@@ -379,5 +383,80 @@ fn test_int2c2e_sph_h2o_sto3g_vendor_parity() {
     println!(
         "  PASS: int2c2e_sph H2O STO-3G vendor parity: mismatch_count=0 at atol=1e-9 \
         vs vendored libcint 6.1.3"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROCm oracle parity test (Phase 16-04 / D-15)
+//
+// Idempotency check at atol=1e-12 across all 2c2e shell pairs in H2O STO-3G
+// under the rocm backend. Gated `#[cfg(feature = "rocm")] + #[ignore] +
+// CINTX_ROCM_ORACLE=1` env-gate. See `xtask rocm-oracle` for the trigger.
+//
+// NOTE: the cpu sibling test in this file (`test_int2c2e_sph_h2o_sto3g_idempotency`)
+// uses `count_mismatches(reference, observed, atol)` — a 3-arg helper at
+// absolute tolerance only. The rocm variant uses an inline 4-arg
+// abs+rel tolerance check matching D-15's atol=1e-12 / rtol=1e-10 contract.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// int2c2e_sph H2O STO-3G ROCm oracle parity (atol=1e-12 / rtol=1e-10).
+#[cfg(feature = "rocm")]
+#[test]
+#[ignore]
+fn test_int2c2e_sph_h2o_sto3g_rocm_parity() {
+    assert_eq!(
+        std::env::var("CINTX_ROCM_ORACLE").as_deref(),
+        Ok("1"),
+        "ROCm oracle must be invoked via `xtask rocm-oracle` (sets CINTX_ROCM_ORACLE=1). \
+         Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
+    );
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let atol = 1e-12_f64;
+    let rtol = 1e-10_f64;
+
+    let ang: Vec<i32> = (0..N_SHELLS)
+        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
+        .collect();
+    let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
+
+    let mut mismatch_count = 0usize;
+    let mut pair_count = 0usize;
+
+    for i_sh in 0..N_SHELLS {
+        let ni = shell_nao[i_sh];
+        for k_sh in 0..N_SHELLS {
+            pair_count += 1;
+            let nk = shell_nao[k_sh];
+
+            let reference = eval_2c2e_sph_cintx(i_sh, k_sh, ni, nk, &atm, &bas, &env);
+            let observed = eval_2c2e_sph_cintx(i_sh, k_sh, ni, nk, &atm, &bas, &env);
+
+            // Inline abs+rel tolerance check (count_mismatches in this file is abs-only).
+            assert_eq!(
+                reference.len(),
+                observed.len(),
+                "output length mismatch for shells ({i_sh},{k_sh})"
+            );
+            for (idx, (&r, &o)) in reference.iter().zip(observed.iter()).enumerate() {
+                let diff = (o - r).abs();
+                let threshold = atol + rtol * r.abs();
+                if diff > threshold {
+                    mismatch_count += 1;
+                    eprintln!(
+                        "  rocm MISMATCH shells ({i_sh},{k_sh}) idx {idx}: \
+                         ref={r:.15e}, obs={o:.15e}, diff={diff:.3e}, threshold={threshold:.3e}"
+                    );
+                }
+            }
+        }
+    }
+
+    assert_eq!(
+        mismatch_count, 0,
+        "rocm oracle parity failed: {mismatch_count} mismatches in int2c2e_sph across {pair_count} pairs"
+    );
+    println!(
+        "  PASS: rocm int2c2e_sph mismatch_count=0 across {pair_count} pairs at atol={atol:.0e}/rtol={rtol:.0e}"
     );
 }

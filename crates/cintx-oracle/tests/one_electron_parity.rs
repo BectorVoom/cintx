@@ -28,7 +28,11 @@
 //!
 //! These tests require the `cpu` feature to be enabled (cubecl cpu backend).
 
-#![cfg(feature = "cpu")]
+// Module gate widened to allow `--features rocm` (without cpu) per Phase 16-04
+// Plan 16-04 `<interfaces>` Option A: lets the rocm oracle suite be invoked
+// stand-alone via `xtask rocm-oracle`. The cpu tests remain gated `#[cfg(feature
+// = "cpu")]` per-fn (default-on, so they continue to run unchanged).
+#![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
     ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, PTR_COEFF, PTR_COORD,
@@ -640,4 +644,116 @@ fn test_int1e_nuc_sph_h2o_sto3g_vendor_parity() {
         "int1e_nuc_sph: {mismatches} elements exceed atol=1e-11/rtol=1e-9 vs vendored libcint"
     );
     println!("  PASS: mismatch_count=0 vs vendored libcint 6.1.3");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROCm oracle parity tests (Phase 16-04 / D-15)
+//
+// These tests are gated by the `rocm` Cargo feature AND `#[ignore]` AND an
+// env-gate (`CINTX_ROCM_ORACLE=1`) — all three must be satisfied for them to
+// run. Default `cargo test --features rocm` skips them (they are ignored).
+// The opt-in invocation is wrapped by `cargo run -p xtask -- rocm-oracle`,
+// which sets `CINTX_ROCM_ORACLE=1` and `CINTX_BACKEND=rocm` and passes
+// `-- --ignored`. Direct `cargo test --features rocm -- --ignored` (without
+// the env-gate) panics with a guidance message — accidental opt-in is
+// impossible.
+//
+// Tolerance: atol=1e-12 / rtol=1e-10, tighter than the cpu suite's 1e-11/1e-9
+// per D-15. These tests share `build_h2o_sto3g`, `collect_1e_sph_matrix`, and
+// `count_mismatches` with the cpu tests above; the only difference is the
+// dispatch target (selected at runtime via `CINTX_BACKEND=rocm`).
+//
+// No CI gate is added (D-15 explicit). See `xtask rocm-oracle` for the
+// operator-driven trigger.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Assert the env-gate is set; panic with a guidance message otherwise.
+///
+/// This makes accidental opt-in impossible: even if a developer runs
+/// `cargo test --features rocm -- --ignored` directly (bypassing the xtask
+/// wrapper), the test panics immediately with the recommended invocation.
+#[cfg(feature = "rocm")]
+fn assert_rocm_oracle_env_gate() {
+    assert_eq!(
+        std::env::var("CINTX_ROCM_ORACLE").as_deref(),
+        Ok("1"),
+        "ROCm oracle must be invoked via `xtask rocm-oracle` (sets CINTX_ROCM_ORACLE=1). \
+         Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
+    );
+}
+
+/// int1e_ovlp_sph H2O STO-3G ROCm oracle parity (atol=1e-12 / rtol=1e-10).
+///
+/// Calls `collect_1e_sph_matrix` twice through the rocm backend and verifies
+/// idempotency at the tight tolerance from D-15.
+#[cfg(feature = "rocm")]
+#[test]
+#[ignore]
+fn test_int1e_ovlp_sph_h2o_sto3g_rocm_parity() {
+    assert_rocm_oracle_env_gate();
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let api_id = RawApiId::INT1E_OVLP_SPH;
+    // D-15: rocm oracle uses tighter atol=1e-12 / rtol=1e-10 than the cpu suite
+    let atol = 1e-12_f64;
+    let rtol = 1e-10_f64;
+
+    let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let observed = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let mismatch_count = count_mismatches(&reference, &observed, atol, rtol);
+    assert_eq!(
+        mismatch_count, 0,
+        "rocm oracle parity failed: {mismatch_count} mismatches in int1e_ovlp_sph"
+    );
+    println!(
+        "  PASS: rocm int1e_ovlp_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}"
+    );
+}
+
+/// int1e_kin_sph H2O STO-3G ROCm oracle parity (atol=1e-12 / rtol=1e-10).
+#[cfg(feature = "rocm")]
+#[test]
+#[ignore]
+fn test_int1e_kin_sph_h2o_sto3g_rocm_parity() {
+    assert_rocm_oracle_env_gate();
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let api_id = RawApiId::INT1E_KIN_SPH;
+    let atol = 1e-12_f64;
+    let rtol = 1e-10_f64;
+
+    let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let observed = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let mismatch_count = count_mismatches(&reference, &observed, atol, rtol);
+    assert_eq!(
+        mismatch_count, 0,
+        "rocm oracle parity failed: {mismatch_count} mismatches in int1e_kin_sph"
+    );
+    println!(
+        "  PASS: rocm int1e_kin_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}"
+    );
+}
+
+/// int1e_nuc_sph H2O STO-3G ROCm oracle parity (atol=1e-12 / rtol=1e-10).
+#[cfg(feature = "rocm")]
+#[test]
+#[ignore]
+fn test_int1e_nuc_sph_h2o_sto3g_rocm_parity() {
+    assert_rocm_oracle_env_gate();
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let api_id = RawApiId::INT1E_NUC_SPH;
+    let atol = 1e-12_f64;
+    let rtol = 1e-10_f64;
+
+    let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let observed = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
+    let mismatch_count = count_mismatches(&reference, &observed, atol, rtol);
+    assert_eq!(
+        mismatch_count, 0,
+        "rocm oracle parity failed: {mismatch_count} mismatches in int1e_nuc_sph"
+    );
+    println!(
+        "  PASS: rocm int1e_nuc_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}"
+    );
 }

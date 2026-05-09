@@ -12,6 +12,11 @@ cpu = ["cintx-cubecl/cpu"]
 with-f12 = ["cintx-cubecl/with-f12"]
 with-4c1e = ["cintx-cubecl/with-4c1e"]
 unstable-source-api = ["cintx-cubecl/unstable-source-api"]
+# Forwards `cintx-cubecl/rocm`. Required for the Phase 16-04 opt-in ROCm
+# oracle base-family suite (D-15) — exposes the rocm runtime through the
+# compat path so cintx-oracle (which depends on cintx-compat, not cintx-cubecl
+# directly) can transitively activate it via `--features rocm`.
+rocm = ["cintx-cubecl/rocm"]
 
 [dependencies]
 cintx-core = { path = "../cintx-core" }

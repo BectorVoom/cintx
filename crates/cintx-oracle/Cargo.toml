@@ -12,6 +12,13 @@ cpu = ["cintx-compat/cpu"]
 with-4c1e = ["cintx-compat/with-4c1e"]
 with-f12 = ["cintx-compat/with-f12"]
 unstable-source-api = ["cintx-compat/unstable-source-api"]
+# Forwards `cintx-compat/rocm` (which forwards to `cintx-cubecl/rocm`) so
+# `cargo test -p cintx-oracle --features rocm` transitively activates the
+# rocm backend (cubecl-hip). Required for the opt-in ROCm oracle base-family
+# suite (Phase 16-04 / D-15) — tests are gated `#[cfg(feature = "rocm")]
+# #[ignore]` and are only triggered via `xtask rocm-oracle` (which sets
+# `CINTX_ROCM_ORACLE=1`).
+rocm = ["cintx-compat/rocm"]
 
 [dependencies]
 anyhow = "1.0.102"

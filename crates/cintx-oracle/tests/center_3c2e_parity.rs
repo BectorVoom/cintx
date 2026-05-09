@@ -6,7 +6,11 @@
 //!
 //! Tolerance: atol 1e-9 for 3c2e per phase research D-06.
 
-#![cfg(feature = "cpu")]
+// Module gate widened to allow `--features rocm` (without cpu) for the
+// Phase 16-04 ROCm oracle suite (D-15). Cpu tests remain unconditional under
+// the (cpu OR rocm) gate; rocm tests inside are individually gated
+// `#[cfg(feature = "rocm")]` + `#[ignore]` + env-gated.
+#![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
     ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
@@ -279,5 +283,101 @@ fn test_center_3c2e_sph_h2o_sto3g_vendor_parity() {
     assert_eq!(
         mismatch_count, 0,
         "int3c2e_sph vendor parity failed: {mismatch_count} elements exceed atol=1e-9"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROCm oracle parity test (Phase 16-04 / D-15)
+//
+// Idempotency check at atol=1e-12 / rtol=1e-10 across all 5^3 shell triples
+// for `int3c2e_ip1_sph` under the rocm backend (mirroring the cpu sibling
+// test's `RawApiId::INT3C2E_IP1_SPH` choice — Phase 10 STATE.md decision).
+// Gated `#[cfg(feature = "rocm")] + #[ignore] + CINTX_ROCM_ORACLE=1` env-gate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// int3c2e_ip1_sph H2O STO-3G ROCm oracle parity (atol=1e-12 / rtol=1e-10).
+#[cfg(feature = "rocm")]
+#[test]
+#[ignore]
+fn test_int3c2e_sph_h2o_sto3g_rocm_parity() {
+    assert_eq!(
+        std::env::var("CINTX_ROCM_ORACLE").as_deref(),
+        Ok("1"),
+        "ROCm oracle must be invoked via `xtask rocm-oracle` (sets CINTX_ROCM_ORACLE=1). \
+         Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
+    );
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let api_id = RawApiId::INT3C2E_IP1_SPH;
+    let atol = 1e-12_f64;
+    let rtol = 1e-10_f64;
+
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
+    let shell_nsph: Vec<usize> = ang.iter().map(|&l| nsph_for_l(l)).collect();
+
+    let mut mismatch_count = 0usize;
+    let mut triple_count = 0usize;
+
+    for i_sh in 0..N_SHELLS {
+        for j_sh in 0..N_SHELLS {
+            for k_sh in 0..N_SHELLS {
+                triple_count += 1;
+                let ni = shell_nsph[i_sh];
+                let nj = shell_nsph[j_sh];
+                let nk = shell_nsph[k_sh];
+                let n_elem = ni * nj * nk;
+                let shls = [i_sh as i32, j_sh as i32, k_sh as i32];
+                let mut out1 = vec![0.0_f64; n_elem];
+                let mut out2 = vec![0.0_f64; n_elem];
+
+                unsafe {
+                    eval_raw(
+                        api_id,
+                        Some(&mut out1),
+                        None,
+                        &shls,
+                        &atm,
+                        &bas,
+                        &env,
+                        None,
+                        None,
+                    )
+                    .unwrap_or_else(|e| panic!("rocm eval_raw failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}"));
+                    eval_raw(
+                        api_id,
+                        Some(&mut out2),
+                        None,
+                        &shls,
+                        &atm,
+                        &bas,
+                        &env,
+                        None,
+                        None,
+                    )
+                    .unwrap_or_else(|e| panic!("rocm eval_raw second call failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}"));
+                }
+
+                // Inline abs+rel tolerance check (count_mismatches in this file is abs-only).
+                for (idx, (&r, &o)) in out1.iter().zip(out2.iter()).enumerate() {
+                    let diff = (o - r).abs();
+                    let threshold = atol + rtol * r.abs();
+                    if diff > threshold {
+                        mismatch_count += 1;
+                        eprintln!(
+                            "  rocm MISMATCH shells ({i_sh},{j_sh},{k_sh}) idx {idx}: \
+                             ref={r:.15e}, obs={o:.15e}, diff={diff:.3e}, threshold={threshold:.3e}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    assert_eq!(
+        mismatch_count, 0,
+        "rocm oracle parity failed: {mismatch_count} mismatches in int3c2e_ip1_sph across {triple_count} triples"
+    );
+    println!(
+        "  PASS: rocm int3c2e_ip1_sph mismatch_count=0 across {triple_count} triples at atol={atol:.0e}/rtol={rtol:.0e}"
     );
 }

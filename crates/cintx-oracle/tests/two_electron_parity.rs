@@ -7,7 +7,12 @@
 //! - absolute: 1e-12
 //! - relative: 1e-10
 
-#![cfg(all(feature = "cpu", has_vendor_libcint))]
+// Module gate widened: the existing two_electron_parity tests require a
+// vendor libcint build, but the Phase 16-04 rocm idempotency variant does
+// not (it's pure self-consistency). The compound predicate keeps the
+// existing tests vendor-gated while letting the rocm variant compile under
+// `--features rocm` (with or without cpu, with or without vendor build).
+#![cfg(any(all(feature = "cpu", has_vendor_libcint), feature = "rocm"))]
 
 use cintx_compat::raw::{
     ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
@@ -305,4 +310,73 @@ fn oracle_parity_int2e_sph_h2o_sto3g_two_electron() {
 fn oracle_parity_int2e_sph_h2_sto3g_two_electron() {
     let (atm, bas, env) = build_h2_sto3g();
     run_vendor_parity("H2 STO-3G", 2, &atm, &bas, &env);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROCm oracle parity test (Phase 16-04 / D-15)
+//
+// Idempotency check across all 4-shell quartets in H2O STO-3G under the
+// rocm backend at atol=1e-12 / rtol=1e-10. Gated `#[cfg(feature = "rocm")]
+// + #[ignore] + CINTX_ROCM_ORACLE=1` env-gate. See module-level doc on
+// `one_electron_parity.rs::assert_rocm_oracle_env_gate` for the gate
+// rationale and `xtask rocm-oracle` for the operator-driven trigger.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// int2e_sph H2O STO-3G ROCm oracle parity (atol=1e-12 / rtol=1e-10).
+///
+/// Runs `eval_int2e_sph_cintx` twice for every shell quartet and verifies
+/// idempotency. Since this is a self-consistency test (not a vendor parity
+/// gate), no `has_vendor_libcint` requirement applies — the rocm test runs
+/// whenever `--features rocm` is active and `CINTX_ROCM_ORACLE=1` is set.
+#[cfg(feature = "rocm")]
+#[test]
+#[ignore]
+fn test_int2e_sph_h2o_sto3g_rocm_parity() {
+    assert_eq!(
+        std::env::var("CINTX_ROCM_ORACLE").as_deref(),
+        Ok("1"),
+        "ROCm oracle must be invoked via `xtask rocm-oracle` (sets CINTX_ROCM_ORACLE=1). \
+         Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
+    );
+
+    let (atm, bas, env) = build_h2o_sto3g();
+    let atol = 1e-12_f64;
+    let rtol = 1e-10_f64;
+    let n_shells = 5_usize;
+
+    let ang: Vec<i32> = (0..n_shells)
+        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
+        .collect();
+    let shell_nsph: Vec<usize> = ang.iter().map(|&l| nsph_for_l(l)).collect();
+
+    let mut mismatch_count = 0usize;
+    let mut quartet_count = 0usize;
+
+    for i_sh in 0..n_shells {
+        let ni = shell_nsph[i_sh];
+        for j_sh in 0..n_shells {
+            let nj = shell_nsph[j_sh];
+            for k_sh in 0..n_shells {
+                let nk = shell_nsph[k_sh];
+                for l_sh in 0..n_shells {
+                    quartet_count += 1;
+                    let nl = shell_nsph[l_sh];
+                    let n_elem = ni * nj * nk * nl;
+                    let shls = [i_sh as i32, j_sh as i32, k_sh as i32, l_sh as i32];
+
+                    let reference = eval_int2e_sph_cintx(&shls, n_elem, &atm, &bas, &env);
+                    let observed = eval_int2e_sph_cintx(&shls, n_elem, &atm, &bas, &env);
+                    mismatch_count += count_mismatches(&reference, &observed, atol, rtol);
+                }
+            }
+        }
+    }
+
+    assert_eq!(
+        mismatch_count, 0,
+        "rocm oracle parity failed: {mismatch_count} mismatches in int2e_sph across {quartet_count} quartets"
+    );
+    println!(
+        "  PASS: rocm int2e_sph mismatch_count=0 across {quartet_count} quartets at atol={atol:.0e}/rtol={rtol:.0e}"
+    );
 }
