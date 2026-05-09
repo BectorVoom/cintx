@@ -16,7 +16,7 @@
 - [x] **Phase 13: F12/STG/YP Kernels** - Implement STG and YP geminal 2e kernels with separate dispatch paths, PTR_F12_ZETA env plumbing, and sph-only oracle gate under the with-f12 profile. (completed 2026-04-05)
 - [x] **Phase 14: Unstable-Source-API Families** - Implement origi, grids, Breit, origk, and ssc families behind the unstable-source-api gate with oracle parity in nightly CI. (completed 2026-04-05)
 - [x] **Phase 15: Oracle Tolerance Unification & Manifest Lock Closure** - Audit every family's empirical precision floor, set per-family atol/rtol constants, regenerate the four-profile manifest lock, and close the unified oracle CI gate. (completed 2026-04-06)
-- [ ] **Phase 16: Multi-Backend Support (cuda / rocm / metal) with Feature + Env-Var Selection** - Add additive Cargo feature flags for cuda, rocm (cubecl-hip), and metal alongside the existing wgpu and unconditional cpu backends; wire `CINTX_BACKEND` env-var runtime selection across compiled-in backends with hard-error on missing-feature mismatch.
+- [x] **Phase 16: Multi-Backend Support (cuda / rocm / metal) with Feature + Env-Var Selection** - Add additive Cargo feature flags for cuda, rocm (cubecl-hip), and metal alongside the existing wgpu and unconditional cpu backends; wire `CINTX_BACKEND` env-var runtime selection across compiled-in backends with hard-error on missing-feature mismatch. (completed 2026-05-09)
 
 ## Progress
 
@@ -37,7 +37,7 @@
 | Phase 13: F12/STG/YP Kernels | v1.2 | 4/4 | Complete | 2026-04-05 |
 | Phase 14: Unstable-Source-API Families | v1.2 | 0/5 | Planned | - |
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | v1.2 | 0/3 | Planned | - |
-| Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | In Progress | - |
+| Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 

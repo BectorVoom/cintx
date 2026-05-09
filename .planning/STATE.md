@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
-status: Milestone complete
-stopped_at: Completed 15-03-PLAN.md
-last_updated: "2026-04-06T00:11:00.086Z"
+status: Phase 16 complete (HUMAN-UAT pending)
+stopped_at: Completed 16-04-PLAN.md
+last_updated: "2026-05-09T00:00:00.000Z"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 21
-  completed_plans: 21
+  total_phases: 6
+  completed_phases: 6
+  total_plans: 25
+  completed_plans: 25
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 15 — oracle-tolerance-unification-manifest-lock-closure
+**Current focus:** Phase 16 complete — multi-backend-support (HUMAN-UAT pending: branch-protection registration, CUDA runtime risk-accept)
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
+Phase: 16 (complete)
+Plan: All 4 plans complete (16-01 through 16-04)
 
 ## Performance Metrics
 
