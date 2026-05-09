@@ -37,7 +37,7 @@
 | Phase 13: F12/STG/YP Kernels | v1.2 | 4/4 | Complete | 2026-04-05 |
 | Phase 14: Unstable-Source-API Families | v1.2 | 0/5 | Planned | - |
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | v1.2 | 0/3 | Planned | - |
-| Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 1/4 | In Progress | - |
+| Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 2/4 | In Progress | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
