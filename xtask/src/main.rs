@@ -2,6 +2,7 @@ mod bench_report;
 mod manifest_audit;
 mod oracle_covered_update;
 mod oracle_update;
+mod rocm_oracle;
 mod wgpu_capability_gate;
 
 use std::collections::BTreeSet;
@@ -39,6 +40,10 @@ enum Command {
     },
     OomContractCheck,
     OracleCoveredUpdate,
+    /// Phase 16-04 / D-15 ROCm oracle wrapper. Operator-driven — not in CI.
+    RocmOracle {
+        profile: Option<String>,
+    },
     WgpuCapabilityGate {
         profiles: Vec<String>,
         require_adapter: bool,
@@ -67,6 +72,7 @@ fn run() -> Result<()> {
         "helper-legacy-parity" => parse_helper_legacy_parity(args)?,
         "oom-contract-check" => parse_oom_contract_check(args)?,
         "oracle-covered-update" => Command::OracleCoveredUpdate,
+        "rocm-oracle" => parse_rocm_oracle(args)?,
         "wgpu-capability-gate" => parse_wgpu_capability_gate(args)?,
         "--help" | "-h" | "help" => Command::Help,
         other => return Err(anyhow!("unknown xtask command: {other}")),
@@ -92,6 +98,7 @@ fn execute(command: Command) -> Result<()> {
         Command::HelperLegacyParity { profile } => oracle_update::run_helper_legacy_parity(&profile),
         Command::OomContractCheck => oracle_update::run_oom_contract_check(),
         Command::OracleCoveredUpdate => oracle_covered_update::run_oracle_covered_update(),
+        Command::RocmOracle { profile } => rocm_oracle::run_rocm_oracle(profile.as_deref()),
         Command::WgpuCapabilityGate {
             profiles,
             require_adapter,
@@ -212,6 +219,27 @@ fn parse_helper_legacy_parity(args: impl Iterator<Item = String>) -> Result<Comm
         }
     }
     Ok(Command::HelperLegacyParity { profile })
+}
+
+fn parse_rocm_oracle(args: impl Iterator<Item = String>) -> Result<Command> {
+    let items: Vec<String> = args.collect();
+    let mut profile: Option<String> = None;
+    let mut index = 0;
+    while let Some(flag) = items.get(index) {
+        match flag.as_str() {
+            "--profile" => {
+                let value = items
+                    .get(index + 1)
+                    .context("expected value after --profile")?;
+                ensure_known_profile(value)?;
+                profile = Some(value.clone());
+                index += 2;
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => return Err(anyhow!("unknown rocm-oracle flag: {other}")),
+        }
+    }
+    Ok(Command::RocmOracle { profile })
 }
 
 fn parse_oom_contract_check(args: impl Iterator<Item = String>) -> Result<Command> {
@@ -345,6 +373,7 @@ fn print_help() {
     println!("  helper-legacy-parity [--profile base]");
     println!("  oom-contract-check");
     println!("  oracle-covered-update                      Run oracle parity for all 4 profiles and stamp oracle_covered=true in manifest lock");
+    println!("  rocm-oracle [--profile base]               Run ROCm oracle base-family suite (env-gated; requires --features rocm and ROCm 7.x on dev host; D-15: not in CI)");
     println!("  wgpu-capability-gate [--profiles {REQUIRED_PROFILES_CSV}] [--require-adapter true|false]");
     println!();
     println!("Defaults:");
