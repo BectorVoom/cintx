@@ -713,6 +713,11 @@ mod tests {
         ));
     }
 
+    // Phase 16-01 (W)/(F) site per RESEARCH §5: BackendKind::Wgpu is a feature-gated
+    // variant after Wave 1; this test must compile only when the wgpu backend is
+    // enabled. BackendIntent literal stays explicit (no `..Default::default()`) so the
+    // Wave 1 default-flip is mechanical.
+    #[cfg(feature = "wgpu")]
     #[test]
     fn query_workspace_records_backend_contract_metadata() {
         use crate::options::{BackendCapabilityToken, BackendIntent, BackendKind};
@@ -751,6 +756,11 @@ mod tests {
         );
     }
 
+    // Phase 16-01 (W)/(F) site per RESEARCH §5: drift test asserts Wgpu vs Cpu
+    // mismatch; both BackendIntent literals are already explicit. Gated on `wgpu`
+    // so Wave 1's `--no-default-features --features cpu` matrix cell does not try
+    // to construct a `BackendKind::Wgpu` variant that has been cfg-removed.
+    #[cfg(feature = "wgpu")]
     #[test]
     fn evaluate_rejects_query_workspace_backend_intent_drift() {
         use crate::options::{BackendIntent, BackendKind};

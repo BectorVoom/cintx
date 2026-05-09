@@ -7,8 +7,13 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-default = ["cpu"]
+default = ["cpu", "wgpu"]
 cpu = ["cubecl/cpu"]
+# Wave-0 (Phase 16-01) introduces `wgpu` as a default-on placeholder feature so
+# `#[cfg(feature = "wgpu")]` test gates compile today (no behavior change). Wave 1
+# rewires this to `wgpu = ["dep:cubecl-wgpu", "dep:wgpu"]` and drops it from default
+# per D-04/D-07.
+wgpu = []
 with-f12 = []
 with-4c1e = []
 unstable-source-api = []

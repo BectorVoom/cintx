@@ -6,6 +6,13 @@ edition = "2024"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# Wave-0 (Phase 16-01) introduces `wgpu` as a default-on feature flag so that
+# `#[cfg(feature = "wgpu")]`-gated tests compile today (no behavior change) and
+# Wave 1 can drop it from `default` to make wgpu opt-in per D-04.
+default = ["wgpu"]
+wgpu = []
+
 [dependencies]
 cintx-core = { path = "../cintx-core" }
 cintx-ops = { path = "../cintx-ops" }

@@ -271,7 +271,10 @@ fn collect_limit_entries(adapter: &wgpu::Adapter) -> Vec<String> {
     ]
 }
 
-#[cfg(test)]
+// Phase 16-01 (W)/(F) site per RESEARCH §5: this entire test module exercises the
+// wgpu adapter selector and bootstrap path. Gated on `feature = "wgpu"` so Wave 1's
+// `--no-default-features --features cpu` matrix cell stops trying to build it.
+#[cfg(all(test, feature = "wgpu"))]
 mod tests {
     use super::*;
     use cintx_runtime::{BackendIntent, BackendKind};

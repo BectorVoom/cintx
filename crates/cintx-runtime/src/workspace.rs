@@ -344,6 +344,12 @@ mod tests {
         assert!(plan.chunks.iter().all(|chunk| chunk.bytes <= 320));
     }
 
+    // Phase 16-01 (W) site per RESEARCH §5: this drift test directly constructs
+    // `BackendKind::Wgpu` and toggles to `BackendKind::Cpu`; both literals are
+    // explicit (no `..Default::default()`). Gated on `wgpu` so Wave 1's
+    // `--no-default-features --features cpu` matrix cell does not try to construct
+    // a cfg-removed Wgpu variant.
+    #[cfg(feature = "wgpu")]
     #[test]
     fn planning_matches_checks_backend_contract() {
         use crate::options::{BackendCapabilityToken, BackendIntent, BackendKind};
