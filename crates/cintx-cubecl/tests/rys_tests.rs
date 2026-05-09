@@ -227,42 +227,52 @@ mod rys_cpu_tests {
         let cube_count = CubeCount::Static(1, 1, 1);
         let cube_dim = CubeDim::new_1d(1);
 
+        // cubecl 0.10.0 API deltas (vs 0.9.0):
+        // - `ArrayArg::from_raw_parts(handle, len)` is now (Handle, usize); the
+        //   element-type generic and the trailing stride argument are gone, and the
+        //   handle is taken by value (clone here so the `Handle` is consumed only
+        //   by the launch — the original is still needed for `read_one_unchecked`).
+        // - Scalar parameters are passed as bare values; `ScalarArg::new` is gone.
+        // - `launch` is now infallible (returns `()`); the trailing `.unwrap()` is
+        //   gone.
+        // - `read_one` now returns `Result<Bytes, ServerError>`; for tests we use
+        //   `read_one_unchecked` which returns `Bytes` directly.
         match nroots {
             1 => rys_root1_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
-                unsafe { ArrayArg::from_raw_parts::<f64>(&u_handle, n, 1) },
-                unsafe { ArrayArg::from_raw_parts::<f64>(&w_handle, n, 1) },
-                ScalarArg::new(x),
-            ).unwrap(),
+                unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
+                unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
+                x,
+            ),
             2 => rys_root2_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
-                unsafe { ArrayArg::from_raw_parts::<f64>(&u_handle, n, 1) },
-                unsafe { ArrayArg::from_raw_parts::<f64>(&w_handle, n, 1) },
-                ScalarArg::new(x),
-            ).unwrap(),
+                unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
+                unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
+                x,
+            ),
             3 => rys_root3_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
-                unsafe { ArrayArg::from_raw_parts::<f64>(&u_handle, n, 1) },
-                unsafe { ArrayArg::from_raw_parts::<f64>(&w_handle, n, 1) },
-                ScalarArg::new(x),
-            ).unwrap(),
+                unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
+                unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
+                x,
+            ),
             4 => rys_root4_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
-                unsafe { ArrayArg::from_raw_parts::<f64>(&u_handle, n, 1) },
-                unsafe { ArrayArg::from_raw_parts::<f64>(&w_handle, n, 1) },
-                ScalarArg::new(x),
-            ).unwrap(),
+                unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
+                unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
+                x,
+            ),
             5 => rys_root5_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
-                unsafe { ArrayArg::from_raw_parts::<f64>(&u_handle, n, 1) },
-                unsafe { ArrayArg::from_raw_parts::<f64>(&w_handle, n, 1) },
-                ScalarArg::new(x),
-            ).unwrap(),
+                unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
+                unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
+                x,
+            ),
             _ => panic!("nroots={nroots} not supported in tests"),
         }
 
-        let u_raw = client.read_one(u_handle);
-        let w_raw = client.read_one(w_handle);
+        let u_raw = client.read_one_unchecked(u_handle);
+        let w_raw = client.read_one_unchecked(w_handle);
         let roots = f64::from_bytes(&u_raw)[0..n].to_vec();
         let weights = f64::from_bytes(&w_raw)[0..n].to_vec();
         (roots, weights)

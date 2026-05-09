@@ -206,7 +206,11 @@ fn collect_feature_names(adapter: &wgpu::Adapter) -> Vec<String> {
             wgpu::Features::STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING,
             "STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING",
         ),
-        (wgpu::Features::PUSH_CONSTANTS, "PUSH_CONSTANTS"),
+        // Note: `PUSH_CONSTANTS` was renamed to `IMMEDIATES` in wgpu 29 to align
+        // with the WebGPU spec. The reported feature name string is preserved as
+        // "PUSH_CONSTANTS" for backward compatibility with capability fingerprints
+        // computed against earlier cubecl/wgpu releases.
+        (wgpu::Features::IMMEDIATES, "PUSH_CONSTANTS"),
         (wgpu::Features::SHADER_F64, "SHADER_F64"),
         (wgpu::Features::SHADER_I16, "SHADER_I16"),
         (wgpu::Features::SHADER_F16, "SHADER_F16"),

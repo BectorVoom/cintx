@@ -23,7 +23,7 @@ cubecl-wgpu = "0.10.0"
 cubecl-runtime = "0.10.0"
 smallvec = "1"
 tracing = "0.1"
-wgpu = "26.0.1"
+wgpu = "29.0.3"
 
 [dev-dependencies]
 approx = "0.5"
