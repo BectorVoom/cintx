@@ -7,11 +7,19 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-# Wave-0 (Phase 16-01) introduces `wgpu` as a default-on feature flag so that
-# `#[cfg(feature = "wgpu")]`-gated tests compile today (no behavior change) and
-# Wave 1 can drop it from `default` to make wgpu opt-in per D-04.
-default = ["wgpu"]
+# Phase 16-02 (Wave 1) wiring per CONTEXT D-07 + D-10 + D-11.
+# `cpu` is default-on (D-06). The `wgpu`, `cuda`, `rocm`, `metal` flags exist
+# so that `BackendKind`'s per-variant `#[cfg(feature = "...")]` gating can
+# stay in lockstep with the upstream cintx-cubecl feature set. cintx-cubecl
+# forwards each enabled backend to the corresponding flag here. This crate
+# itself does not pull any backend deps — the flags only enable the typed
+# enum arm.
+default = ["cpu"]
+cpu = []
 wgpu = []
+cuda = []
+rocm = []
+metal = []
 
 [dependencies]
 cintx-core = { path = "../cintx-core" }

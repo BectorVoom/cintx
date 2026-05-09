@@ -51,10 +51,12 @@ impl CubeClExecutor {
 
     /// Resolve the `ResolvedBackend` from the executor's backend cache.
     ///
-    /// Reads `CINTX_BACKEND` env var (or defaults to Wgpu) and constructs a
-    /// live client handle via `BackendCache::resolve`.
+    /// Reads `CINTX_BACKEND` env var (or defaults to Cpu per D-11) and
+    /// constructs a live client handle via `BackendCache::resolve`. Returns
+    /// `BackendNotCompiled` / `InvalidEnvParam` per D-01/D-02 when the env
+    /// var asks for an unavailable backend.
     fn resolve_backend(&self) -> Result<ResolvedBackend, cintxRsError> {
-        let backend_kind = backend::resolve_backend_kind();
+        let backend_kind = backend::resolve_backend_kind()?;
         let intent = BackendIntent {
             backend: backend_kind,
             selector: "auto".to_owned(),
@@ -64,21 +66,30 @@ impl CubeClExecutor {
 
     /// Check that the backend supports f64 compute (SHADER_F64).
     ///
-    /// wgpu path: gates on SHADER_F64 capability.
+    /// wgpu/metal path: gates on SHADER_F64 capability.
     /// CPU path: always passes (native f64 support).
+    /// CUDA path: f64 capable; runtime accept-with-failure.
+    /// ROCm path: dev-host runtime-verified; accept-with-failure.
     fn check_f64_capability(
         &self,
         backend: &ResolvedBackend,
         _plan: &ExecutionPlan<'_>,
     ) -> Result<(), cintxRsError> {
         match backend {
-            ResolvedBackend::Wgpu(_client, _features) => {
+            #[cfg(feature = "cpu")]
+            ResolvedBackend::Cpu(_) => Ok(()),
+            #[cfg(feature = "wgpu")]
+            ResolvedBackend::Wgpu(_, _) => {
                 // Gate wgpu dispatch on SHADER_F64 capability. The feature list
                 // was captured at bootstrap and stored alongside the client.
                 check_shader_f64_in_features(backend.wgpu_features())
             }
-            #[cfg(feature = "cpu")]
-            ResolvedBackend::Cpu(_client) => Ok(()), // CPU always supports f64 natively.
+            #[cfg(feature = "cuda")]
+            ResolvedBackend::Cuda(_) => Ok(()), // f64 capable; runtime accept-with-failure.
+            #[cfg(feature = "rocm")]
+            ResolvedBackend::Rocm(_) => Ok(()), // dev-host runtime-verified; accept-with-failure.
+            #[cfg(feature = "metal")]
+            ResolvedBackend::Metal(_, _) => check_shader_f64_in_features(backend.wgpu_features()),
         }
     }
 

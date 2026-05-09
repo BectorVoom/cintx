@@ -7,13 +7,26 @@ edition = "2024"
 path = "src/lib.rs"
 
 [features]
-default = ["cpu", "wgpu"]
-cpu = ["cubecl/cpu"]
-# Wave-0 (Phase 16-01) introduces `wgpu` as a default-on placeholder feature so
-# `#[cfg(feature = "wgpu")]` test gates compile today (no behavior change). Wave 1
-# rewires this to `wgpu = ["dep:cubecl-wgpu", "dep:wgpu"]` and drops it from default
-# per D-04/D-07.
-wgpu = []
+# Phase 16-02 (Wave 1) wiring per CONTEXT D-07 + M1 amendment.
+# `cpu` is default-on (D-06). `wgpu` is no longer default (D-04). `metal` is the
+# M1 alias for the `wgpu` runtime since `cubecl-metal` does not exist on
+# crates.io — see .planning/phases/16-multi-backend-support/16-02-PLAN.md
+# `<context_deviation>` block.
+#
+# Each backend feature additionally forwards to the matching feature on
+# cintx-runtime so the per-variant cfg gates on `BackendKind` stay in lockstep
+# with this crate's per-arm cfg gates on `ResolvedBackend`.
+default = ["cpu"]
+cpu = ["cubecl/cpu", "cintx-runtime/cpu"]
+wgpu = ["dep:cubecl-wgpu", "dep:wgpu", "cintx-runtime/wgpu"]
+cuda = ["dep:cubecl-cuda", "cintx-runtime/cuda"]
+rocm = ["dep:cubecl-hip", "cintx-runtime/rocm"]
+# M1 alias: `metal` reuses the wgpu runtime on Apple targets (cubecl-metal
+# does not exist on crates.io). Forwarding to `wgpu` pulls in cubecl-wgpu +
+# wgpu, and `cintx-runtime/metal` activates the typed `BackendKind::Metal`
+# arm so the public `CINTX_BACKEND=metal` surface remains distinct from
+# `=wgpu` for capability fingerprints and error diagnostics.
+metal = ["wgpu", "cintx-runtime/metal"]
 with-f12 = []
 with-4c1e = []
 unstable-source-api = []
@@ -21,14 +34,16 @@ unstable-source-api = []
 [dependencies]
 cintx-core = { path = "../cintx-core" }
 cintx-ops = { path = "../cintx-ops" }
-cintx-runtime = { path = "../cintx-runtime" }
+cintx-runtime = { path = "../cintx-runtime", default-features = false }
 bytemuck = { version = "1", features = ["derive"] }
-cubecl = { version = "0.10.0", features = ["wgpu"] }
-cubecl-wgpu = "0.10.0"
+cubecl = { version = "0.10.0" }
+cubecl-wgpu = { version = "0.10.0", optional = true }
+cubecl-cuda = { version = "0.10.0", optional = true }
+cubecl-hip = { version = "0.10.0", optional = true }
 cubecl-runtime = "0.10.0"
 smallvec = "1"
 tracing = "0.1"
-wgpu = "29.0.3"
+wgpu = { version = "29.0.3", optional = true }
 
 [dev-dependencies]
 approx = "0.5"

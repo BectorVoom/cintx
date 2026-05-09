@@ -7,17 +7,46 @@ pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 /// Per D-03, backend kind is control-plane metadata carried in `ExecutionOptions` and
 /// propagated through `WorkspaceQuery` so query/evaluate drift can be detected and
 /// rejected with a typed error.
+///
+/// Phase 16-02 (Wave 1) per-variant cfg gating per D-10. The `Cpu` arm is
+/// always present (D-06: cpu is default-on, the feature flag is informational
+/// only). `Wgpu`, `Cuda`, `Rocm`, `Metal` are each gated on their own feature
+/// flag and the cintx-cubecl feature wiring forwards every backend feature
+/// to the matching flag here so the enum stays in lockstep.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BackendKind {
-    /// wgpu-backed CubeCL runtime (the primary production backend).
-    Wgpu,
-    /// CPU execution profile, used for testing and oracle comparison only.
+    /// CPU execution profile. Always available — `cpu` feature is default-on (D-06).
     Cpu,
+    /// wgpu-backed CubeCL runtime.
+    #[cfg(feature = "wgpu")]
+    Wgpu,
+    /// CUDA-backed CubeCL runtime (compile-only; verification gap per
+    /// `.planning/notes/cuda-metal-verification-gap.md`).
+    #[cfg(feature = "cuda")]
+    Cuda,
+    /// ROCm/HIP-backed CubeCL runtime.
+    #[cfg(feature = "rocm")]
+    Rocm,
+    /// Metal — M1 alias for the wgpu runtime on Apple targets. See
+    /// `.planning/phases/16-multi-backend-support/16-02-PLAN.md`
+    /// `<context_deviation>` block and
+    /// `.planning/notes/cuda-metal-verification-gap.md`.
+    #[cfg(feature = "metal")]
+    Metal,
 }
 
 impl Default for BackendKind {
     fn default() -> Self {
-        Self::Wgpu
+        // D-11 default flip happens in Task 2 of this plan. For now keep the
+        // historical Wgpu default; this line is rewritten by the next commit.
+        #[cfg(feature = "wgpu")]
+        {
+            Self::Wgpu
+        }
+        #[cfg(not(feature = "wgpu"))]
+        {
+            Self::Cpu
+        }
     }
 }
 
@@ -30,14 +59,18 @@ impl Default for BackendKind {
 pub struct BackendIntent {
     pub backend: BackendKind,
     /// Adapter selection hint.  `"auto"` means the runtime picks the best
-    /// available wgpu adapter.
+    /// available adapter for the resolved backend.
     pub selector: String,
 }
 
 impl Default for BackendIntent {
     fn default() -> Self {
+        // D-11 default flip happens in Task 2 of this plan; for now the
+        // backend default tracks BackendKind::default() which still resolves
+        // to Wgpu when that feature is on. Task 2 rewrites this to literal
+        // BackendKind::Cpu.
         Self {
-            backend: BackendKind::Wgpu,
+            backend: BackendKind::default(),
             selector: "auto".to_owned(),
         }
     }
@@ -53,7 +86,7 @@ impl Default for BackendIntent {
 pub struct BackendCapabilityToken {
     /// Human-readable adapter identifier (e.g. `"NVIDIA GeForce RTX 4090"`).
     pub adapter_name: String,
-    /// Backend API string (e.g. `"wgpu"`, `"cpu"`).
+    /// Backend API string (e.g. `"cpu"`, `"wgpu"`, `"cuda"`, `"rocm"`, `"metal"`).
     pub backend_api: String,
     /// Lightweight capability fingerprint.  Must change whenever device
     /// features or limits relevant to execution differ.
@@ -62,6 +95,10 @@ pub struct BackendCapabilityToken {
 
 impl Default for BackendCapabilityToken {
     fn default() -> Self {
+        // RESEARCH §8.7: backend_api flips to "cpu" alongside the
+        // BackendIntent flip. Task 2 of this plan owns that change; for now
+        // keep the historical "wgpu" default so the Task 1 commit is
+        // structurally additive only.
         Self {
             adapter_name: String::new(),
             backend_api: "wgpu".to_owned(),

@@ -1,7 +1,14 @@
-/// WGPU adapter selection, bootstrap, and capability preflight.
-///
-/// This module implements D-01 (fail-closed adapter selection), D-02 (typed
-/// capability failures), and D-04 (adapter metadata for reproducibility).
+#![cfg(feature = "wgpu")]
+//! WGPU adapter selection, bootstrap, and capability preflight.
+//!
+//! This module implements D-01 (fail-closed adapter selection), D-02 (typed
+//! capability failures), and D-04 (adapter metadata for reproducibility).
+//!
+//! Phase 16-02 (Wave 1): the entire module is gated behind
+//! `#![cfg(feature = "wgpu")]` because every symbol it imports
+//! (`cubecl_wgpu::*`, `wgpu::*`) is only present when the optional
+//! wgpu deps are pulled in via `cintx-cubecl/wgpu` or `cintx-cubecl/metal`
+//! (M1 alias).
 
 use cintx_core::cintxRsError;
 use cintx_runtime::BackendIntent;
@@ -98,7 +105,7 @@ fn bootstrap_with_selector(
     {
         use std::sync::OnceLock;
 
-        use cubecl::wgpu::AutoGraphicsApi;
+        use cubecl_wgpu::AutoGraphicsApi;
 
         // CubeCL panics if init_setup is called twice for the same device
         // ("A server is still registered for device ..."). Cache the default
@@ -121,17 +128,17 @@ fn bootstrap_with_selector(
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn do_bootstrap<G: cubecl::wgpu::GraphicsApi>(
+fn do_bootstrap<G: cubecl_wgpu::GraphicsApi>(
     selector: AdapterSelector,
 ) -> Result<WgpuPreflightReport, CapabilityReason> {
-    use cubecl::wgpu::RuntimeOptions;
+    use cubecl_wgpu::RuntimeOptions;
 
     let wgpu_device = selector_to_wgpu_device(&selector);
 
     // Use std::panic::catch_unwind to convert CubeCL's panic-based adapter
     // failures into typed errors (Pitfall 1 from research notes).
     let setup_result = std::panic::catch_unwind(|| {
-        cubecl::wgpu::init_setup::<G>(&wgpu_device, RuntimeOptions::default())
+        cubecl_wgpu::init_setup::<G>(&wgpu_device, RuntimeOptions::default())
     });
 
     let setup = setup_result.map_err(|_| CapabilityReason::MissingAdapter)?;
@@ -163,11 +170,11 @@ fn do_bootstrap<G: cubecl::wgpu::GraphicsApi>(
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn selector_to_wgpu_device(selector: &AdapterSelector) -> cubecl::wgpu::WgpuDevice {
+fn selector_to_wgpu_device(selector: &AdapterSelector) -> cubecl_wgpu::WgpuDevice {
     match selector {
-        AdapterSelector::Auto => cubecl::wgpu::WgpuDevice::DefaultDevice,
-        AdapterSelector::Discrete(n) => cubecl::wgpu::WgpuDevice::DiscreteGpu(*n),
-        AdapterSelector::Integrated(n) => cubecl::wgpu::WgpuDevice::IntegratedGpu(*n),
+        AdapterSelector::Auto => cubecl_wgpu::WgpuDevice::DefaultDevice,
+        AdapterSelector::Discrete(n) => cubecl_wgpu::WgpuDevice::DiscreteGpu(*n),
+        AdapterSelector::Integrated(n) => cubecl_wgpu::WgpuDevice::IntegratedGpu(*n),
     }
 }
 
@@ -271,10 +278,10 @@ fn collect_limit_entries(adapter: &wgpu::Adapter) -> Vec<String> {
     ]
 }
 
-// Phase 16-01 (W)/(F) site per RESEARCH §5: this entire test module exercises the
-// wgpu adapter selector and bootstrap path. Gated on `feature = "wgpu"` so Wave 1's
-// `--no-default-features --features cpu` matrix cell stops trying to build it.
-#[cfg(all(test, feature = "wgpu"))]
+// Phase 16-02 (Wave 1): the entire `runtime_bootstrap` module is now gated on
+// `#![cfg(feature = "wgpu")]` (see top-of-file inner attribute). The test mod
+// only needs `#[cfg(test)]` because the wgpu gate is already inherited.
+#[cfg(test)]
 mod tests {
     use super::*;
     use cintx_runtime::{BackendIntent, BackendKind};
