@@ -17,6 +17,7 @@ pub enum CintxStatus {
     ExecutionFailed = 7,
     NullPointer = 8,
     Panic = 9,
+    BackendNotCompiled = 10,
 }
 
 impl CintxStatus {
@@ -36,6 +37,7 @@ pub const CINTX_STATUS_ALLOCATION_FAILED: i32 = CintxStatus::AllocationFailed as
 pub const CINTX_STATUS_EXECUTION_FAILED: i32 = CintxStatus::ExecutionFailed as i32;
 pub const CINTX_STATUS_NULL_POINTER: i32 = CintxStatus::NullPointer as i32;
 pub const CINTX_STATUS_PANIC: i32 = CintxStatus::Panic as i32;
+pub const CINTX_STATUS_BACKEND_NOT_COMPILED: i32 = CintxStatus::BackendNotCompiled as i32;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CintxErrorReport {
@@ -114,6 +116,7 @@ pub fn status_from_core_error(error: &cintxRsError) -> CintxStatus {
         }
         cintxRsError::ChunkPlanFailed { .. } => CintxStatus::ExecutionFailed,
         cintxRsError::InvalidEnvParam { .. } => CintxStatus::InvalidInput,
+        cintxRsError::BackendNotCompiled { .. } => CintxStatus::BackendNotCompiled,
     }
 }
 
@@ -290,6 +293,10 @@ mod tests {
         );
         assert_eq!(CINTX_STATUS_NULL_POINTER, CintxStatus::NullPointer.code());
         assert_eq!(CINTX_STATUS_PANIC, CintxStatus::Panic.code());
+        assert_eq!(
+            CINTX_STATUS_BACKEND_NOT_COMPILED,
+            CintxStatus::BackendNotCompiled.code()
+        );
     }
 
     #[test]

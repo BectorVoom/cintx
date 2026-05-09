@@ -96,6 +96,14 @@ impl From<cintxRsError> for FacadeError {
             cintxRsError::InvalidEnvParam { param, reason } => Self::Validation {
                 detail: format!("InvalidEnvParam param={param} reason={reason}"),
             },
+            cintxRsError::BackendNotCompiled {
+                requested,
+                compiled_in,
+            } => Self::Validation {
+                detail: format!(
+                    "BackendNotCompiled requested={requested:?} compiled_in={compiled_in:?}"
+                ),
+            },
         }
     }
 }

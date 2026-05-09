@@ -68,6 +68,13 @@ pub enum cintxRsError {
     ChunkPlanFailed { from: &'static str, detail: String },
     #[error("invalid env parameter {param}: {reason}")]
     InvalidEnvParam { param: &'static str, reason: String },
+    #[error(
+        "requested {requested:?} is not compiled in; compiled-in backends: {compiled_in:?}"
+    )]
+    BackendNotCompiled {
+        requested: String,
+        compiled_in: Vec<String>,
+    },
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;
@@ -92,6 +99,22 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "invalid env parameter PTR_F12_ZETA: must be non-zero"
+        );
+    }
+
+    #[test]
+    fn backend_not_compiled_formats_and_matches() {
+        let err = cintxRsError::BackendNotCompiled {
+            requested: "cuda".to_owned(),
+            compiled_in: vec!["cpu".to_owned(), "wgpu".to_owned()],
+        };
+        assert!(matches!(
+            err,
+            cintxRsError::BackendNotCompiled { ref requested, .. } if requested == "cuda"
+        ));
+        assert_eq!(
+            err.to_string(),
+            "requested \"cuda\" is not compiled in; compiled-in backends: [\"cpu\", \"wgpu\"]"
         );
     }
 
