@@ -31,7 +31,7 @@ cintx is a public Rust library that redesigns and reimplements libcint with resu
 ### Core Libraries
 | Library | Version guidance | Purpose | Notes |
 |---------|------------------|---------|-------|
-| `cubecl` | Keep the current `0.9.x` line unless a verified backend issue forces a change | Shared GPU compute backend | `docs.rs` shows `cubecl 0.9.0` as the latest published crate. Keep the public API backend-agnostic enough that a backend swap remains possible if the ecosystem shifts. |
+| `cubecl` | Pin `0.10.0` | Shared GPU compute backend | cubecl 0.10.0 was published on 2026-05-07 and is the current published line as of 2026-05-09; pinning an exact version preserves oracle reproducibility. The public API stays backend-agnostic enough that a backend swap remains possible if the ecosystem shifts. |
 | `thiserror` | `2.0.18` | Public typed error surface | Fits the design requirement for library-facing error enums without leaking implementation details into the API contract. |
 | `anyhow` | `1.0.102` | App-boundary, xtask, benchmark, and oracle tooling errors | Matches the design choice to keep ergonomic context-rich errors out of the public library surface. |
 | `tracing` | Stay on the current stable `0.1.x` line used by the workspace | Structured spans and diagnostics | Required for planner decisions, chunking, transfers, fallback reasons, and OOM visibility. |
