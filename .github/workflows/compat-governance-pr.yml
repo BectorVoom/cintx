@@ -225,6 +225,72 @@ jobs:
             - name: Run API value baseline gate
               run: ci/api-value-baseline.sh
 
+    feature_matrix_gate:
+        name: feature_matrix_gate (${{ matrix.cell }})
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - cell: cpu-only
+                      features: ""
+                    - cell: cpu+wgpu
+                      features: "wgpu"
+                    - cell: all-features
+                      features: "wgpu,cuda,rocm,metal"
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
+
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Install ROCm runtime headers (cubecl-hip-sys build script needs hipconfig)
+              if: matrix.cell == 'all-features'
+              run: |
+                  wget https://repo.radeon.com/amdgpu-install/6.0/ubuntu/jammy/amdgpu-install_6.0.60000-1_all.deb
+                  sudo apt-get install -y ./amdgpu-install_6.0.60000-1_all.deb
+                  sudo amdgpu-install --usecase=rocm --no-dkms -y
+                  echo "/opt/rocm/bin" >> $GITHUB_PATH
+
+            - name: cargo check
+              run: |
+                  if [ -z "${{ matrix.features }}" ]; then
+                    cargo check -p cintx-cubecl
+                  else
+                    cargo check -p cintx-cubecl --features "${{ matrix.features }}"
+                  fi
+
+            - name: cargo test (excluding ignored)
+              run: |
+                  if [ -z "${{ matrix.features }}" ]; then
+                    cargo test -p cintx-cubecl
+                  else
+                    cargo test -p cintx-cubecl --features "${{ matrix.features }}"
+                  fi
+
     gpu_bench_advisory:
         name: gpu_bench_advisory
         runs-on: ubuntu-latest
