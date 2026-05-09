@@ -680,22 +680,28 @@ The phase has external dependencies. Probed on 2026-05-09:
 | A7 | The "four required gates" mentioned in CONTEXT.md are actually the four jobs inside `compat-governance-pr.yml` | §6.1 | None — confirmed by reading the workflow file |
 | A8 | Branch protection updates can be done by the user post-merge | §8.6 | None — clearly a manual ops step |
 
-## 14. Open Questions
+## 14. Open Questions (RESOLVED)
+
+All three open questions surfaced during research were resolved during plan-phase
+and the resolution is reflected in `16-02-PLAN.md`.
 
 1. **Should `metal` be M1 (alias for wgpu), M2 (drop the feature), or M3 (empty-feature stub)?**
-   - What we know: `cubecl-metal` does not exist; Metal is served by `cubecl-wgpu` on Apple targets.
-   - What's unclear: User intent. CONTEXT.md D-05 lists `metal = ["dep:cubecl-metal"]` as if cubecl-metal existed. Resolution requires a clarifying decision.
-   - Recommendation: M1 (alias for wgpu) preserves the `metal` feature and `CINTX_BACKEND=metal` surface with minimal code change. Capture as a CONTEXT-deviation entry.
+   - What we knew: `cubecl-metal` does not exist; Metal is served by `cubecl-wgpu` on Apple targets.
+   - What was unclear: User intent. CONTEXT.md D-05 listed `metal = ["dep:cubecl-metal"]` as if cubecl-metal existed.
+   - Recommendation: M1 (alias for wgpu).
+   - **RESOLVED:** User selected M1 during plan-phase. Captured as a `<context_deviation>` block in `16-02-PLAN.md` (lines 71–98). `metal = ["dep:cubecl-wgpu", "dep:wgpu"]`; `BackendKind::Metal` dispatches to `cubecl_wgpu::WgpuRuntime` in `from_intent()`. No `metal_backend.rs` is created.
 
 2. **Should `compiled_backends() -> &'static [&'static str]` be public?**
-   - What we know: CONTEXT.md says "lean toward exposing it; it's free if `compiled_in` is already a `const`."
-   - What's unclear: SemVer commitment. Once exposed, downstream might rely on the order or the exact string spellings.
-   - Recommendation: Expose as `pub const COMPILED_BACKENDS: &[&str]` (a const, not a fn). Sorted lexicographically. Documented as "the set of backend names that `CINTX_BACKEND` can resolve to in this build."
+   - What we knew: CONTEXT.md says "lean toward exposing it; it's free if `compiled_in` is already a `const`."
+   - What was unclear: SemVer commitment. Once exposed, downstream might rely on the order or the exact string spellings.
+   - Recommendation: Expose as `pub const COMPILED_BACKENDS: &[&str]`.
+   - **RESOLVED:** `16-02-PLAN.md` exposes `pub fn compiled_backends() -> &'static [&'static str]` (a function, not a const). API-equivalent at the call site (both produce a `&'static [&'static str]`); the function form is slightly more flexible if cfg-driven assembly is needed later. The internal storage may still be a `const` array. The order and spelling are still part of the public commitment as recommended.
 
 3. **Should the `serial_test` crate become a workspace dev-dep?**
-   - What we know: Existing env-var tests at `backend/mod.rs:104-127` work around parallel-test env races by reading-without-mutating, which is fragile and silently weakens coverage.
-   - What's unclear: Whether the user prefers a single new dev-dep or an in-tree mutex pattern.
-   - Recommendation: Add `serial_test` as a dev-dep — it's 1 crate, well-maintained, and existing in-tree workarounds are demonstrably weak.
+   - What we knew: Existing env-var tests at `backend/mod.rs:104-127` work around parallel-test env races by reading-without-mutating, which is fragile and silently weakens coverage.
+   - What was unclear: Whether the user prefers a single new dev-dep or an in-tree mutex pattern.
+   - Recommendation: Add `serial_test` as a dev-dep.
+   - **RESOLVED:** `16-02-PLAN.md` (Step around line 524) adds `serial_test` as a dev-dep and applies `#[serial]` to the env-var resolution tests so mutating tests no longer race.
 
 ## 15. Sources
 
