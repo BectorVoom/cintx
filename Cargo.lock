@@ -413,6 +413,7 @@ dependencies = [
  "cintx-compat",
  "cintx-core",
  "cintx-ops",
+ "cintx-rs",
  "serde_json",
 ]
 
