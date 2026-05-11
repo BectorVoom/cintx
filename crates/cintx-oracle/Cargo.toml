@@ -26,6 +26,7 @@ cintx-compat = { path = "../cintx-compat" }
 cintx-core = { path = "../cintx-core" }
 cintx-ops = { path = "../cintx-ops" }
 cintx-rs = { path = "../cintx-rs", default-features = false }
+cintx-runtime = { path = "../cintx-runtime", default-features = false }
 serde_json = "1.0.145"
 
 [build-dependencies]
