@@ -1,10 +1,11 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: "Milestone: Full API Parity & Unified Oracle Gate"
-status: Phase 16 complete (HUMAN-UAT pending)
-stopped_at: Completed 16-04-PLAN.md
-last_updated: "2026-05-09T00:00:00.000Z"
+milestone: v1.3
+milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
+status: Phase 17 context gathered
+stopped_at: "Phase 17 context gathered — ready for /gsd:plan-phase 17"
+resume_file: ".planning/phases/17-real-integral-evaluation-in-safe-api/17-CONTEXT.md"
+last_updated: "2026-05-12T00:00:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 6
@@ -19,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 16 complete — multi-backend-support (HUMAN-UAT pending: branch-protection registration, CUDA runtime risk-accept)
+**Current focus:** Phase 17 context gathered — real-integral evaluation in safe API (issue #11 Task 3); ready for `/gsd:plan-phase 17`.
 
 ## Current Position
 
-Phase: 16 (complete)
-Plan: All 4 plans complete (16-01 through 16-04)
+Phase: 17 (context gathered)
+Plan: pending `/gsd:plan-phase 17`
 
 ## Performance Metrics
 
