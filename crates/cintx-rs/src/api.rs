@@ -2,11 +2,12 @@
 
 use crate::error::FacadeError;
 use cintx_compat::raw::enforce_safe_facade_policy_gate;
-use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
+use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple};
+use cintx_cubecl::CubeClExecutor;
 use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
     BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
-    HostWorkspaceAllocator, OutputOwnership, WorkspaceAllocator, WorkspaceBytes,
+    HostWorkspaceAllocator, WorkspaceAllocator,
     WorkspaceQuery as RuntimeWorkspaceQuery, schedule_chunks,
     query_workspace as runtime_query_workspace,
 };
@@ -462,104 +463,6 @@ pub fn unsupported_unstable_request(symbol: &str) -> FacadeError {
     }
 }
 
-fn fill_staging_values(representation: Representation, staging: &mut [f64]) {
-    match representation {
-        Representation::Cart => {
-            for (idx, value) in staging.iter_mut().enumerate() {
-                *value = (idx + 1) as f64;
-            }
-        }
-        Representation::Spheric => {
-            for (idx, value) in staging.iter_mut().enumerate() {
-                *value = ((idx + 1) as f64) * 0.5;
-            }
-        }
-        Representation::Spinor => {
-            let mut idx = 0usize;
-            for pair in staging.chunks_exact_mut(2) {
-                let value = (idx + 1) as f64;
-                pair[0] = value;
-                pair[1] = -value;
-                idx += 1;
-            }
-            if let [tail] = staging.chunks_exact_mut(2).into_remainder() {
-                *tail = 0.0;
-            }
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct CubeClExecutor;
-
-impl CubeClExecutor {
-    fn new() -> Self {
-        Self
-    }
-
-    fn ensure_supported(&self, _plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
-        Ok(())
-    }
-}
-
-impl BackendExecutor for CubeClExecutor {
-    fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
-        self.ensure_supported(plan).is_ok()
-            && plan
-                .descriptor
-                .entry
-                .supports_representation(plan.representation)
-    }
-
-    fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
-        self.ensure_supported(plan)?;
-        Ok(WorkspaceBytes(plan.workspace.bytes))
-    }
-
-    fn execute(
-        &self,
-        plan: &ExecutionPlan<'_>,
-        io: &mut ExecutionIo<'_>,
-    ) -> Result<ExecutionStats, cintxRsError> {
-        self.ensure_supported(plan)?;
-        io.ensure_output_contract()?;
-
-        if io.backend_output_ownership() != OutputOwnership::BackendStagingOnly {
-            return Err(cintxRsError::ChunkPlanFailed {
-                from: "safe_cubecl_executor",
-                detail: "backend_output must remain staging-only".to_owned(),
-            });
-        }
-        if io.final_write_ownership() != OutputOwnership::CompatFinalWrite {
-            return Err(cintxRsError::ChunkPlanFailed {
-                from: "safe_cubecl_executor",
-                detail: "CompatFinalWrite must remain owned by compat layout".to_owned(),
-            });
-        }
-
-        let transfer_bytes = {
-            let staging = io.staging_output();
-            fill_staging_values(plan.representation, staging);
-            staging.len().saturating_mul(size_of::<f64>())
-        };
-        let not0 = io.chunk().work_unit_count as i32;
-        let peak_workspace_bytes = io.workspace().len();
-
-        io.record_transfer_bytes(transfer_bytes);
-        io.record_not0(not0);
-
-        Ok(ExecutionStats {
-            workspace_bytes: plan.workspace.bytes,
-            required_workspace_bytes: plan.workspace.required_bytes,
-            peak_workspace_bytes,
-            chunk_count: 1,
-            planned_batches: io.chunk().work_unit_count.max(1),
-            transfer_bytes,
-            not0,
-            fallback_reason: plan.workspace.fallback_reason,
-        })
-    }
-}
 
 
 #[cfg(feature = "unstable-source-api")]
