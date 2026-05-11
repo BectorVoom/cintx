@@ -17,7 +17,7 @@
 - [x] **Phase 14: Unstable-Source-API Families** - Implement origi, grids, Breit, origk, and ssc families behind the unstable-source-api gate with oracle parity in nightly CI. (completed 2026-04-05)
 - [x] **Phase 15: Oracle Tolerance Unification & Manifest Lock Closure** - Audit every family's empirical precision floor, set per-family atol/rtol constants, regenerate the four-profile manifest lock, and close the unified oracle CI gate. (completed 2026-04-06)
 - [x] **Phase 16: Multi-Backend Support (cuda / rocm / metal) with Feature + Env-Var Selection** - Add additive Cargo feature flags for cuda, rocm (cubecl-hip), and metal alongside the existing wgpu and unconditional cpu backends; wire `CINTX_BACKEND` env-var runtime selection across compiled-in backends with hard-error on missing-feature mismatch. (completed 2026-05-09)
-- [ ] **Phase 17: Real-Integral Evaluation in Safe API (issue #11 Task 3)** - Replace the synthetic `(idx + 1)` / `((idx + 1) * 0.5)` pattern in `SessionRequest::fill_staging_values` with real `cintx-compat::raw::eval_raw` dispatch so the safe API delivers byte-identity values against libcint for every arity-2 intor it already accepts. No public API change.
+- [x] **Phase 17: Real-Integral Evaluation in Safe API (issue #11 Task 3)** - Replace the synthetic `(idx + 1)` / `((idx + 1) * 0.5)` pattern in `SessionRequest::fill_staging_values` with real `cintx-compat::raw::eval_raw` dispatch so the safe API delivers byte-identity values against libcint for every arity-2 intor it already accepts. No public API change. (completed 2026-05-11)
 - [ ] **Phase 18: SessionRequest Arity ≥3 Dispatch (issue #11 Task 2)** - Extend `SessionRequest::evaluate` to dispatch arity-3 and arity-4 shell tuples (covering `int2e_*`, `int3c1e*`, `int3c2e_*`, `int4c1e_*`) through the existing operator catalog with F-order AO layout matching libcint memory layout.
 - [ ] **Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (issue #11 Task 1)** - Implement Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and expose them through `SessionRequest` alongside ordinary one-electron operators. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate against libcint.
 
@@ -170,11 +170,11 @@ the order may be relaxed to parallelize if the planner judges the risk acceptabl
 
 Plans:
 **Wave 1**
-- [ ] 17-01-PLAN.md — Wave 0: add `cintx-rs` path-dep to `crates/cintx-oracle/Cargo.toml` so the new parity test can call `SessionRequest::evaluate`.
-- [ ] 17-02-PLAN.md — Wave 1: delete the synthetic stub `CubeClExecutor` + `fill_staging_values` in `crates/cintx-rs/src/api.rs`; add `use cintx_cubecl::CubeClExecutor;`; rewrite the brittle `owned_values[0] == 1.0` unit test to deterministic + nonzero + invariants.
+- [x] 17-01-PLAN.md — Wave 0: add `cintx-rs` path-dep to `crates/cintx-oracle/Cargo.toml` so the new parity test can call `SessionRequest::evaluate`.
+- [x] 17-02-PLAN.md — Wave 1: delete the synthetic stub `CubeClExecutor` + `fill_staging_values` in `crates/cintx-rs/src/api.rs`; add `use cintx_cubecl::CubeClExecutor;`; rewrite the brittle `owned_values[0] == 1.0` unit test to deterministic + nonzero + invariants.
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 17-03-PLAN.md — Wave 1: add `crates/cintx-oracle/tests/safe_api_arity2_parity.rs` (12 per-symbol tests at atol=1e-12: 8 cart/sph vendor-parity + 4 spinor idempotency).
+- [x] 17-03-PLAN.md — Wave 1: add `crates/cintx-oracle/tests/safe_api_arity2_parity.rs` (12 per-symbol tests at atol=1e-12: 8 cart/sph vendor-parity + 4 spinor idempotency).
 
 **Notes**:
   - Smallest of the three issue #11 tasks; explicitly callable as an isolated PR.
