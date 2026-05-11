@@ -2,11 +2,12 @@
 
 use crate::error::FacadeError;
 use cintx_compat::raw::enforce_safe_facade_policy_gate;
-use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
+use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple};
+use cintx_cubecl::CubeClExecutor;
 use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
     BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
-    HostWorkspaceAllocator, OutputOwnership, WorkspaceAllocator, WorkspaceBytes,
+    HostWorkspaceAllocator, WorkspaceAllocator,
     WorkspaceQuery as RuntimeWorkspaceQuery, schedule_chunks,
     query_workspace as runtime_query_workspace,
 };
@@ -224,8 +225,9 @@ impl<'basis> SessionQuery<'basis> {
                 .map_err(FacadeError::from)?;
                 let chunk_stats = executor.execute(&plan, &mut io).map_err(FacadeError::from)?;
                 total_not0 = total_not0.saturating_add(chunk_stats.not0.max(0));
-                total_transfer_bytes =
-                    total_transfer_bytes.saturating_add(io.transfer_bytes());
+                total_transfer_bytes = total_transfer_bytes
+                    .saturating_add(io.transfer_bytes())
+                    .saturating_add(chunk_stats.transfer_bytes);
                 total_peak_workspace_bytes =
                     total_peak_workspace_bytes.max(io.workspace().len());
             }
@@ -462,104 +464,6 @@ pub fn unsupported_unstable_request(symbol: &str) -> FacadeError {
     }
 }
 
-fn fill_staging_values(representation: Representation, staging: &mut [f64]) {
-    match representation {
-        Representation::Cart => {
-            for (idx, value) in staging.iter_mut().enumerate() {
-                *value = (idx + 1) as f64;
-            }
-        }
-        Representation::Spheric => {
-            for (idx, value) in staging.iter_mut().enumerate() {
-                *value = ((idx + 1) as f64) * 0.5;
-            }
-        }
-        Representation::Spinor => {
-            let mut idx = 0usize;
-            for pair in staging.chunks_exact_mut(2) {
-                let value = (idx + 1) as f64;
-                pair[0] = value;
-                pair[1] = -value;
-                idx += 1;
-            }
-            if let [tail] = staging.chunks_exact_mut(2).into_remainder() {
-                *tail = 0.0;
-            }
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct CubeClExecutor;
-
-impl CubeClExecutor {
-    fn new() -> Self {
-        Self
-    }
-
-    fn ensure_supported(&self, _plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
-        Ok(())
-    }
-}
-
-impl BackendExecutor for CubeClExecutor {
-    fn supports(&self, plan: &ExecutionPlan<'_>) -> bool {
-        self.ensure_supported(plan).is_ok()
-            && plan
-                .descriptor
-                .entry
-                .supports_representation(plan.representation)
-    }
-
-    fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
-        self.ensure_supported(plan)?;
-        Ok(WorkspaceBytes(plan.workspace.bytes))
-    }
-
-    fn execute(
-        &self,
-        plan: &ExecutionPlan<'_>,
-        io: &mut ExecutionIo<'_>,
-    ) -> Result<ExecutionStats, cintxRsError> {
-        self.ensure_supported(plan)?;
-        io.ensure_output_contract()?;
-
-        if io.backend_output_ownership() != OutputOwnership::BackendStagingOnly {
-            return Err(cintxRsError::ChunkPlanFailed {
-                from: "safe_cubecl_executor",
-                detail: "backend_output must remain staging-only".to_owned(),
-            });
-        }
-        if io.final_write_ownership() != OutputOwnership::CompatFinalWrite {
-            return Err(cintxRsError::ChunkPlanFailed {
-                from: "safe_cubecl_executor",
-                detail: "CompatFinalWrite must remain owned by compat layout".to_owned(),
-            });
-        }
-
-        let transfer_bytes = {
-            let staging = io.staging_output();
-            fill_staging_values(plan.representation, staging);
-            staging.len().saturating_mul(size_of::<f64>())
-        };
-        let not0 = io.chunk().work_unit_count as i32;
-        let peak_workspace_bytes = io.workspace().len();
-
-        io.record_transfer_bytes(transfer_bytes);
-        io.record_not0(not0);
-
-        Ok(ExecutionStats {
-            workspace_bytes: plan.workspace.bytes,
-            required_workspace_bytes: plan.workspace.required_bytes,
-            peak_workspace_bytes,
-            chunk_count: 1,
-            planned_batches: io.chunk().work_unit_count.max(1),
-            transfer_bytes,
-            not0,
-            fallback_reason: plan.workspace.fallback_reason,
-        })
-    }
-}
 
 
 #[cfg(feature = "unstable-source-api")]
@@ -656,35 +560,62 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_runs_runtime_path_and_returns_owned_output() {
+    fn evaluate_returns_deterministic_nonzero_real_values() {
         let (basis, shells) = sample_basis(Representation::Cart);
         let request = SessionRequest::new(
-            OperatorId::new(0),
+            OperatorId::new(0),                       // int1e_ovlp_cart
             Representation::Cart,
             &basis,
             shells,
             ExecutionOptions::default(),
         );
 
-        let query = request.query_workspace().expect("query should succeed");
-        let expected_workspace_bytes = query.workspace().bytes;
-        let expected_chunk_count = query.workspace().chunk_count;
+        // Capture expected workspace metadata before consuming the first query.
+        let query1 = request.clone().query_workspace().expect("query should succeed");
+        let expected_workspace_bytes = query1.workspace().bytes;
+        let expected_chunk_count = query1.workspace().chunk_count;
 
-        let output = query.evaluate().expect("safe evaluate should succeed");
+        // First evaluation.
+        let output1 = query1.evaluate().expect("safe evaluate should succeed");
 
-        assert!(!output.tensor.owned_values.is_empty());
-        assert_eq!(output.tensor.owned_values[0], 1.0);
+        // Second independent evaluation from the same request — idempotency check.
+        let query2 = request.query_workspace().expect("query should succeed (2nd)");
+        let output2 = query2.evaluate().expect("safe evaluate should succeed (2nd)");
+
+        // (1) Idempotency: real, deterministic kernel must return identical values across runs.
         assert_eq!(
-            output.tensor.owned_values.len(),
-            output.tensor.extents.iter().product::<usize>()
+            output1.tensor.owned_values, output2.tensor.owned_values,
+            "evaluate must be deterministic across repeated calls"
         );
-        assert_eq!(output.workspace_bytes, expected_workspace_bytes);
-        assert_eq!(output.chunk_count, expected_chunk_count);
+
+        // (2) Nonzero: a zero-fill regression must fail this test. For two valid GTO shells the
+        //     overlap matrix must contain at least one nonzero element (self-overlap of normalized
+        //     GTOs is nonzero on the diagonal).
+        let nonzero_count = output1
+            .tensor
+            .owned_values
+            .iter()
+            .filter(|&&v| v.abs() > 1e-18)
+            .count();
+        assert!(
+            nonzero_count > 0,
+            "evaluate must produce at least one nonzero element; got all-zero owned_values \
+             (regression to zero-fill stub?)"
+        );
+
+        // (3) Existing extent / byte-count / stats invariants (preserved from prior test).
+        assert!(!output1.tensor.owned_values.is_empty());
         assert_eq!(
-            output.bytes_written,
-            output.tensor.owned_values.len() * std::mem::size_of::<f64>()
+            output1.tensor.owned_values.len(),
+            output1.tensor.extents.iter().product::<usize>(),
         );
-        assert!(output.stats.transfer_bytes > 0);
+        assert_eq!(output1.workspace_bytes, expected_workspace_bytes);
+        assert_eq!(output1.chunk_count, expected_chunk_count);
+        assert_eq!(
+            output1.bytes_written,
+            output1.tensor.owned_values.len() * std::mem::size_of::<f64>(),
+        );
+        assert!(output1.stats.transfer_bytes > 0);
     }
 
     #[test]
