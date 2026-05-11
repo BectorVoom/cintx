@@ -41,7 +41,7 @@
 | Phase 14: Unstable-Source-API Families | v1.2 | 0/5 | Planned | - |
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | v1.2 | 0/3 | Planned | - |
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
-| Phase 17: Real-Integral Evaluation in Safe API | v1.3 | TBD | Planned | - |
+| Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | TBD | Planned | - |
 | Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | TBD | Planned | - |
 
@@ -166,7 +166,16 @@ the order may be relaxed to parallelize if the planner judges the risk acceptabl
   1. `crates/cintx-rs/src/api.rs::fill_staging_values` invokes `cintx-compat::raw::eval_raw` (or an equivalent compat dispatch) for every operator the safe API currently routes; no synthetic-pattern fallback remains in the arity-2 path. (RVAL-01)
   2. `cintx-oracle/tests/one_electron_parity.rs` is extended (or a sibling test added) that drives every supported arity-2 intor through `SessionRequest::evaluate` and asserts byte-identity against libcint at the unified `atol=1e-12` Phase 15 tolerance. (RVAL-02)
   3. No public API change in `cintx-rs`: `SessionRequest` constructors, accessors, and error types stay source- and SemVer-compatible with v1.2. (RVAL-03)
-**Plans**: TBD via `/gsd:plan-phase`
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+- [ ] 17-01-PLAN.md — Wave 0: add `cintx-rs` path-dep to `crates/cintx-oracle/Cargo.toml` so the new parity test can call `SessionRequest::evaluate`.
+- [ ] 17-02-PLAN.md — Wave 1: delete the synthetic stub `CubeClExecutor` + `fill_staging_values` in `crates/cintx-rs/src/api.rs`; add `use cintx_cubecl::CubeClExecutor;`; rewrite the brittle `owned_values[0] == 1.0` unit test to deterministic + nonzero + invariants.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 17-03-PLAN.md — Wave 1: add `crates/cintx-oracle/tests/safe_api_arity2_parity.rs` (12 per-symbol tests at atol=1e-12: 8 cart/sph vendor-parity + 4 spinor idempotency).
+
 **Notes**:
   - Smallest of the three issue #11 tasks; explicitly callable as an isolated PR.
   - Downstream impact: unblocks every arity-2 intor in pyscf_rs `pyscf-gto/src/intor.rs` immediately on land.

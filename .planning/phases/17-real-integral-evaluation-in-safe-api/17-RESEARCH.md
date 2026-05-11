@@ -551,22 +551,25 @@ ASVS V5 (Input Validation): `SessionRequest::new` already validates `OperatorId`
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Vendor FFI wrappers for cart and spinor variants of 1e and 2c2e operators**
    - What we know: `one_electron_parity.rs` has vendor wrappers for `int1e_ovlp_sph`, `int1e_kin_sph`, `int1e_nuc_sph` (sph only). Phase 12 added spinor vendor wrappers for some families.
    - What's unclear: Whether `vendor_int1e_ovlp_cart`, `vendor_int1e_ovlp_spinor`, `vendor_int2c2e_cart`, `vendor_int2c2e_sph`, `vendor_int2c2e_spinor` exist in `cintx-oracle::vendor_ffi`.
    - Recommendation: Grep `crates/cintx-oracle/src/vendor_ffi.rs` before writing the parity tests. For any missing vendor wrapper, use the idempotency-only strategy (two safe API calls agree) rather than skipping the test entirely. The `#[cfg(has_vendor_libcint)]` guard ensures the vendor comparison only compiles when the vendor build is available.
+   - **RESOLVED:** 17-03 PLAN.md `<interfaces>` block enumerates the 8 cart/sph vendor wrappers by line number in `crates/cintx-oracle/src/vendor_ffi.rs` (verified 2026-05-12): `vendor_int1e_{ovlp,kin,nuc}_sph` at lines 21/47/73, `vendor_int2c2e_sph` at line 142, `vendor_int1e_{ovlp,kin,nuc}_cart` at lines 301/327/353, `vendor_int2c2e_cart` at line 412. No spinor wrappers exist; the four spinor variants therefore use the idempotency-only strategy implemented in 17-03 Task 2 (`fn assert_safe_api_idempotent`).
 
 2. **`int2c2e_spinor` spinor transform correctness**
    - What we know: Phase 12 delivered real C→spinor transforms for all base families including 2c2e spinor. D-10 in CONTEXT.md notes "Phase 12 landed real spinor transforms; arity-2 spinor cases should round-trip cleanly."
    - What's unclear: Whether any spinor-specific transform gap exists for the 2c2e spinor path through the safe API vs through `eval_raw`.
    - Recommendation: The planner should include a "run the existing `center_2c2e_parity.rs` spinor parity test" verification step before declaring the safe API parity test green for `int2c2e_spinor`. If the compat-path spinor test is already green at `atol=1e-12`, the safe API path should be too (same executor, same transforms).
+   - **RESOLVED:** Because no `vendor_int2c2e_spinor` wrapper exists, the safe-API spinor path is verified by idempotency in 17-03 Task 2 (`test_int2c2e_spinor_safe_api_idempotency`). 17-03 Task 2's action block also instructs the executor to STOP and surface as a planner-time blocker if `evaluate` returns `UnsupportedApi` or panics on a spinor request — that explicitly catches the "Phase 12 transform gap" scenario without requiring Phase 17 to bake any spinor-transform changes. A `TODO(phase-18-or-later)` comment is required in the test file pointing back here.
 
 3. **Safe API H2O STO-3G BasisSet construction correctness**
    - What we know: `Shell::try_new` and `Atom::try_new` have validation logic that may reject invalid inputs. The normalization applied by the safe API path may differ from the normalization assumed by the raw path.
    - What's unclear: Whether the raw `build_h2o_sto3g()` coefficients are pre-normalized to libcint's convention, or whether cintx applies additional normalization inside `Shell::try_new`.
    - Recommendation: Run a quick idempotency check (two safe API calls agree) before adding vendor parity assertions. If the safe API idempotency check passes but vendor parity fails, investigate normalization.
+   - **RESOLVED:** 17-03 Task 1 action spec pins the H2O STO-3G basis: O/H1/H2 atoms with explicit Bohr coordinates, 5 shells (O-1s, O-2s, O-2p, H1-1s, H2-1s) with explicit exponents/coefficients copied verbatim from `crates/cintx-oracle/tests/center_2c2e_parity.rs` lines 37-175 (the `PTR_ENV_START`-aware version). The 4 spinor idempotency tests in 17-03 Task 2 will surface any normalization mismatch before vendor-parity is asserted in the 8 cart/sph tests, satisfying the recommendation's ordering ("idempotency check before vendor parity").
 
 ---
 
