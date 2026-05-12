@@ -114,6 +114,11 @@ pub struct ExecutionOptions {
     /// on the `ExecutionPlan` for F12-family operators.
     /// Must be non-zero for F12 calls (validated by `validate_f12_env_params` before kernel launch).
     pub f12_zeta: Option<f64>,
+    /// AO symmetry packing requested by the caller. Phase 18 implements `S1` only;
+    /// every other variant returns `FacadeError::UnsupportedAoSymmetry` from
+    /// `SessionRequest::query_workspace`. `None` is the default and is treated as
+    /// `Some(AoSymmetry::S1)`.
+    pub aosym: Option<cintx_core::AoSymmetry>,
 }
 
 impl ExecutionOptions {

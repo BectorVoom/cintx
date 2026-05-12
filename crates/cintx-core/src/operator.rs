@@ -19,6 +19,34 @@ impl fmt::Display for Representation {
     }
 }
 
+/// AO symmetry packing convention (pyscf-compatible naming).
+///
+/// Phase 18 ships `S1` only; every other variant returns
+/// `FacadeError::UnsupportedAoSymmetry` from `SessionRequest::query_workspace`.
+/// `Display` emits the lowercase pyscf form (`s1`, `s2ij`, `s2kl`, `s4`, `s8`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
+#[repr(u8)]
+pub enum AoSymmetry {
+    #[default]
+    S1,
+    S2ij,
+    S2kl,
+    S4,
+    S8,
+}
+
+impl fmt::Display for AoSymmetry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AoSymmetry::S1 => write!(f, "s1"),
+            AoSymmetry::S2ij => write!(f, "s2ij"),
+            AoSymmetry::S2kl => write!(f, "s2kl"),
+            AoSymmetry::S4 => write!(f, "s4"),
+            AoSymmetry::S8 => write!(f, "s8"),
+        }
+    }
+}
+
 /// Lean wrapper around the generated operator index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
