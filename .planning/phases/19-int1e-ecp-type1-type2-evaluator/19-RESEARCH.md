@@ -476,9 +476,11 @@ The only condition that would justify deferring gradients (out of scope per D-10
 | Performance regression | Wall-clock per Cu/LANL2DZ Cu-Cu shell tuple | Phase 15 baseline (no baseline today; established this phase) | `criterion` bench (optional) |
 | Coverage | Manifest oracle_covered flag | 4 (or 6) entries flipped from `false` to `true` post-parity | `manifest-audit` |
 
-## Open Questions for Planner
+## Open Questions for Planner (RESOLVED 2026-05-12)
 
 ### **Q1 (BLOCKING): Oracle source decision — vendor PySCF nr_ecp.c or pivot to libecpint?**
+
+**RESOLVED:** D-01 (revised 2026-05-12) — Option C adopted: vendor PySCF nr_ecp as the primary byte-identity oracle; libecpint added as a non-blocking secondary cross-check (see CONTEXT.md `<decisions>` D-01 + D-02).
 
 **Status:** D-01 as written is unimplementable (libcint 6.1.3 ships no ECP source — VERIFIED).
 
@@ -495,6 +497,8 @@ The only condition that would justify deferring gradients (out of scope per D-10
 
 ### Q2: ECP shell representation of "local channel"
 
+**RESOLVED:** D-04 — EcpShell carries an `ecp_type` marker via `EcpChannel { Local, Projected(u8) }`; the local Type-1 channel and the semi-local Type-2 projector channels are both representable (option (b) recommendation accepted in CONTEXT.md).
+
 PySCF encodes the local (Type-1) ECP channel by setting `ANG_OF = -1` on the ecpbas row. cintx's typed `EcpShell::ang_momentum: u8` can't hold -1.
 
 Options:
@@ -506,6 +510,8 @@ Options:
 
 ### Q3: ecpbas packing convention in `eval_raw`
 
+**RESOLVED:** D-05 (revised) — match PySCF `nr_ecp.h` verbatim: `AS_ECPBAS_OFFSET = 18`, `AS_NECPBAS = 19`. ecpbas is packed after bas in the same i32 slab (see CONTEXT.md `<decisions>` D-05).
+
 PySCF's convention: ecpbas is packed contiguously **after** bas in the same i32 slab; the env array stores the start pointer at `env[AS_ECPBAS_OFFSET]` and the count at `env[AS_NECPBAS]`.
 
 Alternative: cintx-compat could accept a separate `ecpbas: &[i32]` slab — more typed but breaks the "single slab" convention of all other families.
@@ -514,17 +520,23 @@ Alternative: cintx-compat could accept a separate `ecpbas: &[i32]` slab — more
 
 ### Q4: Manifest row count — 4 or 6?
 
+**RESOLVED:** D-09 — 4 manifest rows this phase (cart/sph × {ecp, ecp_ipnuc}); D-12 explicitly defers spinor.
+
 CONTEXT D-12 defers spinor rows. The 4 base + 2 gradient = 6 number from CONTEXT D-10 includes the SO/spinor count. Per D-12, the manifest delta is **4 rows** (cart + sph × {ecp, ecp_ipnuc}), with spinor rows added in a follow-up phase.
 
 **Recommendation:** 4 rows this phase. Document spinor rows as deferred in the manifest CSV header comment.
 
 ### Q5: `canonical_family = "ecp"` vs `"1e"`
 
+**RESOLVED:** D-09 — `canonical_family = "ecp"` (parallels Phase 13's `"f12"` precedent).
+
 CONTEXT D-09 chose `"ecp"` as a separate canonical_family (matching Phase 13's `"f12"` precedent). Alternative: `canonical_family = "1e"` with operator_name distinguishing (`int1e_ecp_*` vs `int1e_*`), which would route through the existing `launch_one_electron` launcher — but that conflates two algorithmically distinct paths and complicates the existing launcher.
 
 **Recommendation:** keep `"ecp"` per D-09. Phase 13 F12 precedent is the right pattern.
 
 ### Q6: Bessel function strategy (`math/bessel.rs`)
+
+**RESOLVED:** D-07 + Phase 13 precedent — tabulated `K_TAB_*` strategy (option (b)) via `include_bytes!` + `bytemuck::AlignedBytes` (matches PySCF byte-identity at atol=1e-12).
 
 Three viable strategies (must pick ONE explicitly):
 
@@ -538,6 +550,8 @@ Three viable strategies (must pick ONE explicitly):
 
 ### Q7: Cu/LANL2DZ basis source
 
+**RESOLVED:** Claude's Discretion in CONTEXT.md — basissetexchange.org JSON export committed at `crates/cintx-oracle/data/cu_lanl2dz.json`; source URL cited in fixture rustdoc.
+
 Three viable sources:
 
 | Source | Authority | Ergonomics |
@@ -550,6 +564,8 @@ Three viable sources:
 
 ### Q8: Test fixture coverage scope
 
+**RESOLVED:** Claude's Discretion + Deferred — Cu/LANL2DZ full Cartesian product only this phase; lighter-atom (Na/SBKJC, K/CRENBL) validation deferred to `.planning/spikes/ecp-fixture-validation.md` per CONTEXT.md `<deferred>`.
+
 - Cu/LANL2DZ has 10 shells (1s, 1p, 1d, 1s, 1p, 1d, 1s, 1p, 1d, 1f-projector roughly). Cartesian product = 100 tuples.
 - Light-atom fallback (Na/SBKJC, K/CRENBL — only s+p projectors) would prove Type-1+Type-2 correctness with smaller coverage before Cu.
 - Phase 18 precedent: H2O STO-3G has 5 shells, 25 tuples per test — comparable.
@@ -557,6 +573,8 @@ Three viable sources:
 **Recommendation:** Cu/LANL2DZ only this phase per CONTEXT decision; defer lighter-atom validation to `.planning/spikes/ecp-fixture-validation.md` follow-up.
 
 ### Q9: libcint header lacks `AS_ECPBAS_OFFSET` / `AS_NECPBAS`
+
+**RESOLVED:** Revised `<canonical_refs>` "Vendored ECP source integration" — do NOT modify `libcint-master/include/cint.h.in`; the ECP slot constants live in `cintx-compat::raw` and mirror PySCF `nr_ecp.h`.
 
 The vendored `libcint-master/include/cint.h.in` lacks the ECP env-slot constants. Even if Option A (PySCF vendor) is chosen, `cint.h.in` won't gain these constants automatically — they live in `nr_ecp.h` which is the new vendored file.
 
