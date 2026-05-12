@@ -14,6 +14,9 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CINTX_ORACLE_BUILD_VENDOR");
     // Declare the custom cfg flag so rustc doesn't warn about unexpected_cfgs
     println!("cargo::rustc-check-cfg=cfg(has_vendor_libcint)");
+    // Phase 19 D-01: PySCF nr_ecp vendor cfg — emitted by the parallel
+    // cc::Build chain below when CINTX_ORACLE_BUILD_VENDOR=1.
+    println!("cargo::rustc-check-cfg=cfg(has_vendor_pyscf_nr_ecp)");
     println!("cargo:rerun-if-changed={}", cint_h_in.display());
     println!("cargo:rerun-if-changed={}", cint_funcs_h.display());
 
@@ -292,4 +295,67 @@ extern CINTIntegralFunction int3c2e_sph_ssc;
     bindings
         .write_to_file(out_dir.join("oracle_bindings.rs"))
         .expect("failed to write oracle libcint bindings");
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 19 D-01 (REVISED 2026-05-12): PySCF nr_ecp parallel cc::Build.
+    //
+    // libcint 6.1.3 upstream ships zero ECP source files (verified in
+    // 19-RESEARCH.md §"libcint v6.1.3 upstream — NO ECP CODE PRESENT").
+    // The C-level ECP code historically attributed to "libcint ECP"
+    // actually lives in PySCF's `pyscf/lib/gto/nr_ecp.{c,h}` +
+    // `nr_ecp_deriv.c` (Apache-2.0, same author Qiming Sun). We vendor
+    // these into `vendor/pyscf-nr-ecp/` (NOT into libcint-master/) to
+    // keep the upstream libcint sync clean.
+    //
+    // This build emits the `has_vendor_pyscf_nr_ecp` cfg so downstream
+    // FFI declarations (added by Plan 03+) can compile-out cleanly on
+    // hosts where CINTX_ORACLE_BUILD_VENDOR is not set.
+    // ─────────────────────────────────────────────────────────────────────
+    let pyscf_root = workspace_root.join("vendor/pyscf-nr-ecp");
+    let mut ecp_build = cc::Build::new();
+    ecp_build
+        .warnings(false)
+        // PySCF's nr_ecp.{c,_deriv.c} and the cintx-authored dgemm_shim.c
+        // use C99 features (mid-block declarations, for-loop init decls,
+        // `_Complex double`). gnu89 (libcint's baseline) is too strict;
+        // use gnu99 for the PySCF subtree. The libcint cc::Build above
+        // continues to use gnu89 — the two trees are compiled into
+        // separate static libraries (`cintx_oracle_vendor` vs
+        // `cintx_pyscf_nr_ecp`) so the flag choice does not bleed.
+        .flag("-std=gnu99")
+        .flag("-Wno-implicit-function-declaration")
+        // Processed cint.h + cint_config.h (libcint vendor headers shared
+        // with the upstream libcint build above).
+        .include(&out_dir)
+        .include(libcint_root.join("include"))
+        .include(libcint_root.join("src"))
+        // PySCF nr_ecp.h declares its slot constants (AS_ECPBAS_OFFSET=18,
+        // AS_NECPBAS=19, RADI_POWER=3, SO_TYPE_OF=4, ECP_LMAX=5) and the
+        // shim np_helper.h + vhf/fblas.h sit under the same include root.
+        .include(pyscf_root.join("include"))
+        .file(pyscf_root.join("src/nr_ecp.c"))
+        .file(pyscf_root.join("src/nr_ecp_deriv.c"))
+        // Minimal cintx-authored dgemm_ reference implementation. Avoids a
+        // hard system-BLAS link dependency for the default oracle path; a
+        // future cintx-oracle build can drop this file and link `-lblas`
+        // instead. See `.planning/notes/pyscf-nr-ecp-vendor-subset.md`.
+        .file(pyscf_root.join("src/dgemm_shim.c"))
+        .compile("cintx_pyscf_nr_ecp");
+
+    println!("cargo:rustc-link-lib=static=cintx_pyscf_nr_ecp");
+    println!("cargo:rustc-cfg=has_vendor_pyscf_nr_ecp");
+
+    for src in &[
+        "src/nr_ecp.c",
+        "src/nr_ecp_deriv.c",
+        "src/dgemm_shim.c",
+        "include/nr_ecp.h",
+        "include/gto/nr_ecp.h",
+        "include/np_helper/np_helper.h",
+        "include/vhf/fblas.h",
+        "LICENSE",
+        "NOTICE",
+    ] {
+        println!("cargo:rerun-if-changed={}", pyscf_root.join(src).display());
+    }
 }

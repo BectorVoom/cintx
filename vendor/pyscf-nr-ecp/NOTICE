@@ -1,0 +1,56 @@
+PySCF nr_ecp vendored sources
+=============================
+
+This subtree contains a verbatim copy of three source files from PySCF
+(the Python-based Simulations of Chemistry Framework), licensed under
+the Apache License, Version 2.0.
+
+Upstream provenance
+-------------------
+
+Project:        PySCF
+URL:            https://github.com/pyscf/pyscf
+Commit SHA:     60cd9022b5158b0eef46ded606a03b111a0ad08c
+Branch:         master
+Fetched:        2026-05-12 (UTC)
+License:        Apache License, Version 2.0 (see LICENSE in this directory)
+Copyright:      The PySCF Developers
+Author:         Qiming Sun <osirpt.sun@gmail.com> (lead author for the nr_ecp.* files)
+
+Files imported
+--------------
+
+  Upstream path                              Vendor path
+  ----------------------------------------   ------------------------------------
+  pyscf/lib/gto/nr_ecp.c                     src/nr_ecp.c
+  pyscf/lib/gto/nr_ecp_deriv.c               src/nr_ecp_deriv.c
+  pyscf/lib/gto/nr_ecp.h                     include/nr_ecp.h
+                                             include/gto/nr_ecp.h (duplicate)
+  pyscf/LICENSE                              LICENSE
+
+Apache-2.0 grant
+----------------
+
+The LICENSE file at the root of this subtree is reproduced verbatim from
+upstream PySCF. The Apache-2.0 grant covers these files; no modifications
+have been made to the C / header content.
+
+cintx provenance note
+---------------------
+
+Vendored for Phase 19 (int1e_ecp_* Type-1 / Type-2 evaluator). These files
+are the primary byte-identity oracle for cintx's `int1e_ecp_*` family per
+phase decision D-01 (REVISED 2026-05-12): libcint 6.1.3 upstream ships no
+ECP source, so PySCF's nr_ecp.{c,h} + nr_ecp_deriv.c is the canonical
+C-level reference for the algorithm cintx must reproduce.
+
+The shim headers under `include/np_helper/np_helper.h` and
+`include/vhf/fblas.h` are minimal cintx-authored stubs (NOT from upstream
+PySCF) that satisfy the `#include` directives in nr_ecp.c without pulling
+the full pyscf/lib/{np_helper,vhf} sources. They are not Apache-2.0
+PySCF code; see `.planning/notes/pyscf-nr-ecp-vendor-subset.md`.
+
+The `src/dgemm_shim.c` file is a cintx-authored minimal reference
+`dgemm_` implementation used only to satisfy the BLAS symbol dependency
+of nr_ecp.c when no system BLAS is available. It is NOT from upstream
+PySCF.
