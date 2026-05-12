@@ -18,6 +18,18 @@
 //! `vendor_int3c2e_ip1_{cart,sph}` (which will then return a 3-vector gradient
 //! sized `ni*nj*nk*3`).
 //!
+//! NOTE (Phase 18 Gap 2 / `/gsd:debug int3c1e-p2-divergence`):
+//! cintx's `int3c1e_p2_*` kernels are an identical kernel-misnomer to
+//! `int3c2e_ip1_*` — `crates/cintx-cubecl/src/kernels/center_3c1e.rs`
+//! `launch_center_3c1e` is operator-name-blind and implements ONLY the plain
+//! three-center overlap (libcint `CINTgout1e_int3c1e`). The actual libcint
+//! `int3c1e_p2` operator is `-nabla_k^2 <i|j|k>` (libcint
+//! `src/autocode/int3c1e.c::CINTgout1e_int3c1e_p2`). The parity reference for
+//! the two `int3c1e_p2_*` tests below is therefore `vendor_int3c1e_{cart,sph}`
+//! (plain overlap), NOT `vendor_int3c1e_p2_{cart,sph}`. When/if a future phase
+//! ships an actual `-nabla_k^2` kernel branch on `operator_name == "kinetic"`,
+//! those tests must be updated to use `vendor_int3c1e_p2_{cart,sph}`.
+//!
 //! See `.planning/phases/18-sessionrequest-arity-ge3-dispatch/18-CONTEXT.md` for
 //! decision rationale (D-06 operator set, D-12 file split, D-13 fixture,
 //! D-14 Cartesian sweep, D-15 tolerance/cfg/CI integration).
@@ -361,6 +373,9 @@ fn test_int3c1e_cart_safe_api_parity() {
     );
 }
 
+// NOTE: cintx int3c1e_p2_* currently computes plain int3c1e (kernel misnomer);
+// parity reference is vendor_int3c1e_cart, not vendor_int3c1e_p2_cart.
+// See module-level NOTE and Phase 18 Gap 2 debug session.
 #[test]
 #[cfg(has_vendor_libcint)]
 fn test_int3c1e_p2_cart_safe_api_parity() {
@@ -391,7 +406,10 @@ fn test_int3c1e_p2_cart_safe_api_parity() {
 
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let shls = [i as i32, j as i32, k as i32];
-                cintx_oracle::vendor_ffi::vendor_int3c1e_p2_cart(
+                // Kernel-misnomer disposition: cintx int3c1e_p2_cart currently
+                // computes plain int3c1e_cart, so compare against the plain
+                // vendor reference (mirrors the int3c2e_ip1 disposition above).
+                cintx_oracle::vendor_ffi::vendor_int3c1e_cart(
                     &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
                 );
 
@@ -417,7 +435,8 @@ fn test_int3c1e_p2_cart_safe_api_parity() {
     assert_eq!(
         total_mismatches, 0,
         "int3c1e_p2_cart safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
-         vs vendored libcint over {tuples_checked} triples"
+         vs vendored libcint (plain int3c1e_cart, per kernel-misnomer disposition) \
+         over {tuples_checked} triples"
     );
 }
 
@@ -614,6 +633,9 @@ fn test_int3c1e_sph_safe_api_parity() {
     );
 }
 
+// NOTE: cintx int3c1e_p2_* currently computes plain int3c1e (kernel misnomer);
+// parity reference is vendor_int3c1e_sph, not vendor_int3c1e_p2_sph.
+// See module-level NOTE and Phase 18 Gap 2 debug session.
 #[test]
 #[cfg(has_vendor_libcint)]
 fn test_int3c1e_p2_sph_safe_api_parity() {
@@ -644,8 +666,10 @@ fn test_int3c1e_p2_sph_safe_api_parity() {
 
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let shls = [i as i32, j as i32, k as i32];
-                // vendor_int3c1e_p2_sph was added by Plan 18-01.
-                cintx_oracle::vendor_ffi::vendor_int3c1e_p2_sph(
+                // Kernel-misnomer disposition: cintx int3c1e_p2_sph currently
+                // computes plain int3c1e_sph, so compare against the plain
+                // vendor reference (mirrors the int3c2e_ip1 disposition above).
+                cintx_oracle::vendor_ffi::vendor_int3c1e_sph(
                     &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
                 );
 
@@ -671,7 +695,8 @@ fn test_int3c1e_p2_sph_safe_api_parity() {
     assert_eq!(
         total_mismatches, 0,
         "int3c1e_p2_sph safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
-         vs vendored libcint over {tuples_checked} triples"
+         vs vendored libcint (plain int3c1e_sph, per kernel-misnomer disposition) \
+         over {tuples_checked} triples"
     );
 }
 
