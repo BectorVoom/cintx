@@ -347,7 +347,21 @@ dependencies = [
  "cintx-compat",
  "cintx-core",
  "cintx-ops",
+ "cintx-rs",
+ "cintx-runtime",
  "serde_json",
+]
+
+[[package]]
+name = "cintx-rs"
+version = "0.1.0"
+dependencies = [
+ "cintx-compat",
+ "cintx-core",
+ "cintx-cubecl",
+ "cintx-ops",
+ "cintx-runtime",
+ "thiserror",
 ]
 
 [[package]]

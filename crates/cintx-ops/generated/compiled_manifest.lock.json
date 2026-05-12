@@ -441,6 +441,134 @@
       "stability": "optional"
     },
     {
+      "arity": 2,
+      "canonical_family": "ecp",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ecp",
+        "representation": "cart",
+        "symbol": "int1e_ecp_cart"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "ecp",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ecp",
+        "representation": "sph",
+        "symbol": "int1e_ecp_sph"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "ecp",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ecp_ipnuc",
+        "representation": "cart",
+        "symbol": "int1e_ecp_ipnuc_cart"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "ecp",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ecp_ipnuc",
+        "representation": "sph",
+        "symbol": "int1e_ecp_ipnuc_sph"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
       "arity": 0,
       "canonical_family": "helper",
       "category": "helper",
