@@ -1,7 +1,7 @@
 ---
 phase: 18-sessionrequest-arity-ge3-dispatch
 verified: 2026-05-12T12:30:00Z
-status: human_needed
+status: gaps_found
 score: 5/5 must-haves verified
 overrides_applied: 0
 human_verification:
