@@ -1271,3 +1271,246 @@ pub fn vendor_int3c1e_ip1_r6_origk_sph(out: &mut [f64], shls: &[i32; 3], atm: &[
 pub fn vendor_int3c2e_sph_ssc(out: &mut [f64], shls: &[i32; 3], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
     unsafe { ffi::int3c2e_sph_ssc(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 19 PySCF nr_ecp scalar wrappers (D-01 revised: PySCF's nr_ecp is the
+// primary ECP byte-identity reference since libcint 6.1.3 upstream ships no
+// ECP code).
+//
+// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:6179-6266 (ECPscalar_sph + ECPscalar_cart).
+// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:366-453 (ECPscalar_ipnuc_*).
+//
+// IMPORTANT — ECP slab packing convention: PySCF's ECPscalar_* functions
+// extract the ECP shell rows from inside the same `bas` table via
+//     ecpbas = bas + env[AS_ECPBAS_OFFSET] * BAS_SLOTS
+//     necpbas = (int)env[AS_NECPBAS]
+// (nr_ecp.c lines 6205-6206 for sph, 6248-6249 for cart). Callers MUST set
+// env[AS_ECPBAS_OFFSET=18] to the shell-index where ECP rows START in the
+// combined bas table, AND set env[AS_NECPBAS=19] to the ECP row count.
+// The cintx-oracle Cu/LANL2DZ fixture (fixtures.rs::build_cu_lanl2dz)
+// returns ecpbas as a separate slab — callers wrapping this into a vendor
+// call must concatenate (atom_bas ++ ecp_bas) into a single bas table and
+// set env[AS_ECPBAS_OFFSET] = atom_bas.len() / BAS_SLOTS before calling.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Evaluate PySCF `ECPscalar_sph` for a single shell pair using the vendored
+/// PySCF nr_ecp Type-1 + Type-2 reference. See module rustdoc for ecpbas
+/// packing convention.
+///
+/// Gated `#[cfg(has_vendor_pyscf_nr_ecp)]` — the cfg flag is emitted by
+/// `crates/cintx-oracle/build.rs` when `CINTX_ORACLE_BUILD_VENDOR=1`.
+#[cfg(has_vendor_pyscf_nr_ecp)]
+#[allow(non_snake_case)]
+pub fn vendor_ECPscalar_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::ECPscalar_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL (ECPOpt)
+            ptr::null_mut(), // cache = NULL (let PySCF allocate)
+        )
+    }
+}
+
+/// Evaluate PySCF `ECPscalar_cart` for a single shell pair.
+#[cfg(has_vendor_pyscf_nr_ecp)]
+#[allow(non_snake_case)]
+pub fn vendor_ECPscalar_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::ECPscalar_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate PySCF `ECPscalar_ipnuc_sph` — ECP gradient (component_rank=3) sph.
+/// Plan 05 wires this; Plan 04 ships only the FFI wrapper so the bindgen
+/// allowlist + link surface land in one place.
+#[cfg(has_vendor_pyscf_nr_ecp)]
+#[allow(non_snake_case)]
+pub fn vendor_ECPscalar_ipnuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::ECPscalar_ipnuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate PySCF `ECPscalar_ipnuc_cart` — ECP gradient (component_rank=3) cart.
+#[cfg(has_vendor_pyscf_nr_ecp)]
+#[allow(non_snake_case)]
+pub fn vendor_ECPscalar_ipnuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::ECPscalar_ipnuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FFI ABI smoke test — catches symbol/ABI mismatches between cintx-oracle's
+// bindgen output and the vendored PySCF nr_ecp shared object before parity
+// tests run.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(all(test, has_vendor_libcint, has_vendor_pyscf_nr_ecp))]
+mod ecp_ffi_smoke {
+    use super::*;
+
+    /// Minimal H-atom + 1 Local ECP row, calls vendor_ECPscalar_sph and
+    /// vendor_ECPscalar_cart and asserts the FFI returns without crashing.
+    /// The numerical value is not checked here — see safe_api_ecp_parity.rs.
+    #[test]
+    fn ecpscalar_sph_and_cart_smoke() {
+        const ATM_SLOTS: usize = 6;
+        const BAS_SLOTS: usize = 8;
+        const PTR_ENV_START: usize = 20;
+        const AS_ECPBAS_OFFSET: usize = 18;
+        const AS_NECPBAS: usize = 19;
+        const CHARGE_OF: usize = 0;
+        const PTR_COORD: usize = 1;
+        const NUC_MOD_OF: usize = 2;
+        const PTR_ZETA: usize = 3;
+        const POINT_NUC: i32 = 1;
+        const ATOM_OF: usize = 0;
+        const ANG_OF: usize = 1;
+        const NPRIM_OF: usize = 2;
+        const NCTR_OF: usize = 3;
+        const RADI_POWER: usize = 3; // ECP slot
+        const PTR_EXP: usize = 5;
+        const PTR_COEFF: usize = 6;
+
+        // Build env: pre-pad to PTR_ENV_START=20.
+        let mut env = vec![0.0_f64; PTR_ENV_START];
+
+        let coord_ptr = env.len() as i32;
+        env.extend_from_slice(&[0.0_f64, 0.0, 0.0]);
+        let zeta_ptr = env.len() as i32;
+        env.push(0.0);
+
+        // Single s-shell AO: 1 primitive, exp=1.0, coeff=1.0.
+        let ao_exp_ptr = env.len() as i32;
+        env.push(1.0);
+        let ao_coeff_ptr = env.len() as i32;
+        env.push(1.0);
+
+        // ECP Type-1 (Local) row: 1 primitive, exp=1.0, coeff=1.0,
+        // radial_power=0.
+        let ecp_exp_ptr = env.len() as i32;
+        env.push(1.0);
+        let ecp_coeff_ptr = env.len() as i32;
+        env.push(1.0);
+
+        let mut atm = vec![0_i32; ATM_SLOTS];
+        atm[CHARGE_OF] = 1;
+        atm[PTR_COORD] = coord_ptr;
+        atm[NUC_MOD_OF] = POINT_NUC;
+        atm[PTR_ZETA] = zeta_ptr;
+        let natm: i32 = 1;
+
+        // bas table: AO row + ECP row (concatenated).
+        let mut bas = vec![0_i32; 2 * BAS_SLOTS];
+        // AO row at index 0
+        bas[ATOM_OF] = 0;
+        bas[ANG_OF] = 0;
+        bas[NPRIM_OF] = 1;
+        bas[NCTR_OF] = 1;
+        bas[PTR_EXP] = ao_exp_ptr;
+        bas[PTR_COEFF] = ao_coeff_ptr;
+        // ECP row at index 1
+        bas[BAS_SLOTS + ATOM_OF] = 0;
+        bas[BAS_SLOTS + ANG_OF] = -1; // Local channel sentinel
+        bas[BAS_SLOTS + NPRIM_OF] = 1;
+        bas[BAS_SLOTS + NCTR_OF] = 1;
+        bas[BAS_SLOTS + RADI_POWER] = 0;
+        bas[BAS_SLOTS + PTR_EXP] = ecp_exp_ptr;
+        bas[BAS_SLOTS + PTR_COEFF] = ecp_coeff_ptr;
+        let nbas: i32 = 2;
+
+        // Wire env[AS_ECPBAS_OFFSET] = 1 (ECP starts at bas index 1).
+        // Wire env[AS_NECPBAS] = 1 (one ECP row).
+        env[AS_ECPBAS_OFFSET] = 1.0;
+        env[AS_NECPBAS] = 1.0;
+
+        // Evaluate (s-shell × s-shell): output = 1 element (cart) or 1 element (sph).
+        let shls = [0_i32, 0_i32];
+        let mut out_sph = vec![0.0_f64; 1];
+        let _ret_sph = vendor_ECPscalar_sph(&mut out_sph, &shls, &atm, natm, &bas, nbas, &env);
+
+        let mut out_cart = vec![0.0_f64; 1];
+        let _ret_cart = vendor_ECPscalar_cart(&mut out_cart, &shls, &atm, natm, &bas, nbas, &env);
+
+        // FFI returned without crashing — smoke test passes. Numerical
+        // value validation happens in safe_api_ecp_parity.rs.
+        // The returned outputs SHOULD be non-zero (a Type-1 ECP integral
+        // for an s-s pair at zero displacement is finite), but we don't
+        // assert specifics here.
+        let _ = out_sph;
+        let _ = out_cart;
+    }
+}

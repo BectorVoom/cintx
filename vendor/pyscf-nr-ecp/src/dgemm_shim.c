@@ -20,7 +20,19 @@
  */
 
 #include <ctype.h>
+#include <stddef.h>
 #include <string.h>
+
+/*
+ * cintx-authored `NPdset0` implementation. Called by PySCF nr_ecp.c and
+ * nr_ecp_deriv.c to zero-fill a double array (line 6253 of nr_ecp.c,
+ * multiple sites in nr_ecp_deriv.c). The PySCF upstream implementation
+ * in pyscf/lib/np_helper/np_helper.c is a thin memset wrapper; we
+ * inline it here to keep the link surface self-contained.
+ */
+void NPdset0(double *p, const size_t n) {
+    memset(p, 0, n * sizeof(double));
+}
 
 static int dgemm_shim_trans(const char *t) {
     /* Returns 0 for 'N'/'n', 1 for 'T'/'t'/'C'/'c'. */
