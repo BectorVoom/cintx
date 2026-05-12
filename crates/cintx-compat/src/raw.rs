@@ -55,6 +55,48 @@ pub const NGRIDS: usize = 11;
 /// Grid coordinates are packed as env[PTR_GRIDS..PTR_GRIDS + 3*ngrids] (libcint PTR_GRIDS = 12).
 pub const PTR_GRIDS: usize = 12;
 
+// =====================================================================
+// Phase 19 D-05: ECP slot constants (from PySCF nr_ecp.h, upstream names
+// kept verbatim). ecpbas rows reuse the existing BAS_SLOTS = 8 row width;
+// slots 3 and 4 are reinterpreted (no separate ecpbas-width constant —
+// per the Phase 19 RESEARCH §"ecpbas row width" decision).
+// Source: vendor/pyscf-nr-ecp/include/nr_ecp.h
+// =====================================================================
+
+/// ECP basis row slot: angular momentum power of `r` in `V_l(r)`.
+///
+/// Matches PySCF `nr_ecp.h` `RADI_POWER`. Reinterprets the BAS slot index 3
+/// (which is `NCTR_OF` for ordinary bas rows). ecpbas rows reuse the existing
+/// `BAS_SLOTS = 8` row width.
+pub const RADI_POWER: usize = 3;
+
+/// ECP basis row slot: spin-orbit channel marker.
+///
+/// Matches PySCF `nr_ecp.h` `SO_TYPE_OF`. Reinterprets BAS slot index 4
+/// (which is `KAPPA_OF` for ordinary bas rows). 0 = scalar; nonzero = SO
+/// (out of scope per Phase 19 D-12).
+pub const SO_TYPE_OF: usize = 4;
+
+/// env slot index pointing at the start of the `ecpbas` array.
+///
+/// Matches PySCF `nr_ecp.h` `AS_ECPBAS_OFFSET = 18`. The kernel-side
+/// dispatch reads the ecpbas slice starting at this env index when an
+/// `int1e_ecp_*` operator is selected.
+pub const AS_ECPBAS_OFFSET: usize = 18;
+
+/// env slot index holding the number of `ecpbas` rows.
+///
+/// Matches PySCF `nr_ecp.h` `AS_NECPBAS = 19`. `eval_raw` rejects ECP
+/// dispatch with a typed `cintxRsError::InvalidEnvParam` when
+/// `env[AS_NECPBAS] <= 0` or non-finite.
+pub const AS_NECPBAS: usize = 19;
+
+/// Max angular momentum supported by the ECP code path.
+///
+/// Matches PySCF `nr_ecp.h` `ECP_LMAX = 5`. Mirrored on the typed surface
+/// at `cintx_core::ecp::ECP_LMAX`.
+pub const ECP_LMAX: usize = 5;
+
 pub const POINT_NUC: i32 = 1;
 pub const GAUSSIAN_NUC: i32 = 2;
 pub const FRAC_CHARGE_NUC: i32 = 3;
@@ -100,6 +142,13 @@ impl RawApiId {
 
     pub const INT4C1E_CART: Self = Self::Symbol("int4c1e_cart");
     pub const INT4C1E_SPH: Self = Self::Symbol("int4c1e_sph");
+
+    // Phase 19 D-05: ECP raw-API symbols. Spinor forms intentionally
+    // omitted (out of scope per D-12).
+    pub const INT1E_ECP_CART: Self = Self::Symbol("int1e_ecp_cart");
+    pub const INT1E_ECP_SPH: Self = Self::Symbol("int1e_ecp_sph");
+    pub const INT1E_ECP_IPNUC_CART: Self = Self::Symbol("int1e_ecp_ipnuc_cart");
+    pub const INT1E_ECP_IPNUC_SPH: Self = Self::Symbol("int1e_ecp_ipnuc_sph");
 
     fn symbol(self) -> &'static str {
         match self {
@@ -331,6 +380,66 @@ impl<'a> RawBasRecord<'a> {
     }
 }
 
+/// Typed view over a flat libcint-style `ecpbas` slab.
+///
+/// ECP basis rows reuse the existing `BAS_SLOTS = 8` row width (slots 3 and
+/// 4 are reinterpreted as `RADI_POWER` and `SO_TYPE_OF`). The PySCF ECP
+/// kernel reads the slab pointed to by `env[AS_ECPBAS_OFFSET]` with
+/// `env[AS_NECPBAS]` rows; this view is the typed surface for safe-Rust
+/// consumers.
+#[derive(Clone, Copy, Debug)]
+pub struct EcpBasArray<'a> {
+    data: &'a [i32],
+}
+
+impl<'a> EcpBasArray<'a> {
+    /// Construct an `EcpBasArray` from a flat `i32` slab. Returns
+    /// `cintxRsError::InvalidBasLayout` if `data.len()` is not a multiple
+    /// of `BAS_SLOTS` (same error variant `RawBasView::new` uses).
+    pub fn new(data: &'a [i32]) -> Result<Self, cintxRsError> {
+        if data.len() % BAS_SLOTS != 0 {
+            return Err(cintxRsError::InvalidBasLayout {
+                slot_width: BAS_SLOTS,
+                provided: data.len(),
+            });
+        }
+        Ok(Self { data })
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len() / BAS_SLOTS
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Returns the raw 8-slot row at `index`, or panics if out of bounds —
+    /// callers must check `len()` first. Mirrors the indexing contract of
+    /// `RawBasView::get`.
+    pub fn row(&self, index: usize) -> &[i32] {
+        let start = index
+            .checked_mul(BAS_SLOTS)
+            .expect("ecpbas row index overflow");
+        &self.data[start..start + BAS_SLOTS]
+    }
+
+    /// Reads the `RADI_POWER` slot for row `index`.
+    pub fn radial_power(&self, index: usize) -> i32 {
+        self.row(index)[RADI_POWER]
+    }
+
+    /// Reads the `SO_TYPE_OF` slot for row `index`.
+    pub fn so_type(&self, index: usize) -> i32 {
+        self.row(index)[SO_TYPE_OF]
+    }
+
+    /// Iterates over the raw 8-slot rows.
+    pub fn iter_rows(&self) -> std::slice::ChunksExact<'_, i32> {
+        self.data.chunks_exact(BAS_SLOTS)
+    }
+}
+
 /// Raw environment view over libcint-style `env` values.
 #[derive(Clone, Copy, Debug)]
 pub struct RawEnvView<'a> {
@@ -453,6 +562,21 @@ pub unsafe fn eval_raw(
         // Validate before dispatch so we return a typed error on bad input.
         cintx_runtime::validator::validate_f12_env_params("f12", &plan.operator_env_params)?;
     }
+    // Phase 19 D-05: ECP dispatch guard — reject before kernel launch when
+    // env[AS_NECPBAS] is missing/zero/non-finite. Mirrors the F12 zeta gate
+    // above (same insertion point, same error variant). Plan 04 wires the
+    // kernel-side reader that consumes env[AS_ECPBAS_OFFSET].
+    if is_ecp_family_symbol(plan.descriptor.operator_symbol()) {
+        let necpbas = env.get(AS_NECPBAS).copied().unwrap_or(0.0);
+        if !necpbas.is_finite() || necpbas <= 0.0 {
+            return Err(cintxRsError::InvalidEnvParam {
+                param: "AS_NECPBAS",
+                reason: format!(
+                    "env[AS_NECPBAS] must be > 0 and finite for ECP operators, got {necpbas}"
+                ),
+            });
+        }
+    }
     if plan.descriptor.entry.canonical_family == "grids" {
         plan.operator_env_params.grids_params = Some(extract_grids_env_params(env)?);
         cintx_runtime::validator::validate_grids_env_params("grids", &plan.operator_env_params)?;
@@ -571,6 +695,14 @@ fn unstable_source_api_enabled() -> bool {
 
 fn is_f12_family_symbol(symbol: &str) -> bool {
     symbol.starts_with("int2e_stg") || symbol.starts_with("int2e_yp")
+}
+
+/// Phase 19: identifies the four ECP operator symbols
+/// (`int1e_ecp_cart`, `int1e_ecp_sph`, `int1e_ecp_ipnuc_cart`,
+/// `int1e_ecp_ipnuc_sph`). Mirrors `is_f12_family_symbol` — sibling
+/// gating insertion point in `eval_raw`.
+fn is_ecp_family_symbol(symbol: &str) -> bool {
+    symbol.starts_with("int1e_ecp_")
 }
 
 fn parse_env_usize_param(
@@ -1883,6 +2015,134 @@ mod tests {
         assert!(
             !matches!(result, Err(cintxRsError::InvalidEnvParam { .. })),
             "eval_raw grids path should not fail env validation when grids params are set: {result:?}"
+        );
+    }
+
+    // --- Phase 19 D-05: ECP slot constants + EcpBasArray + dispatch arm ---
+
+    #[test]
+    fn ecp_slot_constants_match_pyscf_nr_ecp_h() {
+        assert_eq!(RADI_POWER, 3);
+        assert_eq!(SO_TYPE_OF, 4);
+        assert_eq!(AS_ECPBAS_OFFSET, 18);
+        assert_eq!(AS_NECPBAS, 19);
+        assert_eq!(ECP_LMAX, 5);
+    }
+
+    #[test]
+    fn ecp_bas_array_accepts_slab_with_bas_slots_multiple_length() {
+        // 2 rows × 8 slots = 16 i32s — should succeed.
+        let slab = [0i32; 16];
+        let view = EcpBasArray::new(&slab).expect("16-slot slab should be accepted");
+        assert_eq!(view.len(), 2);
+        assert!(!view.is_empty());
+    }
+
+    #[test]
+    fn ecp_bas_array_rejects_non_multiple_length() {
+        // 9 i32s is not a multiple of BAS_SLOTS=8 — should be rejected
+        // with InvalidBasLayout (same variant RawBasView::new uses).
+        let slab = [0i32; 9];
+        let err = EcpBasArray::new(&slab).unwrap_err();
+        assert!(matches!(
+            err,
+            cintxRsError::InvalidBasLayout {
+                slot_width: BAS_SLOTS,
+                provided: 9,
+            }
+        ));
+    }
+
+    #[test]
+    fn ecp_bas_array_named_getters_read_correct_slots() {
+        // Build one ecpbas row with radial_power=2 at slot 3 and so_type=0
+        // at slot 4. Layout (BAS_SLOTS=8): [atom, ang, nprim, RADI_POWER,
+        // SO_TYPE_OF, ptr_exp, ptr_coeff, _].
+        let row: [i32; 8] = [
+            0, /* atom */
+            -1, /* ang (Local sentinel) */
+            1, /* nprim */
+            2, /* RADI_POWER */
+            0, /* SO_TYPE_OF (scalar) */
+            10, /* PTR_EXP */
+            11, /* PTR_COEFF */
+            0, /* padding */
+        ];
+        let view = EcpBasArray::new(&row).expect("single-row slab");
+        assert_eq!(view.len(), 1);
+        assert_eq!(view.radial_power(0), 2);
+        assert_eq!(view.so_type(0), 0);
+        // iter_rows yields the same 8-slot record.
+        let mut iter = view.iter_rows();
+        let first = iter.next().expect("at least one row");
+        assert_eq!(first.len(), BAS_SLOTS);
+        assert_eq!(first[RADI_POWER], 2);
+        assert_eq!(first[SO_TYPE_OF], 0);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn raw_api_id_ecp_constants_expose_canonical_symbols() {
+        // Construct via the public constants and round-trip through symbol().
+        assert_eq!(
+            RawApiId::INT1E_ECP_CART.symbol(),
+            "int1e_ecp_cart",
+        );
+        assert_eq!(RawApiId::INT1E_ECP_SPH.symbol(), "int1e_ecp_sph");
+        assert_eq!(
+            RawApiId::INT1E_ECP_IPNUC_CART.symbol(),
+            "int1e_ecp_ipnuc_cart",
+        );
+        assert_eq!(
+            RawApiId::INT1E_ECP_IPNUC_SPH.symbol(),
+            "int1e_ecp_ipnuc_sph",
+        );
+    }
+
+    #[test]
+    fn is_ecp_family_symbol_matches_only_int1e_ecp_prefix() {
+        assert!(is_ecp_family_symbol("int1e_ecp_cart"));
+        assert!(is_ecp_family_symbol("int1e_ecp_sph"));
+        assert!(is_ecp_family_symbol("int1e_ecp_ipnuc_cart"));
+        assert!(is_ecp_family_symbol("int1e_ecp_ipnuc_sph"));
+        // Negative cases — non-ECP symbols must not match.
+        assert!(!is_ecp_family_symbol("int1e_ovlp_cart"));
+        assert!(!is_ecp_family_symbol("int1e_nuc_sph"));
+        assert!(!is_ecp_family_symbol("int4c1e_cart"));
+        assert!(!is_ecp_family_symbol("int2e_stg_sph"));
+    }
+
+    #[test]
+    fn eval_raw_ecp_symbol_with_zero_necpbas_returns_invalid_env_param() {
+        // Build an env that is long enough to reach AS_NECPBAS=19 but
+        // explicitly sets env[AS_NECPBAS] = 0.0 (no ecpbas rows attached).
+        // The ECP dispatch guard must fire before kernel launch, returning
+        // cintxRsError::InvalidEnvParam { param: "AS_NECPBAS", ... }.
+        let fixture = RawFixture::single_atom_three_shells();
+        let mut env_full = fixture.env.clone();
+        // Pad up to (AS_NECPBAS + 1) so env.get(AS_NECPBAS) is in bounds.
+        if env_full.len() <= AS_NECPBAS {
+            env_full.resize(AS_NECPBAS + 1, 0.0);
+        }
+        env_full[AS_NECPBAS] = 0.0; // explicit zero — guard should fire
+        let mut out = vec![0.0_f64; 64];
+        let err = unsafe {
+            eval_raw(
+                RawApiId::INT1E_ECP_SPH,
+                Some(&mut out),
+                None,
+                &fixture.shls_2,
+                &fixture.atm,
+                &fixture.bas,
+                &env_full,
+                None,
+                None,
+            )
+        }
+        .unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "AS_NECPBAS"),
+            "expected InvalidEnvParam(AS_NECPBAS) for zero necpbas, got: {err:?}"
         );
     }
 }
