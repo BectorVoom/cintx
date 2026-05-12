@@ -226,6 +226,34 @@ pub fn vendor_int3c2e_sph(
     }
 }
 
+/// Evaluate int3c2e_cart for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, Cartesian).
+pub fn vendor_int3c2e_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int4c1e_sph for a single shell quartet using vendored libcint.
 ///
 /// `out` must be pre-allocated with ni*nj elements where
@@ -476,6 +504,34 @@ pub fn vendor_int3c1e_p2_cart(
 ) -> i32 {
     unsafe {
         ffi::int3c1e_p2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_p2_sph for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 1-electron integral, p2 variant, spherical).
+pub fn vendor_int3c1e_p2_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_p2_sph(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,

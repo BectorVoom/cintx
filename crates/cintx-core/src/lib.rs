@@ -15,6 +15,6 @@ pub use atom::{Atom, NuclearModel};
 pub use basis::{BasisMeta, BasisSet};
 pub use env::{EnvBoundsError, EnvParams, EnvUnits};
 pub use error::{CoreError, cintxRsError};
-pub use operator::{OperatorId, Representation};
+pub use operator::{AoSymmetry, OperatorId, Representation};
 pub use shell::{Shell, ShellTuple, ShellTupleArityError};
 pub use tensor::{TensorLayout, TensorShape};

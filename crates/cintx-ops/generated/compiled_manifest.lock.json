@@ -353,6 +353,38 @@
       "stability": "stable"
     },
     {
+      "id": {
+        "family": "3c2e",
+        "operator": "electron-repulsion",
+        "representation": "cart",
+        "symbol": "int3c2e_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "id": {
+        "family": "3c2e",
+        "operator": "electron-repulsion",
+        "representation": "sph",
+        "symbol": "int3c2e_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
       "arity": 4,
       "canonical_family": "4c1e",
       "category": "4c1e",

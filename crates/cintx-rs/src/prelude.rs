@@ -28,6 +28,7 @@ pub use crate::error::FacadeError;
 pub use crate::error::FacadeErrorKind;
 
 // Core typed inputs accepted by SessionBuilder and SessionRequest.
+pub use cintx_core::AoSymmetry;
 pub use cintx_core::BasisSet;
 pub use cintx_core::OperatorId;
 pub use cintx_core::Representation;
