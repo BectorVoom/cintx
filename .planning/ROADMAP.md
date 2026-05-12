@@ -42,7 +42,7 @@
 | Phase 15: Oracle Tolerance Unification & Manifest Lock Closure | v1.2 | 0/3 | Planned | - |
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
-| Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | TBD | Planned | - |
+| Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
 | Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | TBD | Planned | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
@@ -191,7 +191,20 @@ Plans:
   3. Output tensors expose F-order AO axes consistent with libcint memory layout so downstream consumers (notably pyscf_rs `pyscf-gto/src/intor.rs`) can treat the safe API as a drop-in alternative to the raw `eval_raw` path. (ARITY-03)
   4. Two-electron symmetry packing follows pyscf's `aosym` convention (`s1`, `s2ij`, `s2kl`, `s4`, `s8`) where supported, or returns a typed error documenting which packings are not yet implemented. (ARITY-04)
   5. Oracle parity tests for arity-3 and arity-4 dispatch are added to `cintx-oracle` and gate CI alongside the existing arity-2 parity tests. (ARITY-05)
-**Plans**: TBD via `/gsd:plan-phase`
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+- [ ] 18-01-PLAN.md — Wave 0: manifest expansion (R1: add plain int3c2e_{cart,sph}) + AoSymmetry enum + ExecutionOptions::aosym + re-exports + 3 new vendor FFI wrappers + resolver misc_wrapper_macro arm.
+- [ ] 18-02-PLAN.md — Wave 1: safe-API surface (aosym preflight in query_workspace, FacadeError::UnsupportedAoSymmetry variant + kind() arm, F-order rustdoc on IntegralTensor, INT4C1E_CART_OPERATOR_ID shift 22 -> 24, two aosym unit tests).
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 18-03-PLAN.md — Wave 2: 8 arity-3 oracle parity tests against vendored libcint at atol=1e-12 (cart/sph for int3c1e, int3c1e_p2, int3c2e_ip1, plain int3c2e).
+- [ ] 18-04-PLAN.md — Wave 2: 4 arity-4 oracle parity tests against vendored libcint at atol=1e-12 (int2e_{cart,sph} base; int4c1e_{cart,sph} per-test with-4c1e gated).
+
+**Cross-cutting constraints:**
+- Per-symbol nonzero sentinel (`any_nonzero` flag asserted after the sweep) guards against zero-fill regressions per PATTERNS.md §Shared Patterns.
+
 **Notes**:
   - `int2e_sph` is the single hottest call in any closed-shell SCF workflow — closing this gap is the biggest practical unblocker for pyscf_rs's `pyscf-scf` crate.
   - `int3c2e_*` enables density fitting (pyscf_rs `pyscf-df` crate).
