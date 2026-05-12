@@ -479,11 +479,9 @@ fn test_int4c1e_cart_safe_api_parity() {
                 for l in 0..N_SHELLS {
                     let ni = shells[i].ao_per_shell();
                     let nj = shells[j].ao_per_shell();
-                    // int4c1e traces over the (k,l) auxiliary pair → output is ni*nj.
-                    let n_elem = ni * nj;
-                    // Reference unused shell sizes to keep the loop symmetric with int2e_*.
-                    let _nk = shells[k].ao_per_shell();
-                    let _nl = shells[l].ao_per_shell();
+                    let nk = shells[k].ao_per_shell();
+                    let nl = shells[l].ao_per_shell();
+                    let n_elem = ni * nj * nk * nl;
 
                     let safe_out = collect_safe_api_tuple_buffer(
                         OperatorId::new(24),
@@ -546,11 +544,9 @@ fn test_int4c1e_sph_safe_api_parity() {
                 for l in 0..N_SHELLS {
                     let ni = shells[i].ao_per_shell();
                     let nj = shells[j].ao_per_shell();
-                    // int4c1e traces over the (k,l) auxiliary pair → output is ni*nj.
-                    let n_elem = ni * nj;
-                    // Reference unused shell sizes to keep the loop symmetric with int2e_*.
-                    let _nk = shells[k].ao_per_shell();
-                    let _nl = shells[l].ao_per_shell();
+                    let nk = shells[k].ao_per_shell();
+                    let nl = shells[l].ao_per_shell();
+                    let n_elem = ni * nj * nk * nl;
 
                     let safe_out = collect_safe_api_tuple_buffer(
                         OperatorId::new(25),
