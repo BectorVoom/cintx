@@ -61,6 +61,17 @@ impl<'basis> SessionRequest<'basis> {
     }
 
     pub fn query_workspace(&self) -> Result<SessionQuery<'basis>, FacadeError> {
+        // Phase 18 D-04: aosym preflight — only S1 (and None ≡ S1) is implemented.
+        // Non-S1 packings return a typed FacadeError::UnsupportedAoSymmetry so callers
+        // can pattern-match programmatically. Fails fast before any runtime work.
+        if let Some(aosym) = self.options.aosym {
+            if aosym != cintx_core::AoSymmetry::S1 {
+                return Err(FacadeError::UnsupportedAoSymmetry {
+                    requested: aosym.to_string(),
+                });
+            }
+        }
+
         let runtime_workspace = runtime_query_workspace(
             self.operator,
             self.representation,
@@ -438,6 +449,35 @@ impl EvaluationStats {
     }
 }
 
+/// Owned integral tensor returned by `SessionQuery::evaluate`.
+///
+/// # Memory layout
+///
+/// `owned_values` is a dense `Vec<f64>` storing `extents.iter().product()` real
+/// values (or 2x that for `Spinor` outputs with `complex_interleaved == true`,
+/// where real and imaginary parts alternate in the innermost stride).
+///
+/// **AO axis layout** — `extents` lists AO-axis sizes in **shell-tuple order**:
+/// `extents[0] = ao_per_shell(shells[0])`, `extents[1] = ao_per_shell(shells[1])`,
+/// etc. The per-kernel index ordering inside `owned_values` matches libcint's
+/// memory layout for that family:
+///
+/// - **Arity >= 3** (`int2e_*`, `int3c1e_*`, `int3c2e_*`, `int4c1e_*`): **F-order**
+///   (Fortran / column-major) — `extents[0]` is the fastest-varying axis.
+///   Byte-identical to vendor libcint output without transposition (verified by
+///   the Phase 18 oracle parity sweep in `crates/cintx-oracle/tests/safe_api_arity{3,4}_parity.rs`).
+/// - **Arity 2** (`int1e_*`, `int2c2e_*`): row-major within each shell-pair
+///   block — `extents[0]` is the slowest-varying axis. The arity-2 oracle parity
+///   tests apply the column-major-to-row-major conversion to vendor output before
+///   comparison (see `crates/cintx-oracle/tests/safe_api_arity2_parity.rs:280-292`).
+///
+/// When `component_axis_leading == true` (the planner default), an optional
+/// component axis (e.g., for IP/derivative operators) is the slowest-varying
+/// axis — placed beyond `extents.len()` shell-tuple axes.
+///
+/// The arity-aware layout is verified implicitly by the oracle parity sweep
+/// (`crates/cintx-oracle/tests/safe_api_arity{2,3,4}_parity.rs`). If the layout
+/// silently drifts, the first parity test fails.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct IntegralTensor {
     pub extents: Vec<usize>,
@@ -734,5 +774,60 @@ mod tests {
     fn unsupported_unstable_requests_map_to_unsupported_api() {
         let err = unsupported_unstable_request("int2e_ipip1_sph");
         assert!(matches!(err, FacadeError::UnsupportedApi { .. }));
+    }
+
+    #[test]
+    fn aosym_error_path_rejects_non_s1_with_typed_error() {
+        use cintx_core::AoSymmetry;
+        let (basis, shells) = sample_basis_with_shells(Representation::Cart, &[0, 0]);
+
+        for non_s1 in [AoSymmetry::S2ij, AoSymmetry::S2kl, AoSymmetry::S4, AoSymmetry::S8] {
+            let options = ExecutionOptions {
+                aosym: Some(non_s1),
+                ..Default::default()
+            };
+            let request = SessionRequest::new(
+                OperatorId::new(0),
+                Representation::Cart,
+                &basis,
+                shells.clone(),
+                options,
+            );
+            let err = request
+                .query_workspace()
+                .expect_err("non-S1 aosym must return UnsupportedAoSymmetry");
+            match err {
+                FacadeError::UnsupportedAoSymmetry { requested } => {
+                    assert_eq!(
+                        requested,
+                        non_s1.to_string(),
+                        "requested field must carry the lowercase pyscf form"
+                    );
+                }
+                other => panic!(
+                    "expected UnsupportedAoSymmetry for aosym={non_s1:?}, got {other:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn aosym_none_and_s1_both_succeed_through_query_workspace() {
+        use cintx_core::AoSymmetry;
+        let (basis, shells) = sample_basis_with_shells(Representation::Cart, &[0, 0]);
+
+        for aosym in [None, Some(AoSymmetry::S1)] {
+            let options = ExecutionOptions { aosym, ..Default::default() };
+            let request = SessionRequest::new(
+                OperatorId::new(0),
+                Representation::Cart,
+                &basis,
+                shells.clone(),
+                options,
+            );
+            request
+                .query_workspace()
+                .unwrap_or_else(|e| panic!("aosym={aosym:?} must succeed; got {e:?}"));
+        }
     }
 }
