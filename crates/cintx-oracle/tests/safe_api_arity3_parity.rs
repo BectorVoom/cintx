@@ -544,3 +544,258 @@ fn test_int3c2e_cart_safe_api_parity() {
          vs vendored libcint over {tuples_checked} triples"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 2: Four sph vendor-parity tests
+//
+// Mirrors the cart sweeps above — only OperatorId, Representation, and the
+// vendor function name change. Same tolerance (ATOL=1e-12, RTOL=0.0), same
+// 5x5x5 = 125 triple sweep, same any_nonzero sentinel, same pre-compare
+// length assert, same NO transpose (F-order direct compare).
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+#[cfg(has_vendor_libcint)]
+fn test_int3c1e_sph_safe_api_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Spheric);
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let mut total_mismatches = 0usize;
+    let mut any_nonzero = false;
+    let mut tuples_checked = 0usize;
+
+    for i in 0..N_SHELLS {
+        for j in 0..N_SHELLS {
+            for k in 0..N_SHELLS {
+                let ni = shells[i].ao_per_shell();
+                let nj = shells[j].ao_per_shell();
+                let nk = shells[k].ao_per_shell();
+                let n_elem = ni * nj * nk;
+
+                let safe_out = collect_safe_api_tuple_buffer(
+                    OperatorId::new(18),
+                    Representation::Spheric,
+                    &basis,
+                    &[shells[i].clone(), shells[j].clone(), shells[k].clone()],
+                );
+
+                let mut vendor_out = vec![0.0_f64; n_elem];
+                let shls = [i as i32, j as i32, k as i32];
+                cintx_oracle::vendor_ffi::vendor_int3c1e_sph(
+                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                );
+
+                assert_eq!(safe_out.len(), vendor_out.len(),
+                    "int3c1e_sph buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
+                    safe_out.len(), vendor_out.len());
+
+                if safe_out.iter().any(|&v| v.abs() > 1e-18)
+                    || vendor_out.iter().any(|&v| v.abs() > 1e-18)
+                {
+                    any_nonzero = true;
+                }
+                total_mismatches += count_mismatches(&vendor_out, &safe_out, ATOL, RTOL);
+                tuples_checked += 1;
+            }
+        }
+    }
+
+    assert!(
+        any_nonzero,
+        "int3c1e_sph safe-API outputs are all zeros over {tuples_checked} triples"
+    );
+    assert_eq!(
+        total_mismatches, 0,
+        "int3c1e_sph safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
+         vs vendored libcint over {tuples_checked} triples"
+    );
+}
+
+#[test]
+#[cfg(has_vendor_libcint)]
+fn test_int3c1e_p2_sph_safe_api_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Spheric);
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let mut total_mismatches = 0usize;
+    let mut any_nonzero = false;
+    let mut tuples_checked = 0usize;
+
+    for i in 0..N_SHELLS {
+        for j in 0..N_SHELLS {
+            for k in 0..N_SHELLS {
+                let ni = shells[i].ao_per_shell();
+                let nj = shells[j].ao_per_shell();
+                let nk = shells[k].ao_per_shell();
+                let n_elem = ni * nj * nk;
+
+                let safe_out = collect_safe_api_tuple_buffer(
+                    OperatorId::new(16),
+                    Representation::Spheric,
+                    &basis,
+                    &[shells[i].clone(), shells[j].clone(), shells[k].clone()],
+                );
+
+                let mut vendor_out = vec![0.0_f64; n_elem];
+                let shls = [i as i32, j as i32, k as i32];
+                // vendor_int3c1e_p2_sph was added by Plan 18-01.
+                cintx_oracle::vendor_ffi::vendor_int3c1e_p2_sph(
+                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                );
+
+                assert_eq!(safe_out.len(), vendor_out.len(),
+                    "int3c1e_p2_sph buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
+                    safe_out.len(), vendor_out.len());
+
+                if safe_out.iter().any(|&v| v.abs() > 1e-18)
+                    || vendor_out.iter().any(|&v| v.abs() > 1e-18)
+                {
+                    any_nonzero = true;
+                }
+                total_mismatches += count_mismatches(&vendor_out, &safe_out, ATOL, RTOL);
+                tuples_checked += 1;
+            }
+        }
+    }
+
+    assert!(
+        any_nonzero,
+        "int3c1e_p2_sph safe-API outputs are all zeros over {tuples_checked} triples"
+    );
+    assert_eq!(
+        total_mismatches, 0,
+        "int3c1e_p2_sph safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
+         vs vendored libcint over {tuples_checked} triples"
+    );
+}
+
+// NOTE: cintx int3c2e_ip1_* currently computes plain 3c2e (kernel misnomer);
+// parity reference is vendor_int3c2e_*, not vendor_int3c2e_ip1_*.
+#[test]
+#[cfg(has_vendor_libcint)]
+fn test_int3c2e_ip1_sph_safe_api_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Spheric);
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let mut total_mismatches = 0usize;
+    let mut any_nonzero = false;
+    let mut tuples_checked = 0usize;
+
+    for i in 0..N_SHELLS {
+        for j in 0..N_SHELLS {
+            for k in 0..N_SHELLS {
+                let ni = shells[i].ao_per_shell();
+                let nj = shells[j].ao_per_shell();
+                let nk = shells[k].ao_per_shell();
+                // cintx int3c2e_ip1_* kernel computes plain 3c2e (component_rank: "" -> multiplier 1).
+                // Buffer size is ni*nj*nk (NOT ni*nj*nk*3). See RESEARCH.md Item 5 + A6.
+                let n_elem = ni * nj * nk;
+
+                let safe_out = collect_safe_api_tuple_buffer(
+                    OperatorId::new(20),
+                    Representation::Spheric,
+                    &basis,
+                    &[shells[i].clone(), shells[j].clone(), shells[k].clone()],
+                );
+
+                let mut vendor_out = vec![0.0_f64; n_elem];
+                let shls = [i as i32, j as i32, k as i32];
+                // Plain vendor_int3c2e_sph (no _ip1 suffix); pre-existing wrapper.
+                // Same wiring as the passing raw-path test at center_3c2e_parity.rs:222-287.
+                cintx_oracle::vendor_ffi::vendor_int3c2e_sph(
+                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                );
+
+                assert_eq!(safe_out.len(), vendor_out.len(),
+                    "int3c2e_ip1 buffer length mismatch — check kernel vs vendor wiring (RESEARCH.md Item 5/A6)");
+
+                if safe_out.iter().any(|&v| v.abs() > 1e-18)
+                    || vendor_out.iter().any(|&v| v.abs() > 1e-18)
+                {
+                    any_nonzero = true;
+                }
+                total_mismatches += count_mismatches(&vendor_out, &safe_out, ATOL, RTOL);
+                tuples_checked += 1;
+            }
+        }
+    }
+
+    assert!(
+        any_nonzero,
+        "int3c2e_ip1_sph safe-API outputs are all zeros over {tuples_checked} triples"
+    );
+    assert_eq!(
+        total_mismatches, 0,
+        "int3c2e_ip1_sph safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
+         vs vendored libcint (plain int3c2e_sph, NOT _ip1_) over {tuples_checked} triples"
+    );
+}
+
+#[test]
+#[cfg(has_vendor_libcint)]
+fn test_int3c2e_sph_safe_api_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Spheric);
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let mut total_mismatches = 0usize;
+    let mut any_nonzero = false;
+    let mut tuples_checked = 0usize;
+
+    for i in 0..N_SHELLS {
+        for j in 0..N_SHELLS {
+            for k in 0..N_SHELLS {
+                let ni = shells[i].ao_per_shell();
+                let nj = shells[j].ao_per_shell();
+                let nk = shells[k].ao_per_shell();
+                let n_elem = ni * nj * nk;
+
+                let safe_out = collect_safe_api_tuple_buffer(
+                    OperatorId::new(23),
+                    Representation::Spheric,
+                    &basis,
+                    &[shells[i].clone(), shells[j].clone(), shells[k].clone()],
+                );
+
+                let mut vendor_out = vec![0.0_f64; n_elem];
+                let shls = [i as i32, j as i32, k as i32];
+                cintx_oracle::vendor_ffi::vendor_int3c2e_sph(
+                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                );
+
+                assert_eq!(safe_out.len(), vendor_out.len(),
+                    "int3c2e_sph buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
+                    safe_out.len(), vendor_out.len());
+
+                if safe_out.iter().any(|&v| v.abs() > 1e-18)
+                    || vendor_out.iter().any(|&v| v.abs() > 1e-18)
+                {
+                    any_nonzero = true;
+                }
+                total_mismatches += count_mismatches(&vendor_out, &safe_out, ATOL, RTOL);
+                tuples_checked += 1;
+            }
+        }
+    }
+
+    assert!(
+        any_nonzero,
+        "int3c2e_sph safe-API outputs are all zeros over {tuples_checked} triples"
+    );
+    assert_eq!(
+        total_mismatches, 0,
+        "int3c2e_sph safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
+         vs vendored libcint over {tuples_checked} triples"
+    );
+}
