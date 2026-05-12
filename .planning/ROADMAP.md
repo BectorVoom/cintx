@@ -43,7 +43,7 @@
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
-| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 0/6 | Planned | - |
+| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 1/6 | In Progress (Wave 0 complete) | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -226,7 +226,7 @@ Plans:
 
 Plans:
 **Wave 0**
-- [ ] 19-01-PLAN.md — Wave 0: vendor PySCF nr_ecp subtree (Apache-2.0); extend cintx-oracle/build.rs with parallel cc::Build + has_vendor_pyscf_nr_ecp cfg; expand api_manifest.csv with 4 ECP rows (cart/sph × {ecp, ecp_ipnuc}) + regenerate lock; build Cu/LANL2DZ fixture; land empty stubs for bessel.rs, radial_quadrature.rs, EcpShell.
+- [x] 19-01-PLAN.md — Wave 0: vendor PySCF nr_ecp subtree (Apache-2.0); extend cintx-oracle/build.rs with parallel cc::Build + has_vendor_pyscf_nr_ecp cfg; expand api_manifest.csv with 4 ECP rows (cart/sph × {ecp, ecp_ipnuc}) + regenerate lock; build Cu/LANL2DZ fixture; land empty stubs for bessel.rs, radial_quadrature.rs, EcpShell. (Completed 2026-05-12; SUMMARY: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-01-SUMMARY.md`; new OperatorIds 26..=29; INT4C1E_CART_OPERATOR_ID=24 preserved.)
 
 **Wave 1** *(blocked on Wave 0 completion; 02 and 03 run in parallel)*
 - [ ] 19-02-PLAN.md — Wave 1: implement modified spherical Bessel i_l(x) in math/bessel.rs (paired #[cube] + *_host(), three numerical branches per PySCF nr_ecp.h K_TAB tables) + Gauss-Chebyshev (Type-2 radial) and Gauss-Hermite (Type-1 radial) nodes/weights in math/radial_quadrature.rs. Host-side unit tests at atol=1e-12 cover all branches.

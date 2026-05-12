@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
 status: Ready to execute
-stopped_at: Completed 15-03-PLAN.md
-last_updated: "2026-05-12T08:42:20.251Z"
+stopped_at: Completed 19-01-PLAN.md
+last_updated: "2026-05-12T09:48:55Z"
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 38
-  completed_plans: 32
-  percent: 84
+  completed_plans: 33
+  percent: 87
 ---
 
 # Project State
@@ -24,8 +24,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 19 — CONTEXT gathered (2026-05-12); 4 gray areas decided (oracle source, typed-API placement, kernel strategy, gradient scope); ready for plan-phase
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-CONTEXT.md`
+Phase: 19 — Wave 0 complete (Plan 01 landed 2026-05-12, 1/6 plans done); Wave 1 (Plans 02 + 03) ready to start in parallel
+Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-01-SUMMARY.md`
 
 ## Performance Metrics
 
@@ -102,6 +102,7 @@ Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-CONTEXT.md`
 | Phase 15-oracle-tolerance-unification-manifest-lock-closure P01 | 8 | 2 tasks | 4 files |
 | Phase 15 P02 | 7 | 2 tasks | 4 files |
 | Phase 15-oracle-tolerance-unification-manifest-lock-closure P03 | 2 | 2 tasks | 2 files |
+| Phase 19-int1e-ecp-type1-type2-evaluator P01 | 13 min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -239,6 +240,13 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 15]: manifest-audit check_oracle_coverage only checks stability=stable entries per D-07; should_fail now includes !uncovered_stable.is_empty() for hard CI gate
 - [Phase 15-oracle-tolerance-unification-manifest-lock-closure]: Accept any non-empty subset of standard profiles in validate_required_profile_scope; CI matrix covers full coverage across parallel jobs
 - [Phase 15-oracle-tolerance-unification-manifest-lock-closure]: Use fail-fast: false in oracle_parity_gate matrix so all four profile jobs report independently even when one fails (D-09)
+- [Phase 19-int1e-ecp-type1-type2-evaluator P01]: PySCF master HEAD commit 60cd9022b5158b0eef46ded606a03b111a0ad08c pinned as the vendored nr_ecp source baseline (no nr_ecp-specific release tag); SHA recorded in vendor/pyscf-nr-ecp/NOTICE for byte-identity reproducibility.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P01]: Ship a cintx-authored dgemm_ reference shim (vendor/pyscf-nr-ecp/src/dgemm_shim.c) rather than depend on system BLAS — dev host has libblas.so.3 but no .so symlink. Future builds can drop the shim and link system BLAS without touching the rest of the vendor tree.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P01]: Use -std=gnu99 for the PySCF parallel cc::Build (vs libcint chain's gnu89) because nr_ecp.c uses C99 mid-block for-loop init declarations and <complex.h>; two distinct static libs keep the flag choice isolated.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P01]: crates/cintx-ops/generated/compiled_manifest.lock.json is the canonical manifest source — crates/cintx-ops/build.rs regenerates api_manifest.csv + api_manifest.rs from it on every build. The xtask manifest-audit subcommand has no --update flag; edit the lock JSON directly to add rows.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P01]: ECP rows land at OperatorIds 26..=29 (int1e_ecp_{cart,sph,ipnuc_cart,ipnuc_sph}); INT4C1E_CART_OPERATOR_ID=24 preserved. Test-only constants INT2E_STG_SPH_OPERATOR_ID and INT2E_IPIP1_SPH_OPERATOR_ID shift +4 to 106 and 116 — Plan 03 owns updating them (they live in #[cfg(test)] modules so cargo check still passes).
+- [Phase 19-int1e-ecp-type1-type2-evaluator P01]: Parse fixture parameter JSON at runtime via serde_json::from_str(include_str!(...)) + OnceLock rather than hardcode literals (basis data stays auditable JSON, single source of truth).
+- [Phase 19-int1e-ecp-type1-type2-evaluator P01]: Cu/LANL2DZ general-contraction blocks from BSE are split into single-NCTR libcint bas rows (libcint requires NCTR_OF=1 per row for distinct contraction coefficients). 3 BSE shells → 8 libcint bas rows.
 
 ### Roadmap Evolution
 
@@ -261,6 +269,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-04-06T00:06:46.337Z
-Stopped at: Completed 15-03-PLAN.md
+Last session: 2026-05-12T09:48:55Z
+Stopped at: Completed 19-01-PLAN.md
 Resume file: None
