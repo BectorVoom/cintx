@@ -21,6 +21,8 @@ family_name,operator_name,symbol_name,category,arity,forms,component_rank,featur
 "3c2e","electron-repulsion","int3c2e_ip1_cart","3c2e",3,"cart","","none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","3c2e"
 "3c2e","electron-repulsion","int3c2e_ip1_sph","3c2e",3,"sph","","none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","3c2e"
 "3c2e","electron-repulsion","int3c2e_ip1_spinor","3c2e",3,"spinor","","none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","3c2e"
+"3c2e","electron-repulsion","int3c2e_cart","3c2e",3,"cart","","none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","3c2e"
+"3c2e","electron-repulsion","int3c2e_sph","3c2e",3,"sph","","none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","3c2e"
 "4c1e","electron-repulsion","int4c1e_cart","4c1e",4,"cart","","with-4c1e","optional","src/cint4c1e.c","with-4c1e|with-f12+with-4c1e",true,"operator","4c1e"
 "4c1e","electron-repulsion","int4c1e_sph","4c1e",4,"sph","","with-4c1e","optional","src/cint4c1e.c","with-4c1e|with-f12+with-4c1e",true,"operator","4c1e"
 "helper","CINTlen_cart","CINTlen_cart","helper",0,"cart|helper","scalar","none","stable","include/cint.h.in","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"helper","helper"
