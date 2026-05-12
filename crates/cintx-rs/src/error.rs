@@ -10,6 +10,10 @@ pub enum FacadeErrorKind {
     Memory,
     Validation,
     UnsupportedAoSymmetry,
+    /// Phase 19 D-06: an ECP operator was requested but the `BasisSet`
+    /// has no ECP shells attached (constructed via `BasisSet::try_new`
+    /// rather than `BasisSet::try_new_with_ecp`).
+    MissingEcpBasis,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -24,6 +28,12 @@ pub enum FacadeError {
     Validation { detail: String },
     #[error("unsupported aosym packing: {requested}")]
     UnsupportedAoSymmetry { requested: String },
+    /// Phase 19 D-06: the requested operator is one of the ECP operators
+    /// (`OperatorId::is_ecp() == true`) but the `BasisSet` has no ECP
+    /// shells attached. Returned by `SessionRequest::query_workspace`
+    /// before any runtime work is performed.
+    #[error("operator '{operator}' requires ECP basis, but BasisSet::ecp_shells() is empty")]
+    MissingEcpBasis { operator: String },
 }
 
 impl FacadeError {
@@ -34,6 +44,7 @@ impl FacadeError {
             Self::Memory { .. } => FacadeErrorKind::Memory,
             Self::Validation { .. } => FacadeErrorKind::Validation,
             Self::UnsupportedAoSymmetry { .. } => FacadeErrorKind::UnsupportedAoSymmetry,
+            Self::MissingEcpBasis { .. } => FacadeErrorKind::MissingEcpBasis,
         }
     }
 

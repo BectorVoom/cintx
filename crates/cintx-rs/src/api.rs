@@ -72,6 +72,21 @@ impl<'basis> SessionRequest<'basis> {
             }
         }
 
+        // Phase 19 D-06: ECP-basis preflight — operator.is_ecp() &&
+        // basis.ecp_shells().is_empty() returns FacadeError::MissingEcpBasis.
+        // Fails fast before any runtime_query_workspace work, mirroring the
+        // aosym preflight above. Resolves the operator symbol via the
+        // manifest so the error message names the canonical libcint symbol;
+        // falls back to the OperatorId Display impl if the manifest lookup
+        // fails (defensive — keeps the safe API from panicking on a missing
+        // descriptor).
+        if self.operator.is_ecp() && self.basis.ecp_shells().is_empty() {
+            let symbol = Resolver::descriptor(self.operator)
+                .map(|d| d.operator_symbol().to_string())
+                .unwrap_or_else(|_| format!("{}", self.operator));
+            return Err(FacadeError::MissingEcpBasis { operator: symbol });
+        }
+
         let runtime_workspace = runtime_query_workspace(
             self.operator,
             self.representation,
@@ -528,9 +543,10 @@ pub mod unstable {
 #[cfg(test)]
 mod tests {
     use super::{SessionRequest, unsupported_unstable_request};
-    use crate::error::FacadeError;
+    use crate::error::{FacadeError, FacadeErrorKind};
     #[cfg(feature = "with-f12")]
     use cintx_compat::raw::enforce_safe_facade_policy_gate;
+    use cintx_core::ecp::{EcpChannel, EcpShell};
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
     #[cfg(feature = "with-f12")]
     use cintx_runtime::{ExecutionPlan, query_workspace as runtime_query_workspace};
@@ -834,6 +850,165 @@ mod tests {
             request
                 .query_workspace()
                 .unwrap_or_else(|e| panic!("aosym={aosym:?} must succeed; got {e:?}"));
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // Phase 19 D-06: FacadeError::MissingEcpBasis variant + query_workspace
+    // preflight tests.
+    // ----------------------------------------------------------------------
+
+    fn sample_basis_with_ecp(
+        rep: Representation,
+        shell_l_values: &[u8],
+        ecp_count: usize,
+    ) -> (BasisSet, ShellTuple) {
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom].into_boxed_slice());
+
+        let mut shells = Vec::new();
+        for (idx, shell_l) in shell_l_values.iter().copied().enumerate() {
+            let exponent = 1.0 - (idx as f64 * 0.05);
+            let shell = Arc::new(
+                Shell::try_new(0, shell_l, 1, 1, 0, rep, arc_f64(&[exponent]), arc_f64(&[1.0]))
+                    .unwrap(),
+            );
+            shells.push(shell);
+        }
+
+        let mut ecp_shells: Vec<Arc<EcpShell>> = Vec::new();
+        for _ in 0..ecp_count {
+            ecp_shells.push(Arc::new(
+                EcpShell::try_new(
+                    0,
+                    EcpChannel::Local,
+                    0,
+                    1,
+                    1,
+                    0,
+                    arc_f64(&[0.5]),
+                    arc_f64(&[1.0]),
+                )
+                .unwrap(),
+            ));
+        }
+        let ecp_arc = Arc::from(ecp_shells.into_boxed_slice());
+
+        let basis =
+            BasisSet::try_new_with_ecp(atoms, Arc::from(shells.clone().into_boxed_slice()), ecp_arc)
+                .unwrap();
+        let shell_tuple = ShellTuple::try_from_iter(shells).unwrap();
+        (basis, shell_tuple)
+    }
+
+    #[test]
+    fn facade_error_missing_ecp_basis_carries_kind_and_operator() {
+        // Test 1+2 (variant exists, kind() arm wired).
+        let err = FacadeError::MissingEcpBasis {
+            operator: "int1e_ecp_sph".to_owned(),
+        };
+        assert_eq!(err.kind(), FacadeErrorKind::MissingEcpBasis);
+        match &err {
+            FacadeError::MissingEcpBasis { operator } => {
+                assert_eq!(operator, "int1e_ecp_sph");
+            }
+            other => panic!("expected MissingEcpBasis variant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn facade_error_missing_ecp_basis_display_message_matches_pattern() {
+        // Test 3: Display message matches the documented contract.
+        let err = FacadeError::MissingEcpBasis {
+            operator: "int1e_ecp_sph".to_owned(),
+        };
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("operator 'int1e_ecp_sph'")
+                && rendered.contains("requires ECP basis")
+                && rendered.contains("BasisSet::ecp_shells()")
+                && rendered.contains("is empty"),
+            "unexpected Display rendering: {rendered}",
+        );
+    }
+
+    #[test]
+    fn query_workspace_returns_missing_ecp_basis_for_ecp_op_without_ecp_shells() {
+        // Test 4: ECP operator + ECP-less basis → MissingEcpBasis preflight
+        // fires before any runtime_query_workspace work.
+        let (basis, shells) = sample_basis_with_shells(Representation::Spheric, &[0, 0]);
+        assert!(basis.ecp_shells().is_empty(), "fixture must have no ECP");
+        let request = SessionRequest::new(
+            OperatorId::INT1E_ECP_SPH,
+            Representation::Spheric,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let err = request
+            .query_workspace()
+            .expect_err("ECP op without ECP basis must fail preflight");
+        match err {
+            FacadeError::MissingEcpBasis { operator } => {
+                assert_eq!(operator, "int1e_ecp_sph");
+            }
+            other => panic!("expected MissingEcpBasis, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn query_workspace_does_not_return_missing_ecp_basis_for_non_ecp_operators() {
+        // Test 5: non-ECP operator must not trip the MissingEcpBasis gate
+        // regardless of whether ecp_shells is empty.
+        let (basis, shells) = sample_basis_with_shells(Representation::Spheric, &[0, 0]);
+        assert!(basis.ecp_shells().is_empty());
+        let request = SessionRequest::new(
+            // int1e_ovlp_sph — not an ECP operator
+            OperatorId::new(1),
+            Representation::Spheric,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        // query_workspace may succeed or return a non-MissingEcpBasis error
+        // (e.g. UnsupportedApi for some configurations), but it must NEVER
+        // return MissingEcpBasis for a non-ECP operator.
+        match request.query_workspace() {
+            Ok(_) => {}
+            Err(FacadeError::MissingEcpBasis { .. }) => {
+                panic!("non-ECP operator must not return MissingEcpBasis");
+            }
+            Err(_) => {}
+        }
+    }
+
+    #[test]
+    fn query_workspace_passes_through_for_ecp_op_with_ecp_shells_attached() {
+        // Test 6: ECP operator + ECP basis attached → preflight does not
+        // block. The call may fail later (planner / executor / no kernel
+        // wired yet in Plan 03), but the preflight itself must not return
+        // MissingEcpBasis.
+        let (basis, shells) = sample_basis_with_ecp(Representation::Spheric, &[0, 0], 1);
+        assert_eq!(basis.ecp_shells().len(), 1);
+        let request = SessionRequest::new(
+            OperatorId::INT1E_ECP_SPH,
+            Representation::Spheric,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        match request.query_workspace() {
+            Ok(_) => {}
+            Err(FacadeError::MissingEcpBasis { .. }) => {
+                panic!(
+                    "ECP op with ecp_shells attached must NOT return MissingEcpBasis"
+                );
+            }
+            Err(_) => {
+                // Plan 04 wires the kernel; until then a downstream error
+                // is acceptable. The point of this test is purely that the
+                // ECP preflight does not fire.
+            }
         }
     }
 }
