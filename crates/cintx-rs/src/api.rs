@@ -539,10 +539,16 @@ mod tests {
 
     #[cfg(feature = "with-4c1e")]
     const INT4C1E_CART_OPERATOR_ID: u32 = 24;
+    // Phase 19 Plan 01 inserted four `int1e_ecp_*` rows at OperatorIds 26..=29,
+    // ahead of the F12 / source-only blocks; every operator id at or after 26
+    // shifts by +4. The values below are derived from
+    // crates/cintx-ops/src/generated/api_manifest.rs::OPERATOR_DESCRIPTORS
+    // post-regeneration (verified manually: int2e_stg_sph is at position 106,
+    // int2e_ipip1_sph is at position 116).
     #[cfg(feature = "with-f12")]
-    const INT2E_STG_SPH_OPERATOR_ID: u32 = 102;
+    const INT2E_STG_SPH_OPERATOR_ID: u32 = 106;
     #[cfg(not(feature = "unstable-source-api"))]
-    const INT2E_IPIP1_SPH_OPERATOR_ID: u32 = 112;
+    const INT2E_IPIP1_SPH_OPERATOR_ID: u32 = 116;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_vec().into_boxed_slice())

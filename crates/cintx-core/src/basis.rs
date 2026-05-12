@@ -1,4 +1,5 @@
 use crate::atom::Atom;
+use crate::ecp::EcpShell;
 use crate::error::{CoreError, CoreResult};
 use crate::shell::{SHELL_TUPLE_CAPACITY, Shell, ShellTuple};
 use smallvec::SmallVec;
@@ -44,15 +45,34 @@ impl BasisMeta {
 }
 
 /// Ownership wrapper for atoms and shells plus cached metadata.
+///
+/// Phase 19 D-03: extended with `ecp_shells` (defaults to empty slice for
+/// callers that go through `try_new`). ECP shells do NOT contribute to AO
+/// metadata — `BasisMeta::from_shells` stays AO-only.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BasisSet {
     atoms: Arc<[Atom]>,
     shells: Arc<[Arc<Shell>]>,
     meta: BasisMeta,
+    ecp_shells: Arc<[Arc<EcpShell>]>,
 }
 
 impl BasisSet {
     pub fn try_new(atoms: Arc<[Atom]>, shells: Arc<[Arc<Shell>]>) -> CoreResult<Self> {
+        let empty_ecp: Arc<[Arc<EcpShell>]> =
+            Arc::from(Vec::<Arc<EcpShell>>::new().into_boxed_slice());
+        Self::try_new_with_ecp(atoms, shells, empty_ecp)
+    }
+
+    /// Build a `BasisSet` that carries ECP shells alongside the ordinary AO
+    /// shells. The AO-shell validation and AO metadata are identical to
+    /// `try_new`; in addition, every `EcpShell::atom_index` must reference a
+    /// valid atom in `atoms`.
+    pub fn try_new_with_ecp(
+        atoms: Arc<[Atom]>,
+        shells: Arc<[Arc<Shell>]>,
+        ecp_shells: Arc<[Arc<EcpShell>]>,
+    ) -> CoreResult<Self> {
         if shells.is_empty() {
             return Err(CoreError::EmptyBasis);
         }
@@ -68,11 +88,22 @@ impl BasisSet {
             }
         }
 
+        for ecp_shell in ecp_shells.iter() {
+            let atom_index = ecp_shell.atom_index as usize;
+            if atom_index >= atom_count {
+                return Err(CoreError::MissingAtomIndex {
+                    index: atom_index,
+                    total: atom_count,
+                });
+            }
+        }
+
         let meta = BasisMeta::from_shells(&shells);
         Ok(BasisSet {
             atoms,
             shells,
             meta,
+            ecp_shells,
         })
     }
 
@@ -86,6 +117,12 @@ impl BasisSet {
 
     pub fn meta(&self) -> &BasisMeta {
         &self.meta
+    }
+
+    /// Phase 19 D-03: ECP shells associated with this basis. Returns an
+    /// empty slice when constructed via `try_new` (i.e. no ECP attached).
+    pub fn ecp_shells(&self) -> &[Arc<EcpShell>] {
+        &self.ecp_shells
     }
 
     pub fn shell_tuple_for_indices<I>(&self, idx: I) -> CoreResult<ShellTuple>
@@ -114,11 +151,95 @@ mod tests {
     use super::*;
     use crate::NuclearModel;
     use crate::atom::Atom;
+    use crate::ecp::{EcpChannel, EcpShell};
     use crate::operator::Representation;
     use std::sync::Arc;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_owned().into_boxed_slice())
+    }
+
+    fn sample_ao_shell() -> Arc<Shell> {
+        Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                arc_f64(&[1.0]),
+                arc_f64(&[1.0]),
+            )
+            .unwrap(),
+        )
+    }
+
+    fn sample_ecp_shell() -> Arc<EcpShell> {
+        Arc::new(
+            EcpShell::try_new(
+                0,
+                EcpChannel::Local,
+                0,
+                1,
+                1,
+                0,
+                arc_f64(&[0.5]),
+                arc_f64(&[1.0]),
+            )
+            .unwrap(),
+        )
+    }
+
+    fn sample_h_atom() -> Arc<[Atom]> {
+        let atom =
+            Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        Arc::from(vec![atom].into_boxed_slice())
+    }
+
+    #[test]
+    fn try_new_leaves_ecp_shells_empty() {
+        let atoms = sample_h_atom();
+        let shells = Arc::from(vec![sample_ao_shell()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, shells).expect("basis with no ECP should build");
+        assert!(basis.ecp_shells().is_empty());
+    }
+
+    #[test]
+    fn try_new_with_ecp_attaches_and_returns_slice() {
+        let atoms = sample_h_atom();
+        let shells = Arc::from(vec![sample_ao_shell()].into_boxed_slice());
+        let ecp_shells = Arc::from(vec![sample_ecp_shell()].into_boxed_slice());
+        let basis = BasisSet::try_new_with_ecp(atoms, shells, ecp_shells)
+            .expect("basis with ECP should build");
+        assert_eq!(basis.ecp_shells().len(), 1);
+        assert_eq!(basis.ecp_shells()[0].channel, EcpChannel::Local);
+    }
+
+    #[test]
+    fn try_new_with_ecp_rejects_bad_ecp_atom_index() {
+        let atoms = sample_h_atom();
+        let shells = Arc::from(vec![sample_ao_shell()].into_boxed_slice());
+        // atom_index = 1 but atoms.len() == 1, so 1 is out of bounds.
+        let bad_ecp_shell = Arc::new(
+            EcpShell::try_new(
+                1,
+                EcpChannel::Local,
+                0,
+                1,
+                1,
+                0,
+                arc_f64(&[0.5]),
+                arc_f64(&[1.0]),
+            )
+            .unwrap(),
+        );
+        let ecp_shells = Arc::from(vec![bad_ecp_shell].into_boxed_slice());
+        let err = BasisSet::try_new_with_ecp(atoms, shells, ecp_shells).unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::MissingAtomIndex { index: 1, total: 1 }
+        ));
     }
 
     #[test]

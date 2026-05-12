@@ -28,6 +28,12 @@ pub enum CoreError {
     ShellIndexOutOfBounds { index: usize, total: usize },
     #[error("shell tuple cannot exceed {limit} entries")]
     ShellTupleArityExceeded { limit: usize },
+    /// Phase 19 ECP-shell validation: projected angular momentum exceeds
+    /// PySCF `ECP_LMAX = 5` (see `vendor/pyscf-nr-ecp/include/nr_ecp.h`).
+    #[error(
+        "ECP projected angular momentum {requested} exceeds ECP_LMAX={max}"
+    )]
+    EcpAngularMomentumTooHigh { requested: u8, max: u8 },
 }
 
 #[allow(non_camel_case_types)]

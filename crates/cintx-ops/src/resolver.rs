@@ -509,4 +509,45 @@ mod tests {
             );
         }
     }
+
+    /// Phase 19 Plan 03 (T-19-09b): asserts that the four `int1e_ecp_*`
+    /// entries in `OPERATOR_DESCRIPTORS` carry the same `OperatorId` integer
+    /// that `cintx_core::operator::OperatorId::INT1E_ECP_*` declares — a
+    /// typed manifest-agreement check that fails fast if the generated
+    /// manifest and the typed constants ever drift. Also asserts the
+    /// preservation invariant that `int4c1e_cart` keeps `OperatorId::new(24)`
+    /// — the central guarantee of Plan 01's ECP-insertion containment plan.
+    #[test]
+    fn ecp_operator_ids_match_constants() {
+        use cintx_core::operator::OperatorId;
+
+        let expected = [
+            ("int1e_ecp_cart", OperatorId::INT1E_ECP_CART),
+            ("int1e_ecp_sph", OperatorId::INT1E_ECP_SPH),
+            ("int1e_ecp_ipnuc_cart", OperatorId::INT1E_ECP_IPNUC_CART),
+            ("int1e_ecp_ipnuc_sph", OperatorId::INT1E_ECP_IPNUC_SPH),
+        ];
+
+        for (symbol, expected_id) in expected {
+            let descriptor = crate::generated::OPERATOR_DESCRIPTORS
+                .iter()
+                .find(|d| d.entry.symbol_name == symbol)
+                .unwrap_or_else(|| panic!("OPERATOR_DESCRIPTORS missing {symbol}"));
+            assert_eq!(
+                descriptor.id, expected_id,
+                "OperatorId drift for {symbol}: manifest says {:?}, constant says {:?}",
+                descriptor.id, expected_id,
+            );
+        }
+
+        // Preservation invariant: existing int4c1e_cart entry must still
+        // carry OperatorId::new(24). This is the central guarantee of the
+        // entire +4 ID-shift containment plan from Plan 01.
+        let int4c1e_cart_id = crate::generated::OPERATOR_DESCRIPTORS
+            .iter()
+            .find(|d| d.entry.symbol_name == "int4c1e_cart")
+            .expect("int4c1e_cart missing")
+            .id;
+        assert_eq!(int4c1e_cart_id, OperatorId::new(24));
+    }
 }
