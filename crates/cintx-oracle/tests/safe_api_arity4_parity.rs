@@ -439,3 +439,156 @@ fn test_int2e_sph_safe_api_parity() {
          vs vendored libcint over {tuples_checked} quartets"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// int4c1e_* per-symbol parity tests (CONTEXT.md D-06 + D-12)
+//
+// Each test stacks per-test attributes verbatim per PATTERNS.md §arity4:
+//   #[test]
+//   #[cfg(feature = "with-4c1e")]   <-- per-test, NOT module-level
+//   #[cfg(has_vendor_libcint)]
+//
+// Both `#[cfg(...)]` attributes stack additively — the test compiles only when
+// both `feature = "with-4c1e"` AND `has_vendor_libcint` are active. PATTERNS.md
+// §Pitfall 4 forbids a module-level with-4c1e gate: it would break the int2e_*
+// tests under the base profile.
+//
+// Precedent for stacked cfg attributes: crates/cintx-oracle/tests/oracle_gate_closure.rs:737-739.
+//
+// Phase 11 D-09 keeps the complex int4c1e variant out of scope — only the
+// cart/sph wrappers are exercised here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+#[cfg(feature = "with-4c1e")]
+#[cfg(has_vendor_libcint)]
+fn test_int4c1e_cart_safe_api_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Cart);
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let mut total_mismatches = 0usize;
+    let mut any_nonzero = false;
+    let mut tuples_checked = 0usize;
+
+    for i in 0..N_SHELLS {
+        for j in 0..N_SHELLS {
+            for k in 0..N_SHELLS {
+                for l in 0..N_SHELLS {
+                    let ni = shells[i].ao_per_shell();
+                    let nj = shells[j].ao_per_shell();
+                    // int4c1e traces over the (k,l) auxiliary pair → output is ni*nj.
+                    let n_elem = ni * nj;
+                    // Reference unused shell sizes to keep the loop symmetric with int2e_*.
+                    let _nk = shells[k].ao_per_shell();
+                    let _nl = shells[l].ao_per_shell();
+
+                    let safe_out = collect_safe_api_tuple_buffer(
+                        OperatorId::new(24),
+                        Representation::Cart,
+                        &basis,
+                        &[
+                            shells[i].clone(),
+                            shells[j].clone(),
+                            shells[k].clone(),
+                            shells[l].clone(),
+                        ],
+                    );
+
+                    let mut vendor_out = vec![0.0_f64; n_elem];
+                    let shls = [i as i32, j as i32, k as i32, l as i32];
+                    cintx_oracle::vendor_ffi::vendor_int4c1e_cart(
+                        &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    );
+
+                    if safe_out.iter().any(|&v| v.abs() > 1e-18)
+                        || vendor_out.iter().any(|&v| v.abs() > 1e-18)
+                    {
+                        any_nonzero = true;
+                    }
+                    total_mismatches += count_mismatches(&vendor_out, &safe_out, ATOL, RTOL);
+                    tuples_checked += 1;
+                }
+            }
+        }
+    }
+
+    assert!(
+        any_nonzero,
+        "int4c1e_cart safe-API outputs are all zeros over {tuples_checked} quartets"
+    );
+    assert_eq!(
+        total_mismatches, 0,
+        "int4c1e_cart safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
+         vs vendored libcint over {tuples_checked} quartets"
+    );
+}
+
+#[test]
+#[cfg(feature = "with-4c1e")]
+#[cfg(has_vendor_libcint)]
+fn test_int4c1e_sph_safe_api_parity() {
+    let (atm, bas, env) = build_h2o_sto3g();
+    let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Spheric);
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    let mut total_mismatches = 0usize;
+    let mut any_nonzero = false;
+    let mut tuples_checked = 0usize;
+
+    for i in 0..N_SHELLS {
+        for j in 0..N_SHELLS {
+            for k in 0..N_SHELLS {
+                for l in 0..N_SHELLS {
+                    let ni = shells[i].ao_per_shell();
+                    let nj = shells[j].ao_per_shell();
+                    // int4c1e traces over the (k,l) auxiliary pair → output is ni*nj.
+                    let n_elem = ni * nj;
+                    // Reference unused shell sizes to keep the loop symmetric with int2e_*.
+                    let _nk = shells[k].ao_per_shell();
+                    let _nl = shells[l].ao_per_shell();
+
+                    let safe_out = collect_safe_api_tuple_buffer(
+                        OperatorId::new(25),
+                        Representation::Spheric,
+                        &basis,
+                        &[
+                            shells[i].clone(),
+                            shells[j].clone(),
+                            shells[k].clone(),
+                            shells[l].clone(),
+                        ],
+                    );
+
+                    let mut vendor_out = vec![0.0_f64; n_elem];
+                    let shls = [i as i32, j as i32, k as i32, l as i32];
+                    cintx_oracle::vendor_ffi::vendor_int4c1e_sph(
+                        &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    );
+
+                    if safe_out.iter().any(|&v| v.abs() > 1e-18)
+                        || vendor_out.iter().any(|&v| v.abs() > 1e-18)
+                    {
+                        any_nonzero = true;
+                    }
+                    total_mismatches += count_mismatches(&vendor_out, &safe_out, ATOL, RTOL);
+                    tuples_checked += 1;
+                }
+            }
+        }
+    }
+
+    assert!(
+        any_nonzero,
+        "int4c1e_sph safe-API outputs are all zeros over {tuples_checked} quartets"
+    );
+    assert_eq!(
+        total_mismatches, 0,
+        "int4c1e_sph safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
+         vs vendored libcint over {tuples_checked} quartets"
+    );
+}
