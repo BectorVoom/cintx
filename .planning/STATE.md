@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
 status: Ready to execute
-stopped_at: Completed 19-02-PLAN.md
-last_updated: "2026-05-12T10:09:06Z"
+stopped_at: Completed 19-03-PLAN.md
+last_updated: "2026-05-12T10:53:00Z"
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 38
-  completed_plans: 34
-  percent: 89
+  completed_plans: 35
+  percent: 92
 ---
 
 # Project State
@@ -24,27 +24,28 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 19 — Wave 1 partial (Plans 01 + 02 landed 2026-05-12, 2/6 plans done); Plan 03 (typed surface) ready to start; Plans 04/05 unblocked on math
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-02-SUMMARY.md`
+Phase: 19 — Wave 1 complete (Plans 01 + 02 + 03 landed 2026-05-12, 3/6 plans done); Plan 04 (Type-1+Type-2 kernel + parity) unblocked; Plan 05 (gradient parity) also unblocked
+Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-03-SUMMARY.md`
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 4
-- Average duration: 18.25 min
-- Total execution time: 1.2 hours
+- Total plans completed: 5
+- Average duration: 15.6 min
+- Total execution time: 1.3 hours
 
 **By Phase:**
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 2 | 27 min | 13.5 min |
 | 02 | 7 | 107 min | 15.3 min |
+| 19 | 3 | 28 min | 9.3 min |
 
 **Recent Trend:**
 
-- Last 5 plans: 26 min, 8 min, 29 min, 13 min, 10 min
-- Trend: Stable; Phase 19 math infrastructure landed quickly thanks to copy-from-PySCF + Phase-8 paired-fn pattern reuse
+- Last 5 plans: 8 min, 29 min, 13 min, 10 min, 5 min
+- Trend: Faster; Phase 19 Plan 03 typed-surface work executed in 5 min because Plan 01 had already scaffolded the placeholder files (ecp.rs stub, manifest rows at fixed OperatorIds) and the pattern was a 1:1 lift from Phase 18 D-04 UnsupportedAoSymmetry.
 
 | Phase 01-manifest-planner-foundation P01 | 18min | 2 tasks | 15 files |
 | Phase 01-manifest-planner-foundation P02 | 9min | 2 tasks | 10 files |
@@ -104,6 +105,7 @@ Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-02-SUMMARY.md`
 | Phase 15-oracle-tolerance-unification-manifest-lock-closure P03 | 2 | 2 tasks | 2 files |
 | Phase 19-int1e-ecp-type1-type2-evaluator P01 | 13 min | 3 tasks | 20 files |
 | Phase 19-int1e-ecp-type1-type2-evaluator P02 | 10 min | 2 tasks | 2 files |
+| Phase 19-int1e-ecp-type1-type2-evaluator P03 | 5 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -254,6 +256,11 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 19-int1e-ecp-type1-type2-evaluator P02]: Plan 02 Test 2 correction — PySCF's ECPgauss_chebyshev weights include the radial-transform Jacobian dr/du, so they sum to ~23.5 at LEVEL0 (the truncated grid length on [0, ∞)), NOT to π/2. The plan's "sum to π/2 at atol=1e-12" assertion was replaced with the substantive ∫_0^∞ e^{-r} dr = 1 identity (rel ~3.8e-11 at LEVEL0, ~1.9e-14 at LEVEL_MAX) — exercises both nodes and weights simultaneously.
 - [Phase 19-int1e-ecp-type1-type2-evaluator P02]: CubeCL 0.10 natural-log discovery — `f64::log` is the std two-arg version `log(self, base)` which cubecl does NOT override; the unary natural log is registered as `ln` (cubecl-core unary.rs:197 `impl_unary_func!(Log, ln, ...)`). Use `f64::ln(x)` inside `#[cube]` for natural log. Recorded in radial_quadrature.rs module rustdoc for future math modules.
 - [Phase 19-int1e-ecp-type1-type2-evaluator P02]: CubeCL prelude shadows host f64 methods inside #[cfg(test)] modules of cintx-cubecl — calling `x.sinh()` inside a test resolves to the cubecl Cube intrinsic and panics with "Unexpanded Cube functions should not be called". Use precomputed reference f64 literals in tests instead of computing trigonometric/hyperbolic reference values at runtime.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P03]: OperatorId integers for the four ECP constants are read-and-derived from `OPERATOR_DESCRIPTORS` in `crates/cintx-ops/src/generated/api_manifest.rs` (positional pairing: `OPERATOR_DESCRIPTORS[K].id == OperatorId::new(K)`) — never hardcoded. A typed `ecp_operator_ids_match_constants` `#[test]` in cintx-ops/src/resolver.rs enforces manifest ↔ constants agreement at test-run time, plus the `int4c1e_cart → OperatorId::new(24)` preservation invariant.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P03]: BasisSet::try_new keeps its existing signature (SemVer-preserving); the new try_new_with_ecp(atoms, shells, ecp_shells) is the ECP-aware constructor. The empty-ECP default in try_new delegates to try_new_with_ecp with `Arc::from(Vec::<Arc<EcpShell>>::new().into_boxed_slice())`. Validates EcpShell::atom_index against atoms.len() with the existing CoreError::MissingAtomIndex variant (no new variant for atom-index validation).
+- [Phase 19-int1e-ecp-type1-type2-evaluator P03]: EcpShell::try_new added one new CoreError variant — EcpAngularMomentumTooHigh { requested, max } — for the Projected(l > ECP_LMAX=5) check. Existing variants (InvalidShellCounts, ShellPrimitiveMismatch, InvalidNuclearDetail) cover the length/finiteness cases verbatim from Shell::try_new.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P03]: EcpBasArray::new reuses cintxRsError::InvalidBasLayout (the same variant RawBasView::new uses for length-not-multiple-of-BAS_SLOTS) — no new compat error variant. Phase 19 D-05's "ecpbas reuses BAS_SLOTS=8" decision makes the slab shape contract identical to ordinary bas rows.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P03]: FacadeError::MissingEcpBasis is facade-only — not emitted by From<cintxRsError>. SessionRequest::query_workspace preflight runs in order: aosym (Phase 18) → ECP (Phase 19) → runtime_query_workspace. Each preflight is independent and fails fast before runtime. The MissingEcpBasis variant carries `operator: String` resolved via Resolver::descriptor with a defensive fallback to OperatorId Display so the safe API never panics on a missing manifest entry.
 
 ### Roadmap Evolution
 
@@ -276,6 +283,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-05-12T10:09:06Z
-Stopped at: Completed 19-02-PLAN.md
+Last session: 2026-05-12T10:53:00Z
+Stopped at: Completed 19-03-PLAN.md
 Resume file: None

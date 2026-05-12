@@ -43,7 +43,7 @@
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
-| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 2/6 | In Progress (Wave 1 partial — math landed) | - |
+| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 3/6 | In Progress (Wave 1 complete — typed surface + raw compat + facade landed) | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
