@@ -1131,27 +1131,24 @@ pub fn vendor_int3c1e_p2_sph(
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **R1 resolution: drop or add to manifest?**
+> All four questions disposed during `/gsd:plan-phase 18` on 2026-05-12. Inline RESOLVED markers reflect the user / planner choice. Recommendations above marked **(stale)** are kept only for historical context.
+
+1. **R1 resolution: drop or add to manifest?** — **RESOLVED: OPTION 3 (add to manifest).** User explicitly chose to add plain `int3c2e_cart` and `int3c2e_sph` operator-kind rows to the manifest at `crates/cintx-ops/generated/compiled_manifest.lock.json:275-306` (the lock file is the single edit site; `api_manifest.rs` + `api_manifest.csv` regenerate via `build.rs`). D-06 retained with its full 8-symbol arity-3 set. Side-effects scheduled in Plan 18-01: OperatorId shift for `int4c1e_{cart,sph}` (22→24, 23→25) and resolver `misc_wrapper_macro` exception for plain `int3c2e_*` (no upstream `cint3c2e_*` misc.h wrappers). The original "Recommendation: Drop them" above is **stale** — superseded by the user choice.
    - What we know: D-06 lists `int3c2e_cart` and `int3c2e_sph` which are NOT in the manifest. Only `int3c2e_ip1_*` exists.
-   - What's unclear: Whether the user/planner wants to (a) drop these two symbols from Phase 18 scope or (b) add them to the manifest as a planner-time prerequisite task.
-   - Recommendation: **Drop them (option a)**. Adding manifest entries pulls in resolver / lock-file regen / oracle coverage tracking — substantial scope expansion. The existing `int3c2e_ip1_*` already computes the plain 3c2e (per Item 5); covering `int3c2e_ip1_{cart,sph}` is equivalent.
+   - What's unclear: ~~Whether the user/planner wants to (a) drop these two symbols from Phase 18 scope or (b) add them to the manifest as a planner-time prerequisite task.~~ Settled — manifest expansion.
+   - Recommendation (stale): ~~**Drop them (option a)**~~. Superseded by the user's manifest-expansion choice.
 
-2. **R2 resolution: how strong is the F-order rustdoc?**
+2. **R2 resolution: how strong is the F-order rustdoc?** — **RESOLVED: Qualified wording (Pattern 5).** Planner adopts arity-aware doc: arity-2 outputs are row-major; arity ≥ 3 outputs are F-order. Strict uniform-F-order wording would be inaccurate. Implemented in Plan 18-02 with grep-checkable acceptance criteria.
    - What we know: cintx kernels write F-order for arity ≥ 3 but row-major for arity-2 (1e/2c2e).
-   - What's unclear: Whether the rustdoc should be strict ("F-order") or qualified ("F-order at arity ≥ 3, row-major at arity-2 — see oracle parity tests").
-   - Recommendation: **Qualified wording** (Pattern 5 above). Strict wording would be inaccurate; the planner cannot make the kernels uniform in Phase 18 scope.
+   - Recommendation: **Qualified wording** (Pattern 5 above). Confirmed.
 
-3. **Spinor smoke test: yes or no?**
-   - What we know: D-07 says "compiled but unverified"; Claude's discretion item says "default no — `cargo check` already covers compilation".
-   - What's unclear: Whether the planner wants a one-line `evaluate().is_ok()` smoke test.
-   - Recommendation: **Default no.** Add only if free (e.g., during the arity-3/4 test file scaffolding, a single `int2e_spinor` smoke check is < 10 lines).
+3. **Spinor smoke test: yes or no?** — **RESOLVED: No.** Planner default. Not added in Plans 18-03 / 18-04. Spinor arity-3/4 remains "compiled but unverified" per D-07.
+   - Recommendation: **Default no.** Confirmed.
 
-4. **Shared `collect_safe_api_matrix` helper: factor or inline?**
-   - What we know: Phase 17's discretion item leaned toward a sibling helper; Phase 18 has 12 new tests across 2 files, so the case for factoring is stronger.
-   - What's unclear: Whether to factor into `tests/common/mod.rs` (the Rust convention for shared test modules), `tests/safe_api_helpers.rs` (single-file helper module), or inline per test.
-   - Recommendation: **Factor into `crates/cintx-oracle/tests/common/mod.rs`** (or `safe_api_helpers.rs` — planner choice). Refactor `safe_api_arity2_parity.rs` to use the shared helper (Phase 18 is explicitly allowed to factor this — the Phase 17 deferred-helper note was about hoisting the chunk loop into `cintx-runtime`, not about test-side helpers).
+4. **Shared `collect_safe_api_matrix` helper: factor or inline?** — **RESOLVED: Inline per test file.** Planner deferred the shared-helper extraction (CONTEXT.md "Claude's Discretion default: skip") to keep Plan 18-03 / 18-04 surface minimal. Each new test file duplicates the small `collect_safe_api_tuple_buffer` body. Helper extraction may be revisited in a follow-up polish phase if maintenance burden grows.
+   - Recommendation (stale): ~~Factor into `crates/cintx-oracle/tests/common/mod.rs`~~. Superseded by the planner's inline-duplication choice.
 
 ---
 
