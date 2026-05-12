@@ -1,0 +1,95 @@
+{
+  "atom": {
+    "Z": 29,
+    "name": "Cu",
+    "coord": [0.0, 0.0, 0.0]
+  },
+  "source": {
+    "url": "https://www.basissetexchange.org/api/basis/lanl2dz/format/json/?elements=29",
+    "revision_date": "2013-03-25",
+    "original_paper": "Hay & Wadt, J. Chem. Phys. 82, 270 (1985); LANL2DZ ECP basis for transition metals",
+    "fetched": "2026-05-12",
+    "note": "BSE general contractions split into single-contraction shells (NCTR_OF=1 per libcint bas row). Each general-contracted block in BSE becomes N shells where N = number of contraction columns. AO total: 3 (s) + 3 (p) + 2 (d) = 8 shells."
+  },
+  "shells": [
+    {
+      "l": 0,
+      "exponents": [8.1760000, 2.5680000, 0.9587000, 0.1153000, 0.0396000],
+      "coefficients": [-0.4210260, 0.7385924, 0.5525692, 0.0000000, 0.0000000],
+      "note": "Cu s-shell contraction 1 of 3 (BSE column 0)"
+    },
+    {
+      "l": 0,
+      "exponents": [8.1760000, 2.5680000, 0.9587000, 0.1153000, 0.0396000],
+      "coefficients": [0.1787665, -0.3592273, -0.4704825, 1.0807407, 0.0000000],
+      "note": "Cu s-shell contraction 2 of 3 (BSE column 1)"
+    },
+    {
+      "l": 0,
+      "exponents": [8.1760000, 2.5680000, 0.9587000, 0.1153000, 0.0396000],
+      "coefficients": [0.0000000, 0.0000000, 0.0000000, 0.0000000, 1.0000000],
+      "note": "Cu s-shell contraction 3 of 3 (BSE column 2; diffuse s)"
+    },
+    {
+      "l": 1,
+      "exponents": [25.6300000, 3.1660000, 1.0230000, 0.0860000, 0.0240000],
+      "coefficients": [-0.0489173, 0.6272854, 0.4716188, 0.0000000, 0.0000000],
+      "note": "Cu p-shell contraction 1 of 3 (BSE column 0)"
+    },
+    {
+      "l": 1,
+      "exponents": [25.6300000, 3.1660000, 1.0230000, 0.0860000, 0.0240000],
+      "coefficients": [0.0000000, 0.0000000, 0.0000000, 1.0000000, 0.0000000],
+      "note": "Cu p-shell contraction 2 of 3 (BSE column 1)"
+    },
+    {
+      "l": 1,
+      "exponents": [25.6300000, 3.1660000, 1.0230000, 0.0860000, 0.0240000],
+      "coefficients": [0.0000000, 0.0000000, 0.0000000, 0.0000000, 1.0000000],
+      "note": "Cu p-shell contraction 3 of 3 (BSE column 2; diffuse p)"
+    },
+    {
+      "l": 2,
+      "exponents": [41.3400000, 11.4200000, 3.8390000, 1.2300000, 0.3102000],
+      "coefficients": [0.0465424, 0.2227824, 0.4539059, 0.5314769, 0.0000000],
+      "note": "Cu d-shell contraction 1 of 2 (BSE column 0; gto_spherical region)"
+    },
+    {
+      "l": 2,
+      "exponents": [41.3400000, 11.4200000, 3.8390000, 1.2300000, 0.3102000],
+      "coefficients": [0.0000000, 0.0000000, 0.0000000, 0.0000000, 1.0000000],
+      "note": "Cu d-shell contraction 2 of 2 (BSE column 1; diffuse d)"
+    }
+  ],
+  "ecp": {
+    "n_core_electrons": 10,
+    "max_l": 2,
+    "note": "LANL2DZ ECP for Cu replaces the 10 core electrons (1s, 2s, 2p). Highest angular momentum channel (l=2, d) is the 'local' channel V_L; lower-l channels (l=0 s, l=1 p) are semi-local projectors V_l - V_L. PySCF convention uses ang_momentum = -1 sentinel for the local channel; Plan 03 promotes this representation.",
+    "shells": [
+      {
+        "l": 2,
+        "channel": "local",
+        "r_exponents": [1, 2, 2],
+        "exponents": [511.9951763, 93.2801074, 23.2206669],
+        "coefficients": [-10.0000000, -72.5548282, -12.7450231],
+        "note": "Highest l in the ECP — designated the local (V_L) channel per LANL2DZ convention. r_exponent indices stored as RADI_POWER slot (PySCF nr_ecp.h slot 3)."
+      },
+      {
+        "l": 0,
+        "channel": "projected",
+        "r_exponents": [0, 1, 2, 2],
+        "exponents": [173.1180854, 185.2419886, 73.1517847, 14.6884157],
+        "coefficients": [3.0000000, 23.8351825, 473.8930488, 157.6345823],
+        "note": "s-channel projector V_0 - V_L."
+      },
+      {
+        "l": 1,
+        "channel": "projected",
+        "r_exponents": [0, 1, 2, 2],
+        "exponents": [100.7191369, 130.8345665, 53.8683720, 14.0989469],
+        "coefficients": [5.0000000, 6.4990936, 351.4605395, 85.5016036],
+        "note": "p-channel projector V_1 - V_L."
+      }
+    ]
+  }
+}

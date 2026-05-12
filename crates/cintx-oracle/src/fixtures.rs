@@ -145,6 +145,222 @@ pub fn build_h2o_sto3g_f12(zeta: f64) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     (atm, bas, env)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Cu/LANL2DZ molecular fixture (Phase 19 Plan 01 Wave 0 scaffold).
+//
+// Source: basissetexchange.org "LANL2DZ" element 29 (Cu); see
+// `crates/cintx-oracle/data/cu_lanl2dz.json` for the embedded basis +
+// ECP parameters with provenance.
+// Original paper: Hay & Wadt, J. Chem. Phys. 82, 270 (1985).
+// AO contractions: 3 (s) + 3 (p) + 2 (d) = 8 shells (general contractions
+// from BSE split into single-NCTR libcint rows). ECP projectors: 3
+// (l=0 s projector, l=1 p projector, l=2 d/local channel).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CU_LANL2DZ_JSON: &str = include_str!("../data/cu_lanl2dz.json");
+
+/// Parsed Cu/LANL2DZ basis JSON, populated once on first call.
+fn cu_lanl2dz_parsed() -> &'static Value {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Value> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        serde_json::from_str(CU_LANL2DZ_JSON)
+            .expect("cu_lanl2dz.json must parse as valid JSON at compile-baked time")
+    })
+}
+
+/// Build Cu/LANL2DZ libcint-style (atm, bas, ecpbas, env) slabs with user
+/// data starting at PTR_ENV_START and `env[AS_ECPBAS_OFFSET]` /
+/// `env[AS_NECPBAS]` populated per PySCF `nr_ecp.h` convention.
+///
+/// The returned `ecpbas` slab is a separate `Vec<i32>` of width
+/// `BAS_SLOTS = 8` per row (slots 3 and 4 reinterpreted as `RADI_POWER` and
+/// `SO_TYPE_OF` for ECP rows per Phase 19 D-05). Callers either pass the
+/// `ecpbas` pointer to the FFI separately, or pack it into a combined slab
+/// and update `env[AS_ECPBAS_OFFSET]` to point at it; this Wave 0 stub
+/// keeps the slabs separate and sets `env[AS_ECPBAS_OFFSET] = 0` (sentinel
+/// for "ecpbas passed as a separate slab"). `env[AS_NECPBAS]` is set to
+/// the row count for forward compatibility.
+///
+/// PySCF nr_ecp.h slot constants (mirrored locally for self-containment):
+///   AS_ECPBAS_OFFSET = 18, AS_NECPBAS = 19, RADI_POWER = 3, SO_TYPE_OF = 4.
+///
+/// Per Phase 19 D-04 (channel encoding): the ECP "local" channel is stored
+/// with `ANG_OF = -1` (PySCF convention). The d-channel (l=2) is the local
+/// channel in LANL2DZ for Cu; s (l=0) and p (l=1) are semi-local projectors.
+///
+/// Plan 03 promotes this scaffold to consume the typed `EcpShell` /
+/// `BasisSet::ecp_shells` surface and the typed safe-API entry point.
+pub fn build_cu_lanl2dz() -> (Vec<i32>, Vec<i32>, Vec<i32>, Vec<f64>) {
+    // PySCF nr_ecp.h slot constants — duplicated here for clarity. These
+    // match `vendor/pyscf-nr-ecp/include/nr_ecp.h` and will be promoted to
+    // `cintx-compat::raw` constants in Plan 03.
+    const AS_ECPBAS_OFFSET: usize = 18;
+    const AS_NECPBAS: usize = 19;
+    const RADI_POWER_SLOT: usize = 3;
+    const SO_TYPE_OF_SLOT: usize = 4;
+
+    let parsed = cu_lanl2dz_parsed();
+
+    // ─── Read atom data ──────────────────────────────────────────────────
+    let atom_z = parsed["atom"]["Z"]
+        .as_i64()
+        .expect("cu_lanl2dz.json: atom.Z must be integer") as i32;
+    let coord_arr = parsed["atom"]["coord"]
+        .as_array()
+        .expect("cu_lanl2dz.json: atom.coord must be array");
+    let cu_coord: [f64; 3] = [
+        coord_arr[0].as_f64().unwrap(),
+        coord_arr[1].as_f64().unwrap(),
+        coord_arr[2].as_f64().unwrap(),
+    ];
+
+    // ─── Build env with PTR_ENV_START prepad ─────────────────────────────
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+
+    let cu_coord_ptr = env.len() as i32; // typically 20
+    env.extend_from_slice(&cu_coord);
+    let zeta_ptr = env.len() as i32; // 23 — nuclear model zeta slot (unused for POINT_NUC)
+    env.push(0.0);
+
+    // Append AO shell exponents + coefficients.
+    let shells_json = parsed["shells"]
+        .as_array()
+        .expect("cu_lanl2dz.json: shells must be array");
+    let mut shell_entries: Vec<(i32, i32, i32, i32)> = Vec::with_capacity(shells_json.len()); // (l, nprim, exp_ptr, coeff_ptr)
+    for shell in shells_json {
+        let l = shell["l"]
+            .as_i64()
+            .expect("cu_lanl2dz.json: shell.l must be integer") as i32;
+        let exps: Vec<f64> = shell["exponents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect();
+        let coeffs: Vec<f64> = shell["coefficients"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect();
+        debug_assert_eq!(
+            exps.len(),
+            coeffs.len(),
+            "Cu/LANL2DZ shell: nprim mismatch between exponents and coefficients"
+        );
+        let nprim = exps.len() as i32;
+        let exp_ptr = env.len() as i32;
+        env.extend_from_slice(&exps);
+        let coeff_ptr = env.len() as i32;
+        env.extend_from_slice(&coeffs);
+        shell_entries.push((l, nprim, exp_ptr, coeff_ptr));
+    }
+
+    // Append ECP shell exponents + coefficients.
+    let ecp_shells_json = parsed["ecp"]["shells"]
+        .as_array()
+        .expect("cu_lanl2dz.json: ecp.shells must be array");
+    let mut ecp_entries: Vec<(i32, i32, i32, i32, i32, i32)> = Vec::with_capacity(ecp_shells_json.len());
+    // (ang_of, radial_power_sum, so_type, nprim, exp_ptr, coeff_ptr).
+    // radial_power_sum is the FIRST r_exponent in the list (PySCF stores a
+    // single integer at the RADI_POWER slot; per-primitive r_exponents in
+    // the LANL2DZ JSON share the same value or are uniform per shell;
+    // Plan 03 may split a shell into multiple rows if r_exponents differ).
+    for shell in ecp_shells_json {
+        let channel = shell["channel"]
+            .as_str()
+            .expect("cu_lanl2dz.json: ecp.shells[].channel must be string");
+        let ang_of: i32 = if channel == "local" {
+            -1
+        } else {
+            shell["l"].as_i64().unwrap() as i32
+        };
+        let r_exps: Vec<i32> = shell["r_exponents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_i64().unwrap() as i32)
+            .collect();
+        let radial_power = if r_exps.is_empty() {
+            0
+        } else {
+            // For Wave 0 we store the first r_exponent; Plan 03/04 split
+            // shells whose r_exponents are non-uniform.
+            r_exps[0]
+        };
+        let so_type = 0_i32; // scalar ECP per D-12 (no SO this phase)
+        let exps: Vec<f64> = shell["exponents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect();
+        let coeffs: Vec<f64> = shell["coefficients"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect();
+        debug_assert_eq!(
+            exps.len(),
+            coeffs.len(),
+            "Cu/LANL2DZ ECP shell: nprim mismatch between exponents and coefficients"
+        );
+        let nprim = exps.len() as i32;
+        let exp_ptr = env.len() as i32;
+        env.extend_from_slice(&exps);
+        let coeff_ptr = env.len() as i32;
+        env.extend_from_slice(&coeffs);
+        ecp_entries.push((ang_of, radial_power, so_type, nprim, exp_ptr, coeff_ptr));
+    }
+
+    // ─── Build atm ───────────────────────────────────────────────────────
+    let mut atm = vec![0_i32; ATM_SLOTS];
+    atm[CHARGE_OF] = atom_z;
+    atm[PTR_COORD] = cu_coord_ptr;
+    atm[NUC_MOD_OF] = POINT_NUC;
+    atm[PTR_ZETA] = zeta_ptr;
+
+    // ─── Build bas (one row per AO shell, NCTR_OF = 1) ───────────────────
+    let mut bas = vec![0_i32; shell_entries.len() * BAS_SLOTS];
+    for (idx, (l, nprim, exp_ptr, coeff_ptr)) in shell_entries.iter().enumerate() {
+        let base = idx * BAS_SLOTS;
+        bas[base + ATOM_OF] = 0;
+        bas[base + ANG_OF] = *l;
+        bas[base + NPRIM_OF] = *nprim;
+        bas[base + NCTR_OF] = 1;
+        bas[base + PTR_EXP] = *exp_ptr;
+        bas[base + PTR_COEFF] = *coeff_ptr;
+    }
+
+    // ─── Build ecpbas (one row per ECP projector, width = BAS_SLOTS) ─────
+    let mut ecpbas = vec![0_i32; ecp_entries.len() * BAS_SLOTS];
+    for (idx, (ang_of, radial_power, so_type, nprim, exp_ptr, coeff_ptr)) in
+        ecp_entries.iter().enumerate()
+    {
+        let base = idx * BAS_SLOTS;
+        ecpbas[base + ATOM_OF] = 0;
+        ecpbas[base + ANG_OF] = *ang_of;
+        ecpbas[base + NPRIM_OF] = *nprim;
+        ecpbas[base + RADI_POWER_SLOT] = *radial_power;
+        ecpbas[base + SO_TYPE_OF_SLOT] = *so_type;
+        ecpbas[base + PTR_EXP] = *exp_ptr;
+        ecpbas[base + PTR_COEFF] = *coeff_ptr;
+    }
+
+    // Wire env[AS_ECPBAS_OFFSET] / env[AS_NECPBAS]. For Wave 0 the ecpbas
+    // slab is returned separately; we set AS_ECPBAS_OFFSET = 0 as a
+    // sentinel meaning "ecpbas is not packed into a combined env-anchored
+    // slab" (the FFI wrapper Plan 03 adds will pass the ecpbas pointer
+    // alongside atm/bas). AS_NECPBAS is set to the row count so downstream
+    // consumers can sanity-check the slab length.
+    env[AS_ECPBAS_OFFSET] = 0.0;
+    env[AS_NECPBAS] = ecp_entries.len() as f64;
+
+    (atm, bas, ecpbas, env)
+}
+
 pub const REQUIRED_MATRIX_ARTIFACT: &str =
     "/tmp/cintx_artifacts/cintx_phase_04_manifest_representation_matrix.json";
 pub const MATRIX_ARTIFACT_FALLBACK_NAME: &str =
