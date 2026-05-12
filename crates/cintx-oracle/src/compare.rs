@@ -246,6 +246,8 @@ fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
         "int3c2e_ip1_cart" => Some(RawApiId::INT3C2E_IP1_CART),
         "int3c2e_ip1_sph" => Some(RawApiId::INT3C2E_IP1_SPH),
         "int3c2e_ip1_spinor" => Some(RawApiId::INT3C2E_IP1_SPINOR),
+        "int3c2e_cart" => Some(RawApiId::Symbol("int3c2e_cart")),
+        "int3c2e_sph" => Some(RawApiId::Symbol("int3c2e_sph")),
         "int4c1e_cart" => Some(RawApiId::INT4C1E_CART),
         "int4c1e_sph" => Some(RawApiId::INT4C1E_SPH),
         _ => None,
@@ -334,6 +336,8 @@ unsafe fn eval_legacy_symbol(
         | "int2e_yp_ipip1_sph"
         | "int2e_yp_ipvip1_sph"
         | "int2e_yp_ip1ip2_sph"
+        | "int3c2e_cart"
+        | "int3c2e_sph"
         | "int4c1e_cart"
         | "int4c1e_sph" => unsafe {
             let api = raw_api_for_symbol(symbol).expect("optional symbol must map to RawApiId");
