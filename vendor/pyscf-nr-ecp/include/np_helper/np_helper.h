@@ -38,6 +38,22 @@ void NPzunpack_tril(int n, double complex *tril, double complex *mat,
 void NPdpack_tril(int n, double *tril, double *mat);
 void NPzpack_tril(int n, double complex *tril, double complex *mat);
 
+/* `NPdset0` IS called from nr_ecp.c and nr_ecp_deriv.c (zero-fill helper).
+ * Implementation lives in `src/dgemm_shim.c` alongside the dgemm shim — both
+ * are cintx-authored to satisfy the link surface for the PySCF nr_ecp
+ * subtree without pulling in the full np_helper C library. */
+void NPdset0(double *p, const size_t n);
+
+/* `MAX` and `MIN` are macros that PySCF's `pyscf/lib/np_helper/np_helper.h`
+ * defines; nr_ecp.c uses `MAX` in `ECPrad_part` (radial part max-l selection)
+ * and `ECPscalar_cache_size`. The two-argument form matches PySCF upstream. */
+#ifndef MAX
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 #if defined(__cplusplus)
 }
 #endif
