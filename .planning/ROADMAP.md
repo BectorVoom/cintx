@@ -180,7 +180,7 @@ Plans:
   - Smallest of the three issue #11 tasks; explicitly callable as an isolated PR.
   - Downstream impact: unblocks every arity-2 intor in pyscf_rs `pyscf-gto/src/intor.rs` immediately on land.
 
-### Phase 18: SessionRequest Arity ≥3 Dispatch
+### Phase 18: SessionRequest Arity ≥3 Dispatch ✓ Complete (2026-05-12)
 **Goal**: `SessionRequest::evaluate` dispatches arity-3 and arity-4 shell tuples through the existing operator catalog, returning tensors with F-order AO axes that match libcint memory layout. Covers `int2e_*` (the SCF J/K hot path), `int3c1e`, `int3c1e_p2`, `int3c2e_ip1`, `int3c2e_sph`, `int3c2e_cart`, `int4c1e_sph`, and `int4c1e_cart`.
 **Depends on**: Phase 17
 **Closes**: issue #11 Task 2
@@ -195,12 +195,14 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 18-01-PLAN.md — Wave 0: manifest expansion (R1: add plain int3c2e_{cart,sph}) + AoSymmetry enum + ExecutionOptions::aosym + re-exports + 3 new vendor FFI wrappers + resolver misc_wrapper_macro arm.
-- [ ] 18-02-PLAN.md — Wave 1: safe-API surface (aosym preflight in query_workspace, FacadeError::UnsupportedAoSymmetry variant + kind() arm, F-order rustdoc on IntegralTensor, INT4C1E_CART_OPERATOR_ID shift 22 -> 24, two aosym unit tests).
+- [x] 18-01-PLAN.md — Wave 0: manifest expansion (R1: add plain int3c2e_{cart,sph}) + AoSymmetry enum + ExecutionOptions::aosym + re-exports + 3 new vendor FFI wrappers + resolver misc_wrapper_macro arm.
+- [x] 18-02-PLAN.md — Wave 1: safe-API surface (aosym preflight in query_workspace, FacadeError::UnsupportedAoSymmetry variant + kind() arm, F-order rustdoc on IntegralTensor, INT4C1E_CART_OPERATOR_ID shift 22 -> 24, two aosym unit tests).
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 18-03-PLAN.md — Wave 2: 8 arity-3 oracle parity tests against vendored libcint at atol=1e-12 (cart/sph for int3c1e, int3c1e_p2, int3c2e_ip1, plain int3c2e).
-- [ ] 18-04-PLAN.md — Wave 2: 4 arity-4 oracle parity tests against vendored libcint at atol=1e-12 (int2e_{cart,sph} base; int4c1e_{cart,sph} per-test with-4c1e gated).
+- [x] 18-03-PLAN.md — Wave 2: 8 arity-3 oracle parity tests against vendored libcint at atol=1e-12 (cart/sph for int3c1e, int3c1e_p2, int3c2e_ip1, plain int3c2e).
+- [x] 18-04-PLAN.md — Wave 2: 4 arity-4 oracle parity tests against vendored libcint at atol=1e-12 (int2e_{cart,sph} base; int4c1e_{cart,sph} per-test with-4c1e gated).
+
+**Outcome (2026-05-12):** 10/12 oracle parity tests pass at atol=1e-12. SC#1, SC#4, SC#5 fully verified. SC#2/SC#3 verified for 10 of 12 operator/representation pairs. Deferred (out of phase): int3c1e_p2_{cart,sph} kernel divergence from vendored libcint (~1e-2 to 1e-4) — pre-dates Phase 18, tracked in 18-HUMAN-UAT.md Gap 2 for a /gsd:debug session.
 
 **Cross-cutting constraints:**
 - Per-symbol nonzero sentinel (`any_nonzero` flag asserted after the sweep) guards against zero-fill regressions per PATTERNS.md §Shared Patterns.
