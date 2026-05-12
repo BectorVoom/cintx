@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
-status: Phase 18 complete (1 deferred gap tracked)
-stopped_at: Completed 18-04-PLAN.md (Phase 18)
-last_updated: "2026-05-12T13:20:00.000Z"
+status: Phase 19 context gathered (ready for plan-phase)
+stopped_at: Phase 19 context gathered
+last_updated: "2026-05-12T14:00:00.000Z"
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 36
   completed_plans: 32
   percent: 89
+resume_file: .planning/phases/19-int1e-ecp-type1-type2-evaluator/19-CONTEXT.md
 ---
 
 # Project State
@@ -20,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 19 — int1e_ecp_* Type-1/Type-2 Evaluator (or run /gsd:debug for Phase 18 deferred Gap 2)
+**Current focus:** Phase 19 — int1e_ecp_* Type-1/Type-2 Evaluator (context gathered 2026-05-12; ready for /gsd:plan-phase 19)
 
 ## Current Position
 
-Phase: 18 — COMPLETE (2026-05-12); 10/12 oracle parity tests pass; 1 deferred kernel gap (int3c1e_p2_*) tracked in 18-HUMAN-UAT.md
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/` (discuss/plan next phase)
+Phase: 19 — CONTEXT gathered (2026-05-12); 4 gray areas decided (oracle source, typed-API placement, kernel strategy, gradient scope); ready for plan-phase
+Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-CONTEXT.md`
 
 ## Performance Metrics
 
