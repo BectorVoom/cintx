@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
 status: Ready to execute
-stopped_at: Completed 19-01-PLAN.md
-last_updated: "2026-05-12T09:48:55Z"
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-05-12T10:09:06Z"
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 38
-  completed_plans: 33
-  percent: 87
+  completed_plans: 34
+  percent: 89
 ---
 
 # Project State
@@ -24,16 +24,16 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 19 — Wave 0 complete (Plan 01 landed 2026-05-12, 1/6 plans done); Wave 1 (Plans 02 + 03) ready to start in parallel
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-01-SUMMARY.md`
+Phase: 19 — Wave 1 partial (Plans 01 + 02 landed 2026-05-12, 2/6 plans done); Plan 03 (typed surface) ready to start; Plans 04/05 unblocked on math
+Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-02-SUMMARY.md`
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 3
-- Average duration: 21 min
-- Total execution time: 1.0 hours
+- Total plans completed: 4
+- Average duration: 18.25 min
+- Total execution time: 1.2 hours
 
 **By Phase:**
 | Phase | Plans | Total | Avg/Plan |
@@ -43,8 +43,8 @@ Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-01-SUMMARY.md`
 
 **Recent Trend:**
 
-- Last 5 plans: 7 min, 10 min, 26 min, 8 min, 29 min
-- Trend: Improved after raw/oracle stabilization
+- Last 5 plans: 26 min, 8 min, 29 min, 13 min, 10 min
+- Trend: Stable; Phase 19 math infrastructure landed quickly thanks to copy-from-PySCF + Phase-8 paired-fn pattern reuse
 
 | Phase 01-manifest-planner-foundation P01 | 18min | 2 tasks | 15 files |
 | Phase 01-manifest-planner-foundation P02 | 9min | 2 tasks | 10 files |
@@ -103,6 +103,7 @@ Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-01-SUMMARY.md`
 | Phase 15 P02 | 7 | 2 tasks | 4 files |
 | Phase 15-oracle-tolerance-unification-manifest-lock-closure P03 | 2 | 2 tasks | 2 files |
 | Phase 19-int1e-ecp-type1-type2-evaluator P01 | 13 min | 3 tasks | 20 files |
+| Phase 19-int1e-ecp-type1-type2-evaluator P02 | 10 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -247,6 +248,12 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 19-int1e-ecp-type1-type2-evaluator P01]: ECP rows land at OperatorIds 26..=29 (int1e_ecp_{cart,sph,ipnuc_cart,ipnuc_sph}); INT4C1E_CART_OPERATOR_ID=24 preserved. Test-only constants INT2E_STG_SPH_OPERATOR_ID and INT2E_IPIP1_SPH_OPERATOR_ID shift +4 to 106 and 116 — Plan 03 owns updating them (they live in #[cfg(test)] modules so cargo check still passes).
 - [Phase 19-int1e-ecp-type1-type2-evaluator P01]: Parse fixture parameter JSON at runtime via serde_json::from_str(include_str!(...)) + OnceLock rather than hardcode literals (basis data stays auditable JSON, single source of truth).
 - [Phase 19-int1e-ecp-type1-type2-evaluator P01]: Cu/LANL2DZ general-contraction blocks from BSE are split into single-NCTR libcint bas rows (libcint requires NCTR_OF=1 per row for distinct contraction coefficients). 3 BSE shells → 8 libcint bas rows.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P02]: Modified spherical Bessel i_l(x) evaluated DIRECTLY in all three branches (small-x, moderate-x Taylor, large-x asymptotic) — no upward or downward recurrence. Direct evaluation is numerically stable across the full Phase 19 envelope (l ∈ [0, ECP_LMAX=5], x ∈ [0, ∞)) and trivially parallel per-l. Boundaries (x=1e-7, x=16) mirror PySCF nr_ecp.c::ECPsph_ine verbatim with the exp(-z) scaling dropped.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P02]: Gauss-Chebyshev second-kind generator copied VERBATIM from vendor/pyscf-nr-ecp/src/nr_ecp.c::ECPgauss_chebyshev (lines 4848-4865). No precommitted binary table; runtime closed-form evaluation runs ~10 μs at LEVEL_MAX=2047 and is called once per shell per launch (not in a hot inner loop). Direct evaluation keeps byte-identity with PySCF trivially provable.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P02]: Gauss-Hermite hardcoded n=1..=8 reference table from DLMF 18.16.4 (physicists' convention, weight e^{-x²}). n > 8 panics with a clear out-of-range message — Phase 19's working set (Cu/LANL2DZ + standard ECP basis catalog) does not exceed n=8, so fail-fast is preferred to silently dropping precision. A future plan can add Golub-Welsch tridiagonal eigensolver fallback for higher n.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P02]: Plan 02 Test 2 correction — PySCF's ECPgauss_chebyshev weights include the radial-transform Jacobian dr/du, so they sum to ~23.5 at LEVEL0 (the truncated grid length on [0, ∞)), NOT to π/2. The plan's "sum to π/2 at atol=1e-12" assertion was replaced with the substantive ∫_0^∞ e^{-r} dr = 1 identity (rel ~3.8e-11 at LEVEL0, ~1.9e-14 at LEVEL_MAX) — exercises both nodes and weights simultaneously.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P02]: CubeCL 0.10 natural-log discovery — `f64::log` is the std two-arg version `log(self, base)` which cubecl does NOT override; the unary natural log is registered as `ln` (cubecl-core unary.rs:197 `impl_unary_func!(Log, ln, ...)`). Use `f64::ln(x)` inside `#[cube]` for natural log. Recorded in radial_quadrature.rs module rustdoc for future math modules.
+- [Phase 19-int1e-ecp-type1-type2-evaluator P02]: CubeCL prelude shadows host f64 methods inside #[cfg(test)] modules of cintx-cubecl — calling `x.sinh()` inside a test resolves to the cubecl Cube intrinsic and panics with "Unexpanded Cube functions should not be called". Use precomputed reference f64 literals in tests instead of computing trigonometric/hyperbolic reference values at runtime.
 
 ### Roadmap Evolution
 
@@ -269,6 +276,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-05-12T09:48:55Z
-Stopped at: Completed 19-01-PLAN.md
+Last session: 2026-05-12T10:09:06Z
+Stopped at: Completed 19-02-PLAN.md
 Resume file: None

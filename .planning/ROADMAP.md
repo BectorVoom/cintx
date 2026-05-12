@@ -43,7 +43,7 @@
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
-| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 1/6 | In Progress (Wave 0 complete) | - |
+| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 2/6 | In Progress (Wave 1 partial — math landed) | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -229,7 +229,7 @@ Plans:
 - [x] 19-01-PLAN.md — Wave 0: vendor PySCF nr_ecp subtree (Apache-2.0); extend cintx-oracle/build.rs with parallel cc::Build + has_vendor_pyscf_nr_ecp cfg; expand api_manifest.csv with 4 ECP rows (cart/sph × {ecp, ecp_ipnuc}) + regenerate lock; build Cu/LANL2DZ fixture; land empty stubs for bessel.rs, radial_quadrature.rs, EcpShell. (Completed 2026-05-12; SUMMARY: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-01-SUMMARY.md`; new OperatorIds 26..=29; INT4C1E_CART_OPERATOR_ID=24 preserved.)
 
 **Wave 1** *(blocked on Wave 0 completion; 02 and 03 run in parallel)*
-- [ ] 19-02-PLAN.md — Wave 1: implement modified spherical Bessel i_l(x) in math/bessel.rs (paired #[cube] + *_host(), three numerical branches per PySCF nr_ecp.h K_TAB tables) + Gauss-Chebyshev (Type-2 radial) and Gauss-Hermite (Type-1 radial) nodes/weights in math/radial_quadrature.rs. Host-side unit tests at atol=1e-12 cover all branches.
+- [x] 19-02-PLAN.md — Wave 1: implement modified spherical Bessel i_l(x) in math/bessel.rs (paired #[cube] + *_host(), three numerical branches: small-x Taylor, moderate-x direct Taylor sum, large-x asymptotic — direct evaluation, no recurrence) + PySCF-byte-identity Gauss-Chebyshev (Type-2 radial, adaptive LEVEL0..=LEVEL_MAX) and DLMF-table Gauss-Hermite n≤8 (Type-1 radial) nodes/weights in math/radial_quadrature.rs. 21 host-side unit tests at atol=1e-12, all passing. (Completed 2026-05-12; SUMMARY: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-02-SUMMARY.md`.)
 - [ ] 19-03-PLAN.md — Wave 1: EcpShell + BasisSet::ecp_shells extension + OperatorId::INT1E_ECP_* constants + is_ecp() helper + cintx-compat::raw ECP slot constants (AS_ECPBAS_OFFSET=18, AS_NECPBAS=19, RADI_POWER=3, SO_TYPE_OF=4, ECP_LMAX=5 per PySCF nr_ecp.h verbatim) + EcpBasArray typed view + eval_raw ECP dispatch arm + FacadeError::MissingEcpBasis variant + SessionRequest::query_workspace preflight.
 
 **Wave 2** *(blocked on Wave 1 completion)*
