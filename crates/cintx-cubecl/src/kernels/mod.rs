@@ -3,6 +3,7 @@ pub mod center_3c1e;
 pub mod center_3c2e;
 #[cfg(feature = "with-4c1e")]
 pub mod center_4c1e;
+pub mod ecp;
 #[cfg(feature = "with-f12")]
 pub mod f12;
 pub mod one_electron;
@@ -29,6 +30,7 @@ fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
         "2c2e" => Some(center_2c2e::launch_center_2c2e as FamilyLaunchFn),
         "3c1e" => Some(center_3c1e::launch_center_3c1e as FamilyLaunchFn),
         "3c2e" => Some(center_3c2e::launch_center_3c2e as FamilyLaunchFn),
+        "ecp" => Some(ecp::launch_ecp as FamilyLaunchFn),
         #[cfg(feature = "with-4c1e")]
         "4c1e" => Some(center_4c1e::launch_center_4c1e as FamilyLaunchFn),
         #[cfg(feature = "with-f12")]
@@ -47,9 +49,17 @@ fn resolve_family_name(canonical_family: &str) -> Option<FamilyLaunchFn> {
     }
 }
 
+/// Test-only re-export of `resolve_family_name` so the ECP kernel's
+/// in-module tests can verify the registration entry point without invoking
+/// the launcher (which requires a backend). Phase 19 D-08 footprint.
+#[cfg(test)]
+pub(crate) fn resolve_family_name_for_tests(canonical_family: &str) -> Option<FamilyLaunchFn> {
+    resolve_family_name(canonical_family)
+}
+
 pub fn supports_canonical_family(canonical_family: &str) -> bool {
     match canonical_family {
-        "1e" | "2e" | "2c2e" | "3c1e" | "3c2e" => true,
+        "1e" | "2e" | "2c2e" | "3c1e" | "3c2e" | "ecp" => true,
         "4c1e" => cfg!(feature = "with-4c1e"),
         "f12" => cfg!(feature = "with-f12"),
         "origi" | "grids" | "breit" | "origk" | "ssc" => cfg!(feature = "unstable-source-api"),
