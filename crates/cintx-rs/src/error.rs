@@ -9,6 +9,7 @@ pub enum FacadeErrorKind {
     Layout,
     Memory,
     Validation,
+    UnsupportedAoSymmetry,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -21,6 +22,8 @@ pub enum FacadeError {
     Memory { detail: String },
     #[error("validation failed: {detail}")]
     Validation { detail: String },
+    #[error("unsupported aosym packing: {requested}")]
+    UnsupportedAoSymmetry { requested: String },
 }
 
 impl FacadeError {
@@ -30,6 +33,7 @@ impl FacadeError {
             Self::Layout { .. } => FacadeErrorKind::Layout,
             Self::Memory { .. } => FacadeErrorKind::Memory,
             Self::Validation { .. } => FacadeErrorKind::Validation,
+            Self::UnsupportedAoSymmetry { .. } => FacadeErrorKind::UnsupportedAoSymmetry,
         }
     }
 
