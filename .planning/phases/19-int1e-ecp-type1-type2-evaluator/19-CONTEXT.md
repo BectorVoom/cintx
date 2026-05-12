@@ -24,11 +24,17 @@ integration and the radial expansion that ECP-projected Gaussians demand. A new
 `ecp_shells: Arc<[Arc<EcpShell>]>` field; `BasisSet::ecp_shells()` returns `&[]`
 when no ECP basis is attached, preserving SemVer for every existing caller.
 
-Vendored libcint (`libcint-master/src/`) currently contains **zero** ECP source —
-the byte-identity gate against "libcint" requires importing libcint 6.1.3's upstream
-`ecp.c` / `cint_ecp.h` files into the vendor tree and extending `cintx-oracle`'s
-`build.rs` + FFI surface. A secondary non-blocking cross-check against
-chrr/libECP (JCC 2017) closes ROADMAP SC#4's "secondary oracle" wording.
+Vendored libcint (`libcint-master/src/`) currently contains **zero** ECP source.
+**Research finding (2026-05-12):** libcint 6.1.3 upstream ships no ECP code; the
+historically-attributed "libcint ECP" implementation actually lives in PySCF
+(`pyscf/lib/gto/nr_ecp.{c,h}` + `nr_ecp_deriv.c`, Apache-2.0, same author
+Qiming Sun). The byte-identity gate therefore vendors PySCF's `nr_ecp` sources
+into the vendor tree (NOT libcint's, which does not exist) and extends
+`cintx-oracle`'s `build.rs` + FFI surface. A secondary non-blocking cross-check
+against **libecpint** (Shaw & Hill, JCP 147 074108, 2017, MIT) closes ROADMAP
+SC#4's "secondary oracle" wording. Earlier wording referencing `chrr/libECP` is
+superseded — libecpint is the actually-published JCP 2017 ECP library; chrr
+is a separate sparsely-documented project not recommended as an oracle.
 
 The new Cu/LANL2DZ fixture in `crates/cintx-oracle/src/fixtures.rs::build_cu_lanl2dz()`
 is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
@@ -40,21 +46,35 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
 ## Implementation Decisions
 
 ### Oracle reference source
-- **D-01:** **Vendor libcint 6.1.3's upstream `ecp.c` / `cint_ecp.h` (and any required
-  headers) into `libcint-master/src/` as the primary byte-identity reference at
-  `atol=1e-12, rtol=0.0`.** Extend `crates/cintx-oracle/build.rs` to compile the new
-  C sources alongside the existing ones; add per-symbol FFI wrappers in
-  `crates/cintx-oracle/src/vendor_ffi.rs` (or sibling module) for
-  `int1e_ecp_{cart,sph}` and `int1e_ecp_ipnuc_{cart,sph}`. Matches SC#4 wording
-  literally and preserves the existing C-FFI oracle pattern used by every other
-  family (no Python sidecar harness).
-- **D-02:** **libECP (chrr, JCC 2017) added as a secondary, non-blocking oracle.**
-  Linked optionally behind a `cintx-oracle` build cfg (e.g.,
-  `#[cfg(has_libecp_oracle)]`), invoked from a sibling parity test file
-  (`ecp_libecp_crosscheck_parity.rs`). Failures do **not** block CI; tolerance is
-  documented as "informational, libECP and libcint use different recurrence
-  conventions internally" and is set per-test as a loose envelope (e.g., `atol=1e-9`)
-  pending empirical measurement during execution.
+- **D-01 (REVISED 2026-05-12 after research finding):** **Vendor PySCF's
+  `pyscf/lib/gto/nr_ecp.{c,h}` + `nr_ecp_deriv.c` (Apache-2.0, Qiming Sun) into a
+  new vendor subtree as the primary byte-identity reference at `atol=1e-12,
+  rtol=0.0`.** libcint 6.1.3 ships **zero** ECP source files (verified by reading
+  `libcint-master/src/`, the v6.1.3 release tag, `cint.h.in`, and `cint_funcs.h`);
+  the C functions named `cintx-oracle` must call against (`ECPtype1_cart`,
+  `ECPtype2_cart`, `ECPscalar_*`, etc.) all live in PySCF's `nr_ecp`. Place the
+  vendored sources under a sibling vendor tree (e.g., `pyscf-nr-ecp-master/` or
+  `vendor/pyscf-nr-ecp/`) rather than `libcint-master/src/` to keep the upstream
+  libcint sync clean. Extend `crates/cintx-oracle/build.rs` to compile the new
+  C sources via the `cc` crate alongside the existing libcint ones; add per-symbol
+  FFI wrappers in `crates/cintx-oracle/src/vendor_ffi.rs` (or sibling module) for
+  `int1e_ecp_{cart,sph}` and `int1e_ecp_ipnuc_{cart,sph}` (Rust extern "C" names
+  may differ — use the actual PySCF C symbols such as `ECPscalar_sph` /
+  `ECPscalar_cart` / `ECPscalar_ipnuc_sph` / `ECPscalar_ipnuc_cart`; planner
+  enumerates exact names from vendored headers). Preserves the existing C-FFI
+  oracle pattern used by every other family (no Python sidecar harness).
+- **D-02 (REVISED 2026-05-12):** **libecpint (Shaw & Hill, JCP 147 074108, 2017,
+  MIT) added as a secondary, non-blocking oracle.** This replaces the earlier
+  reference to `chrr/libECP` (a separate sparsely-documented project, not the
+  JCC 2017 paper as the ROADMAP wording implied). libecpint is C++17, header-rich,
+  and the actively-maintained published-paper implementation. Link optionally
+  behind a `cintx-oracle` build cfg (e.g., `#[cfg(has_libecpint_oracle)]`),
+  invoked from a sibling parity test file (`ecp_libecpint_crosscheck_parity.rs`).
+  Failures do **not** block CI; tolerance is documented as "informational,
+  libecpint and PySCF nr_ecp use different recurrence + quadrature conventions
+  internally" and is set per-test as a loose envelope (e.g., `atol=1e-9`)
+  pending empirical measurement during execution. Use cfg test gate
+  `CINTX_LIBECPINT_ORACLE=1` (Phase 16 ROCm precedent).
 
 ### Typed-API placement of `ecpbas`
 - **D-03:** **Extend `cintx-core::BasisSet` with an optional `ecp_shells: Arc<[Arc<EcpShell>]>`
@@ -72,12 +92,18 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
   Rust struct holding owned `SmallVec` of exponents/coefficients (no `*ptr_env*`
   indirection in the typed surface; raw-compat layer converts to/from env-array
   layout). Distinct from `Shell` (no `kappa`, has `radial_power` and `ecp_type`).
-- **D-05:** **`cintx-compat::raw` gains an `EcpBasArray` typed view + the canonical
-  ECP slot constants** (`RADI_POWER_OF`, `SO_TYPE_OF`, `ECP_BAS_SLOTS = 8`, `PTR_ECPBAS_OFFSET`,
-  `PTR_NECPBAS`, matching upstream libcint cint.h). Raw callers continue to pass
-  `i32` slabs; typed callers go through `BasisSet::ecp_shells()`. `eval_raw` for
-  `int1e_ecp_*` symbols accepts the extended atm/bas/ecpbas/env layout fail-closed
-  on missing ecpbas when an ECP operator is dispatched.
+- **D-05 (REVISED 2026-05-12):** **`cintx-compat::raw` gains an `EcpBasArray`
+  typed view + the canonical ECP slot constants taken verbatim from PySCF
+  `pyscf/lib/gto/nr_ecp.h`:** `AS_ECPBAS_OFFSET = 18`, `AS_NECPBAS = 19`,
+  `RADI_POWER = 3`, `SO_TYPE_OF = 4`, `ECP_LMAX = 5`. The `ecpbas` row reuses the
+  existing `BAS_SLOTS = 8` width (slots 3 and 4 reinterpreted as `RADI_POWER` and
+  `SO_TYPE_OF` for ECP rows). Use the upstream PySCF names verbatim — they are
+  the only stable contract since libcint upstream has no ECP slot names. Earlier
+  speculative names (`RADI_POWER_OF`, `ECP_BAS_SLOTS`, `PTR_ECPBAS_OFFSET`,
+  `PTR_NECPBAS`) are superseded by the verified PySCF set above. Raw callers
+  continue to pass `i32` slabs; typed callers go through `BasisSet::ecp_shells()`.
+  `eval_raw` for `int1e_ecp_*` symbols accepts the extended atm/bas/ecpbas/env
+  layout fail-closed on missing ecpbas when an ECP operator is dispatched.
 - **D-06:** **`SessionRequest::new` signature stays SemVer-stable.** The ECP basis
   rides on the existing `basis: &'basis BasisSet` parameter (which now carries
   optional `ecp_shells`). No builder method, no extra positional arg, no
@@ -261,18 +287,24 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
   `radial_quadrature.rs` modules (`boys.rs`, `obara_saika.rs`, `pdata.rs`, `rys.rs`,
   `stg.rs`). D-07 lands the two new modules here.
 
-### Vendored libcint integration
-- `libcint-master/src/` — **does NOT contain ecp.c today**; D-01 imports upstream
-  libcint 6.1.3's ECP sources here. `build.rs` in `crates/cintx-oracle` already
-  compiles the C sources via the `cc` crate — extend the source list to include
-  ECP files.
-- `libcint-master/include/cint.h.in` — currently lacks ECP slot constants. D-05
-  adds the ECP slot constants to `cintx-compat::raw` (mirrored from upstream
-  libcint's `RADI_POWER_OF`, `SO_TYPE_OF`, `ECP_BAS_SLOTS`, `PTR_ECPBAS_OFFSET`,
-  `PTR_NECPBAS`).
-- `libcint-master/include/cint_funcs.h` — extern function declarations. After
-  D-01 vendor, this header should already include `int1e_ecp_*` decls; verify
-  during research.
+### Vendored ECP source integration (PySCF nr_ecp)
+- **REVISED D-01:** libcint upstream ships no ECP code; the byte-identity
+  reference is **PySCF's `pyscf/lib/gto/nr_ecp.{c,h}` + `nr_ecp_deriv.c`**
+  (Apache-2.0, same author Qiming Sun). Vendor under a NEW sibling directory
+  (e.g., `vendor/pyscf-nr-ecp/` or `pyscf-nr-ecp-master/`) — do **NOT** place
+  inside `libcint-master/src/` (keeps upstream libcint sync clean).
+- `crates/cintx-oracle/build.rs` — already compiles libcint C sources via the
+  `cc` crate. Extend with a parallel `cc::Build` for the PySCF nr_ecp vendor
+  tree. Headers referenced: `pyscf-nr-ecp-master/include/nr_ecp.h` (slot
+  constants `AS_ECPBAS_OFFSET = 18`, `AS_NECPBAS = 19`, `RADI_POWER = 3`,
+  `SO_TYPE_OF = 4`, `ECP_LMAX = 5`).
+- `libcint-master/include/cint.h.in` — do **NOT** modify (preserve upstream
+  libcint sync). D-05 ECP slot constants live in cintx-compat directly,
+  mirrored from PySCF's `nr_ecp.h`.
+- PySCF C function names to wire via FFI (planner enumerates exact signatures
+  from vendored sources): `ECPscalar_sph`, `ECPscalar_cart`,
+  `ECPscalar_ipnuc_sph`, `ECPscalar_ipnuc_cart` (or whatever the vendored
+  headers actually declare — these are illustrative; confirm during execution).
 
 ### Existing parity test patterns
 - `crates/cintx-oracle/tests/safe_api_arity2_parity.rs` (Phase 17 output) — direct
@@ -316,14 +348,18 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
   required during planning; pyscf_rs's gate runs on its own clock.
 
 ### Reference materials (read during research only)
-- Upstream libcint 6.1.3 ECP source: https://github.com/sunqm/libcint/blob/master/src/ecp.c
-  (or the 6.1.3 release tag) — D-01's vendor source. Confirm license compatibility
-  (Apache 2.0 vs cintx workspace license) during research.
-- chrr/libECP: https://github.com/chrr/libECP — D-02's secondary cross-check
-  reference. JCC 2017 paper documents the algorithm.
-- PySCF `pyscf/gto/ecp.py` — cross-reference for the Type-1/Type-2 algorithm;
-  not the primary oracle but useful for validating the implementation against
-  a Python reference if libcint's C is unclear.
+- **PySCF `pyscf/lib/gto/nr_ecp.{c,h}` + `nr_ecp_deriv.c`**:
+  https://github.com/pyscf/pyscf/tree/master/pyscf/lib/gto — D-01's primary
+  vendor source (Apache-2.0). Verified: libcint upstream has zero ECP files;
+  these are the canonical C-level ECP routines historically attributed to
+  "libcint ECP".
+- **libecpint** (Shaw & Hill, JCP 147 074108, 2017, MIT):
+  https://github.com/robashaw/libecpint — D-02's secondary non-blocking cross-check.
+  The actual JCP 2017 ECP library. (Earlier wording referencing `chrr/libECP`
+  was a misattribution and is superseded.)
+- PySCF `pyscf/gto/ecp.py`: https://github.com/pyscf/pyscf/blob/master/pyscf/gto/ecp.py
+  — Python-side dispatch into `nr_ecp` C entry points; cross-reference for the
+  Type-1/Type-2 algorithm and confirms which C symbols cintx-oracle must wire.
 
 </canonical_refs>
 
@@ -404,8 +440,10 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
   `MissingEcpBasis` preflight check next to the existing aosym preflight.
 - `crates/cintx-rs/src/error.rs` — add `FacadeError::MissingEcpBasis { operator: String }`
   variant at end of variants.
-- `libcint-master/src/ecp.c` (NEW vendor) — upstream libcint 6.1.3 ECP source
-  imported here. `crates/cintx-oracle/build.rs` extends the `cc` source list.
+- `vendor/pyscf-nr-ecp/` (or `pyscf-nr-ecp-master/`) (NEW vendor subtree) —
+  PySCF `pyscf/lib/gto/nr_ecp.{c,h}` + `nr_ecp_deriv.c` imported here per
+  revised D-01 (libcint upstream has no ECP source). `crates/cintx-oracle/build.rs`
+  adds a parallel `cc::Build` for this subtree.
 - `crates/cintx-oracle/src/fixtures.rs` — NEW `build_cu_lanl2dz()` builder
   function. Mirrors `build_h2o_sto3g` PTR_ENV_START-aligned env layout, with
   ecpbas array packed after the standard bas table.
@@ -416,10 +454,11 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
 - `crates/cintx-oracle/tests/safe_api_ecp_parity.rs` (NEW) — 6 per-symbol tests
   (4 base + 2 gradient) at atol=1e-12 vs vendored libcint, full Cartesian
   product over Cu/LANL2DZ shells.
-- `crates/cintx-oracle/tests/ecp_libecp_crosscheck_parity.rs` (NEW, optional) —
-  secondary cross-check. `#[ignore]` + `CINTX_LIBECP_ORACLE=1` opt-in (D-02).
-- `.planning/notes/libcint-ecp-vendor-subset.md` — if researcher decides to
-  vendor a minimal subset rather than the full upstream tree.
+- `crates/cintx-oracle/tests/ecp_libecpint_crosscheck_parity.rs` (NEW, optional) —
+  secondary cross-check vs libecpint. `#[ignore]` + `CINTX_LIBECPINT_ORACLE=1`
+  opt-in (revised D-02; chrr/libECP wording superseded).
+- `.planning/notes/pyscf-nr-ecp-vendor-subset.md` — if planner decides to
+  vendor a minimal subset of PySCF's nr_ecp rather than the full file set.
 
 </code_context>
 
@@ -487,11 +526,11 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
   K/CRENBL — simpler ECPs (no d-shell projectors) to validate Type-1 + Type-2
   correctness on a less-tangled test case before Cu. Captured as a spike seed
   in `.planning/spikes/ecp-fixture-validation.md`. Optional researcher add.
-- **libECP secondary cross-check as a CI-required gate** — D-02 keeps it
-  non-blocking this phase. Promote to required if cintx's libcint vendor reveals
-  any tolerance drift versus libECP that the team wants to track. Phase 15
-  unification precedent suggests not loosening atol below 1e-12; libECP cross-check
-  becomes informational metadata.
+- **libecpint secondary cross-check as a CI-required gate** — revised D-02 keeps
+  it non-blocking this phase. Promote to required if cintx's PySCF nr_ecp vendor
+  reveals any tolerance drift versus libecpint that the team wants to track.
+  Phase 15 unification precedent suggests not loosening atol below 1e-12; the
+  libecpint cross-check becomes informational metadata.
 - **Multi-fixture parity sweep** (multiple basis sets per atom; multiple
   pseudopotential families). Cu/LANL2DZ is enough to prove Phase 19 correctness.
   Add when CI budget allows or a regression motivates it.
