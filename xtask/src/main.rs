@@ -1,4 +1,5 @@
 mod bench_report;
+mod gen_ecp_tables;
 mod manifest_audit;
 mod oracle_covered_update;
 mod oracle_update;
@@ -48,6 +49,11 @@ enum Command {
         profiles: Vec<String>,
         require_adapter: bool,
     },
+    /// Phase 19 D-15. Extract PySCF K-Taylor tables into `.bin` blobs; `--check`
+    /// re-extracts and fails closed if the committed blob diverges from source.
+    GenEcpTables {
+        check: bool,
+    },
     Help,
 }
 
@@ -74,6 +80,7 @@ fn run() -> Result<()> {
         "oracle-covered-update" => Command::OracleCoveredUpdate,
         "rocm-oracle" => parse_rocm_oracle(args)?,
         "wgpu-capability-gate" => parse_wgpu_capability_gate(args)?,
+        "gen-ecp-tables" => parse_gen_ecp_tables(args)?,
         "--help" | "-h" | "help" => Command::Help,
         other => return Err(anyhow!("unknown xtask command: {other}")),
     };
@@ -103,6 +110,7 @@ fn execute(command: Command) -> Result<()> {
             profiles,
             require_adapter,
         } => wgpu_capability_gate::run_wgpu_capability_gate(&profiles, require_adapter),
+        Command::GenEcpTables { check } => gen_ecp_tables::run_gen_ecp_tables(check),
         Command::Help => {
             print_help();
             Ok(())
@@ -288,6 +296,23 @@ fn parse_wgpu_capability_gate(args: impl Iterator<Item = String>) -> Result<Comm
     })
 }
 
+fn parse_gen_ecp_tables(args: impl Iterator<Item = String>) -> Result<Command> {
+    let items: Vec<String> = args.collect();
+    let mut check = false;
+    let mut index = 0;
+    while let Some(flag) = items.get(index) {
+        match flag.as_str() {
+            "--check" => {
+                check = true;
+                index += 1;
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => return Err(anyhow!("unknown gen-ecp-tables flag: {other}")),
+        }
+    }
+    Ok(Command::GenEcpTables { check })
+}
+
 fn parse_profiles_csv(csv: &str) -> Result<Vec<String>> {
     parse_profiles_csv_with_allowlist(csv, &REQUIRED_PROFILES, REQUIRED_PROFILES_CSV)
 }
@@ -375,6 +400,7 @@ fn print_help() {
     println!("  oracle-covered-update                      Run oracle parity for all 4 profiles and stamp oracle_covered=true in manifest lock");
     println!("  rocm-oracle [--profile base]               Run ROCm oracle base-family suite (env-gated; requires --features rocm and ROCm 7.x on dev host; D-15: not in CI)");
     println!("  wgpu-capability-gate [--profiles {REQUIRED_PROFILES_CSV}] [--require-adapter true|false]");
+    println!("  gen-ecp-tables [--check]                   Extract PySCF K-Taylor tables to .bin blobs; --check is a byte-exact drift gate (Phase 19 D-15)");
     println!();
     println!("Defaults:");
     println!("  profiles: {REQUIRED_PROFILES_CSV}");

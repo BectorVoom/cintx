@@ -70,6 +70,10 @@ jobs:
               run: |
                   cargo run --manifest-path xtask/Cargo.toml -- manifest-audit --profiles "${CINTX_REQUIRED_PROFILES}" --check-lock
 
+            - name: Run ECP K-Taylor table drift gate
+              run: |
+                  cargo run --manifest-path xtask/Cargo.toml --locked -- gen-ecp-tables --check
+
     oracle_parity_gate:
         name: oracle_parity_gate (${{ matrix.profile }})
         runs-on: ubuntu-latest
