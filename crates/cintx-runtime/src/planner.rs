@@ -7,7 +7,7 @@ use crate::workspace::{
     ChunkInfo, ChunkPlanner, DEFAULT_ALIGNMENT_BYTES, WorkspaceAllocator, WorkspaceQuery,
     WorkspaceRequest,
 };
-use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple, cintxRsError};
+use cintx_core::{BasisSet, OperatorId, PrecisionKind, Representation, ShellTuple, cintxRsError};
 use cintx_ops::resolver::{OperatorDescriptor, Resolver, ResolverError};
 use tracing::{debug, info_span};
 
@@ -70,6 +70,12 @@ pub struct ExecutionPlan<'a> {
     /// Operator-specific env parameters (e.g. f12_zeta for F12/STG/YP).
     /// Populated by the caller; default is all None.
     pub operator_env_params: OperatorEnvParams,
+    /// Float precision for this evaluation: `F64` (default, byte-identical to libcint)
+    /// or `F32` (opt-in, ~1e-4 rtol, unlocks non-`SHADER_F64` wgpu adapters).
+    ///
+    /// The f64 path is byte-identical to upstream libcint 6.1.3 (D-08, D-12).
+    /// Callers that do not set this field get `F64` automatically.
+    pub precision: PrecisionKind,
 }
 
 impl<'a> ExecutionPlan<'a> {
@@ -106,6 +112,9 @@ impl<'a> ExecutionPlan<'a> {
             // Note: f12_zeta is populated by the caller (raw compat reads env[9],
             // safe API passes it via ExecutionOptions). Default is None.
             operator_env_params: OperatorEnvParams::default(),
+            // Default to F64 (byte-identical to libcint 6.1.3, D-08/D-12).
+            // Callers that want f32 precision set this field after construction.
+            precision: PrecisionKind::default(),
         })
     }
 }
