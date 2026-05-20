@@ -298,6 +298,131 @@ mod tests {
         ExecutionPlan::new(OperatorId::new(operator_id), rep, basis, shells, query).unwrap()
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // T06-1a: check_capability with F32 precision returns Ok even when the
+    // wgpu feature list lacks "SHADER_F64".
+    // RED: compile fails until check_capability is added to CubeClExecutor.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn check_capability_f32_bypasses_shader_f64_gate() {
+        use cintx_core::PrecisionKind;
+        use cintx_runtime::{query_workspace, ExecutionOptions};
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell};
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        // Build a minimal plan with precision == F32.
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = std::sync::Arc::from(vec![atom].into_boxed_slice());
+        let shell_a = std::sync::Arc::new(
+            Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
+                std::sync::Arc::from(vec![1.0_f64].into_boxed_slice()),
+                std::sync::Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap(),
+        );
+        let shell_b = std::sync::Arc::new(
+            Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
+                std::sync::Arc::from(vec![1.0_f64].into_boxed_slice()),
+                std::sync::Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap(),
+        );
+        let all_shells = std::sync::Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = Box::leak(Box::new(
+            BasisSet::try_new(atoms, all_shells).unwrap(),
+        ));
+        let shells = ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(
+            OperatorId::new(0), Representation::Cart, basis, shells.clone(), &opts,
+        ).unwrap();
+        let query = Box::leak(Box::new(query));
+        let mut plan = cintx_runtime::ExecutionPlan::new(
+            OperatorId::new(0), Representation::Cart, basis, shells, query,
+        ).unwrap();
+        plan.precision = PrecisionKind::F32;
+
+        let executor = CubeClExecutor::new();
+
+        // Test check_capability directly: F32 must return Ok on the cpu backend.
+        // (On wgpu/metal without SHADER_F64, it would also return Ok due to early bypass.)
+        #[cfg(feature = "cpu")]
+        {
+            let cpu_client = resolve_cpu_client().unwrap();
+            let backend = ResolvedBackend::Cpu(cpu_client);
+            // RED: This call fails to compile until check_capability is defined on CubeClExecutor.
+            let result = executor.check_capability(&backend, &plan);
+            assert!(result.is_ok(), "F32 check_capability must return Ok (bypass): {:?}", result);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // T06-1b: check_capability with F64 precision delegates to check_f64_capability,
+    // enforcing SHADER_F64 on wgpu/metal.
+    // RED: compile fails until check_capability is added to CubeClExecutor.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn check_capability_f64_delegates_to_check_f64_capability() {
+        use cintx_core::PrecisionKind;
+        use cintx_runtime::{query_workspace, ExecutionOptions};
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell};
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        // Build a minimal plan with precision == F64 (default).
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = std::sync::Arc::from(vec![atom].into_boxed_slice());
+        let shell_a = std::sync::Arc::new(
+            Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
+                std::sync::Arc::from(vec![1.0_f64].into_boxed_slice()),
+                std::sync::Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap(),
+        );
+        let shell_b = std::sync::Arc::new(
+            Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
+                std::sync::Arc::from(vec![1.0_f64].into_boxed_slice()),
+                std::sync::Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap(),
+        );
+        let all_shells = std::sync::Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = Box::leak(Box::new(
+            BasisSet::try_new(atoms, all_shells).unwrap(),
+        ));
+        let shells = ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(
+            OperatorId::new(0), Representation::Cart, basis, shells.clone(), &opts,
+        ).unwrap();
+        let query = Box::leak(Box::new(query));
+        let mut plan = cintx_runtime::ExecutionPlan::new(
+            OperatorId::new(0), Representation::Cart, basis, shells, query,
+        ).unwrap();
+        plan.precision = PrecisionKind::F64; // explicit F64
+
+        let executor = CubeClExecutor::new();
+
+        // Test check_capability directly on CPU: F64+CPU must return Ok
+        // (cpu always passes check_f64_capability — byte-identical behavior preserved).
+        #[cfg(feature = "cpu")]
+        {
+            let cpu_client = resolve_cpu_client().unwrap();
+            let backend = ResolvedBackend::Cpu(cpu_client);
+            // RED: This call fails to compile until check_capability is defined on CubeClExecutor.
+            let result = executor.check_capability(&backend, &plan);
+            assert!(result.is_ok(), "F64 check_capability on CPU must return Ok: {:?}", result);
+        }
+
+        // Verify check_shader_f64_in_features still fails closed (frozen behavior).
+        let features_without_f64: Vec<String> = vec![
+            "TIMESTAMP_QUERY".to_owned(),
+            "PUSH_CONSTANTS".to_owned(),
+        ];
+        let result = check_shader_f64_in_features(&features_without_f64);
+        assert!(result.is_err(), "F64 SHADER_F64 gate must still fail closed");
+        match result.unwrap_err() {
+            cintxRsError::UnsupportedApi { requested } => {
+                assert!(
+                    requested.contains("missing_shader_f64"),
+                    "F64 path error must mention missing_shader_f64, got: {requested}"
+                );
+            }
+            other => panic!("Expected UnsupportedApi, got: {other:?}"),
+        }
+    }
+
     #[test]
     fn shader_f64_absent_returns_unsupported_api() {
         // Test that check_shader_f64_in_features returns UnsupportedApi when
