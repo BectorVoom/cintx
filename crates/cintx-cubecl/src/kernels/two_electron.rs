@@ -12,7 +12,7 @@ use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_4d;
-use cintx_core::{Representation, cintxRsError};
+use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use std::f64::consts::PI;
 
@@ -555,11 +555,16 @@ fn contract_2e_cart(g: &[f64], shape: TwoEShape, li: u8, lj: u8, lk: u8, ll: u8)
     out
 }
 
-pub fn launch_two_electron(
+/// Generic inner for the 2e launcher. See `launch_two_electron` for the dispatch rationale.
+///
+/// Intermediate computations (G-tensor, cart_buf) remain `f64`; output staging
+/// is written via `F::from_f64_lossy`. The `f64` monomorphization is byte-identical
+/// to the pre-generic code.
+fn launch_two_electron_typed<F: CintFloat>(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    staging: &mut [f64],
+    staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
     if specialization.canonical_family() != "2e" {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -669,36 +674,47 @@ pub fn launch_two_electron(
         }
     }
 
+    // Representation dispatch: intermediate transforms use f64 temp buffers;
+    // final values cast to F via F::from_f64_lossy.
     match plan.representation {
         Representation::Spheric => {
             let sph = cart_to_sph_2e(&cart_buf, li, lj, lk, ll);
             let sph_size = nsi * nsj * nsk * nsl;
             let copy_len = staging.len().min(sph.len()).min(sph_size);
-            staging[..copy_len].copy_from_slice(&sph[..copy_len]);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
         Representation::Spinor => {
             let kappa_i = shell_i.kappa;
             let kappa_j = shell_j.kappa;
             let kappa_k = shell_k.kappa;
             let kappa_l = shell_l.kappa;
+            let mut tmp_staging = vec![0.0_f64; staging.len()];
             cart_to_spinor_sf_4d(
-                staging, &cart_buf,
+                &mut tmp_staging, &cart_buf,
                 li, kappa_i, lj, kappa_j,
                 lk, kappa_k, ll, kappa_l,
             )?;
+            for (dst, &src) in staging.iter_mut().zip(tmp_staging.iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
         Representation::Cart => {
             let copy_len = staging.len().min(cart_buf.len());
-            staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
     }
 
+    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
     let not0 = staging
         .iter()
-        .filter(|&&v| v.abs() > 1e-18)
+        .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<f64>();
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -709,4 +725,25 @@ pub fn launch_two_electron(
         not0,
         fallback_reason: plan.workspace.fallback_reason,
     })
+}
+
+/// Host-side 2e launcher — outer precision dispatcher.
+///
+/// Keeps the registered `FamilyLaunchFn` signature unchanged so the `as FamilyLaunchFn`
+/// cast in `kernels/mod.rs` compiles. Dispatches on `plan.precision` to the generic inner.
+pub fn launch_two_electron(
+    backend: &ResolvedBackend,
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    staging: &mut [f64],
+) -> Result<ExecutionStats, cintxRsError> {
+    match plan.precision {
+        PrecisionKind::F64 => {
+            launch_two_electron_typed::<f64>(backend, plan, specialization, staging)
+        }
+        PrecisionKind::F32 => {
+            let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
+            launch_two_electron_typed::<f32>(backend, plan, specialization, staging_f32)
+        }
+    }
 }

@@ -18,7 +18,7 @@ use crate::math::rys::{rys_root1_host, rys_root2_host};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_2d;
-use cintx_core::{Representation, cintxRsError};
+use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
 /// sqrt(pi) constant — used in G-tensor base case normalization.
@@ -424,18 +424,24 @@ fn contract_nuclear(
     out
 }
 
-/// Real 1e integral host-side kernel for overlap, kinetic, and nuclear attraction.
+/// Generic inner for the 1e launcher.
 ///
-/// Replaces the stub implementation. Implements the G-tensor fill + operator
-/// post-processing pipeline from libcint `g1e.c`, `intor1.c`, `cint1e.c`.
+/// Contains the full algorithm of `launch_one_electron` parameterized over the
+/// output float type `F: CintFloat`. The staging buffer is typed `&mut [F]` so the
+/// bytemuck-cast pattern at the outer boundary is sound (Plan 01 A5 proven).
 ///
-/// The function writes directly into `staging` (pre-allocated by executor).
-/// If `plan.representation == Spheric`, applies `cart_to_sph_1e` before writing.
-pub fn launch_one_electron(
+/// Intermediate computations (G-tensor, cart_buf) remain `f64` throughout —
+/// precision conversion happens only at the final staging write via
+/// `F::from_f64_lossy`. For f64 this is a zero-cost identity; for f32 it truncates.
+///
+/// The outer public `launch_one_electron` is a thin dispatcher that matches on
+/// `plan.precision`, binds the appropriate `&mut [F]` view (bytemuck cast for F32;
+/// the existing slice for F64), and calls this inner.
+fn launch_one_electron_typed<F: CintFloat>(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    staging: &mut [f64],
+    staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
     if specialization.canonical_family() != "1e" {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -557,42 +563,52 @@ pub fn launch_one_electron(
         }
     }
 
-    // Apply cart-to-sph or cart-to-spinor transform, or copy Cartesian to staging
+    // Apply cart-to-sph or cart-to-spinor transform, or copy Cartesian to staging.
+    // Intermediate transforms use a f64 temporary buffer; final values are cast to F
+    // via F::from_f64_lossy. For f64 this is a zero-cost identity; for f32 it truncates.
     match plan.representation {
         Representation::Spheric => {
-            // Transform cartesian buffer to spherical and write into staging
+            // Always write via a temporary f64 sph buffer, then cast to F.
+            // This keeps cart_to_sph_1e (which operates on &mut [f64]) unchanged.
             let sph_size = nsi * nsj;
-            if staging.len() >= sph_size {
-                cart_to_sph_1e(&cart_buf, &mut staging[..sph_size], li, lj);
-            } else {
-                // staging smaller than expected: fill what we can
-                let mut sph_tmp = vec![0.0_f64; sph_size];
-                cart_to_sph_1e(&cart_buf, &mut sph_tmp, li, lj);
-                let copy_len = staging.len().min(sph_size);
-                staging[..copy_len].copy_from_slice(&sph_tmp[..copy_len]);
+            let mut sph_tmp = vec![0.0_f64; sph_size];
+            cart_to_sph_1e(&cart_buf, &mut sph_tmp, li, lj);
+            let copy_len = staging.len().min(sph_size);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph_tmp[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
             }
         }
         Representation::Spinor => {
-            // Apply 2D cart-to-spinor sf transform (scalar-field, spin-free).
-            // Matches libcint c2s_sf_1e for int1e_ovlp_spinor, int1e_kin_spinor,
-            // int1e_nuc_spinor (all three 1e spinor operators use c2s_sf_1e).
+            // Apply 2D cart-to-spinor sf transform via a temporary f64 buffer,
+            // then cast to F. Matches libcint c2s_sf_1e for int1e_ovlp_spinor,
+            // int1e_kin_spinor, int1e_nuc_spinor.
             let kappa_i = shell_i.kappa;
             let kappa_j = shell_j.kappa;
-            cart_to_spinor_sf_2d(staging, &cart_buf, li, kappa_i, lj, kappa_j)?;
+            // Temporary f64 staging for the transform (existing c2spinor code is f64)
+            let mut tmp_staging = vec![0.0_f64; staging.len()];
+            cart_to_spinor_sf_2d(&mut tmp_staging, &cart_buf, li, kappa_i, lj, kappa_j)?;
+            for (dst, &src) in staging.iter_mut().zip(tmp_staging.iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
         Representation::Cart => {
-            // Copy Cartesian buffer directly to staging
+            // Copy Cartesian buffer to staging, casting each element to F.
             let copy_len = staging.len().min(cart_buf.len());
-            staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
     }
 
+    // Per-symbol nonzero sentinel: count staging elements with |v| > threshold.
+    // F: CintFloat includes num_traits::Float which provides .abs() via method syntax.
+    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
     let not0 = staging
         .iter()
-        .filter(|&&v| v.abs() > 1e-18)
+        .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<f64>();
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -603,6 +619,39 @@ pub fn launch_one_electron(
         not0,
         fallback_reason: plan.workspace.fallback_reason,
     })
+}
+
+/// Real 1e integral host-side kernel for overlap, kinetic, and nuclear attraction.
+///
+/// Outer precision dispatcher: keeps the registered `FamilyLaunchFn` signature
+/// (`fn(..., &mut [f64]) -> ...`) so the `as FamilyLaunchFn` cast in `kernels/mod.rs`
+/// compiles unchanged. Internally matches on `plan.precision` and delegates to the
+/// generic inner `launch_one_electron_typed::<F>`, reinterpreting the staging buffer
+/// via `bytemuck::cast_slice_mut` for the F32 arm (A5 proven sound in Plan 01).
+///
+/// # Precision dispatch
+/// - `PrecisionKind::F64` (default): passes `staging` directly to the `f64` inner.
+///   Zero cost — no cast required, byte-identical to the pre-generic code.
+/// - `PrecisionKind::F32`: reinterprets `staging: &mut [f64]` as `&mut [f32]` via
+///   `bytemuck::cast_slice_mut` (8-byte aligned f64 buffer satisfies 4-byte f32 align;
+///   A3 confirmed 2×M f32 lanes per M f64 slots), then calls the `f32` inner.
+pub fn launch_one_electron(
+    backend: &ResolvedBackend,
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    staging: &mut [f64],
+) -> Result<ExecutionStats, cintxRsError> {
+    match plan.precision {
+        PrecisionKind::F64 => {
+            // F64 arm: staging is already &mut [f64] = &mut [F]; zero cast.
+            launch_one_electron_typed::<f64>(backend, plan, specialization, staging)
+        }
+        PrecisionKind::F32 => {
+            // F32 arm: reinterpret the f64 byte buffer as &mut [f32] (bytemuck A5 proven).
+            let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
+            launch_one_electron_typed::<f32>(backend, plan, specialization, staging_f32)
+        }
+    }
 }
 
 #[cfg(test)]
