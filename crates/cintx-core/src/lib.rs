@@ -9,6 +9,7 @@ pub mod ecp;
 pub mod env;
 pub mod error;
 pub mod operator;
+pub mod precision;
 pub mod shell;
 pub mod tensor;
 
@@ -18,5 +19,6 @@ pub use ecp::{EcpShell, EcpChannel};
 pub use env::{EnvBoundsError, EnvParams, EnvUnits};
 pub use error::{CoreError, cintxRsError};
 pub use operator::{AoSymmetry, OperatorId, Representation};
+pub use precision::{CintFloat, PrecisionKind};
 pub use shell::{Shell, ShellTuple, ShellTupleArityError};
 pub use tensor::{TensorLayout, TensorShape};
