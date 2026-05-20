@@ -15,7 +15,7 @@
 use crate::backend::ResolvedBackend;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
-use cintx_core::{Representation, cintxRsError};
+use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use std::f64::consts::PI;
 
@@ -721,6 +721,113 @@ pub fn launch_center_4c1e(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test T05-2a: launch_center_4c1e_typed::<f64> byte-identical to baseline.
+    // RED: compile fails until launch_center_4c1e_typed is defined.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn test_center_4c1e_parity_f64() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::ResolvedBackend;
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
+        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
+            atom_idx, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_a0 = make_s_shell(0);
+        let shell_a1 = make_s_shell(0);
+        let shell_b0 = make_s_shell(1);
+        let shell_b1 = make_s_shell(1);
+        let all_shells = Arc::from(vec![shell_a0.clone(), shell_a1.clone(), shell_b0.clone(), shell_b1.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
+
+        // Find int4c1e_cart OperatorId
+        use cintx_ops::resolver::Resolver;
+        let desc = Resolver::descriptor_by_symbol("int4c1e_cart").expect("int4c1e_cart must exist");
+        let op_id = desc.id;
+
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
+        plan.precision = PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+
+        let mut staging_outer = vec![0.0_f64; 1];
+        let mut staging_typed = vec![0.0_f64; 1];
+
+        let result_outer = launch_center_4c1e(&backend, &plan, &spec, &mut staging_outer);
+        assert!(result_outer.is_ok(), "outer f64 4c1e should succeed: {:?}", result_outer);
+
+        // RED: compile fails until launch_center_4c1e_typed is defined
+        let result_typed = launch_center_4c1e_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
+        assert!(result_typed.is_ok(), "typed f64 4c1e should succeed: {:?}", result_typed);
+
+        assert_eq!(staging_outer[0].to_bits(), staging_typed[0].to_bits(),
+            "f64 outer and typed 4c1e should be byte-identical: outer={} typed={}", staging_outer[0], staging_typed[0]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test T05-2b: launch_center_4c1e F32 path runs without panic.
+    // RED: compile fails until precision dispatch is added.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "with-4c1e")]
+    #[test]
+    fn test_center_4c1e_f32_smoke() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::ResolvedBackend;
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
+        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
+            atom_idx, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_a0 = make_s_shell(0);
+        let shell_a1 = make_s_shell(0);
+        let shell_b0 = make_s_shell(1);
+        let shell_b1 = make_s_shell(1);
+        let all_shells = Arc::from(vec![shell_a0.clone(), shell_a1.clone(), shell_b0.clone(), shell_b1.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
+
+        use cintx_ops::resolver::Resolver;
+        let desc = Resolver::descriptor_by_symbol("int4c1e_cart").expect("int4c1e_cart must exist");
+        let op_id = desc.id;
+
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
+        plan.precision = PrecisionKind::F32;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+
+        let mut staging = vec![0.0_f64; 1];
+        let result = launch_center_4c1e(&backend, &plan, &spec, &mut staging);
+        assert!(result.is_ok(), "F32 4c1e should succeed: {:?}", result);
+
+        let staging_f32 = bytemuck::cast_slice::<f64, f32>(&staging);
+        assert!(staging_f32[0].is_finite(), "F32 4c1e result should be finite: {}", staging_f32[0]);
+    }
 
     #[test]
     fn test_fill_4c1e_g_tensor_ssss() {
