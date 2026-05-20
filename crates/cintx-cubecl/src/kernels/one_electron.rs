@@ -579,17 +579,12 @@ fn launch_one_electron_typed<F: CintFloat>(
             }
         }
         Representation::Spinor => {
-            // Apply 2D cart-to-spinor sf transform via a temporary f64 buffer,
-            // then cast to F. Matches libcint c2s_sf_1e for int1e_ovlp_spinor,
-            // int1e_kin_spinor, int1e_nuc_spinor.
+            // Apply 2D cart-to-spinor sf transform directly into staging: &mut [F].
+            // cart_to_spinor_sf_2d is now generic over F: CintFloat (Task 2 PART B).
+            // Matches libcint c2s_sf_1e for int1e_ovlp_spinor, int1e_kin_spinor, int1e_nuc_spinor.
             let kappa_i = shell_i.kappa;
             let kappa_j = shell_j.kappa;
-            // Temporary f64 staging for the transform (existing c2spinor code is f64)
-            let mut tmp_staging = vec![0.0_f64; staging.len()];
-            cart_to_spinor_sf_2d(&mut tmp_staging, &cart_buf, li, kappa_i, lj, kappa_j)?;
-            for (dst, &src) in staging.iter_mut().zip(tmp_staging.iter()) {
-                *dst = F::from_f64_lossy(src);
-            }
+            cart_to_spinor_sf_2d::<F>(staging, &cart_buf, li, kappa_i, lj, kappa_j)?;
         }
         Representation::Cart => {
             // Copy Cartesian buffer to staging, casting each element to F.

@@ -41,8 +41,8 @@ pub fn spinor_len(l: u8, kappa: i32) -> usize {
 ///   gspbz_im += cbI * v1
 ///
 /// Writes nd spinor rows starting at gsp[offset_alpha..] and gsp[offset_beta..].
-fn apply_sf_block(
-    gsp: &mut [f64],
+fn apply_sf_block<F: CintFloat>(
+    gsp: &mut [F],
     cart: &[f64],
     coeff_r: &[&[f64]],
     coeff_i: &[&[f64]],
@@ -70,10 +70,10 @@ fn apply_sf_block(
             sb_im += cb_i * v1;
         }
         let out_i = row_offset + i;
-        gsp[out_i * 2] = sa_re;
-        gsp[out_i * 2 + 1] = sa_im;
-        gsp[(nd_total + out_i) * 2] = sb_re;
-        gsp[(nd_total + out_i) * 2 + 1] = sb_im;
+        gsp[out_i * 2] = F::from_f64_lossy(sa_re);
+        gsp[out_i * 2 + 1] = F::from_f64_lossy(sa_im);
+        gsp[(nd_total + out_i) * 2] = F::from_f64_lossy(sb_re);
+        gsp[(nd_total + out_i) * 2 + 1] = F::from_f64_lossy(sb_im);
     }
 }
 
@@ -85,8 +85,8 @@ fn apply_sf_block(
 ///   gspaz_im += caR * v1
 ///   gspbz_re -= cbI * v1
 ///   gspbz_im += cbR * v1
-fn apply_iket_sf_block(
-    gsp: &mut [f64],
+fn apply_iket_sf_block<F: CintFloat>(
+    gsp: &mut [F],
     cart: &[f64],
     coeff_r: &[&[f64]],
     coeff_i: &[&[f64]],
@@ -114,10 +114,10 @@ fn apply_iket_sf_block(
             sb_im += cb_r * v1;
         }
         let out_i = row_offset + i;
-        gsp[out_i * 2] = sa_re;
-        gsp[out_i * 2 + 1] = sa_im;
-        gsp[(nd_total + out_i) * 2] = sb_re;
-        gsp[(nd_total + out_i) * 2 + 1] = sb_im;
+        gsp[out_i * 2] = F::from_f64_lossy(sa_re);
+        gsp[out_i * 2 + 1] = F::from_f64_lossy(sa_im);
+        gsp[(nd_total + out_i) * 2] = F::from_f64_lossy(sb_re);
+        gsp[(nd_total + out_i) * 2 + 1] = F::from_f64_lossy(sb_im);
     }
 }
 
@@ -129,8 +129,8 @@ fn apply_iket_sf_block(
 ///   gspbz_re += cbR*v1 + cbI*vz - caR*vy - caI*vx
 ///   gspbz_im += cbI*v1 - cbR*vz - caI*vy + caR*vx
 #[allow(clippy::too_many_arguments)]
-fn apply_si_block(
-    gsp: &mut [f64],
+fn apply_si_block<F: CintFloat>(
+    gsp: &mut [F],
     cart_v1: &[f64],
     cart_vx: &[f64],
     cart_vy: &[f64],
@@ -164,10 +164,10 @@ fn apply_si_block(
             sb_im += cb_i * v1 - cb_r * vz - ca_i * vy + ca_r * vx;
         }
         let out_i = row_offset + i;
-        gsp[out_i * 2] = sa_re;
-        gsp[out_i * 2 + 1] = sa_im;
-        gsp[(nd_total + out_i) * 2] = sb_re;
-        gsp[(nd_total + out_i) * 2 + 1] = sb_im;
+        gsp[out_i * 2] = F::from_f64_lossy(sa_re);
+        gsp[out_i * 2 + 1] = F::from_f64_lossy(sa_im);
+        gsp[(nd_total + out_i) * 2] = F::from_f64_lossy(sb_re);
+        gsp[(nd_total + out_i) * 2 + 1] = F::from_f64_lossy(sb_im);
     }
 }
 
@@ -180,8 +180,8 @@ fn apply_si_block(
 ///   gspbz_re -= cbI*v1 - cbR*vz - caI*vy + caR*vx
 ///   gspbz_im += cbR*v1 + cbI*vz - caR*vy - caI*vx
 #[allow(clippy::too_many_arguments)]
-fn apply_iket_si_block(
-    gsp: &mut [f64],
+fn apply_iket_si_block<F: CintFloat>(
+    gsp: &mut [F],
     cart_v1: &[f64],
     cart_vx: &[f64],
     cart_vy: &[f64],
@@ -215,10 +215,10 @@ fn apply_iket_si_block(
             sb_im += cb_r * v1 + cb_i * vz - ca_r * vy - ca_i * vx;
         }
         let out_i = row_offset + i;
-        gsp[out_i * 2] = sa_re;
-        gsp[out_i * 2 + 1] = sa_im;
-        gsp[(nd_total + out_i) * 2] = sb_re;
-        gsp[(nd_total + out_i) * 2 + 1] = sb_im;
+        gsp[out_i * 2] = F::from_f64_lossy(sa_re);
+        gsp[out_i * 2 + 1] = F::from_f64_lossy(sa_im);
+        gsp[(nd_total + out_i) * 2] = F::from_f64_lossy(sb_re);
+        gsp[(nd_total + out_i) * 2 + 1] = F::from_f64_lossy(sb_im);
     }
 }
 
@@ -287,8 +287,8 @@ fn lt_coeff_rows(l: u8) -> (Vec<&'static [f64]>, Vec<&'static [f64]>) {
 /// `cart`: input cartesian buffer of length ncart(l).
 /// `l`: angular momentum.
 /// `kappa`: spinor quantum number (<0 → GT block, >0 → LT block, ==0 → both).
-pub fn cart_to_spinor_sf(
-    gsp: &mut [f64],
+pub fn cart_to_spinor_sf<F: CintFloat>(
+    gsp: &mut [F],
     cart: &[f64],
     l: u8,
     kappa: i32,
@@ -337,8 +337,8 @@ pub fn cart_to_spinor_sf(
 /// Corresponds to `CINTc2s_iket_spinor_sf1` in libcint.
 /// Same signature as `cart_to_spinor_sf` but output is multiplied by i:
 /// (re, im) → (-im, re).
-pub fn cart_to_spinor_iket_sf(
-    gsp: &mut [f64],
+pub fn cart_to_spinor_iket_sf<F: CintFloat>(
+    gsp: &mut [F],
     cart: &[f64],
     l: u8,
     kappa: i32,
@@ -389,8 +389,8 @@ pub fn cart_to_spinor_iket_sf(
 /// `cart_vx`: x Pauli component cartesian buffer (length ncart(l)).
 /// `cart_vy`: y Pauli component cartesian buffer (length ncart(l)).
 /// `cart_vz`: z Pauli component cartesian buffer (length ncart(l)).
-pub fn cart_to_spinor_si(
-    gsp: &mut [f64],
+pub fn cart_to_spinor_si<F: CintFloat>(
+    gsp: &mut [F],
     cart_v1: &[f64],
     cart_vx: &[f64],
     cart_vy: &[f64],
@@ -446,8 +446,8 @@ pub fn cart_to_spinor_si(
 ///
 /// Corresponds to `CINTc2s_iket_spinor_si1` in libcint.
 /// Same as `cart_to_spinor_si` but output is multiplied by i.
-pub fn cart_to_spinor_iket_si(
-    gsp: &mut [f64],
+pub fn cart_to_spinor_iket_si<F: CintFloat>(
+    gsp: &mut [F],
     cart_v1: &[f64],
     cart_vx: &[f64],
     cart_vy: &[f64],
@@ -528,8 +528,8 @@ pub fn cart_to_spinor_iket_si(
 /// # Signs
 /// The bra transform uses the conjugate convention from libcint:
 ///   `saI += -caI * v1` (negative imaginary part of bra coefficient).
-pub fn cart_to_spinor_sf_2d(
-    staging: &mut [f64],
+pub fn cart_to_spinor_sf_2d<F: CintFloat>(
+    staging: &mut [F],
     cart: &[f64],
     li: u8,
     kappa_i: i16,
@@ -599,11 +599,12 @@ pub fn cart_to_spinor_sf_2d(
     // ── Step 3: Write column-major interleaved to staging ─────────────────
     // zcopy_ij: staging[(j*di + i)*2] = re, [(j*di+i)*2+1] = im
     // ni=di, nj=dj: output is column-major, j-spinor outer, i-spinor inner
+    // Cast from f64 intermediates to F at the output boundary via from_f64_lossy.
     for j in 0..dj {
         for i in 0..di {
             let out_idx = j * di + i;
-            staging[out_idx * 2] = out_r[j * di + i];
-            staging[out_idx * 2 + 1] = out_i[j * di + i];
+            staging[out_idx * 2] = F::from_f64_lossy(out_r[j * di + i]);
+            staging[out_idx * 2 + 1] = F::from_f64_lossy(out_i[j * di + i]);
         }
     }
 
@@ -875,8 +876,8 @@ fn apply_ket_block(
 /// - `staging`: output buffer, size `di * dj * dk * dl * 2`
 /// - `cart`: Cartesian input, size `nci * ncj * nck * ncl`
 ///   Layout: i innermost, l outermost: `cart[((l*nck+k)*ncj+j)*nci+i]`
-pub fn cart_to_spinor_sf_4d(
-    staging: &mut [f64],
+pub fn cart_to_spinor_sf_4d<F: CintFloat>(
+    staging: &mut [F],
     cart: &[f64],
     li: u8, kappa_i: i16,
     lj: u8, kappa_j: i16,
@@ -926,7 +927,8 @@ pub fn cart_to_spinor_sf_4d(
             let cart_slice = &cart[kl_offset..kl_offset + nci * ncj];
             let opij_offset = (l_cart * nck + k_cart) * ij_stride * 2;
             let opij_slice = &mut opij[opij_offset..opij_offset + ij_stride * 2];
-            cart_to_spinor_sf_2d(opij_slice, cart_slice, li, kappa_i, lj, kappa_j)?;
+            // Intermediate step 1 stays in f64 (opij is Vec<f64>).
+            cart_to_spinor_sf_2d::<f64>(opij_slice, cart_slice, li, kappa_i, lj, kappa_j)?;
         }
     }
 
@@ -942,7 +944,7 @@ pub fn cart_to_spinor_sf_4d(
 
     // Zero out staging
     for v in staging[..required].iter_mut() {
-        *v = 0.0;
+        *v = F::from_f64_lossy(0.0);
     }
 
     // For each (j_sp, i_sp) spinor pair from step 1, build a complex [nck * ncl] vector
@@ -982,11 +984,12 @@ pub fn cart_to_spinor_sf_4d(
             );
 
             // Store result: staging[(((l_sp * dk + k_sp) * dj + j_sp) * di + i_sp) * 2]
+            // Cast from f64 intermediates to F at the output boundary.
             for l_sp in 0..dl {
                 for k_sp in 0..dk {
                     let dst_idx = (((l_sp * dk + k_sp) * dj + j_sp) * di + i_sp) * 2;
-                    staging[dst_idx] = spinor_out_r[l_sp * dk + k_sp];
-                    staging[dst_idx + 1] = spinor_out_i[l_sp * dk + k_sp];
+                    staging[dst_idx] = F::from_f64_lossy(spinor_out_r[l_sp * dk + k_sp]);
+                    staging[dst_idx + 1] = F::from_f64_lossy(spinor_out_i[l_sp * dk + k_sp]);
                 }
             }
         }
@@ -1275,8 +1278,8 @@ fn apply_ket1_block(
 /// - `li`, `kappa_i`: bra shell angular momentum and kappa
 /// - `lj`, `kappa_j`: ket shell angular momentum and kappa
 /// - `lk`: auxiliary shell angular momentum (no kappa — transforms to spherical)
-pub fn cart_to_spinor_sf_3c2e(
-    staging: &mut [f64],
+pub fn cart_to_spinor_sf_3c2e<F: CintFloat>(
+    staging: &mut [F],
     cart: &[f64],
     li: u8, kappa_i: i16,
     lj: u8, kappa_j: i16,

@@ -373,13 +373,11 @@ fn launch_center_2c2e_typed<F: CintFloat>(
             }
         }
         Representation::Spinor => {
+            // Apply 2D cart-to-spinor sf transform directly into staging: &mut [F].
+            // cart_to_spinor_sf_2d is now generic over F: CintFloat (Task 2 PART B).
             let kappa_i = shell_i.kappa;
             let kappa_k = shell_k.kappa;
-            let mut tmp_staging = vec![0.0_f64; staging.len()];
-            cart_to_spinor_sf_2d(&mut tmp_staging, &cart_buf, li, kappa_i, lk, kappa_k)?;
-            for (dst, &src) in staging.iter_mut().zip(tmp_staging.iter()) {
-                *dst = F::from_f64_lossy(src);
-            }
+            cart_to_spinor_sf_2d::<F>(staging, &cart_buf, li, kappa_i, lk, kappa_k)?;
         }
         Representation::Cart => {
             let copy_len = staging.len().min(cart_buf.len());
