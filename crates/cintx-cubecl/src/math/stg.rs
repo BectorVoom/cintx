@@ -463,4 +463,22 @@ mod tests {
     fn cos_14_14_has_196_elements() {
         assert_eq!(COS_14_14.len(), 196, "COS_14_14 must have 14*14=196 elements");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // TDD 20-02 RED: generic stg_roots_host tests
+    // These will fail until stg_roots_host is made generic over F: CintFloat.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// stg_roots_host::<f64> byte-identity: nroots=1, same result as concrete version.
+    /// Golden: stg_roots_host(1, 1.0, 0.5) roots[0] finite and non-zero.
+    #[test]
+    fn stg_roots_host_generic_f64_unchanged() {
+        let (roots_concrete, weights_concrete) = stg_roots_host(1, 1.0_f64, 0.5_f64);
+        let (roots_generic, weights_generic) = stg_roots_host::<f64>(1, 1.0_f64, 0.5_f64);
+        assert_eq!(roots_concrete.len(), roots_generic.len());
+        let diff = (roots_concrete[0] - roots_generic[0]).abs();
+        assert!(diff == 0.0, "stg f64 byte-identity: diff={diff}");
+        let wdiff = (weights_concrete[0] - weights_generic[0]).abs();
+        assert!(wdiff == 0.0, "stg f64 weight byte-identity: diff={wdiff}");
+    }
 }

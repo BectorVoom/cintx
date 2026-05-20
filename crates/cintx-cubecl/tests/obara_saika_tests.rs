@@ -11,6 +11,55 @@ use approx::assert_abs_diff_eq;
 use cintx_cubecl::math::obara_saika::{hrr_step_host, vrr_2e_step_host, vrr_step_host};
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TDD 20-02 RED: generic host wrapper tests
+// These will fail until vrr_step_host / hrr_step_host / vrr_2e_step_host are
+// made generic over F: CintFloat.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// vrr_step_host::<f64> — p-shell, byte-identity with baseline.
+/// g[0]=1.0, rijrx=0.5 -> g[1] = 0.5 (same as os_vrr_p_shell).
+#[test]
+fn os_vrr_step_host_generic_f64_byte_identity() {
+    let mut g = vec![0.0f64; 4];
+    g[0] = 1.0;
+    vrr_step_host::<f64>(&mut g, 0.5_f64, 0.25_f64, 1, 1);
+    assert_abs_diff_eq!(g[1], 0.5_f64, epsilon = 1e-12);
+}
+
+/// vrr_step_host::<f32> — p-shell smoke: g[1] finite and non-zero.
+#[test]
+fn os_vrr_step_host_generic_f32_smoke() {
+    let mut g = vec![0.0f32; 4];
+    g[0] = 1.0_f32;
+    vrr_step_host::<f32>(&mut g, 0.5_f32, 0.25_f32, 1, 1);
+    assert!(g[1].is_finite(), "f32 vrr_step g[1] must be finite");
+    assert!(g[1] != 0.0_f32, "f32 vrr_step g[1] must be non-zero");
+    // Sanity: close to f64 value
+    let rel_err = (g[1] as f64 - 0.5_f64).abs() / 0.5_f64;
+    assert!(rel_err < 1e-5, "f32 vrr_step g[1] rel error too large: {rel_err:.2e}");
+}
+
+/// vrr_2e_step_host::<f64> — byte-identity with baseline (c00=0.3, b10=0.2, nmax=2).
+#[test]
+fn os_vrr_2e_step_host_generic_f64_byte_identity() {
+    let mut g = vec![0.0f64; 8];
+    g[0] = 1.0;
+    vrr_2e_step_host::<f64>(&mut g, 0.3_f64, 0.2_f64, 2, 1);
+    assert_abs_diff_eq!(g[1], 0.3_f64, epsilon = 1e-12);
+    assert_abs_diff_eq!(g[2], 0.29_f64, epsilon = 1e-12);
+}
+
+/// vrr_2e_step_host::<f32> — smoke: g[1] and g[2] finite.
+#[test]
+fn os_vrr_2e_step_host_generic_f32_smoke() {
+    let mut g = vec![0.0f32; 8];
+    g[0] = 1.0_f32;
+    vrr_2e_step_host::<f32>(&mut g, 0.3_f32, 0.2_f32, 2, 1);
+    assert!(g[1].is_finite(), "f32 vrr_2e g[1] must be finite");
+    assert!(g[2].is_finite(), "f32 vrr_2e g[2] must be finite");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  vrr_step tests
 // ─────────────────────────────────────────────────────────────────────────────
 
