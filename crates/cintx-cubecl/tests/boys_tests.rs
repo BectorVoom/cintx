@@ -13,6 +13,7 @@
 //! All assertions use absolute tolerance 1e-12 per design decision D-19.
 
 use cintx_cubecl::math::boys::{SQRTPIE4, TURNOVER_POINT, boys_gamma_inc_host, erf_host};
+use cintx_core::CintFloat;
 
 /// Helper: call boys_gamma_inc_host and return the result array.
 fn compute_boys(t: f64, m: u32) -> Vec<f64> {
@@ -191,6 +192,53 @@ fn boys_high_order() {
             computed[k as usize], reference[k as usize]
         );
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Test 7 (TDD 20-02 RED): boys_gamma_inc_host::<f64> byte-identity with baseline
+// f64 reference values precomputed from boys_gamma_inc_impl (power series branch, t=1.0, m=4)
+// ──────────────────────────────────────────────────────────────────────────────
+#[test]
+fn boys_host_generic_f64_byte_identity() {
+    // boys_gamma_inc_host::<f64>(1.0, 4) must match the pre-refactor concrete f64 values.
+    // These golden values were captured from the unmodified boys_gamma_inc_impl (power series
+    // branch, t=1.0 < TURNOVER_POINT[4]=1.705493613097).
+    let golden: [f64; 5] = [
+        0.74682413281242698844, // f[0]
+        0.18947234582049235496, // f[1]
+        0.10026879814501736543, // f[2]
+        0.06673227477682226738, // f[3]
+        0.04962324113315674107, // f[4]
+    ];
+    let result: Vec<f64> = boys_gamma_inc_host::<f64>(1.0_f64, 4);
+    assert_eq!(result.len(), 5, "f64: result must have m+1=5 elements");
+    for (k, (&computed, &expected)) in result.iter().zip(golden.iter()).enumerate() {
+        assert!(
+            (computed - expected).abs() < 1e-14,
+            "boys f64 byte-identity failed at k={k}: got {computed:.20e}, expected {expected:.20e}"
+        );
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Test 8 (TDD 20-02 RED): boys_gamma_inc_host::<f32> returns finite non-zero values
+// ──────────────────────────────────────────────────────────────────────────────
+#[test]
+fn boys_host_generic_f32_smoke() {
+    let result: Vec<f32> = boys_gamma_inc_host::<f32>(1.0_f32, 4);
+    assert_eq!(result.len(), 5, "f32: result must have m+1=5 elements");
+    assert!(result[0] != 0.0_f32, "f32: F_0(1.0) must be non-zero");
+    for (k, &v) in result.iter().enumerate() {
+        assert!(v.is_finite(), "f32: F_{k}(1.0) must be finite, got {v}");
+    }
+    // Sanity: f32 value of F_0(1.0) should be close to the f64 golden
+    let f0_f32 = result[0] as f64;
+    let f0_f64_golden = 0.74682413281242698844_f64;
+    let rel_err = (f0_f32 - f0_f64_golden).abs() / f0_f64_golden.abs();
+    assert!(
+        rel_err < 1e-5,
+        "f32 F_0(1.0) relative error too large: rel_err={rel_err:.2e}, f32={f0_f32:.10}, f64={f0_f64_golden:.10}"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
