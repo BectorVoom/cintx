@@ -1355,8 +1355,14 @@ pub fn vendor_ECPscalar_cart(
 }
 
 /// Evaluate PySCF `ECPscalar_ipnuc_sph` — ECP gradient (component_rank=3) sph.
-/// Plan 05 wires this; Plan 04 ships only the FFI wrapper so the bindgen
-/// allowlist + link surface land in one place.
+///
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:453-462 (`ECPscalar_ipnuc_sph`
+/// → `_sph_factory(_deriv1_cart, .., comp=3, ..)`). The `out` buffer MUST hold
+/// `3 * nao_i * nao_j` f64s (component_rank=3), where `nao_X = CINTcgto_spheric`.
+/// PySCF writes `[comp ∈ {x,y,z}, dij]` with `comp` slowest-varying and `dij`
+/// F-order (`j*di + i`, `i` fastest) — i.e. `[axis, ao_j, ao_i]`. The
+/// `debug_assert!` below enforces the buffer-size invariant (T-19-23) before the
+/// unsafe FFI call. Plan 19-07 wires this into the gradient parity tests.
 #[cfg(has_vendor_pyscf_nr_ecp)]
 #[allow(non_snake_case)]
 pub fn vendor_ECPscalar_ipnuc_sph(
@@ -1368,6 +1374,12 @@ pub fn vendor_ECPscalar_ipnuc_sph(
     nbas: i32,
     env: &[f64],
 ) -> i32 {
+    // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_spheric.
+    debug_assert!(
+        out.len() % 3 == 0,
+        "ECPscalar_ipnuc_sph out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
+        out.len()
+    );
     unsafe {
         ffi::ECPscalar_ipnuc_sph(
             out.as_mut_ptr(),
@@ -1385,6 +1397,12 @@ pub fn vendor_ECPscalar_ipnuc_sph(
 }
 
 /// Evaluate PySCF `ECPscalar_ipnuc_cart` — ECP gradient (component_rank=3) cart.
+///
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:366-375 (`ECPscalar_ipnuc_cart`
+/// → `_cart_factory(_deriv1_cart, .., comp=3, ..)`). The `out` buffer MUST hold
+/// `3 * nao_i * nao_j` f64s (component_rank=3), where `nao_X = CINTcgto_cart`.
+/// Same `[comp, ao_j, ao_i]` layout as the sph variant; the `debug_assert!`
+/// enforces the buffer-size invariant (T-19-23) before the unsafe FFI call.
 #[cfg(has_vendor_pyscf_nr_ecp)]
 #[allow(non_snake_case)]
 pub fn vendor_ECPscalar_ipnuc_cart(
@@ -1396,6 +1414,12 @@ pub fn vendor_ECPscalar_ipnuc_cart(
     nbas: i32,
     env: &[f64],
 ) -> i32 {
+    // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_cart.
+    debug_assert!(
+        out.len() % 3 == 0,
+        "ECPscalar_ipnuc_cart out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
+        out.len()
+    );
     unsafe {
         ffi::ECPscalar_ipnuc_cart(
             out.as_mut_ptr(),

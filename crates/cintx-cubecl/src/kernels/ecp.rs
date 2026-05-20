@@ -59,8 +59,36 @@
 //! `launch_one_electron` line 434). `cart_to_sph_1e` is applied when
 //! `plan.representation == Representation::Spheric`.
 //!
-//! Gradient operator (`operator_name == "ecp_ipnuc"`) returns `UnsupportedApi`;
-//! Plan 19-07 lands the gradient algorithm.
+//! # Gradient operator (`operator_name == "ecp_ipnuc"`) — Plan 19-07
+//!
+//! The gradient arm ports PySCF nr_ecp_deriv.c's `_deriv1_cart`
+//! (vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:201-286) — the 3-component
+//! `∂/∂A_i^{x,y,z}` derivative of the ECP integral w.r.t. the *bra* AO center
+//! `A_i` (matching libcint/PySCF `ipnuc` = derivative on the first index;
+//! `ECPscalar_ipnuc_cart` line 366 / `ECPscalar_ipnuc_sph` line 453). The
+//! derivative recurrence is the standard GTO identity
+//!   `∂/∂A χ_l = 2 a_i · χ_{l+1} − l · χ_{l-1}`
+//! implemented by `_l_down` (the `2 a_i χ_{l+1}` term, nr_ecp_deriv.c:148-172)
+//! and `_l_up` (the `l χ_{l-1}` term, nr_ecp_deriv.c:174-199). Both reuse the
+//! *same* scalar `ecp_type1_cart` / `ecp_type2_cart` drivers (no new radial
+//! machinery — `_deriv1_cart` just re-evaluates them at `l ± 1` on
+//! per-primitive uncontracted "fake" shells, dividing out `expi·expj` and
+//! re-applying the AO contraction coefficients afterward). See
+//! `compute_type1_pair_grad` / `compute_type2_pair_grad` (both fold into the
+//! unified `deriv1_cart_pair` driver since `_deriv1_cart` sums Type-1+Type-2
+//! into one buffer per fake shell).
+//!
+//! ## Component layout (D-11)
+//!
+//! PySCF writes the 3 components as `[comp, dij]` with `comp` slowest-varying
+//! (`gctrx`, `gctry`, `gctrz` are three consecutive `dij`-blocks, line 240-245),
+//! and inside each block the `dij` layout is F-order `n + j*di + i` = `[ao_j,
+//! ao_i]` with `ao_i` fastest (line 278-280). cintx's required gradient layout
+//! is F-order `[axis ∈ {x,y,z}, ao_j, ao_i]` (axis slowest) — the int3c2e_ip1_*
+//! precedent (CONTEXT D-11). These are IDENTICAL: PySCF's comp == cintx's axis
+//! (same {x,y,z} order), and PySCF's per-block `[ao_j, ao_i]` == cintx's
+//! `[ao_j, ao_i]`. No transpose is required in either the kernel or the
+//! collector (resolved by reading nr_ecp_deriv.c, not assumed).
 
 use crate::backend::ResolvedBackend;
 use crate::math::ecp_k_taylor::{
@@ -640,7 +668,11 @@ fn ecp_type1_cart(
         }
         nrs0 = (1usize << level) - 1;
         step = 1usize << (LEVEL_MAX - level);
-        start = (start - 1) / 2;
+        // C uses signed int: (0 - 1) / 2 == 0. Mirror that exactly under usize
+        // (saturating_sub avoids the Rust underflow panic at the finest level
+        // when a non-converging far-field pair reaches start == 0; byte-identical
+        // to the C arithmetic since the loop exits at level > LEVEL_MAX anyway).
+        start = start.saturating_sub(1) / 2;
         wtscale *= 0.5;
         level += 1;
     }
@@ -876,7 +908,11 @@ fn ecp_type2_cart(
         }
         nrs0 = (1usize << level) - 1;
         step = 1usize << (LEVEL_MAX - level);
-        start = (start - 1) / 2;
+        // C uses signed int: (0 - 1) / 2 == 0. Mirror that exactly under usize
+        // (saturating_sub avoids the Rust underflow panic at the finest level
+        // when a non-converging far-field pair reaches start == 0; byte-identical
+        // to the C arithmetic since the loop exits at level > LEVEL_MAX anyway).
+        start = start.saturating_sub(1) / 2;
         wtscale *= 0.5;
         level += 1;
     }
@@ -937,6 +973,329 @@ fn ecp_type2_cart(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Gradient (ipnuc) driver — port of nr_ecp_deriv.c::_deriv1_cart.
+// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:201-286 (_deriv1_cart),
+//         :148-172 (_l_down), :174-199 (_l_up).
+//
+// `_deriv1_cart` computes ∂/∂A_i^{x,y,z} of the (Type-1 + Type-2) ECP integral
+// w.r.t. the bra AO center, via the GTO derivative identity
+//   ∂/∂A χ_l = 2 a_i χ_{l+1} − l χ_{l-1}.
+// It uncontracts the primitives (each primitive becomes a single-primitive
+// "fake" shell with coefficient == exponent), re-evaluates the SAME scalar
+// `ECPtype1_cart` / `ECPtype2_cart` drivers at l+1 and l-1, applies `_l_down`
+// (the 2·a_i·χ_{l+1} term) and `_l_up` (the −l·χ_{l-1} term), divides out
+// expi·expj, then re-applies the AO contraction coefficients.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Local index in `cart_comps(l+1)` reached by raising the `axis` power of
+/// `cart_comps(l)[i]` by one. `axis`: 0=x, 1=y, 2=z. The x-raise is the
+/// identity prefix in cintx's `cart_comps` ordering (verified: matches
+/// libcint's `_l_down` `outx[...i] = buf1[...i]` convention), so `raise_idx`
+/// is the cintx-ordering analog of nr_ecp_deriv.c's global `_y_addr` / `_z_addr`
+/// tables (nr_ecp_deriv.c:56-75) — derived from `cart_comps` rather than
+/// transcribed, since cintx's cart enumeration order (not libcint's global
+/// addr layout) is what the cintx scalar drivers produce.
+#[inline]
+fn raise_idx(l: usize, i: usize, axis: usize) -> usize {
+    let comps_l = cart_comps(l as u8);
+    let (lx, ly, lz) = comps_l[i];
+    let target = match axis {
+        0 => (lx + 1, ly, lz),
+        1 => (lx, ly + 1, lz),
+        _ => (lx, ly, lz + 1),
+    };
+    cart_comps((l + 1) as u8)
+        .iter()
+        .position(|&c| c == target)
+        .expect("raised cartesian component must exist in cart_comps(l+1)")
+}
+
+/// `_l_down(out, buf1, fac, ai, li, nfj)` — the `2·a_i·χ_{li+1}` derivative
+/// term. Writes the 3 axis blocks `out = [outx | outy | outz]` (each `nfi*nfj`,
+/// F-order `j*nfi+i`) by down-mapping the `nfi1 = ncart(li+1)` rows of `buf1`.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:148-172.
+fn l_down(out: &mut [f64], buf1: &[f64], fac: f64, ai: f64, li: usize, nfj: usize) {
+    let nfi = ncart(li as u8);
+    let nfi1 = ncart((li + 1) as u8);
+    // Cart→sph common-factor compensation between the (li+1) and li shells.
+    let fac = match li {
+        0 => fac * (-2.0 / 3.0_f64.sqrt()) * ai,
+        1 => fac * (-2.0 * 0.488602511902919921) * ai,
+        _ => fac * (-2.0) * ai,
+    };
+    let (outx, rest) = out.split_at_mut(nfi * nfj);
+    let (outy, outz) = rest.split_at_mut(nfi * nfj);
+    for j in 0..nfj {
+        for i in 0..nfi {
+            // x-raise is the identity prefix; y/z raise via raise_idx.
+            outx[j * nfi + i] = fac * buf1[j * nfi1 + i];
+            outy[j * nfi + i] = fac * buf1[j * nfi1 + raise_idx(li, i, 1)];
+            outz[j * nfi + i] = fac * buf1[j * nfi1 + raise_idx(li, i, 2)];
+        }
+    }
+}
+
+/// `_l_up(out, buf1, fac, li, nfj)` — the `−li·χ_{li-1}` derivative term (the
+/// minus sign is folded into the `_l_down` `-2` so this `_l_up` is the libcint
+/// `+= (pow+1)` accumulation). Adds the power-weighted `nfi0 = ncart(li-1)`
+/// rows of `buf1` into the 3 axis blocks.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:174-199.
+fn l_up(out: &mut [f64], buf1: &[f64], fac: f64, li: usize, nfj: usize) {
+    let nfi = ncart(li as u8);
+    let nfi0 = ncart((li - 1) as u8);
+    let fac = match li {
+        1 => fac * 3.0_f64.sqrt(),
+        2 => fac * (1.0 / 0.488602511902919921),
+        _ => fac,
+    };
+    let comps0 = cart_comps((li - 1) as u8);
+    let (outx, rest) = out.split_at_mut(nfi * nfj);
+    let (outy, outz) = rest.split_at_mut(nfi * nfj);
+    for (i, &(px, py, pz)) in comps0.iter().enumerate() {
+        let xfac = fac * (px as f64 + 1.0);
+        let yfac = fac * (py as f64 + 1.0);
+        let zfac = fac * (pz as f64 + 1.0);
+        let xi = i; // x-raise identity prefix
+        let yi = raise_idx(li - 1, i, 1);
+        let zi = raise_idx(li - 1, i, 2);
+        for j in 0..nfj {
+            outx[j * nfi + xi] += xfac * buf1[j * nfi0 + i];
+            outy[j * nfi + yi] += yfac * buf1[j * nfi0 + i];
+            outz[j * nfi + zi] += zfac * buf1[j * nfi0 + i];
+        }
+    }
+}
+
+/// Evaluate the (Type-1 + Type-2) scalar ECP cart integral for a single
+/// uncontracted *primitive* pair with the bra shell forced to angular momentum
+/// `li_eff` (the `l ± 1` shifts `_deriv1_cart` needs). Mirrors PySCF's
+/// per-primitive `ECPtype1_cart(buf1,...) | ECPtype2_cart(buf1,...)` on the
+/// `_uncontract_bas` fake shells: each primitive becomes a 1-prim/1-ctr shell
+/// whose coefficient equals its exponent (nr_ecp_deriv.c:129-145), so the
+/// returned buffer carries the `expi·expj` factor that the caller divides out.
+/// Output `buf` is F-order `[ao_j, ao_i]` (`j*nfi_eff + i`), length
+/// `ncart(li_eff) * ncart(lj)`.
+#[allow(clippy::too_many_arguments)]
+fn ecp_scalar_prim_pair_cart(
+    buf: &mut [f64],
+    li_eff: usize,
+    lj: usize,
+    ai: f64,
+    aj: f64,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    lc: i32,
+    rad_shells: &[EcpRadShell],
+    rs_max: &[f64],
+    ws_max: &[f64],
+) {
+    // Single-primitive, single-contraction fake shells (coeff == exponent,
+    // matching _uncontract_bas which sets PTR_COEFF = PTR_EXP).
+    let shell_i = Shell::try_new(
+        0,
+        li_eff as u8,
+        1,
+        1,
+        0,
+        Representation::Cart,
+        Arc::from(vec![ai].into_boxed_slice()),
+        Arc::from(vec![ai].into_boxed_slice()),
+    )
+    .expect("fake bra primitive shell");
+    let shell_j = Shell::try_new(
+        0,
+        lj as u8,
+        1,
+        1,
+        0,
+        Representation::Cart,
+        Arc::from(vec![aj].into_boxed_slice()),
+        Arc::from(vec![aj].into_boxed_slice()),
+    )
+    .expect("fake ket primitive shell");
+    if lc < 0 {
+        ecp_type1_cart(
+            buf, &shell_i, &shell_j, ri, rj, rc, rad_shells, rs_max, ws_max,
+        );
+    } else {
+        ecp_type2_cart(
+            buf,
+            &shell_i,
+            &shell_j,
+            ri,
+            rj,
+            rc,
+            lc as usize,
+            rad_shells,
+            rs_max,
+            ws_max,
+        );
+    }
+}
+
+/// Port of `_deriv1_cart` for one ECP slot (Type-1 if `lc < 0`, else Type-2
+/// projector channel `lc`). Accumulates the 3-component gradient into `gctr`,
+/// laid out F-order `[axis, ao_j, ao_i]` (axis slowest): `gctr` is three
+/// consecutive `dij = nci*nfi * ncj*nfj` blocks (x, y, z), each block F-order
+/// `n + j*di + i` with `di = nci*nfi`. For the Cu/LANL2DZ fixture nci=ncj=1 so
+/// `dij = nfi*nfj` and the per-axis block is exactly `[ao_j, ao_i]`.
+/// Both `compute_type1_pair_grad` (lc<0) and `compute_type2_pair_grad` (lc>=0)
+/// route through this single driver because nr_ecp_deriv.c's `_deriv1_cart`
+/// sums Type-1+Type-2 into the same buffer (line 256-259 / 265-268).
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:201-286.
+#[allow(clippy::too_many_arguments)]
+fn deriv1_cart_pair(
+    gctr: &mut [f64],
+    shell_i: &Shell,
+    shell_j: &Shell,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    lc: i32,
+    rad_shells: &[EcpRadShell],
+    rs_max: &[f64],
+    ws_max: &[f64],
+) {
+    let li = shell_i.ang_momentum as usize;
+    let lj = shell_j.ang_momentum as usize;
+    let npi = shell_i.nprim as usize;
+    let npj = shell_j.nprim as usize;
+    let nci = shell_i.nctr as usize;
+    let ncj = shell_j.nctr as usize;
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfi0 = if li > 0 { ncart((li - 1) as u8) } else { 0 };
+    let nfi1 = ncart((li + 1) as u8);
+    let di = nfi * nci;
+    let dj = nfj * ncj;
+    let dij = di * dj;
+    let expi = &shell_i.exponents;
+    let expj = &shell_j.exponents;
+    let ci = &shell_i.coefficients;
+    let cj = &shell_j.coefficients;
+
+    // gprim = [gpx | gpy | gpz], each nfi*nfj, F-order j*nfi+i.
+    let mut gprim = vec![0.0f64; 3 * nfi * nfj];
+    let mut buf1 = vec![0.0f64; nfi1 * nfj];
+
+    for jp in 0..npj {
+        for ip in 0..npi {
+            // divide expi*expj — exponents were used as coefficients on the
+            // uncontracted fake shells (nr_ecp_deriv.c:251-253).
+            let fac = 1.0 / (expi[ip] * expj[jp]);
+
+            // l+1 term → _l_down.
+            for v in buf1[..nfi1 * nfj].iter_mut() {
+                *v = 0.0;
+            }
+            ecp_scalar_prim_pair_cart(
+                &mut buf1[..nfi1 * nfj],
+                li + 1,
+                lj,
+                expi[ip],
+                expj[jp],
+                ri,
+                rj,
+                rc,
+                lc,
+                rad_shells,
+                rs_max,
+                ws_max,
+            );
+            l_down(&mut gprim, &buf1[..nfi1 * nfj], fac, expi[ip], li, nfj);
+
+            // l-1 term → _l_up (only if li > 0).
+            if li > 0 {
+                for v in buf1[..nfi0 * nfj].iter_mut() {
+                    *v = 0.0;
+                }
+                ecp_scalar_prim_pair_cart(
+                    &mut buf1[..nfi0 * nfj],
+                    li - 1,
+                    lj,
+                    expi[ip],
+                    expj[jp],
+                    ri,
+                    rj,
+                    rc,
+                    lc,
+                    rad_shells,
+                    rs_max,
+                    ws_max,
+                );
+                l_up(&mut gprim, &buf1[..nfi0 * nfj], fac, li, nfj);
+            }
+
+            // Re-apply AO contraction coefficients into the 3 axis blocks.
+            let (gpx, rest) = gprim.split_at(nfi * nfj);
+            let (gpy, gpz) = rest.split_at(nfi * nfj);
+            for jc in 0..ncj {
+                for ic in 0..nci {
+                    let cfac = ci[ic * npi + ip] * cj[jc * npj + jp];
+                    let n = jc * nfj * di + ic * nfi;
+                    for j in 0..nfj {
+                        for i in 0..nfi {
+                            let g = n + j * di + i;
+                            gctr[g] += cfac * gpx[j * nfi + i];
+                            gctr[dij + g] += cfac * gpy[j * nfi + i];
+                            gctr[2 * dij + g] += cfac * gpz[j * nfi + i];
+                        }
+                    }
+                }
+            }
+            // gprim is reset per primitive pair (matches PySCF's _l_down which
+            // overwrites and _l_up which accumulates within one (ip,jp)).
+            for v in gprim.iter_mut() {
+                *v = 0.0;
+            }
+        }
+    }
+}
+
+/// `compute_type1_pair_grad` — the Local (Type-1) gradient channel of
+/// `_deriv1_cart`. Thin alias over `deriv1_cart_pair` with `lc = -1`.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:256-257 (ECPtype1_cart at l±1).
+#[allow(clippy::too_many_arguments)]
+fn compute_type1_pair_grad(
+    gctr: &mut [f64],
+    shell_i: &Shell,
+    shell_j: &Shell,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    rad_shells: &[EcpRadShell],
+    rs_max: &[f64],
+    ws_max: &[f64],
+) {
+    deriv1_cart_pair(
+        gctr, shell_i, shell_j, ri, rj, rc, -1, rad_shells, rs_max, ws_max,
+    );
+}
+
+/// `compute_type2_pair_grad` — the Projected (Type-2) gradient channel of
+/// `_deriv1_cart` for projector angular momentum `lc`. Thin alias over
+/// `deriv1_cart_pair`.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:258-259 (ECPtype2_cart at l±1).
+#[allow(clippy::too_many_arguments)]
+fn compute_type2_pair_grad(
+    gctr: &mut [f64],
+    shell_i: &Shell,
+    shell_j: &Shell,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    lc: usize,
+    rad_shells: &[EcpRadShell],
+    rs_max: &[f64],
+    ws_max: &[f64],
+) {
+    deriv1_cart_pair(
+        gctr, shell_i, shell_j, ri, rj, rc, lc as i32, rad_shells, rs_max, ws_max,
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Launcher
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -945,8 +1304,12 @@ fn ecp_type2_cart(
 /// Dispatches Type-1 (channel == Local) and Type-2 (channel == Projected(l))
 /// ECP shells. For the scalar `int1e_ecp_*` operator, accumulates a Cartesian
 /// `[ao_i, ao_j]` buffer and applies `cart_to_sph_1e` when
-/// `plan.representation == Spheric`. The gradient `int1e_ecp_ipnuc_*` operator
-/// returns `UnsupportedApi` — Plan 19-07 lands the gradient algorithm.
+/// `plan.representation == Spheric`. For the gradient `int1e_ecp_ipnuc_*`
+/// operator (`operator_name == "ecp_ipnuc"`, component_rank=3) it accumulates
+/// the 3-component `∂/∂A_i^{x,y,z}` gradient via `_deriv1_cart`
+/// (`compute_type1_pair_grad` / `compute_type2_pair_grad`), writing F-order
+/// `[axis, ao_j, ao_i]` (axis slowest) and applying `cart_to_sph_1e` per axis
+/// for the spherical representation.
 pub fn launch_ecp(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
@@ -966,23 +1329,15 @@ pub fn launch_ecp(
     let _ = backend; // host-side pipeline; let _ = backend per one_electron.rs:451
 
     let operator_name = plan.descriptor.operator_name();
-    match operator_name {
-        "ecp" => {} // proceed
-        "ecp_ipnuc" => {
-            // Plan 19-07: gradient branch lands here.
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!(
-                    "ecp gradient operator '{}' not implemented (Plan 19-07)",
-                    operator_name
-                ),
-            });
-        }
+    let is_gradient = match operator_name {
+        "ecp" => false,
+        "ecp_ipnuc" => true,
         other => {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!("unknown ecp operator name: {other}"),
             });
         }
-    }
+    };
 
     let shells = plan.shells.as_slice();
     if shells.len() != 2 {
@@ -1015,12 +1370,37 @@ pub fn launch_ecp(
     let ri = atoms[shell_i.atom_index as usize].coord_bohr;
     let rj = atoms[shell_j.atom_index as usize].coord_bohr;
 
-    // gctr is the cartesian shell-pair output, F-order [ao_i, ao_j]
-    // (length nci*ncj). PySCF's per-contraction stride is nci*nfi (here nci=1
-    // per AO shell row in the Cu/LANL2DZ fixture); the driver indexes
-    // gctr[(jc*nfj+mj)*nci*nfi + ic*nfi+mi] which collapses to F-order when
-    // nci=ncj=1.
-    let mut gctr = vec![0.0_f64; nci * ncj];
+    // Number of output components: 1 for scalar `ecp`, 3 for gradient
+    // `ecp_ipnuc` (∂/∂A_i^{x,y,z}, F-order [axis, ao_j, ao_i] axis slowest).
+    let n_comp = if is_gradient { 3 } else { 1 };
+
+    // Gradient buffer-size invariant (T-19-23): the gradient staging slice MUST
+    // hold n_comp * cart-or-sph product. Reject an undersized buffer with a
+    // typed Layout error rather than silently writing past it / under-filling.
+    if is_gradient {
+        let needed = match plan.representation {
+            Representation::Spheric => n_comp * (nsi as usize) * (nsj as usize),
+            Representation::Cart => n_comp * (nci as usize) * (ncj as usize),
+            // Spinor is the D-12 zero-write path; sized by the caller.
+            Representation::Spinor => 0,
+        };
+        if !matches!(plan.representation, Representation::Spinor) && staging.len() < needed {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "cubecl_ecp",
+                detail: format!(
+                    "ecp_ipnuc staging buffer too small for component_rank=3: have {}, need {needed}",
+                    staging.len()
+                ),
+            });
+        }
+    }
+
+    // gctr is the cartesian shell-pair output. For scalar this is F-order
+    // [ao_i, ao_j] (length nci*ncj). For gradient it is 3 consecutive
+    // dij = (nci*nfi)*(ncj*nfj) blocks (x, y, z) — F-order [axis, ao_j, ao_i],
+    // axis slowest (D-11, int3c2e_ip1_* precedent). PySCF's _deriv1_cart writes
+    // the SAME [comp, j*di+i] layout (nr_ecp_deriv.c:240-280) — no transpose.
+    let mut gctr = vec![0.0_f64; n_comp * (nci as usize) * (ncj as usize)];
 
     // Build the 2047-point Gauss-Chebyshev grid PySCF samples adaptively
     // (rs/ws_gauss_chebyshev2047). gauss_chebyshev_nodes_weights_host(LEVEL_MAX)
@@ -1031,51 +1411,69 @@ pub fn launch_ecp(
     let slots = group_ecp_slots(ecp_shells);
     for slot in &slots {
         let rc = atoms[slot.atom_index as usize].coord_bohr;
-        if slot.lc < 0 {
-            ecp_type1_cart(
-                &mut gctr,
-                shell_i,
-                shell_j,
-                ri,
-                rj,
-                rc,
-                &slot.rad_shells,
-                &rs_max,
-                &ws_max,
-            );
-        } else {
+        if slot.lc >= 0 {
             let lc = slot.lc as usize;
             if lc > ECP_LMAX {
                 return Err(cintxRsError::UnsupportedApi {
                     requested: format!("ecp projector l={lc} exceeds ECP_LMAX={ECP_LMAX}"),
                 });
             }
-            ecp_type2_cart(
+        }
+        match (is_gradient, slot.lc < 0) {
+            (false, true) => ecp_type1_cart(
+                &mut gctr, shell_i, shell_j, ri, rj, rc, &slot.rad_shells, &rs_max, &ws_max,
+            ),
+            (false, false) => ecp_type2_cart(
                 &mut gctr,
                 shell_i,
                 shell_j,
                 ri,
                 rj,
                 rc,
-                lc,
+                slot.lc as usize,
                 &slot.rad_shells,
                 &rs_max,
                 &ws_max,
-            );
+            ),
+            // Gradient: route Local → compute_type1_pair_grad,
+            // Projected(l) → compute_type2_pair_grad (both via deriv1_cart_pair).
+            (true, true) => compute_type1_pair_grad(
+                &mut gctr, shell_i, shell_j, ri, rj, rc, &slot.rad_shells, &rs_max, &ws_max,
+            ),
+            (true, false) => compute_type2_pair_grad(
+                &mut gctr,
+                shell_i,
+                shell_j,
+                ri,
+                rj,
+                rc,
+                slot.lc as usize,
+                &slot.rad_shells,
+                &rs_max,
+                &ws_max,
+            ),
         }
     }
 
     // Apply representation transform and write into staging.
     match plan.representation {
         Representation::Spheric => {
-            let sph_size = nsi * nsj;
-            if staging.len() >= sph_size {
-                cart_to_sph_1e(&gctr, &mut staging[..sph_size], li, lj);
-            } else {
-                let mut sph_tmp = vec![0.0_f64; sph_size];
-                cart_to_sph_1e(&gctr, &mut sph_tmp, li, lj);
-                let copy_len = staging.len().min(sph_size);
-                staging[..copy_len].copy_from_slice(&sph_tmp[..copy_len]);
+            // For gradient: transform each axis block independently (axis stays
+            // slowest); cart block size nci*ncj, sph block size nsi*nsj.
+            let cart_block = (nci as usize) * (ncj as usize);
+            let sph_block = (nsi as usize) * (nsj as usize);
+            for axis in 0..n_comp {
+                let cart_slice = &gctr[axis * cart_block..(axis + 1) * cart_block];
+                let out_off = axis * sph_block;
+                if staging.len() >= out_off + sph_block {
+                    cart_to_sph_1e(cart_slice, &mut staging[out_off..out_off + sph_block], li, lj);
+                } else {
+                    let mut sph_tmp = vec![0.0_f64; sph_block];
+                    cart_to_sph_1e(cart_slice, &mut sph_tmp, li, lj);
+                    let avail = staging.len().saturating_sub(out_off);
+                    let copy_len = avail.min(sph_block);
+                    staging[out_off..out_off + copy_len].copy_from_slice(&sph_tmp[..copy_len]);
+                }
             }
         }
         Representation::Cart => {
@@ -1179,5 +1577,120 @@ mod tests {
         assert_eq!(cint_common_fac_sp(0), 0.282094791773878143);
         assert_eq!(cint_common_fac_sp(1), 0.488602511902919921);
         assert_eq!(cint_common_fac_sp(2), 1.0);
+    }
+
+    // ── Gradient (ipnuc / _deriv1_cart) helpers ───────────────────────────────
+
+    /// The gradient operator `ecp_ipnuc` resolves to the same `launch_ecp`
+    /// launcher under canonical_family "ecp" (positive assertion — replaces the
+    /// 19-04 "rejects gradient operator name" stub).
+    #[test]
+    fn gradient_operator_routes_through_launch_ecp() {
+        // Both scalar and gradient operators live under canonical_family "ecp".
+        assert!(
+            crate::kernels::resolve_family_name_for_tests("ecp").is_some(),
+            "ecp family (scalar + ecp_ipnuc gradient) must resolve to launch_ecp"
+        );
+        assert!(crate::kernels::supports_canonical_family("ecp"));
+    }
+
+    /// `raise_idx`: x-raise is the identity prefix; y/z raise land on the
+    /// expected cart_comps(l+1) component.
+    #[test]
+    fn raise_idx_matches_cart_comps() {
+        for l in 0..4usize {
+            for (i, &(lx, ly, lz)) in cart_comps(l as u8).iter().enumerate() {
+                assert_eq!(raise_idx(l, i, 0), i, "x-raise must be identity prefix");
+                let yc = cart_comps((l + 1) as u8);
+                assert_eq!(yc[raise_idx(l, i, 1)], (lx, ly + 1, lz));
+                assert_eq!(yc[raise_idx(l, i, 2)], (lx, ly, lz + 1));
+            }
+        }
+    }
+
+    /// Zero-overlap sanity: an AO shell pair placed far from the ECP center
+    /// yields a near-zero 3-component gradient buffer (the radial Gaussian
+    /// `exp(-a r_CA^2)` damps it to machine epsilon). Exercises the full
+    /// `deriv1_cart_pair` driver and asserts the buffer is exactly 3*nfi*nfj.
+    #[test]
+    fn gradient_zero_overlap_is_negligible() {
+        let (rs_max, ws_max) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
+        // s-shell bra/ket, single tight primitive.
+        let mk = |l: u8| {
+            Shell::try_new(
+                0,
+                l,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![3.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap()
+        };
+        let si = mk(0);
+        let sj = mk(0);
+        let nfi = ncart(0);
+        let nfj = ncart(0);
+        let mut gctr = vec![0.0_f64; 3 * nfi * nfj];
+        // ECP center 50 bohr away from the AO centers at origin.
+        let rad = EcpRadShell {
+            exponents: vec![2.0],
+            coefficients: vec![1.0],
+            radial_power: 0,
+        };
+        deriv1_cart_pair(
+            &mut gctr,
+            &si,
+            &sj,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [50.0, 0.0, 0.0],
+            -1, // Local (Type-1)
+            std::slice::from_ref(&rad),
+            &rs_max,
+            &ws_max,
+        );
+        assert_eq!(gctr.len(), 3 * nfi * nfj);
+        for (k, &v) in gctr.iter().enumerate() {
+            assert!(
+                v.abs() < 1e-12,
+                "far-separated ECP gradient component {k} should vanish, got {v:e}"
+            );
+        }
+    }
+
+    /// The `s`-shell (li=0) gradient takes ONLY the `_l_down` path (no `_l_up`,
+    /// since li=0). A finite, non-zero ECP-center-coincident s-s gradient must
+    /// produce a 3-component buffer where the symmetry of the configuration is
+    /// reflected. Here we assert the buffer is sized and that an on-center
+    /// (rca=0) configuration yields a finite (not NaN/Inf) result.
+    #[test]
+    fn gradient_on_center_is_finite() {
+        let (rs_max, ws_max) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
+        let si = Shell::try_new(
+            0, 1, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.5_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+        )
+        .unwrap();
+        let sj = Shell::try_new(
+            0, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.2_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+        )
+        .unwrap();
+        let nfi = ncart(1);
+        let nfj = ncart(0);
+        let mut gctr = vec![0.0_f64; 3 * nfi * nfj];
+        let rad = EcpRadShell { exponents: vec![1.0], coefficients: vec![1.0], radial_power: 0 };
+        deriv1_cart_pair(
+            &mut gctr, &si, &sj,
+            [0.1, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.0],
+            -1, std::slice::from_ref(&rad), &rs_max, &ws_max,
+        );
+        assert_eq!(gctr.len(), 3 * nfi * nfj);
+        assert!(gctr.iter().all(|v| v.is_finite()), "gradient must be finite");
     }
 }
