@@ -749,6 +749,98 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Test T04-1a: launch_one_electron_typed::<f64> writes a positive finite
+    // s-s overlap. This is the generic inner that the dispatcher delegates to.
+    // RED: compile fails until launch_one_electron_typed is implemented.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_precision_dispatch_f64_inner_positive_overlap() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::ResolvedBackend;
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
+        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(OperatorId::new(0), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(OperatorId::new(0), Representation::Cart, &basis, shells, &query).unwrap();
+        plan.precision = PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 1];
+
+        // Call the generic _typed inner directly (f64 monomorphization).
+        // RED: compile fails until launch_one_electron_typed is defined.
+        let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(result.is_ok(), "f64 inner should succeed: {:?}", result);
+        assert!(staging[0].is_finite(), "f64 overlap should be finite, got {}", staging[0]);
+        assert!(staging[0] > 0.0, "s-s overlap should be positive, got {}", staging[0]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test T04-1b: launch_one_electron_typed::<f32> writes a positive finite
+    // f32 s-s overlap. RED: compile fails until the typed inner exists; then
+    // fails at runtime until f32 math is correctly wired.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_precision_dispatch_f32_inner_positive_overlap() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::ResolvedBackend;
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
+        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(OperatorId::new(0), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(OperatorId::new(0), Representation::Cart, &basis, shells, &query).unwrap();
+        plan.precision = PrecisionKind::F32;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+
+        // Staging is 1 f64 = 8 bytes. The f32 inner writes 1 f32 (4 bytes) at index 0.
+        let mut staging_f32 = vec![0.0_f32; 1];
+
+        // Call the generic _typed inner directly (f32 monomorphization).
+        // RED: compile fails until launch_one_electron_typed is defined.
+        let result = launch_one_electron_typed::<f32>(&backend, &plan, &spec, &mut staging_f32);
+        assert!(result.is_ok(), "f32 inner should succeed: {:?}", result);
+        assert!(staging_f32[0].is_finite(), "f32 overlap should be finite, got {}", staging_f32[0]);
+        assert!(staging_f32[0] > 0.0, "s-s overlap (f32) should be positive, got {}", staging_f32[0]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Test 6: rys_root2_host returns valid roots (0,1) and positive weights
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
