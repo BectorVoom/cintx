@@ -12,11 +12,21 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     // Re-run if the vendor gate env var changes (set or unset).
     println!("cargo:rerun-if-env-changed=CINTX_ORACLE_BUILD_VENDOR");
+    // Phase 19 D-02 (REVISED): re-run if the optional libecpint secondary-oracle
+    // gate env var changes. Mirrors the Phase 16 ROCm opt-in precedent
+    // (CINTX_ROCM_ORACLE=1). When unset, the libecpint branch below is skipped
+    // entirely and the default oracle build is byte-for-byte unchanged.
+    println!("cargo:rerun-if-env-changed=CINTX_LIBECPINT_ORACLE");
     // Declare the custom cfg flag so rustc doesn't warn about unexpected_cfgs
     println!("cargo::rustc-check-cfg=cfg(has_vendor_libcint)");
     // Phase 19 D-01: PySCF nr_ecp vendor cfg — emitted by the parallel
     // cc::Build chain below when CINTX_ORACLE_BUILD_VENDOR=1.
     println!("cargo::rustc-check-cfg=cfg(has_vendor_pyscf_nr_ecp)");
+    // Phase 19 D-02 (REVISED): optional libecpint secondary-oracle cfg — emitted
+    // by the OPTIONAL libecpint branch below ONLY when CINTX_LIBECPINT_ORACLE=1
+    // (and libecpint is reachable on the host). Registered unconditionally so
+    // `#[cfg(has_libecpint_oracle)]` code never trips `unexpected_cfgs`.
+    println!("cargo::rustc-check-cfg=cfg(has_libecpint_oracle)");
     println!("cargo:rerun-if-changed={}", cint_h_in.display());
     println!("cargo:rerun-if-changed={}", cint_funcs_h.display());
 
@@ -79,6 +89,32 @@ fn main() {
         .header(cint_funcs_h.to_string_lossy())
         .allowlist_function("cint.*");
     let _cc_probe = cc::Build::new();
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 19 D-02 (REVISED): OPTIONAL libecpint secondary-oracle build branch.
+    //
+    // libecpint (Shaw & Hill, JCP 147 074108, 2017, MIT;
+    // https://github.com/robashaw/libecpint) is a NON-BLOCKING cross-check
+    // oracle. It is compiled/linked ONLY when CINTX_LIBECPINT_ORACLE is set,
+    // mirroring the Phase 16 ROCm opt-in (CINTX_ROCM_ORACLE=1). When the env
+    // var is unset, this branch is skipped ENTIRELY and the default oracle
+    // build is byte-for-byte unchanged (threat T-19-27 mitigated).
+    //
+    // libecpint is C++17 and exposes no stable C API of its own, so the FFI
+    // needs a thin operator-supplied `extern "C"` shim (.cpp) compiled here
+    // with -std=c++17. To keep cintx from vendoring a large external C++
+    // dependency on its own initiative, this branch is "best-effort": it emits
+    // the `has_libecpint_oracle` cfg ONLY if it can locate both libecpint and
+    // the extern "C" shim on the host (via CINTX_LIBECPINT_DIR /
+    // CINTX_LIBECPINT_SHIM, or a `vendor/libecpint/` tree). If the env gate is
+    // set but the library/shim are absent, the branch logs a `cargo:warning`
+    // and continues WITHOUT emitting the cfg, so the cross-check tests stay
+    // cfg'd-out and the build never fails on a host that lacks libecpint.
+    // See `.planning/notes/ecp-libecpint-crosscheck.md` for operator steps.
+    // ─────────────────────────────────────────────────────────────────────
+    if env::var_os("CINTX_LIBECPINT_ORACLE").is_some() {
+        try_build_libecpint(&workspace_root);
+    }
 
     if env::var_os("CINTX_ORACLE_BUILD_VENDOR").is_none() {
         return;
@@ -374,4 +410,98 @@ extern int ECPscalar_ipnuc_cart(double *out, int *dims, int *shls,
     ] {
         println!("cargo:rerun-if-changed={}", pyscf_root.join(src).display());
     }
+}
+
+/// Phase 19 D-02 (REVISED): OPTIONAL libecpint secondary-oracle build helper.
+///
+/// Invoked from `main` ONLY when `CINTX_LIBECPINT_ORACLE` is set. Best-effort:
+/// it compiles an operator-supplied `extern "C"` shim against libecpint and
+/// emits `cargo:rustc-cfg=has_libecpint_oracle` ONLY when both the libecpint
+/// install root and the shim source can be located. Otherwise it logs a
+/// `cargo:warning` and returns WITHOUT emitting the cfg, so the cross-check
+/// tests stay compiled-out and the build never fails on a host that lacks
+/// libecpint. This keeps the default build untouched (the env var being set
+/// is the only thing that even reaches this function).
+///
+/// Discovery (operator-supplied; documented in
+/// `.planning/notes/ecp-libecpint-crosscheck.md`):
+///   - `CINTX_LIBECPINT_DIR`  — libecpint install/build root (contains
+///     `include/libecpint.hpp` and a linkable `libecpint` static/shared lib),
+///     OR a vendored `vendor/libecpint/` tree if present.
+///   - `CINTX_LIBECPINT_SHIM` — path to the operator's `extern "C"` shim .cpp
+///     wrapping libecpint's ECP integral entry points into the C signatures
+///     declared in `crates/cintx-oracle/src/libecpint_ffi.rs`.
+fn try_build_libecpint(workspace_root: &std::path::Path) {
+    // Re-run if either discovery env var changes.
+    println!("cargo:rerun-if-env-changed=CINTX_LIBECPINT_DIR");
+    println!("cargo:rerun-if-env-changed=CINTX_LIBECPINT_SHIM");
+
+    // Locate the libecpint install/build root.
+    let libecpint_dir = env::var_os("CINTX_LIBECPINT_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let vendored = workspace_root.join("vendor/libecpint");
+            vendored.join("include").is_dir().then_some(vendored)
+        });
+
+    let Some(libecpint_dir) = libecpint_dir else {
+        println!(
+            "cargo:warning=CINTX_LIBECPINT_ORACLE is set but libecpint was not found. \
+             Set CINTX_LIBECPINT_DIR to a libecpint install/build root (or vendor it under \
+             vendor/libecpint/). Skipping the libecpint cross-check oracle (non-blocking, D-02); \
+             has_libecpint_oracle NOT emitted. See .planning/notes/ecp-libecpint-crosscheck.md."
+        );
+        return;
+    };
+
+    // Locate the operator-supplied extern "C" shim .cpp.
+    let shim = env::var_os("CINTX_LIBECPINT_SHIM").map(PathBuf::from);
+    let Some(shim) = shim.filter(|p| p.is_file()) else {
+        println!(
+            "cargo:warning=CINTX_LIBECPINT_ORACLE is set and libecpint was found at {}, but the \
+             extern \"C\" shim was not. Set CINTX_LIBECPINT_SHIM to the shim .cpp wrapping \
+             libecpint into the C signatures in crates/cintx-oracle/src/libecpint_ffi.rs. \
+             Skipping the libecpint cross-check oracle (non-blocking, D-02); \
+             has_libecpint_oracle NOT emitted. See .planning/notes/ecp-libecpint-crosscheck.md.",
+            libecpint_dir.display()
+        );
+        return;
+    };
+
+    println!("cargo:rerun-if-changed={}", shim.display());
+
+    // Compile the operator's extern "C" shim against libecpint (C++17).
+    // The two static libraries (libcint vendor / PySCF nr_ecp / this shim) are
+    // compiled independently so flag choices do not bleed.
+    let mut cxx = cc::Build::new();
+    cxx.cpp(true)
+        .warnings(false)
+        .flag_if_supported("-std=c++17")
+        .include(libecpint_dir.join("include"))
+        .file(&shim);
+    // Allow the operator to point at extra include roots libecpint needs
+    // (e.g. bundled Eigen / pugixml) via CINTX_LIBECPINT_INCLUDE (':'-separated).
+    if let Some(extra) = env::var_os("CINTX_LIBECPINT_INCLUDE") {
+        for inc in env::split_paths(&extra) {
+            cxx.include(inc);
+        }
+    }
+    cxx.compile("cintx_libecpint_shim");
+
+    // Link the operator's libecpint install. Search both `lib` and `lib64`.
+    println!(
+        "cargo:rustc-link-search=native={}",
+        libecpint_dir.join("lib").display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}",
+        libecpint_dir.join("lib64").display()
+    );
+    println!("cargo:rustc-link-lib=static=cintx_libecpint_shim");
+    println!("cargo:rustc-link-lib=ecpint");
+    // libecpint is C++; pull in the C++ standard library.
+    println!("cargo:rustc-link-lib=stdc++");
+
+    // Emit the cfg ONLY now that the shim compiled and libecpint is linkable.
+    println!("cargo:rustc-cfg=has_libecpint_oracle");
 }

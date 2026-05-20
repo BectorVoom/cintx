@@ -6,6 +6,13 @@ pub mod fixtures;
 #[cfg(has_vendor_libcint)]
 pub mod vendor_ffi;
 
+// Phase 19 D-02 (REVISED): optional libecpint secondary-oracle FFI shim.
+// `has_libecpint_oracle` is emitted by build.rs ONLY when CINTX_LIBECPINT_ORACLE=1
+// and libecpint + an operator-supplied extern "C" shim are reachable; the default
+// build does not have this cfg, so the module is absent (no regression).
+#[cfg(has_libecpint_oracle)]
+pub mod libecpint_ffi;
+
 // Profile-aware parity report entrypoints surfaced for xtask/CI gate consumers.
 pub use compare::{generate_profile_parity_report, generate_phase2_parity_report, verify_helper_surface_coverage, tolerance_for_family, Phase2ParityReport, FamilyTolerance};
 // Profile-aware fixture builders and required profile/family constants for gate wiring.
