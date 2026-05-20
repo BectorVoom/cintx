@@ -181,37 +181,37 @@ mod rys_cpu_tests {
     // ─────────────────────────────────────────────────────────────────────────
 
     #[cube(launch)]
-    fn rys_root1_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64) {
+    fn rys_root1_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64, pie4: f64) {
         if UNIT_POS == 0 {
-            rys_root1(x, u_out, w_out);
+            rys_root1::<f64>(x, u_out, w_out, pie4);
         }
     }
 
     #[cube(launch)]
-    fn rys_root2_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64) {
+    fn rys_root2_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64, pie4: f64) {
         if UNIT_POS == 0 {
-            rys_root2(x, u_out, w_out);
+            rys_root2::<f64>(x, u_out, w_out, pie4);
         }
     }
 
     #[cube(launch)]
-    fn rys_root3_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64) {
+    fn rys_root3_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64, pie4: f64) {
         if UNIT_POS == 0 {
-            rys_root3(x, u_out, w_out);
+            rys_root3::<f64>(x, u_out, w_out, pie4);
         }
     }
 
     #[cube(launch)]
-    fn rys_root4_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64) {
+    fn rys_root4_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64, pie4: f64) {
         if UNIT_POS == 0 {
-            rys_root4(x, u_out, w_out);
+            rys_root4::<f64>(x, u_out, w_out, pie4);
         }
     }
 
     #[cube(launch)]
-    fn rys_root5_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64) {
+    fn rys_root5_kernel(u_out: &mut Array<f64>, w_out: &mut Array<f64>, x: f64, pie4: f64) {
         if UNIT_POS == 0 {
-            rys_root5(x, u_out, w_out);
+            rys_root5::<f64>(x, u_out, w_out, pie4);
         }
     }
 
@@ -243,30 +243,35 @@ mod rys_cpu_tests {
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
+                PIE4,
             ),
             2 => rys_root2_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
+                PIE4,
             ),
             3 => rys_root3_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
+                PIE4,
             ),
             4 => rys_root4_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
+                PIE4,
             ),
             5 => rys_root5_kernel::launch::<CpuRuntime>(
                 &client, cube_count, cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
+                PIE4,
             ),
             _ => panic!("nroots={nroots} not supported in tests"),
         }
