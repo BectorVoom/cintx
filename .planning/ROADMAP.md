@@ -43,7 +43,7 @@
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
-| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 5/8 | In Progress (replan — K-Taylor port landed; scalar+gradient close pending) | - |
+| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 6/8 | In Progress (replan — scalar byte-identity closed; gradient + optional oracle pending) | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -241,7 +241,7 @@ Plans:
 - [x] 19-05-PLAN.md — K-Taylor port foundation: embed _sph_ine_tab (400×24) + _sph_ine_tab_order7 (400×8×8) as LE-f64 binary blobs via include_bytes! + bytemuck (D-14, roots_xw_data.rs precedent); xtask gen-ecp-tables subcommand extracting the tables from nr_ecp.c + a --check drift-gate (D-15); host-first port of ECPsph_ine_opt + ECPrad_part + type1_rad_part + type2_facs_rad (D-16). [ECP-01, ECP-02, ECP-04]
 
 **Wave 2 (replan) — scalar close**
-- [ ] 19-06-PLAN.md — Scalar close: replace the direct-quadrature compute_type1_pair/compute_type2_pair bodies with the K-Taylor recurrence; remove #[ignore] from the two scalar parity tests; iterate to atol=1e-12 byte-identity over the full Cu/LANL2DZ Cartesian product; flip oracle_covered=true on int1e_ecp_{cart,sph}. Closes ECP-01/02/03 + scalar half of ECP-04. [ECP-01, ECP-02, ECP-03, ECP-04] (depends 19-05)
+- [x] 19-06-PLAN.md — Scalar close: replace the direct-quadrature compute_type1_pair/compute_type2_pair bodies with the K-Taylor recurrence; remove #[ignore] from the two scalar parity tests; iterate to atol=1e-12 byte-identity over the full Cu/LANL2DZ Cartesian product; flip oracle_covered=true on int1e_ecp_{cart,sph}. Closes ECP-01/02/03 + scalar half of ECP-04. [ECP-01, ECP-02, ECP-03, ECP-04] (depends 19-05)
 
 **Wave 3 (replan) — gradient (supersedes halted 19-05)**
 - [ ] 19-07-PLAN.md — Gradient: port nr_ecp_deriv.c (_deriv1_cart, comp=3) for int1e_ecp_ipnuc_{cart,sph} on the K-Taylor foundation; F-order [axis, ao_j, ao_i] axis-slowest (D-11); vendor_ECPscalar_ipnuc_{cart,sph} wrappers; two ipnuc parity tests at atol=1e-12; flip oracle_covered=true on the two ipnuc rows. Closes ECP-05 + gradient half of ECP-04. [ECP-01, ECP-02, ECP-04, ECP-05] (depends 19-06)
