@@ -247,7 +247,7 @@ Plans:
 - [x] 19-07-PLAN.md — Gradient: port nr_ecp_deriv.c (_deriv1_cart, comp=3) for int1e_ecp_ipnuc_{cart,sph} on the K-Taylor foundation; F-order [axis, ao_j, ao_i] axis-slowest (D-11); vendor_ECPscalar_ipnuc_{cart,sph} wrappers; two ipnuc parity tests at atol=1e-12; flip oracle_covered=true on the two ipnuc rows. Closes ECP-05 + gradient half of ECP-04. [ECP-01, ECP-02, ECP-04, ECP-05] (depends 19-06)
 
 **Wave 4 (replan) — optional secondary oracle (supersedes 19-06)**
-- [ ] 19-08-PLAN.md — Optional non-blocking libecpint (Shaw & Hill, JCP 147 074108, 2017, MIT) secondary cross-check behind has_libecpint_oracle cfg (emitted only when CINTX_LIBECPINT_ORACLE=1); env-gated #[ignore] cross-check tests at informational atol≈1e-9 per D-02 REVISED. [ECP-04] (depends 19-06)
+- [x] 19-08-PLAN.md — Optional non-blocking libecpint (Shaw & Hill, JCP 147 074108, 2017, MIT) secondary cross-check behind has_libecpint_oracle cfg (emitted only when CINTX_LIBECPINT_ORACLE=1); env-gated #[ignore] cross-check tests at informational atol≈1e-9 per D-02 REVISED. [ECP-04] (depends 19-06)
 
 **Notes**:
   - Largest of the three issue #11 tasks — requires a new evaluator implementation, not just dispatch wiring.

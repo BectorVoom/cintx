@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 19 (int1e-ecp-type1-type2-evaluator) — EXECUTING
-Plan: 19-07 of 8 complete (scalar+gradient byte-identity, all 4 ECP rows oracle_covered); next 19-08 optional libecpint cross-check
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-07-SUMMARY.md`
+Plan: 19-08 of 8 complete (all plans done); phase-level verification pending
+Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-08-SUMMARY.md`
 
 ## Performance Metrics
 
