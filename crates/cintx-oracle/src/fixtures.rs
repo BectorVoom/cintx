@@ -379,6 +379,29 @@ const ORACLE_COMPARE_APPROVED_PROFILES: &[&str] = &[
 ];
 pub const PHASE4_ORACLE_FAMILIES: &[&str] = &["1e", "2e", "2c2e", "3c1e", "3c2e", "4c1e"];
 pub const PHASE2_FAMILIES: &[&str] = &["1e", "2e", "2c2e", "3c1e", "3c2e"];
+
+/// Canonical families that are oracle-covered, but verified by a dedicated harness
+/// rather than the generic raw-eval/legacy-wrapper parity matrix built here.
+///
+/// `ecp` is structurally incompatible with the generic `RawApiId` raw-eval path: it
+/// requires a separate `ecpbas` slab plus the family-level `launch_ecp` dispatcher, so
+/// it has no `RawApiId` mapping in `compare::raw_api_for_symbol`. Its byte-identity
+/// against vendored PySCF `nr_ecp` (atol=1e-12) is fully verified in the dedicated
+/// harness `crates/cintx-oracle/tests/safe_api_ecp_parity.rs`. These entries therefore
+/// keep `oracle_covered=true` in the manifest lock, but are excluded from the generic
+/// representation matrix and its expected-symbol completeness check below.
+///
+/// Matched against `ManifestEntry::canonical_family` / the lock's `canonical_family`
+/// field (NOT `id.family`, which is `"1e"` for ECP). Add future dedicated-harness
+/// canonical families here so both the matrix source and the expected-symbol set stay
+/// consistent from a single source of truth.
+const DEDICATED_ORACLE_FAMILIES: &[&str] = &["ecp"];
+
+/// True when `canonical_family` is verified by a dedicated harness and must be excluded
+/// from the generic representation matrix and its completeness check.
+fn is_dedicated_oracle_family(canonical_family: &str) -> bool {
+    DEDICATED_ORACLE_FAMILIES.contains(&canonical_family)
+}
 pub const COMPILED_MANIFEST_LOCK_JSON: &str =
     include_str!("../../cintx-ops/generated/compiled_manifest.lock.json");
 const BASE_PROFILE: &str = "base";
@@ -693,6 +716,18 @@ fn manifest_lock_symbol_metadata() -> Result<BTreeMap<String, LockSymbolMetadata
         if !is_phase4_oracle_family(family) {
             continue;
         }
+        // ECP and other dedicated-harness families are oracle-covered but verified
+        // outside the generic raw-eval matrix; exclude them from the expected-symbol
+        // set so the matrix completeness check stays consistent (see
+        // DEDICATED_ORACLE_FAMILIES). Matched on `canonical_family`, since ECP's
+        // `id.family` is `"1e"`.
+        let canonical_family = entry
+            .get("canonical_family")
+            .and_then(Value::as_str)
+            .unwrap_or(family);
+        if is_dedicated_oracle_family(canonical_family) {
+            continue;
+        }
         let Some(symbol) = id.get("symbol").and_then(Value::as_str) else {
             continue;
         };
@@ -747,6 +782,14 @@ fn phase4_operator_entries(
             continue;
         }
         if !is_phase4_oracle_family(entry.family_name) {
+            continue;
+        }
+        // ECP and other dedicated-harness families are oracle-covered but verified
+        // outside the generic raw-eval matrix (see DEDICATED_ORACLE_FAMILIES); skip
+        // them here so they never enter the representation matrix. This must precede
+        // the metadata lookup below, since `manifest_lock_symbol_metadata` already
+        // omits these symbols.
+        if is_dedicated_oracle_family(entry.canonical_family) {
             continue;
         }
         let Some(lock_entry) = metadata.get(entry.symbol_name) else {
