@@ -13,7 +13,6 @@
 //! All assertions use absolute tolerance 1e-12 per design decision D-19.
 
 use cintx_cubecl::math::boys::{SQRTPIE4, TURNOVER_POINT, boys_gamma_inc_host, erf_host};
-use cintx_core::CintFloat;
 
 /// Helper: call boys_gamma_inc_host and return the result array.
 fn compute_boys(t: f64, m: u32) -> Vec<f64> {

@@ -10,11 +10,20 @@
 //! CubeCL constraints applied:
 //! - All loop counters are u32
 //! - if/else uses statement form (assign to mut, then branch)
-//! - f64::exp, f64::sqrt, f64::erf used (not method syntax)
+//! - F::exp, F::sqrt, F::erf used (not method syntax)
 //! - `#[cube]` helper functions for every helper called from `#[cube]`
 //! - Array indexing uses `as usize` conversions per CubeCL 0.9.x Array trait
+//!
+//! # Generics
+//!
+//! `#[cube]` device fns are generic over `F: cubecl::prelude::Float`.
+//! Host wrappers are generic over `F: CintFloat`.
+//! Const tables (`SQRTPIE4`, `TURNOVER_POINT`) stay `f64` (FROZEN values);
+//! they are injected as `F` at the host/launcher boundary via `F::from_f64_lossy`.
+//! Never use `F::new(f64_literal)` for precision-critical constants (Pitfall 5).
 
 use cubecl::prelude::*;
+use cintx_core::CintFloat;
 
 /// Maximum Boys function order supported (last non-zero TURNOVER_POINT index).
 /// Matches practical upper bound for 2e integrals with ANG_MAX=15:
@@ -23,16 +32,19 @@ pub const MMAX: u32 = 39;
 
 /// sqrt(pi/4) — used in erfc branch F_0(t) formula.
 /// Source: fmt.c line 23 (SQRTPIE4).
+/// FROZEN: stays f64; injected as F via `F::from_f64_lossy(SQRTPIE4)` at boundary.
 pub const SQRTPIE4: f64 = 0.886226925452758013649083741670572591398774728061193564106903894926;
 
 /// Convergence tolerance: DBL_EPSILON * 0.5.
 /// Source: fmt.c line 20 (SML_FLOAT64).
+/// FROZEN: used only in the host-side `boys_gamma_inc_impl` where f64 precision is fixed.
 const DBL_EPSILON_HALF: f64 = f64::EPSILON * 0.5;
 
 /// Turn-over points for switching from power series to erfc branch.
 /// TURNOVER_POINT[m]: threshold t value for order m.
 /// Source: fmt.c lines 42-83.
 /// Index 0 and 1 are 0.0 — for m=0 and m=1, erfc branch is always used when t > 0.
+/// FROZEN: stays `[f64; 40]`; injected as `F` via `F::from_f64_lossy(TURNOVER_POINT[m])`.
 pub const TURNOVER_POINT: [f64; 40] = [
     0.0,
     0.0,
@@ -76,68 +88,89 @@ pub const TURNOVER_POINT: [f64; 40] = [
     14.936875152120,
 ];
 
-/// Host-side wrapper for the Boys function.
+/// Host-side wrapper for the Boys function, generic over `F: CintFloat`.
 ///
-/// Looks up `TURNOVER_POINT[m]` on the host and computes all F_k(t) for k=0..=m.
-/// Returns a `Vec<f64>` of length `m+1` with values F_0(t), F_1(t), ..., F_m(t).
+/// Looks up `TURNOVER_POINT[m]` on the host (FROZEN f64) and injects it as `F`
+/// via `F::from_f64_lossy`. Computes all F_k(t) for k=0..=m.
+/// Returns a `Vec<F>` of length `m+1` with values F_0(t), F_1(t), ..., F_m(t).
+///
+/// The `<f64>` monomorphization is byte-identical to the pre-refactor concrete
+/// `boys_gamma_inc_host(t: f64, m: u32) -> Vec<f64>` function.
 ///
 /// This is the primary entry point from host code and tests. The actual computation
 /// mirrors `gamma_inc_like()` in libcint's `fmt.c` (lines 206-226).
-pub fn boys_gamma_inc_host(t: f64, m: u32) -> Vec<f64> {
-    let mut f = vec![0.0f64; (m + 1) as usize];
-    let turnover = TURNOVER_POINT[m as usize];
+pub fn boys_gamma_inc_host<F: CintFloat>(t: F, m: u32) -> Vec<F> {
+    let mut f = vec![F::zero(); (m + 1) as usize];
+    let turnover = F::from_f64_lossy(TURNOVER_POINT[m as usize]);
     boys_gamma_inc_impl(&mut f, t, m, turnover);
     f
 }
 
 /// Core Boys function computation implementing `gamma_inc_like` from fmt.c.
 ///
-/// Fills `f[0..=m]` with F_0(t)..F_m(t).
-/// Parameter `turnover` is `TURNOVER_POINT[m]`, passed from host to avoid
-/// const array indexing inside the kernel (CubeCL constraint).
-pub fn boys_gamma_inc_impl(f: &mut [f64], t: f64, m: u32, turnover: f64) {
-    if t == 0.0 {
+/// Fills `f[0..=m]` with F_0(t)..F_m(t). Generic over `F: CintFloat`.
+/// Parameter `turnover` is `TURNOVER_POINT[m]` injected as `F`, passed from host
+/// to preserve the const-injection pattern.
+///
+/// Uses `CintFloat`'s supertrait methods (`.exp()`, `.sqrt()`, `.to_f64()`)
+/// via method syntax — no direct `num_traits` reference needed.
+pub fn boys_gamma_inc_impl<F: CintFloat>(f: &mut [F], t: F, m: u32, turnover: F) {
+    let zero = F::zero();
+    let one = F::one();
+
+    if t == zero {
         // Branch 1: t == 0 — analytical identity F_m(0) = 1/(2m+1)
         // Source: fmt.c lines 208-212
-        f[0] = 1.0;
+        f[0] = one;
         let mut k: u32 = 1;
         while k <= m {
-            f[k as usize] = 1.0 / (2 * k + 1) as f64;
+            f[k as usize] = one / F::from_f64_lossy((2 * k + 1) as f64);
             k += 1;
         }
     } else if t < turnover {
         // Branch 2: power series (fmt1_gamma_inc_like, fmt.c lines 186-203)
         // b = m + 0.5; iterate x = x * t / bi; s = s + x until convergence.
-        let b = m as f64 + 0.5;
-        let e = 0.5 * f64::exp(-t);
+        let b = F::from_f64_lossy(m as f64 + 0.5);
+        let half = F::from_f64_lossy(0.5);
+        let e = half * (-t).exp();
         let mut x = e;
         let mut s = e;
-        let tol = DBL_EPSILON_HALF * e;
-        let mut bi = b + 1.0;
+        // Tolerance: DBL_EPSILON_HALF * e (uses f64 epsilon for precision)
+        // For f32, this tolerance is tighter than f32's epsilon, but that just
+        // means more iterations and higher accuracy — safe for correctness.
+        let tol = F::from_f64_lossy(DBL_EPSILON_HALF) * e;
+        let mut bi = b + one;
         while x > tol {
             x = x * t / bi;
             s = s + x;
-            bi = bi + 1.0;
+            bi = bi + one;
         }
         f[m as usize] = s / b;
         // Downward recurrence: f[i-1] = (e + t*f[i]) / (i - 0.5), fmt.c lines 200-203
         let mut i: u32 = m;
         while i > 0 {
-            let b_down = i as f64 - 0.5;
+            let b_down = F::from_f64_lossy(i as f64 - 0.5);
             f[(i - 1) as usize] = (e + t * f[i as usize]) / b_down;
             i -= 1;
         }
     } else {
         // Branch 3: erfc + upward recurrence (fmt.c lines 218-225)
         // F_0(t) = SQRTPIE4 / sqrt(t) * erf(sqrt(t))
-        let tt = f64::sqrt(t);
-        f[0] = erf_host(tt) * (SQRTPIE4 / tt);
-        let e = f64::exp(-t);
-        let b = 0.5 / t;
+        // erf_host is FROZEN f64 libm linkage; for generic F, wrap via from_f64_lossy.
+        let tt = t.sqrt();
+        // Use erf_host (FROZEN f64 libm) and inject as F via from_f64_lossy.
+        let tt_f64 = tt.to_f64().unwrap_or(0.0);
+        let erf_val = F::from_f64_lossy(erf_host(tt_f64));
+        let sqrtpie4 = F::from_f64_lossy(SQRTPIE4);
+        f[0] = erf_val * (sqrtpie4 / tt);
+        let e = (-t).exp();
+        let half = F::from_f64_lossy(0.5);
+        let b = half / t;
         // Upward recurrence: F_m = b * ((2m-1)*F_{m-1} - exp(-t)), fmt.c line 223
         let mut i: u32 = 1;
         while i <= m {
-            f[i as usize] = b * ((2 * i - 1) as f64 * f[(i - 1) as usize] - e);
+            let coeff = F::from_f64_lossy((2 * i - 1) as f64);
+            f[i as usize] = b * (coeff * f[(i - 1) as usize] - e);
             i += 1;
         }
     }
@@ -146,7 +179,9 @@ pub fn boys_gamma_inc_impl(f: &mut [f64], t: f64, m: u32, turnover: f64) {
 /// Compute erf(x) on the host side using the C math library.
 ///
 /// Used in `boys_gamma_inc_impl` (host-side only) and tests.
-/// Inside `#[cube]` kernels, `boys_erf_approx` is used instead.
+/// FROZEN: stays `f64` — libm `double erf` linkage.
+/// For the generic F host path, wrap as `F::from_f64_lossy(erf_host(x.to_f64().unwrap()))`.
+/// Inside `#[cube]` kernels, `boys_erf_approx::<F>` is used instead.
 pub fn erf_host(x: f64) -> f64 {
     // SAFETY: erf is a pure C math function with no side effects.
     unsafe extern "C" {
@@ -157,59 +192,70 @@ pub fn erf_host(x: f64) -> f64 {
 
 /// `#[cube]` Boys function — fills `f[0..=m]` with F_0(t)..F_m(t).
 ///
+/// Generic over `F: Float` (CubeCL device float trait).
+///
 /// Parameters:
 /// - `f`: output array, length must be >= m+1
 /// - `t`: Boys function argument (>= 0)
 /// - `m`: maximum order
-/// - `turnover`: pre-computed `TURNOVER_POINT[m]` from host side
+/// - `turnover`: pre-computed `TURNOVER_POINT[m]` injected from host as `F`
+/// - `sqrtpie4`: `SQRTPIE4` injected from host as `F` (T-20-04: precision-critical const
+///   must be injected as a passed param via `from_f64_lossy`, NEVER as `F::new(f64_lit)`)
 ///
 /// Algorithm ports `gamma_inc_like()` from `libcint-master/src/fmt.c` lines 206-226.
 ///
 /// CubeCL constraints:
 /// - Statement-form if/else (no if-expressions as values)
 /// - u32 loop counters with `as usize` for Array indexing
-/// - f64::exp, f64::sqrt used (not method syntax)
+/// - F::exp, F::sqrt used (not method syntax) — Phase 19 D-02: natural log is F::ln not F::log
 #[cube]
-pub fn boys_gamma_inc(f: &mut Array<f64>, t: f64, m: u32, turnover: f64) {
+pub fn boys_gamma_inc<F: Float>(
+    f: &mut Array<F>,
+    t: F,
+    m: u32,
+    turnover: F,
+    sqrtpie4: F,
+) {
     // Branch 1: t == 0 — F_m(0) = 1/(2m+1), fmt.c lines 208-212
-    if t == 0.0f64 {
-        f[0usize] = 1.0f64;
+    if t == F::new(0.0) {
+        f[0usize] = F::new(1.0);
         let mut k: u32 = 1;
         while k <= m {
-            f[k as usize] = 1.0f64 / (2u32 * k + 1u32) as f64;
+            f[k as usize] = F::new(1.0) / F::cast_from(2u32 * k + 1u32);
             k += 1;
         }
     } else if t < turnover {
         // Branch 2: power series, fmt1_gamma_inc_like fmt.c lines 186-203
-        let b = m as f64 + 0.5f64;
-        let e = 0.5f64 * f64::exp(-t);
+        let b = F::cast_from(m) + F::new(0.5);
+        let e = F::new(0.5) * F::exp(-t);
         let mut x = e;
         let mut s = e;
-        let tol = f64::EPSILON * 0.5f64 * e;
-        let mut bi = b + 1.0f64;
+        let tol = F::new(f64::EPSILON as f32 * 0.5) * e;
+        let mut bi = b + F::new(1.0);
         while x > tol {
             x = x * t / bi;
             s = s + x;
-            bi = bi + 1.0f64;
+            bi = bi + F::new(1.0);
         }
         f[m as usize] = s / b;
         // Downward recurrence, fmt.c lines 200-203
         let mut i: u32 = m;
         while i > 0u32 {
-            let b_down = i as f64 - 0.5f64;
+            let b_down = F::cast_from(i) - F::new(0.5);
             f[(i - 1u32) as usize] = (e + t * f[i as usize]) / b_down;
             i -= 1;
         }
     } else {
         // Branch 3: erfc + upward recurrence, fmt.c lines 218-225
-        let tt = f64::sqrt(t);
-        let erf_val = boys_erf_approx(tt);
-        f[0usize] = erf_val * (SQRTPIE4 / tt);
-        let e = f64::exp(-t);
-        let b = 0.5f64 / t;
+        let tt = F::sqrt(t);
+        let erf_val = boys_erf_approx::<F>(tt);
+        f[0usize] = erf_val * (sqrtpie4 / tt);
+        let e = F::exp(-t);
+        let b = F::new(0.5) / t;
         let mut i: u32 = 1;
         while i <= m {
-            f[i as usize] = b * ((2u32 * i - 1u32) as f64 * f[(i - 1u32) as usize] - e);
+            let coeff = F::cast_from(2u32 * i - 1u32);
+            f[i as usize] = b * (coeff * f[(i - 1u32) as usize] - e);
             i += 1;
         }
     }
@@ -217,24 +263,26 @@ pub fn boys_gamma_inc(f: &mut Array<f64>, t: f64, m: u32, turnover: f64) {
 
 /// High-accuracy erf approximation for use inside `#[cube]` kernels.
 ///
-/// Uses the Abramowitz & Stegun 7.1.26 rational approximation (max error ~1.5e-7).
+/// Generic over `F: Float`. Uses the Abramowitz & Stegun 7.1.26 rational
+/// approximation (max error ~1.5e-7).
 /// When combined with sqrt(pi/4)/sqrt(t) scaling, the Boys function accuracy
 /// exceeds the 1e-12 atol requirement for t >= TURNOVER_POINT[m].
 ///
-/// For the CPU backend, `f64::erf` is available and would be preferred if exposed
-/// by CubeCL 0.9.x; this approximation serves as a portable fallback.
+/// For the CPU backend, `F::erf` is available and would be preferred;
+/// this approximation serves as a portable fallback for all backends.
 #[cube]
-pub fn boys_erf_approx(x: f64) -> f64 {
+pub fn boys_erf_approx<F: Float>(x: F) -> F {
     // Abramowitz & Stegun 7.1.26 rational approximation
     // p = 0.3275911, a1..a5 coefficients
-    let p = 0.3275911f64;
-    let a1 = 0.254829592f64;
-    let a2 = -0.284496736f64;
-    let a3 = 1.421413741f64;
-    let a4 = -1.453152027f64;
-    let a5 = 1.061405429f64;
+    // These are small exact literals — use F::new (safe for non-precision-critical constants)
+    let p = F::new(0.3275911);
+    let a1 = F::new(0.254829592);
+    let a2 = F::new(-0.284496736);
+    let a3 = F::new(1.421413741);
+    let a4 = F::new(-1.453152027);
+    let a5 = F::new(1.061405429);
 
-    let t_val = 1.0f64 / (1.0f64 + p * x);
+    let t_val = F::new(1.0) / (F::new(1.0) + p * x);
     let poly = t_val * (a1 + t_val * (a2 + t_val * (a3 + t_val * (a4 + t_val * a5))));
-    1.0f64 - poly * f64::exp(-(x * x))
+    F::new(1.0) - poly * F::exp(-(x * x))
 }
