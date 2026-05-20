@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
 status: Phase 19 blocked — replan needed (ECP byte-identity / K-Taylor port)
-stopped_at: Halted 19-05 execution pending K-Taylor port plan
-last_updated: "2026-05-20T00:00:00.000Z"
+stopped_at: Phase 19 K-Taylor port context updated (D-13..D-17); ready to replan 19-05/19-06
+last_updated: "2026-05-20T08:06:46.439Z"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -284,6 +284,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-20
-Stopped at: Halted 19-05 execution — replan needed (ECP byte-identity blocked on K-Taylor port; see Blockers/Concerns)
-Resume file: None
+Last session: 2026-05-20T08:06:46.435Z
+Stopped at: Phase 19 K-Taylor port context updated (D-13..D-17); ready to replan 19-05/19-06
+Resume file: .planning/phases/19-int1e-ecp-type1-type2-evaluator/19-CONTEXT.md
