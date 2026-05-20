@@ -1,7 +1,8 @@
 # Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator - Context
 
 **Gathered:** 2026-05-12
-**Status:** Ready for planning
+**Updated:** 2026-05-20 — K-Taylor byte-identity port replan (plans 19-01..19-04 executed; 19-05 halted)
+**Status:** Replan in progress — K-Taylor port decisions added below (D-13..D-17); D-01..D-12 unchanged
 
 <domain>
 ## Phase Boundary
@@ -39,6 +40,23 @@ is a separate sparsely-documented project not recommended as an oracle.
 The new Cu/LANL2DZ fixture in `crates/cintx-oracle/src/fixtures.rs::build_cu_lanl2dz()`
 is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
 "already present in the oracle test corpus" claim.
+
+**Replan note (2026-05-20):** Plans 19-01..19-04 executed (typed surface,
+math primitives, vendor FFI, `launch_ecp` host launcher + parity harness).
+Plan 19-04 shipped the scalar kernel as a *direct-quadrature* approximation
+(Gauss-Hermite + Gauss-Chebyshev + the generic modified spherical Bessel
+`i_l` from 19-02) — a real-but-wrong signal that does **not** reach the
+`atol=1e-12, rtol=0.0` byte-identity gate, so the two scalar parity tests are
+`#[ignore]`d and the manifest rows stay `oracle_covered=false`. Plan 19-05
+(gradient) was halted because gradient byte-identity (`nr_ecp_deriv.c`) builds
+on the same missing foundation. **Root cause:** byte-identity vs PySCF nr_ecp
+requires replicating PySCF's *exact* radial machinery — the precomputed
+K-Taylor tables (`_sph_ine_tab` 400×24 and `_sph_ine_tab_order7` 400×8×8 in
+`vendor/pyscf-nr-ecp/src/nr_ecp.c`) plus `ECPrad_part`/`ECPrad_block` and the
+per-`(li,lj,l_c)` angular splice — not a mathematically-equivalent quadrature.
+The K-Taylor port decisions below (D-13..D-17) supersede D-07's
+"direct-quadrature" framing while keeping D-07's `#[cube]`+`*_host()` paired
+math-module structure.
 
 </domain>
 
@@ -154,7 +172,72 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
   `cintx-rs::api`: "ECP spinor outputs are not oracle-gated in Phase 19". Add as a
   deferred idea.
 
+### K-Taylor byte-identity port (replan — added 2026-05-20)
+- **D-13 (FIDELITY — locked direction; supersedes D-07's "direct-quadrature"):**
+  Phase 19 **commits to exact byte-identity vs PySCF nr_ecp at `atol=1e-12,
+  rtol=0.0`** for the four scalar+gradient symbols — the Phase 15 unified
+  tolerance and the project's core value. This is achieved by porting PySCF's
+  exact radial recurrence, **not** by relaxing the ECP tolerance and **not** by
+  shipping ECP "compiled-but-unverified" (the D-12 spinor escape hatch does NOT
+  extend to the cart/sph scalar+gradient symbols). The byte-identity gate runs on
+  the CPU `*_host()` path vs the vendored C (`cargo test --features cpu --test
+  safe_api_ecp_parity`), so 1e-12 is achievable when the host port replicates
+  PySCF's evaluation order exactly. *(User did not separately deliberate this in
+  the 2026-05-20 session — it is the implied direction of choosing to replan the
+  port rather than relax the gate. Flagged so it can be revisited if relaxing the
+  ECP tolerance is ever preferred.)*
+- **D-14 (TABLE EMBEDDING — USER DECISION 2026-05-20):** The two K-Taylor tables
+  (`_sph_ine_tab` 400×24 and `_sph_ine_tab_order7` 400×8×8, ~35k doubles) ship as
+  a **binary blob via `include_bytes!` + `bytemuck::cast_slice`**, mirroring
+  `crates/cintx-cubecl/src/math/roots_xw_data.rs` exactly (little-endian f64
+  `.bin` wrapped in `AlignedBytes<{N*8}>`). **Not** generated Rust literal arrays.
+  **Mandatory constraint (not a choice):** embed PySCF's *exact* literal values and
+  use its interpolation — `ECPrad_part` Taylor-expands `_sph_ine_tab` around
+  `z0 = entry*K_TAB_INTERVAL + K_TAB_INTERVAL/2`; recomputing the table from
+  cintx's own `bessel.rs` series would diverge and break byte-identity. The
+  K-Taylor *constants* already exist in `bessel.rs` (`K_TAB_ENTRIES=400`,
+  `K_TAB_COL=24`, `K_TAB_INTERVAL=0.04`, `K_TAYLOR_MAX=7`, `X_SMALL_THRESHOLD=1e-7`,
+  `X_LARGE_THRESHOLD=16.0`); only the table *data* + the `ECPrad_part`/`ECPrad_block`
+  evaluators are missing.
+- **D-15 (EXTRACTION & SYNC — USER DECISION 2026-05-20):** Add an **xtask
+  subcommand** (e.g. `gen-ecp-tables`) that parses the `_sph_ine_tab` /
+  `_sph_ine_tab_order7` literal arrays directly out of
+  `vendor/pyscf-nr-ecp/src/nr_ecp.c` and emits the `.bin`(s), **plus a CI/test
+  drift-check** that re-extracts and fails if the committed `.bin` no longer
+  matches the vendored source. This is deliberately **stronger** than the Rys
+  precedent (the Rys `roots_xw_*.bin` are checked-in artifacts with no in-repo
+  regenerator) and mirrors the project's manifest-lock discipline. Planner picks:
+  exact subcommand name, whether the gate is an xtask invocation or a
+  `#[cfg(has_vendor_pyscf_ecp)]` unit test in the existing oracle matrix, and the
+  comparison granularity (regenerated-blob byte-compare is the simplest sufficient
+  form; element-wise re-parse is the alternative).
+
 ### Claude's Discretion
+- **D-16 — GPU `#[cube]` vs host-first for `ECPrad_part`/`ECPrad_block`
+  (user delegated 2026-05-20; the user chose NOT to discuss this area).**
+  Default: **host-first.** Port `ECPrad_part`/`ECPrad_block` (and the K-Taylor
+  table consumers) as `*_host()` Rust to close the byte-identity gate — which
+  runs CPU-vs-C on `--features cpu` — following the existing host-side
+  `kernels/ecp.rs::launch_ecp` launcher; then add the `#[cube]` GPU counterpart
+  using the `bessel.rs` paired `#[cube]`+`*_host()` pattern (host-side branching
+  to dodge the Phase 8 P02 `cond_br` MLIR limit). If the `#[cube]` half cannot
+  land cleanly this phase, defer it (see Deferred Ideas). **Tension to honor:**
+  CLAUDE.md mandates "CubeCL is the primary compute backend; host CPU work stays
+  limited to planning, validation, marshaling, and test/oracle glue" — a
+  host-only ECP kernel is a *documented deviation*, not the intended end state.
+  Researcher should assess `#[cube]` feasibility for the recurrence's
+  cache-reuse + data-dependent control flow before the planner commits.
+- **D-17 — Re-sequencing of 19-05/19-06 (user delegated 2026-05-20).**
+  Default, per the halt commit's "add an explicit port plan before re-sequencing":
+  **(1)** a standalone **K-Taylor port plan** (tables blob per D-14 + extractor /
+  drift-check xtask per D-15 + `ECPrad_part`/`ECPrad_block` host port) that both
+  arms build on; **(2)** **scalar close** — replace the direct-quadrature
+  `compute_type1_pair`/`compute_type2_pair` bodies, remove `#[ignore]` from
+  `crates/cintx-oracle/tests/safe_api_ecp_parity.rs`, flip the two scalar manifest
+  rows to `oracle_covered=true`; **(3)** **gradient** — the re-done 19-05
+  (`int1e_ecp_ipnuc_{cart,sph}` porting `nr_ecp_deriv.c`); **(4)** optional
+  **libecpint secondary** (the existing 19-06, D-02). Planner decides exact plan
+  boundaries, numbering, and whether (1)+(2) fold into one plan.
 - **Exact upstream libcint ECP source set to vendor (D-01).** Likely
   `libcint-master/src/ecp.c` + any headers it transitively needs. Researcher
   enumerates the full file list from upstream libcint 6.1.3 tree and confirms
@@ -305,6 +388,53 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
   from vendored sources): `ECPscalar_sph`, `ECPscalar_cart`,
   `ECPscalar_ipnuc_sph`, `ECPscalar_ipnuc_cart` (or whatever the vendored
   headers actually declare — these are illustrative; confirm during execution).
+
+### K-Taylor port — exact source locations (2026-05-20 replan, D-13..D-17)
+- `vendor/pyscf-nr-ecp/src/nr_ecp.c` — the byte-identity source. Concrete spans:
+  - line **30**: `static double _sph_ine_tab[] = { // 400x24 }` — the
+    `K_TAB_ENTRIES × K_TAB_COL` table (D-14 blob source).
+  - line **434**: `static double _sph_ine_tab_order7[] = { // 400x8x8 }`
+    ("expand ECPsph_ine_opt up to order 7"; D-14 second blob source).
+  - line **4870**: `int ECPrad_part(...)` — radial-part evaluation kernel to
+    port (D-16). Reads `_sph_ine_tab_order7` at ~4703 and `_sph_ine_tab` at ~4814
+    via `entry = floor(z/K_TAB_INTERVAL)` interpolation around
+    `z0 = entry*K_TAB_INTERVAL + K_TAB_INTERVAL/2`.
+  - `ECPrad_block` + the per-`(li,lj,l_c)` angular splice (callers at ~5441,
+    ~5656, ~5910) — the scalar Type-1/Type-2 evaluation around it.
+- `vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c` (1007 lines) — gradient port source for
+  the re-done 19-05 (`int1e_ecp_ipnuc_{cart,sph}`); builds on the same
+  `ECPrad_part`/`ECPrad_block` foundation (D-17 step 3).
+- `vendor/pyscf-nr-ecp/include/gto/nr_ecp.h` lines **20-22** — `K_TAB_COL 24`
+  (`>= 7*2+1+K_TAYLOR_MAX`), `K_TAB_ENTRIES 400`, `K_TAB_INTERVAL (16./400)`. The
+  source of truth for the constants already mirrored in `bessel.rs`.
+- `crates/cintx-cubecl/src/math/roots_xw_data.rs` (+ `roots_xw_x.bin`,
+  `roots_xw_w.bin`) — the **exact embedding precedent for D-14**: `AlignedBytes<{N*8}>`
+  + `include_bytes!` + `bytemuck::cast_slice` over a 1,783,600-element f64 table.
+  The new `math/ecp_k_taylor_data.rs` (or sibling) follows this verbatim.
+- `crates/cintx-cubecl/src/math/bessel.rs` lines **82-114** — K-Taylor constants
+  already declared (`K_TAYLOR_MAX`, `K_TAB_ENTRIES`, `K_TAB_COL`, `K_TAB_INTERVAL`,
+  thresholds); `modified_spherical_bessel_in{,_host}` is the *generic* `i_l` (NOT
+  the K-Taylor-table evaluator). The port adds the table data + `ECPrad_part`-style
+  evaluator, it does not reuse the series form for the gate (D-14 constraint).
+- `crates/cintx-cubecl/src/kernels/ecp.rs` — current host-side `launch_ecp` with the
+  direct-quadrature `compute_type1_pair` (line ~145, Gauss-Hermite) /
+  `compute_type2_pair` (line ~273, Gauss-Chebyshev + Bessel) bodies that D-13/D-17
+  step 2 replace. Comments at lines ~69-82 already document the deferred K-Taylor
+  port surface.
+- `xtask/src/main.rs` (Command dispatch ~line 69) — where the D-15 `gen-ecp-tables`
+  subcommand registers, alongside `manifest-audit` / `oracle-covered-update`.
+- `crates/cintx-oracle/tests/safe_api_ecp_parity.rs` — the `#[ignore]`d scalar
+  parity tests (D-17 step 2 removes the `#[ignore]`); `vendor_ECPscalar_*` FFI
+  wrappers are already wired and ready to use as the primary gate.
+
+### Execution evidence (read for replan grounding, not re-implementation)
+- `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-04-SUMMARY.md` — records
+  the direct-quadrature scope-trade, the "Plan 04b" deferral, the deviation log
+  (np_helper shim `NPdset0`/`MAX`/`MIN` corrections), and the Cu/LANL2DZ fixture
+  at the minimum 8-AO-shell coverage. The authoritative blocker write-up.
+- `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-05-PLAN.md` — the halted
+  gradient plan; its F-order `[axis, ao_j, ao_i]` layout + transpose-convention
+  notes carry forward into the re-done gradient plan.
 
 ### Existing parity test patterns
 - `crates/cintx-oracle/tests/safe_api_arity2_parity.rs` (Phase 17 output) — direct
@@ -513,6 +643,13 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
 <deferred>
 ## Deferred Ideas
 
+- **`#[cube]` GPU port of `ECPrad_part`/`ECPrad_block` (if D-16 host-first ships
+  without the GPU half this phase).** The byte-identity gate runs CPU-vs-C, so a
+  `*_host()` port closes the requirements; the `#[cube]` counterpart (paired
+  `bessel.rs` pattern, host-side branching for the recurrence's data-dependent
+  control flow) can follow. Tracks the CLAUDE.md "CubeCL is the primary compute
+  backend" constraint — keep the host-only state explicitly documented as a
+  deviation until the GPU path lands. Candidate for a Phase 19 follow-up or v1.4.
 - **`int1e_ecp_spinor` and `int1e_ecp_ipnuc_spinor` oracle parity sweep.** D-12
   defers spinor representation to a follow-up phase. Type-2 ECP is naturally
   spin-orbit-like; spinor IS the physically-right representation. Multi-component
@@ -560,3 +697,4 @@ is built fresh — no Cu basis or ECP fixture exists today despite the ROADMAP's
 
 *Phase: 19-int1e-ecp-type1-type2-evaluator*
 *Context gathered: 2026-05-12*
+*Updated 2026-05-20: K-Taylor byte-identity port replan — added D-13..D-17 (D-01..D-12 unchanged)*

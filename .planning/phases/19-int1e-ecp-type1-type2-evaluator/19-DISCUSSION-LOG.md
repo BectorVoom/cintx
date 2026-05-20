@@ -155,3 +155,74 @@ Captured in CONTEXT.md `<deferred>`. Cross-reference list:
 - Type-1 / Type-2 gradient helper extraction once other 1e gradient operators
   land.
 - Pre-screening for negligible ECP shell contributions.
+
+---
+
+# Session 2 — K-Taylor byte-identity port replan
+
+**Date:** 2026-05-20
+**Phase:** 19-int1e-ecp-type1-type2-evaluator
+**Trigger:** Plans 19-01..19-04 executed; 19-05 (gradient) halted on the K-Taylor
+byte-identity blocker (halt commit `b4e1e24`). Re-ran `/gsd:discuss-phase 19`,
+chose **Update it** — keep D-01..D-12, add port decisions.
+**Areas offered:** Byte-identity fidelity, Table embedding & provenance, GPU
+`#[cube]` vs host-first, Plan re-sequencing.
+**Areas the user chose to discuss:** Table embedding & provenance (only).
+
+---
+
+## Table embedding & provenance
+
+### Q1 — How should the two K-Taylor tables physically live in cintx-cubecl?
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Binary blob + `include_bytes!` | Mirror `roots_xw_data.rs`: LE f64 `.bin`, `AlignedBytes<{N*8}>`, `bytemuck::cast_slice`. Tiny diff, byte-identity by construction. | ✓ |
+| Generated Rust literal arrays | `static SPH_INE_TAB: [f64; 9600] = [...]`. Readable/grep-able but ~35k literals bloat the tree; needs exact f64 round-trip. | |
+| You decide | Planner picks. | |
+
+**User's choice:** Binary blob + `include_bytes!` (→ D-14).
+**Notes:** Locked constraint recorded regardless of option: byte-identity requires
+PySCF's *exact* literals + its interpolation; recomputing via cintx's `bessel.rs`
+series would diverge.
+
+### Q2 — How rigorous should extraction-and-sync be?
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Regenerable + CI drift-check | xtask (`gen-ecp-tables`) parses literals from vendored `nr_ecp.c`, emits `.bin`, + CI/test gate fails on drift. Stronger than Rys precedent; mirrors manifest-lock. | ✓ |
+| Checked-in blob + provenance note | One-time extraction, commit `.bin` + `.planning/notes/` provenance (source/span/sha256). Matches Rys precedent; no CI step. | |
+| Checked-in blob + test-time byte-match | Commit `.bin` + a unit test re-parses `nr_ecp.c` and asserts byte-match in the oracle matrix. | |
+
+**User's choice:** Regenerable + CI drift-check (→ D-15).
+**Notes:** Finding surfaced during discussion — the Rys `roots_xw_*.bin` are
+checked-in artifacts with **no** in-repo regenerator, and xtask has no
+table-generation subcommand today; D-15 deliberately adds that rigor.
+
+### Wrap-up
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Ready — write context | Write CONTEXT.md; record the 3 skipped areas as defaults. | ✓ |
+| More questions on embedding | Keep deep-diving placement / drift-check assertion / format. | |
+| Discuss a skipped area too | Pull fidelity / GPU-vs-host / sequencing back in. | |
+
+**User's choice:** Ready — write context.
+
+---
+
+## Claude's Discretion (skipped areas recorded as defaults)
+
+- **Byte-identity fidelity (D-13):** committed to exact `atol=1e-12` byte-identity
+  (not relaxed tolerance, not "compiled-but-unverified"); supersedes D-07's
+  direct-quadrature. Flagged as revisitable since not separately deliberated.
+- **GPU `#[cube]` vs host-first (D-16):** default host-first to close the
+  CPU-vs-C gate, `#[cube]` follows the `bessel.rs` paired pattern; host-only is a
+  documented CLAUDE.md deviation, not the end state.
+- **Plan re-sequencing (D-17):** default = standalone K-Taylor port plan → scalar
+  close → gradient (re-done 19-05) → optional libecpint (19-06). Planner sets
+  exact boundaries.
+
+## Deferred Ideas (new this session)
+
+- `#[cube]` GPU port of `ECPrad_part`/`ECPrad_block` if D-16 ships host-only first.
