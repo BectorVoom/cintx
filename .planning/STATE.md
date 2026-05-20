@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
-status: Ready to execute
-stopped_at: Completed 19-03-PLAN.md
-last_updated: "2026-05-12T10:53:00Z"
+status: Phase 19 blocked — replan needed (ECP byte-identity / K-Taylor port)
+stopped_at: Halted 19-05 execution pending K-Taylor port plan
+last_updated: "2026-05-20T00:00:00.000Z"
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 38
-  completed_plans: 35
-  percent: 92
+  completed_plans: 36
+  percent: 89
 ---
 
 # Project State
@@ -20,11 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 19 — int1e_ecp_* Type-1/Type-2 Evaluator (context gathered 2026-05-12; ready for /gsd:plan-phase 19)
+**Current focus:** Phase 19 — int1e-ecp-type1-type2-evaluator
 
 ## Current Position
 
-Phase: 19 — Wave 1 complete (Plans 01 + 02 + 03 landed 2026-05-12, 3/6 plans done); Plan 04 (Type-1+Type-2 kernel + parity) unblocked; Plan 05 (gradient parity) also unblocked
+Phase: 19 (int1e-ecp-type1-type2-evaluator) — EXECUTING
+Plan: 1 of 6
 Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-03-SUMMARY.md`
 
 ## Performance Metrics
@@ -273,7 +274,7 @@ None yet.
 
 ### Blockers/Concerns
 
-None currently.
+- [Phase 19, 2026-05-20] **ECP byte-identity blocked on missing K-Taylor port.** Plan 19-05 (gradient) execution was halted. Its must-haves require atol=1e-12 byte-identity vs PySCF `nr_ecp_deriv.c`, but the gradient reuses `compute_type1_pair`/`compute_type2_pair`, which Plan 04 shipped as a **direct-quadrature approximation** (tests `#[ignore]`'d, `oracle_covered=false` — see `19-04-SUMMARY.md`). Byte-identity for BOTH the scalar (Plan 04) and gradient (Plan 05) arms is gated on porting PySCF's K-Taylor machinery (the 400×24 `K_TAB` table + `ECPrad_part`/`ECPrad_block`), which is **not yet implemented** (only the `K_TAB_*` dimension constants exist in `bessel.rs`). **Decision: replan** — add an explicit K-Taylor port plan that makes the scalar arm byte-identical, then re-sequence 19-05 (gradient) and 19-06 on top of it. The interrupted 19-05 partial scaffolding is salvaged at `.planning/notes/19-05-partial-gradient-scaffolding.{patch,md}`.
 
 ### Quick Tasks Completed
 
@@ -283,6 +284,6 @@ None currently.
 
 ## Session Continuity
 
-Last session: 2026-05-12T10:53:00Z
-Stopped at: Completed 19-03-PLAN.md
+Last session: 2026-05-20
+Stopped at: Halted 19-05 execution — replan needed (ECP byte-identity blocked on K-Taylor port; see Blockers/Concerns)
 Resume file: None
