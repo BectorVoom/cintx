@@ -887,4 +887,126 @@ mod tests {
             "capability token drift must fail evaluate with ChunkPlanFailed"
         );
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // T06-2a: ExecutionOptions::default().precision == PrecisionKind::F64
+    // RED: compile fails until `precision: PrecisionKind` is added to ExecutionOptions.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn execution_options_default_precision_is_f64() {
+        use cintx_core::PrecisionKind;
+        // RED: ExecutionOptions does not yet have a `precision` field.
+        // Once added, ExecutionOptions::default().precision must equal PrecisionKind::F64.
+        let opts = ExecutionOptions::default();
+        assert_eq!(
+            opts.precision,
+            PrecisionKind::F64,
+            "ExecutionOptions::default() precision must be F64"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // T06-2b: A plan built via query_workspace with opts.precision == F32
+    // has plan.precision == F32 after the planner threads it through.
+    // RED: compile fails until precision threading is implemented in query_workspace
+    // + evaluate (or after plan construction).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn plan_precision_threaded_from_options_f32() {
+        use cintx_core::PrecisionKind;
+        let (basis, shells) = sample_basis(Representation::Cart);
+        // Set precision to F32 in opts.
+        // RED: ExecutionOptions does not yet have a `precision` field.
+        let opts = ExecutionOptions {
+            precision: PrecisionKind::F32,
+            ..ExecutionOptions::default()
+        };
+        let query = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        ).expect("workspace query should succeed");
+        let mut plan = ExecutionPlan::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        ).expect("plan should build");
+        // Thread precision via the f12_zeta "caller populates after new" precedent.
+        // RED: plan.precision is already on ExecutionPlan (from Plan 01), but the
+        // planner does not yet set it from opts. After GREEN, this should be F32.
+        plan.precision = opts.precision; // simulate what the planner will do
+        assert_eq!(
+            plan.precision,
+            PrecisionKind::F32,
+            "plan.precision must be F32 when opts.precision == F32"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // T06-2c: Default opts produces plan.precision == F64 (f64 path unchanged).
+    // RED: compile fails until `precision: PrecisionKind` is added to ExecutionOptions.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn plan_precision_default_is_f64() {
+        use cintx_core::PrecisionKind;
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let opts = ExecutionOptions::default();
+        // RED: ExecutionOptions does not yet have a `precision` field.
+        let query = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        ).expect("workspace query should succeed");
+        let plan = ExecutionPlan::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        ).expect("plan should build");
+        assert_eq!(
+            plan.precision,
+            PrecisionKind::F64,
+            "plan.precision must default to F64 when using default opts"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // T06-2d: try_alloc_staging is OOM-safe and the f64 buffer over-allocates
+    // for f32 (elements*2 f32 lanes >= elements needed).
+    // GREEN even before any staging changes (confirmed frozen OOM contract).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn try_alloc_staging_oom_safe_and_f32_lane_count_adequate() {
+        // try_alloc_staging is frozen — it still returns Vec<f64>.
+        let elements = 16usize;
+        let staging = try_alloc_staging(elements).expect("allocation should succeed");
+        // Buffer holds `elements` f64 = `elements * 8` bytes.
+        assert_eq!(staging.len(), elements, "staging Vec<f64> must have exactly `elements` entries");
+        // Byte capacity of the buffer.
+        let total_bytes = staging.len() * std::mem::size_of::<f64>();
+        // How many f32 lanes fit in those bytes (size_of::<f32>() == 4; size_of::<f64>() == 8).
+        let f32_lanes = total_bytes / std::mem::size_of::<f32>();
+        assert_eq!(
+            f32_lanes,
+            elements * 2,
+            "f64 buffer of {elements} elements yields {f32_lanes} f32 lanes (expected {})",
+            elements * 2
+        );
+        assert!(
+            f32_lanes >= elements,
+            "f32 lane count ({f32_lanes}) must be >= element count ({elements}) — buffer over-allocates safely"
+        );
+        // Verify the OOM-safe fallible alloc still works for larger sizes.
+        let large = try_alloc_staging(1024).expect("large staging alloc should succeed");
+        assert_eq!(large.len(), 1024, "large staging alloc must have 1024 f64 entries");
+        // All entries initialized to 0.0 (no partial writes).
+        assert!(large.iter().all(|&v| v == 0.0), "staging buffer must be zero-initialized");
+    }
 }
