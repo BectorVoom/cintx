@@ -350,7 +350,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 20-07-PLAN.md — Safe API: `evaluate::<F: CintFloat>()` method-level generic returning `TypedEvaluationOutput<F = f64>` / `IntegralTensor<F = f64>`; `evaluate()` stays byte-identical f64; `CintFloat::PRECISION` maps `F` -> runtime tag.
+- [x] 20-07-PLAN.md — Safe API: `evaluate::<F: CintFloat>()` method-level generic returning `TypedEvaluationOutput<F = f64>` / `IntegralTensor<F = f64>`; `evaluate()` stays byte-identical f64; `CintFloat::PRECISION` maps `F` -> runtime tag.
 
 **Wave 7** *(blocked on Wave 6)*
 
