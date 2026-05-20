@@ -21,7 +21,7 @@
 - [x] **Phase 17: Real-Integral Evaluation in Safe API (issue #11 Task 3)** - Replace the synthetic `(idx + 1)` / `((idx + 1) * 0.5)` pattern in `SessionRequest::fill_staging_values` with real `cintx-compat::raw::eval_raw` dispatch so the safe API delivers byte-identity values against libcint for every arity-2 intor it already accepts. No public API change. (completed 2026-05-11)
 - [ ] **Phase 18: SessionRequest Arity ≥3 Dispatch (issue #11 Task 2)** - Extend `SessionRequest::evaluate` to dispatch arity-3 and arity-4 shell tuples (covering `int2e_*`, `int3c1e*`, `int3c2e_*`, `int4c1e_*`) through the existing operator catalog with F-order AO layout matching libcint memory layout.
 - [x] **Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (issue #11 Task 1)** (completed 2026-05-20) - Implement Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and expose them through `SessionRequest` alongside ordinary one-electron operators. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate against libcint.
-- [ ] **Phase 20: Generic Float Precision (f64/f32 Switch)** - Parameterize the cintx compute path (CubeCL kernels, shared `#[cube]` math, staging buffers, safe-API outputs) over a generic `F: Float` so callers pick f64 (default, byte-identity) or f32 (loose-tolerance, unlocks non-`SHADER_F64` GPUs) via `evaluate::<F>()`. Raw compat `env`/`atm`/`bas` and the C ABI shim stay f64. Milestone-sized cross-cutting refactor (~3,396 f64 sites, 8 crates) planned as a single phase per operator decision 2026-05-20.
+- [x] **Phase 20: Generic Float Precision (f64/f32 Switch)** - Parameterize the cintx compute path (CubeCL kernels, shared `#[cube]` math, staging buffers, safe-API outputs) over a generic `F: Float` so callers pick f64 (default, byte-identity) or f32 (loose-tolerance, unlocks non-`SHADER_F64` GPUs) via `evaluate::<F>()`. Raw compat `env`/`atm`/`bas` and the C ABI shim stay f64. Milestone-sized cross-cutting refactor (~3,396 f64 sites, 8 crates) planned as a single phase per operator decision 2026-05-20. (completed 2026-05-20)
 
 ## Progress
 
@@ -354,4 +354,4 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 20-08-PLAN.md — Separate f32 oracle gate: `f32_tolerance_for_family` + F32 constants (parallel to the FROZEN f64 model) + `tests/f32_parity.rs` driving `evaluate::<f32>()` with empirically derived per-family rtol floors; the f64 byte-identity gate stays untouched.
+- [x] 20-08-PLAN.md — Separate f32 oracle gate: `f32_tolerance_for_family` + F32 constants (parallel to the FROZEN f64 model) + `tests/f32_parity.rs` driving `evaluate::<f32>()` with empirically derived per-family rtol floors; the f64 byte-identity gate stays untouched.
