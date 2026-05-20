@@ -445,4 +445,96 @@ mod tests {
         let nonzero = gz.iter().filter(|&&v| v.abs() > 1e-20).count();
         assert!(nonzero > 0, "p-p G-tensor gz should have non-zero entries");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test T04-2a: launch_center_2c2e_typed::<f64> writes a positive s-s 2c2e
+    // integral. RED: compile fails until launch_center_2c2e_typed exists.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_2c2e_precision_dispatch_f64_positive() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
+        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+
+        // int2c2e_cart is OPERATOR_DESCRIPTORS[12] per the compiled manifest
+        let op = OperatorId::new(12);
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+        let opts = ExecutionOptions::default();
+        let query = match query_workspace(op, Representation::Cart, &basis, shells.clone(), &opts) {
+            Ok(q) => q,
+            Err(_) => return, // skip if operator not available in this build
+        };
+        let mut plan = ExecutionPlan::new(op, Representation::Cart, &basis, shells, &query).unwrap();
+        plan.precision = PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 1];
+
+        // RED: compile fails until launch_center_2c2e_typed is defined.
+        let result = launch_center_2c2e_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(result.is_ok(), "f64 2c2e typed inner should succeed: {:?}", result);
+        assert!(staging[0].is_finite(), "2c2e f64 result should be finite");
+        assert!(staging[0] > 0.0, "s-s 2c2e integral should be positive");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test T04-2b: launch_center_2c2e_typed::<f32> writes a finite f32.
+    // RED: compile fails until launch_center_2c2e_typed exists.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_2c2e_precision_dispatch_f32_positive() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
+        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+
+        let op = OperatorId::new(12);
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+        let opts = ExecutionOptions::default();
+        let query = match query_workspace(op, Representation::Cart, &basis, shells.clone(), &opts) {
+            Ok(q) => q,
+            Err(_) => return,
+        };
+        let mut plan = ExecutionPlan::new(op, Representation::Cart, &basis, shells, &query).unwrap();
+        plan.precision = PrecisionKind::F32;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging_f32 = vec![0.0_f32; 1];
+
+        let result = launch_center_2c2e_typed::<f32>(&backend, &plan, &spec, &mut staging_f32);
+        assert!(result.is_ok(), "f32 2c2e typed inner should succeed: {:?}", result);
+        assert!(staging_f32[0].is_finite(), "2c2e f32 result should be finite");
+        assert!(staging_f32[0] > 0.0, "s-s 2c2e f32 integral should be positive");
+    }
 }
