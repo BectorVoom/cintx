@@ -2,7 +2,7 @@
 
 use crate::error::FacadeError;
 use cintx_compat::raw::enforce_safe_facade_policy_gate;
-use cintx_core::{BasisSet, OperatorId, Representation, ShellTuple};
+use cintx_core::{BasisSet, CintFloat, OperatorId, Representation, ShellTuple};
 use cintx_cubecl::CubeClExecutor;
 use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
@@ -122,7 +122,35 @@ impl<'basis> SessionQuery<'basis> {
         &self.workspace
     }
 
-    pub fn evaluate(self) -> Result<TypedEvaluationOutput, FacadeError> {
+    /// Evaluate the integral using the default f64 precision.
+    ///
+    /// This is a thin shim that delegates to `evaluate_generic::<f64>()`. It exists
+    /// so that every existing `req.evaluate()` call site compiles unchanged without
+    /// a turbofish (D-03/D-12). The result is byte-identical to the pre-generic
+    /// implementation.
+    pub fn evaluate(self) -> Result<TypedEvaluationOutput<f64>, FacadeError> {
+        self.evaluate_generic::<f64>()
+    }
+
+    /// Evaluate the integral using the precision specified by the type parameter `F`.
+    ///
+    /// - `evaluate_generic::<f64>()` — byte-identical to the pre-generic `evaluate()` (D-12).
+    /// - `evaluate_generic::<f32>()` — opts into f32 output; sets `plan.precision = F32`;
+    ///   returns `Vec<f32>` (T-20-19 type-system isolation).
+    ///
+    /// # Staging buffer design
+    ///
+    /// The facade owns a `Vec<F>` sized in `size_of::<F>()` per element. When passing to
+    /// `ExecutionIo::new` (which requires `&mut [f64]` — frozen interface), the buffer is
+    /// reinterpreted via `bytemuck::cast_slice_mut::<F, f64>`. This is sound because both
+    /// `f32` and `f64` are `bytemuck::Pod` (proven in Plan 01, A5 spike), and the kernel
+    /// dispatcher reads back the same byte pattern it wrote (it branches on `plan.precision`).
+    ///
+    /// OOM-safe fallible allocation (`try_reserve_exact`) and the no-partial-writes contract
+    /// are preserved verbatim.
+    pub fn evaluate_generic<F: CintFloat + bytemuck::Pod>(
+        self,
+    ) -> Result<TypedEvaluationOutput<F>, FacadeError> {
         self.workspace
             .execution_token
             .ensure_matches(&self.request, &self.runtime_workspace)?;
@@ -150,6 +178,13 @@ impl<'basis> SessionQuery<'basis> {
             &self.runtime_workspace,
         )
         .map_err(FacadeError::from)?;
+
+        // Set precision from the F type parameter (Plan 07 wiring note):
+        // F::PRECISION maps to PrecisionKind::F64 for f64 and PrecisionKind::F32 for f32.
+        // This must happen before any planner::evaluate call so kernel dispatchers (Plans 04/05)
+        // pick the right monomorphization. Follows the f12_zeta caller-populates-after-new
+        // precedent established in Plan 06.
+        plan.precision = F::PRECISION;
 
         // Propagate f12_zeta from ExecutionOptions to operator_env_params (safe API path).
         if let Some(zeta) = self.request.options().f12_zeta {
@@ -189,21 +224,21 @@ impl<'basis> SessionQuery<'basis> {
             }));
         }
 
-        // Allocate the full staging accumulator owned by the facade, so we can read
-        // staging values from executor.execute() directly without RecordingExecutor.
+        // Allocate the output accumulator as Vec<F>.
+        // Buffer is sized in elements; each element is size_of::<F>() bytes (T-20-20 mitigation).
         let staging_elements = output_layout.staging_elements;
         let staging_bytes = staging_elements
-            .checked_mul(size_of::<f64>())
+            .checked_mul(size_of::<F>())
             .ok_or(FacadeError::Memory {
                 detail: "staging element byte count overflowed usize".to_owned(),
             })?;
-        let mut owned_values = Vec::new();
+        let mut owned_values: Vec<F> = Vec::new();
         owned_values
             .try_reserve_exact(staging_elements)
             .map_err(|_| FacadeError::Memory {
                 detail: format!("failed to allocate staging buffer of {staging_bytes} bytes"),
             })?;
-        owned_values.resize(staging_elements, 0.0f64);
+        owned_values.resize(staging_elements, F::zero());
 
         let schedule = schedule_chunks(&plan.workspace);
         let total_units = plan.workspace.work_units.max(1);
@@ -222,12 +257,16 @@ impl<'basis> SessionQuery<'basis> {
             let suffix = staging_elements.saturating_mul(end) / total_units;
             let chunk_len = suffix.saturating_sub(prefix).max(1);
 
+            // chunk_staging is always Vec<f64> — the kernel dispatchers receive &mut [f64]
+            // (frozen ExecutionIo interface) and reinterpret internally for f32 precision.
+            // A Vec<f64> of chunk_len elements has chunk_len * 8 bytes = chunk_len * 2 f32
+            // lanes, which over-allocates for f32 (proven Plan 01 A5 / Plan 06 T06-2d).
             let chunk_staging_bytes = chunk_len.checked_mul(size_of::<f64>()).ok_or(
                 FacadeError::Memory {
                     detail: "chunk staging byte count overflowed usize".to_owned(),
                 },
             )?;
-            let mut chunk_staging = Vec::new();
+            let mut chunk_staging: Vec<f64> = Vec::new();
             chunk_staging
                 .try_reserve_exact(chunk_len)
                 .map_err(|_| FacadeError::Memory {
@@ -259,11 +298,16 @@ impl<'basis> SessionQuery<'basis> {
             }
             allocator.release(workspace);
 
-            // Copy chunk staging into the appropriate range of the accumulator.
+            // Copy chunk staging into the accumulator by reinterpreting the f64 buffer as
+            // &[F]. For f64: zero-cost cast (bytemuck identity). For f32: the kernel wrote
+            // chunk_len f32 values at indices 0..chunk_len in the f32 view of the f64 buffer
+            // (see one_electron.rs / two_electron.rs outer dispatchers). We read exactly
+            // chunk_len F values.
+            let chunk_as_f: &[F] = bytemuck::cast_slice::<f64, F>(&chunk_staging);
             let dest_end = prefix.saturating_add(chunk_len).min(staging_elements);
             if prefix < dest_end {
                 owned_values[prefix..dest_end]
-                    .copy_from_slice(&chunk_staging[..dest_end - prefix]);
+                    .copy_from_slice(&chunk_as_f[..dest_end - prefix]);
             }
         }
 
@@ -279,7 +323,7 @@ impl<'basis> SessionQuery<'basis> {
 
         let bytes_written = owned_values
             .len()
-            .checked_mul(size_of::<f64>())
+            .checked_mul(size_of::<F>())
             .ok_or(FacadeError::Memory {
                 detail: "owned output byte size overflowed usize".to_owned(),
             })?;
@@ -1027,6 +1071,73 @@ mod tests {
         let t: IntegralTensor = IntegralTensor::default();
         // owned_values must be Vec<f64>
         let _: Vec<f64> = t.owned_values;
+    }
+
+    // ------------------------------------------------------------------
+    // Plan 20-07 Task 2: generic evaluate::<F: CintFloat>() and f64 shim.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn cintfloat_precision_const_f64_is_f64() {
+        use cintx_core::{CintFloat, PrecisionKind};
+        assert_eq!(<f64 as CintFloat>::PRECISION, PrecisionKind::F64);
+    }
+
+    #[test]
+    fn cintfloat_precision_const_f32_is_f32() {
+        use cintx_core::{CintFloat, PrecisionKind};
+        assert_eq!(<f32 as CintFloat>::PRECISION, PrecisionKind::F32);
+    }
+
+    #[test]
+    fn evaluate_generic_f32_returns_vec_f32_with_nonzero_element() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let request = SessionRequest::new(
+            OperatorId::new(0), // int1e_ovlp_cart
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let query = request.query_workspace().expect("query should succeed");
+        let output: TypedEvaluationOutput<f32> = query
+            .evaluate_generic::<f32>()
+            .expect("evaluate::<f32> should succeed");
+        // Must return Vec<f32>
+        let _: Vec<f32> = output.tensor.owned_values.clone();
+        // Must have at least one nonzero element
+        let nonzero_count = output
+            .tensor
+            .owned_values
+            .iter()
+            .filter(|&&v| v.abs() > 1e-9_f32)
+            .count();
+        assert!(
+            nonzero_count > 0,
+            "evaluate::<f32> must produce at least one nonzero element"
+        );
+    }
+
+    #[test]
+    fn evaluate_unparameterized_delegates_to_f64_path() {
+        // evaluate() (unparameterized) must return TypedEvaluationOutput<f64> byte-identically.
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let request = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let q1 = request.clone().query_workspace().expect("q1");
+        let out1 = q1.evaluate().expect("evaluate f64 unparameterized");
+        let q2 = request.query_workspace().expect("q2");
+        let out2 = q2.evaluate_generic::<f64>().expect("evaluate_generic::<f64>");
+        // Must be byte-identical (same f64 values)
+        assert_eq!(
+            out1.tensor.owned_values, out2.tensor.owned_values,
+            "evaluate() and evaluate_generic::<f64>() must be byte-identical"
+        );
     }
 
     #[test]

@@ -423,6 +423,7 @@ dependencies = [
 name = "cintx-rs"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cintx-compat",
  "cintx-core",
  "cintx-cubecl",

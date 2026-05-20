@@ -43,6 +43,15 @@ pub trait CintFloat:
     + num_traits::FromPrimitive
     + sealed::Sealed
 {
+    /// The `PrecisionKind` runtime tag for this float type.
+    ///
+    /// `f64::PRECISION == PrecisionKind::F64` (default, byte-identity with libcint).
+    /// `f32::PRECISION == PrecisionKind::F32` (opt-in, ~1e-4 rtol).
+    ///
+    /// This const enables zero-cost `F → PrecisionKind` mapping in generic
+    /// host-side code (e.g. `evaluate::<F>()`) without runtime branching.
+    const PRECISION: PrecisionKind;
+
     /// Convert an `f64` const-table value to `Self` at the host/staging boundary.
     ///
     /// For `f64`: returns `x` unchanged (lossless).
@@ -53,6 +62,8 @@ pub trait CintFloat:
 
 impl sealed::Sealed for f64 {}
 impl CintFloat for f64 {
+    const PRECISION: PrecisionKind = PrecisionKind::F64;
+
     #[inline(always)]
     fn from_f64_lossy(x: f64) -> Self {
         x
@@ -61,6 +72,8 @@ impl CintFloat for f64 {
 
 impl sealed::Sealed for f32 {}
 impl CintFloat for f32 {
+    const PRECISION: PrecisionKind = PrecisionKind::F32;
+
     #[inline(always)]
     fn from_f64_lossy(x: f64) -> Self {
         x as f32
