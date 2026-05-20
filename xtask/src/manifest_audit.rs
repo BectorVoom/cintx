@@ -1,8 +1,9 @@
 use anyhow::{anyhow, bail, Context, Result};
 use cintx_ops::resolver::{HelperKind, Resolver, Stability};
 use cintx_oracle::fixtures::{
-    build_profile_representation_matrix, build_required_profile_matrices, is_oracle_eligible_family,
-    write_pretty_json_artifact, OracleRawInputs, PHASE4_APPROVED_PROFILES,
+    build_profile_representation_matrix, build_required_profile_matrices,
+    is_dedicated_oracle_family, is_oracle_eligible_family, write_pretty_json_artifact,
+    OracleRawInputs, PHASE4_APPROVED_PROFILES,
 };
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -196,6 +197,19 @@ fn collect_lock_symbols_for_profile(
             .ok_or_else(|| anyhow!("compiled manifest lock entry missing `id` object"))?;
         let family = id.get("family").and_then(Value::as_str).unwrap_or_default();
         if !is_phase4_oracle_family(family) {
+            continue;
+        }
+
+        // Dedicated-harness families (e.g. ECP) are oracle-covered but verified outside
+        // the generic raw-eval matrix, so `collect_generated_symbols_for_profile` (the
+        // representation matrix) omits them. Mirror that omission here, keyed on the
+        // lock's top-level `canonical_family` (NOT `id.family`, which is "1e" for ECP),
+        // so generated vs lock stay consistent and the drift gate does not false-positive.
+        let canonical_family = entry
+            .get("canonical_family")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if is_dedicated_oracle_family(canonical_family) {
             continue;
         }
 

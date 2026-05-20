@@ -399,7 +399,12 @@ const DEDICATED_ORACLE_FAMILIES: &[&str] = &["ecp"];
 
 /// True when `canonical_family` is verified by a dedicated harness and must be excluded
 /// from the generic representation matrix and its completeness check.
-fn is_dedicated_oracle_family(canonical_family: &str) -> bool {
+///
+/// Public so the xtask `manifest-audit --check-lock` gate can apply the SAME exclusion
+/// to its lock-side symbol collection — otherwise the generated matrix (which excludes
+/// ECP) and the lock symbol set (which would include ECP) disagree and the drift gate
+/// false-positives on the dedicated-harness symbols.
+pub fn is_dedicated_oracle_family(canonical_family: &str) -> bool {
     DEDICATED_ORACLE_FAMILIES.contains(&canonical_family)
 }
 pub const COMPILED_MANIFEST_LOCK_JSON: &str =
