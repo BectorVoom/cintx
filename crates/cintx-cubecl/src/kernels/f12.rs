@@ -433,7 +433,7 @@ fn fill_g_tensor_f12(
     let ua = 0.25 * zeta * zeta / a0;
     let ta = a0 * rr;
 
-    let (u_roots, mut w_weights) = stg_roots_host(shape.nroots, ta, ua);
+    let (u_roots, mut w_weights) = stg_roots_host::<f64>(shape.nroots, ta, ua);
 
     if is_stg {
         // STG weight post-processing (g2e_f12.c lines 292-297):
@@ -1587,8 +1587,8 @@ mod tests {
         let a0 = aij * akl / (aij + akl);
         let ua = 0.25 * zeta * zeta / a0;
 
-        let (roots_stg, weights_raw_stg) = stg_roots_host(nroots, ta, ua);
-        let (roots_yp, weights_raw_yp) = stg_roots_host(nroots, ta, ua);
+        let (roots_stg, weights_raw_stg) = stg_roots_host::<f64>(nroots, ta, ua);
+        let (roots_yp, weights_raw_yp) = stg_roots_host::<f64>(nroots, ta, ua);
 
         assert!(!roots_stg.is_empty(), "stg_roots_host should return non-empty roots");
         assert!(!weights_raw_stg.is_empty(), "stg_roots_host should return non-empty weights");

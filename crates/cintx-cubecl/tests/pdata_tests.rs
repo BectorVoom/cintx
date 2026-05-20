@@ -34,6 +34,8 @@ fn pdata_generic_f64_byte_identity() {
 }
 
 /// compute_pdata_host::<f32> smoke: all fields finite and physically reasonable.
+/// Note: compute_pdata_host<F: CintFloat> returns concrete PairData (f64 fields).
+/// The f32 inputs are computed in f32 precision and converted to f64 at the boundary.
 #[test]
 fn pdata_generic_f32_smoke() {
     let p = compute_pdata_host::<f32>(
@@ -42,12 +44,13 @@ fn pdata_generic_f32_smoke() {
         1.4_f32, 0.0_f32, 0.0_f32,
         1.0_f32, 1.0_f32,
     );
-    assert!(p.zeta_ab.is_finite(), "f32 zeta_ab must be finite");
-    assert!(p.fac.is_finite() && p.fac != 0.0_f32, "f32 fac must be finite and non-zero");
-    assert!(p.aij2.is_finite() && p.aij2 != 0.0_f32, "f32 aij2 must be finite and non-zero");
-    // Sanity: f32 zeta_ab should be close to f64 value
-    let rel = (p.zeta_ab as f64 - 2.0f64).abs() / 2.0f64;
-    assert!(rel < 1e-5, "f32 zeta_ab relative error: {rel:.2e}");
+    // PairData fields are f64 (computed from f32, converted at boundary)
+    assert!(p.zeta_ab.is_finite(), "f32-input zeta_ab must be finite");
+    assert!(p.fac.is_finite() && p.fac != 0.0_f64, "f32-input fac must be finite and non-zero");
+    assert!(p.aij2.is_finite() && p.aij2 != 0.0_f64, "f32-input aij2 must be finite and non-zero");
+    // Sanity: f32-input zeta_ab should be close to f64 golden
+    let rel = (p.zeta_ab - 2.0f64).abs() / 2.0f64;
+    assert!(rel < 1e-5, "f32-input zeta_ab relative error: {rel:.2e}");
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

@@ -29,8 +29,18 @@
 //! - Statement-form if/else (no if-expressions as values)
 //! - Array indexing uses `as usize` conversions per CubeCL 0.9.x
 //! - No recursion; all iterative
+//!
+//! # Generics
+//!
+//! `#[cube]` device fns are generic over `F: cubecl::prelude::Float`.
+//! Host wrappers are generic over `F: CintFloat`.
+//! The `<f64>` monomorphization of each function is byte-identical to the
+//! pre-refactor concrete f64 version (Phase 8 D-01 Phase-09 decisions preserved).
+//! The `nmax>=1` VRR guard and the `vrr_2e_step` vs `vrr_step` distinction
+//! are preserved verbatim — only the float type changes.
 
 use cubecl::prelude::*;
+use cintx_core::CintFloat;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  vrr_step — 1e vertical recurrence for one Cartesian dimension
@@ -44,9 +54,12 @@ use cubecl::prelude::*;
 /// g[(n+1)*stride]   = n * aij2 * g[(n-1)*stride] + rijrx * g[n*stride],  n = 1..nmax-1
 /// ```
 ///
+/// Generic over `F: Float` (CubeCL device float trait).
+///
 /// The caller must set `g[0]` before calling this function (base case).
 ///
 /// Source: `libcint-master/src/g1e.c` lines 164-172 (CINTg1e_ovlp VRR).
+/// Phase 8 D-01: `nmax>=1` guard preserved verbatim.
 ///
 /// Parameters:
 /// - `g`: G-array, indexed as `g[n * stride]`
@@ -55,7 +68,7 @@ use cubecl::prelude::*;
 /// - `nmax`: maximum angular momentum on this center
 /// - `stride`: stride between consecutive n-indices in `g`
 #[cube]
-pub fn vrr_step(g: &mut Array<f64>, rijrx: f64, aij2: f64, nmax: u32, stride: u32) {
+pub fn vrr_step<F: Float>(g: &mut Array<F>, rijrx: F, aij2: F, nmax: u32, stride: u32) {
     if nmax >= 1u32 {
         // g[1*stride] = rijrx * g[0], g1e.c line 164
         g[stride as usize] = rijrx * g[0usize];
@@ -64,25 +77,28 @@ pub fn vrr_step(g: &mut Array<f64>, rijrx: f64, aij2: f64, nmax: u32, stride: u3
         let mut n: u32 = 1;
         while n < nmax {
             g[((n + 1u32) * stride) as usize] =
-                n as f64 * aij2 * g[((n - 1u32) * stride) as usize]
+                F::cast_from(n) * aij2 * g[((n - 1u32) * stride) as usize]
                     + rijrx * g[(n * stride) as usize];
             n += 1;
         }
     }
 }
 
-/// Host-side wrapper for `vrr_step` — operates on a plain `&mut [f64]` slice.
+/// Host-side wrapper for `vrr_step` — operates on a plain `&mut [F]` slice.
+///
+/// Generic over `F: CintFloat`. The `<f64>` monomorphization is byte-identical
+/// to the pre-refactor `vrr_step_host(g: &mut [f64], ...)`.
 ///
 /// Used by tests and host-side integral planning code.
 ///
 /// See `vrr_step` for algorithm description.
-pub fn vrr_step_host(g: &mut [f64], rijrx: f64, aij2: f64, nmax: u32, stride: u32) {
+pub fn vrr_step_host<F: CintFloat>(g: &mut [F], rijrx: F, aij2: F, nmax: u32, stride: u32) {
     if nmax >= 1 {
         g[stride as usize] = rijrx * g[0];
         let mut n: u32 = 1;
         while n < nmax {
             g[((n + 1) * stride) as usize] =
-                n as f64 * aij2 * g[((n - 1) * stride) as usize]
+                F::from_f64_lossy(n as f64) * aij2 * g[((n - 1) * stride) as usize]
                     + rijrx * g[(n * stride) as usize];
             n += 1;
         }
@@ -101,6 +117,8 @@ pub fn vrr_step_host(g: &mut [f64], rijrx: f64, aij2: f64, nmax: u32, stride: u3
 /// ```
 /// for j = 1..=lj, i = 0..=(li_max - j).
 ///
+/// Generic over `F: Float` (CubeCL device float trait).
+///
 /// Source: `libcint-master/src/g1e.c` lines 175-182 (CINTg1e_ovlp HRR).
 ///
 /// Parameters:
@@ -111,7 +129,7 @@ pub fn vrr_step_host(g: &mut [f64], rijrx: f64, aij2: f64, nmax: u32, stride: u3
 /// - `li_max`: total angular momentum on both centers (nmax in VRR sense)
 /// - `lj`: target j angular momentum to build
 #[cube]
-pub fn hrr_step(g: &mut Array<f64>, rirj: f64, di: u32, dj: u32, li_max: u32, lj: u32) {
+pub fn hrr_step<F: Float>(g: &mut Array<F>, rirj: F, di: u32, dj: u32, li_max: u32, lj: u32) {
     let mut j: u32 = 1;
     while j <= lj {
         // i runs from 0 to li_max - j (inclusive)
@@ -129,12 +147,15 @@ pub fn hrr_step(g: &mut Array<f64>, rirj: f64, di: u32, dj: u32, li_max: u32, lj
     }
 }
 
-/// Host-side wrapper for `hrr_step` — operates on a plain `&mut [f64]` slice.
+/// Host-side wrapper for `hrr_step` — operates on a plain `&mut [F]` slice.
+///
+/// Generic over `F: CintFloat`. The `<f64>` monomorphization is byte-identical
+/// to the pre-refactor `hrr_step_host(g: &mut [f64], ...)`.
 ///
 /// Used by tests and host-side integral planning code.
 ///
 /// See `hrr_step` for algorithm description.
-pub fn hrr_step_host(g: &mut [f64], rirj: f64, di: u32, dj: u32, li_max: u32, lj: u32) {
+pub fn hrr_step_host<F: CintFloat>(g: &mut [F], rirj: F, di: u32, dj: u32, li_max: u32, lj: u32) {
     let mut j: u32 = 1;
     while j <= lj {
         let i_max = li_max - j;
@@ -162,7 +183,10 @@ pub fn hrr_step_host(g: &mut [f64], rirj: f64, di: u32, dj: u32, li_max: u32, lj
 /// g[(n+1)*stride]   = n * b10 * g[(n-1)*stride] + c00 * g[n*stride],  n = 1..nmax-1
 /// ```
 ///
+/// Generic over `F: Float` (CubeCL device float trait).
+///
 /// Source: `libcint-master/src/g2e.c` lines 306-322 (CINTg0_2e_2d bra VRR).
+/// Phase 8 D-01: `nmax>=1` guard preserved verbatim.
 ///
 /// Parameters:
 /// - `g`: G-array for one Rys root, stride-indexed
@@ -171,7 +195,7 @@ pub fn hrr_step_host(g: &mut [f64], rirj: f64, di: u32, dj: u32, li_max: u32, lj
 /// - `nmax`: max angular momentum bra
 /// - `stride`: stride between consecutive n-indices
 #[cube]
-pub fn vrr_2e_step(g: &mut Array<f64>, c00: f64, b10: f64, nmax: u32, stride: u32) {
+pub fn vrr_2e_step<F: Float>(g: &mut Array<F>, c00: F, b10: F, nmax: u32, stride: u32) {
     if nmax >= 1u32 {
         // g[1*stride] = c00 * g[0], g2e.c line 312
         g[stride as usize] = c00 * g[0usize];
@@ -180,25 +204,28 @@ pub fn vrr_2e_step(g: &mut Array<f64>, c00: f64, b10: f64, nmax: u32, stride: u3
         let mut n: u32 = 1;
         while n < nmax {
             g[((n + 1u32) * stride) as usize] =
-                n as f64 * b10 * g[((n - 1u32) * stride) as usize]
+                F::cast_from(n) * b10 * g[((n - 1u32) * stride) as usize]
                     + c00 * g[(n * stride) as usize];
             n += 1;
         }
     }
 }
 
-/// Host-side wrapper for `vrr_2e_step` — operates on a plain `&mut [f64]` slice.
+/// Host-side wrapper for `vrr_2e_step` — operates on a plain `&mut [F]` slice.
+///
+/// Generic over `F: CintFloat`. The `<f64>` monomorphization is byte-identical
+/// to the pre-refactor `vrr_2e_step_host(g: &mut [f64], ...)`.
 ///
 /// Used by tests and host-side integral planning code.
 ///
 /// See `vrr_2e_step` for algorithm description.
-pub fn vrr_2e_step_host(g: &mut [f64], c00: f64, b10: f64, nmax: u32, stride: u32) {
+pub fn vrr_2e_step_host<F: CintFloat>(g: &mut [F], c00: F, b10: F, nmax: u32, stride: u32) {
     if nmax >= 1 {
         g[stride as usize] = c00 * g[0];
         let mut n: u32 = 1;
         while n < nmax {
             g[((n + 1) * stride) as usize] =
-                n as f64 * b10 * g[((n - 1) * stride) as usize]
+                F::from_f64_lossy(n as f64) * b10 * g[((n - 1) * stride) as usize]
                     + c00 * g[(n * stride) as usize];
             n += 1;
         }

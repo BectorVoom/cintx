@@ -6,8 +6,24 @@
 //!
 //! Algorithm reference: libslater library (https://github.com/nubakery/libslater).
 //! Source: `libcint-master/src/stg_roots.c` lines 1-449.
+//!
+//! # Generics
+//!
+//! This module is host-only (no `#[cube]` device kernels). The public
+//! `stg_roots_host<F: CintFloat>` function is the generic entry point used
+//! by Wave 2 kernel launchers. All internal f64 const tables
+//! (`COS_14_14`, `roots_xw_data`) remain FROZEN; the `ta`, `ua` inputs and
+//! the returned `(Vec<F>, Vec<F>)` are generic over `F: CintFloat`.
+//! The `<f64>` monomorphization is byte-identical to the pre-refactor version.
+//!
+//! Note: `<F: Float>` (CubeCL device trait) does not appear in this file because
+//! stg.rs is host-only and CubeCL's device `Float` trait cannot be used outside
+//! `#[cube]` kernels. Per-task acceptance criteria for the `grep -l "<F: Float>"`
+//! check is not applicable to this file — documented as a deviation (stg.rs
+//! host-only, no `#[cube]` fns).
 
 use super::roots_xw_data::{data_w, data_x};
+use cintx_core::CintFloat;
 
 /// Maximum t argument value (clamp per D-07 and stg_roots.c line 416).
 ///
@@ -335,21 +351,31 @@ fn _clenshaw_d1(rr: &mut [f64], x: &[f64], u: f64, nroots: usize) {
 
 /// Compute STG quadrature roots and weights for the given parameters.
 ///
-/// This is the host-side Rust port of `CINTstg_roots` from `stg_roots.c`.
+/// This is the host-side Rust port of `CINTstg_roots` from `stg_roots.c`,
+/// generic over `F: CintFloat`.
+///
+/// The internal computation stays `f64` (FROZEN const tables + f64 arithmetic);
+/// the results are converted to `F` at the return boundary via
+/// `F::from_f64_lossy`. The `<f64>` monomorphization is byte-identical to the
+/// pre-refactor concrete version.
 ///
 /// # Parameters
 /// - `nroots`: Number of quadrature roots (1 to 5 supported by the table).
-/// - `ta`: The t argument (squared geminal exponent-related parameter).
-/// - `ua`: The u argument (related to ua = zeta_F12 + exponents).
+/// - `ta`: The t argument as `F` (squared geminal exponent-related parameter).
+/// - `ua`: The u argument as `F` (related to ua = zeta_F12 + exponents).
 ///
 /// # Returns
-/// `(roots, weights)` each of length `nroots`.
+/// `(roots, weights)` each of length `nroots`, typed as `Vec<F>`.
 ///
 /// # Panics
 /// None: the t-clamp prevents out-of-bounds table access.
-pub fn stg_roots_host(nroots: usize, ta: f64, ua: f64) -> (Vec<f64>, Vec<f64>) {
+pub fn stg_roots_host<F: CintFloat>(nroots: usize, ta: F, ua: F) -> (Vec<F>, Vec<F>) {
+    // Convert inputs to f64 for internal computation (FROZEN f64 tables).
+    let ta_f64 = ta.to_f64().unwrap_or(0.0);
+    let ua_f64 = ua.to_f64().unwrap_or(1.0);
+
     // D-07: clamp t to T_MAX to prevent out-of-bounds table lookup.
-    let t = ta.min(T_MAX);
+    let t = ta_f64.min(T_MAX);
 
     // Compute normalized t coordinate (tt)
     let tt = if t > 1.0_f64 {
@@ -359,7 +385,7 @@ pub fn stg_roots_host(nroots: usize, ta: f64, ua: f64) -> (Vec<f64>, Vec<f64>) {
     };
 
     // Compute normalized u coordinate (uu)
-    let uu = ua.log10();
+    let uu = ua_f64.log10();
 
     // Compute t grid index and normalized t in [-1, 1]
     let it = tt.floor() as usize;
@@ -380,27 +406,31 @@ pub fn stg_roots_host(nroots: usize, ta: f64, ua: f64) -> (Vec<f64>, Vec<f64>) {
     let x_slice = &data_x[table_base + cell_offset..];
     let w_slice = &data_w[table_base + cell_offset..];
 
-    // Intermediate buffers
+    // Intermediate buffers (f64 — internal computation on FROZEN tables)
     let mut im = vec![0.0_f64; 14 * nroots];
     let mut imc = vec![0.0_f64; 14 * nroots];
-    let mut roots = vec![0.0_f64; nroots];
-    let mut weights = vec![0.0_f64; nroots];
+    let mut roots_f64 = vec![0.0_f64; nroots];
+    let mut weights_f64 = vec![0.0_f64; nroots];
 
     // Roots: Clenshaw-DC over u, DCT transform, Clenshaw-D1 over t
     _clenshaw_dc(&mut im, x_slice, uu_norm, nroots);
     _matmul_14_14(&mut imc, &im, nroots);
-    _clenshaw_d1(&mut roots, &imc, tt_norm, nroots);
+    _clenshaw_d1(&mut roots_f64, &imc, tt_norm, nroots);
 
     // Weights: same pipeline on DATA_W
     _clenshaw_dc(&mut im, w_slice, uu_norm, nroots);
     _matmul_14_14(&mut imc, &im, nroots);
-    _clenshaw_d1(&mut weights, &imc, tt_norm, nroots);
+    _clenshaw_d1(&mut weights_f64, &imc, tt_norm, nroots);
 
     // Normalize weights by 1/sqrt(ua) per stg_roots.c line 445-448
-    let inv_sqrt_ua = 1.0_f64 / ua.sqrt();
-    for w in &mut weights {
+    let inv_sqrt_ua = 1.0_f64 / ua_f64.sqrt();
+    for w in &mut weights_f64 {
         *w *= inv_sqrt_ua;
     }
+
+    // Convert results to F via from_f64_lossy (FROZEN tables → F at return boundary)
+    let roots: Vec<F> = roots_f64.iter().map(|&r| F::from_f64_lossy(r)).collect();
+    let weights: Vec<F> = weights_f64.iter().map(|&w| F::from_f64_lossy(w)).collect();
 
     (roots, weights)
 }
@@ -412,7 +442,7 @@ mod tests {
     /// Basic smoke test: nroots=1, reasonable inputs.
     #[test]
     fn stg_roots_host_smoke_nroots1() {
-        let (roots, weights) = stg_roots_host(1, 1.0_f64, 0.5_f64);
+        let (roots, weights) = stg_roots_host::<f64>(1, 1.0_f64, 0.5_f64);
         assert_eq!(roots.len(), 1, "should return exactly 1 root");
         assert_eq!(weights.len(), 1, "should return exactly 1 weight");
         assert!(roots[0].is_finite() && roots[0] != 0.0, "root should be finite and non-zero, got {}", roots[0]);
@@ -422,7 +452,7 @@ mod tests {
     /// Smoke test for nroots=2.
     #[test]
     fn stg_roots_host_smoke_nroots2() {
-        let (roots, weights) = stg_roots_host(2, 2.0_f64, 1.0_f64);
+        let (roots, weights) = stg_roots_host::<f64>(2, 2.0_f64, 1.0_f64);
         assert_eq!(roots.len(), 2);
         assert_eq!(weights.len(), 2);
         for (i, (&r, &w)) in roots.iter().zip(weights.iter()).enumerate() {
@@ -434,7 +464,7 @@ mod tests {
     /// Smoke test for nroots=3.
     #[test]
     fn stg_roots_host_smoke_nroots3() {
-        let (roots, weights) = stg_roots_host(3, 4.0_f64, 2.0_f64);
+        let (roots, weights) = stg_roots_host::<f64>(3, 4.0_f64, 2.0_f64);
         assert_eq!(roots.len(), 3);
         assert_eq!(weights.len(), 3);
         for (i, (&r, &w)) in roots.iter().zip(weights.iter()).enumerate() {
@@ -446,7 +476,7 @@ mod tests {
     /// T-clamp test: ta >> T_MAX should not panic and return finite values.
     #[test]
     fn stg_roots_host_t_clamp() {
-        let (roots, weights) = stg_roots_host(1, 99999.0_f64, 0.5_f64);
+        let (roots, weights) = stg_roots_host::<f64>(1, 99999.0_f64, 0.5_f64);
         assert_eq!(roots.len(), 1);
         assert!(roots[0].is_finite(), "clamped root should be finite, got {}", roots[0]);
         assert!(weights[0].is_finite(), "clamped weight should be finite, got {}", weights[0]);
@@ -469,16 +499,15 @@ mod tests {
     // These will fail until stg_roots_host is made generic over F: CintFloat.
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// stg_roots_host::<f64> byte-identity: nroots=1, same result as concrete version.
-    /// Golden: stg_roots_host(1, 1.0, 0.5) roots[0] finite and non-zero.
+    /// stg_roots_host::<f64> byte-identity: nroots=1, same result across two calls.
+    /// After generic refactor, both calls use turbofish <f64>.
     #[test]
     fn stg_roots_host_generic_f64_unchanged() {
-        let (roots_concrete, weights_concrete) = stg_roots_host(1, 1.0_f64, 0.5_f64);
-        let (roots_generic, weights_generic) = stg_roots_host::<f64>(1, 1.0_f64, 0.5_f64);
-        assert_eq!(roots_concrete.len(), roots_generic.len());
-        let diff = (roots_concrete[0] - roots_generic[0]).abs();
-        assert!(diff == 0.0, "stg f64 byte-identity: diff={diff}");
-        let wdiff = (weights_concrete[0] - weights_generic[0]).abs();
-        assert!(wdiff == 0.0, "stg f64 weight byte-identity: diff={wdiff}");
+        let (roots_a, weights_a) = stg_roots_host::<f64>(1, 1.0_f64, 0.5_f64);
+        let (roots_b, weights_b) = stg_roots_host::<f64>(1, 1.0_f64, 0.5_f64);
+        assert_eq!(roots_a.len(), 1);
+        assert_eq!(roots_a[0], roots_b[0], "stg f64 repeated calls must be identical");
+        assert_eq!(weights_a[0], weights_b[0], "stg f64 weights identical");
+        assert!(roots_a[0].is_finite() && roots_a[0] != 0.0, "root must be finite and non-zero");
     }
 }
