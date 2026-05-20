@@ -43,7 +43,7 @@
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
-| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 3/6 | In Progress (Wave 1 complete — typed surface + raw compat + facade landed) | - |
+| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 4/8 | In Progress (replan — K-Taylor byte-identity port; scalar+gradient close pending) | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -222,24 +222,32 @@ Plans:
   3. `SessionRequest::evaluate` dispatches `int1e_ecp_sph` and `int1e_ecp_cart` through the same safe-API surface as ordinary one-electron operators — no parallel ECP API is introduced. (ECP-03)
   4. Cu/LANL2DZ (already present in the oracle test corpus) passes byte-identity parity against libcint at `atol=1e-12` through both `cintx-compat::raw::eval_raw` and `SessionRequest::evaluate`. Secondary cross-check against `libECP` (chrr, JCC 2017) is added as a non-blocking oracle. (ECP-04)
   5. Decision on whether `int1e_ecp_ipnuc_*` gradient variants land in this phase or defer to a follow-up phase is recorded in the phase's SPEC.md before plan-phase starts. (ECP-05)
-**Plans**: 6 plans (planned 2026-05-12; oracle pivot to PySCF nr_ecp per D-01 REVISED; gradients in scope per D-10)
+**Plans**: 8 plans (19-01..04 executed; 19-05/06 stale plans superseded after the 2026-05-20 K-Taylor byte-identity replan; new 19-05..08 added per D-13..D-17)
 
 Plans:
 **Wave 0**
 - [x] 19-01-PLAN.md — Wave 0: vendor PySCF nr_ecp subtree (Apache-2.0); extend cintx-oracle/build.rs with parallel cc::Build + has_vendor_pyscf_nr_ecp cfg; expand api_manifest.csv with 4 ECP rows (cart/sph × {ecp, ecp_ipnuc}) + regenerate lock; build Cu/LANL2DZ fixture; land empty stubs for bessel.rs, radial_quadrature.rs, EcpShell. (Completed 2026-05-12; SUMMARY: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-01-SUMMARY.md`; new OperatorIds 26..=29; INT4C1E_CART_OPERATOR_ID=24 preserved.)
 
-**Wave 1** *(blocked on Wave 0 completion; 02 and 03 run in parallel)*
-- [x] 19-02-PLAN.md — Wave 1: implement modified spherical Bessel i_l(x) in math/bessel.rs (paired #[cube] + *_host(), three numerical branches: small-x Taylor, moderate-x direct Taylor sum, large-x asymptotic — direct evaluation, no recurrence) + PySCF-byte-identity Gauss-Chebyshev (Type-2 radial, adaptive LEVEL0..=LEVEL_MAX) and DLMF-table Gauss-Hermite n≤8 (Type-1 radial) nodes/weights in math/radial_quadrature.rs. 21 host-side unit tests at atol=1e-12, all passing. (Completed 2026-05-12; SUMMARY: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-02-SUMMARY.md`.)
-- [ ] 19-03-PLAN.md — Wave 1: EcpShell + BasisSet::ecp_shells extension + OperatorId::INT1E_ECP_* constants + is_ecp() helper + cintx-compat::raw ECP slot constants (AS_ECPBAS_OFFSET=18, AS_NECPBAS=19, RADI_POWER=3, SO_TYPE_OF=4, ECP_LMAX=5 per PySCF nr_ecp.h verbatim) + EcpBasArray typed view + eval_raw ECP dispatch arm + FacadeError::MissingEcpBasis variant + SessionRequest::query_workspace preflight.
+**Wave 1** *(blocked on Wave 0 completion; 02 and 03 ran in parallel)*
+- [x] 19-02-PLAN.md — Wave 1: implement modified spherical Bessel i_l(x) in math/bessel.rs (paired #[cube] + *_host(), three numerical branches: small-x Taylor, moderate-x direct Taylor sum, large-x asymptotic — direct evaluation, no recurrence) + Gauss-Chebyshev + Gauss-Hermite nodes/weights in math/radial_quadrature.rs. (Completed 2026-05-12; SUMMARY: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-02-SUMMARY.md`.)
+- [x] 19-03-PLAN.md — Wave 1: EcpShell + BasisSet::ecp_shells extension + OperatorId::INT1E_ECP_* constants + is_ecp() helper + cintx-compat::raw ECP slot constants + EcpBasArray typed view + eval_raw ECP dispatch arm + FacadeError::MissingEcpBasis variant + SessionRequest::query_workspace preflight. (Completed 2026-05-12; SUMMARY: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-03-SUMMARY.md`.)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 19-04-PLAN.md — Wave 2: launch_ecp kernel (Type-1 + Type-2 scalar) in crates/cintx-cubecl/src/kernels/ecp.rs; canonical_family "ecp" registered unconditionally in kernels/mod.rs; vendor_ECPscalar_{cart,sph} FFI wrappers; two named per-symbol parity tests at atol=1e-12 vs PySCF nr_ecp over Cu/LANL2DZ Cartesian product; flip oracle_covered=true on the two scalar manifest rows.
+- [x] 19-04-PLAN.md — Wave 2: launch_ecp kernel scaffolding (canonical_family "ecp" registered; vendor_ECPscalar_{cart,sph} FFI; safe_api_ecp_parity.rs harness). Shipped a DIRECT-QUADRATURE approximation that does NOT reach atol=1e-12; parity tests #[ignore]'d, oracle_covered stayed false. (Completed 2026-05-12; SUMMARY: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-04-SUMMARY.md` — the authoritative blocker write-up.)
 
-**Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 19-05-PLAN.md — Wave 3: gradient branch in launch_ecp (Type-1 + Type-2 derivatives) per PySCF nr_ecp_deriv.c; F-order [axis, ao_j, ao_i] component layout (component_rank=3, axis slowest-varying, int3c2e_ip1_* precedent); vendor_ECPscalar_ipnuc_{cart,sph} FFI wrappers; two more parity tests at atol=1e-12; flip oracle_covered=true on the two ipnuc manifest rows.
+> **REPLAN 2026-05-20 (K-Taylor byte-identity port).** 19-04's direct-quadrature kernel cannot reach byte-identity. The original 19-05 (gradient) was halted and the original 19-06 (libecpint) was unstarted; both PLAN.md files are preserved as `.superseded.md`. The four plans below (19-05..08) replace them per D-13..D-17. 19-01..04 are frozen.
 
-**Wave 4** *(independent of Wave 2/3; optional)*
-- [ ] 19-06-PLAN.md — Wave 4 (optional, non-blocking): libecpint (Shaw & Hill, JCP 147 074108, 2017, MIT) secondary cross-check oracle behind cargo cfg has_libecpint_oracle (emitted only when CINTX_LIBECPINT_ORACLE=1); four #[ignore]+env-gated cross-check tests at informational atol=1e-9 per D-02 REVISED.
+**Wave 1 (replan) — K-Taylor port foundation**
+- [ ] 19-05-PLAN.md — K-Taylor port foundation: embed _sph_ine_tab (400×24) + _sph_ine_tab_order7 (400×8×8) as LE-f64 binary blobs via include_bytes! + bytemuck (D-14, roots_xw_data.rs precedent); xtask gen-ecp-tables subcommand extracting the tables from nr_ecp.c + a --check drift-gate (D-15); host-first port of ECPsph_ine_opt + ECPrad_part + type1_rad_part + type2_facs_rad (D-16). [ECP-01, ECP-02, ECP-04]
+
+**Wave 2 (replan) — scalar close**
+- [ ] 19-06-PLAN.md — Scalar close: replace the direct-quadrature compute_type1_pair/compute_type2_pair bodies with the K-Taylor recurrence; remove #[ignore] from the two scalar parity tests; iterate to atol=1e-12 byte-identity over the full Cu/LANL2DZ Cartesian product; flip oracle_covered=true on int1e_ecp_{cart,sph}. Closes ECP-01/02/03 + scalar half of ECP-04. [ECP-01, ECP-02, ECP-03, ECP-04] (depends 19-05)
+
+**Wave 3 (replan) — gradient (supersedes halted 19-05)**
+- [ ] 19-07-PLAN.md — Gradient: port nr_ecp_deriv.c (_deriv1_cart, comp=3) for int1e_ecp_ipnuc_{cart,sph} on the K-Taylor foundation; F-order [axis, ao_j, ao_i] axis-slowest (D-11); vendor_ECPscalar_ipnuc_{cart,sph} wrappers; two ipnuc parity tests at atol=1e-12; flip oracle_covered=true on the two ipnuc rows. Closes ECP-05 + gradient half of ECP-04. [ECP-01, ECP-02, ECP-04, ECP-05] (depends 19-06)
+
+**Wave 4 (replan) — optional secondary oracle (supersedes 19-06)**
+- [ ] 19-08-PLAN.md — Optional non-blocking libecpint (Shaw & Hill, JCP 147 074108, 2017, MIT) secondary cross-check behind has_libecpint_oracle cfg (emitted only when CINTX_LIBECPINT_ORACLE=1); env-gated #[ignore] cross-check tests at informational atol≈1e-9 per D-02 REVISED. [ECP-04] (depends 19-06)
 
 **Notes**:
   - Largest of the three issue #11 tasks — requires a new evaluator implementation, not just dispatch wiring.
