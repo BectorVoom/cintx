@@ -29,7 +29,7 @@
 use crate::backend::ResolvedBackend;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_3c1e, ncart, nsph};
-use cintx_core::{Representation, cintxRsError};
+use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
 /// sqrt(pi) constant — matches libcint `SQRTPI = sqrt(M_PI)`.
@@ -462,6 +462,109 @@ pub fn launch_center_3c1e(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test T05-1a: launch_center_3c1e_typed::<f64> is byte-identical to the
+    // existing launch_center_3c1e at f64 (center_3c1e_parity).
+    // RED: compile fails until launch_center_3c1e_typed is defined.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_center_3c1e_parity_f64() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::ResolvedBackend;
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
+        let make_s_shell = |atom_idx: u64| Arc::new(Shell::try_new(
+            atom_idx, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_a = make_s_shell(0);
+        let shell_b = make_s_shell(1);
+        let shell_c = make_s_shell(2);
+        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b, shell_c]).unwrap();
+
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(OperatorId::new(15), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(OperatorId::new(15), Representation::Cart, &basis, shells, &query).unwrap();
+        plan.precision = PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+
+        let mut staging_outer = vec![0.0_f64; 1];
+        let mut staging_typed = vec![0.0_f64; 1];
+
+        // Call outer dispatcher (should route to _typed::<f64> internally)
+        let result_outer = launch_center_3c1e(&backend, &plan, &spec, &mut staging_outer);
+        assert!(result_outer.is_ok(), "outer f64 should succeed: {:?}", result_outer);
+
+        // Call typed inner directly (RED: compile fails until launch_center_3c1e_typed defined)
+        let result_typed = launch_center_3c1e_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
+        assert!(result_typed.is_ok(), "typed f64 should succeed: {:?}", result_typed);
+
+        // Byte-identical check
+        assert_eq!(staging_outer[0].to_bits(), staging_typed[0].to_bits(),
+            "f64 outer and typed should be byte-identical: outer={} typed={}", staging_outer[0], staging_typed[0]);
+        assert!(staging_outer[0].is_finite() && staging_outer[0].abs() > 1e-20,
+            "3c1e s-s-s overlap should be finite and nonzero: {}", staging_outer[0]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test T05-1b: launch_center_3c1e F32 path runs without panic.
+    // RED: compile fails until launch_center_3c1e dispatches on plan.precision.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_center_3c1e_f32_smoke() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::ResolvedBackend;
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
+        let make_s_shell = |atom_idx: u64| Arc::new(Shell::try_new(
+            atom_idx, 0, 1, 1, 0, Representation::Cart,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_a = make_s_shell(0);
+        let shell_b = make_s_shell(1);
+        let shell_c = make_s_shell(2);
+        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b, shell_c]).unwrap();
+
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(OperatorId::new(15), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(OperatorId::new(15), Representation::Cart, &basis, shells, &query).unwrap();
+        plan.precision = PrecisionKind::F32;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+
+        // F32 uses bytemuck cast: 2 f32 values fit in one f64 slot (A3 alignment)
+        let mut staging = vec![0.0_f64; 1];
+        let result = launch_center_3c1e(&backend, &plan, &spec, &mut staging);
+        assert!(result.is_ok(), "F32 3c1e should succeed without panic: {:?}", result);
+
+        let staging_f32 = bytemuck::cast_slice::<f64, f32>(&staging);
+        assert!(staging_f32[0].is_finite(), "F32 3c1e result should be finite: {}", staging_f32[0]);
+        assert!(staging_f32[0] > 0.0, "F32 3c1e result should be positive: {}", staging_f32[0]);
+    }
 
     // Test: s-s-s overlap at same center should be nonzero
     #[test]
