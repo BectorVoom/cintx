@@ -45,7 +45,7 @@
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
 | Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 8/8 | Complete | 2026-05-20 |
-| Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 0/? | Planned | - |
+| Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 0/8 | Planned | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -274,3 +274,27 @@ Plans:
   - Largest single phase in the project — a cross-cutting type-parameter refactor, not a new evaluator.
   - **RESEARCH FLAGS** from `20-CONTEXT.md`: (a) confirm the CubeCL `Float` trait surface covers the transcendentals the kernels need (`exp`, `sqrt`, `erf`) and that const-table casting is sound under monomorphization; (b) confirm f32 shader capability is universally available on wgpu adapters.
   - Claude's discretion: exact per-family f32 tolerance floors, helper genericization order, and whether to introduce a sealed `Scalar`/`CintFloat` super-trait bridging device-side CubeCL `Float` and host-side `num_traits::Float`.
+**Plans**: 8 plans (bottom-up serena-driven waves; f64 path stays green at every wave boundary)
+
+Plans:
+**Wave 1**
+- [ ] 20-01-PLAN.md — Wave 0 scaffolding: serena onboarding gate (D-11), `CintFloat` sealed trait + `PrecisionKind` enum in cintx-core, `ExecutionPlan.precision` field, num-traits direct dep, and the A5 bytemuck staging-cast validation spike.
+
+**Wave 2** *(parallel; blocked on Wave 1)*
+- [ ] 20-02-PLAN.md — Shared math leaves group A: genericize boys.rs (reference refactor), obara_saika.rs, pdata.rs, stg.rs over `F` (device `F: Float` / host `F: CintFloat`); const tables FROZEN f64.
+- [ ] 20-03-PLAN.md — Shared math leaves group B: genericize rys.rs (1,140 f64-lines, isolated for budget) and the c2s cart-to-sph transform over `F`; coefficient tables/blobs FROZEN f64.
+
+**Wave 3** *(blocked on Wave 2)*
+- [ ] 20-04-PLAN.md — Kernel launchers group A: precision-dispatch 1e/2e/2c2e launchers (keep FamilyLaunchFn signature, `match plan.precision` -> generic `_typed::<F>` inner + bytemuck staging cast) + thread `F` through the spinor transform interleaved accumulation.
+
+**Wave 4** *(blocked on Wave 3)*
+- [ ] 20-05-PLAN.md — Kernel launchers group B: precision-dispatch 3c1e/3c2e/4c1e/f12 launchers (copy the Wave-3 dispatcher pattern); `f12_zeta` stays `Option<f64>`, cast to `F` at the kernel boundary.
+
+**Wave 5** *(blocked on Wave 4)*
+- [ ] 20-06-PLAN.md — Executor capability branch (f32 bypasses `SHADER_F64` via `check_capability`; f64 retains it) + thread `ExecutionOptions.precision` -> `ExecutionPlan.precision`; staging over-allocation soundness; raw env/atm/bas + C ABI stay f64.
+
+**Wave 6** *(blocked on Wave 5)*
+- [ ] 20-07-PLAN.md — Safe API: `evaluate::<F: CintFloat>()` method-level generic returning `TypedEvaluationOutput<F = f64>` / `IntegralTensor<F = f64>`; `evaluate()` stays byte-identical f64; `CintFloat::PRECISION` maps `F` -> runtime tag.
+
+**Wave 7** *(blocked on Wave 6)*
+- [ ] 20-08-PLAN.md — Separate f32 oracle gate: `f32_tolerance_for_family` + F32 constants (parallel to the FROZEN f64 model) + `tests/f32_parity.rs` driving `evaluate::<f32>()` with empirically derived per-family rtol floors; the f64 byte-identity gate stays untouched.
