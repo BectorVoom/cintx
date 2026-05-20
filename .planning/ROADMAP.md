@@ -333,8 +333,8 @@ Plans:
 
 **Wave 2** *(parallel; blocked on Wave 1)*
 
-- [ ] 20-02-PLAN.md — Shared math leaves group A: genericize boys.rs (reference refactor), obara_saika.rs, pdata.rs, stg.rs over `F` (device `F: Float` / host `F: CintFloat`); const tables FROZEN f64.
-- [ ] 20-03-PLAN.md — Shared math leaves group B: genericize rys.rs (1,140 f64-lines, isolated for budget) and the c2s cart-to-sph transform over `F`; coefficient tables/blobs FROZEN f64.
+- [x] 20-02-PLAN.md — Shared math leaves group A: genericize boys.rs (reference refactor), obara_saika.rs, pdata.rs, stg.rs over `F` (device `F: Float` / host `F: CintFloat`); const tables FROZEN f64.
+- [x] 20-03-PLAN.md — Shared math leaves group B: genericize rys.rs (1,140 f64-lines, isolated for budget) and the c2s cart-to-sph transform over `F`; coefficient tables/blobs FROZEN f64.
 
 **Wave 3** *(blocked on Wave 2)*
 
