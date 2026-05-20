@@ -275,17 +275,20 @@ fn contract_3c1e_ovlp(g: &[f64], li: u8, lj: u8, lk: u8, g_size: usize) -> Vec<f
     out
 }
 
-/// Launch the 3c1e kernel for a contracted shell triple.
+/// Generic inner for the 3c1e launcher.
 ///
-/// Implements the three-center one-electron overlap integral per
-/// `cint3c1e.c` `CINT3c1e_loop_nopt` with `CINTg3c1e_ovlp` G-fill.
+/// Contains the full algorithm of `launch_center_3c1e` parameterized over the
+/// output float type `F: CintFloat`. The staging buffer is typed `&mut [F]` so the
+/// bytemuck-cast pattern at the outer boundary is sound (Plan 01 A5 proven).
 ///
-/// Replaces the zero-returning stub from Phase 9.
-pub fn launch_center_3c1e(
+/// Intermediate computations (G-tensor, cart_buf) remain `f64` throughout —
+/// precision conversion happens only at the final staging write via
+/// `F::from_f64_lossy`. For f64 this is a zero-cost identity; for f32 it truncates.
+fn launch_center_3c1e_typed<F: CintFloat>(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    staging: &mut [f64],
+    staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
     if specialization.canonical_family() != "3c1e" {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -426,27 +429,35 @@ pub fn launch_center_3c1e(
         }
     }
 
-    // Apply cart-to-sph transform or copy Cartesian to staging
+    // Apply cart-to-sph transform or copy Cartesian to staging.
+    // Intermediate transforms use a f64 temporary buffer; final values are cast to F
+    // via F::from_f64_lossy. For f64 this is zero-cost identity; for f32 it truncates.
     match plan.representation {
         Representation::Spheric => {
             let sph = cart_to_sph_3c1e(&cart_buf, li, lj, lk);
             let sph_size = nsi * nsj * nsk;
-            let copy_len = staging.len().min(sph.len()).min(sph_size);
-            staging[..copy_len].copy_from_slice(&sph[..copy_len]);
+            let copy_len = staging.len().min(sph_size);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
         _ => {
-            // Cartesian: copy directly
+            // Cartesian: copy with F cast
             let copy_len = staging.len().min(cart_buf.len());
-            staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
     }
 
+    // Per-symbol nonzero sentinel
+    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
     let not0 = staging
         .iter()
-        .filter(|&&v| v.abs() > 1e-18)
+        .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<f64>();
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -457,6 +468,32 @@ pub fn launch_center_3c1e(
         not0,
         fallback_reason: plan.workspace.fallback_reason,
     })
+}
+
+/// Launch the 3c1e kernel for a contracted shell triple.
+///
+/// Outer precision dispatcher: keeps the registered `FamilyLaunchFn` signature
+/// so the `as FamilyLaunchFn` cast in `kernels/mod.rs` compiles unchanged.
+/// Internally matches on `plan.precision` and delegates to the generic inner
+/// `launch_center_3c1e_typed::<F>`, reinterpreting staging via `bytemuck::cast_slice_mut`
+/// for the F32 arm (A5 proven sound in Plan 01).
+///
+/// Replaces the zero-returning stub from Phase 9.
+pub fn launch_center_3c1e(
+    backend: &ResolvedBackend,
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    staging: &mut [f64],
+) -> Result<ExecutionStats, cintxRsError> {
+    match plan.precision {
+        PrecisionKind::F64 => {
+            launch_center_3c1e_typed::<f64>(backend, plan, specialization, staging)
+        }
+        PrecisionKind::F32 => {
+            let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
+            launch_center_3c1e_typed::<f32>(backend, plan, specialization, staging_f32)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -481,7 +518,7 @@ mod tests {
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
-        let make_s_shell = |atom_idx: u64| Arc::new(Shell::try_new(
+        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
             atom_idx, 0, 1, 1, 0, Representation::Cart,
             Arc::from(vec![1.0_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
@@ -536,7 +573,7 @@ mod tests {
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
-        let make_s_shell = |atom_idx: u64| Arc::new(Shell::try_new(
+        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
             atom_idx, 0, 1, 1, 0, Representation::Cart,
             Arc::from(vec![1.0_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());

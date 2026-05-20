@@ -306,11 +306,17 @@ fn transpose_ij_3idx(buf: &[f64], ni: usize, nj: usize, nk: usize) -> Vec<f64> {
     out
 }
 
-pub fn launch_center_3c2e(
+/// Generic inner for the 3c2e launcher.
+///
+/// Contains the full algorithm of `launch_center_3c2e` parameterized over the
+/// output float type `F: CintFloat`. Intermediate computations (G-tensor, cart_buf)
+/// remain `f64`; precision conversion happens only at the final staging write via
+/// `F::from_f64_lossy`. Preserves the li>=lj canonicalization + transpose-back.
+fn launch_center_3c2e_typed<F: CintFloat>(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    staging: &mut [f64],
+    staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
     if specialization.canonical_family() != "3c2e" {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -429,30 +435,41 @@ pub fn launch_center_3c2e(
         cart_buf
     };
 
+    // Apply cart-to-sph/spinor or copy Cartesian, casting to F at the staging write.
     match plan.representation {
         Representation::Spheric => {
             let sph = cart_to_sph_3c2e(&cart_out, li_in, lj_in, lk);
             let sph_size = nsi_in * nsj_in * nsk;
-            let copy_len = staging.len().min(sph.len()).min(sph_size);
-            staging[..copy_len].copy_from_slice(&sph[..copy_len]);
+            let copy_len = staging.len().min(sph_size);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
         Representation::Spinor => {
+            // cart_to_spinor_sf_3c2e is generic over F: CintFloat (Plan 04).
             let kappa_i = shell_i_in.kappa;
             let kappa_j = shell_j_in.kappa;
-            // k is the auxiliary shell — no kappa, transforms to spherical
-            cart_to_spinor_sf_3c2e(
+            cart_to_spinor_sf_3c2e::<F>(
                 staging, &cart_out,
                 li_in, kappa_i, lj_in, kappa_j, lk,
             )?;
         }
         Representation::Cart => {
             let copy_len = staging.len().min(cart_out.len());
-            staging[..copy_len].copy_from_slice(&cart_out[..copy_len]);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_out[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
     }
 
-    let not0 = staging.iter().filter(|&&v| v.abs() > 1e-18).count() as i32;
-    let staging_bytes = staging.len() * std::mem::size_of::<f64>();
+    // Per-symbol nonzero sentinel
+    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -463,6 +480,28 @@ pub fn launch_center_3c2e(
         not0,
         fallback_reason: plan.workspace.fallback_reason,
     })
+}
+
+/// Outer precision dispatcher for the 3c2e kernel.
+///
+/// Keeps the registered `FamilyLaunchFn` signature unchanged. Internally matches on
+/// `plan.precision` and delegates to `launch_center_3c2e_typed::<F>`, reinterpreting
+/// staging via `bytemuck::cast_slice_mut` for the F32 arm (A5 proven sound).
+pub fn launch_center_3c2e(
+    backend: &ResolvedBackend,
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    staging: &mut [f64],
+) -> Result<ExecutionStats, cintxRsError> {
+    match plan.precision {
+        PrecisionKind::F64 => {
+            launch_center_3c2e_typed::<f64>(backend, plan, specialization, staging)
+        }
+        PrecisionKind::F32 => {
+            let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
+            launch_center_3c2e_typed::<f32>(backend, plan, specialization, staging_f32)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -487,7 +526,7 @@ mod tests {
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
-        let make_s_shell = |atom_idx: u64| Arc::new(Shell::try_new(
+        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
             atom_idx, 0, 1, 1, 0, Representation::Cart,
             Arc::from(vec![1.0_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
@@ -499,8 +538,8 @@ mod tests {
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b, shell_c]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(OperatorId::new(17), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(OperatorId::new(17), Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(OperatorId::new(22), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(OperatorId::new(22), Representation::Cart, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F64;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -542,7 +581,7 @@ mod tests {
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
-        let make_s_shell = |atom_idx: u64| Arc::new(Shell::try_new(
+        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
             atom_idx, 0, 1, 1, 0, Representation::Cart,
             Arc::from(vec![1.0_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
@@ -554,8 +593,8 @@ mod tests {
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b, shell_c]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(OperatorId::new(17), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(OperatorId::new(17), Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(OperatorId::new(22), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(OperatorId::new(22), Representation::Cart, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F32;
 
         let spec = SpecializationKey::from_plan(&plan);
