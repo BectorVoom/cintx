@@ -1,5 +1,6 @@
-//! Safe-API parity tests for the two scalar arity-2 ECP operators
-//! (`int1e_ecp_cart`, `int1e_ecp_sph`).
+//! Safe-API parity tests for the four arity-2 ECP operators — the two scalar
+//! (`int1e_ecp_cart`, `int1e_ecp_sph`) and the two gradient
+//! (`int1e_ecp_ipnuc_cart`, `int1e_ecp_ipnuc_sph`, component_rank=3).
 //!
 //! Targets byte-identity vs vendored PySCF nr_ecp at the Phase 15 unified
 //! tolerance (atol=1e-12, rtol=0.0). Cu/LANL2DZ full Cartesian product per
@@ -8,33 +9,36 @@
 //! ≥8 AO shell entries and ≥3 ECP projector entries (verified by `jq`
 //! before each run; see the file-top `coverage_invariant_holds` test).
 //!
-//! ## Status (Phase 19 replan — scalar closed)
+//! ## Status (Phase 19 replan — scalar + gradient closed)
 //!
-//! Byte-identity is achieved. Plan 19-06 replaced the 19-04 numerical-quadrature
-//! kernel with a verbatim port of PySCF nr_ecp's `ECPtype1_cart` / `ECPtype2_cart`
-//! drivers (the level-adaptive Gauss-Chebyshev radial loop, the 19-05 K-Taylor
-//! radial machinery `ecprad_part_host` / `type1_rad_part_host` /
-//! `type2_facs_rad_host`, and the per-`(li, lj, l_c)` angular splice). The two
-//! scalar parity tests below run **by default** (no `#[ignore]`) and pass at
-//! `atol=1e-12, rtol=0.0` over the full Cu/LANL2DZ Cartesian product
-//! (worst-case observed `|diff| ≈ 1.4e-14`). The `int1e_ecp_{cart,sph}` manifest
-//! rows are flipped to `oracle_covered=true`. Run via:
+//! Byte-identity is achieved for all four operators. Plan 19-06 replaced the
+//! 19-04 numerical-quadrature kernel with a verbatim port of PySCF nr_ecp's
+//! `ECPtype1_cart` / `ECPtype2_cart` drivers (scalar). Plan 19-07 added the
+//! gradient arm — a port of nr_ecp_deriv.c's `_deriv1_cart` (the
+//! `∂/∂A_i χ = 2 a_i χ_{l+1} − l χ_{l-1}` recurrence via `_l_down`/`_l_up`,
+//! reusing the same scalar drivers at l±1). All four parity tests below run
+//! **by default** (no `#[ignore]`) and pass at `atol=1e-12, rtol=0.0` over the
+//! full Cu/LANL2DZ Cartesian product (scalar worst `|diff| ≈ 1.4e-14`; gradient
+//! worst `|diff| ≈ 5.7e-14` per axis × 3 components). All four
+//! `int1e_ecp_{,_ipnuc}_{cart,sph}` manifest rows are flipped to
+//! `oracle_covered=true`. Run via:
 //!
 //!     CINTX_ORACLE_BUILD_VENDOR=1 cargo test --locked \
 //!         -p cintx-oracle --features cpu --test safe_api_ecp_parity
-//!
-//! The gradient `int1e_ecp_ipnuc_{cart,sph}` rows stay `oracle_covered=false`
-//! (closed by Plan 19-07).
 //!
 //! ## Vendor symbols compared against
 //!
 //! - `ECPscalar_sph`  (nr_ecp.c:6179-6221) — dispatches to ECPtype1_sph +
 //!   ECPtype2_sph internally via ECPtype_scalar_sph.
 //! - `ECPscalar_cart` (nr_ecp.c:6223-6266) — analog for Cartesian rep.
+//! - `ECPscalar_ipnuc_cart` (nr_ecp_deriv.c:366-375) — `_cart_factory(_deriv1_cart,
+//!   comp=3)`; the 3-component bra-center gradient.
+//! - `ECPscalar_ipnuc_sph`  (nr_ecp_deriv.c:453-462) — `_sph_factory(_deriv1_cart,
+//!   comp=3)`; per-component cart→sph transform via ECPscalar_c2s_factory.
 //!
-//! Both are combined Type-1+Type-2 wrappers (no separate
-//! `ECPtype1_*` / `ECPtype2_*` FFI per PySCF convention; the type split
-//! happens inside ECPtype_scalar_*).
+//! The scalar wrappers are combined Type-1+Type-2 (no separate
+//! `ECPtype1_*` / `ECPtype2_*` FFI per PySCF convention); `_deriv1_cart` likewise
+//! sums Type-1+Type-2 into one buffer per fake shell.
 
 // Module gate matches safe_api_arity2_parity.rs.
 #![cfg(any(feature = "cpu", feature = "rocm"))]
@@ -380,5 +384,205 @@ fn test_int1e_ecp_sph_safe_api_parity() {
     assert_eq!(
         mismatches, 0,
         "int1e_ecp_sph safe API: {mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} vs vendored PySCF nr_ecp"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gradient (ipnuc) collectors — component_rank=3, F-order [axis, ao_j, ao_i]
+// (axis slowest). The full gradient "matrix" is 3 × n_ao × n_ao, laid out
+// axis-outer: comp_matrix[axis*n_ao*n_ao + row*n_ao + col].
+//
+// Both collectors index each per-pair buffer identically as
+//   pair[axis*ni*nj + jj*ni + ii]   (axis slowest, ao_i fastest within a block)
+// so the comparison is apples-to-apples and NOT masked by the (per-axis
+// non-symmetric) structure of the gradient. cintx's launch_ecp writes
+// staging[axis*ni*nj + j*ni + i]; PySCF's _deriv1_cart writes
+// out[comp*dij + j*di + i] with di=ni (single contraction) — the SAME layout,
+// so NO transpose is applied (component order resolved by reading
+// nr_ecp_deriv.c:240-280 / ECPscalar_distribute, Plan 19-07 Task 1).
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn collect_safe_api_ecp_ipnuc_matrix(
+    op: OperatorId,
+    rep: Representation,
+    basis: &BasisSet,
+    shells: &[Arc<Shell>],
+) -> Vec<f64> {
+    let shell_nao: Vec<usize> = shells.iter().map(|s| s.ao_per_shell()).collect();
+    let n_ao: usize = shell_nao.iter().sum();
+    let mut comp_matrix = vec![0.0_f64; 3 * n_ao * n_ao];
+
+    let mut row_offset = 0usize;
+    for si in 0..shells.len() {
+        let ni = shell_nao[si];
+        let mut col_offset = 0usize;
+        for sj in 0..shells.len() {
+            let nj = shell_nao[sj];
+            let shell_tuple = ShellTuple::try_from_iter([shells[si].clone(), shells[sj].clone()])
+                .expect("ShellTuple");
+            let request =
+                SessionRequest::new(op, rep, basis, shell_tuple, ExecutionOptions::default());
+            let query = request.query_workspace().expect("query_workspace");
+            let output = query.evaluate().expect("evaluate");
+            let pair = &output.tensor.owned_values;
+            assert_eq!(
+                pair.len(),
+                3 * ni * nj,
+                "ipnuc safe-API pair buffer must be 3*ni*nj (component_rank=3)"
+            );
+            for axis in 0..3 {
+                for ii in 0..ni {
+                    for jj in 0..nj {
+                        // F-order [axis, ao_j, ao_i]: axis slowest, ao_i fastest.
+                        let v = pair[axis * ni * nj + jj * ni + ii];
+                        comp_matrix[axis * n_ao * n_ao
+                            + (row_offset + ii) * n_ao
+                            + (col_offset + jj)] = v;
+                    }
+                }
+            }
+            col_offset += nj;
+        }
+        row_offset += ni;
+    }
+    comp_matrix
+}
+
+/// Vendor PySCF nr_ecp gradient collector — mirrors `collect_ecp_matrix_vendor`
+/// but allocates a `3 * ni * nj` output buffer per shell pair and calls
+/// `vendor_ECPscalar_ipnuc_{cart,sph}`. PySCF writes `[comp, dij]` with `comp`
+/// slowest (gctrx|gctry|gctrz) and `dij` F-order `j*di+i` (ao_i fastest); for
+/// single contraction (`di = ni`) this is `[axis, ao_j, ao_i]` — IDENTICAL to
+/// cintx's layout, so the read index matches the safe-API collector with NO
+/// transpose. (PySCF component output convention resolved in Plan 19-07 Task 1
+/// from nr_ecp_deriv.c:240-280 + ECPscalar_distribute, nr_ecp.c:6133-6152.)
+#[cfg(all(has_vendor_libcint, has_vendor_pyscf_nr_ecp))]
+fn collect_ecp_ipnuc_matrix_vendor(
+    rep: &str,
+    atm: &[i32],
+    bas: &[i32],
+    ecpbas: &[i32],
+    env: &[f64],
+) -> Vec<f64> {
+    use cintx_oracle::vendor_ffi;
+
+    let nbas_ao = (bas.len() / BAS_SLOTS) as i32;
+    let necpbas = (ecpbas.len() / BAS_SLOTS) as i32;
+
+    let mut combined_bas = Vec::with_capacity(bas.len() + ecpbas.len());
+    combined_bas.extend_from_slice(bas);
+    combined_bas.extend_from_slice(ecpbas);
+    let combined_nbas = nbas_ao + necpbas;
+
+    let mut env_with_ecp = env.to_vec();
+    while env_with_ecp.len() <= AS_NECPBAS {
+        env_with_ecp.push(0.0);
+    }
+    env_with_ecp[AS_ECPBAS_OFFSET] = nbas_ao as f64;
+    env_with_ecp[AS_NECPBAS] = necpbas as f64;
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+
+    let nfn = match rep {
+        "sph" => |l: i32| -> usize { (2 * l + 1) as usize },
+        "cart" => |l: i32| -> usize { ((l + 1) * (l + 2) / 2) as usize },
+        _ => panic!("unknown rep: {rep}"),
+    };
+
+    let ang: Vec<i32> = (0..nbas_ao)
+        .map(|s| bas[s as usize * BAS_SLOTS + ANG_OF])
+        .collect();
+    let shell_nao: Vec<usize> = ang.iter().map(|&l| nfn(l)).collect();
+    let n_ao: usize = shell_nao.iter().sum();
+
+    let mut comp_matrix = vec![0.0_f64; 3 * n_ao * n_ao];
+    let mut row_offset = 0usize;
+    for si in 0..nbas_ao as usize {
+        let ni = shell_nao[si];
+        let mut col_offset = 0usize;
+        for sj in 0..nbas_ao as usize {
+            let nj = shell_nao[sj];
+            let shls = [si as i32, sj as i32];
+            let mut out = vec![0.0_f64; 3 * ni * nj];
+
+            let _ret = match rep {
+                "sph" => vendor_ffi::vendor_ECPscalar_ipnuc_sph(
+                    &mut out,
+                    &shls,
+                    atm,
+                    natm,
+                    &combined_bas,
+                    combined_nbas,
+                    &env_with_ecp,
+                ),
+                "cart" => vendor_ffi::vendor_ECPscalar_ipnuc_cart(
+                    &mut out,
+                    &shls,
+                    atm,
+                    natm,
+                    &combined_bas,
+                    combined_nbas,
+                    &env_with_ecp,
+                ),
+                _ => unreachable!(),
+            };
+
+            // PySCF [comp, dij] with dij F-order j*ni+i (i fastest). No transpose.
+            for axis in 0..3 {
+                for ii in 0..ni {
+                    for jj in 0..nj {
+                        let v = out[axis * ni * nj + jj * ni + ii];
+                        comp_matrix[axis * n_ao * n_ao
+                            + (row_offset + ii) * n_ao
+                            + (col_offset + jj)] = v;
+                    }
+                }
+            }
+            col_offset += nj;
+        }
+        row_offset += ni;
+    }
+    comp_matrix
+}
+
+#[test]
+#[cfg(all(has_vendor_libcint, has_vendor_pyscf_nr_ecp))]
+fn test_int1e_ecp_ipnuc_cart_safe_api_parity() {
+    let (atm, bas, ecpbas, env) = build_cu_lanl2dz();
+    let (basis, shells) = build_cu_lanl2dz_safe_basis(Representation::Cart);
+
+    let safe_matrix = collect_safe_api_ecp_ipnuc_matrix(
+        OperatorId::INT1E_ECP_IPNUC_CART,
+        Representation::Cart,
+        &basis,
+        &shells,
+    );
+    let vendor_matrix = collect_ecp_ipnuc_matrix_vendor("cart", &atm, &bas, &ecpbas, &env);
+
+    let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, ATOL, RTOL);
+    assert_eq!(
+        mismatches, 0,
+        "int1e_ecp_ipnuc_cart safe API: {mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} vs vendored PySCF nr_ecp_deriv (3 components)"
+    );
+}
+
+#[test]
+#[cfg(all(has_vendor_libcint, has_vendor_pyscf_nr_ecp))]
+fn test_int1e_ecp_ipnuc_sph_safe_api_parity() {
+    let (atm, bas, ecpbas, env) = build_cu_lanl2dz();
+    let (basis, shells) = build_cu_lanl2dz_safe_basis(Representation::Spheric);
+
+    let safe_matrix = collect_safe_api_ecp_ipnuc_matrix(
+        OperatorId::INT1E_ECP_IPNUC_SPH,
+        Representation::Spheric,
+        &basis,
+        &shells,
+    );
+    let vendor_matrix = collect_ecp_ipnuc_matrix_vendor("sph", &atm, &bas, &ecpbas, &env);
+
+    let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, ATOL, RTOL);
+    assert_eq!(
+        mismatches, 0,
+        "int1e_ecp_ipnuc_sph safe API: {mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} vs vendored PySCF nr_ecp_deriv (3 components)"
     );
 }

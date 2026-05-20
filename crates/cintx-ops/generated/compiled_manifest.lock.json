@@ -527,7 +527,7 @@
         "representation": "cart",
         "symbol": "int1e_ecp_ipnuc_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -559,7 +559,7 @@
         "representation": "sph",
         "symbol": "int1e_ecp_ipnuc_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
