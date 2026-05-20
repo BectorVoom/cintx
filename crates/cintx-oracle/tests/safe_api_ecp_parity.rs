@@ -8,29 +8,23 @@
 //! ≥8 AO shell entries and ≥3 ECP projector entries (verified by `jq`
 //! before each run; see the file-top `coverage_invariant_holds` test).
 //!
-//! ## Status (Phase 19 Wave 2)
+//! ## Status (Phase 19 replan — scalar closed)
 //!
-//! The kernel implementation that landed in
-//! `crates/cintx-cubecl/src/kernels/ecp.rs` uses a direct-quadrature form
-//! (Gauss-Hermite for Type-1, Gauss-Chebyshev + modified Bessel i_l for
-//! Type-2) without the full PySCF K-Taylor + Bessel-recurrence machinery.
-//! Byte-identity (atol=1e-12) parity against PySCF nr_ecp's
-//! `ECPscalar_{sph,cart}` is therefore NOT YET achieved.
+//! Byte-identity is achieved. Plan 19-06 replaced the 19-04 numerical-quadrature
+//! kernel with a verbatim port of PySCF nr_ecp's `ECPtype1_cart` / `ECPtype2_cart`
+//! drivers (the level-adaptive Gauss-Chebyshev radial loop, the 19-05 K-Taylor
+//! radial machinery `ecprad_part_host` / `type1_rad_part_host` /
+//! `type2_facs_rad_host`, and the per-`(li, lj, l_c)` angular splice). The two
+//! scalar parity tests below run **by default** (no `#[ignore]`) and pass at
+//! `atol=1e-12, rtol=0.0` over the full Cu/LANL2DZ Cartesian product
+//! (worst-case observed `|diff| ≈ 1.4e-14`). The `int1e_ecp_{cart,sph}` manifest
+//! rows are flipped to `oracle_covered=true`. Run via:
 //!
-//! The two `#[test]` functions below are gated with `#[ignore]` so they
-//! do NOT run by default. They DO compile and link against vendored
-//! PySCF nr_ecp (proving the FFI surface is sound), and provide the
-//! exact test harness Plan 04b / Plan 05 will tighten the kernel
-//! against. Run them explicitly via:
+//!     CINTX_ORACLE_BUILD_VENDOR=1 cargo test --locked \
+//!         -p cintx-oracle --features cpu --test safe_api_ecp_parity
 //!
-//!     CINTX_ORACLE_BUILD_VENDOR=1 cargo nextest run --locked \
-//!         -p cintx-oracle --test safe_api_ecp_parity -- --ignored
-//!
-//! When the kernel achieves byte-identity, remove the `#[ignore]` lines
-//! and flip `oracle_covered` to true in
-//! `crates/cintx-ops/src/generated/api_manifest.csv` (Plan 04 explicitly
-//! leaves the manifest flag at `false` since the parity gate isn't yet
-//! closed — see 19-04-SUMMARY.md "Deferred to Plan 04b").
+//! The gradient `int1e_ecp_ipnuc_{cart,sph}` rows stay `oracle_covered=false`
+//! (closed by Plan 19-07).
 //!
 //! ## Vendor symbols compared against
 //!
@@ -343,12 +337,11 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-symbol parity tests — gated #[ignore] until the kernel achieves
-// byte-identity (see file rustdoc "Status" section).
+// Per-symbol parity tests — run by default at atol=1e-12 byte-identity
+// (see file rustdoc "Status" section).
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Wave-2 kernel uses direct-quadrature without PySCF K-Taylor machinery — see 19-04-SUMMARY.md"]
 #[cfg(all(has_vendor_libcint, has_vendor_pyscf_nr_ecp))]
 fn test_int1e_ecp_cart_safe_api_parity() {
     let (atm, bas, ecpbas, env) = build_cu_lanl2dz();
@@ -370,7 +363,6 @@ fn test_int1e_ecp_cart_safe_api_parity() {
 }
 
 #[test]
-#[ignore = "Wave-2 kernel uses direct-quadrature without PySCF K-Taylor machinery — see 19-04-SUMMARY.md"]
 #[cfg(all(has_vendor_libcint, has_vendor_pyscf_nr_ecp))]
 fn test_int1e_ecp_sph_safe_api_parity() {
     let (atm, bas, ecpbas, env) = build_cu_lanl2dz();
