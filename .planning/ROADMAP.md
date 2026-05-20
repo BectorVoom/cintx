@@ -342,7 +342,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 20-05-PLAN.md — Kernel launchers group B: precision-dispatch 3c1e/3c2e/4c1e/f12 launchers (copy the Wave-3 dispatcher pattern); `f12_zeta` stays `Option<f64>`, cast to `F` at the kernel boundary.
+- [x] 20-05-PLAN.md — Kernel launchers group B: precision-dispatch 3c1e/3c2e/4c1e/f12 launchers (copy the Wave-3 dispatcher pattern); `f12_zeta` stays `Option<f64>`, cast to `F` at the kernel boundary.
 
 **Wave 5** *(blocked on Wave 4)*
 
