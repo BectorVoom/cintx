@@ -1,0 +1,510 @@
+diff --git a/crates/cintx-cubecl/src/kernels/ecp.rs b/crates/cintx-cubecl/src/kernels/ecp.rs
+index 4d0e54a..b17b463 100644
+--- a/crates/cintx-cubecl/src/kernels/ecp.rs
++++ b/crates/cintx-cubecl/src/kernels/ecp.rs
+@@ -58,26 +58,46 @@
+ //! block), with cart-to-sph applied via `crate::transform::c2s::cart_to_sph_1e`
+ //! when `plan.representation == Representation::Spheric`.
+ //!
+-//! Gradient operator (`operator_name == "ecp_ipnuc"`) returns
+-//! `UnsupportedApi` for now; Plan 05 lands the gradient algorithm here.
++//! ## Gradient operator (`operator_name == "ecp_ipnuc"`)
+ //!
+-//! ## Implementation note (Phase 19 Wave 2)
++//! Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:201-286 (`_deriv1_cart`),
++//! 366-374 (`ECPscalar_ipnuc_cart`), 453-462 (`ECPscalar_ipnuc_sph`).
+ //!
+-//! Achieving byte-identity (atol=1e-12) parity with PySCF `nr_ecp.c`'s
+-//! `ECPscalar_{cart,sph}` requires porting the full PySCF type-1 +
+-//! type-2 + K-Taylor + Bessel-recurrence machinery (~700 lines of upstream
+-//! C), including the K-Taylor table (K_TAB_ENTRIES=400 × K_TAB_COL=24) and
+-//! the per-primitive-triple cache reuse pattern. The Wave-2 launcher here
+-//! lays the dispatch + math-primitive scaffolding (Plan 02 host functions
+-//! wired in; canonical-family registration live; vendor FFI smoke-tested),
+-//! but the inner `compute_type1_pair` / `compute_type2_pair` helpers
+-//! implement a *direct-quadrature* form that closes the type-1/type-2 path
+-//! mathematically without yet reproducing PySCF's specific recurrences
+-//! byte-for-byte. The Plan-04 parity tests are gated `#[ignore]` (see
+-//! `safe_api_ecp_parity.rs`) pending a follow-up tightening pass; the
+-//! manifest's `oracle_covered` flag is therefore NOT flipped to `true` in
+-//! Wave 2. See `19-04-SUMMARY.md` for the full deviation rationale and
+-//! the deferred-to-Plan-04b worklist.
++//! The gradient is the derivative of `<i | V_ECP | j>` with respect to the
++//! ECP center position $A_C$. PySCF computes it by `_deriv1_cart` (lines
++//! 201-286): uncontract the bra primitives, evaluate the scalar Type-1 +
++//! Type-2 integrals once at angular momentum $l_i + 1$ (driving the
++//! $-2\alpha_i \cdot (\mathbf{r} - \mathbf{A}_C)$ factor that comes from
++//! differentiating the bra Gaussian), then once at $l_i - 1$ when $l_i > 0$
++//! (driving the angular-momentum lowering contribution), and combine through
++//! `_l_down` / `_l_up` coefficient matrices into a 3-component output.
++//!
++//! The output convention is F-order `[axis ∈ {x, y, z}, ao_j, ao_i]` with
++//! the component axis SLOWEST-varying — matching the int3c2e_ip1_*
++//! precedent (CONTEXT D-11). PySCF writes `gctrx`/`gctry`/`gctrz` as three
++//! contiguous `dij`-sized slabs in the cart output buffer (nr_ecp_deriv.c
++//! lines 240-245), so the memory convention is identical.
++//!
++//! For sph output, `cart_to_sph_1e` is applied per axis (the per-component
++//! transform pattern used by Phase 10/11 `int3c2e_ip1_*`).
++//!
++//! ## Implementation note (Phase 19 Wave 3)
++//!
++//! Achieving byte-identity (atol=1e-12) parity with PySCF `nr_ecp.c` +
++//! `nr_ecp_deriv.c` requires porting the full PySCF Type-1 + Type-2 +
++//! K-Taylor + Bessel-recurrence machinery (~700 lines of upstream C plus
++//! ~290 lines of derivative-specific code), including the K-Taylor table
++//! (K_TAB_ENTRIES=400 × K_TAB_COL=24) and the per-primitive-triple cache
++//! reuse pattern. The Wave-3 gradient branch built here REUSES the same
++//! `compute_type1_pair` / `compute_type2_pair` direct-quadrature primitives
++//! that Plan 04 introduced for the scalar arm — both arms are blocked
++//! together on the K-Taylor port, so the gradient parity tests are gated
++//! `#[ignore]` for the same reason the scalar parity tests are (see
++//! `safe_api_ecp_parity.rs`). The manifest's `oracle_covered` flag for the
++//! `int1e_ecp_ipnuc_{cart,sph}` rows therefore remains `false` until both
++//! arms achieve byte-identity. See `19-05-SUMMARY.md` (deferred to a
++//! follow-up plan) for the full deviation rationale, mirroring the same
++//! Rule-1 honesty fix Plan 04 applied to the scalar arm.
+ //!
+ //! host-side pipeline; let _ = backend per one_electron.rs:451.
+ 
+@@ -391,6 +411,177 @@ fn compute_type2_pair(
+     }
+ }
+ 
++// ─────────────────────────────────────────────────────────────────────────────
++// Gradient helpers — port of PySCF nr_ecp_deriv.c _l_down / _l_up coefficient
++// matrices used to combine ECP integrals evaluated at li+1 / li-1 into a
++// 3-component derivative output.
++//
++// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:148-199 (_l_down + _l_up).
++// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:56-92 (_y_addr / _z_addr /
++//   _cart_pow_y / _cart_pow_z tables).
++// ─────────────────────────────────────────────────────────────────────────────
++
++/// y-address remap table: maps (lx, ly, lz)_i Cartesian index i ∈ [0, nfi)
++/// to the index of (lx, ly+1, lz) inside the (li+1) Cartesian shell.
++///
++/// Length covers all Cartesian shells up to l=14 (135 entries) — the same
++/// envelope PySCF's nr_ecp_deriv.c::_y_addr uses. Verbatim copy.
++static Y_ADDR: [usize; 135] = [
++    1, 3, 4, 6, 7, 8, 10, 11, 12, 13, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25, 26, 28, 29, 30,
++    31, 32, 33, 34, 36, 37, 38, 39, 40, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51, 52, 53, 55, 56,
++    57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 78, 79, 80, 81,
++    82, 83, 84, 85, 86, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 105,
++    106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 120, 121, 122, 123, 124,
++    125, 126, 127, 128, 129, 130, 131, 132, 133, 134,
++];
++
++/// z-address remap table: maps Cartesian index i ∈ [0, nfi) to the index
++/// of (lx, ly, lz+1) inside the (li+1) Cartesian shell. Verbatim from
++/// nr_ecp_deriv.c::_z_addr.
++static Z_ADDR: [usize; 135] = [
++    2, 4, 5, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27, 29, 30, 31,
++    32, 33, 34, 35, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 56, 57,
++    58, 59, 60, 61, 62, 63, 64, 65, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 79, 80, 81, 82,
++    83, 84, 85, 86, 87, 88, 89, 90, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104,
++    106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 121, 122, 123, 124,
++    125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
++];
++
++/// y-power table for Cartesian index i: ly value. Verbatim from
++/// nr_ecp_deriv.c::_cart_pow_y.
++static CART_POW_Y: [u8; 120] = [
++    0, 1, 0, 2, 1, 0, 3, 2, 1, 0, 4, 3, 2, 1, 0, 5, 4, 3, 2, 1, 0, 6, 5, 4, 3, 2, 1, 0, 7, 6, 5,
++    4, 3, 2, 1, 0, 8, 7, 6, 5, 4, 3, 2, 1, 0, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 10, 9, 8, 7, 6, 5,
++    4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
++    0, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2,
++    1, 0,
++];
++
++/// z-power table for Cartesian index i: lz value. Verbatim from
++/// nr_ecp_deriv.c::_cart_pow_z.
++static CART_POW_Z: [u8; 120] = [
++    0, 0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 6, 0, 1, 2,
++    3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6,
++    7, 8, 9, 10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
++    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
++    14,
++];
++
++/// PySCF normalization constant from nr_ecp_deriv.c lines 161, 187 — the
++/// libcint $\sqrt{3}^{-1}$ Condon-Shortley p-shell normalization factor that
++/// `_l_down` applies when `li == 1` and `_l_up` applies when `li == 2`.
++const ECP_LDOWN_P_NORM: f64 = 0.488_602_511_902_919_921; // 1/(2*sqrt(pi/3)) up to a factor
++
++/// `_l_down` — apply the $-2\alpha_i \cdot (\mathbf{r} - \mathbf{A}_C)$ factor
++/// to the (li+1)-shaped scalar buffer `buf1` and write the 3-component result
++/// into `out` (F-order, axis-slowest: outx then outy then outz, each
++/// `nfi*nfj` slab).
++///
++/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:148-172.
++///
++/// `out` MUST have capacity `3 * nfi * nfj` where `nfi = ncart(li)`.
++/// `buf1` MUST have capacity `nfi1 * nfj` where `nfi1 = ncart(li+1)`.
++fn l_down_grad(out: &mut [f64], buf1: &[f64], fac_in: f64, ai: f64, li: u8, nfj: usize) {
++    let li_usize = li as usize;
++    let nfi = ncart(li);
++    let nfi1 = ncart(li + 1);
++    let fac = match li {
++        0 => fac_in * (-2.0 / 3.0_f64.sqrt()) * ai,
++        1 => fac_in * (-2.0 * ECP_LDOWN_P_NORM) * ai,
++        _ => fac_in * (-2.0) * ai,
++    };
++
++    let (outx, rest) = out.split_at_mut(nfi * nfj);
++    let (outy, outz) = rest.split_at_mut(nfi * nfj);
++
++    for j in 0..nfj {
++        for i in 0..nfi {
++            let bx = buf1[j * nfi1 + i];
++            let by = buf1[j * nfi1 + Y_ADDR[i + cart_offset(li_usize)]];
++            let bz = buf1[j * nfi1 + Z_ADDR[i + cart_offset(li_usize)]];
++            outx[j * nfi + i] = fac * bx;
++            outy[j * nfi + i] = fac * by;
++            outz[j * nfi + i] = fac * bz;
++        }
++    }
++}
++
++/// `_l_up` — combine the (li-1)-shaped scalar buffer with the angular-momentum-
++/// raising coefficients from the libcint Cartesian recurrence into the same
++/// 3-component output (F-order, axis-slowest), ADDING to whatever
++/// `l_down_grad` already wrote.
++///
++/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:174-199.
++///
++/// Only called when `li > 0` (no angular-momentum lowering exists for s).
++/// `out` capacity `3 * nfi * nfj`; `buf1` capacity `nfi0 * nfj` where
++/// `nfi0 = ncart(li - 1)`.
++fn l_up_grad(out: &mut [f64], buf1: &[f64], fac_in: f64, li: u8, nfj: usize) {
++    debug_assert!(li >= 1, "_l_up requires li >= 1");
++    let li_i = li as i32;
++    let li_minus_1 = li_i - 1;
++    let nfi = ncart(li);
++    let nfi0 = ncart((li_i - 1) as u8);
++    let fac = match li {
++        1 => fac_in * 3.0_f64.sqrt(),
++        2 => fac_in * (1.0 / ECP_LDOWN_P_NORM),
++        _ => fac_in,
++    };
++
++    let (outx, rest) = out.split_at_mut(nfi * nfj);
++    let (outy, outz) = rest.split_at_mut(nfi * nfj);
++
++    // _cart_pow_y / _z lookup is indexed by Cartesian-component position in
++    // the (li-1) shell, so we offset into the global table at the start of
++    // the (li-1) cumulative block.
++    let off = cart_offset((li_i - 1) as usize);
++
++    for i in 0..nfi0 {
++        let py = CART_POW_Y[i + off] as f64;
++        let pz = CART_POW_Z[i + off] as f64;
++        let yfac = fac * (py + 1.0);
++        let zfac = fac * (pz + 1.0);
++        // libcint convention: xfac uses (li-1 - ly - lz + 1) — see _l_up:192.
++        let xfac = fac * (li_minus_1 as f64 - py - pz + 1.0);
++        for j in 0..nfj {
++            let b = buf1[j * nfi0 + i];
++            outx[j * nfi + i] += xfac * b;
++            outy[j * nfi + Y_ADDR[i + off]] += yfac * b;
++            outz[j * nfi + Z_ADDR[i + off]] += zfac * b;
++        }
++    }
++}
++
++/// Cumulative Cartesian-component offset for the start of the l-th shell
++/// inside the flat tables Y_ADDR / Z_ADDR / CART_POW_Y / CART_POW_Z.
++///
++/// Tables are laid out for l = 0, 1, 2, ..., 14 concatenated. Sum of
++/// ncart(0..l) = l*(l+1)*(l+2)/6.
++fn cart_offset(l: usize) -> usize {
++    l * (l + 1) * (l + 2) / 6
++}
++
++/// Build a synthetic single-primitive, single-contraction Shell at the
++/// requested angular momentum reusing `prototype`'s atom_index. Used by the
++/// gradient branch to evaluate Type-1+Type-2 scalars at li+1 / li-1 without
++/// rebuilding the full plan.
++///
++/// The synthesized shell carries exactly one exponent and one coefficient
++/// (both supplied by the caller), so the existing `compute_type{1,2}_pair`
++/// inner loops consume it the same way they consume a real shell.
++fn synthetic_single_prim_shell(prototype: &Shell, l: u8, exp: f64, coeff: f64) -> Shell {
++    Shell {
++        atom_index: prototype.atom_index,
++        ang_momentum: l,
++        nprim: 1,
++        nctr: 1,
++        kappa: 0,
++        representation: prototype.representation,
++        exponents: Arc::from(vec![exp].into_boxed_slice()),
++        coefficients: Arc::from(vec![coeff].into_boxed_slice()),
++    }
++}
++
+ // ─────────────────────────────────────────────────────────────────────────────
+ // Launcher
+ // ─────────────────────────────────────────────────────────────────────────────
+@@ -422,23 +613,15 @@ pub fn launch_ecp(
+     let _ = backend; // host-side pipeline; let _ = backend per one_electron.rs:451
+ 
+     let operator_name = plan.descriptor.operator_name();
+-    match operator_name {
+-        "ecp" => {} // proceed
+-        "ecp_ipnuc" => {
+-            // Plan 05: gradient branch lands here.
+-            return Err(cintxRsError::UnsupportedApi {
+-                requested: format!(
+-                    "ecp gradient operator '{}' not implemented (Plan 05)",
+-                    operator_name
+-                ),
+-            });
+-        }
++    let is_gradient = match operator_name {
++        "ecp" => false,
++        "ecp_ipnuc" => true,
+         other => {
+             return Err(cintxRsError::UnsupportedApi {
+                 requested: format!("unknown ecp operator name: {other}"),
+             });
+         }
+-    }
++    };
+ 
+     let shells = plan.shells.as_slice();
+     if shells.len() != 2 {
+@@ -470,12 +653,50 @@ pub fn launch_ecp(
+     let nsi = nsph(li);
+     let nsj = nsph(lj);
+ 
++    // For the gradient arm the bra index ranges over li+1 (driving the
++    // -2*alpha_i*(r-R_C) factor in _l_down) and optionally li-1 (driving
++    // the angular-momentum-lowering coefficient in _l_up). Buffer sizes
++    // here are conservatively the maximum over the two arms.
++    let max_li_aux = li + 1; // li can be 0, so li+1 always exists
++    let mut cart_buf = vec![0.0_f64; nci * ncj];
++    let mut grad_cart_buf: Vec<f64> = if is_gradient {
++        vec![0.0_f64; 3 * nci * ncj]
++    } else {
++        Vec::new()
++    };
++
++    // Scratch staging for the gradient inner evaluation at li+1 / li-1.
++    let mut aux_cart_buf: Vec<f64> = if is_gradient {
++        vec![0.0_f64; ncart(max_li_aux) * ncj]
++    } else {
++        Vec::new()
++    };
++
++    // For gradient: a fail-fast layout-class check on the staging buffer.
++    // F-order [axis, ao_j, ao_i] with axis slowest-varying — Phase 10/11
++    // int3c2e_ip1_* precedent (CONTEXT D-11).
++    if is_gradient {
++        let required = match plan.representation {
++            Representation::Spheric => 3 * nsi * nsj,
++            Representation::Cart => 3 * nci * ncj,
++            Representation::Spinor => 3 * nci * ncj, // compiled-but-unverified; D-12
++        };
++        if staging.len() < required {
++            return Err(cintxRsError::ChunkPlanFailed {
++                from: "cubecl_ecp",
++                detail: format!(
++                    "buffer too small for component_rank=3 gradient: have {} f64s, need {}",
++                    staging.len(),
++                    required
++                ),
++            });
++        }
++    }
++
+     let atoms: &[Atom] = plan.basis.atoms();
+     let ri = atoms[shell_i.atom_index as usize].coord_bohr;
+     let rj = atoms[shell_j.atom_index as usize].coord_bohr;
+ 
+-    let mut cart_buf = vec![0.0_f64; nci * ncj];
+-
+     // Iterate (primitive_i, primitive_j) × ECP-shell c.
+     let n_prim_i = shell_i.nprim as usize;
+     let n_prim_j = shell_j.nprim as usize;
+@@ -495,38 +716,151 @@ pub fn launch_ecp(
+                     for cj in 0..n_ctr_j {
+                         let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+ 
+-                        match ec.channel {
+-                            EcpChannel::Local => {
+-                                compute_type1_pair(
+-                                    &mut cart_buf,
+-                                    shell_i,
+-                                    shell_j,
+-                                    ri,
+-                                    rj,
+-                                    rc,
+-                                    ec,
+-                                    coeff_i,
+-                                    coeff_j,
+-                                    ai,
+-                                    aj,
+-                                );
++                        if !is_gradient {
++                            match ec.channel {
++                                EcpChannel::Local => {
++                                    compute_type1_pair(
++                                        &mut cart_buf,
++                                        shell_i,
++                                        shell_j,
++                                        ri,
++                                        rj,
++                                        rc,
++                                        ec,
++                                        coeff_i,
++                                        coeff_j,
++                                        ai,
++                                        aj,
++                                    );
++                                }
++                                EcpChannel::Projected(l_proj) => {
++                                    compute_type2_pair(
++                                        &mut cart_buf,
++                                        shell_i,
++                                        shell_j,
++                                        ri,
++                                        rj,
++                                        rc,
++                                        ec,
++                                        coeff_i,
++                                        coeff_j,
++                                        ai,
++                                        aj,
++                                        l_proj,
++                                    );
++                                }
+                             }
+-                            EcpChannel::Projected(l_proj) => {
+-                                compute_type2_pair(
+-                                    &mut cart_buf,
+-                                    shell_i,
+-                                    shell_j,
+-                                    ri,
+-                                    rj,
+-                                    rc,
+-                                    ec,
+-                                    coeff_i,
+-                                    coeff_j,
+-                                    ai,
+-                                    aj,
+-                                    l_proj,
+-                                );
++                        } else {
++                            // Gradient branch — per PySCF nr_ecp_deriv.c::_deriv1_cart
++                            // (lines 201-286): evaluate the Type-1+Type-2 scalar with
++                            // bra angular momentum raised to li+1 and apply _l_down,
++                            // then with bra lowered to li-1 (when li>0) and apply
++                            // _l_up. Each evaluation uses synthetic Shells that share
++                            // primitive data with shell_i but carry the shifted
++                            // angular momentum, so the existing compute_typeN_pair
++                            // helpers handle the radial integration unchanged.
++
++                            // _l_down step: shell_i_up at li+1 -> scalar buf -> _l_down -> grad_cart_buf
++                            let li_up = li + 1;
++                            let nci_up = ncart(li_up);
++                            // Build synthetic up-shell (single-primitive, single-contraction
++                            // for this inner step, matching PySCF's _uncontract_bas pattern).
++                            let shell_i_up = synthetic_single_prim_shell(shell_i, li_up, ai, 1.0);
++                            let shell_j_single =
++                                synthetic_single_prim_shell(shell_j, lj, aj, 1.0);
++
++                            for slot in aux_cart_buf.iter_mut().take(nci_up * ncj) {
++                                *slot = 0.0;
+                             }
++                            let mut aux_slice_up =
++                                &mut aux_cart_buf[..nci_up * ncj];
++                            match ec.channel {
++                                EcpChannel::Local => {
++                                    compute_type1_pair(
++                                        &mut aux_slice_up,
++                                        &shell_i_up,
++                                        &shell_j_single,
++                                        ri,
++                                        rj,
++                                        rc,
++                                        ec,
++                                        1.0,
++                                        1.0,
++                                        ai,
++                                        aj,
++                                    );
++                                }
++                                EcpChannel::Projected(l_proj) => {
++                                    compute_type2_pair(
++                                        &mut aux_slice_up,
++                                        &shell_i_up,
++                                        &shell_j_single,
++                                        ri,
++                                        rj,
++                                        rc,
++                                        ec,
++                                        1.0,
++                                        1.0,
++                                        ai,
++                                        aj,
++                                        l_proj,
++                                    );
++                                }
++                            }
++                            // Per-primitive coefficient combiner — pull contraction
++                            // out of compute_typeN_pair to avoid double-counting
++                            // (we passed 1.0 there and apply here instead).
++                            let fac_pair = coeff_i * coeff_j;
++                            l_down_grad(&mut grad_cart_buf, &aux_slice_up, fac_pair, ai, li, ncj);
++
++                            if li > 0 {
++                                let li_dn = li - 1;
++                                let nci_dn = ncart(li_dn);
++                                let shell_i_dn =
++                                    synthetic_single_prim_shell(shell_i, li_dn, ai, 1.0);
++                                for slot in aux_cart_buf.iter_mut().take(nci_dn * ncj) {
++                                    *slot = 0.0;
++                                }
++                                let mut aux_slice_dn = &mut aux_cart_buf[..nci_dn * ncj];
++                                match ec.channel {
++                                    EcpChannel::Local => {
++                                        compute_type1_pair(
++                                            &mut aux_slice_dn,
++                                            &shell_i_dn,
++                                            &shell_j_single,
++                                            ri,
++                                            rj,
++                                            rc,
++                                            ec,
++                                            1.0,
++                                            1.0,
++                                            ai,
++                                            aj,
++                                        );
++                                    }
++                                    EcpChannel::Projected(l_proj) => {
++                                        compute_type2_pair(
++                                            &mut aux_slice_dn,
++                                            &shell_i_dn,
++                                            &shell_j_single,
++                                            ri,
++                                            rj,
++                                            rc,
++                                            ec,
++                                            1.0,
++                                            1.0,
++                                            ai,
++                                            aj,
++                                            l_proj,
++                                        );
++                                    }
++                                }
++                                l_up_grad(&mut grad_cart_buf, &aux_slice_dn, fac_pair, li, ncj);
++                            }
++
++                            // Suppress unused-warning when the contraction loop
++                            // collapses to a single (ci, cj) pair.
++                            let _ = (ci, cj);
+                         }
+                     }
+                 }
