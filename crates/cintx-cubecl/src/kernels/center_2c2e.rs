@@ -28,7 +28,7 @@ use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2c2e, ncart};
 use crate::transform::c2spinor::cart_to_spinor_sf_2d;
-use cintx_core::{Representation, cintxRsError};
+use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
 use std::f64::consts::PI;
@@ -243,22 +243,22 @@ fn fill_g_tensor_2c2e(
     g
 }
 
-/// Real 2c2e integral kernel following the g2c2e.c + g2e.c algorithm.
+/// Generic inner for the 2c2e launcher.
 ///
-/// Replaces the zero-returning stub. Implements the full G-tensor fill
-/// + primitive contraction + cart-to-sph pipeline for the two-center
-/// two-electron Coulomb integral (`int2c2e_sph`).
+/// Intermediate computations (G-tensor, cart_buf) remain `f64`; output staging
+/// is written via `F::from_f64_lossy`. The `f64` monomorphization is byte-identical
+/// to the pre-generic code. See `launch_center_2c2e` for the dispatch rationale.
 ///
 /// # Normalization chain (from libcint):
 /// common_factor = PI^3*2/sqrt(PI) * fac_sp_i * fac_sp_k   (g2c2e.c line 44-45)
 /// fac_env = common_factor * ci * ck                         (cint2c2e.c line 129-133)
 /// fac1 = sqrt(a0/a1^3) * fac_env                           (g2e.c line 4441)
 /// gz[root] = w[root] * fac1                                 (g2e.c line 4563)
-pub fn launch_center_2c2e(
+fn launch_center_2c2e_typed<F: CintFloat>(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    staging: &mut [f64],
+    staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
     if specialization.canonical_family() != "2c2e" {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -362,30 +362,40 @@ pub fn launch_center_2c2e(
         }
     }
 
-    // Apply cart-to-sph, cart-to-spinor, or copy Cartesian to staging
+    // Representation dispatch: intermediate transforms use f64 temp buffers;
+    // final values cast to F via F::from_f64_lossy.
     match plan.representation {
         Representation::Spheric => {
             let sph = cart_to_sph_2c2e(&cart_buf, li, lk);
             let copy_len = staging.len().min(sph.len());
-            staging[..copy_len].copy_from_slice(&sph[..copy_len]);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
         Representation::Spinor => {
             let kappa_i = shell_i.kappa;
             let kappa_k = shell_k.kappa;
-            cart_to_spinor_sf_2d(staging, &cart_buf, li, kappa_i, lk, kappa_k)?;
+            let mut tmp_staging = vec![0.0_f64; staging.len()];
+            cart_to_spinor_sf_2d(&mut tmp_staging, &cart_buf, li, kappa_i, lk, kappa_k)?;
+            for (dst, &src) in staging.iter_mut().zip(tmp_staging.iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
         Representation::Cart => {
             let copy_len = staging.len().min(cart_buf.len());
-            staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
     }
 
+    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
     let not0 = staging
         .iter()
-        .filter(|&&v| v.abs() > 1e-18)
+        .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<f64>();
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -396,6 +406,27 @@ pub fn launch_center_2c2e(
         not0,
         fallback_reason: plan.workspace.fallback_reason,
     })
+}
+
+/// 2c2e outer precision dispatcher — keeps the registered FamilyLaunchFn signature.
+///
+/// Dispatches on `plan.precision` to `launch_center_2c2e_typed::<F>`. The F32 arm
+/// reinterprets `staging: &mut [f64]` as `&mut [f32]` via bytemuck (Plan 01 A5 proven).
+pub fn launch_center_2c2e(
+    backend: &ResolvedBackend,
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    staging: &mut [f64],
+) -> Result<ExecutionStats, cintxRsError> {
+    match plan.precision {
+        PrecisionKind::F64 => {
+            launch_center_2c2e_typed::<f64>(backend, plan, specialization, staging)
+        }
+        PrecisionKind::F32 => {
+            let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
+            launch_center_2c2e_typed::<f32>(backend, plan, specialization, staging_f32)
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
