@@ -505,11 +505,19 @@ fn ensure_validated_4c1e(
     Ok(())
 }
 
-pub fn launch_center_4c1e(
+/// Generic inner for the 4c1e launcher.
+///
+/// Contains the full algorithm of `launch_center_4c1e` parameterized over the
+/// output float type `F: CintFloat`. Intermediate computations (G-tensor, cart_buf)
+/// remain `f64`; precision conversion happens only at the final staging write via
+/// `F::from_f64_lossy`. Preserves the Validated4C1E envelope and polynomial-recurrence
+/// G-tensor fill (no Rys quadrature, nroots=1). The `#[cfg(feature = "with-4c1e")]`
+/// gate is on the public outer only; the inner is gated via the outer.
+fn launch_center_4c1e_typed<F: CintFloat>(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    staging: &mut [f64],
+    staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
     ensure_validated_4c1e(plan, specialization)?;
 
@@ -686,26 +694,32 @@ pub fn launch_center_4c1e(
         }
     }
 
-    // Apply cart-to-sph transform if representation is Spheric.
+    // Apply cart-to-sph transform or copy Cartesian, casting to F at write.
     match plan.representation {
         Representation::Spheric => {
             let sph = cart_to_sph_2e(&cart_buf, li, lj, lk, ll);
             let sph_size = nsi * nsj * nsk * nsl;
-            let copy_len = staging.len().min(sph.len()).min(sph_size);
-            staging[..copy_len].copy_from_slice(&sph[..copy_len]);
+            let copy_len = staging.len().min(sph_size);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
         _ => {
             let copy_len = staging.len().min(cart_buf.len());
-            staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
+                *dst = F::from_f64_lossy(src);
+            }
         }
     }
 
+    // Per-symbol nonzero sentinel
+    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
     let not0 = staging
         .iter()
-        .filter(|&&v| v.abs() > 1e-18)
+        .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<f64>();
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -716,6 +730,30 @@ pub fn launch_center_4c1e(
         not0,
         fallback_reason: plan.workspace.fallback_reason,
     })
+}
+
+/// Outer precision dispatcher for the 4c1e kernel.
+///
+/// Keeps the registered `FamilyLaunchFn` signature and `#[cfg(feature = "with-4c1e")]`
+/// gate unchanged. Internally matches on `plan.precision` and delegates to the
+/// generic inner `launch_center_4c1e_typed::<F>`, reinterpreting staging via
+/// `bytemuck::cast_slice_mut` for the F32 arm (A5 proven sound). The Validated4C1E
+/// envelope, polynomial-recurrence G-tensor, and 4-branch HRR are preserved verbatim.
+pub fn launch_center_4c1e(
+    backend: &ResolvedBackend,
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    staging: &mut [f64],
+) -> Result<ExecutionStats, cintxRsError> {
+    match plan.precision {
+        PrecisionKind::F64 => {
+            launch_center_4c1e_typed::<f64>(backend, plan, specialization, staging)
+        }
+        PrecisionKind::F32 => {
+            let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
+            launch_center_4c1e_typed::<f32>(backend, plan, specialization, staging_f32)
+        }
+    }
 }
 
 #[cfg(test)]

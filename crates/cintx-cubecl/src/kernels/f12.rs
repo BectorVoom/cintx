@@ -1510,30 +1510,38 @@ fn launch_yp_ip1ip2(
     f12_kernel_core(backend, plan, spec, staging, zeta, &F12_IP1IP2, false)
 }
 
-/// Dispatch to the correct STG or YP entry point based on operator_name.
+/// Generic inner for the f12 launcher.
 ///
-/// Reads `plan.operator_env_params.f12_zeta` (pre-validated by validate_f12_env_params).
-/// Routes by operator_name prefix ("stg" or "yp") and suffix ("", "_ip1", "_ipip1", "_ipvip1", "_ip1ip2").
-pub fn launch_f12(
+/// Contains the full routing logic of `launch_f12` parameterized over the output
+/// float type `F: CintFloat`. The staging buffer is typed `&mut [F]` so the
+/// bytemuck-cast pattern at the outer boundary is sound (Plan 01 A5 proven).
+///
+/// `f12_zeta` STAYS `Option<f64>` on `ExecutionOptions`/`OperatorEnvParams` (env-side
+/// f64, D-06 / Open Question 3). The `zeta: f64` value is used in `f64` arithmetic
+/// throughout the entire computation pipeline (G-tensor, root computation, weight
+/// post-processing). If the kernel were to use `F`-typed internal math in the future,
+/// the cast would be `F::from_f64_lossy(zeta)` at the point zeta enters the `F` math.
+/// For now, all intermediates stay `f64` and only the final staging write uses
+/// `F::from_f64_lossy`.
+fn launch_f12_typed<F: CintFloat>(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
     specialization: &SpecializationKey,
-    staging: &mut [f64],
+    staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    // Validate and extract f12_zeta.
-    // canonical_family for STG/YP operators in the manifest is "f12"; we pass
-    // "f12" explicitly so validate_f12_env_params performs the zeta gate unconditionally.
+    // Validate and extract f12_zeta. The field stays Option<f64> (env-side, D-06).
+    // cast to F only when/if it enters F-typed kernel math (currently stays f64 throughout).
     validate_f12_env_params("f12", &plan.operator_env_params)?;
 
-    let zeta = plan
+    // f12_zeta: Option<f64> — env parameter stays f64 per D-06 / Open Question 3.
+    // If we ever move kernel math to F, the cast point is: F::from_f64_lossy(zeta)
+    let zeta: f64 = plan
         .operator_env_params
         .f12_zeta
         .expect("validate_f12_env_params guarantees Some non-zero zeta");
 
-    // operator_name() returns "stg", "stg_ip1", "yp", "yp_ip1", etc. (no "int2e_" prefix).
     let operator_name = plan.descriptor.operator_name();
 
-    // Determine STG vs YP and variant suffix from operator_name.
     let (is_stg, variant_suffix) = if let Some(suffix) = operator_name.strip_prefix("stg") {
         (true, suffix)
     } else if let Some(suffix) = operator_name.strip_prefix("yp") {
@@ -1544,27 +1552,80 @@ pub fn launch_f12(
         });
     };
 
-    if is_stg {
+    // We need a temporary f64 staging buffer, run the f64 computation, then cast to F.
+    // All internal f12 math runs in f64 (same pattern as 1e/2e/2c2e typed inners).
+    let staging_len = staging.len();
+    let mut staging_f64 = vec![0.0_f64; staging_len];
+
+    let stats = if is_stg {
         match variant_suffix {
-            "" => launch_stg_base(backend, plan, specialization, staging, zeta),
-            "_ip1" => launch_stg_ip1(backend, plan, specialization, staging, zeta),
-            "_ipip1" => launch_stg_ipip1(backend, plan, specialization, staging, zeta),
-            "_ipvip1" => launch_stg_ipvip1(backend, plan, specialization, staging, zeta),
-            "_ip1ip2" => launch_stg_ip1ip2(backend, plan, specialization, staging, zeta),
+            "" => launch_stg_base(backend, plan, specialization, &mut staging_f64, zeta),
+            "_ip1" => launch_stg_ip1(backend, plan, specialization, &mut staging_f64, zeta),
+            "_ipip1" => launch_stg_ipip1(backend, plan, specialization, &mut staging_f64, zeta),
+            "_ipvip1" => launch_stg_ipvip1(backend, plan, specialization, &mut staging_f64, zeta),
+            "_ip1ip2" => launch_stg_ip1ip2(backend, plan, specialization, &mut staging_f64, zeta),
             other => Err(cintxRsError::UnsupportedApi {
                 requested: format!("f12 launch: unknown stg variant suffix: {other}"),
             }),
         }
     } else {
         match variant_suffix {
-            "" => launch_yp_base(backend, plan, specialization, staging, zeta),
-            "_ip1" => launch_yp_ip1(backend, plan, specialization, staging, zeta),
-            "_ipip1" => launch_yp_ipip1(backend, plan, specialization, staging, zeta),
-            "_ipvip1" => launch_yp_ipvip1(backend, plan, specialization, staging, zeta),
-            "_ip1ip2" => launch_yp_ip1ip2(backend, plan, specialization, staging, zeta),
+            "" => launch_yp_base(backend, plan, specialization, &mut staging_f64, zeta),
+            "_ip1" => launch_yp_ip1(backend, plan, specialization, &mut staging_f64, zeta),
+            "_ipip1" => launch_yp_ipip1(backend, plan, specialization, &mut staging_f64, zeta),
+            "_ipvip1" => launch_yp_ipvip1(backend, plan, specialization, &mut staging_f64, zeta),
+            "_ip1ip2" => launch_yp_ip1ip2(backend, plan, specialization, &mut staging_f64, zeta),
             other => Err(cintxRsError::UnsupportedApi {
                 requested: format!("f12 launch: unknown yp variant suffix: {other}"),
             }),
+        }
+    }?;
+
+    // Cast f64 results to F at the output boundary.
+    // For f64 this is a zero-cost identity; for f32 it truncates.
+    for (dst, &src) in staging.iter_mut().zip(staging_f64.iter()) {
+        *dst = F::from_f64_lossy(src);
+    }
+
+    // Per-symbol nonzero sentinel
+    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        not0,
+        peak_workspace_bytes: staging_bytes,
+        transfer_bytes: staging_bytes,
+        ..stats
+    })
+}
+
+/// Dispatch to the correct STG or YP entry point based on operator_name.
+///
+/// Outer precision dispatcher: keeps the registered `FamilyLaunchFn` signature and
+/// `#[cfg(feature = "with-f12")]` gate unchanged. Internally matches on `plan.precision`
+/// and delegates to `launch_f12_typed::<F>`, reinterpreting staging via
+/// `bytemuck::cast_slice_mut` for the F32 arm (A5 proven sound).
+///
+/// `f12_zeta` STAYS `Option<f64>` on `ExecutionOptions`/`OperatorEnvParams` (D-06).
+/// The cast to `F` is `F::from_f64_lossy(zeta)` inside the typed inner, at the
+/// kernel output boundary (see `launch_f12_typed` documentation).
+pub fn launch_f12(
+    backend: &ResolvedBackend,
+    plan: &ExecutionPlan<'_>,
+    specialization: &SpecializationKey,
+    staging: &mut [f64],
+) -> Result<ExecutionStats, cintxRsError> {
+    match plan.precision {
+        PrecisionKind::F64 => {
+            launch_f12_typed::<f64>(backend, plan, specialization, staging)
+        }
+        PrecisionKind::F32 => {
+            let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
+            launch_f12_typed::<f32>(backend, plan, specialization, staging_f32)
         }
     }
 }
@@ -1590,7 +1651,7 @@ mod tests {
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
         let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
+            atom_idx, 0, 1, 1, 0, Representation::Spheric,
             Arc::from(vec![1.0_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
         let shell_a0 = make_s_shell(0);
@@ -1602,14 +1663,15 @@ mod tests {
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
 
         use cintx_ops::resolver::Resolver;
-        let desc = Resolver::descriptor_by_symbol("int2e_stg_cart").expect("int2e_stg_cart must exist");
+        let desc = Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
         let op_id = desc.id;
 
-        let mut opts = ExecutionOptions::default();
-        opts.f12_zeta = Some(1.0);
-        let query = query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(op_id, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F64;
+        // f12_zeta stays Option<f64> on plan.operator_env_params (env-side, D-06 / Open Q3)
+        plan.operator_env_params.f12_zeta = Some(1.0);
 
         let spec = SpecializationKey::from_plan(&plan);
         let cpu_client = resolve_cpu_client().unwrap();
@@ -1646,7 +1708,7 @@ mod tests {
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
         let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
+            atom_idx, 0, 1, 1, 0, Representation::Spheric,
             Arc::from(vec![1.0_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
         let shell_a0 = make_s_shell(0);
@@ -1658,14 +1720,14 @@ mod tests {
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
 
         use cintx_ops::resolver::Resolver;
-        let desc = Resolver::descriptor_by_symbol("int2e_stg_cart").expect("int2e_stg_cart must exist");
+        let desc = Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
         let op_id = desc.id;
 
-        let mut opts = ExecutionOptions::default();
-        opts.f12_zeta = Some(1.0);
-        let query = query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
+        let opts = ExecutionOptions::default();
+        let query = query_workspace(op_id, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F32;
+        plan.operator_env_params.f12_zeta = Some(1.0);
 
         let spec = SpecializationKey::from_plan(&plan);
         let cpu_client = resolve_cpu_client().unwrap();
@@ -1696,7 +1758,7 @@ mod tests {
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
         let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
+            atom_idx, 0, 1, 1, 0, Representation::Spheric,
             Arc::from(vec![1.0_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
         let shell_a0 = make_s_shell(0);
@@ -1708,13 +1770,13 @@ mod tests {
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
 
         use cintx_ops::resolver::Resolver;
-        let desc = Resolver::descriptor_by_symbol("int2e_stg_cart").expect("int2e_stg_cart must exist");
+        let desc = Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
         let op_id = desc.id;
 
         // No zeta set — should be rejected
         let opts = ExecutionOptions::default();
-        let query = query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(op_id, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F64;
 
         let spec = SpecializationKey::from_plan(&plan);
