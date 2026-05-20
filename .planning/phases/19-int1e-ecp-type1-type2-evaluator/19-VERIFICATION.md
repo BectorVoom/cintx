@@ -1,12 +1,18 @@
 ---
 phase: 19-int1e-ecp-type1-type2-evaluator
 verified: 2026-05-20T13:07:04Z
-status: human_needed
-score: 5/5 must-haves verified (substance); 2 human-decision items
-overrides_applied: 0
+status: passed
+score: 5/5 must-haves verified; both human-decision items resolved
+overrides_applied: 1
 re_verification:
-  previous_status: none
-  previous_score: none
+  previous_status: human_needed
+  previous_score: 5/5 (substance), 2 human-decision items
+resolution:
+  decided_by: user (execute-phase checkpoint, 2026-05-20)
+  - item: "ECP-04 'both paths' (eval_raw + SessionRequest::evaluate) coverage"
+    decision: "ACCEPTED transitive coverage (documented deviation). eval_raw and SessionRequest::evaluate dispatch through the identical launch_ecp kernel via CubeClExecutor::execute; byte-identity is asserted through SessionRequest::evaluate at atol=1e-12, which proves the shared kernel. No dedicated eval_raw test required."
+  - item: "CLAUDE.md hardening gaps CR-01 / HI-01 / HI-02 (index panic + silent partial-write returning Ok)"
+    decision: "FIXED (not waived). Commit cbe95bb: launch_ecp now returns typed cintxRsError::InvalidShellAtomIndex on out-of-range bra/ket/slot atom_index, and the staging buffer-size invariant is unconditional (scalar + gradient) returning cintxRsError::BufferTooSmall — the scalar Spheric/Cart paths no longer truncate-and-return-Ok. Verified: cintx-cubecl ecp unit tests 20/0; ECP byte-identity parity 5/5; full workspace cargo test 0 failures."
 human_verification:
   - test: "Decide whether ECP-04's literal 'through both cintx-compat::raw::eval_raw AND SessionRequest::evaluate' clause is satisfied by transitive (shared-kernel) coverage, or requires a dedicated eval_raw byte-identity test."
     expected: "Either accept transitive coverage (both paths build an ExecutionPlan and call CubeClExecutor::execute → launch_ecp; the same K-Taylor kernel and math; SessionRequest path is byte-identity-verified at atol=1e-12) — OR require a sibling test that drives eval_raw with an INT1E_ECP_* RawApiId over Cu/LANL2DZ and asserts atol=1e-12 vs PySCF, mirroring the SessionRequest harness."
@@ -21,8 +27,8 @@ human_verification:
 **Phase Goal:** cintx implements Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and exposes them through `SessionRequest` alongside ordinary one-electron operators. Symbols delivered: `int1e_ecp_sph`, `int1e_ecp_cart`, and gradient variants `int1e_ecp_ipnuc_sph` / `int1e_ecp_ipnuc_cart`. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate (atol=1e-12) through both `cintx-compat::raw::eval_raw` and `SessionRequest::evaluate`. Secondary cross-check against libecpint is a non-blocking oracle.
 
 **Verified:** 2026-05-20T13:07:04Z
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Status:** passed (both human-decision items resolved — see `resolution:` in frontmatter)
+**Re-verification:** Yes — human_needed → passed after user checkpoint (ECP-04 transitive coverage accepted; CR-01/HI-01/HI-02 fixed in cbe95bb)
 
 ## Requirement-source note
 

@@ -19,7 +19,7 @@
 - [x] **Phase 16: Multi-Backend Support (cuda / rocm / metal) with Feature + Env-Var Selection** - Add additive Cargo feature flags for cuda, rocm (cubecl-hip), and metal alongside the existing wgpu and unconditional cpu backends; wire `CINTX_BACKEND` env-var runtime selection across compiled-in backends with hard-error on missing-feature mismatch. (completed 2026-05-09)
 - [x] **Phase 17: Real-Integral Evaluation in Safe API (issue #11 Task 3)** - Replace the synthetic `(idx + 1)` / `((idx + 1) * 0.5)` pattern in `SessionRequest::fill_staging_values` with real `cintx-compat::raw::eval_raw` dispatch so the safe API delivers byte-identity values against libcint for every arity-2 intor it already accepts. No public API change. (completed 2026-05-11)
 - [ ] **Phase 18: SessionRequest Arity ≥3 Dispatch (issue #11 Task 2)** - Extend `SessionRequest::evaluate` to dispatch arity-3 and arity-4 shell tuples (covering `int2e_*`, `int3c1e*`, `int3c2e_*`, `int4c1e_*`) through the existing operator catalog with F-order AO layout matching libcint memory layout.
-- [ ] **Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (issue #11 Task 1)** - Implement Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and expose them through `SessionRequest` alongside ordinary one-electron operators. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate against libcint.
+- [x] **Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (issue #11 Task 1)** (completed 2026-05-20) - Implement Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and expose them through `SessionRequest` alongside ordinary one-electron operators. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate against libcint.
 
 ## Progress
 
@@ -43,7 +43,7 @@
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
-| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 7/8 | In Progress (replan — scalar+gradient byte-identity closed; optional libecpint oracle pending) | - |
+| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 8/8 | Complete | 2026-05-20 |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 

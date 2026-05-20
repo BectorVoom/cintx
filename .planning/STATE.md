@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
-status: Ready to execute
-stopped_at: Phase 19 K-Taylor port context updated (D-13..D-17); ready to replan 19-05/19-06
-last_updated: "2026-05-20T08:37:03.975Z"
+status: Phase 19 complete
+stopped_at: Phase 19 complete — ECP scalar+gradient byte-identity (atol=1e-12) verified; K-Taylor blocker resolved
+last_updated: "2026-05-20T13:30:00.000Z"
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 40
-  completed_plans: 39
-  percent: 97
+  completed_plans: 40
+  percent: 100
 ---
 
 # Project State
@@ -20,13 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 19 — int1e-ecp-type1-type2-evaluator
+**Current focus:** Phase 19 complete; next is Phase 20 — precision-generic-f64-f32-switch (context captured, not yet roadmapped)
 
 ## Current Position
 
-Phase: 19 (int1e-ecp-type1-type2-evaluator) — EXECUTING
-Plan: 19-08 of 8 complete (all plans done); phase-level verification pending
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-08-SUMMARY.md`
+Phase: 19 (int1e-ecp-type1-type2-evaluator) — COMPLETE ✓
+Plan: 8 of 8 complete; verification passed (status: passed)
+Next: Phase 20 (precision-generic-f64-f32-switch) — CONTEXT.md captured, not yet roadmapped/planned
+Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-VERIFICATION.md`
 
 ## Performance Metrics
 
@@ -274,7 +275,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 19, 2026-05-20] **ECP byte-identity blocked on missing K-Taylor port.** Plan 19-05 (gradient) execution was halted. Its must-haves require atol=1e-12 byte-identity vs PySCF `nr_ecp_deriv.c`, but the gradient reuses `compute_type1_pair`/`compute_type2_pair`, which Plan 04 shipped as a **direct-quadrature approximation** (tests `#[ignore]`'d, `oracle_covered=false` — see `19-04-SUMMARY.md`). Byte-identity for BOTH the scalar (Plan 04) and gradient (Plan 05) arms is gated on porting PySCF's K-Taylor machinery (the 400×24 `K_TAB` table + `ECPrad_part`/`ECPrad_block`), which is **not yet implemented** (only the `K_TAB_*` dimension constants exist in `bessel.rs`). **Decision: replan** — add an explicit K-Taylor port plan that makes the scalar arm byte-identical, then re-sequence 19-05 (gradient) and 19-06 on top of it. The interrupted 19-05 partial scaffolding is salvaged at `.planning/notes/19-05-partial-gradient-scaffolding.{patch,md}`.
+- ~~[Phase 19, 2026-05-20] **ECP byte-identity blocked on missing K-Taylor port.**~~ **RESOLVED 2026-05-20.** The K-Taylor replan (19-05..08) shipped and is verified: 19-05 ported PySCF's exact table-interpolation radial machinery (`ecpsph_ine_opt_host`, `ecprad_part_host`, `type1_rad_part_host`, `type2_facs_rad_host`) with the two K-Taylor tables embedded as byte-locked `.bin` blobs + an xtask drift-gate; 19-06 rewired the scalar `compute_type1/2_pair` onto it (byte-identity atol=1e-12 confirmed); 19-07 ported `nr_ecp_deriv.c::_deriv1_cart` for the gradient (byte-identity atol=1e-12 confirmed); 19-08 added the optional non-blocking libecpint cross-check. All four ECP rows are `oracle_covered=true`. The dropped-into-generic-parity-matrix regression and the CLAUDE.md fail-closed hardening gaps surfaced during the execute-phase gates were both fixed (commits f589c3d/52b5086/cbe95bb).
 
 ### Quick Tasks Completed
 
