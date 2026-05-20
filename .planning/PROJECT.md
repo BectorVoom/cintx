@@ -24,10 +24,11 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - [x] v1.1 executor infrastructure (EXEC-06/07/08/09, VERI-06) fully resolved — direct CubeCL client API, ResolvedBackend dispatch, CPU backend, f64 strategy. Validated in Phase 7.
 - [x] Unstable-source family APIs (origi, grids, Breit, origk, ssc) implemented behind feature gate with oracle parity in nightly CI. Validated in Phase 14: Unstable-Source-API Families.
 - [x] Oracle tolerance unified to atol=1e-12 for every family with catch-all tolerance and manifest-driven oracle eligibility; four-profile manifest lock regenerated with oracle_covered=true on all 110 stable/optional entries; CI oracle gate uses matrix strategy. Validated in Phase 15: Oracle Tolerance Unification & Manifest Lock Closure.
+- [x] ECP Type-1/Type-2 evaluator (ECP-01..05): `int1e_ecp_{cart,sph}` scalar + `int1e_ecp_ipnuc_{cart,sph}` gradient pass byte-identity vs vendored PySCF nr_ecp at atol=1e-12 over Cu/LANL2DZ, dispatched through the standard `SessionRequest::evaluate` safe-API surface; exact K-Taylor radial machinery ported host-first with byte-locked `.bin` tables + CI drift-gate; optional non-blocking libecpint secondary oracle. Validated in Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (v1.3).
 
 ### Active
 
-None — all v1.2 requirements validated.
+None — all v1.2 requirements validated; Phase 19 (ECP, v1.3) closed to byte-identity.
 
 ### Out of Scope
 
