@@ -562,3 +562,129 @@ mod tests {
         assert_eq!(sph_3c1e, sph_3c2e, "3c1e and 3c2e must produce identical output");
     }
 }
+
+/// Tests for the generic c2s transform functions (Phase 20 Plan 03 — Wave 1 math leaves).
+///
+/// RED phase: tests call all transform fns with explicit `F` type parameters.
+/// They will fail to compile until ALL transform functions are genericized over
+/// `F: CintFloat`.
+///
+/// Pitfall 2 (CubeCL prelude shadow): coefficient table values used as test baselines
+/// are captured as precomputed f64 literals, not computed at test runtime.
+#[cfg(test)]
+mod tests_c2s_generic {
+    use super::*;
+
+    /// f64 path: cart_to_sph_1e ss transform must produce [1.0] (identity for l=0).
+    /// Baseline: precomputed literal 1.0.
+    #[test]
+    fn cart_to_sph_1e_f64_ss_identity() {
+        let cart = [1.0_f64];
+        let mut sph = [0.0_f64];
+        cart_to_sph_1e::<f64>(&cart, &mut sph, 0, 0);
+        assert_eq!(sph, [1.0_f64], "cart_to_sph_1e::<f64> ss identity failed");
+    }
+
+    /// f32 path: ss transform returns [1.0_f32].
+    #[test]
+    fn cart_to_sph_1e_f32_ss_identity() {
+        let cart = [1.0_f32];
+        let mut sph = [0.0_f32];
+        cart_to_sph_1e::<f32>(&cart, &mut sph, 0, 0);
+        assert_eq!(sph, [1.0_f32], "cart_to_sph_1e::<f32> ss identity failed");
+    }
+
+    /// f64 path: cart_to_sph_2c2e ss returns [1.0].
+    #[test]
+    fn cart_to_sph_2c2e_f64_ss_identity() {
+        let cart = vec![1.0_f64];
+        let sph = cart_to_sph_2c2e::<f64>(&cart, 0, 0);
+        assert_eq!(sph, vec![1.0_f64], "cart_to_sph_2c2e::<f64> ss identity failed");
+    }
+
+    /// f32 path: cart_to_sph_2c2e ss returns [1.0_f32].
+    #[test]
+    fn cart_to_sph_2c2e_f32_ss_identity() {
+        let cart = vec![1.0_f32];
+        let sph = cart_to_sph_2c2e::<f32>(&cart, 0, 0);
+        assert_eq!(sph, vec![1.0_f32], "cart_to_sph_2c2e::<f32> ss identity failed");
+    }
+
+    /// f64 path: d-shell 2c2e output length is nsph(2)^2 = 25.
+    #[test]
+    fn cart_to_sph_2c2e_f64_dd_length() {
+        let cart = vec![0.0_f64; ncart(2) * ncart(2)];
+        let sph = cart_to_sph_2c2e::<f64>(&cart, 2, 2);
+        assert_eq!(sph.len(), nsph(2) * nsph(2), "cart_to_sph_2c2e::<f64> dd length wrong");
+    }
+
+    /// f32 path: pp 2c2e returns finite values.
+    #[test]
+    fn cart_to_sph_2c2e_f32_pp_finite() {
+        let cart: Vec<f32> = (0..(ncart(1) * ncart(1))).map(|i| (i + 1) as f32 * 0.1).collect();
+        let sph = cart_to_sph_2c2e::<f32>(&cart, 1, 1);
+        for &v in &sph {
+            assert!(v.is_finite(), "cart_to_sph_2c2e::<f32> produced non-finite value: {v}");
+        }
+    }
+
+    /// f64 path: cart_to_sph_3c1e sss identity.
+    #[test]
+    fn cart_to_sph_3c1e_f64_sss_identity() {
+        let cart = vec![1.0_f64];
+        let sph = cart_to_sph_3c1e::<f64>(&cart, 0, 0, 0);
+        assert_eq!(sph, vec![1.0_f64], "cart_to_sph_3c1e::<f64> sss identity failed");
+    }
+
+    /// f32 path: cart_to_sph_3c1e sss identity.
+    #[test]
+    fn cart_to_sph_3c1e_f32_sss_identity() {
+        let cart = vec![1.0_f32];
+        let sph = cart_to_sph_3c1e::<f32>(&cart, 0, 0, 0);
+        assert_eq!(sph, vec![1.0_f32], "cart_to_sph_3c1e::<f32> sss identity failed");
+    }
+
+    /// f64 path: cart_to_sph_3c2e sss identity.
+    #[test]
+    fn cart_to_sph_3c2e_f64_sss_identity() {
+        let cart = vec![1.0_f64];
+        let sph = cart_to_sph_3c2e::<f64>(&cart, 0, 0, 0);
+        assert_eq!(sph, vec![1.0_f64], "cart_to_sph_3c2e::<f64> sss identity failed");
+    }
+
+    /// f32 path: cart_to_sph_3c2e sss identity.
+    #[test]
+    fn cart_to_sph_3c2e_f32_sss_identity() {
+        let cart = vec![1.0_f32];
+        let sph = cart_to_sph_3c2e::<f32>(&cart, 0, 0, 0);
+        assert_eq!(sph, vec![1.0_f32], "cart_to_sph_3c2e::<f32> sss identity failed");
+    }
+
+    /// f64 path: cart_to_sph_2e ssss identity.
+    #[test]
+    fn cart_to_sph_2e_f64_ssss_identity() {
+        let cart = vec![1.0_f64];
+        let sph = cart_to_sph_2e::<f64>(&cart, 0, 0, 0, 0);
+        assert_eq!(sph, vec![1.0_f64], "cart_to_sph_2e::<f64> ssss identity failed");
+    }
+
+    /// f32 path: cart_to_sph_2e ssss identity.
+    #[test]
+    fn cart_to_sph_2e_f32_ssss_identity() {
+        let cart = vec![1.0_f32];
+        let sph = cart_to_sph_2e::<f32>(&cart, 0, 0, 0, 0);
+        assert_eq!(sph, vec![1.0_f32], "cart_to_sph_2e::<f32> ssss identity failed");
+    }
+
+    /// f32 path: d-shell 2e returns finite values.
+    #[test]
+    fn cart_to_sph_2e_f32_dddd_finite() {
+        let cart: Vec<f32> = (0..(ncart(2) * ncart(2) * ncart(2) * ncart(2)))
+            .map(|i| (i + 1) as f32 * 0.01)
+            .collect();
+        let sph = cart_to_sph_2e::<f32>(&cart, 2, 2, 2, 2);
+        for &v in &sph {
+            assert!(v.is_finite(), "cart_to_sph_2e::<f32> produced non-finite value: {v}");
+        }
+    }
+}
