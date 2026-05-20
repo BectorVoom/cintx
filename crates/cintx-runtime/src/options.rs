@@ -1,3 +1,4 @@
+use cintx_core::PrecisionKind;
 use tracing::Span;
 
 pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
@@ -119,6 +120,15 @@ pub struct ExecutionOptions {
     /// `SessionRequest::query_workspace`. `None` is the default and is treated as
     /// `Some(AoSymmetry::S1)`.
     pub aosym: Option<cintx_core::AoSymmetry>,
+    /// Output precision for this evaluation.
+    ///
+    /// `F64` (default) = byte-identical to libcint 6.1.3 (D-08/D-12).
+    /// `F32` = opt-in, ~1e-4 rtol oracle gate (D-09), unlocks non-`SHADER_F64`
+    /// wgpu adapters (D-10 / PREC-06).
+    ///
+    /// `PrecisionKind` derives `Default` as `F64`, so `ExecutionOptions::default()`
+    /// produces the f64 path unchanged — existing call sites are unaffected.
+    pub precision: PrecisionKind,
 }
 
 impl ExecutionOptions {

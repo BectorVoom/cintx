@@ -179,11 +179,17 @@ pub fn query_workspace(
 }
 
 pub fn evaluate(
-    plan: ExecutionPlan<'_>,
+    mut plan: ExecutionPlan<'_>,
     opts: &ExecutionOptions,
     allocator: &mut dyn WorkspaceAllocator,
     executor: &dyn BackendExecutor,
 ) -> Result<ExecutionStats, cintxRsError> {
+    // Thread precision from opts into the plan, following the f12_zeta
+    // "caller populates after new" precedent (planner.rs §operator_env_params).
+    // This ensures kernel dispatchers from Plans 04/05 receive the caller's
+    // precision selection rather than the default F64.
+    plan.precision = opts.precision;
+
     let _parent = opts.trace_span.as_ref().map(tracing::Span::enter);
     let span = info_span!(
         "evaluate",
