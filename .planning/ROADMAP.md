@@ -338,7 +338,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 20-04-PLAN.md — Kernel launchers group A: precision-dispatch 1e/2e/2c2e launchers (keep FamilyLaunchFn signature, `match plan.precision` -> generic `_typed::<F>` inner + bytemuck staging cast) + thread `F` through the spinor transform interleaved accumulation.
+- [x] 20-04-PLAN.md — Kernel launchers group A: precision-dispatch 1e/2e/2c2e launchers (keep FamilyLaunchFn signature, `match plan.precision` -> generic `_typed::<F>` inner + bytemuck staging cast) + thread `F` through the spinor transform interleaved accumulation.
 
 **Wave 4** *(blocked on Wave 3)*
 
