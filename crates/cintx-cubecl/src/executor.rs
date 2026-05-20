@@ -3,7 +3,7 @@ use crate::kernels;
 use crate::resident_cache::DeviceResidentCache;
 use crate::specialization::SpecializationKey;
 use crate::transform;
-use cintx_core::cintxRsError;
+use cintx_core::{PrecisionKind, cintxRsError};
 #[cfg(feature = "with-4c1e")]
 use cintx_core::Representation;
 use cintx_runtime::{
@@ -93,6 +93,32 @@ impl CubeClExecutor {
         }
     }
 
+    /// Precision-aware capability check (D-10 / PREC-06).
+    ///
+    /// For `PrecisionKind::F32`: returns `Ok(())` immediately — f32 is WebGPU-baseline
+    /// universal, so no `SHADER_F64` gate is needed. This unlocks wgpu adapters that
+    /// lack native f64 capability for the f32 evaluation path.
+    ///
+    /// For `PrecisionKind::F64` (default): delegates byte-identically to
+    /// `check_f64_capability`, which enforces the `SHADER_F64` requirement on wgpu/metal
+    /// (Pitfall 3 / PREC-04: the f64 arm stays exactly as before this change).
+    ///
+    /// The two call sites in `query_workspace` and `execute` both call this method;
+    /// `check_f64_capability` is kept intact and private (not removed) to remain
+    /// independently testable.
+    fn check_capability(
+        &self,
+        backend: &ResolvedBackend,
+        plan: &ExecutionPlan<'_>,
+    ) -> Result<(), cintxRsError> {
+        if plan.precision == PrecisionKind::F32 {
+            // f32 is WebGPU-baseline universal — no SHADER_F64 gate required (D-10).
+            return Ok(());
+        }
+        // F64 arm: delegate to the byte-identical existing capability check.
+        self.check_f64_capability(backend, plan)
+    }
+
     #[cfg(feature = "with-4c1e")]
     fn ensure_validated_4c1e(&self, plan: &ExecutionPlan<'_>) -> Result<(), cintxRsError> {
         if !matches!(
@@ -177,7 +203,7 @@ impl BackendExecutor for CubeClExecutor {
 
     fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
         let backend = self.resolve_backend()?;
-        self.check_f64_capability(&backend, plan)?;
+        self.check_capability(&backend, plan)?;
         self.ensure_supported_family(plan)?;
         Ok(WorkspaceBytes(plan.workspace.bytes))
     }
@@ -188,7 +214,7 @@ impl BackendExecutor for CubeClExecutor {
         io: &mut ExecutionIo<'_>,
     ) -> Result<ExecutionStats, cintxRsError> {
         let backend = self.resolve_backend()?;
-        self.check_f64_capability(&backend, plan)?;
+        self.check_capability(&backend, plan)?;
         self.ensure_supported_family(plan)?;
         io.ensure_output_contract()?;
 
