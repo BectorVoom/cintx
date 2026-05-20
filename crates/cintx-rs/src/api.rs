@@ -468,9 +468,12 @@ impl EvaluationStats {
 ///
 /// # Memory layout
 ///
-/// `owned_values` is a dense `Vec<f64>` storing `extents.iter().product()` real
+/// `owned_values` is a dense `Vec<F>` (default `f64`) storing `extents.iter().product()` real
 /// values (or 2x that for `Spinor` outputs with `complex_interleaved == true`,
 /// where real and imaginary parts alternate in the innermost stride).
+///
+/// The type parameter `F` is the output float precision (`f64` or `f32`). The default
+/// `F = f64` keeps every existing call site compiling unchanged (D-12).
 ///
 /// **AO axis layout** — `extents` lists AO-axis sizes in **shell-tuple order**:
 /// `extents[0] = ao_per_shell(shells[0])`, `extents[1] = ao_per_shell(shells[1])`,
@@ -494,16 +497,16 @@ impl EvaluationStats {
 /// (`crates/cintx-oracle/tests/safe_api_arity{2,3,4}_parity.rs`). If the layout
 /// silently drifts, the first parity test fails.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct IntegralTensor {
+pub struct IntegralTensor<F = f64> {
     pub extents: Vec<usize>,
     pub component_axis_leading: bool,
     pub complex_interleaved: bool,
-    pub owned_values: Vec<f64>,
+    pub owned_values: Vec<F>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct TypedEvaluationOutput {
-    pub tensor: IntegralTensor,
+pub struct TypedEvaluationOutput<F = f64> {
+    pub tensor: IntegralTensor<F>,
     pub stats: EvaluationStats,
     pub workspace_bytes: usize,
     pub chunk_count: usize,
@@ -542,7 +545,7 @@ pub mod unstable {
 
 #[cfg(test)]
 mod tests {
-    use super::{SessionRequest, unsupported_unstable_request};
+    use super::{EvaluationStats, IntegralTensor, SessionRequest, TypedEvaluationOutput, unsupported_unstable_request};
     use crate::error::{FacadeError, FacadeErrorKind};
     #[cfg(feature = "with-f12")]
     use cintx_compat::raw::enforce_safe_facade_policy_gate;
@@ -1010,5 +1013,46 @@ mod tests {
                 // ECP preflight does not fire.
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Plan 20-07 Task 1: generic output structs IntegralTensor<F> /
+    // TypedEvaluationOutput<F> with f64 defaults.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn integral_tensor_default_type_param_is_f64() {
+        // Unparameterized IntegralTensor resolves to IntegralTensor<f64>.
+        // Compile-time test: this must type-check without a turbofish.
+        let t: IntegralTensor = IntegralTensor::default();
+        // owned_values must be Vec<f64>
+        let _: Vec<f64> = t.owned_values;
+    }
+
+    #[test]
+    fn typed_evaluation_output_default_type_param_is_f64() {
+        // Unparameterized TypedEvaluationOutput resolves to TypedEvaluationOutput<f64>.
+        let out: TypedEvaluationOutput = TypedEvaluationOutput::default();
+        let _: Vec<f64> = out.tensor.owned_values;
+    }
+
+    #[test]
+    fn integral_tensor_f32_is_constructible() {
+        // TypedEvaluationOutput<f32> and IntegralTensor<f32> must be constructible.
+        let t: IntegralTensor<f32> = IntegralTensor {
+            extents: vec![2, 2],
+            component_axis_leading: false,
+            complex_interleaved: false,
+            owned_values: vec![1.0_f32, 2.0_f32, 3.0_f32, 4.0_f32],
+        };
+        assert_eq!(t.owned_values.len(), 4);
+        let out: TypedEvaluationOutput<f32> = TypedEvaluationOutput {
+            tensor: t,
+            stats: EvaluationStats::default(),
+            workspace_bytes: 0,
+            chunk_count: 0,
+            bytes_written: 0,
+        };
+        assert_eq!(out.tensor.owned_values[0], 1.0_f32);
     }
 }
