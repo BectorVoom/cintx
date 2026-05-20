@@ -9,8 +9,8 @@ progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 40
-  completed_plans: 36
-  percent: 89
+  completed_plans: 37
+  percent: 92
 ---
 
 # Project State
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 19 (int1e-ecp-type1-type2-evaluator) — EXECUTING
-Plan: 1 of 6
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-03-SUMMARY.md`
+Plan: 19-05 of 8 complete (K-Taylor port landed); next 19-06 scalar close
+Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-05-SUMMARY.md`
 
 ## Performance Metrics
 

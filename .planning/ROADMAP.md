@@ -43,7 +43,7 @@
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
-| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 4/8 | In Progress (replan — K-Taylor byte-identity port; scalar+gradient close pending) | - |
+| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 5/8 | In Progress (replan — K-Taylor port landed; scalar+gradient close pending) | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -238,7 +238,7 @@ Plans:
 > **REPLAN 2026-05-20 (K-Taylor byte-identity port).** 19-04's direct-quadrature kernel cannot reach byte-identity. The original 19-05 (gradient) was halted and the original 19-06 (libecpint) was unstarted; both PLAN.md files are preserved as `.superseded.md`. The four plans below (19-05..08) replace them per D-13..D-17. 19-01..04 are frozen.
 
 **Wave 1 (replan) — K-Taylor port foundation**
-- [ ] 19-05-PLAN.md — K-Taylor port foundation: embed _sph_ine_tab (400×24) + _sph_ine_tab_order7 (400×8×8) as LE-f64 binary blobs via include_bytes! + bytemuck (D-14, roots_xw_data.rs precedent); xtask gen-ecp-tables subcommand extracting the tables from nr_ecp.c + a --check drift-gate (D-15); host-first port of ECPsph_ine_opt + ECPrad_part + type1_rad_part + type2_facs_rad (D-16). [ECP-01, ECP-02, ECP-04]
+- [x] 19-05-PLAN.md — K-Taylor port foundation: embed _sph_ine_tab (400×24) + _sph_ine_tab_order7 (400×8×8) as LE-f64 binary blobs via include_bytes! + bytemuck (D-14, roots_xw_data.rs precedent); xtask gen-ecp-tables subcommand extracting the tables from nr_ecp.c + a --check drift-gate (D-15); host-first port of ECPsph_ine_opt + ECPrad_part + type1_rad_part + type2_facs_rad (D-16). [ECP-01, ECP-02, ECP-04]
 
 **Wave 2 (replan) — scalar close**
 - [ ] 19-06-PLAN.md — Scalar close: replace the direct-quadrature compute_type1_pair/compute_type2_pair bodies with the K-Taylor recurrence; remove #[ignore] from the two scalar parity tests; iterate to atol=1e-12 byte-identity over the full Cu/LANL2DZ Cartesian product; flip oracle_covered=true on int1e_ecp_{cart,sph}. Closes ECP-01/02/03 + scalar half of ECP-04. [ECP-01, ECP-02, ECP-03, ECP-04] (depends 19-05)
