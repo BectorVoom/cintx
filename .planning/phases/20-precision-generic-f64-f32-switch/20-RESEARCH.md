@@ -774,7 +774,13 @@ pub struct IntegralTensor<F = f64> {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three questions are answered inline below (see each **Recommendation:**) and the
+> chosen answers are implemented in the Phase 20 plans: Q1 → 20-04/05/06 (`PrecisionKind`
+> enum field + internal `execute()` match), Q2 → 20-04 T2 (genericize `c2spinor.rs`
+> accumulation with an f32-rtol docs warning), Q3 → 20-05 T2 (`f12_zeta` stays
+> `Option<f64>`, cast at the kernel boundary).
 
 1. **`BackendExecutor` trait generics vs `PrecisionKind` dispatch**
    - What we know: `BackendExecutor` is used as `&dyn BackendExecutor` (non-generic); making it generic breaks object safety.
