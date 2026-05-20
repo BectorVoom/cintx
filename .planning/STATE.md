@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
 status: Ready to execute
-stopped_at: Phase 19 K-Taylor port context updated (D-13..D-17); ready to replan 19-05/19-06
-last_updated: "2026-05-20T14:17:36.686Z"
+stopped_at: Completed Phase 20 Plan 01 (Wave 0 precision scaffolding, A5 proven)
+last_updated: "2026-05-20T14:33:13.821Z"
 progress:
   total_phases: 10
   completed_phases: 8
   total_plans: 50
-  completed_plans: 40
+  completed_plans: 41
   percent: 80
 ---
 
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 19 complete; next is Phase 20 — precision-generic-f64-f32-switch (context captured, not yet roadmapped)
+**Current focus:** Phase 20 — precision-generic-f64-f32-switch
 
 ## Current Position
 
-Phase: 19 (int1e-ecp-type1-type2-evaluator) — COMPLETE ✓
-Plan: 8 of 8 complete; verification passed (status: passed)
+Phase: 20 (precision-generic-f64-f32-switch) — EXECUTING
+Plan: 2 of 8
 Next: Phase 20 (precision-generic-f64-f32-switch) — CONTEXT.md captured, not yet roadmapped/planned
 Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-VERIFICATION.md`
 
@@ -108,6 +108,7 @@ Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-VERIFICATION.md`
 | Phase 19-int1e-ecp-type1-type2-evaluator P01 | 13 min | 3 tasks | 20 files |
 | Phase 19-int1e-ecp-type1-type2-evaluator P02 | 10 min | 2 tasks | 2 files |
 | Phase 19-int1e-ecp-type1-type2-evaluator P03 | 5 min | 3 tasks | 8 files |
+| Phase 20 P01 | 5 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -263,6 +264,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 19-int1e-ecp-type1-type2-evaluator P03]: EcpShell::try_new added one new CoreError variant — EcpAngularMomentumTooHigh { requested, max } — for the Projected(l > ECP_LMAX=5) check. Existing variants (InvalidShellCounts, ShellPrimitiveMismatch, InvalidNuclearDetail) cover the length/finiteness cases verbatim from Shell::try_new.
 - [Phase 19-int1e-ecp-type1-type2-evaluator P03]: EcpBasArray::new reuses cintxRsError::InvalidBasLayout (the same variant RawBasView::new uses for length-not-multiple-of-BAS_SLOTS) — no new compat error variant. Phase 19 D-05's "ecpbas reuses BAS_SLOTS=8" decision makes the slab shape contract identical to ordinary bas rows.
 - [Phase 19-int1e-ecp-type1-type2-evaluator P03]: FacadeError::MissingEcpBasis is facade-only — not emitted by From<cintxRsError>. SessionRequest::query_workspace preflight runs in order: aosym (Phase 18) → ECP (Phase 19) → runtime_query_workspace. Each preflight is independent and fails fast before runtime. The MissingEcpBasis variant carries `operator: String` resolved via Resolver::descriptor with a defensive fallback to OperatorId Display so the safe API never panics on a missing manifest entry.
+- [Phase ?]: [Phase 20-01]: CintFloat::from_f64_lossy for f32 uses x as f32 truncation (documented lossy at threshold boundary only)
+- [Phase ?]: [Phase 20-01]: A5 bytemuck staging cast proven SOUND — Wave 3 can use bytemuck::cast_slice_mut without Vec<F> fallback
+- [Phase ?]: [Phase 20-01]: PrecisionKind defaults to F64; ExecutionPlan.precision field byte-identical on f64 path (D-08/D-12)
 
 ### Roadmap Evolution
 
@@ -285,6 +289,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-20T08:06:46.435Z
-Stopped at: Phase 19 K-Taylor port context updated (D-13..D-17); ready to replan 19-05/19-06
-Resume file: .planning/phases/19-int1e-ecp-type1-type2-evaluator/19-CONTEXT.md
+Last session: 2026-05-20T14:33:13.817Z
+Stopped at: Completed Phase 20 Plan 01 (Wave 0 precision scaffolding, A5 proven)
+Resume file: None
