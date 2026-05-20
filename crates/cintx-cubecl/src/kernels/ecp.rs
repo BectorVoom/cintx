@@ -1367,32 +1367,40 @@ pub fn launch_ecp(
     let nsj = nsph(lj);
 
     let atoms: &[Atom] = plan.basis.atoms();
-    let ri = atoms[shell_i.atom_index as usize].coord_bohr;
-    let rj = atoms[shell_j.atom_index as usize].coord_bohr;
+    let atom_count = atoms.len();
+    // CLAUDE.md fail-closed: a malformed BasisSet must surface a typed error, not
+    // an array-index panic in this public-API-reachable path.
+    let ai = shell_i.atom_index as usize;
+    if ai >= atom_count {
+        return Err(cintxRsError::InvalidShellAtomIndex { index: ai, atom_count });
+    }
+    let aj = shell_j.atom_index as usize;
+    if aj >= atom_count {
+        return Err(cintxRsError::InvalidShellAtomIndex { index: aj, atom_count });
+    }
+    let ri = atoms[ai].coord_bohr;
+    let rj = atoms[aj].coord_bohr;
 
     // Number of output components: 1 for scalar `ecp`, 3 for gradient
     // `ecp_ipnuc` (∂/∂A_i^{x,y,z}, F-order [axis, ao_j, ao_i] axis slowest).
     let n_comp = if is_gradient { 3 } else { 1 };
 
-    // Gradient buffer-size invariant (T-19-23): the gradient staging slice MUST
-    // hold n_comp * cart-or-sph product. Reject an undersized buffer with a
-    // typed Layout error rather than silently writing past it / under-filling.
-    if is_gradient {
-        let needed = match plan.representation {
-            Representation::Spheric => n_comp * (nsi as usize) * (nsj as usize),
-            Representation::Cart => n_comp * (nci as usize) * (ncj as usize),
-            // Spinor is the D-12 zero-write path; sized by the caller.
-            Representation::Spinor => 0,
-        };
-        if !matches!(plan.representation, Representation::Spinor) && staging.len() < needed {
-            return Err(cintxRsError::ChunkPlanFailed {
-                from: "cubecl_ecp",
-                detail: format!(
-                    "ecp_ipnuc staging buffer too small for component_rank=3: have {}, need {needed}",
-                    staging.len()
-                ),
-            });
-        }
+    // Output buffer-size invariant (T-19-23, extended to the scalar path per the
+    // CLAUDE.md fail-closed / no-partial-write contract): the staging slice MUST
+    // hold n_comp * (cart-or-sph product) for BOTH scalar (n_comp=1) and gradient
+    // (n_comp=3). Reject an undersized buffer with a typed BufferTooSmall error
+    // rather than silently truncating / under-filling and returning Ok.
+    // Spinor is the D-12 zero-write path; sized by the caller.
+    let needed = match plan.representation {
+        Representation::Spheric => n_comp * (nsi as usize) * (nsj as usize),
+        Representation::Cart => n_comp * (nci as usize) * (ncj as usize),
+        Representation::Spinor => 0,
+    };
+    if !matches!(plan.representation, Representation::Spinor) && staging.len() < needed {
+        return Err(cintxRsError::BufferTooSmall {
+            required: needed,
+            provided: staging.len(),
+        });
     }
 
     // gctr is the cartesian shell-pair output. For scalar this is F-order
@@ -1410,7 +1418,11 @@ pub fn launch_ecp(
 
     let slots = group_ecp_slots(ecp_shells);
     for slot in &slots {
-        let rc = atoms[slot.atom_index as usize].coord_bohr;
+        let ac = slot.atom_index as usize;
+        if ac >= atom_count {
+            return Err(cintxRsError::InvalidShellAtomIndex { index: ac, atom_count });
+        }
+        let rc = atoms[ac].coord_bohr;
         if slot.lc >= 0 {
             let lc = slot.lc as usize;
             if lc > ECP_LMAX {
@@ -1462,23 +1474,19 @@ pub fn launch_ecp(
             // slowest); cart block size nci*ncj, sph block size nsi*nsj.
             let cart_block = (nci as usize) * (ncj as usize);
             let sph_block = (nsi as usize) * (nsj as usize);
+            // The unconditional buffer-size invariant above guarantees
+            // staging.len() >= n_comp * sph_block, so every axis block writes
+            // fully in-bounds — no truncation fallback (CLAUDE.md no-partial-write).
             for axis in 0..n_comp {
                 let cart_slice = &gctr[axis * cart_block..(axis + 1) * cart_block];
                 let out_off = axis * sph_block;
-                if staging.len() >= out_off + sph_block {
-                    cart_to_sph_1e(cart_slice, &mut staging[out_off..out_off + sph_block], li, lj);
-                } else {
-                    let mut sph_tmp = vec![0.0_f64; sph_block];
-                    cart_to_sph_1e(cart_slice, &mut sph_tmp, li, lj);
-                    let avail = staging.len().saturating_sub(out_off);
-                    let copy_len = avail.min(sph_block);
-                    staging[out_off..out_off + copy_len].copy_from_slice(&sph_tmp[..copy_len]);
-                }
+                cart_to_sph_1e(cart_slice, &mut staging[out_off..out_off + sph_block], li, lj);
             }
         }
         Representation::Cart => {
-            let copy_len = staging.len().min(gctr.len());
-            staging[..copy_len].copy_from_slice(&gctr[..copy_len]);
+            // gctr.len() == needed (Cart) and staging.len() >= needed by the
+            // invariant above — full copy, no truncation (CLAUDE.md no-partial-write).
+            staging[..gctr.len()].copy_from_slice(&gctr);
         }
         Representation::Spinor => {
             // D-12: spinor accepted by resolver but NOT byte-identity-gated this
