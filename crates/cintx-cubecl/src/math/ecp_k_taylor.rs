@@ -244,6 +244,258 @@ pub fn ecpsph_ine_opt_host(order: u32, z: f64) -> Vec<f64> {
     out
 }
 
+/// `SIM_ZERO` — radial Gaussian underflow early-break threshold.
+/// Source: vendor/pyscf-nr-ecp/include/gto/nr_ecp.h:13 (`SIM_ZERO 1e-50`).
+pub const SIM_ZERO: f64 = 1.0e-50;
+
+/// `EXPCUTOFF` — exponent-argument cutoff used by the radial guards.
+/// Source: vendor/pyscf-nr-ecp/include/gto/nr_ecp.h:14 (`EXPCUTOFF 39`).
+pub const EXPCUTOFF: f64 = 39.0;
+
+/// `CUTOFF` — upper exp-argument guard (`~ 1e200`).
+/// Source: vendor/pyscf-nr-ecp/include/gto/nr_ecp.h:15 (`CUTOFF 460`).
+pub const CUTOFF: f64 = 460.0;
+
+/// One radial-shell group fed to [`ecprad_part_host`].
+///
+/// Bundles the per-ECP-shell data the C reads out of the `ecpbas`/`env` slabs
+/// (`NPRIM_OF`, `PTR_EXP`, `PTR_COEFF`, `RADI_POWER`). ECP basis rows that share
+/// the same `(atom, l, so_type)` are grouped into one shell and summed together,
+/// matching `_loc_ecpbas` (nr_ecp.c:5261).
+#[derive(Clone, Debug)]
+pub struct EcpRadShell {
+    /// Primitive Gaussian exponents `a_k` (length = nprim).
+    pub exponents: Vec<f64>,
+    /// Primitive Gaussian coefficients `c_k` (length = nprim).
+    pub coefficients: Vec<f64>,
+    /// `RADI_POWER` for this shell (slot 3 of the ecpbas row).
+    pub radial_power: i32,
+}
+
+/// Host port of PySCF `ECPrad_part` — sum the per-ECP-shell radial Gaussian
+/// contributions onto `ur`, applying the `RADI_POWER` switch and the `SIM_ZERO`
+/// early-break.
+///
+/// `rs` is the radial grid (strided by `inc`, offset by `rs_off`), `nrs` the
+/// grid length. `ur` is the accumulator (length `>= nrs`); it is zeroed for
+/// `0..nrs` first. Returns `nrs_max` — the largest effective grid length any
+/// shell reached before its `SIM_ZERO` early-break (the C "number of effective
+/// grids" return value).
+// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:4870-4950
+pub fn ecprad_part_host(
+    ur: &mut [f64],
+    rs: &[f64],
+    rs_off: usize,
+    nrs: usize,
+    inc: usize,
+    shells: &[EcpRadShell],
+) -> usize {
+    let mut ubuf = vec![0.0f64; nrs];
+    let mut r2 = vec![0.0f64; nrs];
+
+    // rs += rs_off;  r2[i] = rs[i*inc]^2;  ur[i] = 0;
+    for i in 0..nrs {
+        let r = rs[rs_off + i * inc];
+        r2[i] = r * r;
+        ur[i] = 0.0;
+    }
+
+    let mut nrs_max = 0usize;
+
+    for shell in shells {
+        let npk = shell.exponents.len();
+        let ak = &shell.exponents;
+        let ck = &shell.coefficients;
+
+        // Per-grid Gaussian sum with SIM_ZERO early-break.
+        let mut nrs_now = nrs;
+        for i in 0..nrs {
+            let mut s = ck[0] * (-ak[0] * r2[i]).exp();
+            for kp in 1..npk {
+                s += ck[kp] * (-ak[kp] * r2[i]).exp();
+            }
+            ubuf[i] = s;
+            if i > 2 && ubuf[i].abs() < SIM_ZERO && ubuf[i - 1].abs() < SIM_ZERO {
+                nrs_now = i;
+                break;
+            }
+        }
+        nrs_max = nrs_max.max(nrs_now);
+
+        // RADI_POWER switch (cases 1/2/3/default).
+        match shell.radial_power {
+            1 => {
+                for i in 0..nrs_now {
+                    ubuf[i] *= rs[rs_off + i * inc];
+                }
+            }
+            2 => {
+                for i in 0..nrs_now {
+                    ubuf[i] *= r2[i];
+                }
+            }
+            3 => {
+                for i in 0..nrs_now {
+                    ubuf[i] *= r2[i] * rs[rs_off + i * inc];
+                }
+            }
+            other => {
+                for i in 0..nrs_now {
+                    for _ in 0..other {
+                        ubuf[i] *= rs[rs_off + i * inc];
+                    }
+                }
+            }
+        }
+
+        for i in 0..nrs_now {
+            ur[i] += ubuf[i];
+        }
+    }
+
+    nrs_max
+}
+
+/// Host port of PySCF `type1_rad_part` — assemble the Type-1 radial table
+/// `rad_all[lab*lmax1 + i]`.
+///
+/// `rad_all` is `(lmax+1)*(lmax+1)` long and is accumulated into (not zeroed).
+/// `k` and `aij` are the Type-1 geometry; `ur` is the radial-part accumulator
+/// from [`ecprad_part_host`]; `rs` the radial grid (strided by `inc`). Early
+/// returns on `nrs == 0`. The `CUTOFF` / `EXPCUTOFF+6+30` guards zero a grid
+/// point's `rur`/`bval`; otherwise `rur[n] = ur[n]*exp(tmp)` and
+/// `bval[n*lmax1..] = ecpsph_ine_opt(lmax, k*rs[n])`. The `lab` loop multiplies
+/// `rur` by `rs` for `lab>0` and accumulates with the `i = lab%2; i+=2` parity
+/// stride.
+// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5754-5806
+#[allow(clippy::too_many_arguments)]
+pub fn type1_rad_part_host(
+    rad_all: &mut [f64],
+    lmax: usize,
+    k: f64,
+    aij: f64,
+    ur: &[f64],
+    rs: &[f64],
+    nrs: usize,
+    inc: usize,
+) {
+    if nrs == 0 {
+        return;
+    }
+
+    let lmax1 = lmax + 1;
+    let mut rur = vec![0.0f64; nrs];
+    let mut bval = vec![0.0f64; nrs * lmax1];
+
+    let kaij = k / (2.0 * aij);
+    let fac = kaij * kaij * aij;
+    for n in 0..nrs {
+        let mut tmp = rs[n * inc] - kaij;
+        tmp = fac - aij * tmp * tmp;
+        if ur[n] == 0.0 || tmp > CUTOFF || tmp < -(EXPCUTOFF + 6.0 + 30.0) {
+            rur[n] = 0.0;
+            for i in 0..lmax1 {
+                bval[n * lmax1 + i] = 0.0;
+            }
+        } else {
+            rur[n] = ur[n] * tmp.exp();
+            let b = ecpsph_ine_opt_host(lmax as u32, k * rs[n * inc]);
+            bval[n * lmax1..n * lmax1 + lmax1].copy_from_slice(&b);
+        }
+    }
+
+    for lab in 0..=lmax {
+        if lab > 0 {
+            for n in 0..nrs {
+                rur[n] *= rs[n * inc];
+            }
+        }
+        let prad = &mut rad_all[lab * lmax1..lab * lmax1 + lmax1];
+        let mut i = lab % 2;
+        while i <= lmax {
+            let mut s = prad[i];
+            for n in 0..nrs {
+                s += rur[n] * bval[n * lmax1 + i];
+            }
+            prad[i] = s;
+            i += 2;
+        }
+    }
+}
+
+/// Host port of PySCF `type2_facs_rad` — build the Type-2 radial factors for one
+/// `(ish, lc, rca)` triple.
+///
+/// `facs` is the output radial-factor buffer of length `nrs * lilc1 * nc`
+/// (`lilc1 = li + lc + 1`, `nc` = number of contractions). For each primitive
+/// `ip` and grid point `i` the buffer holds `exp(-a_i (r-rca)^2) *
+/// ecpsph_ine_opt(li+lc, 2 a_i rca r)` (zeroed when `a_i (r-rca)^2 > EXPCUTOFF+6`),
+/// then the primitive axis is contracted by the coefficient matrix `ci`
+/// (`np x nc`) — the `dgemm_(N,N, m=nrs*lilc1, nc, np, ...)` in the C, replicated
+/// here as a plain Rust matmul. Early-returns on `nrs == 0`.
+// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5134-5186
+#[allow(clippy::too_many_arguments)]
+pub fn type2_facs_rad_host(
+    facs: &mut [f64],
+    li: usize,
+    lc: usize,
+    rca: f64,
+    exponents_i: &[f64],
+    coeffs_i: &[f64],
+    nc: usize,
+    rs: &[f64],
+    nrs: usize,
+    inc: usize,
+) {
+    if nrs == 0 {
+        return;
+    }
+
+    let np = exponents_i.len();
+    let lilc1 = li + lc + 1;
+    let mut r2 = vec![0.0f64; nrs];
+    // buf is column-major (m = nrs*lilc1) x np, matching the C MALLOC_INSTACK
+    // layout `buf[np*nrs*lilc1]` filled primitive-major.
+    let m = nrs * lilc1;
+    let mut buf = vec![0.0f64; m * np];
+
+    for i in 0..nrs {
+        let t1 = rs[i * inc] - rca;
+        r2[i] = t1 * t1;
+    }
+
+    for ip in 0..np {
+        let ai = exponents_i[ip];
+        let ka = 2.0 * ai * rca;
+        for i in 0..nrs {
+            let pbuf_off = ip * (nrs * lilc1) + i * lilc1;
+            let ar2 = ai * r2[i];
+            if ar2 > EXPCUTOFF + 6.0 {
+                for j in 0..=(li + lc) {
+                    buf[pbuf_off + j] = 0.0;
+                }
+            } else {
+                let t1 = (-ar2).exp();
+                let pb = ecpsph_ine_opt_host((li + lc) as u32, ka * rs[i * inc]);
+                for j in 0..=(li + lc) {
+                    buf[pbuf_off + j] = pb[j] * t1;
+                }
+            }
+        }
+    }
+
+    // facs[m x nc] = buf[m x np] * ci[np x nc]  (dgemm_ N,N), column-major.
+    for col in 0..nc {
+        for row in 0..m {
+            let mut s = 0.0f64;
+            for p in 0..np {
+                s += buf[p * m + row] * coeffs_i[col * np + p];
+            }
+            facs[col * m + row] = s;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,6 +586,178 @@ mod tests {
         assert_eq!(got.len(), order + 1);
         for i in 0..=order {
             assert_eq!(got[i], reference[i], "order={i} z={z} large-z mismatch");
+        }
+    }
+
+    /// `ecprad_part_host` over a single Local ECP shell (radial_power=2, one
+    /// Gaussian primitive) reproduces `sum_k c_k exp(-a_k r^2) * r^2`
+    /// element-wise (pins the RADI_POWER=2 case + the Gaussian sum).
+    #[test]
+    fn ecprad_part_radi_power_2_single_gaussian() {
+        let rs = vec![0.1, 0.5, 1.0, 1.5, 2.0];
+        let nrs = rs.len();
+        let ck = 1.7f64;
+        let ak = 0.8f64;
+        let shells = vec![EcpRadShell {
+            exponents: vec![ak],
+            coefficients: vec![ck],
+            radial_power: 2,
+        }];
+        let mut ur = vec![0.0f64; nrs];
+        let nrs_max = ecprad_part_host(&mut ur, &rs, 0, nrs, 1, &shells);
+        assert_eq!(nrs_max, nrs);
+        for i in 0..nrs {
+            let r2 = rs[i] * rs[i];
+            let expected = ck * (-ak * r2).exp() * r2;
+            assert!(
+                (ur[i] - expected).abs() <= 1e-14,
+                "i={i}: got {} expected {}",
+                ur[i],
+                expected
+            );
+        }
+    }
+
+    /// `ecprad_part_host` honors the SIM_ZERO early-break: with a steep exponent
+    /// the Gaussian underflows below SIM_ZERO after a few points, the break
+    /// fires (nrs_max < nrs), and the trailing ur entries stay 0.
+    #[test]
+    fn ecprad_part_sim_zero_early_break() {
+        // Steep, well-separated grid so exp(-a r^2) drops below 1e-50 fast.
+        let rs = vec![0.1, 0.2, 0.3, 12.0, 13.0, 14.0, 15.0];
+        let nrs = rs.len();
+        let shells = vec![EcpRadShell {
+            exponents: vec![3.0],
+            coefficients: vec![1.0],
+            radial_power: 1,
+        }];
+        let mut ur = vec![0.0f64; nrs];
+        let nrs_max = ecprad_part_host(&mut ur, &rs, 0, nrs, 1, &shells);
+        // The break fired before consuming the whole grid.
+        assert!(nrs_max < nrs, "expected early break, got nrs_max={nrs_max}");
+        // Trailing ur entries (beyond the effective length) remain 0.
+        for i in nrs_max..nrs {
+            assert_eq!(ur[i], 0.0, "trailing ur[{i}] should stay 0");
+        }
+    }
+
+    /// `type1_rad_part_host` for a single primitive pair with k/aij chosen so the
+    /// CUTOFF guard does NOT fire produces rad_all consistent with
+    /// rur[n] = ur[n]*exp(tmp) and bval = ecpsph_ine_opt_host(lmax, k*rs[n]).
+    #[test]
+    fn type1_rad_part_internal_consistency() {
+        let lmax = 2usize;
+        let lmax1 = lmax + 1;
+        let k = 1.3f64;
+        let aij = 0.9f64;
+        let rs = vec![0.2, 0.6, 1.1, 1.7];
+        let nrs = rs.len();
+        let ur = vec![0.7, 0.5, 0.3, 0.15];
+
+        let mut rad_all = vec![0.0f64; lmax1 * lmax1];
+        type1_rad_part_host(&mut rad_all, lmax, k, aij, &ur, &rs, nrs, 1);
+
+        // Recompute the reference from the ported pieces.
+        let kaij = k / (2.0 * aij);
+        let fac = kaij * kaij * aij;
+        let mut rur = vec![0.0f64; nrs];
+        let mut bval = vec![0.0f64; nrs * lmax1];
+        for n in 0..nrs {
+            let mut tmp = rs[n] - kaij;
+            tmp = fac - aij * tmp * tmp;
+            if ur[n] == 0.0 || tmp > CUTOFF || tmp < -(EXPCUTOFF + 6.0 + 30.0) {
+                rur[n] = 0.0;
+            } else {
+                rur[n] = ur[n] * tmp.exp();
+                let b = ecpsph_ine_opt_host(lmax as u32, k * rs[n]);
+                bval[n * lmax1..n * lmax1 + lmax1].copy_from_slice(&b);
+            }
+        }
+        let mut expected = vec![0.0f64; lmax1 * lmax1];
+        for lab in 0..=lmax {
+            if lab > 0 {
+                for n in 0..nrs {
+                    rur[n] *= rs[n];
+                }
+            }
+            let mut i = lab % 2;
+            while i <= lmax {
+                let mut s = 0.0f64;
+                for n in 0..nrs {
+                    s += rur[n] * bval[n * lmax1 + i];
+                }
+                expected[lab * lmax1 + i] = s;
+                i += 2;
+            }
+        }
+
+        for idx in 0..(lmax1 * lmax1) {
+            assert_eq!(
+                rad_all[idx], expected[idx],
+                "rad_all[{idx}] {} != expected {}",
+                rad_all[idx], expected[idx]
+            );
+        }
+    }
+
+    /// `type1_rad_part_host` leaves rad_all all-zero when nrs == 0 (early return).
+    #[test]
+    fn type1_rad_part_zero_grid_early_return() {
+        let lmax = 3usize;
+        let lmax1 = lmax + 1;
+        let mut rad_all = vec![0.0f64; lmax1 * lmax1];
+        let rs: Vec<f64> = Vec::new();
+        let ur: Vec<f64> = Vec::new();
+        type1_rad_part_host(&mut rad_all, lmax, 1.0, 1.0, &ur, &rs, 0, 1);
+        assert!(rad_all.iter().all(|&v| v == 0.0), "nrs==0 must leave rad_all zero");
+    }
+
+    /// `type2_facs_rad_host` early-returns (no panic, no writes) when nrs == 0,
+    /// and for a single contraction reproduces the buf*ci matmul internally.
+    #[test]
+    fn type2_facs_rad_consistency_and_zero_grid() {
+        // nrs == 0 early return: facs untouched.
+        let mut facs_empty = vec![0.0f64; 4];
+        let rs_empty: Vec<f64> = Vec::new();
+        type2_facs_rad_host(&mut facs_empty, 1, 1, 0.5, &[1.0], &[1.0], 1, &rs_empty, 0, 1);
+        assert!(facs_empty.iter().all(|&v| v == 0.0));
+
+        // Internal consistency for li=1, lc=1, single primitive, single contraction.
+        let li = 1usize;
+        let lc = 1usize;
+        let lilc1 = li + lc + 1;
+        let rca = 0.4f64;
+        let rs = vec![0.3, 0.9, 1.6];
+        let nrs = rs.len();
+        let exponents = vec![0.75f64];
+        let coeffs = vec![1.25f64]; // np=1, nc=1
+        let nc = 1usize;
+        let m = nrs * lilc1;
+        let mut facs = vec![0.0f64; m * nc];
+        type2_facs_rad_host(&mut facs, li, lc, rca, &exponents, &coeffs, nc, &rs, nrs, 1);
+
+        // Reference: same buf fill then trivial 1x1 contraction.
+        let ai = exponents[0];
+        let ka = 2.0 * ai * rca;
+        let mut expected = vec![0.0f64; m * nc];
+        for i in 0..nrs {
+            let t = rs[i] - rca;
+            let ar2 = ai * t * t;
+            let off = i * lilc1;
+            if ar2 > EXPCUTOFF + 6.0 {
+                for j in 0..=(li + lc) {
+                    expected[off + j] = 0.0;
+                }
+            } else {
+                let scal = (-ar2).exp();
+                let pb = ecpsph_ine_opt_host((li + lc) as u32, ka * rs[i]);
+                for j in 0..=(li + lc) {
+                    expected[off + j] = pb[j] * scal * coeffs[0];
+                }
+            }
+        }
+        for idx in 0..(m * nc) {
+            assert_eq!(facs[idx], expected[idx], "facs[{idx}] mismatch");
         }
     }
 }
