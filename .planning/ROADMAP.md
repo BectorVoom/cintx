@@ -346,7 +346,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 20-06-PLAN.md — Executor capability branch (f32 bypasses `SHADER_F64` via `check_capability`; f64 retains it) + thread `ExecutionOptions.precision` -> `ExecutionPlan.precision`; staging over-allocation soundness; raw env/atm/bas + C ABI stay f64.
+- [x] 20-06-PLAN.md — Executor capability branch (f32 bypasses `SHADER_F64` via `check_capability`; f64 retains it) + thread `ExecutionOptions.precision` -> `ExecutionPlan.precision`; staging over-allocation soundness; raw env/atm/bas + C ABI stay f64.
 
 **Wave 6** *(blocked on Wave 5)*
 
