@@ -1,91 +1,72 @@
 //! Host-side Effective Core Potential (ECP) integral kernel — Type-1 (local,
 //! Coulomb-like) and Type-2 (semi-local, projector-based) scalar integrals.
 //!
-//! Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5808-5991 (ECPtype1_cart)
-//! Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5337-5515 (ECPtype2_cart)
-//! Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:6179-6221 (ECPscalar_sph wrapper —
-//! the entry point cintx-oracle compares against; sets up the cache and
-//! dispatches into ECPtype1_cart + ECPtype2_cart through ECPtype_scalar_sph).
+//! # K-Taylor port (Phase 19 replan)
 //!
-//! The launcher (`launch_ecp`) replaces the family-level dispatcher for
-//! `canonical_family = "ecp"` per 19-CONTEXT.md D-08. Type-1 vs Type-2 selection
-//! happens per ECP shell on `EcpShell::channel` (NOT on operator name) — one
-//! `int1e_ecp_*` matrix output contains contributions from BOTH types when the
-//! basis carries a mix of Local and Projected ECP shells (the typical case for
-//! LANL2DZ and similar pseudopotentials).
+//! This module ports PySCF nr_ecp's *exact* scalar ECP evaluation so the
+//! `int1e_ecp_{cart,sph}` operators reach `atol=1e-12, rtol=0.0` byte-identity
+//! vs the vendored C (`ECPscalar_cart` / `ECPscalar_sph`). It replaces the
+//! 19-04 numerical-quadrature approximation (Gauss-Hermite for Type-1,
+//! Gauss-Chebyshev + the generic unscaled `i_l` for Type-2) with the 19-05
+//! K-Taylor radial machinery plus PySCF's per-`(li, lj, l_c)` angular splice.
+//!
+//! Ported C drivers (each helper carries a `// Source:` citation):
+//! - `ECPtype1_cart`  — vendor/pyscf-nr-ecp/src/nr_ecp.c:5808-5991. Calls
+//!   `ECPrad_part` (5910) then `type1_rad_part` (5931), the level-adaptive
+//!   Gauss-Chebyshev convergence loop (5909-5952), `type1_rad_ang` (5960),
+//!   `type1_static_facs` (5971-5972), and the `LOOP_CART`/`LOOP_XYZ` angular
+//!   accumulation into `gctr` (5976-5988).
+//! - `ECPtype2_cart`  — vendor/pyscf-nr-ecp/src/nr_ecp.c:5337-5515. Calls
+//!   `ECPrad_part`, `type2_facs_rad` (5450/5452), the same level-adaptive loop,
+//!   `type2_facs_ang` (5498/5499), and the two-`dgemm` angular splice
+//!   (5505-5510).
+//! - `ECPscalar_{cart,sph}` — vendor/pyscf-nr-ecp/src/nr_ecp.c:4687-4837 (the
+//!   K-Taylor `ECPsph_ine_opt`, ported in 19-05) feeds the radial assemblers;
+//!   the combined wrapper sums Type-1 + Type-2 across the ecpbas slab.
+//!
+//! The radial primitives (`ecprad_part_host`, `type1_rad_part_host`,
+//! `type2_facs_rad_host`, `ecpsph_ine_opt_host`) live in
+//! `crate::math::ecp_k_taylor` (19-05 output). The angular helpers
+//! (`int_unit_xyz`, `ang_nuc_in_cart`, `cache_3dfac`, `type1_static_facs`,
+//! `type1_rad_ang`, `type2_facs_ang`, `scale_coeff`) are ported here.
+//!
+//! ## CubeCL constraint deviation (CLAUDE.md "CubeCL is the primary backend")
+//!
+//! This ECP kernel is **host-only this phase** (D-16 host-first): the
+//! byte-identity gate runs CPU-vs-C on `--features cpu`, so a `*_host()`-style
+//! pure-Rust port closes the requirement. A `#[cube]` GPU counterpart (the
+//! data-dependent recurrence + cache-reuse control flow, host-side branching
+//! per the Phase 8 P02 `cond_br` MLIR limitation) is a *documented deviation*
+//! tracked in 19-CONTEXT.md "Deferred Ideas" — host-only is not the intended
+//! end state, and a follow-up plan or v1.4 lands the GPU half. Per the
+//! `bessel.rs` / `ecp_k_taylor.rs` convention, no `#[cube]` body appears here.
 //!
 //! ## Normalization & coordinate convention
 //!
-//! The PySCF nr_ecp.c primitive loop (e.g., `ECPtype1_cart` around lines 5872+
-//! and `ECPtype2_cart` around lines 5400+) reads AO primitive normalization
-//! and contraction coefficients VERBATIM from `env[PTR_COEFF + p]`. The
-//! per-primitive Gaussian normalization $N(\alpha, l)$ is embedded in the
-//! contraction coefficients at basis-set build time; the kernel does NOT
-//! apply a separate normalization factor. The cintx-core `Shell::coefficients`
-//! field follows the same convention (set by typed-API callers OR by the
-//! raw-compat slab when read from the env table), so the kernel reads
-//! `shell.coefficients` directly without an additional $N$ multiplication.
+//! PySCF's primitive loop reads AO contraction coefficients VERBATIM from
+//! `env[PTR_COEFF + p]`; the per-primitive Gaussian normalization `N(a, l)` is
+//! embedded in the coefficients at basis-set build time. `scale_coeff`
+//! (nr_ecp.c:5740) additionally folds in `exp(-a |r_CA|^2) * CINTcommon_fac_sp(l)
+//! * 4 pi` per AO primitive. The kernel reads `shell.coefficients` directly
+//! (no extra `N` factor) matching `launch_one_electron`.
 //!
-//! Coordinate / displacement convention: PySCF's ECP kernel evaluates
-//! $\langle \chi_i \mid V_{ECP}(\mathbf{r}-\mathbf{R}_C) \mid \chi_j \rangle$
-//! where $\mathbf{R}_C$ is the ECP center stored on the same atom as the AO
-//! contractions. The displacement convention is therefore $\mathbf{PA}
-//! = \mathbf{P} - \mathbf{R}_A$ and $\mathbf{PB} = \mathbf{P} - \mathbf{R}_B$
-//! where $\mathbf{P}$ is the Gaussian product center of the AO pair and
-//! $\mathbf{R}_A, \mathbf{R}_B$ are the AO atomic centers; the ECP center
-//! $\mathbf{R}_C$ enters the radial integral as $|\mathbf{P} - \mathbf{R}_C|$.
-//! cintx-core's `Atom::coord_bohr` stores atomic centers in Bohr (libcint
-//! convention), so the kernel reads coordinates directly without unit
-//! conversion. The displacement vectors `pa` and `pb` are computed inline
-//! from `shell_i.atom_index → atom.coord_bohr` and the per-primitive-pair
-//! Gaussian product center, identically to libcint's `g1e.c::CINTg_compute_t1`.
+//! The ECP center `R_C` (stored on its atom) enters the radial integral via the
+//! AO-center displacements `rca = R_C - R_A`, `rcb = R_C - R_B` exactly as the
+//! C reference computes them.
 //!
-//! ## Algorithm summary
+//! Both Type-1 and Type-2 accumulate into a Cartesian buffer `[ao_i, ao_j]`
+//! (F-order, ao_i fastest-varying within a contraction block, matching
+//! `launch_one_electron` line 434). `cart_to_sph_1e` is applied when
+//! `plan.representation == Representation::Spheric`.
 //!
-//! - **Type-1 (`EcpChannel::Local`):** Radial Gaussian × $r_C^{n}$ × Gaussian
-//!   product. Evaluated via Gauss-Hermite quadrature (Plan 02
-//!   `gauss_hermite_nodes_weights_host`) over $u = \sqrt{\alpha}(r - r_0)$ for
-//!   the radial coordinate, with Cartesian Boys-style angular accumulation.
-//! - **Type-2 (`EcpChannel::Projected(l)`):** Spherical-wave expansion of each
-//!   AO Gaussian around the ECP center using modified spherical Bessel
-//!   functions $i_l(x)$ (Plan 02 `modified_spherical_bessel_in_host`), Wigner
-//!   angular collapse onto the projector $Y_{lm}$, then radial integral via
-//!   Gauss-Chebyshev second-kind quadrature (Plan 02
-//!   `gauss_chebyshev_nodes_weights_host`).
-//!
-//! Both branches accumulate into a Cartesian buffer `[ao_i, ao_j]` (F-order
-//! per libcint 1e convention, ao_i fastest-varying within a contraction
-//! block), with cart-to-sph applied via `crate::transform::c2s::cart_to_sph_1e`
-//! when `plan.representation == Representation::Spheric`.
-//!
-//! Gradient operator (`operator_name == "ecp_ipnuc"`) returns
-//! `UnsupportedApi` for now; Plan 05 lands the gradient algorithm here.
-//!
-//! ## Implementation note (Phase 19 Wave 2)
-//!
-//! Achieving byte-identity (atol=1e-12) parity with PySCF `nr_ecp.c`'s
-//! `ECPscalar_{cart,sph}` requires porting the full PySCF type-1 +
-//! type-2 + K-Taylor + Bessel-recurrence machinery (~700 lines of upstream
-//! C), including the K-Taylor table (K_TAB_ENTRIES=400 × K_TAB_COL=24) and
-//! the per-primitive-triple cache reuse pattern. The Wave-2 launcher here
-//! lays the dispatch + math-primitive scaffolding (Plan 02 host functions
-//! wired in; canonical-family registration live; vendor FFI smoke-tested),
-//! but the inner `compute_type1_pair` / `compute_type2_pair` helpers
-//! implement a *direct-quadrature* form that closes the type-1/type-2 path
-//! mathematically without yet reproducing PySCF's specific recurrences
-//! byte-for-byte. The Plan-04 parity tests are gated `#[ignore]` (see
-//! `safe_api_ecp_parity.rs`) pending a follow-up tightening pass; the
-//! manifest's `oracle_covered` flag is therefore NOT flipped to `true` in
-//! Wave 2. See `19-04-SUMMARY.md` for the full deviation rationale and
-//! the deferred-to-Plan-04b worklist.
-//!
-//! host-side pipeline; let _ = backend per one_electron.rs:451.
+//! Gradient operator (`operator_name == "ecp_ipnuc"`) returns `UnsupportedApi`;
+//! Plan 19-07 lands the gradient algorithm.
 
 use crate::backend::ResolvedBackend;
-use crate::math::bessel::modified_spherical_bessel_in_host;
-use crate::math::radial_quadrature::{
-    LEVEL0, gauss_chebyshev_nodes_weights_host, gauss_hermite_nodes_weights_host,
+use crate::math::ecp_k_taylor::{
+    EcpRadShell, ecprad_part_host, type1_rad_part_host, type2_facs_rad_host,
 };
+use crate::math::radial_quadrature::{LEVEL0, LEVEL_MAX, gauss_chebyshev_nodes_weights_host};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use cintx_core::ecp::{EcpChannel, EcpShell};
@@ -94,16 +75,74 @@ use cintx_core::{Atom, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use std::sync::Arc;
 
-/// Default Gauss-Hermite node count for the Type-1 radial expansion.
-/// Phase 02 `GAUSS_HERMITE_NMAX = 8`; 8 nodes integrates $r^{2n}\,e^{-\beta r^2}$
-/// exactly for $n \le 7$, which covers all `radial_power` values that LANL2DZ
-/// and the broader PySCF ECP test set exercise.
-const TYPE1_HERMITE_N: u32 = 8;
+/// `ECP_LMAX` — maximum ECP projector angular momentum (Phase 19 envelope).
+/// Source: vendor/pyscf-nr-ecp/include/gto/nr_ecp.h:10 (`ECP_LMAX 5`).
+const ECP_LMAX: usize = 5;
+
+/// `CLOSE_ENOUGH(x, y)` — PySCF radial convergence predicate.
+/// Source: vendor/pyscf-nr-ecp/include/gto/nr_ecp.h:16.
+#[inline]
+fn close_enough(x: f64, y: f64) -> bool {
+    (x - y).abs() < 1e-12 * y.abs() || (x - y).abs() < 1e-12
+}
+
+/// `CINTcommon_fac_sp(l)` — libcint s/p common factor.
+/// Source: libcint-master/src/g1e.c:566-573.
+#[inline]
+fn cint_common_fac_sp(l: usize) -> f64 {
+    match l {
+        0 => 0.282094791773878143,
+        1 => 0.488602511902919921,
+        _ => 1.0,
+    }
+}
+
+/// `_factorial2[n] = n!!` — used by `int_unit_xyz`. `factorial2(n<0) = 1`.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:4473-4486 + 4488-4496.
+const FACTORIAL2: [f64; 40] = [
+    1., 1., 2., 3., 8., 15., 48., 105., 384., 945., 3840., 10395., 46080., 135135., 645120.,
+    2027025., 10321920., 34459425., 185794560., 654729075., 3715891200., 13749310575.,
+    81749606400., 316234143225., 1961990553600., 7905853580625., 51011754393600.,
+    213458046676875., 1428329123020800., 6190283353629376., 42849873690624000.,
+    1.9189878396251069e+17, 1.371195958099968e+18, 6.3326598707628524e+18,
+    4.6620662575398912e+19, 2.2164309547669976e+20, 1.6783438527143608e+21,
+    8.2007945326378929e+21, 6.3777066403145712e+22, 3.1983098677287775e+23,
+];
+
+/// `factorial2(n)` with the `n < 0 => 1` guard (PySCF nr_ecp.c:4488-4496).
+#[inline]
+fn factorial2(n: i32) -> f64 {
+    if n < 0 {
+        1.0
+    } else {
+        FACTORIAL2[n as usize]
+    }
+}
+
+/// `_binom[n][m]` for `n < 10`; PySCF `binom(n, m)`.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:4498-4517.
+const BINOM: [f64; 55] = [
+    1., 1., 1., 1., 2., 1., 1., 3., 3., 1., 1., 4., 6., 4., 1., 1., 5., 10., 10., 5., 1., 1., 6.,
+    15., 20., 15., 6., 1., 1., 7., 21., 35., 35., 21., 7., 1., 1., 8., 28., 56., 70., 56., 28., 8.,
+    1., 1., 9., 36., 84., 126., 126., 84., 36., 9., 1.,
+];
+
+#[inline]
+fn binom(n: usize, m: usize) -> f64 {
+    // Phase-19 envelope keeps n < 10 (li + lj <= 4); the n >= 10 factorial form
+    // is unreachable here, so the table is sufficient.
+    BINOM[n * (n + 1) / 2 + m]
+}
+
+/// `_offset_cart[l]` — cumulative cartesian-component offset.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:4543-4544.
+const OFFSET_CART: [usize; 15] = [
+    0, 1, 4, 10, 20, 35, 56, 84, 120, 165, 220, 286, 364, 455, 560,
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cartesian-component enumeration (libcint CINTcart_comp convention).
-// Mirrors crate::kernels::one_electron::cart_comps but kept local to avoid
-// cross-module visibility churn.
+// Cartesian-component enumeration (libcint LOOP_CART order).
+// Verified bit-equal to PySCF `_cart_pow_y` / `_cart_pow_z` for l <= 4.
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
@@ -123,269 +162,775 @@ fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Type-1 (Local) ECP contribution — direct numerical-quadrature form.
-//
-// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5808-5991 (ECPtype1_cart).
-//
-// Evaluates
-//     $\sum_{p,q} c_{ip} c_{jq} \int (x-A_x)^{l_{ix}}(y-A_y)^{l_{iy}}(z-A_z)^{l_{iz}}
-//          \cdot (x-B_x)^{l_{jx}}(y-B_y)^{l_{jy}}(z-B_z)^{l_{jz}}
-//          \cdot e^{-\alpha_p (\mathbf{r}-\mathbf{A})^2 - \beta_q (\mathbf{r}-\mathbf{B})^2}
-//          \cdot \sum_k d_{kc} r_C^{n_{kc} - 2} e^{-\zeta_{kc} r_C^2}\,d^3r$
-//
-// using the Gaussian-product reduction (libcint pdata convention) followed by
-// Gauss-Hermite radial expansion around the ECP center for the
-// $r_C^n e^{-\zeta r_C^2}$ kernel.
-//
-// Writes its contribution into `cart_buf` (length `nci * ncj`, F-order
-// `[ao_i, ao_j]`).
+// Angular helpers (ported verbatim from nr_ecp.c).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `int_unit_xyz(i, j, k)` — analytic angular integral of `x^i y^j z^k` over
+/// the unit sphere (returns 0 for any odd power).
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:4952-4960.
+fn int_unit_xyz(i: i32, j: i32, k: i32) -> f64 {
+    if i % 2 != 0 || j % 2 != 0 || k % 2 != 0 {
+        0.0
+    } else {
+        factorial2(i - 1) * factorial2(j - 1) * factorial2(k - 1) / factorial2(i + j + k + 1)
+    }
+}
+
+/// Project a cartesian-monomial coefficient vector `omega` (length `ncart(l)`)
+/// onto its pure spherical-harmonic component — `omega <- M^T (M omega)` where
+/// `M = g_c2s[l].cart2sph` (cintx `C2S_L*`). For `l < 2` the libcint transform
+/// is the identity (s, p) so `omega` is unchanged.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:4998-4999 (CINTc2s_bra_sph +
+/// CINTs2c_bra_sph round-trip); libcint cart2sph.c:6476/6965 + fblas.c
+/// (CINTdgemm_TN / CINTdgemm_NN1).
+fn purify_cart_to_sph(omega: &mut [f64], l: usize) {
+    if l < 2 {
+        return; // s_bra/p_bra cart2spheric are identity (no PYPZPX)
+    }
+    let nf = ncart(l as u8);
+    let nd = nsph(l as u8);
+    // buf = M . omega
+    let mut buf = vec![0.0f64; nd];
+    for (m_row, b) in buf.iter_mut().enumerate() {
+        let mut s = 0.0;
+        for (c, &w) in omega.iter().enumerate().take(nf) {
+            s += c2s_coeff(l, m_row, c) * w;
+        }
+        *b = s;
+    }
+    // omega = M^T . buf
+    for (c, ow) in omega.iter_mut().enumerate().take(nf) {
+        let mut s = 0.0;
+        for (m_row, &bv) in buf.iter().enumerate() {
+            s += c2s_coeff(l, m_row, c) * bv;
+        }
+        *ow = s;
+    }
+}
+
+/// `ang_nuc_in_cart(omega, l, r)` — cartesian angular nuclear factors with the
+/// hard-coded l=0/l=1 fast paths and the cart->sph->cart purification for l>=2.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:4966-5001.
+fn ang_nuc_in_cart(omega: &mut [f64], l: usize, r: &[f64; 3]) {
+    match l {
+        0 => {
+            omega[0] = 0.07957747154594767;
+        }
+        1 => {
+            omega[0] = r[0] * 0.2387324146378430;
+            omega[1] = r[1] * 0.2387324146378430;
+            omega[2] = r[2] * 0.2387324146378430;
+        }
+        _ => {
+            let mut xx = [0.0f64; 16];
+            let mut yy = [0.0f64; 16];
+            let mut zz = [0.0f64; 16];
+            xx[0] = 1.0;
+            yy[0] = 1.0;
+            zz[0] = 1.0;
+            for i in 1..=l {
+                xx[i] = xx[i - 1] * r[0];
+                yy[i] = yy[i - 1] * r[1];
+                zz[i] = zz[i - 1] * r[2];
+            }
+            let mut n = 0usize;
+            let li = l as i32;
+            let mut i = li;
+            while i >= 0 {
+                let mut j = li - i;
+                while j >= 0 {
+                    let k = li - i - j;
+                    omega[n] = xx[i as usize] * yy[j as usize] * zz[k as usize];
+                    n += 1;
+                    j -= 1;
+                }
+                i -= 1;
+            }
+            purify_cart_to_sph(omega, l);
+        }
+    }
+}
+
+/// `cache_3dfac(facs, l, r)` — per-axis binomial expansion factors
+/// `fac[axis][i*l1 + j] = binom(i, j) * r[axis]^(i-j)`.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5003-5031.
+fn cache_3dfac(facs: &mut [f64], l: usize, r: &[f64; 3]) {
+    let l1 = l + 1;
+    let (facx, rest) = facs.split_at_mut(l1 * l1);
+    let (facy, facz) = rest.split_at_mut(l1 * l1);
+    let mut xx = [0.0f64; 16];
+    let mut yy = [0.0f64; 16];
+    let mut zz = [0.0f64; 16];
+    xx[0] = 1.0;
+    yy[0] = 1.0;
+    zz[0] = 1.0;
+    for i in 1..=l {
+        xx[i] = xx[i - 1] * r[0];
+        yy[i] = yy[i - 1] * r[1];
+        zz[i] = zz[i - 1] * r[2];
+    }
+    for i in 0..=l {
+        for j in 0..=i {
+            let bfac = binom(i, j);
+            let off = i * l1 + j;
+            facx[off] = bfac * xx[i - j];
+            facy[off] = bfac * yy[i - j];
+            facz[off] = bfac * zz[i - j];
+        }
+    }
+}
+
+/// `type1_static_facs(facs, li, ri)` — static cartesian factors
+/// `facs[mi*d3 + i*d2 + j*d1 + k]` for the Type-1 angular accumulation.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5188-5209.
+fn type1_static_facs(facs: &mut [f64], li: usize, ri: &[f64; 3]) {
+    let d1 = li + 1;
+    let d2 = d1 * d1;
+    let d3 = d2 * d1;
+    let mut fac3d = vec![0.0f64; 3 * d1 * d1];
+    cache_3dfac(&mut fac3d, li, ri);
+    let (fac3dx, rest) = fac3d.split_at(d1 * d1);
+    let (fac3dy, fac3dz) = rest.split_at(d1 * d1);
+
+    for (mi, (px, py, pz)) in cart_comps(li as u8).into_iter().enumerate() {
+        let (px, py, pz) = (px as usize, py as usize, pz as usize);
+        let pfacs = &mut facs[mi * d3..mi * d3 + d3];
+        for i in 0..=px {
+            for j in 0..=py {
+                for k in 0..=pz {
+                    pfacs[i * d2 + j * d1 + k] =
+                        fac3dx[px * d1 + i] * fac3dy[py * d1 + j] * fac3dz[pz * d1 + k];
+                }
+            }
+        }
+    }
+}
+
+/// `type1_rad_ang(rad_ang, lmax, r, rad_all)` — combine the Type-1 radial
+/// moments with the angular nuclear factors.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5211-5257.
+fn type1_rad_ang(rad_ang: &mut [f64], lmax: usize, r: &[f64; 3], rad_all: &[f64]) {
+    let mut unitr = [0.0f64; 3];
+    if !(r[0] == 0.0 && r[1] == 0.0 && r[2] == 0.0) {
+        let norm_r = -1.0 / (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).sqrt();
+        unitr[0] = r[0] * norm_r;
+        unitr[1] = r[1] * norm_r;
+        unitr[2] = r[2] * norm_r;
+    }
+
+    // omega_nuc holds ang_nuc_in_cart for each l = 0..=lmax, packed at OFFSET_CART.
+    let mut omega_nuc = vec![0.0f64; OFFSET_CART[lmax + 1]];
+    for i in 0..=lmax {
+        let off = OFFSET_CART[i];
+        let nf = ncart(i as u8);
+        ang_nuc_in_cart(&mut omega_nuc[off..off + nf], i, &unitr);
+    }
+
+    let d1 = lmax + 1;
+    let d2 = d1 * d1;
+    let d3 = d2 * d1;
+    for v in rad_ang.iter_mut().take(d3) {
+        *v = 0.0;
+    }
+    for i in 0..=lmax {
+        for j in 0..=(lmax - i) {
+            for k in 0..=(lmax - i - j) {
+                let pout_idx = i * d2 + j * d1 + k;
+                let prad = &rad_all[(i + j + k) * d1..(i + j + k) * d1 + d1];
+                let need_even = (i + j + k) % 2;
+                let mut lmb = need_even;
+                let mut acc = 0.0;
+                while lmb <= lmax {
+                    let mut tmp = 0.0;
+                    let pnuc = &omega_nuc[OFFSET_CART[lmb]..];
+                    for (n, (pr, ps, pt)) in cart_comps(lmb as u8).into_iter().enumerate() {
+                        tmp += pnuc[n]
+                            * int_unit_xyz(
+                                (i + pr as usize) as i32,
+                                (j + ps as usize) as i32,
+                                (k + pt as usize) as i32,
+                            );
+                    }
+                    acc += prad[lmb] * tmp;
+                    lmb += 2;
+                }
+                rad_ang[pout_idx] += acc;
+            }
+        }
+    }
+}
+
+/// `type2_facs_ang(facs, li, lc, ri)` — the Type-2 angular factor tensor
+/// `facs[(a+b+c)*nfi*dlclmb + mi*dlclmb + m*dlambda + n]`.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5033-5132.
+fn type2_facs_ang(facs: &mut [f64], li: usize, lc: usize, ri: &[f64; 3]) {
+    let mut unitr = [0.0f64; 3];
+    if !(ri[0] == 0.0 && ri[1] == 0.0 && ri[2] == 0.0) {
+        let norm_ri = -1.0 / (ri[0] * ri[0] + ri[1] * ri[1] + ri[2] * ri[2]).sqrt();
+        unitr[0] = ri[0] * norm_ri;
+        unitr[1] = ri[1] * norm_ri;
+        unitr[2] = ri[2] * norm_ri;
+    }
+
+    let li1 = li + 1;
+    let dlc = lc * 2 + 1;
+    let dlambda = li + lc + 1;
+
+    let mut omega_nuc = vec![0.0f64; OFFSET_CART[li + lc + 1]];
+    for i in 0..=(li + lc) {
+        let off = OFFSET_CART[i];
+        let nf = ncart(i as u8);
+        ang_nuc_in_cart(&mut omega_nuc[off..off + nf], i, &unitr);
+    }
+    for v in omega_nuc.iter_mut().take(OFFSET_CART[li + lc + 1]) {
+        *v *= 4.0 * std::f64::consts::PI;
+    }
+
+    let dlclmb = dlambda * dlc;
+    // omega[(i*li1*li1 + j*li1 + k)*dlclmb + lmb*dlc + m]
+    let mut omega = vec![0.0f64; li1 * li1 * li1 * dlclmb];
+    let mut buf = vec![0.0f64; dlc.max(1)];
+
+    for i in 0..=li {
+        for j in 0..=(li - i) {
+            for k in 0..=(li - i - j) {
+                let need_even = (lc + i + j + k) % 2;
+                let base = (i * li1 * li1 + j * li1 + k) * dlclmb;
+                let mut lmb = need_even;
+                // even-parity lambda block
+                while lmb <= li + lc {
+                    let pnuc = &omega_nuc[OFFSET_CART[lmb]..];
+                    for (m, (pu, pv, pw)) in cart_comps(lc as u8).into_iter().enumerate() {
+                        let mut s = 0.0;
+                        for (n, (pr, ps, pt)) in cart_comps(lmb as u8).into_iter().enumerate() {
+                            s += pnuc[n]
+                                * int_unit_xyz(
+                                    (i + pu as usize + pr as usize) as i32,
+                                    (j + pv as usize + ps as usize) as i32,
+                                    (k + pw as usize + pt as usize) as i32,
+                                );
+                        }
+                        buf[m] = s;
+                    }
+                    let pomega_off = base + lmb * dlc;
+                    match lc {
+                        0 => {
+                            omega[pomega_off] = buf[0] * 0.282094791773878143;
+                        }
+                        1 => {
+                            omega[pomega_off] = buf[0] * 0.488602511902919921;
+                            omega[pomega_off + 1] = buf[1] * 0.488602511902919921;
+                            omega[pomega_off + 2] = buf[2] * 0.488602511902919921;
+                        }
+                        _ => {
+                            // CINTc2s_bra_sph(pomega, 1, buf, lc): pomega[m_sph] =
+                            // sum_cart M[m_sph][cart] * buf[cart].
+                            for m_row in 0..dlc {
+                                let mut s = 0.0;
+                                for (c, &bv) in buf.iter().enumerate().take(ncart(lc as u8)) {
+                                    s += c2s_coeff(lc, m_row, c) * bv;
+                                }
+                                omega[pomega_off + m_row] = s;
+                            }
+                        }
+                    }
+                    lmb += 2;
+                }
+                // odd-parity lambda block is zeroed (omega already 0-init).
+            }
+        }
+    }
+
+    let nfi = ncart(li as u8);
+    let mut fac3d = vec![0.0f64; 3 * li1 * li1];
+    cache_3dfac(&mut fac3d, li, ri);
+    let (fac3dx, rest) = fac3d.split_at(li1 * li1);
+    let (fac3dy, fac3dz) = rest.split_at(li1 * li1);
+
+    for v in facs.iter_mut().take(li1 * nfi * dlclmb) {
+        *v = 0.0;
+    }
+    for (mi, (pr, ps, pt)) in cart_comps(li as u8).into_iter().enumerate() {
+        let (pr, ps, pt) = (pr as usize, ps as usize, pt as usize);
+        for i in 0..=pr {
+            for j in 0..=ps {
+                for k in 0..=pt {
+                    let need_even = (lc + i + j + k) % 2;
+                    let fac =
+                        fac3dx[pr * li1 + i] * fac3dy[ps * li1 + j] * fac3dz[pt * li1 + k];
+                    let pomega_off = (i * li1 * li1 + j * li1 + k) * dlclmb;
+                    let pfacs_off = ((i + j + k) * nfi + mi) * dlclmb;
+                    for m in 0..dlc {
+                        let mut n = need_even;
+                        while n < dlambda {
+                            facs[pfacs_off + m * dlambda + n] +=
+                                fac * omega[pomega_off + n * dlc + m];
+                            n += 2;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `scale_coeff(cei, ci, ai, r2ca, npi, nci, li)` — fold the AO-center radial
+/// Gaussian prefactor and `CINTcommon_fac_sp(li) * 4 pi` into the contraction
+/// coefficients. `cei[ic*npi + ip] = ci[ic*npi + ip] * exp(-ai[ip]*r2ca) * fac`.
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5740-5752.
+fn scale_coeff(cei: &mut [f64], ci: &[f64], ai: &[f64], r2ca: f64, npi: usize, nci: usize, li: usize) {
+    let common_fac = cint_common_fac_sp(li) * 4.0 * std::f64::consts::PI;
+    for ip in 0..npi {
+        let tmp = (-ai[ip] * r2ca).exp() * common_fac;
+        for ic in 0..nci {
+            cei[ic * npi + ip] = ci[ic * npi + ip] * tmp;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-shell data marshaling (typed EcpShell -> radial-grid inputs).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One ECP "slot" — the group of `EcpShell`s on the same atom sharing
+/// `(channel, so_type)`, mirroring PySCF's `_loc_ecpbas` (nr_ecp.c:5261).
+struct EcpSlot<'a> {
+    atom_index: u32,
+    /// `-1` for Local (Type-1), `>=0` for Projected(l) (Type-2).
+    lc: i32,
+    /// The radial-shell groups summed inside `ECPrad_part`.
+    rad_shells: Vec<EcpRadShell>,
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+
+/// Group `ecp_shells` into slots keyed by `(atom_index, channel, so_type)`,
+/// preserving input order (`_loc_ecpbas` groups *consecutive* rows; the typed
+/// fixture lists one shell per channel so each group is a single slot).
+fn group_ecp_slots(ecp_shells: &[Arc<EcpShell>]) -> Vec<EcpSlot<'_>> {
+    let mut slots: Vec<EcpSlot<'_>> = Vec::new();
+    for ec in ecp_shells {
+        let lc = match ec.channel {
+            EcpChannel::Local => -1,
+            EcpChannel::Projected(l) => l as i32,
+        };
+        let rad = EcpRadShell {
+            exponents: ec.exponents.to_vec(),
+            coefficients: ec.coefficients.to_vec(),
+            radial_power: ec.radial_power as i32,
+        };
+        match slots.last_mut() {
+            Some(s) if s.atom_index == ec.atom_index && s.lc == lc => {
+                s.rad_shells.push(rad);
+            }
+            _ => slots.push(EcpSlot {
+                atom_index: ec.atom_index,
+                lc,
+                rad_shells: vec![rad],
+                _marker: std::marker::PhantomData,
+            }),
+        }
+    }
+    slots
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type-1 (Local) ECP driver — port of ECPtype1_cart.
+// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5808-5991.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-fn compute_type1_pair(
-    cart_buf: &mut [f64],
+fn ecp_type1_cart(
+    gctr: &mut [f64],
     shell_i: &Shell,
     shell_j: &Shell,
     ri: [f64; 3],
     rj: [f64; 3],
     rc: [f64; 3],
-    ecp: &EcpShell,
-    coeff_i_scale: f64,
-    coeff_j_scale: f64,
-    ai: f64,
-    aj: f64,
+    rad_shells: &[EcpRadShell],
+    rs_max: &[f64],
+    ws_max: &[f64],
 ) {
-    let li = shell_i.ang_momentum;
-    let lj = shell_j.ang_momentum;
-    let nci = ncart(li);
-    let _ncj = ncart(lj);
+    let li = shell_i.ang_momentum as usize;
+    let lj = shell_j.ang_momentum as usize;
+    let npi = shell_i.nprim as usize;
+    let npj = shell_j.nprim as usize;
+    let nci = shell_i.nctr as usize;
+    let ncj = shell_j.nctr as usize;
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let ai = &shell_i.exponents;
+    let aj = &shell_j.exponents;
+    let ci = &shell_i.coefficients;
+    let cj = &shell_j.coefficients;
 
-    // Per-primitive contribution within ECP shell (Type-1 has channel=Local;
-    // radial form is sum_k d_{kc} r_C^{n_{kc} - 2} e^{-zeta_{kc} r_C^2}).
-    let radial_power = ecp.radial_power as i32; // signed per CoreError invariants
-    let n_ecp_prim = ecp.nprim as usize;
+    let lilj1 = li + lj + 1;
+    let d1 = lilj1;
+    let d2 = d1 * d1;
+    let d3 = d2 * d1;
+    let di1 = li + 1;
+    let di2 = di1 * di1;
+    let di3 = di2 * di1;
+    let dj1 = lj + 1;
+    let dj2 = dj1 * dj1;
+    let dj3 = dj2 * dj1;
 
-    // Gauss-Hermite quadrature: nodes/weights are pre-computed; integration
-    // proceeds in the radial r_C coordinate after change of variable
-    // r = u / sqrt(zeta) so the Gaussian weight becomes exp(-u^2).
-    let (gh_nodes, gh_weights) = gauss_hermite_nodes_weights_host(TYPE1_HERMITE_N);
+    let rca = [rc[0] - ri[0], rc[1] - ri[1], rc[2] - ri[2]];
+    let rcb = [rc[0] - rj[0], rc[1] - rj[1], rc[2] - rj[2]];
+    let sq_rca = rca[0] * rca[0] + rca[1] * rca[1] + rca[2] * rca[2];
+    let sq_rcb = rcb[0] * rcb[0] + rcb[1] * rcb[1] + rcb[2] * rcb[2];
 
-    // Gaussian product center of the AO primitive pair.
-    let pab = ai + aj;
-    let inv_pab = 1.0 / pab;
-    let px = (ai * ri[0] + aj * rj[0]) * inv_pab;
-    let py = (ai * ri[1] + aj * rj[1]) * inv_pab;
-    let pz = (ai * ri[2] + aj * rj[2]) * inv_pab;
+    let mut cei = vec![0.0f64; npi * nci];
+    let mut cej = vec![0.0f64; npj * ncj];
+    scale_coeff(&mut cei, ci, ai, sq_rca, npi, nci, li);
+    scale_coeff(&mut cej, cj, aj, sq_rcb, npj, ncj, lj);
 
-    // Distance-squared from AO pair center to ECP center (rPC).
-    let dx_pc = px - rc[0];
-    let dy_pc = py - rc[1];
-    let dz_pc = pz - rc[2];
-    let r_pc2 = dx_pc * dx_pc + dy_pc * dy_pc + dz_pc * dz_pc;
+    // rad_all[(ip*npj+jp)*d2 + lab*d1 + i]
+    let mut rad_all = vec![0.0f64; npi * npj * d2];
 
-    // libcint EAB factor — Gaussian product prefactor.
-    let r_ab2 = {
-        let dx = ri[0] - rj[0];
-        let dy = ri[1] - rj[1];
-        let dz = ri[2] - rj[2];
-        dx * dx + dy * dy + dz * dz
-    };
-    let prefactor = (-ai * aj * inv_pab * r_ab2).exp();
+    // Level-adaptive Gauss-Chebyshev convergence loop (nr_ecp.c:5897-5952).
+    let mut converged = vec![false; npi * npj];
+    let mut nrs0 = (1usize << LEVEL0) - 1;
+    let mut step = 1usize << (LEVEL_MAX - LEVEL0);
+    let mut start = step - 1;
+    let mut wtscale = step as f64;
+    let mut plast = vec![0.0f64; d2];
+    let mut ur = vec![0.0f64; 1usize << LEVEL_MAX];
 
-    // For each ECP primitive (zeta_c, d_c) and each Hermite radial node:
-    for k in 0..n_ecp_prim {
-        let zeta_c = ecp.exponents[k];
-        let d_c = ecp.coefficients[k]; // nctr=1 typical; index [k * nctr + 0]
-
-        // The radial integrand is r_C^{radial_power - 2} * exp(-zeta_c r_C^2)
-        // times the AO-pair Gaussian. After Gauss-Hermite change of variable
-        // u = sqrt(pab + zeta_c) * (r_C - r0) for some shift r0 that
-        // diagonalizes the Gaussian + ECP kernel, the radial weight becomes
-        // standard. This is a simplified direct-quadrature form: full
-        // ECPtype1_cart fidelity requires the K-Taylor table.
-        let alpha_total = pab + zeta_c;
-        let inv_alpha = 1.0 / alpha_total;
-        let r_eff2 = pab * zeta_c * inv_alpha * r_pc2;
-        let weight_kernel = (-r_eff2).exp() * prefactor;
-
-        // Gauss-Hermite quadrature on the residual radial coordinate. The
-        // simplest interpretation here is to evaluate the radial integrand
-        // at the Hermite nodes and sum; this is dimensionally consistent but
-        // does NOT yet reproduce PySCF's exact recurrence-based result. The
-        // K-Taylor + modified-Bessel infrastructure to do that lives in
-        // PySCF's `_LCoperator_K_taylor_*` family and is the principal
-        // gap to byte-identity (see file rustdoc and 19-04-SUMMARY.md).
-        let mut radial_integral = 0.0_f64;
-        let sqrt_inv = inv_alpha.sqrt();
-        for nh in 0..gh_nodes.len() {
-            let u = gh_nodes[nh];
-            let w = gh_weights[nh];
-            let r = u.abs() * sqrt_inv; // half-line: r >= 0
-            // r_C^{radial_power - 2} factor; PySCF normalizes by 4*pi and the
-            // ECP's standard form embeds a r^{n-2} (i.e. n is the raw slot,
-            // and the radial integrand is r^n * Gaussian / r^2 = r^{n-2} * G).
-            let r_pow = if radial_power - 2 == 0 {
-                1.0
-            } else {
-                r.powi(radial_power - 2)
-            };
-            radial_integral += w * r_pow;
+    let mut level = LEVEL0;
+    while level <= LEVEL_MAX {
+        let nrs = ecprad_part_host(&mut ur, rs_max, start, nrs0, step, rad_shells);
+        if nrs == 0 {
+            break;
+        }
+        for n in 0..nrs {
+            ur[n] *= ws_max[start + n * step] * wtscale;
         }
 
-        let contrib_kernel = d_c * coeff_i_scale * coeff_j_scale * weight_kernel * radial_integral;
+        let mut all_conv = true;
+        for ip in 0..npi {
+            for jp in 0..npj {
+                if converged[ip * npj + jp] {
+                    continue;
+                }
+                let prad = &mut rad_all[(ip * npj + jp) * d2..(ip * npj + jp) * d2 + d2];
+                plast[..d2].copy_from_slice(prad);
+                for v in prad.iter_mut() {
+                    *v *= 0.5;
+                }
+                let rij = [
+                    ai[ip] * rca[0] + aj[jp] * rcb[0],
+                    ai[ip] * rca[1] + aj[jp] * rcb[1],
+                    ai[ip] * rca[2] + aj[jp] * rcb[2],
+                ];
+                let k = (rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]).sqrt() * 2.0;
+                type1_rad_part_host(prad, li + lj, k, ai[ip] + aj[jp], &ur, &rs_max[start..], nrs, step);
+                converged[ip * npj + jp] = true;
+                for i in 0..d2 {
+                    if !close_enough(plast[i], prad[i]) {
+                        converged[ip * npj + jp] = false;
+                        all_conv = false;
+                        break;
+                    }
+                }
+            }
+        }
 
-        // Distribute into Cartesian shell-pair buffer with PA/PB monomials.
-        // Use simple direct product of (x-A)^lx (x-B)^lx polynomials evaluated
-        // at the pair-center P. This is the simplest non-trivial Cartesian
-        // expansion; libcint uses Obara-Saika to do this far more efficiently,
-        // but for proof-of-dispatch the direct form is sufficient.
-        let pa = [px - ri[0], py - ri[1], pz - ri[2]];
-        let pb = [px - rj[0], py - rj[1], pz - rj[2]];
+        if all_conv {
+            break;
+        }
+        nrs0 = (1usize << level) - 1;
+        step = 1usize << (LEVEL_MAX - level);
+        start = (start - 1) / 2;
+        wtscale *= 0.5;
+        level += 1;
+    }
 
-        for (i_idx, (ix, iy, iz)) in cart_comps(li).into_iter().enumerate() {
-            let cart_i = pa[0].powi(ix as i32) * pa[1].powi(iy as i32) * pa[2].powi(iz as i32);
-            for (j_idx, (jx, jy, jz)) in cart_comps(lj).into_iter().enumerate() {
-                let cart_j =
-                    pb[0].powi(jx as i32) * pb[1].powi(jy as i32) * pb[2].powi(jz as i32);
-                // F-order: [ao_i, ao_j] with ao_i fastest-varying
-                let idx = j_idx * nci + i_idx;
-                cart_buf[idx] += contrib_kernel * cart_i * cart_j;
+    // rad_ang_all[(ic*ncj+jc)*d3]
+    let mut rad_ang_all = vec![0.0f64; nci * ncj * d3];
+    let mut rad_ang = vec![0.0f64; d3];
+    for ip in 0..npi {
+        for jp in 0..npj {
+            let rij = [
+                ai[ip] * rca[0] + aj[jp] * rcb[0],
+                ai[ip] * rca[1] + aj[jp] * rcb[1],
+                ai[ip] * rca[2] + aj[jp] * rcb[2],
+            ];
+            type1_rad_ang(
+                &mut rad_ang,
+                li + lj,
+                &rij,
+                &rad_all[(ip * npj + jp) * d2..(ip * npj + jp) * d2 + d2],
+            );
+            for ic in 0..nci {
+                for jc in 0..ncj {
+                    let fac = cei[ic * npi + ip] * cej[jc * npj + jp];
+                    let prad = &mut rad_ang_all[(ic * ncj + jc) * d3..(ic * ncj + jc) * d3 + d3];
+                    for n in 0..d3 {
+                        prad[n] += fac * rad_ang[n];
+                    }
+                }
+            }
+        }
+    }
+
+    let mut ifac = vec![0.0f64; nfi * di3];
+    let mut jfac = vec![0.0f64; nfj * dj3];
+    type1_static_facs(&mut ifac, li, &rca);
+    type1_static_facs(&mut jfac, lj, &rcb);
+
+    let comps_i = cart_comps(li as u8);
+    let comps_j = cart_comps(lj as u8);
+    for ic in 0..nci {
+        for jc in 0..ncj {
+            let prad = &rad_ang_all[(ic * ncj + jc) * d3..(ic * ncj + jc) * d3 + d3];
+            for (mi, &(ix, iy, iz)) in comps_i.iter().enumerate() {
+                let (ix, iy, iz) = (ix as usize, iy as usize, iz as usize);
+                for (mj, &(jx, jy, jz)) in comps_j.iter().enumerate() {
+                    let (jx, jy, jz) = (jx as usize, jy as usize, jz as usize);
+                    let pifac = &ifac[mi * di3..mi * di3 + di3];
+                    let pjfac = &jfac[mj * dj3..mj * dj3 + dj3];
+                    // F-order [ao_i, ao_j]: gctr index = (jc*nfj+mj)*nci*nfi + ic*nfi+mi.
+                    let pout_idx = (jc * nfj + mj) * (nci * nfi) + ic * nfi + mi;
+                    let mut acc = 0.0;
+                    for i1 in 0..=ix {
+                        for i2 in 0..=iy {
+                            for i3 in 0..=iz {
+                                for j1 in 0..=jx {
+                                    for j2 in 0..=jy {
+                                        for j3 in 0..=jz {
+                                            acc += pifac[i1 * di2 + i2 * di1 + i3]
+                                                * pjfac[j1 * dj2 + j2 * dj1 + j3]
+                                                * prad[(i1 + j1) * d2
+                                                    + (i2 + j2) * d1
+                                                    + i3
+                                                    + j3];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    gctr[pout_idx] += acc;
+                }
             }
         }
     }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Type-2 (Projected) ECP contribution — direct numerical-quadrature form.
-//
-// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5337-5515 (ECPtype2_cart).
-//
-// Type-2 is a semi-local operator $\sum_{l,m} \mid Y_{lm}\rangle U_l(r_C)
-// \langle Y_{lm} \mid$. The integral is evaluated via spherical-wave
-// expansion of each AO Gaussian around the ECP center (using modified
-// spherical Bessel $i_l(x)$ — Plan 02's `modified_spherical_bessel_in_host`),
-// Wigner / Clebsch-Gordan angular collapse onto $Y_{lm}$, and a radial integral
-// via Gauss-Chebyshev second-kind quadrature (Plan 02's
-// `gauss_chebyshev_nodes_weights_host`).
+// Type-2 (Projected) ECP driver — port of ECPtype2_cart.
+// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5337-5515.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-fn compute_type2_pair(
-    cart_buf: &mut [f64],
+fn ecp_type2_cart(
+    gctr: &mut [f64],
     shell_i: &Shell,
     shell_j: &Shell,
     ri: [f64; 3],
     rj: [f64; 3],
     rc: [f64; 3],
-    ecp: &EcpShell,
-    coeff_i_scale: f64,
-    coeff_j_scale: f64,
-    ai: f64,
-    aj: f64,
-    l_proj: u8,
+    lc: usize,
+    rad_shells: &[EcpRadShell],
+    rs_max: &[f64],
+    ws_max: &[f64],
 ) {
-    let li = shell_i.ang_momentum;
-    let lj = shell_j.ang_momentum;
-    let nci = ncart(li);
-    let _ncj = ncart(lj);
-    let radial_power = ecp.radial_power as i32;
-    let n_ecp_prim = ecp.nprim as usize;
+    let li = shell_i.ang_momentum as usize;
+    let lj = shell_j.ang_momentum as usize;
+    let npi = shell_i.nprim as usize;
+    let npj = shell_j.nprim as usize;
+    let nci = shell_i.nctr as usize;
+    let ncj = shell_j.nctr as usize;
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let di = nfi * nci;
+    let ai = &shell_i.exponents;
+    let aj = &shell_j.exponents;
+    let ci = &shell_i.coefficients;
+    let cj = &shell_j.coefficients;
 
-    // Gauss-Chebyshev radial quadrature at PySCF's LEVEL0 = 5 (n = 2^5 - 1 = 31).
-    let (cheb_r, cheb_w) = gauss_chebyshev_nodes_weights_host(LEVEL0);
+    let common_fac =
+        cint_common_fac_sp(li) * cint_common_fac_sp(lj) * 16.0 * std::f64::consts::PI * std::f64::consts::PI;
 
-    // Distance from AO centers to ECP center (modified Bessel argument =
-    // 2 * alpha_AO * |r_AO - r_C| * r).
-    let r_ai2 = {
-        let dx = ri[0] - rc[0];
-        let dy = ri[1] - rc[1];
-        let dz = ri[2] - rc[2];
-        dx * dx + dy * dy + dz * dz
-    };
-    let r_bj2 = {
-        let dx = rj[0] - rc[0];
-        let dy = rj[1] - rc[1];
-        let dz = rj[2] - rc[2];
-        dx * dx + dy * dy + dz * dz
-    };
-    let r_ai = r_ai2.sqrt();
-    let r_bj = r_bj2.sqrt();
+    let rca = [rc[0] - ri[0], rc[1] - ri[1], rc[2] - ri[2]];
+    let rcb = [rc[0] - rj[0], rc[1] - rj[1], rc[2] - rj[2]];
+    let dca = (rca[0] * rca[0] + rca[1] * rca[1] + rca[2] * rca[2]).sqrt();
+    let dcb = (rcb[0] * rcb[0] + rcb[1] * rcb[1] + rcb[2] * rcb[2]).sqrt();
 
-    // The angular collapse onto Y_lm contributes a (2l+1) multiplicity factor;
-    // for the scalar trace this enters as a prefactor in the final sum.
-    let l_proj_mult = (2 * l_proj as u32 + 1) as f64;
+    let lilj1 = li + lj + 1;
+    let dlc = lc * 2 + 1;
+    let lilc1 = li + lc + 1;
+    let ljlc1 = lj + lc + 1;
+    let d2 = lilc1 * ljlc1;
+    let d3 = lilj1 * d2;
+    let im = nfi * dlc;
+    let mq = dlc * ljlc1;
 
-    // l_max for the modified Bessel evaluation: we need i_l at l_proj for the
-    // angular collapse but also up to li+lj+l_proj for the angular expansion
-    // of the Cartesian monomials. Clamp to the Plan 02 ECP_LMAX envelope (5);
-    // higher-l combinations beyond that envelope are not exercised in the
-    // LANL2DZ fixture.
-    let l_bessel_max = (li as u32 + lj as u32 + l_proj as u32).min(5);
+    let nrs_alloc = 1usize << LEVEL_MAX;
+    // rad_all[(ic*ncj+jc)*d3 + lab*d2 + i*ljlc1 + j]
+    let mut rad_all = vec![0.0f64; nci * ncj * d3];
+    // rur[lab*nrs + n]
+    let mut rur = vec![0.0f64; nrs_alloc * lilj1];
+    // radi[ic*nrs*lilc1 + n*lilc1 + i], radj likewise
+    let mut radi = vec![0.0f64; nci * lilc1 * nrs_alloc];
+    let mut radj = vec![0.0f64; ncj * ljlc1 * nrs_alloc];
 
-    for k in 0..n_ecp_prim {
-        let zeta_c = ecp.exponents[k];
-        let d_c = ecp.coefficients[k];
+    let mut converged = vec![false; nci * ncj * lilj1];
+    let mut nrs0 = (1usize << LEVEL0) - 1;
+    let mut step = 1usize << (LEVEL_MAX - LEVEL0);
+    let mut start = step - 1;
+    let mut wtscale = step as f64;
+    let mut plast = vec![0.0f64; d2];
 
-        // Radial sweep on the Gauss-Chebyshev nodes (PySCF LEVEL0 = 5 → 31 nodes
-        // covering r ∈ (0, ∞) via the variable transform PySCF's
-        // `ECPgauss_chebyshev` uses).
-        let mut radial_integral = 0.0_f64;
-        for n in 0..cheb_r.len() {
-            let r = cheb_r[n];
-            let w = cheb_w[n];
-
-            // Modified spherical Bessel arguments for the AO bra and ket
-            // primitive expansions around the ECP center.
-            let arg_i = 2.0 * ai * r_ai * r;
-            let arg_j = 2.0 * aj * r_bj * r;
-            let bessel_i = modified_spherical_bessel_in_host(l_bessel_max, arg_i);
-            let bessel_j = modified_spherical_bessel_in_host(l_bessel_max, arg_j);
-
-            // Take the l_proj-th component (the projector's angular index).
-            let l_idx = l_proj as usize;
-            let bi = if l_idx < bessel_i.len() {
-                bessel_i[l_idx]
-            } else {
-                0.0
-            };
-            let bj_val = if l_idx < bessel_j.len() {
-                bessel_j[l_idx]
-            } else {
-                0.0
-            };
-
-            // Radial weight: r^{radial_power} * exp(-(ai + aj + zeta_c) r^2 - ai r_ai^2 - aj r_bj^2)
-            let r_pow = if radial_power == 0 {
-                1.0
-            } else {
-                r.powi(radial_power)
-            };
-            let alpha_sum = ai + aj + zeta_c;
-            let g = (-alpha_sum * r * r - ai * r_ai2 - aj * r_bj2).exp();
-            radial_integral += w * r_pow * g * bi * bj_val;
+    let mut level = LEVEL0;
+    while level <= LEVEL_MAX {
+        let nrs = {
+            // rur[0..nrs] = ECPrad_part radial sum * ws * wtscale.
+            let mut ur_lab0 = vec![0.0f64; nrs0];
+            let n = ecprad_part_host(&mut ur_lab0, rs_max, start, nrs0, step, rad_shells);
+            for i in 0..n {
+                rur[i] = ur_lab0[i] * ws_max[start + i * step] * wtscale;
+            }
+            n
+        };
+        // rur[lab*nrs + i] = rur[(lab-1)*nrs + i] * rs[start + i*step]
+        for i in 0..nrs {
+            for lab in 1..=(li + lj) {
+                rur[nrs * lab + i] = rur[nrs * (lab - 1) + i] * rs_max[start + i * step];
+            }
         }
 
-        let contrib_kernel =
-            d_c * coeff_i_scale * coeff_j_scale * l_proj_mult * radial_integral;
+        // type2_facs_rad for both centers, contraction layout.
+        for ic in 0..nci {
+            let off = ic * nrs * lilc1;
+            type2_facs_rad_host(
+                &mut radi[off..off + nrs * lilc1],
+                li,
+                lc,
+                dca,
+                ai,
+                &ci[ic * npi..ic * npi + npi],
+                1,
+                &rs_max[start..],
+                nrs,
+                step,
+            );
+        }
+        for jc in 0..ncj {
+            let off = jc * nrs * ljlc1;
+            type2_facs_rad_host(
+                &mut radj[off..off + nrs * ljlc1],
+                lj,
+                lc,
+                dcb,
+                aj,
+                &cj[jc * npj..jc * npj + npj],
+                1,
+                &rs_max[start..],
+                nrs,
+                step,
+            );
+        }
 
-        // Distribute into Cartesian shell-pair buffer. For Type-2 the angular
-        // distribution is non-trivial (involves spherical harmonics); the
-        // simplified direct form here uses (x-C)^lx etc. evaluated at the
-        // Gaussian product center, which is dimensionally consistent but
-        // does NOT reproduce PySCF's full angular projection. See file rustdoc.
-        let pc = [
-            (ai * ri[0] + aj * rj[0]) / (ai + aj) - rc[0],
-            (ai * ri[1] + aj * rj[1]) / (ai + aj) - rc[1],
-            (ai * ri[2] + aj * rj[2]) / (ai + aj) - rc[2],
-        ];
+        let mut all_conv = true;
+        let mut ijl = 0usize;
+        for ic in 0..nci {
+            for jc in 0..ncj {
+                let pradi_off = ic * nrs_alloc * lilc1; // note: radi laid out with nrs_alloc stride
+                let _ = pradi_off;
+                for lab in 0..=(li + lj) {
+                    if !converged[ijl] {
+                        // prur = rur + lab*nrs
+                        let prad = &mut rad_all[ijl * d2..ijl * d2 + d2];
+                        plast[..d2].copy_from_slice(prad);
+                        for v in prad.iter_mut() {
+                            *v *= 0.5;
+                        }
+                        for i in 0..lilc1 {
+                            for j in 0..ljlc1 {
+                                let mut s = prad[i * ljlc1 + j];
+                                for n in 0..nrs {
+                                    s += rur[lab * nrs + n]
+                                        * radi[ic * nrs * lilc1 + n * lilc1 + i]
+                                        * radj[jc * nrs * ljlc1 + n * ljlc1 + j];
+                                }
+                                prad[i * ljlc1 + j] = s;
+                            }
+                        }
+                        converged[ijl] = true;
+                        for i in 0..d2 {
+                            if !close_enough(plast[i], prad[i]) {
+                                converged[ijl] = false;
+                                all_conv = false;
+                                break;
+                            }
+                        }
+                    }
+                    ijl += 1;
+                }
+            }
+        }
 
-        for (i_idx, (ix, iy, iz)) in cart_comps(li).into_iter().enumerate() {
-            let cart_i = pc[0].powi(ix as i32) * pc[1].powi(iy as i32) * pc[2].powi(iz as i32);
-            for (j_idx, (jx, jy, jz)) in cart_comps(lj).into_iter().enumerate() {
-                let cart_j =
-                    pc[0].powi(jx as i32) * pc[1].powi(jy as i32) * pc[2].powi(jz as i32);
-                let idx = j_idx * nci + i_idx;
-                cart_buf[idx] += contrib_kernel * cart_i * cart_j;
+        if all_conv {
+            break;
+        }
+        nrs0 = (1usize << level) - 1;
+        step = 1usize << (LEVEL_MAX - level);
+        start = (start - 1) / 2;
+        wtscale *= 0.5;
+        level += 1;
+    }
+
+    // Angular splice: type2_facs_ang + two dgemms (nr_ecp.c:5498-5512).
+    let dlclmb = (li + lc + 1) * dlc;
+    let _ = dlclmb;
+    let mut angi = vec![0.0f64; (li + 1) * nfi * dlc * lilc1];
+    let mut angj = vec![0.0f64; (lj + 1) * nfj * dlc * ljlc1];
+    type2_facs_ang(&mut angi, li, lc, &rca);
+    type2_facs_ang(&mut angj, lj, lc, &rcb);
+
+    // angi laid out [(a)*nfi*dlc*lilc1 + mi*dlc*lilc1 + m*lilc1 + n]
+    // (type2_facs_ang writes facs[(a+b+c)*nfi*dlclmb + mi*dlclmb + m*dlambda + n]
+    //  where dlclmb = dlambda*dlc; we slice per-`a` block below).
+    let mut buf = vec![0.0f64; nfi * dlc * ljlc1];
+    for ic in 0..nci {
+        for jc in 0..ncj {
+            let prad = &rad_all[(ic * ncj + jc) * d3..(ic * ncj + jc) * d3 + d3];
+            for i in 0..=li {
+                for j in 0..=lj {
+                    // dgemm_(N,N, m=ljlc1, n=im, k=lilc1,
+                    //        A=prad+(i+j)*d2 [ljlc1 x lilc1, col-major],
+                    //        B=angi+i*nfi*dlc*lilc1 [lilc1 x im, col-major],
+                    //        C=buf [ljlc1 x im, col-major])
+                    let a = &prad[(i + j) * d2..(i + j) * d2 + d2]; // d2 = lilc1*ljlc1
+                    let b_off = i * nfi * dlc * lilc1;
+                    let b = &angi[b_off..b_off + lilc1 * im];
+                    for col in 0..im {
+                        for row in 0..ljlc1 {
+                            let mut s = 0.0;
+                            for kk in 0..lilc1 {
+                                s += a[kk * ljlc1 + row] * b[col * lilc1 + kk];
+                            }
+                            buf[col * ljlc1 + row] = s;
+                        }
+                    }
+                    // dgemm_(T,N, m=nfi, n=nfj, k=mq=dlc*ljlc1,
+                    //        alpha=common_fac, A=buf [mq x nfi, col-major -> A^T],
+                    //        B=angj+j*nfj*dlc*ljlc1 [mq x nfj, col-major],
+                    //        beta=1, C=gctr+jc*nfj*di+ic*nfi [nfi x nfj, ld=di])
+                    let c_off = jc * nfj * di + ic * nfi;
+                    let bj_off = j * nfj * dlc * ljlc1;
+                    let bj = &angj[bj_off..bj_off + mq * nfj];
+                    for col in 0..nfj {
+                        for row in 0..nfi {
+                            let mut s = 0.0;
+                            for kk in 0..mq {
+                                s += buf[row * mq + kk] * bj[col * mq + kk];
+                            }
+                            gctr[c_off + col * di + row] += common_fac * s;
+                        }
+                    }
+                }
             }
         }
     }
@@ -398,11 +943,10 @@ fn compute_type2_pair(
 /// ECP integral host-side launcher for `canonical_family = "ecp"`.
 ///
 /// Dispatches Type-1 (channel == Local) and Type-2 (channel == Projected(l))
-/// ECP shells per the algorithm summary in the file rustdoc. For the
-/// `int1e_ecp_*` operator (scalar), accumulates into a Cartesian buffer and
-/// applies `cart_to_sph_1e` when `plan.representation == Spheric`. For
-/// `int1e_ecp_ipnuc_*` (gradient), returns `UnsupportedApi` — Plan 05 lands
-/// the gradient algorithm here.
+/// ECP shells. For the scalar `int1e_ecp_*` operator, accumulates a Cartesian
+/// `[ao_i, ao_j]` buffer and applies `cart_to_sph_1e` when
+/// `plan.representation == Spheric`. The gradient `int1e_ecp_ipnuc_*` operator
+/// returns `UnsupportedApi` — Plan 19-07 lands the gradient algorithm.
 pub fn launch_ecp(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
@@ -425,10 +969,10 @@ pub fn launch_ecp(
     match operator_name {
         "ecp" => {} // proceed
         "ecp_ipnuc" => {
-            // Plan 05: gradient branch lands here.
+            // Plan 19-07: gradient branch lands here.
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "ecp gradient operator '{}' not implemented (Plan 05)",
+                    "ecp gradient operator '{}' not implemented (Plan 19-07)",
                     operator_name
                 ),
             });
@@ -444,10 +988,7 @@ pub fn launch_ecp(
     if shells.len() != 2 {
         return Err(cintxRsError::ChunkPlanFailed {
             from: "cubecl_ecp",
-            detail: format!(
-                "ecp kernel requires exactly 2 shells, got {}",
-                shells.len()
-            ),
+            detail: format!("ecp kernel requires exactly 2 shells, got {}", shells.len()),
         });
     }
 
@@ -474,63 +1015,53 @@ pub fn launch_ecp(
     let ri = atoms[shell_i.atom_index as usize].coord_bohr;
     let rj = atoms[shell_j.atom_index as usize].coord_bohr;
 
-    let mut cart_buf = vec![0.0_f64; nci * ncj];
+    // gctr is the cartesian shell-pair output, F-order [ao_i, ao_j]
+    // (length nci*ncj). PySCF's per-contraction stride is nci*nfi (here nci=1
+    // per AO shell row in the Cu/LANL2DZ fixture); the driver indexes
+    // gctr[(jc*nfj+mj)*nci*nfi + ic*nfi+mi] which collapses to F-order when
+    // nci=ncj=1.
+    let mut gctr = vec![0.0_f64; nci * ncj];
 
-    // Iterate (primitive_i, primitive_j) × ECP-shell c.
-    let n_prim_i = shell_i.nprim as usize;
-    let n_prim_j = shell_j.nprim as usize;
-    let n_ctr_i = shell_i.nctr as usize;
-    let n_ctr_j = shell_j.nctr as usize;
+    // Build the 2047-point Gauss-Chebyshev grid PySCF samples adaptively
+    // (rs/ws_gauss_chebyshev2047). gauss_chebyshev_nodes_weights_host(LEVEL_MAX)
+    // reproduces ECPgauss_chebyshev(.., 2047) to f64; the adaptive loop indexes
+    // rs[start + n*step] into it.
+    let (rs_max, ws_max) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
 
-    for pi in 0..n_prim_i {
-        let ai = shell_i.exponents[pi];
-        for pj in 0..n_prim_j {
-            let aj = shell_j.exponents[pj];
-
-            for ec in ecp_shells.iter() {
-                let rc = atoms[ec.atom_index as usize].coord_bohr;
-
-                for ci in 0..n_ctr_i {
-                    let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
-                    for cj in 0..n_ctr_j {
-                        let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
-
-                        match ec.channel {
-                            EcpChannel::Local => {
-                                compute_type1_pair(
-                                    &mut cart_buf,
-                                    shell_i,
-                                    shell_j,
-                                    ri,
-                                    rj,
-                                    rc,
-                                    ec,
-                                    coeff_i,
-                                    coeff_j,
-                                    ai,
-                                    aj,
-                                );
-                            }
-                            EcpChannel::Projected(l_proj) => {
-                                compute_type2_pair(
-                                    &mut cart_buf,
-                                    shell_i,
-                                    shell_j,
-                                    ri,
-                                    rj,
-                                    rc,
-                                    ec,
-                                    coeff_i,
-                                    coeff_j,
-                                    ai,
-                                    aj,
-                                    l_proj,
-                                );
-                            }
-                        }
-                    }
-                }
+    let slots = group_ecp_slots(ecp_shells);
+    for slot in &slots {
+        let rc = atoms[slot.atom_index as usize].coord_bohr;
+        if slot.lc < 0 {
+            ecp_type1_cart(
+                &mut gctr,
+                shell_i,
+                shell_j,
+                ri,
+                rj,
+                rc,
+                &slot.rad_shells,
+                &rs_max,
+                &ws_max,
+            );
+        } else {
+            let lc = slot.lc as usize;
+            if lc > ECP_LMAX {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: format!("ecp projector l={lc} exceeds ECP_LMAX={ECP_LMAX}"),
+                });
             }
+            ecp_type2_cart(
+                &mut gctr,
+                shell_i,
+                shell_j,
+                ri,
+                rj,
+                rc,
+                lc,
+                &slot.rad_shells,
+                &rs_max,
+                &ws_max,
+            );
         }
     }
 
@@ -539,17 +1070,17 @@ pub fn launch_ecp(
         Representation::Spheric => {
             let sph_size = nsi * nsj;
             if staging.len() >= sph_size {
-                cart_to_sph_1e(&cart_buf, &mut staging[..sph_size], li, lj);
+                cart_to_sph_1e(&gctr, &mut staging[..sph_size], li, lj);
             } else {
                 let mut sph_tmp = vec![0.0_f64; sph_size];
-                cart_to_sph_1e(&cart_buf, &mut sph_tmp, li, lj);
+                cart_to_sph_1e(&gctr, &mut sph_tmp, li, lj);
                 let copy_len = staging.len().min(sph_size);
                 staging[..copy_len].copy_from_slice(&sph_tmp[..copy_len]);
             }
         }
         Representation::Cart => {
-            let copy_len = staging.len().min(cart_buf.len());
-            staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
+            let copy_len = staging.len().min(gctr.len());
+            staging[..copy_len].copy_from_slice(&gctr[..copy_len]);
         }
         Representation::Spinor => {
             // D-12: spinor accepted by resolver but NOT byte-identity-gated this
@@ -574,33 +1105,34 @@ pub fn launch_ecp(
     })
 }
 
+/// Single Condon-Shortley cart2sph coefficient (mirrors `c2s.rs::c2s_coeff`,
+/// kept local because that helper is private to the transform module).
+/// `C2S_L*[m_row][cart_col] == libcint g_trans_cart2sph` rows (l <= 4).
+#[inline]
+fn c2s_coeff(l: usize, m_row: usize, cart_col: usize) -> f64 {
+    use crate::transform::c2s::{C2S_L0, C2S_L1, C2S_L2, C2S_L3, C2S_L4};
+    match l {
+        0 => C2S_L0[m_row][cart_col],
+        1 => C2S_L1[m_row][cart_col],
+        2 => C2S_L2[m_row][cart_col],
+        3 => C2S_L3[m_row][cart_col],
+        4 => C2S_L4[m_row][cart_col],
+        _ => 0.0,
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Module-internal unit tests (defense-in-depth for the guard arms).
+// Module-internal unit tests.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
-    //! Module-internal unit tests for the ECP kernel.
-    //!
-    //! These tests exercise the kernel's helper functions and dispatch logic
-    //! that do NOT require a real `ResolvedBackend`. End-to-end coverage of
-    //! `launch_ecp` (which needs a backend to construct an `ExecutionPlan`)
-    //! is provided by the family-registry tests in `kernels/mod.rs`
-    //! (`family_registry_resolves_base_slice` adds an ECP arm in this plan)
-    //! and the parity tests in `crates/cintx-oracle/tests/safe_api_ecp_parity.rs`.
-    //!
-    //! cubecl_ecp guards covered here: canonical-family-name resolver, ECP
-    //! channel-dispatch invariants, Cartesian component enumeration.
-    //! cubecl_ecp guards covered by the integration test in mod.rs: the
-    //! launch_ecp registration entry point.
-    //! cubecl_ecp guards covered by safe_api_ecp_parity.rs: empty-ecp_shells,
-    //! gradient-operator-rejection, byte-identity numerics.
+    //! Module-internal unit tests for the ECP kernel helpers and dispatch.
+    //! End-to-end byte-identity coverage of `launch_ecp` lives in
+    //! `crates/cintx-oracle/tests/safe_api_ecp_parity.rs`.
 
     use super::*;
 
-    /// Sanity check that the registered launcher pointer is reachable from
-    /// the family-name resolver. This catches missing-registration regressions
-    /// without invoking the launcher (no backend needed).
     #[test]
     fn launch_ecp_registered_under_canonical_family_ecp() {
         let resolved = crate::kernels::resolve_family_name_for_tests("ecp");
@@ -614,7 +1146,6 @@ mod tests {
         );
     }
 
-    /// Cartesian component enumeration mirrors libcint's CINTcart_comp order.
     #[test]
     fn cart_comps_returns_expected_count() {
         assert_eq!(cart_comps(0).len(), 1); // s
@@ -623,11 +1154,30 @@ mod tests {
         assert_eq!(cart_comps(3).len(), 10); // f
     }
 
-    /// The TYPE1_HERMITE_N constant must be within Phase 02's supported
-    /// envelope (1..=GAUSS_HERMITE_NMAX=8).
+    /// `int_unit_xyz` matches PySCF: 1/(4π)·(unit-sphere monomial integral).
+    /// `int_unit_xyz(0,0,0) = factorial2(-1)^3 / factorial2(1) = 1/1 = 1`.
     #[test]
-    fn type1_hermite_node_count_within_envelope() {
-        assert!(TYPE1_HERMITE_N >= 1);
-        assert!(TYPE1_HERMITE_N <= 8);
+    fn int_unit_xyz_basic_values() {
+        assert_eq!(int_unit_xyz(0, 0, 0), 1.0);
+        // odd power => 0
+        assert_eq!(int_unit_xyz(1, 0, 0), 0.0);
+        // x^2: factorial2(1)*factorial2(-1)*factorial2(-1)/factorial2(3) = 1/3
+        assert!((int_unit_xyz(2, 0, 0) - 1.0 / 3.0).abs() < 1e-15);
+    }
+
+    /// `binom` agrees with the closed-form for the small-n table.
+    #[test]
+    fn binom_table_values() {
+        assert_eq!(binom(0, 0), 1.0);
+        assert_eq!(binom(4, 2), 6.0);
+        assert_eq!(binom(5, 2), 10.0);
+    }
+
+    /// `cint_common_fac_sp` matches libcint g1e.c:566.
+    #[test]
+    fn common_fac_sp_values() {
+        assert_eq!(cint_common_fac_sp(0), 0.282094791773878143);
+        assert_eq!(cint_common_fac_sp(1), 0.488602511902919921);
+        assert_eq!(cint_common_fac_sp(2), 1.0);
     }
 }
