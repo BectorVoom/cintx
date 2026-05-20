@@ -7,7 +7,7 @@
 //!
 //! Reference: H. B. Schlegel and M. J. Frisch, Int. J. Quant. Chem., 54(1995), 83-87.
 
-use cintx_core::cintxRsError;
+use cintx_core::{cintxRsError, CintFloat};
 
 // ──────────────────────────────────────────────────────────────────────────
 //  Helper dimension functions
@@ -129,7 +129,12 @@ pub const C2S_L4: [[f64; 15]; 9] = [
 ///   2. Ket (j-axis): multiply T[lj] (nsph_j x ncart_j) from the left.
 ///
 /// For l=0 both axes are identity (no-op).
-pub fn cart_to_sph_1e(cart_buf: &[f64], sph_buf: &mut [f64], li: u8, lj: u8) {
+///
+/// Generic over `F: CintFloat`.
+/// The c2s coefficient table is FROZEN f64; each coefficient is cast to `F`
+/// via `F::from_f64_lossy` at the accumulation site (PATTERNS line 162).
+/// The f64 monomorphization is byte-identical to the pre-refactor concrete function.
+pub fn cart_to_sph_1e<F: CintFloat>(cart_buf: &[F], sph_buf: &mut [F], li: u8, lj: u8) {
     let nci = ncart(li);
     let ncj = ncart(lj);
     let nsi = nsph(li);
@@ -140,12 +145,13 @@ pub fn cart_to_sph_1e(cart_buf: &[f64], sph_buf: &mut [f64], li: u8, lj: u8) {
 
     // Step 1: Transform bra (i-axis): T[li] @ cart_buf column-by-column.
     // Intermediate shape: [ncj * nsi] (j is outer, i_sph is inner)
-    let mut tmp = vec![0.0f64; ncj * nsi];
+    // c2s_coeff returns f64 (FROZEN coefficient table); cast to F at accumulation site.
+    let mut tmp = vec![F::zero(); ncj * nsi];
     for j in 0..ncj {
         for mi in 0..nsi {
-            let mut sum = 0.0;
+            let mut sum = F::zero();
             for ci in 0..nci {
-                sum += c2s_coeff(li, mi, ci) * cart_buf[j * nci + ci];
+                sum = sum + F::from_f64_lossy(c2s_coeff(li, mi, ci)) * cart_buf[j * nci + ci];
             }
             tmp[j * nsi + mi] = sum;
         }
@@ -155,9 +161,9 @@ pub fn cart_to_sph_1e(cart_buf: &[f64], sph_buf: &mut [f64], li: u8, lj: u8) {
     // Output shape: [nsj * nsi]
     for mj in 0..nsj {
         for mi in 0..nsi {
-            let mut sum = 0.0;
+            let mut sum = F::zero();
             for cj in 0..ncj {
-                sum += c2s_coeff(lj, mj, cj) * tmp[cj * nsi + mi];
+                sum = sum + F::from_f64_lossy(c2s_coeff(lj, mj, cj)) * tmp[cj * nsi + mi];
             }
             sph_buf[mj * nsi + mi] = sum;
         }
@@ -196,7 +202,10 @@ fn c2s_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
 ///
 /// Transform order: i-axis first (bra), then k-axis (ket), following the same
 /// convention as `cart_to_sph_1e`.
-pub fn cart_to_sph_2c2e(cart: &[f64], li: u8, lk: u8) -> Vec<f64> {
+///
+/// Generic over `F: CintFloat`. The c2s coefficient table is FROZEN f64;
+/// each coefficient is cast to `F` via `F::from_f64_lossy` at the accumulation site.
+pub fn cart_to_sph_2c2e<F: CintFloat>(cart: &[F], li: u8, lk: u8) -> Vec<F> {
     let nci = ncart(li);
     let nck = ncart(lk);
     let nsi = nsph(li);
@@ -206,12 +215,12 @@ pub fn cart_to_sph_2c2e(cart: &[f64], li: u8, lk: u8) -> Vec<f64> {
 
     // Step 1: Transform i-axis: T[li] @ cart column-by-column (for each k).
     // Intermediate shape: [nck * nsi] (k is outer, i_sph is inner)
-    let mut tmp = vec![0.0f64; nck * nsi];
+    let mut tmp = vec![F::zero(); nck * nsi];
     for k in 0..nck {
         for mi in 0..nsi {
-            let mut sum = 0.0;
+            let mut sum = F::zero();
             for ci in 0..nci {
-                sum += c2s_coeff(li, mi, ci) * cart[k * nci + ci];
+                sum = sum + F::from_f64_lossy(c2s_coeff(li, mi, ci)) * cart[k * nci + ci];
             }
             tmp[k * nsi + mi] = sum;
         }
@@ -219,12 +228,12 @@ pub fn cart_to_sph_2c2e(cart: &[f64], li: u8, lk: u8) -> Vec<f64> {
 
     // Step 2: Transform k-axis: T[lk] @ tmp^T row-by-row.
     // Output shape: [nsk * nsi]
-    let mut sph = vec![0.0f64; nsk * nsi];
+    let mut sph = vec![F::zero(); nsk * nsi];
     for mk in 0..nsk {
         for mi in 0..nsi {
-            let mut sum = 0.0;
+            let mut sum = F::zero();
             for ck in 0..nck {
-                sum += c2s_coeff(lk, mk, ck) * tmp[ck * nsi + mi];
+                sum = sum + F::from_f64_lossy(c2s_coeff(lk, mk, ck)) * tmp[ck * nsi + mi];
             }
             sph[mk * nsi + mi] = sum;
         }
@@ -241,7 +250,10 @@ pub fn cart_to_sph_2c2e(cart: &[f64], li: u8, lk: u8) -> Vec<f64> {
 /// Output: flat column-major array of shape `[nsph(lk) * nsph(lj) * nsph(li)]`.
 ///
 /// Transform order: i-axis first, then j-axis, then k-axis.
-pub fn cart_to_sph_3c1e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
+///
+/// Generic over `F: CintFloat`. The c2s coefficient table is FROZEN f64;
+/// each coefficient is cast to `F` via `F::from_f64_lossy` at the accumulation site.
+pub fn cart_to_sph_3c1e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec<F> {
     let nci = ncart(li);
     let ncj = ncart(lj);
     let nck = ncart(lk);
@@ -252,13 +264,13 @@ pub fn cart_to_sph_3c1e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
     debug_assert_eq!(cart.len(), nci * ncj * nck);
 
     // Step 1: Transform i-axis. Intermediate shape: [nck * ncj * nsi]
-    let mut tmp1 = vec![0.0f64; nck * ncj * nsi];
+    let mut tmp1 = vec![F::zero(); nck * ncj * nsi];
     for k in 0..nck {
         for j in 0..ncj {
             for mi in 0..nsi {
-                let mut sum = 0.0;
+                let mut sum = F::zero();
                 for ci in 0..nci {
-                    sum += c2s_coeff(li, mi, ci) * cart[(k * ncj + j) * nci + ci];
+                    sum = sum + F::from_f64_lossy(c2s_coeff(li, mi, ci)) * cart[(k * ncj + j) * nci + ci];
                 }
                 tmp1[(k * ncj + j) * nsi + mi] = sum;
             }
@@ -266,13 +278,13 @@ pub fn cart_to_sph_3c1e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
     }
 
     // Step 2: Transform j-axis. Intermediate shape: [nck * nsj * nsi]
-    let mut tmp2 = vec![0.0f64; nck * nsj * nsi];
+    let mut tmp2 = vec![F::zero(); nck * nsj * nsi];
     for k in 0..nck {
         for mj in 0..nsj {
             for mi in 0..nsi {
-                let mut sum = 0.0;
+                let mut sum = F::zero();
                 for cj in 0..ncj {
-                    sum += c2s_coeff(lj, mj, cj) * tmp1[(k * ncj + cj) * nsi + mi];
+                    sum = sum + F::from_f64_lossy(c2s_coeff(lj, mj, cj)) * tmp1[(k * ncj + cj) * nsi + mi];
                 }
                 tmp2[(k * nsj + mj) * nsi + mi] = sum;
             }
@@ -280,13 +292,13 @@ pub fn cart_to_sph_3c1e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
     }
 
     // Step 3: Transform k-axis. Output shape: [nsk * nsj * nsi]
-    let mut sph = vec![0.0f64; nsk * nsj * nsi];
+    let mut sph = vec![F::zero(); nsk * nsj * nsi];
     for mk in 0..nsk {
         for mj in 0..nsj {
             for mi in 0..nsi {
-                let mut sum = 0.0;
+                let mut sum = F::zero();
                 for ck in 0..nck {
-                    sum += c2s_coeff(lk, mk, ck) * tmp2[(ck * nsj + mj) * nsi + mi];
+                    sum = sum + F::from_f64_lossy(c2s_coeff(lk, mk, ck)) * tmp2[(ck * nsj + mj) * nsi + mi];
                 }
                 sph[(mk * nsj + mj) * nsi + mi] = sum;
             }
@@ -303,9 +315,11 @@ pub fn cart_to_sph_3c1e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
 ///
 /// Identical index structure to `cart_to_sph_3c1e` — same transform, different name
 /// for the 3c2e family.
-pub fn cart_to_sph_3c2e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
+///
+/// Generic over `F: CintFloat`. Delegates to `cart_to_sph_3c1e::<F>`.
+pub fn cart_to_sph_3c2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec<F> {
     // 3c2e has the same 3-index (i, j, k) structure as 3c1e.
-    cart_to_sph_3c1e(cart, li, lj, lk)
+    cart_to_sph_3c1e::<F>(cart, li, lj, lk)
 }
 
 /// Apply cart-to-sph transform for a 2-electron shell quartet (li, lj, lk, ll).
@@ -316,7 +330,10 @@ pub fn cart_to_sph_3c2e(cart: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
 /// Output: flat column-major array of shape `[nsph(ll) * nsph(lk) * nsph(lj) * nsph(li)]`.
 ///
 /// Transform order: i-axis first, then j, k, l (innermost to outermost).
-pub fn cart_to_sph_2e(cart: &[f64], li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> {
+///
+/// Generic over `F: CintFloat`. The c2s coefficient table is FROZEN f64;
+/// each coefficient is cast to `F` via `F::from_f64_lossy` at the accumulation site.
+pub fn cart_to_sph_2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8, ll: u8) -> Vec<F> {
     let nci = ncart(li);
     let ncj = ncart(lj);
     let nck = ncart(lk);
@@ -329,14 +346,14 @@ pub fn cart_to_sph_2e(cart: &[f64], li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> 
     debug_assert_eq!(cart.len(), nci * ncj * nck * ncl);
 
     // Step 1: Transform i-axis. Intermediate shape: [ncl * nck * ncj * nsi]
-    let mut tmp1 = vec![0.0f64; ncl * nck * ncj * nsi];
+    let mut tmp1 = vec![F::zero(); ncl * nck * ncj * nsi];
     for l in 0..ncl {
         for k in 0..nck {
             for j in 0..ncj {
                 for mi in 0..nsi {
-                    let mut sum = 0.0;
+                    let mut sum = F::zero();
                     for ci in 0..nci {
-                        sum += c2s_coeff(li, mi, ci)
+                        sum = sum + F::from_f64_lossy(c2s_coeff(li, mi, ci))
                             * cart[((l * nck + k) * ncj + j) * nci + ci];
                     }
                     tmp1[((l * nck + k) * ncj + j) * nsi + mi] = sum;
@@ -346,14 +363,14 @@ pub fn cart_to_sph_2e(cart: &[f64], li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> 
     }
 
     // Step 2: Transform j-axis. Intermediate shape: [ncl * nck * nsj * nsi]
-    let mut tmp2 = vec![0.0f64; ncl * nck * nsj * nsi];
+    let mut tmp2 = vec![F::zero(); ncl * nck * nsj * nsi];
     for l in 0..ncl {
         for k in 0..nck {
             for mj in 0..nsj {
                 for mi in 0..nsi {
-                    let mut sum = 0.0;
+                    let mut sum = F::zero();
                     for cj in 0..ncj {
-                        sum += c2s_coeff(lj, mj, cj)
+                        sum = sum + F::from_f64_lossy(c2s_coeff(lj, mj, cj))
                             * tmp1[((l * nck + k) * ncj + cj) * nsi + mi];
                     }
                     tmp2[((l * nck + k) * nsj + mj) * nsi + mi] = sum;
@@ -363,14 +380,14 @@ pub fn cart_to_sph_2e(cart: &[f64], li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> 
     }
 
     // Step 3: Transform k-axis. Intermediate shape: [ncl * nsk * nsj * nsi]
-    let mut tmp3 = vec![0.0f64; ncl * nsk * nsj * nsi];
+    let mut tmp3 = vec![F::zero(); ncl * nsk * nsj * nsi];
     for l in 0..ncl {
         for mk in 0..nsk {
             for mj in 0..nsj {
                 for mi in 0..nsi {
-                    let mut sum = 0.0;
+                    let mut sum = F::zero();
                     for ck in 0..nck {
-                        sum += c2s_coeff(lk, mk, ck)
+                        sum = sum + F::from_f64_lossy(c2s_coeff(lk, mk, ck))
                             * tmp2[((l * nck + ck) * nsj + mj) * nsi + mi];
                     }
                     tmp3[((l * nsk + mk) * nsj + mj) * nsi + mi] = sum;
@@ -380,14 +397,14 @@ pub fn cart_to_sph_2e(cart: &[f64], li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> 
     }
 
     // Step 4: Transform l-axis. Output shape: [nsl * nsk * nsj * nsi]
-    let mut sph = vec![0.0f64; nsl * nsk * nsj * nsi];
+    let mut sph = vec![F::zero(); nsl * nsk * nsj * nsi];
     for ml in 0..nsl {
         for mk in 0..nsk {
             for mj in 0..nsj {
                 for mi in 0..nsi {
-                    let mut sum = 0.0;
+                    let mut sum = F::zero();
                     for cl in 0..ncl {
-                        sum += c2s_coeff(ll, ml, cl)
+                        sum = sum + F::from_f64_lossy(c2s_coeff(ll, ml, cl))
                             * tmp3[((cl * nsk + mk) * nsj + mj) * nsi + mi];
                     }
                     sph[((ml * nsk + mk) * nsj + mj) * nsi + mi] = sum;
