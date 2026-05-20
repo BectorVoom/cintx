@@ -43,7 +43,7 @@
 | Phase 16: Multi-Backend Support (cuda / rocm / metal) | v1.2 | 4/4 | Complete | 2026-05-09 |
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
-| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 6/8 | In Progress (replan — scalar byte-identity closed; gradient + optional oracle pending) | - |
+| Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 7/8 | In Progress (replan — scalar+gradient byte-identity closed; optional libecpint oracle pending) | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -244,7 +244,7 @@ Plans:
 - [x] 19-06-PLAN.md — Scalar close: replace the direct-quadrature compute_type1_pair/compute_type2_pair bodies with the K-Taylor recurrence; remove #[ignore] from the two scalar parity tests; iterate to atol=1e-12 byte-identity over the full Cu/LANL2DZ Cartesian product; flip oracle_covered=true on int1e_ecp_{cart,sph}. Closes ECP-01/02/03 + scalar half of ECP-04. [ECP-01, ECP-02, ECP-03, ECP-04] (depends 19-05)
 
 **Wave 3 (replan) — gradient (supersedes halted 19-05)**
-- [ ] 19-07-PLAN.md — Gradient: port nr_ecp_deriv.c (_deriv1_cart, comp=3) for int1e_ecp_ipnuc_{cart,sph} on the K-Taylor foundation; F-order [axis, ao_j, ao_i] axis-slowest (D-11); vendor_ECPscalar_ipnuc_{cart,sph} wrappers; two ipnuc parity tests at atol=1e-12; flip oracle_covered=true on the two ipnuc rows. Closes ECP-05 + gradient half of ECP-04. [ECP-01, ECP-02, ECP-04, ECP-05] (depends 19-06)
+- [x] 19-07-PLAN.md — Gradient: port nr_ecp_deriv.c (_deriv1_cart, comp=3) for int1e_ecp_ipnuc_{cart,sph} on the K-Taylor foundation; F-order [axis, ao_j, ao_i] axis-slowest (D-11); vendor_ECPscalar_ipnuc_{cart,sph} wrappers; two ipnuc parity tests at atol=1e-12; flip oracle_covered=true on the two ipnuc rows. Closes ECP-05 + gradient half of ECP-04. [ECP-01, ECP-02, ECP-04, ECP-05] (depends 19-06)
 
 **Wave 4 (replan) — optional secondary oracle (supersedes 19-06)**
 - [ ] 19-08-PLAN.md — Optional non-blocking libecpint (Shaw & Hill, JCP 147 074108, 2017, MIT) secondary cross-check behind has_libecpint_oracle cfg (emitted only when CINTX_LIBECPINT_ORACLE=1); env-gated #[ignore] cross-check tests at informational atol≈1e-9 per D-02 REVISED. [ECP-04] (depends 19-06)

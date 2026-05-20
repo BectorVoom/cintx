@@ -9,8 +9,8 @@ progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 40
-  completed_plans: 38
-  percent: 95
+  completed_plans: 39
+  percent: 97
 ---
 
 # Project State
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 19 (int1e-ecp-type1-type2-evaluator) — EXECUTING
-Plan: 19-06 of 8 complete (scalar byte-identity closed, atol=1e-12); next 19-07 gradient
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-06-SUMMARY.md`
+Plan: 19-07 of 8 complete (scalar+gradient byte-identity, all 4 ECP rows oracle_covered); next 19-08 optional libecpint cross-check
+Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-07-SUMMARY.md`
 
 ## Performance Metrics
 
