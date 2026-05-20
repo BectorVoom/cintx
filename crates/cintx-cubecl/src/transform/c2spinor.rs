@@ -12,7 +12,7 @@
 //! For kappa == 0, both GT (j=l+1/2) and LT (j=l-1/2) blocks are applied,
 //! with GT written first (rows 0..nd_gt) and LT next (rows nd_gt..nd_gt+nd_lt).
 
-use cintx_core::cintxRsError;
+use cintx_core::{CintFloat, cintxRsError};
 use super::c2s::ncart;
 use super::c2spinor_coeffs as cj;
 
@@ -1710,5 +1710,64 @@ mod tests {
             0, -1, 0, -1, 1,
         ).expect("3c2e s,s,p should succeed");
         assert_eq!(staging.len(), required);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  RED tests: generic cart_to_spinor_sf_2d<F: CintFloat>
+    //  These reference the turbofish ::<f64> and ::<f32> which don't compile
+    //  until cart_to_spinor_sf_2d is made generic (Task 2 PART B GREEN).
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// T04-3a: cart_to_spinor_sf_2d::<f64> writes byte-identical output to pre-generic version.
+    ///
+    /// s-s pair (li=lj=0, kappa_i=kappa_j=-1): cart=[1.0], di=dj=2.
+    /// Expected staging (from existing sf_s_shell_kappa_neg1_cart_one test):
+    ///   staging[0..3] = [0.0, 0.0, 1.0, 0.0] (alpha), staging[4..7] = [1.0, 0.0, 0.0, 0.0] (beta)
+    ///   Actually for 2D: staging[(j*di+i)*2] = re, +1 = im for di=dj=2, dj=dj
+    ///   The 2D function produces di*dj*2 = 2*2*2 = 8 values.
+    ///
+    /// RED: compile fails until cart_to_spinor_sf_2d accepts a type parameter.
+    #[test]
+    fn test_c2spinor_sf_2d_f64_byte_identical() {
+        // s-s pair with simple cart input
+        let cart = vec![1.0f64]; // ncart(0) * ncart(0) = 1
+        let di = spinor_len(0, -1); // 2
+        let dj = spinor_len(0, -1); // 2
+        let required = di * dj * 2; // 8
+
+        // f64 path via turbofish — RED: fails to compile until <F: CintFloat> added
+        let mut staging_f64 = vec![0.0_f64; required];
+        cart_to_spinor_sf_2d::<f64>(&mut staging_f64, &cart, 0, -1, 0, -1)
+            .expect("f64 2d spinor sf should succeed");
+
+        // All values must be finite
+        for (i, &v) in staging_f64.iter().enumerate() {
+            assert!(v.is_finite(), "staging_f64[{i}] = {v} is not finite");
+        }
+        // At least one non-zero
+        let nonzero = staging_f64.iter().filter(|&&v| v.abs() > 1e-15).count();
+        assert!(nonzero > 0, "2d spinor sf s-s should produce non-zero output");
+    }
+
+    /// T04-3b: cart_to_spinor_sf_2d::<f32> writes finite f32 values without panic.
+    ///
+    /// RED: compile fails until cart_to_spinor_sf_2d accepts a type parameter.
+    #[test]
+    fn test_c2spinor_sf_2d_f32_finite() {
+        let cart = vec![1.0f64]; // ncart(0) * ncart(0) = 1
+        let di = spinor_len(0, -1); // 2
+        let dj = spinor_len(0, -1); // 2
+        let required = di * dj * 2; // 8
+
+        // f32 path — RED: fails to compile until <F: CintFloat> added
+        let mut staging_f32 = vec![0.0_f32; required];
+        cart_to_spinor_sf_2d::<f32>(&mut staging_f32, &cart, 0, -1, 0, -1)
+            .expect("f32 2d spinor sf should succeed");
+
+        for (i, &v) in staging_f32.iter().enumerate() {
+            assert!(v.is_finite(), "staging_f32[{i}] = {v} is not finite");
+        }
+        let nonzero = staging_f32.iter().filter(|&&v| v.abs() > 1e-5f32).count();
+        assert!(nonzero > 0, "f32 2d spinor sf s-s should produce non-zero output");
     }
 }
