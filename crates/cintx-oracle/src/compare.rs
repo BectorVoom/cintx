@@ -149,6 +149,79 @@ pub fn tolerance_for_family(family: &str) -> FamilyTolerance {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// f32 tolerance model (Plan 20-08 / D-09 additive gate)
+//
+// Parallel to the frozen f64 model above. The f32 gate runs `evaluate_generic::<f32>()`
+// and compares the f32 output (cast to f64) against the f64 libcint reference at
+// these looser per-family floors. The f64 model (UNIFIED_ATOL/UNIFIED_RTOL/
+// tolerance_for_family) is FROZEN and is NOT touched here (PREC-04 / D-08).
+//
+// Initial values: F32_UNIFIED_RTOL=1e-4 (single-precision mantissa is ~7 significant
+// decimal digits; libcint integrals span ~4-5 decades, leaving ~2-3 digits of
+// float-to-float reproducibility budget). Per-family floors are tightened to
+// empirically derived values (run/measure/×10) in Task 2 via f32_tolerance_for_family.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Relative tolerance floor for f32 oracle comparisons.
+///
+/// Set empirically: run the f32 gate, measure `max(|f32_out as f64 - ref| / |ref|)` per
+/// family, set rtol = 10× that value rounded up. Tightened per family below.
+/// This constant is the fallback for families not listed in the match table.
+pub const F32_UNIFIED_RTOL: f64 = 1e-4;
+
+/// Absolute tolerance floor for f32 oracle comparisons.
+///
+/// Matches the magnitude of subnormal f32 output: integrals below ~1e-7 are
+/// indistinguishable from zero at f32 precision. The f64 oracle uses ZERO_THRESHOLD
+/// to gate relative-error checks; the f32 gate uses F32_UNIFIED_ATOL in the same
+/// role. Set to 1e-7 (half the f32 machine epsilon relative to 1.0).
+pub const F32_UNIFIED_ATOL: f64 = 1e-7;
+
+/// Per-family f32 tolerance floors (parallel to the frozen `tolerance_for_family`).
+///
+/// Returns a `FamilyTolerance` using the empirically derived f32 rtol/atol for the
+/// given integral family. Mirrors the match-arm shape of `tolerance_for_family` but
+/// returns F32 constants. DOES NOT modify or touch the f64 tolerance symbols.
+///
+/// Empirical floor procedure (per 20-RESEARCH.md §Per-Family f32 Tolerance Floor Strategy):
+/// 1. Run `evaluate_generic::<f32>()` over all base-family fixtures.
+/// 2. Record `max(|f32_out as f64 - f64_ref| / |f64_ref|)` for each family.
+/// 3. Set rtol = 10× max_rel_error rounded up to a clean value.
+/// 4. Re-run until 0 mismatches.
+///
+/// Per-family empirical floors (derived in Task 2; initial=F32_UNIFIED_RTOL):
+pub fn f32_tolerance_for_family(family: &str) -> FamilyTolerance {
+    // Per-family empirical rtol floors (measured max rel error × 10, rounded up).
+    // All families start at F32_UNIFIED_RTOL=1e-4; Task 2 tightens these after
+    // running the f32 sweep and measuring max_rel_error per family.
+    let (static_family, rtol) = match family {
+        "1e" => ("1e", F32_UNIFIED_RTOL),
+        "2e" => ("2e", F32_UNIFIED_RTOL),
+        "2c2e" => ("2c2e", F32_UNIFIED_RTOL),
+        "3c1e" => ("3c1e", F32_UNIFIED_RTOL),
+        "3c2e" => ("3c2e", F32_UNIFIED_RTOL),
+        "4c1e" => ("4c1e", F32_UNIFIED_RTOL),
+        "f12" => ("f12", F32_UNIFIED_RTOL),
+        "unstable::source::1e" => ("unstable::source::1e", F32_UNIFIED_RTOL),
+        "unstable::source::2e" => ("unstable::source::2e", F32_UNIFIED_RTOL),
+        "unstable::source::3c1e" => ("unstable::source::3c1e", F32_UNIFIED_RTOL),
+        "unstable::source::3c2e" => ("unstable::source::3c2e", F32_UNIFIED_RTOL),
+        // Catch-all: any new family uses unified f32 floor.
+        _ => (
+            // Leak to satisfy 'static; occurs at most once per unique family string.
+            Box::leak(family.to_owned().into_boxed_str()) as &'static str,
+            F32_UNIFIED_RTOL,
+        ),
+    };
+    FamilyTolerance {
+        family: static_family,
+        atol: F32_UNIFIED_ATOL,
+        rtol,
+        zero_threshold: ZERO_THRESHOLD,
+    }
+}
+
 fn diff_summary(reference: &[f64], observed: &[f64], tolerance: FamilyTolerance) -> DiffSummary {
     if reference.len() != observed.len() {
         return DiffSummary {
@@ -1414,6 +1487,61 @@ mod tests {
     // #[test] parity acceptance anchor
     // #[test] mismatch acceptance anchor
     // #[test] artifacts acceptance anchor
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // f32 tolerance model tests (Plan 20-08)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn f32_tolerance_f32_unified_constants_exist() {
+        // F32_UNIFIED_RTOL and F32_UNIFIED_ATOL must exist and be distinct from f64 ones.
+        assert!(F32_UNIFIED_RTOL > UNIFIED_RTOL, "f32 rtol must be looser than f64 rtol");
+        assert!(F32_UNIFIED_ATOL > UNIFIED_ATOL, "f32 atol must be looser than f64 atol");
+        // Sanity: f32 rtol should be around 1e-4 (single precision limit)
+        assert!(F32_UNIFIED_RTOL <= 1e-3, "f32 rtol should be <= 1e-3 for physical integrals");
+    }
+
+    #[test]
+    fn f32_tolerance_for_family_returns_f32_constants() {
+        let tol = f32_tolerance_for_family("1e");
+        assert_eq!(tol.atol, F32_UNIFIED_ATOL, "f32 tolerance for '1e' must use F32_UNIFIED_ATOL");
+        assert_eq!(tol.rtol, F32_UNIFIED_RTOL, "f32 tolerance for '1e' must use F32_UNIFIED_RTOL");
+        assert_eq!(tol.zero_threshold, ZERO_THRESHOLD, "zero_threshold must be shared");
+
+        let tol2e = f32_tolerance_for_family("2e");
+        assert!(tol2e.atol.is_finite());
+        assert!(tol2e.rtol.is_finite());
+
+        let tol2c2e = f32_tolerance_for_family("2c2e");
+        assert!(tol2c2e.rtol > UNIFIED_RTOL, "f32 2c2e rtol must be looser than f64 unified rtol");
+
+        let tol3c1e = f32_tolerance_for_family("3c1e");
+        assert!(tol3c1e.rtol.is_finite());
+
+        let tol3c2e = f32_tolerance_for_family("3c2e");
+        assert!(tol3c2e.rtol.is_finite());
+
+        // Catch-all family works too
+        let tol_other = f32_tolerance_for_family("unknown_family");
+        assert_eq!(tol_other.atol, F32_UNIFIED_ATOL);
+    }
+
+    #[test]
+    fn tolerance_for_family_f64_unchanged_prec04() {
+        // FROZEN f64 gate: tolerance_for_family must always return UNIFIED_ATOL=1e-12 (PREC-04).
+        let tol = tolerance_for_family("1e");
+        assert_eq!(tol.atol, 1e-12_f64, "PREC-04: f64 atol must be 1e-12");
+        assert_eq!(tol.rtol, 1e-12_f64, "PREC-04: f64 rtol must be 1e-12");
+        assert_eq!(tol.zero_threshold, 1e-18_f64, "PREC-04: zero_threshold must be 1e-18");
+
+        // Check other families
+        let tol2e = tolerance_for_family("2e");
+        assert_eq!(tol2e.atol, 1e-12_f64);
+        assert_eq!(tol2e.rtol, 1e-12_f64);
+
+        let tol_unk = tolerance_for_family("some_new_family");
+        assert_eq!(tol_unk.atol, 1e-12_f64, "catch-all must also return UNIFIED_ATOL");
+    }
 
     #[test]
     fn helper_coverage_matches_manifest() {
