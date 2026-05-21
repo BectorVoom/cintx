@@ -21,7 +21,7 @@
 - [x] **Phase 17: Real-Integral Evaluation in Safe API (issue #11 Task 3)** - Replace the synthetic `(idx + 1)` / `((idx + 1) * 0.5)` pattern in `SessionRequest::fill_staging_values` with real `cintx-compat::raw::eval_raw` dispatch so the safe API delivers byte-identity values against libcint for every arity-2 intor it already accepts. No public API change. (completed 2026-05-11)
 - [ ] **Phase 18: SessionRequest Arity ≥3 Dispatch (issue #11 Task 2)** - Extend `SessionRequest::evaluate` to dispatch arity-3 and arity-4 shell tuples (covering `int2e_*`, `int3c1e*`, `int3c2e_*`, `int4c1e_*`) through the existing operator catalog with F-order AO layout matching libcint memory layout.
 - [x] **Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (issue #11 Task 1)** (completed 2026-05-20) - Implement Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and expose them through `SessionRequest` alongside ordinary one-electron operators. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate against libcint.
-- [ ] **Phase 20: Generic Float Precision (f64/f32 Switch)** - Parameterize the cintx compute path (CubeCL kernels, shared `#[cube]` math, staging buffers, safe-API outputs) over a generic `F: Float` so callers pick f64 (default, byte-identity) or f32 (loose-tolerance, unlocks non-`SHADER_F64` GPUs) via `evaluate::<F>()`. Raw compat `env`/`atm`/`bas` and the C ABI shim stay f64. Milestone-sized cross-cutting refactor (~3,396 f64 sites, 8 crates) planned as a single phase per operator decision 2026-05-20. (8/8 plans executed; verification gaps_found 2026-05-21 — PREC-05 f32 multi-component/f12 gap, see 20-VERIFICATION.md)
+- [ ] **Phase 20: Generic Float Precision (f64/f32 Switch)** - Parameterize the cintx compute path (CubeCL kernels, shared `#[cube]` math, staging buffers, safe-API outputs) over a generic `F: Float` so callers pick f64 (default, byte-identity) or f32 (loose-tolerance, unlocks non-`SHADER_F64` GPUs) via `evaluate::<F>()`. Raw compat `env`/`atm`/`bas` and the C ABI shim stay f64. Milestone-sized cross-cutting refactor (~3,396 f64 sites, 8 crates) planned as a single phase per operator decision 2026-05-20. (8/8 plans executed; verification gaps_found 2026-05-21; gap-closure plans 20-09..20-11 added — PREC-02 Complex<F> + PREC-05 f32 multi-component/f12, see 20-VERIFICATION.md)
 
 ## Progress
 
@@ -46,7 +46,7 @@
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
 | Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 8/8 | Complete | 2026-05-20 |
-| Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 0/8 | Planned | - |
+| Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 8/11 | Gap closure planned | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -324,7 +324,7 @@ Plans:
   - **RESEARCH FLAGS** from `20-CONTEXT.md`: (a) confirm the CubeCL `Float` trait surface covers the transcendentals the kernels need (`exp`, `sqrt`, `erf`) and that const-table casting is sound under monomorphization; (b) confirm f32 shader capability is universally available on wgpu adapters.
   - Claude's discretion: exact per-family f32 tolerance floors, helper genericization order, and whether to introduce a sealed `Scalar`/`CintFloat` super-trait bridging device-side CubeCL `Float` and host-side `num_traits::Float`.
 
-**Plans**: 8 plans (bottom-up serena-driven waves; f64 path stays green at every wave boundary)
+**Plans**: 11 plans (8 executed; 3 gap-closure plans 20-09..20-11 added 2026-05-21 to close the PREC-02 Complex<F> and PREC-05 f32 multi-component/f12 gaps)
 
 Plans:
 **Wave 1**
@@ -355,3 +355,16 @@ Plans:
 **Wave 7** *(blocked on Wave 6)*
 
 - [x] 20-08-PLAN.md — Separate f32 oracle gate: `f32_tolerance_for_family` + F32 constants (parallel to the FROZEN f64 model) + `tests/f32_parity.rs` driving `evaluate::<f32>()` with empirically derived per-family rtol floors; the f64 byte-identity gate stays untouched.
+
+
+**Wave 8** *(gap closure — VERIFICATION.md gaps_found 2026-05-21; existing 20-01..20-08 complete and untouched)*
+
+- [ ] 20-09-PLAN.md — Gap 1 (PREC-02 / D-04 / SC-2): expose spinor/complex safe-API outputs as `num_complex::Complex<F>` via a `complex_values()` typed view reinterpreting the contiguous interleaved `Vec<F>`; real path unchanged; f64 oracle byte-identical. (IMPLEMENT path — no override.)
+
+**Wave 8 (parallel with 20-09; disjoint files)**
+
+- [ ] 20-10-PLAN.md — Gap 2a (PREC-05): kernel + math hardening — CR-01 (bound F32 copy/not0 to true `out_elems`, `BufferTooSmall` guard, 7 kernels), CR-02 + WR-01 (f12 `staging_f64` sized to `out_elems`, true-byte stats), WR-03 (f64-intermediate pdata), WR-04 (fail-loud `to_f64`), WR-05 (precision-appropriate Boys tol, host==device), WR-06 (f32-safe not0 sentinel); f64 integration oracle byte-identical.
+
+**Wave 9** *(blocked on 20-10)*
+
+- [ ] 20-11-PLAN.md — Gap 2b (PREC-05): vendor-gated f32 oracle tests for a multi-component / f12-derivative operator (`int2e_stg_ip1_sph`, ncomp=3 — the CR-01/CR-02 corruption regime) driving `evaluate::<f32>()` at the empirical f32 floor; load-bearing (FAILS pre-20-10); FROZEN f64 gate untouched.
