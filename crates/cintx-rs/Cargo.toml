@@ -12,6 +12,7 @@ cintx-runtime = { path = "../cintx-runtime" }
 cintx-compat = { path = "../cintx-compat", default-features = false }
 cintx-ops = { path = "../cintx-ops" }
 cintx-cubecl = { path = "../cintx-cubecl" }
+num-complex = "0.4"
 thiserror = "2"
 bytemuck = { version = "1", features = ["derive"] }
 

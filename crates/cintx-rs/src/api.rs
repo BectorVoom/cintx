@@ -516,6 +516,10 @@ impl EvaluationStats {
 /// values (or 2x that for `Spinor` outputs with `complex_interleaved == true`,
 /// where real and imaginary parts alternate in the innermost stride).
 ///
+/// For complex outputs (`complex_interleaved == true`, e.g. Spinor), call `complex_values()`
+/// to get the typed `Vec<Complex<F>>` view (D-04 / SC-2); `owned_values` remains the
+/// underlying interleaved storage.
+///
 /// The type parameter `F` is the output float precision (`f64` or `f32`). The default
 /// `F = f64` keeps every existing call site compiling unchanged (D-12).
 ///
@@ -555,6 +559,41 @@ pub struct TypedEvaluationOutput<F = f64> {
     pub workspace_bytes: usize,
     pub chunk_count: usize,
     pub bytes_written: usize,
+}
+
+impl<F: CintFloat> IntegralTensor<F> {
+    /// Complex view of the output for spinor/complex operators (D-04 / SC-2).
+    ///
+    /// Returns `Some(Vec<Complex<F>>)` when `complex_interleaved == true` (Spinor
+    /// outputs): the contiguous interleaved `[re, im, re, im, ...]` `owned_values`
+    /// buffer is reinterpreted element-for-element into `Complex<F>` (num_complex's
+    /// `Complex<F>` is `#[repr(C)] { re, im }`, contiguous — this is a typed
+    /// reinterpretation, not a data reshuffle). Returns `None` for real-valued
+    /// outputs, where callers consume `owned_values: Vec<F>` directly.
+    ///
+    /// Migration note: callers that previously consumed the interleaved `Vec<F>` for
+    /// complex outputs (manually pairing `owned_values[2i]`/`owned_values[2i+1]`) should
+    /// now call `tensor.complex_values()` for the typed `Vec<Complex<F>>` view.
+    pub fn complex_values(&self) -> Option<Vec<num_complex::Complex<F>>> {
+        if !self.complex_interleaved {
+            return None;
+        }
+        // owned_values.len() is even for complex_interleaved (re/im pairs).
+        debug_assert_eq!(self.owned_values.len() % 2, 0);
+        Some(
+            self.owned_values
+                .chunks_exact(2)
+                .map(|pair| num_complex::Complex::new(pair[0], pair[1]))
+                .collect(),
+        )
+    }
+}
+
+impl<F: CintFloat> TypedEvaluationOutput<F> {
+    /// Convenience: complex view of the tensor (see `IntegralTensor::complex_values`).
+    pub fn complex_values(&self) -> Option<Vec<num_complex::Complex<F>>> {
+        self.tensor.complex_values()
+    }
 }
 
 /// Explicit fallback used when unstable source requests are attempted without feature support.
