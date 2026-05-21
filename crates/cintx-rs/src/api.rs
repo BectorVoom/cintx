@@ -1291,4 +1291,50 @@ mod tests {
         let raw: &Vec<f64> = &t.owned_values;
         assert_eq!(raw, &vec![1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64]);
     }
+
+    /// Task 2: PREC-02 end-to-end smoke — a real spinor evaluate() exposes complex_values() == Some.
+    ///
+    /// This test drives `SessionRequest::evaluate()` with `Representation::Spinor` (int1e_ovlp_spinor,
+    /// OperatorId 2) and asserts:
+    /// 1. `output.complex_values().is_some()` — PREC-02/D-04/SC-2 literally TRUE.
+    /// 2. `complex_values().unwrap().len() == output.tensor.owned_values.len() / 2` — correct pairing.
+    /// 3. `owned_values` is unchanged (PREC-04 regression guard on the accessor path).
+    #[test]
+    fn spinor_evaluate_exposes_complex_values_some_prec02() {
+        // int1e_ovlp_spinor = OperatorId 2; two s-shells (l=0) with Spinor representation.
+        let (basis, shells) = sample_basis(Representation::Spinor);
+        let request = SessionRequest::new(
+            OperatorId::new(2), // int1e_ovlp_spinor
+            Representation::Spinor,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let query = request.query_workspace().expect("spinor query_workspace must succeed");
+        let output = query.evaluate().expect("spinor evaluate must succeed");
+
+        // PREC-02: complex_values() must return Some for Spinor output.
+        assert!(
+            output.complex_values().is_some(),
+            "PREC-02 GAP-1: complex_values() must return Some for Spinor evaluate output (complex_interleaved == true)"
+        );
+        // Correct pairing: len == owned_values.len() / 2.
+        let cv = output.complex_values().unwrap();
+        assert_eq!(
+            cv.len(),
+            output.tensor.owned_values.len() / 2,
+            "complex_values() length must be owned_values.len() / 2"
+        );
+        // PREC-04: owned_values still accessible and unchanged.
+        assert!(
+            !output.tensor.owned_values.is_empty(),
+            "owned_values must be non-empty (PREC-04 regression guard)"
+        );
+        // Spinor overlap must produce at least one nonzero complex element.
+        let nonzero_count = cv.iter().filter(|c| c.norm_sqr() > 1e-36).count();
+        assert!(
+            nonzero_count > 0,
+            "spinor evaluate must produce at least one nonzero Complex<f64> element"
+        );
+    }
 }
