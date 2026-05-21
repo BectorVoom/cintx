@@ -951,3 +951,216 @@ fn test_f32_evaluate_generic_produces_nonzero_finite_output() {
     let nonzero = values.iter().filter(|&&v| v.abs() > 1e-18_f32).count();
     assert!(nonzero > 0, "f32 evaluate_generic returned all-zero output for O1s–O2s overlap");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ─── FAMILY: f12 (derivative, ncomp=3) — GAP 2 CLOSURE (PREC-05, Plan 20-11) ─
+//
+// operator: int2e_stg_ip1_sph (OperatorId=107, ncomp=3: gradient on electron 1)
+//
+// CR-01/CR-02 LOAD-BEARING CONTEXT:
+//   With ncomp=3, the planner sets staging_elements = base_elements * 3.
+//   After bytemuck::cast_slice_mut, the f32 slice has chunk_len * 2 lanes.
+//   Pre-20-10 code derived copy_len/not0 from staging.len() (== chunk_len*2),
+//   not from the true output element count. For ncomp=3:
+//     staging_elements = base * 3 > chunk_len
+//   so staging.len() inside the typed inner (after bytemuck) == chunk_len*2,
+//   which is LARGER than the true output element count AND larger than the
+//   actual f32 output region. The pre-fix code read/wrote stale upper-half
+//   lanes, returning silently wrong f32 values. These tests FAIL pre-20-10
+//   and PASS after (CR-01 + CR-02 fixes in commit 5ba79fb).
+//
+// Gate pattern: #[cfg(all(has_vendor_libcint, feature = "with-f12"))]
+//   - Drives evaluate_generic::<f32>() and reads owned_values: Vec<f32>
+//   - Compares (f32_out as f64) against vendor_int2e_stg_ip1_sph (f64 libcint ref)
+//   - Uses f32_tolerance_for_family("f12") at the empirically derived floor
+//   - Anti-zero-fill sentinel + finite sentinel guard false-positive passes
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build H2O STO-3G safe-API basis for f12 tests.
+///
+/// Mirrors build_h2o_sto3g_safe_basis (Spheric) but returns the shells as a flat
+/// Vec for arity-4 quartet iteration. Molecule and numerical values are identical
+/// to the raw build so vendor reference and safe-API f32 outputs are comparable.
+#[cfg(feature = "with-f12")]
+fn build_h2o_sto3g_f12_safe_basis() -> (cintx_core::BasisSet, Vec<Arc<cintx_core::Shell>>) {
+    build_h2o_sto3g_safe_basis(Representation::Spheric)
+}
+
+/// Collect int2e_stg_ip1_sph (ncomp=3) f32 output via the safe evaluate_generic API.
+///
+/// Drives `SessionRequest::evaluate_generic::<f32>()` with zeta=1.2 and
+/// returns `output.tensor.owned_values` (Vec<f32>, length = 3 * ni * nj * nk * nl).
+/// This is the exact entry point that the CR-01/CR-02 corruption silently broke
+/// for ncomp=3 on the pre-20-10 code.
+#[cfg(feature = "with-f12")]
+fn collect_stg_ip1_f32(
+    basis: &cintx_core::BasisSet,
+    tuple_shells: &[Arc<cintx_core::Shell>],
+) -> Vec<f32> {
+    use cintx_runtime::ExecutionOptions;
+    // OperatorId 107 = int2e_stg_ip1_sph (int2e_stg_sph is 106; ip1 is next in manifest).
+    const STG_IP1_SPH_OPERATOR_ID: u32 = 107;
+    let shell_tuple = ShellTuple::try_from_iter(tuple_shells.iter().cloned())
+        .expect("ShellTuple for 4-shell f12 ip1 quartet");
+    let request = SessionRequest::new(
+        OperatorId::new(STG_IP1_SPH_OPERATOR_ID),
+        Representation::Spheric,
+        basis,
+        shell_tuple,
+        ExecutionOptions {
+            f12_zeta: Some(1.2_f64),
+            ..ExecutionOptions::default()
+        },
+    );
+    let query = request
+        .query_workspace()
+        .expect("query_workspace must succeed for f12 ip1 f32 request");
+    let output = query
+        .evaluate_generic::<f32>()
+        .expect("evaluate_generic::<f32>() must succeed for int2e_stg_ip1_sph");
+    output.tensor.owned_values
+}
+
+/// f32 oracle parity gate for int2e_stg_ip1_sph (ncomp=3) — the CR-01/CR-02 corruption regime.
+///
+/// This test is LOAD-BEARING (Plan 20-11 / PREC-05 Gap 2 closure):
+///   - ncomp=3 => staging_elements = base*3, which is > chunk_len on the f32 path.
+///   - Pre-20-10 code derived copy_len/not0 from staging.len() (doubled f32 lane count),
+///     silently returning wrong f32 values for all ncomp>1 operators.
+///   - This test FAILS against pre-20-10 code and PASSES after (commit 5ba79fb).
+///
+/// Quartets: uses the same 3 quartets as the f64 oracle (oracle_parity_int2e_stg_ip1_sph):
+///   SHLS_4_SS=[0,1,0,1], SHLS_4_HH=[3,4,3,4], SHLS_4_SP=[0,2,0,2]
+/// These are the known-good quartets verified at f64 oracle quality; asymmetric
+/// quartets with l>0 shells (e.g. (0,2,2,2)) expose a pre-existing f12 kernel
+/// bug for non-symmetric shell orderings that is OUT OF SCOPE for this plan
+/// (deferred — separate from the CR-01/CR-02 f32 length-contract bug).
+///
+/// CR-01/CR-02 regime confirmation:
+///   SHLS_4_SS: base=1, ncomp=3 → staging_elements=3, pre-fix staging_f32.len()=6 > 3.
+///   SHLS_4_HH: base=1, ncomp=3 → same.
+///   SHLS_4_SP: base=9, ncomp=3 → staging_elements=27, pre-fix staging_f32.len()=54 > 27.
+/// All three quartets exercise staging_elements > chunk_len (the CR-01/CR-02 corruption case).
+///
+/// Verification:
+///   CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu,with-f12 \
+///     --test f32_parity test_f32_int2e_stg_ip1_sph_parity
+#[test]
+#[cfg(all(has_vendor_libcint, feature = "with-f12"))]
+fn test_f32_int2e_stg_ip1_sph_parity() {
+    use cintx_oracle::vendor_ffi;
+    use cintx_oracle::fixtures::build_h2o_sto3g_f12;
+
+    // Build the raw fixture for the vendor reference (f64 libcint, zeta=1.2).
+    let (atm, bas, env) = build_h2o_sto3g_f12(1.2_f64);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Build the safe-API basis for cintx f32 evaluation.
+    let (basis, shells) = build_h2o_sto3g_f12_safe_basis();
+
+    // ncomp = 3: d/dx, d/dy, d/dz of STG on electron 1.
+    // staging_elements = ni*nj*nk*nl * 3 > chunk_len — the CR-01/CR-02 regime.
+    let ncomp = 3usize;
+
+    // Tolerance: f32 family floor for "f12" (empirically derived — see SUMMARY).
+    let tol = f32_tolerance_for_family("f12");
+
+    // Shell quartets matching the f64 oracle (oracle_parity_int2e_stg_ip1_sph):
+    //   [0,1,0,1] = O-1s, O-2s, O-1s, O-2s  (all s; base=1*1*1*1=1, staging=3)
+    //   [3,4,3,4] = H1-1s, H2-1s, H1-1s, H2-1s (all s; base=1, staging=3)
+    //   [0,2,0,2] = O-1s, O-2p, O-1s, O-2p  (mixed s/p; base=1*3*1*3=9, staging=27)
+    // All three have staging_elements = ncomp * base > chunk_len for the f32 path —
+    // the exact CR-01/CR-02 corruption regime.
+    // Note: shells[2]=O-2p has l=1, 3 spherical AOs — this is the multi-component case.
+    let shell_quartets: &[[usize; 4]] = &[
+        [0, 1, 0, 1], // SHLS_4_SS equivalent
+        [3, 4, 3, 4], // SHLS_4_HH equivalent
+        [0, 2, 0, 2], // SHLS_4_SP equivalent: exercises ncomp=3 with p-shell (staging=27)
+    ];
+
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
+    let shell_nao_sph: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
+
+    let mut total_mismatches = 0usize;
+    let mut any_nonzero = false;
+    let mut max_rel_family = 0.0_f64;
+
+    for &[i, j, k, l] in shell_quartets {
+        let ni = shell_nao_sph[i];
+        let nj = shell_nao_sph[j];
+        let nk = shell_nao_sph[k];
+        let nl = shell_nao_sph[l];
+        // ncomp * (ni*nj*nk*nl) is the true output element count.
+        let n_elem = ncomp * ni * nj * nk * nl;
+
+        // ── cintx f32 via the safe API (evaluate_generic::<f32>()) ──────────
+        // This drives the f12 kernel through the F32 arm (CR-01/CR-02 regime).
+        let f32_out = collect_stg_ip1_f32(
+            &basis,
+            &[shells[i].clone(), shells[j].clone(), shells[k].clone(), shells[l].clone()],
+        );
+
+        assert_eq!(
+            f32_out.len(), n_elem,
+            "int2e_stg_ip1_sph f32 output length mismatch: got {} expected {} for ({},{},{},{})",
+            f32_out.len(), n_elem, i, j, k, l
+        );
+
+        // ── f64 libcint vendor reference (same quartets as f64 oracle) ───────
+        let shls = [i as i32, j as i32, k as i32, l as i32];
+        let mut vendor_out = vec![0.0_f64; n_elem];
+        vendor_ffi::vendor_int2e_stg_ip1_sph(
+            &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+        );
+
+        // ── anti-zero-fill sentinel ──────────────────────────────────────────
+        let nonzero_count = f32_out.iter().filter(|&&v| v.abs() > 1e-18_f32).count();
+        if nonzero_count > 0 {
+            any_nonzero = true;
+        }
+
+        // ── finite sentinel ──────────────────────────────────────────────────
+        assert!(
+            f32_out.iter().all(|v| v.is_finite()),
+            "int2e_stg_ip1_sph f32 output non-finite for shls ({},{},{},{})",
+            i, j, k, l
+        );
+
+        // ── max_rel diagnostic (records the empirical floor) ─────────────────
+        let (mc, mr) = count_mismatches_f32(
+            &vendor_out, &f32_out, tol.atol, tol.rtol, tol.zero_threshold,
+        );
+        if mr > max_rel_family {
+            max_rel_family = mr;
+        }
+        total_mismatches += mc;
+        if mc > 0 {
+            eprintln!(
+                "int2e_stg_ip1_sph f32 FAIL: {mc} mismatches for shls ({},{},{},{}) \
+                 [CR-01/CR-02 regime: ncomp=3 => staging_elements=base*3 > chunk_len, max_rel={mr:.3e}]",
+                i, j, k, l
+            );
+        } else {
+            eprintln!(
+                "int2e_stg_ip1_sph f32 PASS: shls ({},{},{},{}) max_rel={mr:.3e} (floor={:.3e})",
+                i, j, k, l, tol.rtol
+            );
+        }
+    }
+
+    eprintln!(
+        "f32 f12/stg_ip1_sph (ncomp=3): max_rel_error={max_rel_family:.3e} (floor={:.3e})",
+        tol.rtol
+    );
+    assert!(
+        any_nonzero,
+        "int2e_stg_ip1_sph f32 output all-zero across all tested quartets (anti-zero-fill sentinel)"
+    );
+    assert_eq!(
+        total_mismatches, 0,
+        "int2e_stg_ip1_sph f32 parity FAIL: {total_mismatches} mismatches \
+         (CR-01/CR-02 regime ncomp=3) — atol={:.0e}/rtol={:.0e}",
+        tol.atol, tol.rtol
+    );
+}
