@@ -359,7 +359,7 @@ Plans:
 
 **Wave 8** *(gap closure — VERIFICATION.md gaps_found 2026-05-21; existing 20-01..20-08 complete and untouched)*
 
-- [ ] 20-09-PLAN.md — Gap 1 (PREC-02 / D-04 / SC-2): expose spinor/complex safe-API outputs as `num_complex::Complex<F>` via a `complex_values()` typed view reinterpreting the contiguous interleaved `Vec<F>`; real path unchanged; f64 oracle byte-identical. (IMPLEMENT path — no override.)
+- [x] 20-09-PLAN.md — Gap 1 (PREC-02 / D-04 / SC-2): expose spinor/complex safe-API outputs as `num_complex::Complex<F>` via a `complex_values()` typed view reinterpreting the contiguous interleaved `Vec<F>`; real path unchanged; f64 oracle byte-identical. (IMPLEMENT path — no override.) **COMPLETE 2026-05-21** — num-complex 0.4 direct dep; complex_values() on IntegralTensor<F> + TypedEvaluationOutput<F>; spinor_evaluate_exposes_complex_values_some_prec02 smoke test; 31/31 cintx-rs tests green; 11/11 f64 oracle integration tests green.
 
 **Wave 8 (parallel with 20-09; disjoint files)**
 
