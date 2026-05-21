@@ -1552,10 +1552,22 @@ fn launch_f12_typed<F: CintFloat>(
         });
     };
 
-    // We need a temporary f64 staging buffer, run the f64 computation, then cast to F.
-    // All internal f12 math runs in f64 (same pattern as 1e/2e/2c2e typed inners).
-    let staging_len = staging.len();
-    let mut staging_f64 = vec![0.0_f64; staging_len];
+    // CR-02: the outer F32 arm already slices staging to out_elems, so staging.len()
+    // is the TRUE output element count for both f64 and f32. Size the temporary f64
+    // buffer to out_elems (not staging.len() from a doubled f32 view) to prevent
+    // sub-kernel length-contract violations and stale-lane corruption.
+    let out_elems = staging.len(); // true output element count (outer arm sliced for F32; == chunk_len for F64)
+
+    // OOM-safe / no-partial-write guard: assert the inner slice covers out_elems.
+    // With CR-01 the outer arm already enforces this; the inner guard documents the invariant.
+    if staging.len() < out_elems {
+        return Err(cintxRsError::BufferTooSmall {
+            required: out_elems,
+            provided: staging.len(),
+        });
+    }
+
+    let mut staging_f64 = vec![0.0_f64; out_elems];
 
     let stats = if is_stg {
         match variant_suffix {
@@ -1581,20 +1593,24 @@ fn launch_f12_typed<F: CintFloat>(
         }
     }?;
 
+    // CR-02: readback bounded to out_elems.
     // Cast f64 results to F at the output boundary.
     // For f64 this is a zero-cost identity; for f32 it truncates.
-    for (dst, &src) in staging.iter_mut().zip(staging_f64.iter()) {
+    for (dst, &src) in staging[..out_elems].iter_mut().zip(staging_f64.iter()) {
         *dst = F::from_f64_lossy(src);
     }
 
     // Per-symbol nonzero sentinel
-    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
-    let not0 = staging
+    // WR-06: precision-aware sentinel so f32 stale lanes (< f32 noise floor ~1e-7)
+    // are not counted. Bounded to out_elems so stale upper-half lanes cannot register.
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging[..out_elems]
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    // WR-01: true-output bytes (out_elems, not the doubled f32 lane count).
+    let staging_bytes = out_elems * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         not0,
         peak_workspace_bytes: staging_bytes,
@@ -1609,6 +1625,8 @@ fn launch_f12_typed<F: CintFloat>(
 /// `#[cfg(feature = "with-f12")]` gate unchanged. Internally matches on `plan.precision`
 /// and delegates to `launch_f12_typed::<F>`, reinterpreting staging via
 /// `bytemuck::cast_slice_mut` for the F32 arm (A5 proven sound).
+/// CR-01: captures the true output element count BEFORE the bytemuck cast and bounds
+/// the typed inner to that count, returning `BufferTooSmall` if the view cannot hold it.
 ///
 /// `f12_zeta` STAYS `Option<f64>` on `ExecutionOptions`/`OperatorEnvParams` (D-06).
 /// The cast to `F` is `F::from_f64_lossy(zeta)` inside the typed inner, at the
@@ -1624,8 +1642,18 @@ pub fn launch_f12(
             launch_f12_typed::<f64>(backend, plan, specialization, staging)
         }
         PrecisionKind::F32 => {
+            // CR-01: capture the true output element count BEFORE the bytemuck cast.
+            // api.rs sizes Vec<f64> to chunk_len == the TRUE output element count;
+            // after cast staging_f32.len() == chunk_len*2, so out_elems = staging.len() pre-cast.
+            let out_elems = staging.len(); // f64 slice length == TRUE output element count
             let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
-            launch_f12_typed::<f32>(backend, plan, specialization, staging_f32)
+            if staging_f32.len() < out_elems {
+                return Err(cintxRsError::BufferTooSmall {
+                    required: out_elems,
+                    provided: staging_f32.len(),
+                });
+            }
+            launch_f12_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
         }
     }
 }

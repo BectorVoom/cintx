@@ -597,7 +597,10 @@ fn launch_one_electron_typed<F: CintFloat>(
 
     // Per-symbol nonzero sentinel: count staging elements with |v| > threshold.
     // F: CintFloat includes num_traits::Float which provides .abs() via method syntax.
-    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
+    // WR-06: use a precision-aware sentinel so f32 stale lanes (< f32 noise floor ~1e-7)
+    // are not counted. The outer F32 arm already bounds staging to out_elems, so this
+    // scan cannot touch stale upper-half lanes.
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -642,9 +645,18 @@ pub fn launch_one_electron(
             launch_one_electron_typed::<f64>(backend, plan, specialization, staging)
         }
         PrecisionKind::F32 => {
-            // F32 arm: reinterpret the f64 byte buffer as &mut [f32] (bytemuck A5 proven).
+            // F32 arm: capture the true output element count BEFORE the bytemuck cast
+            // (api.rs sizes Vec<f64> to chunk_len == the TRUE output element count;
+            // after cast staging_f32.len() == chunk_len*2, so out_elems = staging.len() pre-cast).
+            let out_elems = staging.len(); // f64 slice length == TRUE output element count
             let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
-            launch_one_electron_typed::<f32>(backend, plan, specialization, staging_f32)
+            if staging_f32.len() < out_elems {
+                return Err(cintxRsError::BufferTooSmall {
+                    required: out_elems,
+                    provided: staging_f32.len(),
+                });
+            }
+            launch_one_electron_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
         }
     }
 }

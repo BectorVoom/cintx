@@ -463,7 +463,10 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     }
 
     // Per-symbol nonzero sentinel
-    let nonzero_threshold = F::from_f64_lossy(1e-18_f64);
+    // WR-06: precision-aware sentinel so f32 stale lanes (< f32 noise floor ~1e-7)
+    // are not counted. The outer F32 arm already bounds staging to out_elems, so this
+    // scan cannot touch stale upper-half lanes.
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -487,6 +490,8 @@ fn launch_center_3c2e_typed<F: CintFloat>(
 /// Keeps the registered `FamilyLaunchFn` signature unchanged. Internally matches on
 /// `plan.precision` and delegates to `launch_center_3c2e_typed::<F>`, reinterpreting
 /// staging via `bytemuck::cast_slice_mut` for the F32 arm (A5 proven sound).
+/// CR-01: captures the true output element count BEFORE the bytemuck cast and bounds
+/// the typed inner to that count, returning `BufferTooSmall` if the view cannot hold it.
 pub fn launch_center_3c2e(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
@@ -498,8 +503,18 @@ pub fn launch_center_3c2e(
             launch_center_3c2e_typed::<f64>(backend, plan, specialization, staging)
         }
         PrecisionKind::F32 => {
+            // CR-01: capture the true output element count BEFORE the bytemuck cast.
+            // api.rs sizes Vec<f64> to chunk_len == the TRUE output element count;
+            // after cast staging_f32.len() == chunk_len*2, so out_elems = staging.len() pre-cast.
+            let out_elems = staging.len(); // f64 slice length == TRUE output element count
             let staging_f32: &mut [f32] = bytemuck::cast_slice_mut(staging);
-            launch_center_3c2e_typed::<f32>(backend, plan, specialization, staging_f32)
+            if staging_f32.len() < out_elems {
+                return Err(cintxRsError::BufferTooSmall {
+                    required: out_elems,
+                    provided: staging_f32.len(),
+                });
+            }
+            launch_center_3c2e_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
         }
     }
 }
