@@ -371,8 +371,9 @@ fn _clenshaw_d1(rr: &mut [f64], x: &[f64], u: f64, nroots: usize) {
 /// None: the t-clamp prevents out-of-bounds table access.
 pub fn stg_roots_host<F: CintFloat>(nroots: usize, ta: F, ua: F) -> (Vec<F>, Vec<F>) {
     // Convert inputs to f64 for internal computation (FROZEN f64 tables).
-    let ta_f64 = ta.to_f64().unwrap_or(0.0);
-    let ua_f64 = ua.to_f64().unwrap_or(1.0);
+    // WR-04: CintFloat is sealed to f64|f32; to_f64() is total for both — no fabricated fallback.
+    let ta_f64 = ta.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let ua_f64 = ua.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
 
     // D-07: clamp t to T_MAX to prevent out-of-bounds table lookup.
     let t = ta_f64.min(T_MAX);

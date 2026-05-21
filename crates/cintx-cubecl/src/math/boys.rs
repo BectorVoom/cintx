@@ -35,11 +35,6 @@ pub const MMAX: u32 = 39;
 /// FROZEN: stays f64; injected as F via `F::from_f64_lossy(SQRTPIE4)` at boundary.
 pub const SQRTPIE4: f64 = 0.886226925452758013649083741670572591398774728061193564106903894926;
 
-/// Convergence tolerance: DBL_EPSILON * 0.5.
-/// Source: fmt.c line 20 (SML_FLOAT64).
-/// FROZEN: used only in the host-side `boys_gamma_inc_impl` where f64 precision is fixed.
-const DBL_EPSILON_HALF: f64 = f64::EPSILON * 0.5;
-
 /// Turn-over points for switching from power series to erfc branch.
 /// TURNOVER_POINT[m]: threshold t value for order m.
 /// Source: fmt.c lines 42-83.
@@ -135,10 +130,13 @@ pub fn boys_gamma_inc_impl<F: CintFloat>(f: &mut [F], t: F, m: u32, turnover: F)
         let e = half * (-t).exp();
         let mut x = e;
         let mut s = e;
-        // Tolerance: DBL_EPSILON_HALF * e (uses f64 epsilon for precision)
-        // For f32, this tolerance is tighter than f32's epsilon, but that just
-        // means more iterations and higher accuracy — safe for correctness.
-        let tol = F::from_f64_lossy(DBL_EPSILON_HALF) * e;
+        // WR-05: precision-appropriate convergence tolerance.
+        // F::epsilon() returns the machine epsilon for F: f32::EPSILON (~1.19e-7) for F=f32,
+        // f64::EPSILON (~2.22e-16) for F=f64. This matches the #[cube] device path so
+        // host and device converge at the same precision-appropriate tolerance.
+        // For f64: F::epsilon() == 2.22e-16 vs the old DBL_EPSILON_HALF == 1.11e-16 —
+        // the factor-of-2 difference is within the guard band of the f64 oracle (atol=1e-12).
+        let tol = F::epsilon() * e;
         let mut bi = b + one;
         while x > tol {
             x = x * t / bi;
@@ -159,7 +157,8 @@ pub fn boys_gamma_inc_impl<F: CintFloat>(f: &mut [F], t: F, m: u32, turnover: F)
         // erf_host is FROZEN f64 libm linkage; for generic F, wrap via from_f64_lossy.
         let tt = t.sqrt();
         // Use erf_host (FROZEN f64 libm) and inject as F via from_f64_lossy.
-        let tt_f64 = tt.to_f64().unwrap_or(0.0);
+        // WR-04: CintFloat is sealed to f64|f32; to_f64() is total for both — no fabricated fallback.
+        let tt_f64 = tt.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
         let erf_val = F::from_f64_lossy(erf_host(tt_f64));
         let sqrtpie4 = F::from_f64_lossy(SQRTPIE4);
         f[0] = erf_val * (sqrtpie4 / tt);
@@ -230,7 +229,9 @@ pub fn boys_gamma_inc<F: Float>(
         let e = F::new(0.5) * F::exp(-t);
         let mut x = e;
         let mut s = e;
-        let tol = F::new(f64::EPSILON as f32 * 0.5) * e;
+        // WR-05: use F::EPSILON (CubeCL Float const) so the device convergence tolerance is
+        // precision-appropriate — f32::EPSILON for F=f32, f64::EPSILON for F=f64. Matches host path.
+        let tol = F::EPSILON * e;
         let mut bi = b + F::new(1.0);
         while x > tol {
             x = x * t / bi;

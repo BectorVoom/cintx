@@ -816,7 +816,8 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
 /// to F via `CintFloat::from_f64_lossy`. For F=f64: byte-identical to pre-refactor.
 /// For F=f32: outputs are f64-precision values truncated to f32.
 pub fn rys_root1_host<F: CintFloat>(x: F) -> (F, F) {
-    let x_f64 = x.to_f64().unwrap_or(0.0);
+    // WR-04: CintFloat is sealed to f64|f32; to_f64() is total for both — no fabricated fallback.
+    let x_f64 = x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
     let (rt1, ww1) = rys_root1_host_f64(x_f64);
     (F::from_f64_lossy(rt1), F::from_f64_lossy(ww1))
 }
@@ -930,7 +931,8 @@ fn rys_root1_host_f64(x: f64) -> (f64, f64) {
 /// to F via `CintFloat::from_f64_lossy`. For F=f64: byte-identical to pre-refactor.
 /// For F=f32: outputs are f64-precision values truncated to f32.
 pub fn rys_root2_host<F: CintFloat>(x: F) -> ([F; 2], [F; 2]) {
-    let x_f64 = x.to_f64().unwrap_or(0.0);
+    // WR-04: CintFloat is sealed to f64|f32; to_f64() is total for both — no fabricated fallback.
+    let x_f64 = x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
     let (roots, weights) = rys_root2_host_f64(x_f64);
     let r = roots.map(|v| F::from_f64_lossy(v));
     let w = weights.map(|v| F::from_f64_lossy(v));
@@ -1177,7 +1179,8 @@ fn rys_root2_host_f64(x: f64) -> ([f64; 2], [f64; 2]) {
 /// to F via `CintFloat::from_f64_lossy`. For F=f64: byte-identical to pre-refactor.
 /// For F=f32: outputs are f64-precision values truncated to f32.
 pub fn rys_root3_host<F: CintFloat>(x: F) -> ([F; 3], [F; 3]) {
-    let x_f64 = x.to_f64().unwrap_or(0.0);
+    // WR-04: CintFloat is sealed to f64|f32; to_f64() is total for both — no fabricated fallback.
+    let x_f64 = x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
     let (roots, weights) = rys_root3_host_f64(x_f64);
     let r = roots.map(|v| F::from_f64_lossy(v));
     let w = weights.map(|v| F::from_f64_lossy(v));
@@ -1325,7 +1328,8 @@ fn rys_root3_host_f64(x: f64) -> ([f64; 3], [f64; 3]) {
 /// to F via `CintFloat::from_f64_lossy`. For F=f64: byte-identical to pre-refactor.
 /// For F=f32: outputs are f64-precision values truncated to f32.
 pub fn rys_root4_host<F: CintFloat>(x: F) -> ([F; 4], [F; 4]) {
-    let x_f64 = x.to_f64().unwrap_or(0.0);
+    // WR-04: CintFloat is sealed to f64|f32; to_f64() is total for both — no fabricated fallback.
+    let x_f64 = x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
     let (roots, weights) = rys_root4_host_f64(x_f64);
     let r = roots.map(|v| F::from_f64_lossy(v));
     let w = weights.map(|v| F::from_f64_lossy(v));
@@ -1451,7 +1455,8 @@ fn rys_root4_host_f64(x: f64) -> ([f64; 4], [f64; 4]) {
 /// to F via `CintFloat::from_f64_lossy`. For F=f64: byte-identical to pre-refactor.
 /// For F=f32: outputs are f64-precision values truncated to f32.
 pub fn rys_root5_host<F: CintFloat>(x: F) -> ([F; 5], [F; 5]) {
-    let x_f64 = x.to_f64().unwrap_or(0.0);
+    // WR-04: CintFloat is sealed to f64|f32; to_f64() is total for both — no fabricated fallback.
+    let x_f64 = x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
     let (roots, weights) = rys_root5_host_f64(x_f64);
     let r = roots.map(|v| F::from_f64_lossy(v));
     let w = weights.map(|v| F::from_f64_lossy(v));
@@ -1597,7 +1602,8 @@ fn rys_root5_host_f64(x: f64) -> ([f64; 5], [f64; 5]) {
 /// Computes in f64 internally, converts each root/weight to F via `from_f64_lossy`.
 /// For F=f64: byte-identical to pre-refactor. For F=f32: outputs truncated to f32.
 pub fn rys_roots_host<F: CintFloat>(nroots: usize, x: F) -> (Vec<F>, Vec<F>) {
-    let x_f64 = x.to_f64().unwrap_or(0.0);
+    // WR-04: CintFloat is sealed to f64|f32; to_f64() is total for both — no fabricated fallback.
+    let x_f64 = x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
     let (roots, weights) = rys_roots_host_f64(nroots, x_f64);
     let r = roots.into_iter().map(|v| F::from_f64_lossy(v)).collect();
     let w = weights.into_iter().map(|v| F::from_f64_lossy(v)).collect();

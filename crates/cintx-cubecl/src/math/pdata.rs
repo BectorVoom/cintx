@@ -128,13 +128,17 @@ pub fn compute_pdata<F: Float>(
 
 /// Host-side wrapper for `compute_pdata` — returns `PairData` (concrete f64).
 ///
-/// Generic over `F: CintFloat`. Inputs of type `F` are converted to `f64`
-/// via `CintFloat::to_f64()`, the computation runs in f64, and the result is
+/// Generic over `F: CintFloat`. Inputs of type `F` are converted to `f64` FIRST
+/// (WR-03: all Gaussian-product intermediates computed in f64), then the result is
 /// a concrete `PairData`. This keeps all kernel callers working unchanged.
 ///
+/// WR-03: the f32 monomorphization now genuinely computes in f64 (inputs converted
+/// first), so the precision-sensitive exponential `fac = (-ai*aj/zeta_ab*rr).exp()`
+/// is always evaluated in f64 regardless of F. This matches the documented
+/// "all intermediates stay f64" contract.
+///
 /// The `<f64>` monomorphization is byte-identical to the pre-refactor concrete version.
-/// The `<f32>` monomorphization accepts f32 inputs, computes in f32 precision,
-/// and returns f64-fielded `PairData` — tested to compile and produce finite values.
+/// For F=f64: `to_f64().expect()` is lossless (identity) — byte-identical.
 ///
 /// Used by tests and host-side integral planning code.
 pub fn compute_pdata_host<F: CintFloat>(
@@ -149,7 +153,20 @@ pub fn compute_pdata_host<F: CintFloat>(
     norm_i: F,
     norm_j: F,
 ) -> PairData {
-    // Compute in F precision using CintFloat's num_traits::Float methods.
+    // WR-03: convert inputs to f64 FIRST, then run the Gaussian-product math in f64.
+    // CintFloat is sealed to f64|f32; to_f64() is total for both types (WR-04: no fabricated fallback).
+    let ai = ai.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let aj = aj.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let ri_x = ri_x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let ri_y = ri_y.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let ri_z = ri_z.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let rj_x = rj_x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let rj_y = rj_y.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let rj_z = rj_z.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let norm_i = norm_i.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let norm_j = norm_j.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+
+    // Gaussian-product math runs entirely in f64.
     let zeta_ab = ai + aj;
     let center_p_x = (ai * ri_x + aj * rj_x) / zeta_ab;
     let center_p_y = (ai * ri_y + aj * rj_y) / zeta_ab;
@@ -159,19 +176,18 @@ pub fn compute_pdata_host<F: CintFloat>(
     let rirj_z = ri_z - rj_z;
     let rr = rirj_x * rirj_x + rirj_y * rirj_y + rirj_z * rirj_z;
     let fac = (-ai * aj / zeta_ab * rr).exp() * norm_i * norm_j;
-    let half = F::from_f64_lossy(0.5);
-    let aij2 = half / zeta_ab;
+    let aij2 = 0.5_f64 / zeta_ab;
 
-    // Convert to concrete f64 PairData at the boundary.
+    // Values are already f64 — return the concrete PairData directly.
     PairData {
-        zeta_ab: zeta_ab.to_f64().unwrap_or(0.0),
-        center_p_x: center_p_x.to_f64().unwrap_or(0.0),
-        center_p_y: center_p_y.to_f64().unwrap_or(0.0),
-        center_p_z: center_p_z.to_f64().unwrap_or(0.0),
-        rirj_x: rirj_x.to_f64().unwrap_or(0.0),
-        rirj_y: rirj_y.to_f64().unwrap_or(0.0),
-        rirj_z: rirj_z.to_f64().unwrap_or(0.0),
-        fac: fac.to_f64().unwrap_or(0.0),
-        aij2: aij2.to_f64().unwrap_or(0.0),
+        zeta_ab,
+        center_p_x,
+        center_p_y,
+        center_p_z,
+        rirj_x,
+        rirj_y,
+        rirj_z,
+        fac,
+        aij2,
     }
 }
