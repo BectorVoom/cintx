@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
 status: Executing Phase 20
-stopped_at: Completed Phase 20 Plan 09 (Gap 1 closure — PREC-02 Complex<F> typed view, D-04/SC-2 literally TRUE)
-last_updated: "2026-05-21T13:22:36Z"
+stopped_at: Completed Phase 20 Plan 10 (Gap 2a closure — PREC-05 f32 kernel+math hardening, CR-01/CR-02/WR-01/WR-03/WR-04/WR-05/WR-06 all fixed, f64 oracle byte-identical)
+last_updated: "2026-05-21T14:00:00Z"
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 51
-  completed_plans: 49
-  percent: 96
+  completed_plans: 50
+  percent: 98
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 20 (precision-generic-f64-f32-switch) — EXECUTING
-Plan: 1 of 11
-Next: Phase 20 (precision-generic-f64-f32-switch) — CONTEXT.md captured, not yet roadmapped/planned
-Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-VERIFICATION.md`
+Plan: 11 of 11
+Next: Phase 20 Plan 11 (Gap 2b closure — PREC-05 f32 multi-component/f12-derivative oracle tests)
+Resume: `.planning/phases/20-precision-generic-f64-f32-switch/20-10-SUMMARY.md`
 
 ## Performance Metrics
 
@@ -109,6 +109,7 @@ Resume: `.planning/phases/19-int1e-ecp-type1-type2-evaluator/19-VERIFICATION.md`
 | Phase 19-int1e-ecp-type1-type2-evaluator P02 | 10 min | 2 tasks | 2 files |
 | Phase 19-int1e-ecp-type1-type2-evaluator P03 | 5 min | 3 tasks | 8 files |
 | Phase 20 P01 | 5 | 3 tasks | 5 files |
+| Phase 20 P10 | 7 | 4 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -267,6 +268,10 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: [Phase 20-01]: CintFloat::from_f64_lossy for f32 uses x as f32 truncation (documented lossy at threshold boundary only)
 - [Phase ?]: [Phase 20-01]: A5 bytemuck staging cast proven SOUND — Wave 3 can use bytemuck::cast_slice_mut without Vec<F> fallback
 - [Phase ?]: [Phase 20-01]: PrecisionKind defaults to F64; ExecutionPlan.precision field byte-identical on f64 path (D-08/D-12)
+- [Phase 20-10]: CR-01 fix shape: out_elems captured pre-cast (f64 staging.len()) in outer dispatcher; &mut staging_f32[..out_elems] passed to typed inner so all copy_len/not0 in inner are automatically correct
+- [Phase 20-10]: WR-05 device path: used F::EPSILON (CubeCL Float const, verified from cubecl-core-0.10.0) not F::new(f64::EPSILON as f32 * 0.5); host uses num_traits F::epsilon(); both yield the same type-appropriate epsilon
+- [Phase 20-10]: WR-05 f64 impact: F::epsilon() for f64 == 2.22e-16 vs old DBL_EPSILON_HALF 1.11e-16; factor-of-2 within f64 oracle guard band (atol=1e-12); no precision branch needed
+- [Phase 20-10]: WR-03: compute_pdata_host converts ALL inputs to f64 first; Gaussian-product exponential fac = (-ai*aj/zeta_ab*rr).exp() always f64-precision regardless of F; trailing .to_f64().unwrap_or() removed (values already f64 after input conversion)
 
 ### Roadmap Evolution
 
@@ -289,6 +294,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-20T14:33:13.817Z
-Stopped at: Completed Phase 20 Plan 01 (Wave 0 precision scaffolding, A5 proven)
+Last session: 2026-05-21T14:00:00Z
+Stopped at: Completed Phase 20 Plan 10 (Gap 2a — kernel+math hardening for PREC-05 f32 correctness; 2 commits: 5ba79fb + 69a6a18)
 Resume file: None
