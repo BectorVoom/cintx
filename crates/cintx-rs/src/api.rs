@@ -1166,4 +1166,90 @@ mod tests {
         };
         assert_eq!(out.tensor.owned_values[0], 1.0_f32);
     }
+
+    // --- D-04 / ROADMAP SC-2 / Gap 1: Complex<F> typed view tests ---
+
+    #[test]
+    fn complex_values_returns_some_for_complex_interleaved_f64() {
+        // Spinor output (complex_interleaved == true): complex_values() returns Some.
+        // Buffer: [1.0, 2.0, 3.0, 4.0] -> [Complex(1,2), Complex(3,4)]
+        let t: IntegralTensor<f64> = IntegralTensor {
+            extents: vec![2],
+            component_axis_leading: false,
+            complex_interleaved: true,
+            owned_values: vec![1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64],
+        };
+        let cv = t.complex_values();
+        assert!(cv.is_some(), "complex_values() must return Some when complex_interleaved == true");
+        let v = cv.unwrap();
+        assert_eq!(v.len(), 2, "len must be owned_values.len() / 2");
+        assert_eq!(v[0], num_complex::Complex::new(1.0_f64, 2.0_f64));
+        assert_eq!(v[1], num_complex::Complex::new(3.0_f64, 4.0_f64));
+    }
+
+    #[test]
+    fn complex_values_returns_none_for_real_output() {
+        // Real output (complex_interleaved == false): complex_values() returns None.
+        let t: IntegralTensor<f64> = IntegralTensor {
+            extents: vec![2],
+            component_axis_leading: false,
+            complex_interleaved: false,
+            owned_values: vec![1.0_f64, 2.0_f64],
+        };
+        assert!(t.complex_values().is_none(), "complex_values() must return None when complex_interleaved == false");
+    }
+
+    #[test]
+    fn complex_values_f32_typed() {
+        // IntegralTensor<f32> complex view yields Complex<f32>.
+        let t: IntegralTensor<f32> = IntegralTensor {
+            extents: vec![2],
+            component_axis_leading: false,
+            complex_interleaved: true,
+            owned_values: vec![1.0_f32, 2.0_f32, 3.0_f32, 4.0_f32],
+        };
+        let cv = t.complex_values();
+        assert!(cv.is_some());
+        let v: Vec<num_complex::Complex<f32>> = cv.unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0], num_complex::Complex::new(1.0_f32, 2.0_f32));
+        assert_eq!(v[1], num_complex::Complex::new(3.0_f32, 4.0_f32));
+    }
+
+    #[test]
+    fn typed_evaluation_output_complex_values_delegates_to_tensor() {
+        // TypedEvaluationOutput::complex_values() delegates to tensor.complex_values().
+        let t: IntegralTensor<f64> = IntegralTensor {
+            extents: vec![1],
+            component_axis_leading: false,
+            complex_interleaved: true,
+            owned_values: vec![5.0_f64, 6.0_f64],
+        };
+        let out = TypedEvaluationOutput {
+            tensor: t,
+            stats: EvaluationStats::default(),
+            workspace_bytes: 0,
+            chunk_count: 0,
+            bytes_written: 0,
+        };
+        let cv = out.complex_values();
+        assert!(cv.is_some());
+        let v = cv.unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0], num_complex::Complex::new(5.0_f64, 6.0_f64));
+    }
+
+    #[test]
+    fn owned_values_field_unchanged_by_complex_view() {
+        // The owned_values: Vec<F> field is accessible and byte-identical (PREC-04 / SemVer).
+        let t: IntegralTensor<f64> = IntegralTensor {
+            extents: vec![2],
+            component_axis_leading: false,
+            complex_interleaved: true,
+            owned_values: vec![1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64],
+        };
+        // Field must still be accessible as Vec<f64> directly.
+        let raw: &Vec<f64> = &t.owned_values;
+        assert_eq!(raw, &vec![1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64]);
+    }
 }
