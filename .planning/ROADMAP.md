@@ -46,7 +46,7 @@
 | Phase 17: Real-Integral Evaluation in Safe API | v1.3 | 0/3 | Planned | - |
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
 | Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 8/8 | Complete | 2026-05-20 |
-| Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 9/11 | Gap closure in progress | - |
+| Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 11/11 | Complete | 2026-05-21 |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
