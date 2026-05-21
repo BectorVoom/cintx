@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
-status: Phase complete — ready for verification
+status: Milestone complete
 stopped_at: "Completed Phase 20 Plan 10 (Gap 2a — kernel+math hardening for PREC-05 f32 correctness; 2 commits: 5ba79fb + 69a6a18)"
-last_updated: "2026-05-21T14:11:17.656Z"
+last_updated: "2026-05-21T14:23:44.581Z"
 progress:
   total_phases: 10
   completed_phases: 10
@@ -24,8 +24,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 20 (precision-generic-f64-f32-switch) — EXECUTING
-Plan: 11 of 11
+Phase: 20
+Plan: Not started
 Next: Phase 20 Plan 11 (Gap 2b closure — PREC-05 f32 multi-component/f12-derivative oracle tests)
 Resume: `.planning/phases/20-precision-generic-f64-f32-switch/20-10-SUMMARY.md`
 
@@ -33,7 +33,7 @@ Resume: `.planning/phases/20-precision-generic-f64-f32-switch/20-10-SUMMARY.md`
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 16
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -43,6 +43,7 @@ Resume: `.planning/phases/20-precision-generic-f64-f32-switch/20-10-SUMMARY.md`
 | 01 | 2 | 27 min | 13.5 min |
 | 02 | 7 | 107 min | 15.3 min |
 | 19 | 3 | 28 min | 9.3 min |
+| 20 | 11 | - | - |
 
 **Recent Trend:**
 
