@@ -680,10 +680,14 @@ mod tests {
         executor.execute(&sph_plan, &mut sph_io).unwrap();
 
         // Spinor path: interleaved doubles keep real/imag pair semantics.
+        // Staging must be sized to the full spinor output: for shells l=1 (nso=6) and l=2 (nso=10),
+        // n_elem = 6*10 = 60 for the result, but spinor stores real+imag interleaved so staging
+        // needs 2*n_elem = 120 f64s. (The CR-01 BufferTooSmall guard in 20-10 now enforces this.)
         let spinor_basis = Box::leak(Box::new(sample_basis(Representation::Spinor, 2)));
         let spinor_plan = build_plan(spinor_basis, 2, Representation::Spinor, 2);
         let spinor_chunk = spinor_plan.workspace.chunks[0].clone();
-        let mut spinor_staging = vec![0.0; 8];
+        let spinor_staging_elems = spinor_plan.output_layout.staging_elements.max(8);
+        let mut spinor_staging = vec![0.0_f64; spinor_staging_elems];
         let mut spinor_workspace = FallibleBuffer::try_uninit(
             spinor_plan.workspace.bytes.max(1),
             spinor_plan.workspace.alignment,
