@@ -429,6 +429,7 @@ dependencies = [
  "cintx-cubecl",
  "cintx-ops",
  "cintx-runtime",
+ "num-complex",
  "thiserror",
 ]
 
