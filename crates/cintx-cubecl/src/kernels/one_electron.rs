@@ -161,7 +161,11 @@ fn contract_overlap(g: &[f64], li: u8, lj: u8, nmax: u32) -> Vec<f64> {
             let vx = g[gx + jx as usize * dj + ix as usize];
             let vy = g[gy + jy as usize * dj + iy as usize];
             let vz = g[gz + jz as usize * dj + iz as usize];
-            out[ci_idx * ncj + cj_idx] += vx * vy * vz;
+            // Column-major (bra fastest): out[ket*nci + bra]. This is the layout
+            // cart_to_sph_1e reads (cart_buf[j*nci+ci]) and pyscf-rs stitches
+            // (block[ii+jj*ni]). Row-major here silently transposed cross-l blocks
+            // (li!=lj, both>0: p-d/p-f/d-g) since only those have nci,ncj both >1.
+            out[cj_idx * nci + ci_idx] += vx * vy * vz;
         }
     }
 
@@ -253,7 +257,8 @@ fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
             // T = -0.5 * (g3x*g0y*g0z + g0x*g3y*g0z + g0x*g0y*g3z)
             // The 0.5 factor comes from int1e_kin_sph common_factor *= 0.5.
             let kinetic = -0.5 * (g3x * vy0 * vz0 + vx0 * g3y * vz0 + vx0 * vy0 * g3z);
-            out[ci_idx * ncj + cj_idx] += kinetic;
+            // Column-major (bra fastest): out[ket*nci + bra] — see contract_overlap.
+            out[cj_idx * nci + ci_idx] += kinetic;
         }
     }
 
@@ -415,7 +420,11 @@ fn contract_nuclear(
                     let vx = g_root[gx_off + jx as usize * dj + ix as usize];
                     let vy = g_root[gy_off + jy as usize * dj + iy as usize];
                     let vz = g_root[gz_off + jz as usize * dj + iz as usize];
-                    out[ci_idx * ncj + cj_idx] += vx * vy * vz;
+                    // Column-major (bra fastest): out[ket*nci + bra]. This is the layout
+            // cart_to_sph_1e reads (cart_buf[j*nci+ci]) and pyscf-rs stitches
+            // (block[ii+jj*ni]). Row-major here silently transposed cross-l blocks
+            // (li!=lj, both>0: p-d/p-f/d-g) since only those have nci,ncj both >1.
+            out[cj_idx * nci + ci_idx] += vx * vy * vz;
                 }
             }
         }
@@ -621,22 +630,23 @@ fn launch_one_electron_typed<F: CintFloat>(
             cart_to_spinor_sf_2d::<F>(staging, &cart_blocks, li, kappa_i, lj, kappa_j)?;
         }
         Representation::Cart => {
-            // Copy each contraction block into the contraction-major AO grid. The
-            // Cartesian block is row-major [nci, ncj] (bra outer); staging is laid
-            // out row-major (staging[ii*dj_cart + jj]) — byte-identical to the prior
-            // single-block linear copy when n_ctr_i == n_ctr_j == 1 (dj_cart == ncj).
-            let dj_cart = n_ctr_j * ncj;
+            // Each contraction block is column-major [nci, ncj] (bra fastest:
+            // block[jc*nci + ic]); scatter it into the contraction-major AO grid
+            // column-major (staging[ii + jj*di_cart], ii = ci*nci+ic) — matching
+            // pyscf-rs's Cart stitch (block[ii + jj*ni]). For n_ctr_i==n_ctr_j==1
+            // this is the single-block layout cart_to_sph/stitch already expect.
+            let di_cart = n_ctr_i * nci;
             for ci in 0..n_ctr_i {
                 for cj in 0..n_ctr_j {
                     let base = (ci * n_ctr_j + cj) * block_len;
                     let block = &cart_blocks[base..base + block_len];
-                    for ic in 0..nci {
-                        let ii = ci * nci + ic;
-                        for jc in 0..ncj {
-                            let jj = cj * ncj + jc;
-                            let dst = ii * dj_cart + jj;
+                    for jc in 0..ncj {
+                        let jj = cj * ncj + jc;
+                        for ic in 0..nci {
+                            let ii = ci * nci + ic;
+                            let dst = ii + jj * di_cart;
                             if dst < staging.len() {
-                                staging[dst] = F::from_f64_lossy(block[ic * ncj + jc]);
+                                staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
                             }
                         }
                     }
@@ -1112,5 +1122,169 @@ mod tests {
         }
         // The gc block must NOT be truncated: contraction-1 rows are non-zero.
         assert!(block[3..6].iter().any(|v| v.abs() > 1e-12), "contraction-1 rows must be populated, not truncated to zero");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test XL-1: cross-angular-momentum overlap symmetry (li != lj, both > 0).
+    //
+    // The full overlap matrix is symmetric, so the (a,b) shell-pair block must be
+    // the transpose of the (b,a) block: <a_i|b_j> == <b_j|a_i>. This exercises the
+    // Cartesian buffer layout for li != lj with BOTH nci,ncj > 1 (p-d, p-f, d-g) —
+    // the case where row-major vs column-major actually differ (vectors and
+    // symmetric same-l blocks hide the bug). Single contraction; displaced centers.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_cross_l_overlap_is_symmetric() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple};
+        use cintx_ops::resolver::Resolver;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        // Integral block for an ORDERED shell pair drawn from a FIXED 2-shell mol
+        // (la on atom 0 @ origin, lb on atom 1 @ displaced). `swapped=false` gives
+        // <la|op|lb> (bra=la,ket=lb); `swapped=true` gives <lb|op|la> on the SAME
+        // geometry. The transpose symmetry <la_i|op|lb_j> == <lb_j|op|la_i> holds for
+        // every Hermitian 1e operator (ovlp/kin/nuc) — independent of l. Covers
+        // contract_overlap, contract_kinetic, and contract_nuclear.
+        let block = |op_sym: &str, la: u8, lb: u8, swapped: bool| -> Vec<f64> {
+            let op = Resolver::descriptor_by_symbol(op_sym)
+                .unwrap_or_else(|_| panic!("{op_sym} must be in the cintx manifest"))
+                .id;
+            let atoms: Arc<[Atom]> = Arc::from(
+                vec![
+                    Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap(),
+                    Atom::try_new(1, [0.8, 0.5, -0.3], NuclearModel::Point, None, None).unwrap(),
+                ]
+                .into_boxed_slice(),
+            );
+            let s_la = Arc::new(Shell::try_new(
+                0, la, 1, 1, 0, Representation::Spheric,
+                Arc::from(vec![0.9_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            ).unwrap());
+            let s_lb = Arc::new(Shell::try_new(
+                1, lb, 1, 1, 0, Representation::Spheric,
+                Arc::from(vec![0.6_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            ).unwrap());
+            let all: Arc<[Arc<Shell>]> = Arc::from(vec![s_la.clone(), s_lb.clone()].into_boxed_slice());
+            let basis = BasisSet::try_new(atoms, all).unwrap();
+            let (bra, ket) = if swapped { (s_lb.clone(), s_la.clone()) } else { (s_la.clone(), s_lb.clone()) };
+            let n = bra.ao_per_shell() * ket.ao_per_shell();
+            let shells = ShellTuple::try_from_iter([bra, ket]).unwrap();
+            let opts = ExecutionOptions::default();
+            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+            let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
+            plan.precision = PrecisionKind::F64;
+            let spec = SpecializationKey::from_plan(&plan);
+            let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
+            let mut staging = vec![0.0_f64; n];
+            launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging).unwrap();
+            staging
+        };
+
+        // p-d (1,2), p-f (1,3), d-g (2,4): all have nci,ncj > 1. ovlp/kin use the
+        // analytic g-tensor and handle any l; contract_nuclear only implements
+        // <=2 Rys roots (li+lj<=3), so its arm is limited to p-d (a separate
+        // pre-existing high-l-nuclear limitation, orthogonal to the cross-l layout
+        // fixed here). All three share the column-major cross-l Cartesian layout.
+        let cases: [(&str, &[(u8, u8)]); 3] = [
+            ("int1e_ovlp_sph", &[(1, 2), (1, 3), (2, 4)]),
+            ("int1e_kin_sph", &[(1, 2), (1, 3), (2, 4)]),
+            ("int1e_nuc_sph", &[(1, 2)]),
+        ];
+        for (op_sym, pairs) in cases {
+            for &(la, lb) in pairs {
+                let nsa = nsph(la);
+                let nsb = nsph(lb);
+                let ab = block(op_sym, la, lb, false); // ab[i + j*nsa] = <la_i | lb_j>
+                let ba = block(op_sym, la, lb, true); // ba[j + i*nsb] = <lb_j | la_i>
+                let mut max_asym = 0.0_f64;
+                for i in 0..nsa {
+                    for j in 0..nsb {
+                        max_asym = max_asym.max((ab[i + j * nsa] - ba[j + i * nsb]).abs());
+                    }
+                }
+                assert!(
+                    max_asym < 1e-12,
+                    "{op_sym} cross-l l=({la},{lb}) not symmetric: max |M_ab - M_ba^T| = {max_asym}"
+                );
+                // Sanity: the block is not all-zero (real integral at this separation).
+                assert!(ab.iter().any(|v| v.abs() > 1e-10), "{op_sym} l=({la},{lb}) block unexpectedly all-zero");
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test XL-2: general-contraction (nctr>1) AND high-l cross-block together —
+    // a generally-contracted d-shell (l=2, nctr=2) vs a generally-contracted
+    // f-shell (l=3, nctr=2). This is the exact combination the executor flagged
+    // (DI-02-11-CINTX-NCTR-HIGHL: l>=3 nctr>1). The full block must be the
+    // transpose of the swapped block: <d_gc_i | f_gc_j> == <f_gc_j | d_gc_i>.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_general_contraction_high_l_cross_block_is_symmetric() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple};
+        use cintx_ops::resolver::Resolver;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        let op = Resolver::descriptor_by_symbol("int1e_ovlp_sph")
+            .expect("int1e_ovlp_sph in manifest")
+            .id;
+
+        // Generally-contracted shells: 2 shared primitives, 2 contraction columns.
+        // coefficients[ip*nctr + ic] (row-major canonical).
+        let d_exps: Arc<[f64]> = Arc::from(vec![1.4_f64, 0.45].into_boxed_slice());
+        let d_co: Arc<[f64]> = Arc::from(vec![0.5_f64, 0.2, 0.3, 0.7].into_boxed_slice());
+        let f_exps: Arc<[f64]> = Arc::from(vec![1.1_f64, 0.35].into_boxed_slice());
+        let f_co: Arc<[f64]> = Arc::from(vec![0.6_f64, 0.1, 0.25, 0.8].into_boxed_slice());
+
+        let block = |swapped: bool| -> Vec<f64> {
+            let atoms: Arc<[Atom]> = Arc::from(
+                vec![
+                    Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap(),
+                    Atom::try_new(1, [0.7, -0.4, 0.6], NuclearModel::Point, None, None).unwrap(),
+                ]
+                .into_boxed_slice(),
+            );
+            let d_gc = Arc::new(Shell::try_new(0, 2, 2, 2, 0, Representation::Spheric, d_exps.clone(), d_co.clone()).unwrap());
+            let f_gc = Arc::new(Shell::try_new(1, 3, 2, 2, 0, Representation::Spheric, f_exps.clone(), f_co.clone()).unwrap());
+            let all: Arc<[Arc<Shell>]> = Arc::from(vec![d_gc.clone(), f_gc.clone()].into_boxed_slice());
+            let basis = BasisSet::try_new(atoms, all).unwrap();
+            let (bra, ket) = if swapped { (f_gc.clone(), d_gc.clone()) } else { (d_gc.clone(), f_gc.clone()) };
+            let n = bra.ao_per_shell() * ket.ao_per_shell();
+            let shells = ShellTuple::try_from_iter([bra, ket]).unwrap();
+            let opts = ExecutionOptions::default();
+            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+            let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
+            plan.precision = PrecisionKind::F64;
+            let spec = SpecializationKey::from_plan(&plan);
+            let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
+            let mut staging = vec![0.0_f64; n];
+            launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging).unwrap();
+            staging
+        };
+
+        let nd = 2 * nsph(2); // d_gc ao_per_shell = 2*5 = 10
+        let nf = 2 * nsph(3); // f_gc ao_per_shell = 2*7 = 14
+        let ab = block(false); // ab[i + j*nd] = <d_gc_i | f_gc_j>
+        let ba = block(true); // ba[j + i*nf] = <f_gc_j | d_gc_i>
+        assert_eq!(ab.len(), nd * nf);
+        let mut max_asym = 0.0_f64;
+        for i in 0..nd {
+            for j in 0..nf {
+                max_asym = max_asym.max((ab[i + j * nd] - ba[j + i * nf]).abs());
+            }
+        }
+        assert!(
+            max_asym < 1e-12,
+            "generally-contracted d(nctr=2)-f(nctr=2) cross-block not symmetric: max |Δ| = {max_asym}"
+        );
+        assert!(ab.iter().any(|v| v.abs() > 1e-10), "d_gc-f_gc block unexpectedly all-zero");
     }
 }

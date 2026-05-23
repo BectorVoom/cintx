@@ -516,6 +516,29 @@ fn scale_coeff(cei: &mut [f64], ci: &[f64], ai: &[f64], r2ca: f64, npi: usize, n
     }
 }
 
+/// Transpose canonical `Shell.coefficients` from the workspace's row-major
+/// `[ip * nctr + ic]` layout into the column-major `[ic * nprim + ip]` layout
+/// that this ECP kernel's internal indexing assumes (`scale_coeff`, the
+/// contiguous per-contraction slices in `ecp_type2_cart`, and the
+/// `ci[ic*npi+ip]` reads in `deriv1_cart_pair`). All other cintx kernels
+/// (`one_electron`, `two_electron`, `center_*`) read `coefficients[ip*nctr+ic]`
+/// directly, so that row-major form is canonical; the ECP port was written
+/// against libcint's per-contraction-contiguous convention. For `nctr == 1`
+/// this is the identity (so single-contraction output is byte-unchanged); the
+/// difference only matters for generally-contracted shells (e.g. LANL2DZ Cu).
+fn coeffs_col_major(shell: &Shell) -> Vec<f64> {
+    let np = shell.nprim as usize;
+    let nc = shell.nctr as usize;
+    let src = &shell.coefficients;
+    let mut out = vec![0.0f64; np * nc];
+    for ip in 0..np {
+        for ic in 0..nc {
+            out[ic * np + ip] = src[ip * nc + ic];
+        }
+    }
+    out
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-shell data marshaling (typed EcpShell -> radial-grid inputs).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -588,8 +611,13 @@ fn ecp_type1_cart(
     let nfj = ncart(lj as u8);
     let ai = &shell_i.exponents;
     let aj = &shell_j.exponents;
-    let ci = &shell_i.coefficients;
-    let cj = &shell_j.coefficients;
+    // Canonical Shell.coefficients are row-major [ip*nctr+ic]; this ECP kernel's
+    // internal indexing is column-major [ic*nprim+ip]. Convert once (identity for
+    // nctr==1). Without this, generally-contracted shells read scrambled coeffs.
+    let ci_cm = coeffs_col_major(shell_i);
+    let cj_cm = coeffs_col_major(shell_j);
+    let ci = &ci_cm;
+    let cj = &cj_cm;
 
     let lilj1 = li + lj + 1;
     let d1 = lilj1;
@@ -778,8 +806,13 @@ fn ecp_type2_cart(
     let di = nfi * nci;
     let ai = &shell_i.exponents;
     let aj = &shell_j.exponents;
-    let ci = &shell_i.coefficients;
-    let cj = &shell_j.coefficients;
+    // Canonical Shell.coefficients are row-major [ip*nctr+ic]; this ECP kernel's
+    // internal indexing is column-major [ic*nprim+ip]. Convert once (identity for
+    // nctr==1). Without this, generally-contracted shells read scrambled coeffs.
+    let ci_cm = coeffs_col_major(shell_i);
+    let cj_cm = coeffs_col_major(shell_j);
+    let ci = &ci_cm;
+    let cj = &cj_cm;
 
     let common_fac =
         cint_common_fac_sp(li) * cint_common_fac_sp(lj) * 16.0 * std::f64::consts::PI * std::f64::consts::PI;
@@ -1172,8 +1205,13 @@ fn deriv1_cart_pair(
     let dij = di * dj;
     let expi = &shell_i.exponents;
     let expj = &shell_j.exponents;
-    let ci = &shell_i.coefficients;
-    let cj = &shell_j.coefficients;
+    // Canonical Shell.coefficients are row-major [ip*nctr+ic]; this ECP kernel's
+    // internal indexing is column-major [ic*nprim+ip]. Convert once (identity for
+    // nctr==1). Without this, generally-contracted shells read scrambled coeffs.
+    let ci_cm = coeffs_col_major(shell_i);
+    let cj_cm = coeffs_col_major(shell_j);
+    let ci = &ci_cm;
+    let cj = &cj_cm;
 
     // gprim = [gpx | gpy | gpz], each nfi*nfj, F-order j*nfi+i.
     let mut gprim = vec![0.0f64; 3 * nfi * nfj];
@@ -1365,6 +1403,14 @@ pub fn launch_ecp(
     let ncj = ncart(lj);
     let nsi = nsph(li);
     let nsj = nsph(lj);
+    // Contraction counts: generally-contracted shells (nctr>1) produce
+    // ao_per_shell = nctr * (ncart|nsph) AOs per axis, laid out contraction-major.
+    let nctr_i = shell_i.nctr as usize;
+    let nctr_j = shell_j.nctr as usize;
+    let di_cart = nctr_i * nci;
+    let dj_cart = nctr_j * ncj;
+    let di_sph = nctr_i * nsi;
+    let dj_sph = nctr_j * nsj;
 
     let atoms: &[Atom] = plan.basis.atoms();
     let atom_count = atoms.len();
@@ -1392,8 +1438,8 @@ pub fn launch_ecp(
     // rather than silently truncating / under-filling and returning Ok.
     // Spinor is the D-12 zero-write path; sized by the caller.
     let needed = match plan.representation {
-        Representation::Spheric => n_comp * (nsi as usize) * (nsj as usize),
-        Representation::Cart => n_comp * (nci as usize) * (ncj as usize),
+        Representation::Spheric => n_comp * di_sph * dj_sph,
+        Representation::Cart => n_comp * di_cart * dj_cart,
         Representation::Spinor => 0,
     };
     if !matches!(plan.representation, Representation::Spinor) && staging.len() < needed {
@@ -1408,7 +1454,7 @@ pub fn launch_ecp(
     // dij = (nci*nfi)*(ncj*nfj) blocks (x, y, z) — F-order [axis, ao_j, ao_i],
     // axis slowest (D-11, int3c2e_ip1_* precedent). PySCF's _deriv1_cart writes
     // the SAME [comp, j*di+i] layout (nr_ecp_deriv.c:240-280) — no transpose.
-    let mut gctr = vec![0.0_f64; n_comp * (nci as usize) * (ncj as usize)];
+    let mut gctr = vec![0.0_f64; n_comp * di_cart * dj_cart];
 
     // Build the 2047-point Gauss-Chebyshev grid PySCF samples adaptively
     // (rs/ws_gauss_chebyshev2047). gauss_chebyshev_nodes_weights_host(LEVEL_MAX)
@@ -1470,17 +1516,39 @@ pub fn launch_ecp(
     // Apply representation transform and write into staging.
     match plan.representation {
         Representation::Spheric => {
-            // For gradient: transform each axis block independently (axis stays
-            // slowest); cart block size nci*ncj, sph block size nsi*nsj.
-            let cart_block = (nci as usize) * (ncj as usize);
-            let sph_block = (nsi as usize) * (nsj as usize);
-            // The unconditional buffer-size invariant above guarantees
-            // staging.len() >= n_comp * sph_block, so every axis block writes
-            // fully in-bounds — no truncation fallback (CLAUDE.md no-partial-write).
+            // gctr is the cartesian [di_cart, dj_cart] block per axis, column-major
+            // (bra fastest) and contraction-major within each axis (AO = ctr*ncart+m,
+            // matching ecp_type1/2_cart's `(jc*nfj+mj)*(nctr_i*ncart_i)+ic*nfi+mi`).
+            // Transform each (ci,cj) contraction sub-block to spherical and scatter
+            // it into the contraction-major sph grid staging[ii + jj*di_sph]
+            // (ii = ci*nsi+msi, jj = cj*nsj+msj). For nctr==1 this is byte-identical
+            // to the prior single-block cart_to_sph_1e linear write.
+            let cart_block = di_cart * dj_cart;
+            let sph_block = di_sph * dj_sph;
+            let mut sub = vec![0.0_f64; nci * ncj];
+            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
             for axis in 0..n_comp {
-                let cart_slice = &gctr[axis * cart_block..(axis + 1) * cart_block];
-                let out_off = axis * sph_block;
-                cart_to_sph_1e(cart_slice, &mut staging[out_off..out_off + sph_block], li, lj);
+                let axis_cart = &gctr[axis * cart_block..(axis + 1) * cart_block];
+                let axis_off = axis * sph_block;
+                for ci in 0..nctr_i {
+                    for cj in 0..nctr_j {
+                        // Extract the (ci,cj) cartesian sub-block in cart_to_sph_1e's
+                        // expected layout: sub[mj*nci + mi] (ket cart outer, bra inner).
+                        for mj in 0..ncj {
+                            for mi in 0..nci {
+                                let g = (ci * nci + mi) + (cj * ncj + mj) * di_cart;
+                                sub[mj * nci + mi] = axis_cart[g];
+                            }
+                        }
+                        cart_to_sph_1e(&sub, &mut sph_tmp, li, lj);
+                        for msj in 0..nsj {
+                            for msi in 0..nsi {
+                                let dst = axis_off + (ci * nsi + msi) + (cj * nsj + msj) * di_sph;
+                                staging[dst] = sph_tmp[msj * nsi + msi];
+                            }
+                        }
+                    }
+                }
             }
         }
         Representation::Cart => {
