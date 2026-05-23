@@ -493,14 +493,22 @@ fn launch_one_electron_typed<F: CintFloat>(
     let nsi = nsph(li);
     let nsj = nsph(lj);
 
-    // Accumulated Cartesian integral buffer
-    let mut cart_buf = vec![0.0_f64; nci * ncj];
-
     // Primitive loop over (pi, pj) pairs
     let n_prim_i = shell_i.nprim as usize;
     let n_prim_j = shell_j.nprim as usize;
     let n_ctr_i = shell_i.nctr as usize;
     let n_ctr_j = shell_j.nctr as usize;
+
+    // Per-contraction-pair Cartesian accumulators. Generally-contracted shells
+    // (nctr>1, e.g. ANO/ANO-RCC) emit ONE nci*ncj Cartesian block per (ci,cj)
+    // contraction pair. The contraction index is the OUTER (slow) AO index within
+    // each shell axis and the angular component the inner index — libcint
+    // "contraction-major" AO ordering (matches PySCF sph_labels: 2px,2py,2pz,
+    // 3px,3py,3pz,...). For the segmented case (n_ctr_i == n_ctr_j == 1) this is
+    // a single block and the result is byte-identical to the prior single-buffer
+    // path. Block (ci,cj) starts at flat offset (ci*n_ctr_j + cj) * block_len.
+    let block_len = nci * ncj;
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * block_len];
 
     for pi in 0..n_prim_i {
         let ai = shell_i.exponents[pi];
@@ -533,15 +541,19 @@ fn launch_one_electron_typed<F: CintFloat>(
                 contract_nuclear(&pd, ri, rj, li, lj, atoms)
             };
 
-            // Accumulate over contractions: coefficient[pi * n_ctr + ctr_idx] * prim_buf
-            // Shell coefficients layout: coefficients[pi * n_ctr + ctr_idx] per libcint convention
+            // Scatter this primitive pair into every contraction block, weighted by
+            // that contraction's coefficient pair. Shell coefficient layout is
+            // coefficients[pi * n_ctr + ctr_idx] (libcint convention). Each (ci,cj)
+            // block accumulates independently — the previous code summed every
+            // (ci,cj) pair into a single buffer, truncating nctr>1 shells.
             for ci in 0..n_ctr_i {
                 let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
                 for cj in 0..n_ctr_j {
                     let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
                     let weight = coeff_i * coeff_j;
-                    for k in 0..prim_buf.len() {
-                        cart_buf[k] += weight * prim_buf[k];
+                    let base = (ci * n_ctr_j + cj) * block_len;
+                    for k in 0..block_len {
+                        cart_blocks[base + k] += weight * prim_buf[k];
                     }
                 }
             }
@@ -558,7 +570,7 @@ fn launch_one_electron_typed<F: CintFloat>(
     // are off by ~4*pi relative to vendored libcint output.
     let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
     if (sp_scale - 1.0).abs() > 1e-15 {
-        for v in cart_buf.iter_mut() {
+        for v in cart_blocks.iter_mut() {
             *v *= sp_scale;
         }
     }
@@ -568,29 +580,67 @@ fn launch_one_electron_typed<F: CintFloat>(
     // via F::from_f64_lossy. For f64 this is a zero-cost identity; for f32 it truncates.
     match plan.representation {
         Representation::Spheric => {
-            // Always write via a temporary f64 sph buffer, then cast to F.
-            // This keeps cart_to_sph_1e (which operates on &mut [f64]) unchanged.
-            let sph_size = nsi * nsj;
-            let mut sph_tmp = vec![0.0_f64; sph_size];
-            cart_to_sph_1e(&cart_buf, &mut sph_tmp, li, lj);
-            let copy_len = staging.len().min(sph_size);
-            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph_tmp[..copy_len].iter()) {
-                *dst = F::from_f64_lossy(src);
+            // Per-contraction-pair cart→sph, scattered into the contraction-major
+            // AO grid. di_sph = n_ctr_i * nsi = shell_i.ao_per_shell(). The staging
+            // block is column-major in (bra,ket) with the bra index fastest
+            // (staging[ii + jj*di_sph]) — byte-identical to the prior single-block
+            // linear copy when n_ctr_i == n_ctr_j == 1 (di_sph == nsi).
+            let di_sph = n_ctr_i * nsi;
+            for ci in 0..n_ctr_i {
+                for cj in 0..n_ctr_j {
+                    let base = (ci * n_ctr_j + cj) * block_len;
+                    let mut sph_tmp = vec![0.0_f64; nsi * nsj];
+                    cart_to_sph_1e(&cart_blocks[base..base + block_len], &mut sph_tmp, li, lj);
+                    for mj in 0..nsj {
+                        let jj = cj * nsj + mj;
+                        for mi in 0..nsi {
+                            let ii = ci * nsi + mi;
+                            let dst = ii + jj * di_sph;
+                            if dst < staging.len() {
+                                staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
+                            }
+                        }
+                    }
+                }
             }
         }
         Representation::Spinor => {
-            // Apply 2D cart-to-spinor sf transform directly into staging: &mut [F].
-            // cart_to_spinor_sf_2d is now generic over F: CintFloat (Task 2 PART B).
-            // Matches libcint c2s_sf_1e for int1e_ovlp_spinor, int1e_kin_spinor, int1e_nuc_spinor.
+            // Single-contraction spinor preserves the exact prior behavior.
+            // General contraction (nctr>1) is not wired for the spinor transform
+            // (and is not exercised by the non-relativistic callers); return an
+            // explicit error rather than silently truncating to the (0,0) block.
+            if n_ctr_i != 1 || n_ctr_j != 1 {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "spinor 1e with general contraction (nctr>1)".to_owned(),
+                });
+            }
+            // cart_blocks is exactly one nci*ncj block here — identical to the old
+            // cart_buf. Matches libcint c2s_sf_1e for int1e_*_spinor.
             let kappa_i = shell_i.kappa;
             let kappa_j = shell_j.kappa;
-            cart_to_spinor_sf_2d::<F>(staging, &cart_buf, li, kappa_i, lj, kappa_j)?;
+            cart_to_spinor_sf_2d::<F>(staging, &cart_blocks, li, kappa_i, lj, kappa_j)?;
         }
         Representation::Cart => {
-            // Copy Cartesian buffer to staging, casting each element to F.
-            let copy_len = staging.len().min(cart_buf.len());
-            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
-                *dst = F::from_f64_lossy(src);
+            // Copy each contraction block into the contraction-major AO grid. The
+            // Cartesian block is row-major [nci, ncj] (bra outer); staging is laid
+            // out row-major (staging[ii*dj_cart + jj]) — byte-identical to the prior
+            // single-block linear copy when n_ctr_i == n_ctr_j == 1 (dj_cart == ncj).
+            let dj_cart = n_ctr_j * ncj;
+            for ci in 0..n_ctr_i {
+                for cj in 0..n_ctr_j {
+                    let base = (ci * n_ctr_j + cj) * block_len;
+                    let block = &cart_blocks[base..base + block_len];
+                    for ic in 0..nci {
+                        let ii = ci * nci + ic;
+                        for jc in 0..ncj {
+                            let jj = cj * ncj + jc;
+                            let dst = ii * dj_cart + jj;
+                            if dst < staging.len() {
+                                staging[dst] = F::from_f64_lossy(block[ic * ncj + jc]);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -909,5 +959,158 @@ mod tests {
             assert!(w[1] > 0.0, "weight w[1] should be positive for x={x}, got {}", w[1]);
             assert!(u[0] <= u[1], "roots should be ordered u[0] <= u[1] for x={x}");
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GC-1: general-contraction (nctr>1) parity for s-shells.
+    //
+    // A generally-contracted s shell (2 shared primitives, 2 contraction columns)
+    // paired with itself must produce the FULL 2x2 Gram matrix of the two contracted
+    // functions — not a single truncated value (the bug summed every (ci,cj) pair
+    // into the (0,0) slot, leaving 3/4 of the block zero). Parity reference: assemble
+    // the 2x2 from segmented (nctr=1) single-column launches. No vendored data.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_general_contraction_s_parity() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple};
+        use cintx_ops::resolver::Resolver;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        // Resolve the spherical-overlap operator id (int1e_ovlp_sph is its own
+        // manifest entry; OperatorId::new(0) is the cart variant). This exercises
+        // the kernel's Spheric branch — the path pyscf-rs uses for int1e_ovlp_sph.
+        let op = Resolver::descriptor_by_symbol("int1e_ovlp_sph")
+            .expect("int1e_ovlp_sph must be in the cintx manifest")
+            .id;
+
+        // Overlap block for a single shell pair, all shells on one center at origin.
+        let overlap = |sa: Arc<Shell>, sb: Arc<Shell>| -> Vec<f64> {
+            let n = sa.ao_per_shell() * sb.ao_per_shell();
+            let atoms: Arc<[Atom]> = Arc::from(
+                vec![Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap()]
+                    .into_boxed_slice(),
+            );
+            let all: Arc<[Arc<Shell>]> = Arc::from(vec![sa.clone(), sb.clone()].into_boxed_slice());
+            let basis = BasisSet::try_new(atoms, all).unwrap();
+            let shells = ShellTuple::try_from_iter([sa, sb]).unwrap();
+            let opts = ExecutionOptions::default();
+            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+            let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
+            plan.precision = PrecisionKind::F64;
+            let spec = SpecializationKey::from_plan(&plan);
+            let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
+            let mut staging = vec![0.0_f64; n];
+            launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging).unwrap();
+            staging
+        };
+
+        // Two shared primitives; two contraction columns. coefficients[pi*nctr + ci].
+        let exps: Arc<[f64]> = Arc::from(vec![3.5_f64, 0.8].into_boxed_slice());
+        let coeffs_gc: Arc<[f64]> = Arc::from(vec![0.6_f64, -0.3, 0.4, 0.9].into_boxed_slice());
+        let coeffs_c0: Arc<[f64]> = Arc::from(vec![0.6_f64, 0.4].into_boxed_slice());
+        let coeffs_c1: Arc<[f64]> = Arc::from(vec![-0.3_f64, 0.9].into_boxed_slice());
+
+        let gc = Arc::new(Shell::try_new(0, 0, 2, 2, 0, Representation::Spheric, exps.clone(), coeffs_gc).unwrap());
+        let c0 = Arc::new(Shell::try_new(0, 0, 2, 1, 0, Representation::Spheric, exps.clone(), coeffs_c0).unwrap());
+        let c1 = Arc::new(Shell::try_new(0, 0, 2, 1, 0, Representation::Spheric, exps, coeffs_c1).unwrap());
+
+        let block = overlap(gc.clone(), gc.clone());
+        assert_eq!(block.len(), 4, "gc s nctr=2 self-overlap must be a 2x2 block, got {}", block.len());
+
+        let s00 = overlap(c0.clone(), c0.clone())[0];
+        let s01 = overlap(c0.clone(), c1.clone())[0];
+        let s11 = overlap(c1.clone(), c1.clone())[0];
+
+        // Contraction-major, bra-fastest (di_sph = 2, nsi = 1): block[ci + cj*2].
+        assert!((block[0] - s00).abs() < 1e-12, "S[0,0] {} vs {}", block[0], s00);
+        assert!((block[2] - s01).abs() < 1e-12, "S[0,1] {} vs {}", block[2], s01);
+        assert!((block[1] - s01).abs() < 1e-12, "S[1,0] {} vs {}", block[1], s01);
+        assert!((block[3] - s11).abs() < 1e-12, "S[1,1] {} vs {}", block[3], s11);
+        assert!(block[0] > 0.0 && block[3] > 0.0, "diagonal must be positive (PSD)");
+        assert!((block[1] - block[2]).abs() < 1e-12, "block must be symmetric");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GC-2: general-contraction parity for p-shells, DISPLACED centers.
+    //
+    // This is the test that disambiguates contraction-MAJOR (AO = ctr*(2l+1) + m,
+    // libcint/PySCF order) from contraction-minor for l>0. A gc p-shell (nctr=2)
+    // on atom 0 paired with a plain s-shell on atom 1 yields a 6x1 block; rows
+    // [0..3) must equal the (p_c0 | s) segmented overlap and rows [3..6) the
+    // (p_c1 | s) overlap.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_general_contraction_p_parity_contraction_major() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple};
+        use cintx_ops::resolver::Resolver;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        // Resolve the spherical-overlap operator id (int1e_ovlp_sph is its own
+        // manifest entry; OperatorId::new(0) is the cart variant). This exercises
+        // the kernel's Spheric branch — the path pyscf-rs uses for int1e_ovlp_sph.
+        let op = Resolver::descriptor_by_symbol("int1e_ovlp_sph")
+            .expect("int1e_ovlp_sph must be in the cintx manifest")
+            .id;
+
+        // bra shell on atom 0 (origin), ket shell on atom 1 (displaced along x).
+        let overlap = |bra: Arc<Shell>, ket: Arc<Shell>| -> Vec<f64> {
+            let n = bra.ao_per_shell() * ket.ao_per_shell();
+            let atoms: Arc<[Atom]> = Arc::from(
+                vec![
+                    Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap(),
+                    Atom::try_new(1, [1.3, 0.0, 0.0], NuclearModel::Point, None, None).unwrap(),
+                ]
+                .into_boxed_slice(),
+            );
+            let all: Arc<[Arc<Shell>]> = Arc::from(vec![bra.clone(), ket.clone()].into_boxed_slice());
+            let basis = BasisSet::try_new(atoms, all).unwrap();
+            let shells = ShellTuple::try_from_iter([bra, ket]).unwrap();
+            let opts = ExecutionOptions::default();
+            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+            let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
+            plan.precision = PrecisionKind::F64;
+            let spec = SpecializationKey::from_plan(&plan);
+            let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
+            let mut staging = vec![0.0_f64; n];
+            launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging).unwrap();
+            staging
+        };
+
+        let p_exps: Arc<[f64]> = Arc::from(vec![1.2_f64, 0.4].into_boxed_slice());
+        // coefficients[pi*nctr + ci]: ctr0 = (0.7, 0.3), ctr1 = (0.2, 0.8)
+        let p_gc_co: Arc<[f64]> = Arc::from(vec![0.7_f64, 0.2, 0.3, 0.8].into_boxed_slice());
+        let p_c0_co: Arc<[f64]> = Arc::from(vec![0.7_f64, 0.3].into_boxed_slice());
+        let p_c1_co: Arc<[f64]> = Arc::from(vec![0.2_f64, 0.8].into_boxed_slice());
+
+        let p_gc = Arc::new(Shell::try_new(0, 1, 2, 2, 0, Representation::Spheric, p_exps.clone(), p_gc_co).unwrap());
+        let p_c0 = Arc::new(Shell::try_new(0, 1, 2, 1, 0, Representation::Spheric, p_exps.clone(), p_c0_co).unwrap());
+        let p_c1 = Arc::new(Shell::try_new(0, 1, 2, 1, 0, Representation::Spheric, p_exps, p_c1_co).unwrap());
+        let s_ket = Arc::new(Shell::try_new(
+            1, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![0.9_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+        ).unwrap());
+
+        let block = overlap(p_gc, s_ket.clone()); // 6x1: di_sph=2*3=6, dj=1
+        assert_eq!(block.len(), 6, "gc p nctr=2 vs s must be a 6x1 block, got {}", block.len());
+
+        let seg0 = overlap(p_c0, s_ket.clone()); // 3 components of contraction 0
+        let seg1 = overlap(p_c1, s_ket);         // 3 components of contraction 1
+        assert_eq!(seg0.len(), 3);
+        assert_eq!(seg1.len(), 3);
+
+        // Contraction-major: rows [0..3) = contraction 0, rows [3..6) = contraction 1.
+        for m in 0..3 {
+            assert!((block[m] - seg0[m]).abs() < 1e-12, "ctr0 comp {m}: {} vs {}", block[m], seg0[m]);
+            assert!((block[3 + m] - seg1[m]).abs() < 1e-12, "ctr1 comp {m}: {} vs {}", block[3 + m], seg1[m]);
+        }
+        // The gc block must NOT be truncated: contraction-1 rows are non-zero.
+        assert!(block[3..6].iter().any(|v| v.abs() > 1e-12), "contraction-1 rows must be populated, not truncated to zero");
     }
 }
