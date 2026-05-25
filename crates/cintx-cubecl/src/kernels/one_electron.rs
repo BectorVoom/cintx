@@ -14,7 +14,7 @@
 use crate::backend::ResolvedBackend;
 use crate::math::obara_saika::{hrr_step_host, vrr_step_host};
 use crate::math::pdata::compute_pdata_host;
-use crate::math::rys::{rys_root1_host, rys_root2_host};
+use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_2d;
@@ -304,14 +304,12 @@ fn contract_nuclear(
         let x_boys =
             pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
 
-        // Get Rys roots and weights
-        let (u_arr, w_arr) = if nrys_roots == 1 {
-            let (u0, w0) = rys_root1_host(x_boys);
-            ([u0, 0.0], [w0, 0.0])
-        } else {
-            let (u, w) = rys_root2_host(x_boys);
-            (u, w)
-        };
+        // Get Rys roots and weights. Dispatch through the general nroots=1..5
+        // host quadrature so high-l nuclear attraction (li+lj>=4 → nrys_roots>=3,
+        // e.g. d|d on cc-pVDZ heavy atoms) is supported, not just the old
+        // hardcoded 2-root branch (DI-02-11-CINTX-NUC-HIGHL). Bit-identical for
+        // nrys_roots∈{1,2} (same rys_root1/2_host); rys_roots_host panics >5.
+        let (u_arr, w_arr) = rys_roots_host(nrys_roots as usize, x_boys);
 
         // Nuclear prefactor: fac1 = 2*PI * (-Z_C) * fac / zeta
         // Source: g1e.c line 218-221
