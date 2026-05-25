@@ -618,7 +618,7 @@ fn launch_two_electron_typed<F: CintFloat>(
     let nsk = nsph(lk);
     let nsl = nsph(ll);
 
-    let mut cart_buf = vec![0.0_f64; nfi * nfj * nfk * nfl];
+    let block_len = nfi * nfj * nfk * nfl;
 
     // Pitfall 2: all four common_fac_sp factors are required for 2e.
     let sp_factor = common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk) * common_fac_sp(ll);
@@ -633,6 +633,20 @@ fn launch_two_electron_typed<F: CintFloat>(
     let n_ctr_j = shell_j.nctr as usize;
     let n_ctr_k = shell_k.nctr as usize;
     let n_ctr_l = shell_l.nctr as usize;
+
+    // Per-contraction-quad Cartesian accumulators (mirrors the one_electron.rs
+    // general-contraction fix, cintx 9af2164). A generally-contracted shell
+    // (nctr>1 — e.g. cc-pVDZ's 9s→3s / 4p→2p blocks) emits ONE
+    // nfi*nfj*nfk*nfl Cartesian block PER (ci,cj,ck,cl) contraction quad. The
+    // contraction index is the OUTER (slow) AO index within each shell axis and
+    // the angular component the inner index — libcint "contraction-major" AO
+    // ordering. For the segmented case (all nctr==1) this is a single block,
+    // byte-identical to the prior single-buffer path. Block (ci,cj,ck,cl) starts
+    // at flat offset (((ci*n_ctr_j + cj)*n_ctr_k + ck)*n_ctr_l + cl) * block_len.
+    // The previous code summed every contraction quad into ONE buffer and
+    // scattered it as if nctr==1, leaving the inner-contraction AO blocks zero
+    // (near-zero ERIs → SCF divergence for cc-pVDZ etc.).
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * block_len];
 
     for pi in 0..n_prim_i {
         let ai = shell_i.exponents[pi];
@@ -662,8 +676,11 @@ fn launch_two_electron_typed<F: CintFloat>(
                                 for cl in 0..n_ctr_l {
                                     let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
                                     let weight = coeff_i * coeff_j * coeff_k * coeff_l;
-                                    for idx in 0..cart_buf.len() {
-                                        cart_buf[idx] += weight * prim_cart[idx];
+                                    let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l
+                                        + cl)
+                                        * block_len;
+                                    for idx in 0..block_len {
+                                        cart_blocks[base + idx] += weight * prim_cart[idx];
                                     }
                                 }
                             }
@@ -678,30 +695,102 @@ fn launch_two_electron_typed<F: CintFloat>(
     // final values cast to F via F::from_f64_lossy.
     match plan.representation {
         Representation::Spheric => {
-            let sph = cart_to_sph_2e(&cart_buf, li, lj, lk, ll);
-            let sph_size = nsi * nsj * nsk * nsl;
-            let copy_len = staging.len().min(sph.len()).min(sph_size);
-            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph[..copy_len].iter()) {
-                *dst = F::from_f64_lossy(src);
+            // Per-contraction-quad cart→sph, scattered into the contraction-major
+            // AO grid. di = n_ctr_i * nsi = shell_i.ao_per_shell(). cart_to_sph_2e
+            // emits an i-fastest [nsl][nsk][nsj][nsi] block
+            // (sph[mi + nsi*(mj + nsj*(mk + nsk*ml))]); the downstream stitch
+            // (pyscf-gto evaluate_arity4) reads F-order i-fastest with AO index
+            // ci*nsi+mi, so dst = ii + di*(jj + dj*(kk + dk*ll)). For all-nctr==1
+            // (di==nsi, …) this is byte-identical to the prior linear copy.
+            let di = n_ctr_i * nsi;
+            let dj = n_ctr_j * nsj;
+            let dk = n_ctr_k * nsk;
+            for ci in 0..n_ctr_i {
+                for cj in 0..n_ctr_j {
+                    for ck in 0..n_ctr_k {
+                        for cl in 0..n_ctr_l {
+                            let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                * block_len;
+                            let sph =
+                                cart_to_sph_2e(&cart_blocks[base..base + block_len], li, lj, lk, ll);
+                            for ml in 0..nsl {
+                                let lidx = cl * nsl + ml;
+                                for mk in 0..nsk {
+                                    let kidx = ck * nsk + mk;
+                                    for mj in 0..nsj {
+                                        let jidx = cj * nsj + mj;
+                                        for mi in 0..nsi {
+                                            let iidx = ci * nsi + mi;
+                                            let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
+                                            let dst = iidx + di * (jidx + dj * (kidx + dk * lidx));
+                                            if dst < staging.len() {
+                                                staging[dst] = F::from_f64_lossy(sph[src]);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         Representation::Spinor => {
-            // Apply 4D cart-to-spinor sf transform directly into staging: &mut [F].
-            // cart_to_spinor_sf_4d is now generic over F: CintFloat (Task 2 PART B).
+            // Single-contraction spinor preserves the exact prior behavior. General
+            // contraction (nctr>1) is not wired for the 4D spinor transform (and is
+            // not exercised by the non-relativistic callers); return an explicit
+            // error rather than silently truncating to the (0,0,0,0) block.
+            if n_ctr_i != 1 || n_ctr_j != 1 || n_ctr_k != 1 || n_ctr_l != 1 {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "spinor 2e with general contraction (nctr>1)".to_owned(),
+                });
+            }
+            // cart_blocks is exactly one nfi*nfj*nfk*nfl block here — identical to
+            // the old cart_buf.
             let kappa_i = shell_i.kappa;
             let kappa_j = shell_j.kappa;
             let kappa_k = shell_k.kappa;
             let kappa_l = shell_l.kappa;
             cart_to_spinor_sf_4d::<F>(
-                staging, &cart_buf,
+                staging, &cart_blocks,
                 li, kappa_i, lj, kappa_j,
                 lk, kappa_k, ll, kappa_l,
             )?;
         }
         Representation::Cart => {
-            let copy_len = staging.len().min(cart_buf.len());
-            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
-                *dst = F::from_f64_lossy(src);
+            // Each contraction block is i-fastest [nfl][nfk][nfj][nfi]; scatter it
+            // into the contraction-major AO grid (di = n_ctr_i*nfi) i-fastest to
+            // match the Cart stitch. For all-nctr==1 this is the prior linear copy.
+            let di = n_ctr_i * nfi;
+            let dj = n_ctr_j * nfj;
+            let dk = n_ctr_k * nfk;
+            for ci in 0..n_ctr_i {
+                for cj in 0..n_ctr_j {
+                    for ck in 0..n_ctr_k {
+                        for cl in 0..n_ctr_l {
+                            let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                * block_len;
+                            let block = &cart_blocks[base..base + block_len];
+                            for lc in 0..nfl {
+                                let lidx = cl * nfl + lc;
+                                for kc in 0..nfk {
+                                    let kidx = ck * nfk + kc;
+                                    for jc in 0..nfj {
+                                        let jidx = cj * nfj + jc;
+                                        for ic in 0..nfi {
+                                            let iidx = ci * nfi + ic;
+                                            let src = ic + nfi * (jc + nfj * (kc + nfk * lc));
+                                            let dst = iidx + di * (jidx + dj * (kidx + dk * lidx));
+                                            if dst < staging.len() {
+                                                staging[dst] = F::from_f64_lossy(block[src]);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
