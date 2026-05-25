@@ -14,6 +14,7 @@ mod rys_cpu_tests {
     use cubecl::cpu::CpuRuntime;
     use cubecl::prelude::*;
     use cintx_cubecl::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+    use cintx_cubecl::math::rys::{rys_root3_host, rys_root4_host, rys_root5_host};
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Host-side reference evaluators (pure Rust, not #[cube])
@@ -340,12 +341,15 @@ mod rys_cpu_tests {
         }
     }
 
-    /// Test nroots=3 in asymptotic regime.
+    /// Test nroots=3 in the true asymptotic regime (x ≥ 47 — the libcint else branch).
     /// Source: rys_roots.c rys_root3() last else branch (large-x asymptotic).
+    /// (Was [10, 25, 40] — below the x≥47 asymptotic cutoff; those x now correctly
+    /// use the intermediate-x polynomial branches and are covered by the host-parity
+    /// test `rys_cpu_intermediate_x_matches_host`.)
     #[test]
     fn rys_nroots3_range() {
         let atol = 1.0e-12_f64;
-        for &x in &[10.0_f64, 25.0, 40.0] {
+        for &x in &[50.0_f64, 60.0, 100.0] {
             let (roots, weights) = eval_rys_cpu(3, x);
             let (ref_roots, ref_weights) = ref_rys_root3_asym(x);
             for i in 0..3 {
@@ -357,12 +361,15 @@ mod rys_cpu_tests {
         }
     }
 
-    /// Test nroots=5 in asymptotic regime.
+    /// Test nroots=5 in the true asymptotic regime (x ≥ 59 — the libcint else branch).
     /// Source: rys_roots.c rys_root5() last else branch (lines ~1604-1616).
+    /// (Was [10, 30, 50] — below the x≥59 asymptotic cutoff; those x now correctly
+    /// use the intermediate-x polynomial branches and are covered by the host-parity
+    /// test `rys_cpu_intermediate_x_matches_host`.)
     #[test]
     fn rys_nroots5_range() {
         let atol = 1.0e-12_f64;
-        for &x in &[10.0_f64, 30.0, 50.0] {
+        for &x in &[60.0_f64, 80.0, 100.0] {
             let (roots, weights) = eval_rys_cpu(5, x);
             let (ref_roots, ref_weights) = ref_rys_root5_asym(x);
             for i in 0..5 {
@@ -434,4 +441,44 @@ mod rys_cpu_tests {
             }
         }
     }
+
+    /// The #[cube] rys_root3/4/5 kernels (executed on the CubeCL CPU backend) must
+    /// match the validated host ports across the previously-broken intermediate-x
+    /// band (2 ≤ x < the per-nroots asymptotic cutoff). The host functions are
+    /// byte-validated against libcint's rys_roots.c, so `#[cube] == host` proves the
+    /// GPU kernels' intermediate-x branches are faithful. Guards the regression where
+    /// the kernels fell to the large-x asymptotic far too early and produced wrong
+    /// (even negative) roots for d-shell ERIs. nroots=4 has no other range test, so
+    /// this is its only CPU-backend numeric check.
+    #[test]
+    fn rys_cpu_intermediate_x_matches_host() {
+        let atol = 1.0e-10_f64;
+        for &x in &[2.0_f64, 3.0, 5.0, 7.5, 12.0, 18.0, 25.0, 35.0, 45.0] {
+            let (cr, cw) = eval_rys_cpu(3, x);
+            let (hr, hw) = rys_root3_host::<f64>(x);
+            for i in 0..3 {
+                assert!((cr[i] - hr[i]).abs() <= atol,
+                    "root3 #[cube] vs host x={x} root[{i}] cube={} host={}", cr[i], hr[i]);
+                assert!((cw[i] - hw[i]).abs() <= atol,
+                    "root3 #[cube] vs host x={x} weight[{i}] cube={} host={}", cw[i], hw[i]);
+            }
+            let (cr, cw) = eval_rys_cpu(4, x);
+            let (hr, hw) = rys_root4_host::<f64>(x);
+            for i in 0..4 {
+                assert!((cr[i] - hr[i]).abs() <= atol,
+                    "root4 #[cube] vs host x={x} root[{i}] cube={} host={}", cr[i], hr[i]);
+                assert!((cw[i] - hw[i]).abs() <= atol,
+                    "root4 #[cube] vs host x={x} weight[{i}] cube={} host={}", cw[i], hw[i]);
+            }
+            let (cr, cw) = eval_rys_cpu(5, x);
+            let (hr, hw) = rys_root5_host::<f64>(x);
+            for i in 0..5 {
+                assert!((cr[i] - hr[i]).abs() <= atol,
+                    "root5 #[cube] vs host x={x} root[{i}] cube={} host={}", cr[i], hr[i]);
+                assert!((cw[i] - hw[i]).abs() <= atol,
+                    "root5 #[cube] vs host x={x} weight[{i}] cube={} host={}", cw[i], hw[i]);
+            }
+        }
+    }
+
 }
