@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
-status: Milestone complete
-stopped_at: Completed 21-03-PLAN.md
-last_updated: "2026-05-26T13:17:54.200Z"
+milestone: v1.4
+milestone_name: Full libcint 6.1.3 Family Parity
+status: planning
+last_updated: "2026-05-26T13:40:51.371Z"
+last_activity: 2026-05-26
 progress:
-  total_phases: 11
-  completed_phases: 11
-  total_plans: 59
-  completed_plans: 59
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 21
-Plan: Not started
-Next: Execute Phase 21 — `/gsd:execute-phase 21`
-Resume: `.planning/phases/21-coulomb-gradient-intors/21-01-PLAN.md`
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-26 — Milestone v1.4 started
 
 ## Performance Metrics
 
