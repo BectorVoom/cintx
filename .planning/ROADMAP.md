@@ -404,7 +404,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 1)* — int2e_ip1 (Rys; also exposes `gout_ip1`/`F12Shape` as `pub(crate)` for Wave 4)
 
-- [ ] 21-05-PLAN.md — Wave 3: `int2e_ip1` — new gradient path in `two_electron.rs`: `build_2e_shape(li+1, lj, lk, ll)`, `fill_g_tensor_2e` + `rys_roots_host`, then `gout_ip1` (reused from `f12.rs`). Component-leading `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs`. Oracle vs `vendor_int2e_ip1` at atol=1e-12 for s/p/d. Confirm pyscf-gto's call path (raw vs safe / Phase 18) before committing the surface (Risk R6). [GRAD-07]
+- [x] 21-05-PLAN.md — Wave 3: `int2e_ip1` — new gradient path in `two_electron.rs`: `build_2e_shape(li+1, lj, lk, ll)`, `fill_g_tensor_2e` + `rys_roots_host`, then `gout_ip1` (reused from `f12.rs`). Component-leading `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs`. Oracle vs `vendor_int2e_ip1` at atol=1e-12 for s/p/d. Confirm pyscf-gto's call path (raw vs safe / Phase 18) before committing the surface (Risk R6). [GRAD-07]
 
 **Wave 4** *(blocked on Waves 1-3)* — int3c2e_ip1 repair + ECP gradient
 
