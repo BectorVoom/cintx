@@ -23,6 +23,16 @@
 - [x] **Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (issue #11 Task 1)** (completed 2026-05-20) - Implement Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and expose them through `SessionRequest` alongside ordinary one-electron operators. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate against libcint.
 - [x] **Phase 20: Generic Float Precision (f64/f32 Switch)** - Parameterize the cintx compute path (CubeCL kernels, shared `#[cube]` math, staging buffers, safe-API outputs) over a generic `F: Float` so callers pick f64 (default, byte-identity) or f32 (loose-tolerance, unlocks non-`SHADER_F64` GPUs) via `evaluate::<F>()`. Raw compat `env`/`atm`/`bas` and the C ABI shim stay f64. Milestone-sized cross-cutting refactor (~3,396 f64 sites, 8 crates) planned as a single phase per operator decision 2026-05-20. (8/8 plans executed; verification gaps_found 2026-05-21; gap-closure plans 20-09..20-11 added — PREC-02 Complex<F> + PREC-05 f32 multi-component/f12, see 20-VERIFICATION.md) (completed 2026-05-21)
 - [x] **Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`)** - Implement the 6 plain-Coulomb first-derivative integral families every HF/DFT/MP2/CCSD analytical gradient needs (`int2e_ip1`, `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc`, `int1e_iprinv`, `ECPscalar_iprinv`), byte-identical to libcint 6.1.3 under the oracle gate, and repair the registered-but-stubbed `int3c2e_ip1`. Adds the missing `PTR_RINV_ORIG` env slot. Un-gates pyscf_rs Phase 7's analytical-gradient numeric arms with zero pyscf_rs rework. (completed 2026-05-26)
+- [ ] **Phase 22: Gauge-Origin Env Slot (Gap A — `PTR_COMMON_ORIG`)** - Plumb the `PTR_COMMON_ORIG` gauge-origin env slot (env[1..3]) end-to-end on the `PTR_RINV_ORIG` precedent and add the non-zero gauge-origin oracle fixture that gates all moment + GIAO parity. (v1.4)
+- [ ] **Phase 23: Group 1 — Remaining 1st-Derivative Families (cart/sph)** - The 8 remaining first-derivative families (`int2e_ip2`, `int1e_ip*ip`, `int3c1e_ip1/iprinv`, `int2c2e_ip1/ip2`, `int3c2e_ip2`) at byte-identity, reusing the Phase-21 nabla/`gout_ip1` engine. (v1.4)
+- [ ] **Phase 24: Group 3 — Position / Multipole-Moment Integrals** - Dipole through hexadecapole moments (`int1e_r/rr/rrr/rrrr`, `r2/r4`, `z/zz`, `p4`, `rinv/drinv`, `irp`) plus `_origj` variants, gated on the non-zero gauge-origin fixture. (v1.4)
+- [ ] **Phase 25: Group 2 — Hessian & Higher-Order Derivatives** - 2nd/3rd/4th-order derivative families (`int1e_ipip*`, `int2c2e_ipip1`, `int3c2e_ipip1/ipip2`, the promoted 2e Hessian set, 4th-order families) at component_rank 9/27/81, with the Rys `nroots>=6` Wheeler fallback and fail-closed high-rank staging landing first. (v1.4)
+- [ ] **Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)** - Spin-free 1e+2e GIAO/CG families (purely imaginary, even in cart/sph) at byte-identity, introducing the complex-interleaved output capability. (v1.4)
+- [ ] **Phase 27: Spinor-Derivative Transform (Gap B1)** - `cart_to_spinor_sf_derivative_*` so `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity, closing the Phase-21 R5/D-03 deferral. (v1.4)
+- [ ] **Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)** - The 4-block (`gc_x/y/z/1`) spin-included spinor transform plus the σ·p G-tensor assembler, validated against a kappa-bearing relativistic fixture — the prerequisite for all σ-operator families. (v1.4)
+- [ ] **Phase 29: Group 4 — Relativistic Spin-Operator Integrals (spinor)** - The relativistic σ-operator families (`spsp`, `spnucsp`, `sprinvsp`, `srsr`, `sigma`, `sp`, 2e `spsp1/srsr1/ssp*/sps*/vsp*`) at spinor byte-identity via the Gap B2 `c2s_si` path. (v1.4)
+- [ ] **Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals (spinor)** - The relativistic-NMR GIAO×σ slice (`int1e_spg*`, `spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) at spinor byte-identity, completing the magnetic-property suite. (v1.4)
+- [ ] **Phase 31: Group 6 — Gauge / Breit–Gaunt 2e + Full-Parity Verification (apex)** - The Dirac–Coulomb–Breit 2e set (`int2e_gauge_r1/r2_*`, Gaunt `ssp/sps`) at spinor byte-identity AND the milestone-closing full-parity gate: every libcint 6.1.3 family `oracle_covered=true` with an empty unsupported-families list. (v1.4)
 
 ## Progress
 
@@ -49,6 +59,16 @@
 | Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 8/8 | Complete | 2026-05-20 |
 | Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 11/11 | Complete | 2026-05-21 |
 | Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`) | v1.3 | 0/8 | Planned | - |
+| Phase 22: Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG) | v1.4 | 0/0 | Not started | - |
+| Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 0/0 | Not started | - |
+| Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 0/0 | Not started | - |
+| Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 0/0 | Not started | - |
+| Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/0 | Not started | - |
+| Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 0/0 | Not started | - |
+| Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 0/0 | Not started | - |
+| Phase 29: Group 4 — Relativistic Spin-Operator Integrals | v1.4 | 0/0 | Not started | - |
+| Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals | v1.4 | 0/0 | Not started | - |
+| Phase 31: Group 6 — Gauge/Breit–Gaunt 2e + Full-Parity Verification | v1.4 | 0/0 | Not started | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -430,3 +450,183 @@ Plans:
   - The first-derivative machinery is generic and already exists: `gout_ip1` + `nabla1i_2e`/`nabla1j_2e`/`nabla1k_2e` in `crates/cintx-cubecl/src/kernels/f12.rs:590-785` contain zero F12-specific logic and implement the standard libcint `∂/∂A χ_l = -2α·χ_{l+1} + l·χ_{l-1}` identity — reused verbatim for the plain-Coulomb families.
   - Consumer / driver: pyscf_rs Phase 7 (Gradients + Geomopt); see pyscf_rs `.planning/phases/07-gradients-geomopt/07-RESEARCH.md` §"Gradient-Integral Availability Matrix".
   - Wave 2 and the raw-path of Wave 3 are independent of Phase 18; only the `int2e_ip1` safe-API arm is Phase-18-coupled.
+
+## v1.4 Milestone: Full libcint 6.1.3 Family Parity
+
+The ten v1.4 phases (22–31) add the ~140 remaining libcint 6.1.3 integral families
+to byte-identity at atol=1e-12 under the vendor-gated oracle (`--features cpu` +
+`CINTX_ORACLE_BUILD_VENDOR=1`), reaching complete libcint API parity. They decompose
+into 6 family groups plus the foundational env-slot, complex-output, and spinor-transform
+prerequisites those groups depend on. Source: `.planning/research/SUMMARY-v1.4.md`,
+`ARCHITECTURE-v1.4.md`, `PITFALLS-v1.4.md`.
+
+**Per-family surface scope (v1.4 decision):** each family is
+`manifest row (component_rank) → RawApiId const → kernel → vendor FFI (vendor_int*)
++ byte-identity oracle parity test → flip oracle_covered`. The C ABI shim
+(`cintx-capi`) enum variants and the legacy `cint*` wrappers (`cintx-compat/legacy.rs`)
+are **NOT** added for v1.4 families — the oracle byte-identity gate exercises the raw
+`eval_raw` + vendor-FFI path only. The inbound vendor FFI is kept (it is the libcint
+reference the byte-identity test compares against). No success criterion below requires
+capi or legacy-wrapper surfaces.
+
+**Ordering rationale (three dependency chains):**
+1. **Gap A (FND-01) first** — cheap, isolated, unblocks two groups (moments + GIAO);
+   the non-zero gauge-origin fixture it creates is the correctness gate for both.
+2. **Real cart/sph work before spinor foundations** — Groups 1, 2, 3, and spin-free
+   Group 5 deliver the bulk of the non-relativistic derivative + property surface
+   before the expensive spinor foundations (Gap B1/B2) are needed.
+3. **σ foundations (FND-04, FND-05) before σ families** — the `c2s_si` 4-block
+   transform must pass a kappa-bearing fixture before any Group 4/6/GIAO×σ family is
+   registered `oracle_covered`; eager registration on the scalar `cart_to_spinor_sf`
+   transform produces silently-wrong spinor output (Pitfall 2).
+
+Hard ordering constraints honored: σ families (Group 4, GIAO×σ, Group 6) come after
+FND-05; moments + GIAO come after FND-01; high-l families (Group 2/4/6 high-l quartets)
+depend on FND-02 (Wheeler nroots≥6).
+
+### Phase 22: Gauge-Origin Env Slot (Gap A — `PTR_COMMON_ORIG`)
+
+**Goal**: The `PTR_COMMON_ORIG` gauge-origin env slot (`env[1..3]`) is read end-to-end through the `eval_raw` → planner → kernel path on the Phase-21 `PTR_RINV_ORIG` precedent, and a non-zero gauge-origin oracle fixture exists so that every downstream moment and GIAO parity test is gated on a value that is multiplied by a *non-zero* origin (not the trivially-passing zero origin of H2O/STO-3G).
+**Depends on**: Phase 21 (the `PTR_RINV_ORIG` env-slot block this is modeled on, `raw.rs:599-616`)
+**Requirements**: FND-01
+**Success Criteria** (what must be TRUE):
+
+  1. `OperatorEnvParams` carries a new `common_orig: Option<[f64;3]>` field and `raw.rs::eval_raw` reads `env[PTR_COMMON_ORIG=1..3]` into it via a read block that mirrors the `PTR_RINV_ORIG` block; an env round-trip unit test passes (FND-01).
+  2. A `with_common_origin`-style setter is exposed on the safe-API options, and the validator gates families that require the slot (a family that reads the common origin without one set is rejected with a typed error, mirroring `validate_rinv_orig_env_params`); a validator-rejection unit test passes (FND-01).
+  3. A non-zero gauge-origin oracle fixture (H2O/STO-3G with `env[PTR_COMMON_ORIG] != 0`) is added to `fixtures.rs` and is the declared parity gate for Phases 24 (moments) and 26/30 (GIAO) — a zero-origin-only test is documented as a vacuous gate for this slot (FND-01).
+
+**Plans**: TBD
+
+### Phase 23: Group 1 — Remaining 1st-Derivative Families (cart/sph)
+
+**Goal**: The 8 remaining plain first-derivative families (`int2e_ip2`, `int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip`, `int3c1e_ip1`, `int3c1e_iprinv`, `int2c2e_ip1`, `int2c2e_ip2`, `int3c2e_ip2`) reach byte-identity (cart + sph, component_rank 3) by extending the Phase-21 nabla/`gout_ip1` engine to the ket-side, both-side, and remaining-center derivatives — zero new foundations.
+**Depends on**: Phase 21 (the `gout_ip1` + `nabla1i/j/k` engine in `f12.rs:590-785`, reused verbatim)
+**Requirements**: DRV1-01, DRV1-02, DRV1-03, DRV1-04, DRV1-05
+**Success Criteria** (what must be TRUE):
+
+  1. `int2e_ip2` (arity-4, ∇ on the ket bra-center) matches vendored libcint 6.1.3 at atol=1e-12 (cart + sph) under the vendor gate, with element-for-element byte-identity confirming the component-leading F-order layout (DRV1-01).
+  2. `int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip` (∇ on both bra and ket, rank 9) each match at atol=1e-12 (cart + sph) (DRV1-02).
+  3. `int3c1e_ip1` and `int3c1e_iprinv` (the `iprinv` variant reusing the already-plumbed `PTR_RINV_ORIG`) match at atol=1e-12 (cart + sph) (DRV1-03).
+  4. `int2c2e_ip1` and `int2c2e_ip2` match at atol=1e-12 (cart + sph) (DRV1-04).
+  5. `int3c2e_ip2` matches at atol=1e-12 (cart + sph) (DRV1-05).
+  6. Each family is registered with its `component_rank`, dispatches through `eval_raw`, has a dedicated `vendor_*` parity test executing under both `--features cpu` and `CINTX_ORACLE_BUILD_VENDOR=1` (`running N>0 tests`), and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+
+**Plans**: TBD
+
+### Phase 24: Group 3 — Position / Multipole-Moment Integrals
+
+**Goal**: The full position/multipole-moment family set (`int1e_r/rr/rrr/rrrr`, `int1e_r2/r4`, `int1e_z/zz`, `int1e_p4`, plain `int1e_rinv`, `int1e_drinv`, `int1e_irp`, and the `_origj` variants) reaches byte-identity (cart + sph) on the position-operator G-tensor, with every `r`-operator family reading the gauge origin and validated against the non-zero gauge-origin fixture — not trivially-passing at zero origin.
+**Depends on**: Phase 22 (the `PTR_COMMON_ORIG` slot + gauge-origin fixture; libcint's `int1e_r` computes `drj = rj - env[PTR_COMMON_ORIG]`, so even plain moments read it). Can run in parallel with Phase 23.
+**Requirements**: MOM-01, MOM-02, MOM-03, MOM-04
+**Success Criteria** (what must be TRUE):
+
+  1. Dipole `int1e_r` (and `int1e_r_origj`) match at atol=1e-12 against the **non-zero** gauge-origin fixture (cart + sph), with the angular-momentum headroom raised on the **ket** (`ng[1]`), not the bra — a regression confirms the result is not transposed (MOM-01).
+  2. `int1e_rr`, `int1e_r2`, `int1e_z`, `int1e_zz` and their `_origj` variants match at atol=1e-12 (cart + sph), with the `rr` Cartesian component order copied from the libcint gout index map (MOM-02).
+  3. `int1e_rrr`, `int1e_rrrr`, `int1e_r4` (octupole / hexadecapole, ket headroom up to `ng[1]=4`, rank up to 81) match at atol=1e-12 (cart + sph) (MOM-03).
+  4. `int1e_p4`, `int1e_drinv`, plain `int1e_rinv`, `int1e_irp` match at atol=1e-12 (cart + sph) (MOM-04).
+  5. Each family is registered with its `component_rank`, dispatches through `eval_raw`, has a dedicated `vendor_*` parity test executing under both flags, and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+
+**Plans**: TBD
+
+### Phase 25: Group 2 — Hessian & Higher-Order Derivatives
+
+**Goal**: The 2nd/3rd/4th-order derivative families (`int1e_ipip*`, the 2e Hessian set promoted from `unstable`, `int2c2e_ipip1`, `int3c2e_ipip1/ipip2`, the 4th-order `ipipip*` families) reach byte-identity (cart + sph) at component_rank 9/27/81, after the fail-closed high-rank staging cleanup lands and the Rys `nroots>=6` Wheeler fallback removes the high-angular-momentum ceiling so no family returns `UnsupportedApi` purely due to `nroots>5`.
+**Depends on**: Phase 23 (the Group-1 first-order engine this composes to 2nd+ order). Phase 24 (the ket-headroom plumbing for multi-center elevation).
+**Requirements**: HESS-01, HESS-02, HESS-03, HESS-04, FND-02, FND-06
+**Success Criteria** (what must be TRUE):
+
+  1. The Rys `nroots>=6` Wheeler-fallback is implemented and byte-identical vs vendored libcint for nroots 6..~13; the `executor.rs` `ang_momentum>4` gate is extended to admit g/h once the roots support them; no family returns `UnsupportedApi` purely because `nroots>5` (FND-02; closes `.planning/todos/pending/rys-nroots-ge6-wheeler-fallback.md`).
+  2. High-rank (component_rank 9/27/81) staging is **fail-closed**: an upfront `BufferTooSmall`-style size assertion replaces the `if dst < staging.len()` per-element scatter guards (no silent partial writes), and the chunk planner's OOM-safe-stop is re-validated with an OOM test at rank 81 (FND-06).
+  3. `int1e_ipipovlp`, `int1e_ipipnuc`, `int1e_ipipkin`, `int1e_ipiprinv` (rank 9) match at atol=1e-12 (cart + sph), with the per-family `ng[]` headroom tuple driving G-tensor sizing (bra +2) and element-for-element byte-identity confirming the ×9 component order (HESS-01).
+  4. The 2e Hessian set (`int2e_ipip1`, `int2e_ipvip1`, `int2e_ip1ip2`, `int2e_ipip1ipip2`) — promoted from `unstable::source::2e` and re-routed through the stable raw-api map — matches at atol=1e-12 (cart + sph) (HESS-02).
+  5. `int2c2e_ipip1`, `int3c2e_ipip1`, `int3c2e_ipip2` match at atol=1e-12 (cart + sph) (HESS-03).
+  6. 3rd/4th-order families (`int1e_ipipipnuc`, `int1e_ipipipiprinv`, and siblings) match at atol=1e-12 (cart + sph) with `ng[]`-driven bra+ket headroom (deriv4 raises bra +2 AND ket +2) (HESS-04).
+  7. `deriv3.c` and `deriv4.c` are added to the oracle `cc::Build` with suppl-header `extern` decls + allowlist entries; each family has a dedicated `vendor_*` test executing under both flags and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+
+**Plans**: TBD
+**Research flag**: The Wheeler `nroots>=6` fallback scope (FND-02) is a milestone-level decision that must be resolved before this phase's plans are finalized.
+
+### Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)
+
+**Goal**: The spin-free 1e and 2e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`, and the 2e `int2e_g1/gg1/ig1/giao_*`) — which are **purely imaginary even in cart/sph** — reach byte-identity through a per-family complex-interleaved output capability, validated against the non-zero gauge-origin fixture so the imaginary content actually lands (not silently zeroed).
+**Depends on**: Phase 22 (gauge origin — GIAO = gauge-including atomic orbital). Phases 23 + 24 (the nabla step + position-operator tensor the `r_gauge × ∇` factor combines).
+**Requirements**: GIAO-01, GIAO-02, FND-03
+**Success Criteria** (what must be TRUE):
+
+  1. Complex/imaginary output capability is real: `complex_interleaved` is set per-family from driver routing (not the representation string), `assert_flat_buffer_contract` fires on the flag (a complex cart/sph family staged as real-only FAILS the contract), staging is sized `2×ncomp×…`, and a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API without silent zeroing (FND-03).
+  2. The spin-free 1e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`) match at atol=1e-12 (cart + sph) via the complex path, with the vendor wrapper passing the same `2×`-interleaved buffer to the `double complex *out` libcint symbol (GIAO-01).
+  3. The 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12, with `autocode/intor4.c` added to the oracle `cc::Build` (GIAO-02).
+  4. Every family is gated on the non-zero gauge-origin fixture (a zero-origin GIAO test is doubly-trivial), has a dedicated `vendor_*` test executing under both flags, and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+
+**Plans**: TBD
+
+### Phase 27: Spinor-Derivative Transform (Gap B1)
+
+**Goal**: The spinor-derivative transform `cart_to_spinor_sf_derivative_*` is implemented in `c2spinor.rs` so that `int1e_ipovlp_spinor` and the sibling `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity at atol=1e-12 — closing the Phase-21 R5/D-03 deferral and unblocking the spinor variants of the Group 1/2/5 derivative families.
+**Depends on**: Phase 23 (the scalar first-derivative kernels whose 3-component Cartesian blocks the spinor transform folds per-component). Independent of Gap B2; can run in parallel with Phase 26.
+**Requirements**: FND-04
+**Success Criteria** (what must be TRUE):
+
+  1. `cart_to_spinor_sf_derivative_*` is added to `transform/c2spinor.rs`, applying the cart→spinor coupling per derivative component and folding the `[3, …]` component axis correctly (FND-04).
+  2. `int1e_ipovlp_spinor` moves from `UnsupportedApi` to byte-identity at atol=1e-12 against a spinor fixture, and the sibling `ip`-decorated spinor families that depend only on B1 are flipped `oracle_covered=true` (FND-04).
+  3. A dedicated `vendor_*` spinor parity test executes under both flags (`running N>0 tests`) and is not a `skipped` fixture; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+
+**Plans**: TBD
+**Research flag**: The spinor-derivative per-component axis-fold design is not yet exercised — a one-day design spike against `int1e_ipovlp_spinor` is recommended before this phase's plans are finalized.
+
+### Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)
+
+**Goal**: The spin-included spinor transform `cart_to_spinor_si_*` (the 4-block `gc_x/gc_y/gc_z/gc_1` input of libcint's `c2s_si_1e`, `cart2sph.c:4947`) and the companion σ·p G-tensor assembler module are implemented and validated against a kappa-bearing relativistic oracle fixture — the single largest architectural addition in v1.4 and the hard prerequisite for every σ-operator family (Groups 4, 6, and the GIAO×σ slice of 5).
+**Depends on**: Phase 12 (the scalar Clebsch-Gordan spinor transform this generalizes). Phase 27 is a sibling foundation (B1), not a hard dependency.
+**Requirements**: FND-05
+**Success Criteria** (what must be TRUE):
+
+  1. `cart_to_spinor_si_*` is added to `c2spinor.rs`, consuming the 4-block `gc_x/gc_y/gc_z/gc_1` G-tensor (the three Pauli-σ component blocks plus the scalar), with the block count asserted at the transform boundary; the σ-coupling matches libcint `c2s_si_1e` (FND-05).
+  2. A σ·p G-tensor assembler module (with the 12-component Pauli `gout` emitter) produces the four `gc_*` blocks the `si` transform reads in order (FND-05).
+  3. A kappa-bearing relativistic oracle fixture (a molecule with spinor shells — H2O/STO-3G has none) is added to `fixtures.rs`, and the `si` transform + σ·p assembler pass an end-to-end byte-identity check at atol=1e-12 against it (FND-05).
+  4. `oracle-covered-update` mechanically refuses to flip `oracle_covered=true` for a σ/spinor family whose only fixture was `skipped`; all σ families stay `UnsupportedApi` until this phase passes on the kappa fixture. No capi/legacy-wrapper surface is added.
+
+**Plans**: TBD
+**Research flag**: Confirm the `a_bra_cart2spinor_si` 4-block stride/ordering from `cart2sph.c:4947-4992` (a design spike) before this phase's plans are finalized.
+
+### Phase 29: Group 4 — Relativistic Spin-Operator Integrals (spinor)
+
+**Goal**: The relativistic spin-operator families (`int1e_spsp`, `int1e_spnucsp`, `int1e_sprinvsp`, `int1e_srsr`, `int1e_sr/srnucsr`, `int1e_sigma`, `int1e_sp`, and the 2e `int2e_spsp1/srsr1`, `int2e_ssp1ssp2/sps1sps2`, `int2e_vsp1*/spv1*`) reach byte-identity (spinor) through the Gap B2 `c2s_si` path and the new σ·p module — the Dirac/X2C/DKH and spin-orbit-coupling integrals no other Rust library currently provides.
+**Depends on**: Phase 28 (Gap B2 — the `c2s_si` 4-block transform + σ·p module; all Group 4 families gate on it). Phase 27 (Gap B1) for the `ip`-decorated spin gradients.
+**Requirements**: REL-01, REL-02, REL-03, REL-04
+**Success Criteria** (what must be TRUE):
+
+  1. `int1e_spsp`, `int1e_spnucsp`, `int1e_sprinvsp` match vendored libcint at atol=1e-12 (spinor) via the Gap B2 `c2s_si` path — routing through the scalar `cart_to_spinor_sf` is explicitly rejected (REL-01).
+  2. `int1e_srsr`, `int1e_sr`/`srnucsr`, `int1e_sigma`, `int1e_sp` match at atol=1e-12 (spinor), with the σ 12-component Pauli pattern copied verbatim from the libcint gout (REL-02).
+  3. `int2e_spsp1`, `int2e_srsr1` (and `spsp1spsp2`/`srsr1srsr2`) match at atol=1e-12 (spinor), with `autocode/intor4.c` wired into the oracle build for the spin 2e block (REL-03).
+  4. `int2e_ssp1ssp2`, `int2e_sps1sps2`, `int2e_vsp1*`, `int2e_spv1*` match at atol=1e-12 (spinor) (REL-04).
+  5. Every family is exercised on the kappa-bearing relativistic fixture (N>0 evaluated, non-skipped), has a dedicated `vendor_*` test under both flags, and is flipped `oracle_covered=true` only on the spinor representation (cart/sph σ intermediates are not over-claimed); `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+
+**Plans**: TBD
+
+### Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals (spinor)
+
+**Goal**: The relativistic-NMR GIAO×σ slice (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, the 2e `int2e_cg_sa10*`/`giao_sa10*`) reaches byte-identity (spinor) by combining the complex-interleaved output capability (Phase 26) with the σ·p `c2s_si` path (Phase 28) and the gauge origin (Phase 22) — completing the magnetic-property suite including relativistic corrections.
+**Depends on**: Phase 22 (gauge origin). Phase 28 (Gap B2 σ path). Phase 29 (the σ·p pattern reused directly). Phase 26 (complex output capability).
+**Requirements**: GIAO-03
+**Success Criteria** (what must be TRUE):
+
+  1. The GIAO×σ family set (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) matches vendored libcint at atol=1e-12 (spinor) via the Gap B2 σ path and the complex-interleaved output (GIAO-03).
+  2. Every family is gated on BOTH the non-zero gauge-origin fixture AND the kappa-bearing relativistic fixture, has a dedicated `vendor_*` test executing under both flags (non-skipped), and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+
+**Plans**: TBD
+
+### Phase 31: Group 6 — Gauge / Breit–Gaunt 2e + Full-Parity Verification (apex)
+
+**Goal**: The Dirac–Coulomb–Breit 2e family set (`int2e_gauge_r1_{ssp,sps}{ssp,sps}`, `int2e_gauge_r2_{ssp,sps}{ssp,sps}`, and the Gaunt `ssp/sps` families) reaches byte-identity (spinor) by per-block decomposition of the existing `launch_breit` driver on the Group-4 σ·p machinery — AND the milestone-closing full-parity gate is met: `manifest-audit` shows every libcint 6.1.3 family `oracle_covered=true` for its physical representations, the full vendor-gated oracle suite is green, and the unsupported-families list (vs `cint_funcs.h` + supplemental headers) is empty.
+**Depends on**: Phase 29 (Group 4 — the σ·p + Gaunt-style σ machinery). Phases 27/28 (Gaps B1/B2). Phase 14 (the existing `launch_breit`/`BreitShape` the gauge symbols decompose).
+**Requirements**: BREIT-01, BREIT-02, BREIT-03, PARITY-01
+**Success Criteria** (what must be TRUE):
+
+  1. `int2e_gauge_r1_{ssp,sps}{ssp,sps}` (4 symbols) match vendored libcint at atol=1e-12 (spinor), routing through `c2s_si_2e1i`/`c2s_si_2e2i` (verified `breit1.c:211`) with the complex `double complex *out` buffer sized `2×` (BREIT-01).
+  2. `int2e_gauge_r2_{ssp,sps}{ssp,sps}` (4 symbols) match at atol=1e-12 (spinor) (BREIT-02).
+  3. The Gaunt `ssp/sps` families match at atol=1e-12 (spinor), reusing the existing `launch_breit` decomposition, with `autocode/gaunt1.c` + `breit1.c` added to the oracle `cc::Build` and suppl-header `extern` decls (these symbols are absent from `cint_funcs.h`) (BREIT-03).
+  4. `manifest-audit` is green with EVERY libcint 6.1.3 family `oracle_covered=true` for its physical representations (cart/sph; spinor where physical, σ families spinor-only); the full vendor-gated oracle suite is green under both flags; and the "unsupported libcint families" list (vs `cint_funcs.h` + supplemental headers) is empty — full API parity is mechanically verifiable (PARITY-01).
+  5. No capi/legacy-wrapper surface is added for any Group 6 family; the byte-identity gate exercises the raw `eval_raw` + vendor-FFI path only.
+
+**Plans**: TBD

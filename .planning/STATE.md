@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Full libcint 6.1.3 Family Parity
 status: planning
-last_updated: "2026-05-26T13:40:51.371Z"
-last_activity: 2026-05-26
+last_updated: "2026-05-27T00:00:00.000Z"
+last_activity: 2026-05-27
 progress:
-  total_phases: 0
+  total_phases: 10
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,14 +20,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 21 — coulomb-gradient-intors
+**Current focus:** Phase 22 — Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG); first of the 10 v1.4 full-parity phases (22-31)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-05-26 — Milestone v1.4 started
+Phase: 22 — Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG)
+Plan: — (not yet planned)
+Status: Roadmapped — ready for /gsd:plan-phase 22
+Last activity: 2026-05-27 — v1.4 roadmap created (Phases 22-31); 30 requirements mapped
+
+**v1.4 phase sequence (dependency-ordered):**
+22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
+25 Group 2 Hessian (HESS, FND-02 Wheeler, FND-06 fail-closed) →
+26 Group 5 spin-free GIAO (GIAO-01/02, FND-03 complex) →
+27 Gap B1 spinor-derivative (FND-04) → 28 Gap B2 c2s_si + σ·p (FND-05) →
+29 Group 4 relativistic σ (REL) → 30 Group 5 GIAO×σ (GIAO-03) →
+31 Group 6 gauge/Breit-Gaunt + full-parity (BREIT, PARITY-01).
+
+Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 ## Performance Metrics
 

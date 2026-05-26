@@ -191,13 +191,44 @@
 | GRAD-08 | Phase 21 | Complete |
 | GRAD-09 | Phase 21 | Complete |
 | GRAD-10 | Phase 21 | Complete |
+| FND-01 | Phase 22 | Pending |
+| DRV1-01 | Phase 23 | Pending |
+| DRV1-02 | Phase 23 | Pending |
+| DRV1-03 | Phase 23 | Pending |
+| DRV1-04 | Phase 23 | Pending |
+| DRV1-05 | Phase 23 | Pending |
+| MOM-01 | Phase 24 | Pending |
+| MOM-02 | Phase 24 | Pending |
+| MOM-03 | Phase 24 | Pending |
+| MOM-04 | Phase 24 | Pending |
+| HESS-01 | Phase 25 | Pending |
+| HESS-02 | Phase 25 | Pending |
+| HESS-03 | Phase 25 | Pending |
+| HESS-04 | Phase 25 | Pending |
+| FND-02 | Phase 25 | Pending |
+| FND-06 | Phase 25 | Pending |
+| GIAO-01 | Phase 26 | Pending |
+| GIAO-02 | Phase 26 | Pending |
+| FND-03 | Phase 26 | Pending |
+| FND-04 | Phase 27 | Pending |
+| FND-05 | Phase 28 | Pending |
+| REL-01 | Phase 29 | Pending |
+| REL-02 | Phase 29 | Pending |
+| REL-03 | Phase 29 | Pending |
+| REL-04 | Phase 29 | Pending |
+| GIAO-03 | Phase 30 | Pending |
+| BREIT-01 | Phase 31 | Pending |
+| BREIT-02 | Phase 31 | Pending |
+| BREIT-03 | Phase 31 | Pending |
+| PARITY-01 | Phase 31 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 27 total (Phases 11-15)
 - Complete: 17/27
 - Pending: 10/27
 - v1.3 gradient requirements: 10 total (Phase 21) — all Pending (planned 2026-05-26)
+- v1.4 full-parity requirements: 30 total (FND-01..06, DRV1-01..05, HESS-01..04, MOM-01..04, REL-01..04, GIAO-01..03, BREIT-01..03, PARITY-01) — mapped to Phases 22-31, all Pending (roadmapped 2026-05-27)
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-04-05 after v1.1 milestone complete — v1.0/v1.1 requirements archived to milestones/*
+*Last updated: 2026-05-27 — v1.4 roadmap created (Phases 22-31); 30 v1.4 requirements mapped to traceability*
