@@ -22,7 +22,7 @@
 - [ ] **Phase 18: SessionRequest Arity ≥3 Dispatch (issue #11 Task 2)** - Extend `SessionRequest::evaluate` to dispatch arity-3 and arity-4 shell tuples (covering `int2e_*`, `int3c1e*`, `int3c2e_*`, `int4c1e_*`) through the existing operator catalog with F-order AO layout matching libcint memory layout.
 - [x] **Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (issue #11 Task 1)** (completed 2026-05-20) - Implement Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and expose them through `SessionRequest` alongside ordinary one-electron operators. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate against libcint.
 - [x] **Phase 20: Generic Float Precision (f64/f32 Switch)** - Parameterize the cintx compute path (CubeCL kernels, shared `#[cube]` math, staging buffers, safe-API outputs) over a generic `F: Float` so callers pick f64 (default, byte-identity) or f32 (loose-tolerance, unlocks non-`SHADER_F64` GPUs) via `evaluate::<F>()`. Raw compat `env`/`atm`/`bas` and the C ABI shim stay f64. Milestone-sized cross-cutting refactor (~3,396 f64 sites, 8 crates) planned as a single phase per operator decision 2026-05-20. (8/8 plans executed; verification gaps_found 2026-05-21; gap-closure plans 20-09..20-11 added — PREC-02 Complex<F> + PREC-05 f32 multi-component/f12, see 20-VERIFICATION.md) (completed 2026-05-21)
-- [ ] **Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`)** - Implement the 6 plain-Coulomb first-derivative integral families every HF/DFT/MP2/CCSD analytical gradient needs (`int2e_ip1`, `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc`, `int1e_iprinv`, `ECPscalar_iprinv`), byte-identical to libcint 6.1.3 under the oracle gate, and repair the registered-but-stubbed `int3c2e_ip1`. Adds the missing `PTR_RINV_ORIG` env slot. Un-gates pyscf_rs Phase 7's analytical-gradient numeric arms with zero pyscf_rs rework.
+- [x] **Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`)** - Implement the 6 plain-Coulomb first-derivative integral families every HF/DFT/MP2/CCSD analytical gradient needs (`int2e_ip1`, `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc`, `int1e_iprinv`, `ECPscalar_iprinv`), byte-identical to libcint 6.1.3 under the oracle gate, and repair the registered-but-stubbed `int3c2e_ip1`. Adds the missing `PTR_RINV_ORIG` env slot. Un-gates pyscf_rs Phase 7's analytical-gradient numeric arms with zero pyscf_rs rework. (completed 2026-05-26)
 
 ## Progress
 
@@ -413,7 +413,7 @@ Plans:
 
 **Wave 5** *(blocked on Waves 1-4)* — verification + close-out
 
-- [ ] 21-08-PLAN.md — Wave 5: phase verification + the pyscf_rs hand-off note (which Phase 7 `workflow_dispatch` arms un-gate, `int3c2e_ip1` re-gating history); validate component-leading F-order vs vendor layout (Risk R3); update cintx ROADMAP/STATE/REQUIREMENTS. [GRAD-10]
+- [x] 21-08-PLAN.md — Wave 5: phase verification + the pyscf_rs hand-off note (which Phase 7 `workflow_dispatch` arms un-gate, `int3c2e_ip1` re-gating history); validate component-leading F-order vs vendor layout (Risk R3); update cintx ROADMAP/STATE/REQUIREMENTS. [GRAD-10]
 
 **Risks**:
 
