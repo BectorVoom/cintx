@@ -630,6 +630,200 @@ fn contract_nuclear(
     out
 }
 
+/// Compute the bra-derivative of the nuclear-attraction integral for one primitive pair.
+///
+/// Shared math for `int1e_ipnuc` (sum of `∑_C (-Z_C)·∇` over all nuclei) and
+/// `int1e_iprinv` (single rinv origin, factor `+1.0`, no `-Z_C`). The two callers
+/// differ ONLY in the `origins` list passed here:
+///   - ipnuc: `[(atoms[c].coord_bohr, -(Z_C as f64)) for each nucleus c]`
+///   - iprinv: `[(rinv_orig, 1.0)]` (single entry, no charge)
+///
+/// Reference: `g1e.c` `CINTg1e_nuc` (lines 208-320) for the base nuclear G-tensor,
+/// `grad1.c` `CINTgout1e_int1e_ipnuc`/`int1e_iprinv` for the `∂/∂Ai` (bra) derivative.
+/// The bra nabla identity is `∂/∂Ai χ_l = l·χ_{l-1} - 2·ai·χ_{l+1}`
+/// (`CINTnabla1i_1e`, identical to the overlap-gradient mixing in `contract_grad_1e_bra`).
+///
+/// The base nuclear prefactor `fac1 = 2*PI * charge_factor * fac / aij` matches
+/// libcint exactly: for ipnuc the charge factor is `-Z_C` (point nucleus,
+/// `CINTnuc_mod`→`tau=1.0`), for iprinv it is `+1.0` (g1e.c lines 226-234).
+///
+/// The G-tensor is built with `nmax = li + lj + 1` (one extra bra level so the
+/// `ix+1` nabla access is valid), via the root-dependent VRR `vrr_2e_step_host`
+/// (Phase 09 nuclear-attraction decision — NOT the fixed-center `vrr_step_host`).
+///
+/// Atoms are accumulated in the order they appear in `origins` (ipnuc passes the
+/// low→high atom index order) for bit-stable reduction (D-10, T-21-04-04).
+///
+/// Returns `Vec<f64>` of length `3 * nci * ncj` in component-leading layout:
+/// `out[comp * nci*ncj + cj_idx * nci + ci_idx]`.
+fn contract_nuclear_grad(
+    pd: &crate::math::pdata::PairData,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    li: u8,
+    lj: u8,
+    ai: f64,
+    origins: &[([f64; 3], f64)],
+) -> Vec<f64> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+
+    // +1 bra headroom so the nabla1i ix+1 access is valid.
+    let nmax = (li + lj) as u32 + 1;
+    let nrys_roots = ((li + lj) as u32 + 1) / 2 + 1;
+
+    // G-tensor per-axis layout: (nmax+1) entries per j-level, (lj+1) j-levels.
+    let g_per_axis = ((nmax + 1) * (lj as u32 + 1)) as usize;
+    let dj = (nmax + 1) as usize;
+
+    let ci_comps = cart_comps(li);
+    let cj_comps = cart_comps(lj);
+
+    let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
+
+    let block_len = nci * ncj;
+    let mut out = vec![0.0_f64; 3 * block_len];
+
+    // Ordered accumulation over origins (low→high atom index for ipnuc; single for iprinv).
+    for &(rc, charge_factor) in origins {
+        // Vector from C to P: crij[d] = rc[d] - P[d] (g1e.c uses C - P).
+        let crij = [rc[0] - rp[0], rc[1] - rp[1], rc[2] - rp[2]];
+
+        // Boys argument x = zeta * |P - C|^2.
+        let x_boys =
+            pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
+
+        let (u_arr, w_arr) = rys_roots_host(nrys_roots as usize, x_boys);
+
+        // Nuclear prefactor (point nucleus, tau=1): fac1 = 2*PI * charge_factor * fac / aij.
+        // ipnuc: charge_factor = -Z_C; iprinv: charge_factor = +1.0 (g1e.c 226-234).
+        let fac1 = 2.0 * std::f64::consts::PI * charge_factor * pd.fac / pd.zeta_ab;
+
+        for n in 0..nrys_roots as usize {
+            let u_n = u_arr[n];
+            let w_n = w_arr[n];
+
+            let tau = u_n / (1.0 + u_n);
+            let rt = pd.aij2 * (1.0 - tau);
+
+            let c00 = [
+                (rp[0] - ri[0]) + tau * crij[0],
+                (rp[1] - ri[1]) + tau * crij[1],
+                (rp[2] - ri[2]) + tau * crij[2],
+            ];
+
+            let gz0_root = fac1 * w_n;
+
+            // Build per-root G-tensor (root-dependent c00 and b10=rt) with +1 headroom.
+            let mut g_root = vec![0.0_f64; 3 * g_per_axis];
+            let gx_off = 0usize;
+            let gy_off = g_per_axis;
+            let gz_off = 2 * g_per_axis;
+
+            g_root[gx_off] = 1.0;
+            g_root[gy_off] = 1.0;
+            g_root[gz_off] = gz0_root;
+
+            if nmax >= 1 {
+                crate::math::obara_saika::vrr_2e_step_host(
+                    &mut g_root[gx_off..gx_off + g_per_axis],
+                    c00[0],
+                    rt,
+                    nmax,
+                    1,
+                );
+                crate::math::obara_saika::vrr_2e_step_host(
+                    &mut g_root[gy_off..gy_off + g_per_axis],
+                    c00[1],
+                    rt,
+                    nmax,
+                    1,
+                );
+                crate::math::obara_saika::vrr_2e_step_host(
+                    &mut g_root[gz_off..gz_off + g_per_axis],
+                    c00[2],
+                    rt,
+                    nmax,
+                    1,
+                );
+            }
+
+            // HRR to shift to ket center.
+            let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+            if lj >= 1 {
+                let di = 1u32;
+                let dj_stride = nmax + 1;
+                hrr_step_host(
+                    &mut g_root[gx_off..gx_off + g_per_axis],
+                    rirj[0],
+                    di,
+                    dj_stride,
+                    nmax,
+                    lj as u32,
+                );
+                hrr_step_host(
+                    &mut g_root[gy_off..gy_off + g_per_axis],
+                    rirj[1],
+                    di,
+                    dj_stride,
+                    nmax,
+                    lj as u32,
+                );
+                hrr_step_host(
+                    &mut g_root[gz_off..gz_off + g_per_axis],
+                    rirj[2],
+                    di,
+                    dj_stride,
+                    nmax,
+                    lj as u32,
+                );
+            }
+
+            // Apply nabla1i (bra derivative) to all 3 axes of this root's G-tensor.
+            // f[jx*dj+ix] = ix * g[jx*dj+(ix-1)] + (-2*ai) * g[jx*dj+(ix+1)].
+            let ai2 = -2.0 * ai;
+            let mut g1 = vec![0.0_f64; 3 * g_per_axis];
+            for axis in 0..3usize {
+                let off = axis * g_per_axis;
+                for j in 0..=(lj as usize) {
+                    let jbase = j * dj;
+                    g1[off + jbase] = ai2 * g_root[off + jbase + 1];
+                    for ix in 1..=(li as usize) {
+                        g1[off + jbase + ix] = ix as f64 * g_root[off + jbase + ix - 1]
+                            + ai2 * g_root[off + jbase + ix + 1];
+                    }
+                }
+            }
+
+            // Build this root's 3-component contribution and accumulate.
+            let gx = 0usize;
+            let gy = g_per_axis;
+            let gz = 2 * g_per_axis;
+            for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
+                for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
+                    let nx = jx as usize * dj + ix as usize;
+                    let ny = jy as usize * dj + iy as usize;
+                    let nz = jz as usize * dj + iz as usize;
+
+                    let g0x = g_root[gx + nx];
+                    let g0y = g_root[gy + ny];
+                    let g0z = g_root[gz + nz];
+                    let g1x = g1[gx + nx];
+                    let g1y = g1[gy + ny];
+                    let g1z = g1[gz + nz];
+
+                    let n_out = cj_idx * nci + ci_idx;
+                    out[0 * block_len + n_out] += g1x * g0y * g0z;
+                    out[1 * block_len + n_out] += g0x * g1y * g0z;
+                    out[2 * block_len + n_out] += g0x * g0y * g1z;
+                }
+            }
+        }
+    }
+
+    out
+}
+
 /// Generic inner for the 1e launcher.
 ///
 /// Contains the full algorithm of `launch_one_electron` parameterized over the
@@ -688,15 +882,26 @@ fn launch_one_electron_typed<F: CintFloat>(
     let is_nuclear = op_name == "nuclear-attraction";
     let is_ipovlp = op_name == "ipovlp";
     let is_ipkin = op_name == "ipkin";
+    let is_ipnuc = op_name == "ipnuc";
+    let is_iprinv = op_name == "iprinv";
 
-    if !is_overlap && !is_kinetic && !is_nuclear && !is_ipovlp && !is_ipkin {
+    if !is_overlap
+        && !is_kinetic
+        && !is_nuclear
+        && !is_ipovlp
+        && !is_ipkin
+        && !is_ipnuc
+        && !is_iprinv
+    {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("1e operator '{}' is not supported", op_name),
         });
     }
 
     // Spinor gradient: not supported (Risk R5 / D-03).
-    if (is_ipovlp || is_ipkin) && plan.representation == Representation::Spinor {
+    if (is_ipovlp || is_ipkin || is_ipnuc || is_iprinv)
+        && plan.representation == Representation::Spinor
+    {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("spinor int1e gradient '{}' is not supported", op_name),
         });
@@ -709,9 +914,34 @@ fn launch_one_electron_typed<F: CintFloat>(
     let nsj = nsph(lj);
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Gradient path (ipovlp / ipkin) — 3-component output
+    // Gradient path (ipovlp / ipkin / ipnuc / iprinv) — 3-component output
     // ─────────────────────────────────────────────────────────────────────────
-    if is_ipovlp || is_ipkin {
+    if is_ipovlp || is_ipkin || is_ipnuc || is_iprinv {
+        // For iprinv, resolve the single rinv origin up front. The validator (21-01)
+        // should have rejected a None origin before reaching the kernel, but we fail
+        // typed (never panic, never read a garbage origin) — T-21-04-01 (defensive gate).
+        let iprinv_origin: Option<[f64; 3]> = if is_iprinv {
+            Some(plan.operator_env_params.rinv_orig.ok_or(
+                cintxRsError::InvalidEnvParam {
+                    param: "PTR_RINV_ORIG",
+                    reason: "iprinv kernel reached with no rinv origin".to_owned(),
+                },
+            )?)
+        } else {
+            None
+        };
+
+        // ipnuc origins: every nucleus coordinate with charge factor -Z_C, in
+        // low→high atom-index order for bit-stable ordered reduction (D-10).
+        let ipnuc_origins: Vec<([f64; 3], f64)> = if is_ipnuc {
+            atoms
+                .iter()
+                .map(|atom| (atom.coord_bohr, -(atom.atomic_number as f64)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         // Primitive loop over (pi, pj) pairs — one 3-component block per contraction pair.
         // The gradient path uses n_ctr_i == n_ctr_j == 1 for now (STO-3G/cc-pVDZ segmented);
         // generally-contracted gradient shells are deferred (same as spinor path above).
@@ -738,11 +968,18 @@ fn launch_one_electron_typed<F: CintFloat>(
                     let nmax = (li + lj) as u32 + 1;
                     let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32);
                     contract_grad_1e_bra(&g, li, lj, nmax, ai)
-                } else {
+                } else if is_ipkin {
                     // ipkin: build G-tensor with lj_ext=lj+2 AND nmax=li+lj+3 (kin +2 + bra +1)
                     let nmax = (li + lj) as u32 + 3;
                     let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32 + 2);
                     contract_ipkin(&g, li, lj, nmax, ai, aj)
+                } else if is_ipnuc {
+                    // ipnuc: ∑_C (-Z_C)·∇ over ALL nuclei, ordered low→high (D-10).
+                    contract_nuclear_grad(&pd, ri, rj, li, lj, ai, &ipnuc_origins)
+                } else {
+                    // iprinv: single rinv origin, factor +1.0, no -Z_C (D-08).
+                    let origin = iprinv_origin.expect("iprinv origin resolved above");
+                    contract_nuclear_grad(&pd, ri, rj, li, lj, ai, &[(origin, 1.0)])
                 };
 
                 for ci in 0..n_ctr_i {
@@ -1808,5 +2045,230 @@ mod tests {
         for (a, b) in out1.iter().zip(out2.iter()) {
             assert_eq!(a.to_bits(), b.to_bits(), "ipkin output not bit-identical on two calls");
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-07: ipnuc/iprinv component count
+    // For an s,s pair (li=lj=0, nci=ncj=1) contract_nuclear_grad returns 3 elements;
+    // for a p,s pair (li=1, nci=3) returns 9. Single origin reused for both ipnuc
+    // (one nucleus) and iprinv (one origin) — same helper, same shape.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_ipnuc_component_count() {
+        let ai = 1.0_f64;
+        let aj = 0.8_f64;
+        let ri = [0.0_f64; 3];
+        let rj = [1.4, 0.0, 0.0];
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+
+        // s,s: 3 elements (one nucleus, charge -1)
+        let origins_ss = [([0.0_f64, 0.0, 0.7], -1.0_f64)];
+        let out_ss = contract_nuclear_grad(&pd, ri, rj, 0, 0, ai, &origins_ss);
+        assert_eq!(out_ss.len(), 3, "s-s ipnuc should return 3 components");
+
+        // p,s: 9 elements
+        let out_ps = contract_nuclear_grad(&pd, ri, rj, 1, 0, ai, &origins_ss);
+        assert_eq!(out_ps.len(), 3 * ncart(1) * 1, "p-s ipnuc should return 9 components");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-08: ipnuc determinism — ordered atom-loop reduction (D-10)
+    // Repeated evaluation with a multi-nucleus origin list is bit-identical.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_ipnuc_determinism() {
+        let ai = 1.23_f64;
+        let aj = 0.57_f64;
+        let ri = [0.0_f64; 3];
+        let rj = [1.4, 0.5, 0.0];
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        // Three nuclei (sum over all, charge -Z_C), low→high index order.
+        let origins = [
+            ([0.0_f64, 0.0, 0.0], -8.0_f64),
+            ([0.0_f64, 1.4307, 1.1078], -1.0_f64),
+            ([0.0_f64, -1.4307, 1.1078], -1.0_f64),
+        ];
+        let out1 = contract_nuclear_grad(&pd, ri, rj, 0, 1, ai, &origins);
+        let out2 = contract_nuclear_grad(&pd, ri, rj, 0, 1, ai, &origins);
+        for (a, b) in out1.iter().zip(out2.iter()) {
+            assert_eq!(a.to_bits(), b.to_bits(), "ipnuc output not bit-identical on two calls");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-09: iprinv single-origin sensitivity (the key proof)
+    // contract_nuclear_grad with one origin must consume that origin: two DIFFERENT
+    // origins must produce DIFFERENT output (proves iprinv is NOT origin-blind).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_iprinv_origin_sensitivity() {
+        let ai = 1.0_f64;
+        let aj = 1.0_f64;
+        let ri = [0.0_f64; 3];
+        let rj = [0.0, 0.0, 1.4];
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+
+        // iprinv uses factor +1.0, single origin.
+        let out_a = contract_nuclear_grad(&pd, ri, rj, 0, 0, ai, &[([0.0_f64, 0.0, 1.4], 1.0)]);
+        let out_b = contract_nuclear_grad(&pd, ri, rj, 0, 0, ai, &[([0.7_f64, 0.3, 0.2], 1.0)]);
+
+        // Nonzero output for both.
+        assert!(out_a.iter().any(|v| v.abs() > 1e-12), "iprinv output should be nonzero");
+        // Different origins must produce a different result.
+        let any_diff = out_a
+            .iter()
+            .zip(out_b.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-10);
+        assert!(any_diff, "different rinv origins must produce different output (origin consumed)");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-10: iprinv with None origin returns a typed error (no panic)
+    // Dispatch iprinv through launch_one_electron_typed with rinv_orig == None.
+    // The kernel must return InvalidEnvParam, never panic (T-21-04-01 defensive gate).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_iprinv_none_origin_returns_typed_error() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
+        use cintx_ops::resolver::Resolver;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        let op_sph = Resolver::descriptor_by_symbol("int1e_iprinv_sph")
+            .expect("int1e_iprinv_sph must be in manifest")
+            .id;
+
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
+        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let all_shells: Arc<[Arc<Shell>]> = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
+        // Leave plan.operator_env_params.rinv_orig as None (the defensive case).
+        plan.precision = cintx_core::PrecisionKind::F64;
+        assert!(plan.operator_env_params.rinv_orig.is_none(), "test precondition: origin must be None");
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 3];
+
+        let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(
+            matches!(result, Err(cintxRsError::InvalidEnvParam { param: "PTR_RINV_ORIG", .. })),
+            "iprinv with None origin should return InvalidEnvParam, got: {:?}", result
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-11: ipnuc spinor returns UnsupportedApi
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_ipnuc_spinor_returns_unsupported() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
+        use cintx_ops::resolver::Resolver;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        let op_sph = Resolver::descriptor_by_symbol("int1e_ipnuc_sph")
+            .expect("int1e_ipnuc_sph must be in manifest")
+            .id;
+
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
+        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let all_shells: Arc<[Arc<Shell>]> = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
+        plan.representation = Representation::Spinor;
+        plan.precision = cintx_core::PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 3];
+
+        let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "spinor ipnuc should return UnsupportedApi, got: {:?}", result
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-12: iprinv spinor returns UnsupportedApi (even with a valid origin)
+    // The spinor guard fires before the origin is consumed.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_iprinv_spinor_returns_unsupported() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
+        use cintx_ops::resolver::Resolver;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        let op_sph = Resolver::descriptor_by_symbol("int1e_iprinv_sph")
+            .expect("int1e_iprinv_sph must be in manifest")
+            .id;
+
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
+        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let all_shells: Arc<[Arc<Shell>]> = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
+        plan.representation = Representation::Spinor;
+        plan.precision = cintx_core::PrecisionKind::F64;
+        // Even with a valid origin set, the spinor guard must fire first.
+        plan.operator_env_params.rinv_orig = Some([0.0, 0.0, 0.0]);
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 3];
+
+        let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "spinor iprinv should return UnsupportedApi, got: {:?}", result
+        );
     }
 }
