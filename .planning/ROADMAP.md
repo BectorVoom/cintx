@@ -397,20 +397,23 @@ Plans:
 - [ ] 21-01-PLAN.md — Wave 1: `PTR_RINV_ORIG` env-slot plumbing (the `f12_zeta` 4-step pattern): `OperatorEnvParams.rinv_orig`, `raw.rs` env-read, `validator.rs` gate, thread into `one_electron`/`ecp` kernels; `with_rinv_origin` safe-API setter; env round-trip + validator-rejects-missing-origin unit tests. [GRAD-01]
 - [ ] 21-02-PLAN.md — Wave 1: register all 6 families (+ `int3c2e_ip1` correction) in `compiled_manifest.lock.json` with `component_rank:"3"`; add RawApiId consts, legacy wrappers, CAPI enum variants; `cargo build` regenerates the manifest; manifest-audit xtask green; symbols resolve through `eval_raw` (UnsupportedApi from kernels until Wave 2/3). [GRAD-02]
 
-**Wave 2** *(blocked on Wave 1)* — 1e gradient kernels (no Rys risk except ipnuc)
+**Wave 2** *(blocked on Wave 1)* — 1e gradient kernels (no Rys risk except ipnuc; 21-04 runs after 21-03 — both edit `one_electron.rs`, executor serializes on the `files_modified` overlap)
 
 - [ ] 21-03-PLAN.md — Wave 2: `int1e_ipovlp` + `int1e_ipkin` — `nabla1i` on the overlap/kinetic G-tensors (Obara-Saika; the `contract_kinetic` `CINTnabla1j_1e` code at `one_electron.rs:208` is the pattern). Oracle vs `vendor_int1e_ipovlp`/`ipkin` at atol=1e-12. [GRAD-03, GRAD-04]
 - [ ] 21-04-PLAN.md — Wave 2: `int1e_ipnuc` (∇ on bra, sum over all atoms) + `int1e_iprinv` (single origin via the Wave-1 env slot, no `-Z_C` factor). Both reuse the `gout_ip1` nabla on the nuclear Rys tensor; differ only in atom-loop vs single-origin and prefactor. Oracle vs vendor at atol=1e-12. [GRAD-05, GRAD-06]
 
-**Wave 3** *(blocked on Wave 1; independent of Wave 2)* — 2e + 3c2e gradient kernels (Rys)
+**Wave 3** *(blocked on Wave 1)* — int2e_ip1 (Rys; also exposes `gout_ip1`/`F12Shape` as `pub(crate)` for Wave 4)
 
 - [ ] 21-05-PLAN.md — Wave 3: `int2e_ip1` — new gradient path in `two_electron.rs`: `build_2e_shape(li+1, lj, lk, ll)`, `fill_g_tensor_2e` + `rys_roots_host`, then `gout_ip1` (reused from `f12.rs`). Component-leading `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs`. Oracle vs `vendor_int2e_ip1` at atol=1e-12 for s/p/d. Confirm pyscf-gto's call path (raw vs safe / Phase 18) before committing the surface (Risk R6). [GRAD-07]
-- [ ] 21-06-PLAN.md — Wave 3: `int3c2e_ip1` real derivative kernel (repair family 0) — same `gout_ip1` reuse in `center_3c2e.rs`; flip oracle from plain `vendor_int3c2e` to `vendor_int3c2e_ip1`. [GRAD-08]
 
-**Wave 4** *(blocked on Waves 1-3)* — ECP gradient + close-out
+**Wave 4** *(blocked on Waves 1-3)* — int3c2e_ip1 repair + ECP gradient
 
+- [ ] 21-06-PLAN.md — Wave 4: `int3c2e_ip1` real derivative kernel (repair family 0) — same `gout_ip1` reuse in `center_3c2e.rs` (**depends on 21-05's `pub(crate)` exposure**). Flip oracle from plain `vendor_int3c2e` to `vendor_int3c2e_ip1`. [GRAD-08]
 - [ ] 21-07-PLAN.md — Wave 4: `ECPscalar_iprinv` — per-nucleus selector in `launch_ecp` (the `ipnuc` driver `deriv1_cart_pair` at `ecp.rs:1181` sums all ECP slots; iprinv selects one via the Wave-1 rinv origin) + drop the `-Z_C`/all-slot accumulation; reuse the salvaged `19-05` tables. **Pre-req: confirm scalar-ECP K-Taylor byte-identity (Risk R4).** Oracle: Cu/LANL2DZ iprinv vs vendor. [GRAD-09]
-- [ ] 21-08-PLAN.md — Wave 4: phase verification + the pyscf_rs hand-off note (which Phase 7 `workflow_dispatch` arms un-gate, `int3c2e_ip1` re-gating history); validate component-leading F-order vs vendor layout (Risk R3); update cintx ROADMAP/STATE/REQUIREMENTS. [GRAD-10]
+
+**Wave 5** *(blocked on Waves 1-4)* — verification + close-out
+
+- [ ] 21-08-PLAN.md — Wave 5: phase verification + the pyscf_rs hand-off note (which Phase 7 `workflow_dispatch` arms un-gate, `int3c2e_ip1` re-gating history); validate component-leading F-order vs vendor layout (Risk R3); update cintx ROADMAP/STATE/REQUIREMENTS. [GRAD-10]
 
 **Risks**:
 
