@@ -45,28 +45,37 @@ fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
     comps
 }
 
+/// `pub(crate)` (Phase 21 D-04): shared with `center_3c2e.rs::int3c2e_ip1`, which
+/// builds its derivative G-tensor through the SAME 2e recurrence machinery using the
+/// 3c2e Pitfall-4 kl mapping (real `k` → 2e `ll` slot; 2e `lk` slot is a phantom
+/// s-function). The struct carries the identical field set as
+/// [`crate::kernels::f12::F12Shape`] so `gout_ip1` can be reused verbatim.
 #[derive(Clone, Copy, Debug)]
-struct TwoEShape {
-    nroots: usize,
-    nmax: usize,
-    mmax: usize,
-    li: usize,
-    lj: usize,
-    lk: usize,
-    ll: usize,
-    ibase: bool,
-    kbase: bool,
-    di: usize,
-    dk: usize,
-    dl: usize,
-    dj: usize,
-    g2d_ijmax: usize,
-    g2d_klmax: usize,
-    g_size: usize,
+pub(crate) struct TwoEShape {
+    pub(crate) nroots: usize,
+    pub(crate) nmax: usize,
+    pub(crate) mmax: usize,
+    pub(crate) li: usize,
+    pub(crate) lj: usize,
+    pub(crate) lk: usize,
+    pub(crate) ll: usize,
+    pub(crate) ibase: bool,
+    pub(crate) kbase: bool,
+    pub(crate) di: usize,
+    pub(crate) dk: usize,
+    pub(crate) dl: usize,
+    pub(crate) dj: usize,
+    pub(crate) g2d_ijmax: usize,
+    pub(crate) g2d_klmax: usize,
+    pub(crate) g_size: usize,
 }
 
 /// Initialize stride/layout metadata following `CINTinit_int2e_EnvVars`.
-fn build_2e_shape(li: usize, lj: usize, lk: usize, ll: usize) -> TwoEShape {
+///
+/// `pub(crate)` (Phase 21 D-04): `center_3c2e.rs::int3c2e_ip1` calls this with the
+/// 3c2e kl mapping `build_2e_shape(li+1, lj, 0, lk)` (phantom `lk=0`, real k in the
+/// `ll` slot, bra `i` raised to `li+1` for the `∇_i` headroom).
+pub(crate) fn build_2e_shape(li: usize, lj: usize, lk: usize, ll: usize) -> TwoEShape {
     let nroots = (li + lj + lk + ll) / 2 + 1;
     let nmax = li + lj;
     let mmax = lk + ll;
@@ -348,7 +357,12 @@ fn hrr_ik2d_4d(g: &mut [f64], shape: TwoEShape, rirj: [f64; 3], rkrl: [f64; 3]) 
 }
 
 /// Fill the full `[gx|gy|gz]` tensor for one primitive quartet.
-fn fill_g_tensor_2e(
+///
+/// `pub(crate)` (Phase 21 D-04): `center_3c2e.rs::int3c2e_ip1` fills its derivative
+/// G-tensor through this exact recurrence using the 3c2e kl mapping (phantom 2e `lk`
+/// shell with exponent `ak=0` at the real-k center, real k in the 2e `ll` slot).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fill_g_tensor_2e(
     ai: f64,
     aj: f64,
     ak: f64,
@@ -562,8 +576,11 @@ fn contract_2e_cart(g: &[f64], shape: TwoEShape, li: u8, lj: u8, lk: u8, ll: u8)
 /// li/lj/lk/ll/ibase/kbase/g2d_ijmax/g2d_klmax/g_size). The gradient math is
 /// F12-free, so this 1:1 field copy lets the plain-Coulomb gradient reuse the
 /// exact verbatim derivative code (Phase 21 D-04).
+///
+/// `pub(crate)` (Phase 21 D-04): `center_3c2e.rs::int3c2e_ip1` reuses this bridge so
+/// its 3c2e derivative G-tensor can be fed to the verbatim `gout_ip1` contraction.
 #[inline]
-fn two_e_shape_as_f12(shape: &TwoEShape) -> crate::kernels::f12::F12Shape {
+pub(crate) fn two_e_shape_as_f12(shape: &TwoEShape) -> crate::kernels::f12::F12Shape {
     crate::kernels::f12::F12Shape {
         nroots: shape.nroots,
         nmax: shape.nmax,

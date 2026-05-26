@@ -655,3 +655,250 @@ mod tests {
         assert!(out[0].abs() > 1e-20, "contracted s-s-s 3c2e value must be non-zero");
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// int3c2e_ip1 gradient tests (Plan 21-06 / GRAD-08 / Risk R1).
+//
+// The latent bug: `launch_center_3c2e_typed` was operator-blind and returned the
+// PLAIN (scalar) 3c2e integral for `int3c2e_ip1`. These tests pin the REAL
+// 3-component derivative:
+//   - component count: (s,s,s) → 3; (p,s,s) → 3×3 = 9 (the 3× multiplier is the
+//     proof the scalar stub is gone — the stub returned 1×nci*ncj*nck).
+//   - NOT-equal-to-plain: the (p,s,s) ip1 output is NOT element-wise equal to the
+//     plain int3c2e output broadcast across components (regression-proof for R1).
+//   - determinism (D-10): repeated evaluation is bit-identical.
+//   - spinor (R5): int3c2e_ip1 with Representation::Spinor returns UnsupportedApi.
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(all(test, feature = "cpu"))]
+mod ip1_tests {
+    use super::*;
+    use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+    use crate::specialization::SpecializationKey;
+    use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell, ShellTuple};
+    use cintx_ops::resolver::Resolver;
+    use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+    use std::sync::Arc;
+
+    /// Build a 3-shell (li, lj, lk) triple plan for the int3c2e_ip1 sph operator.
+    fn build_ip1_plan(
+        li: u8,
+        lj: u8,
+        lk: u8,
+    ) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
+        let atom0 = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom1 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom2 = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom0, atom1, atom2].into_boxed_slice());
+
+        let mk = |atom_index: u32, l: u8| {
+            Arc::new(
+                Shell::try_new(
+                    atom_index,
+                    l,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.8_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
+        let s0 = mk(0, li);
+        let s1 = mk(1, lj);
+        let s2 = mk(2, lk);
+
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![s0.clone(), s1.clone(), s2.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = ShellTuple::try_from_iter([s0, s1, s2]).unwrap();
+
+        let op = Resolver::descriptor_by_symbol("int3c2e_ip1_sph")
+            .expect("int3c2e_ip1_sph must be in manifest")
+            .id;
+        (basis, shells, op)
+    }
+
+    /// Build a plain int3c2e_sph triple plan (same shells/centers) for the
+    /// NOT-equal-to-plain regression comparison.
+    fn build_plain_plan(
+        li: u8,
+        lj: u8,
+        lk: u8,
+    ) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
+        let atom0 = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom1 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom2 = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom0, atom1, atom2].into_boxed_slice());
+
+        let mk = |atom_index: u32, l: u8| {
+            Arc::new(
+                Shell::try_new(
+                    atom_index,
+                    l,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.8_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
+        let s0 = mk(0, li);
+        let s1 = mk(1, lj);
+        let s2 = mk(2, lk);
+
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![s0.clone(), s1.clone(), s2.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = ShellTuple::try_from_iter([s0, s1, s2]).unwrap();
+
+        let op = Resolver::descriptor_by_symbol("int3c2e_sph")
+            .expect("int3c2e_sph must be in manifest")
+            .id;
+        (basis, shells, op)
+    }
+
+    fn run(
+        basis: &BasisSet,
+        shells: ShellTuple,
+        op: cintx_core::OperatorId,
+        rep: Representation,
+    ) -> Result<(Vec<f64>, ExecutionStats), cintxRsError> {
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op, rep, basis, shells.clone(), &opts)?;
+        let mut plan = ExecutionPlan::new(op, rep, basis, shells, &q)?;
+        plan.precision = PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+
+        let out_elems = plan.output_layout.staging_elements;
+        let mut staging = vec![0.0_f64; out_elems];
+        let stats = launch_center_3c2e_typed::<f64>(&backend, &plan, &spec, &mut staging)?;
+        Ok((staging, stats))
+    }
+
+    // Component count (the 3× multiplier proves the scalar stub is gone). The scalar
+    // stub only WROTE `nci*ncj*nck` elements (3 for (p,s,s)) and left the remaining
+    // 6 lanes at zero. The real derivative must FILL all 3 component blocks with
+    // genuinely-derived values. We assert the kernel writes a nonzero value into
+    // each of the 3 component blocks (not just into the first block).
+    #[test]
+    fn test_int3c2e_ip1_component_count() {
+        let (basis, shells, op) = build_ip1_plan(0, 0, 0);
+        let (staging, _) = run(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(
+            staging.len(),
+            3,
+            "(s,s,s) int3c2e_ip1 should produce 3 components, got {}",
+            staging.len()
+        );
+        // s-s-s ∇_i with off-center geometry: all 3 components nonzero.
+        assert!(
+            staging.iter().all(|v| v.abs() > 1e-12),
+            "(s,s,s) int3c2e_ip1 must fill all 3 component lanes: {staging:?}"
+        );
+
+        let (basis, shells, op) = build_ip1_plan(1, 0, 0);
+        let (staging, _) = run(&basis, shells, op, Representation::Spheric).unwrap();
+        // sph p = 3 AOs; 3 components × 3×1×1 = 9. The scalar stub gave 3 written.
+        assert_eq!(
+            staging.len(),
+            9,
+            "(p,s,s) int3c2e_ip1 should produce 9 outputs (3 comps × 3 AO), got {}",
+            staging.len()
+        );
+        // PROOF the scalar stub is gone: every one of the 3 component blocks (each
+        // of length nci*ncj*nck = 3) must carry a nonzero derived value. The stub
+        // wrote only the first block (lanes 0..3) and left lanes 3..9 at zero, so
+        // blocks 1 and 2 would be all-zero under the stub.
+        let block_len = 3usize; // nci(p)*ncj(s)*nck(s) = 3*1*1
+        for comp in 0..3usize {
+            let block = &staging[comp * block_len..(comp + 1) * block_len];
+            assert!(
+                block.iter().any(|v| v.abs() > 1e-12),
+                "(p,s,s) int3c2e_ip1 component block {comp} is all-zero — the scalar \
+                 stub (R1) is NOT closed. staging={staging:?}"
+            );
+        }
+    }
+
+    // NOT-equal-to-plain (R1 regression proof): the (p,s,s) ip1 output must NOT be
+    // element-wise equal to the plain int3c2e output broadcast across the 3 comps.
+    // The scalar stub WROTE `plain` into the first component block (lanes 0..3) and
+    // zeros into the rest, so the regression-proof here is the first block: a real
+    // derivative ∇_i is NOT equal to the plain integral value itself.
+    #[test]
+    fn test_int3c2e_ip1_not_equal_to_plain() {
+        let (basis_ip1, shells_ip1, op_ip1) = build_ip1_plan(1, 0, 0);
+        let (ip1, _) = run(&basis_ip1, shells_ip1, op_ip1, Representation::Spheric).unwrap();
+
+        let (basis_plain, shells_plain, op_plain) = build_plain_plan(1, 0, 0);
+        let (plain, _) = run(&basis_plain, shells_plain, op_plain, Representation::Spheric).unwrap();
+
+        // plain has 3 AOs (p,s,s); ip1 has 9 (3 comps × 3 AO).
+        assert_eq!(plain.len(), 3, "plain (p,s,s) 3c2e should be 3 AOs");
+        assert_eq!(ip1.len(), 9, "ip1 (p,s,s) 3c2e should be 9 (3 comps × 3 AO)");
+
+        // The FIRST component block (lanes 0..3) is what the scalar stub wrote `plain`
+        // into. A real ∇_i derivative differs from the plain integral value. If the
+        // stub were still in place, ip1[0..3] would equal `plain` exactly.
+        let first_block = &ip1[0..3];
+        let first_block_equals_plain = first_block
+            .iter()
+            .zip(plain.iter())
+            .all(|(a, b)| (a - b).abs() <= 1e-12);
+        assert!(
+            !first_block_equals_plain,
+            "int3c2e_ip1 first component block is byte-equal to the plain integral — \
+             the scalar stub (R1) is NOT closed. ip1[0..3]={first_block:?} plain={plain:?}"
+        );
+        // The derivative must produce nonzero values across all 3 component blocks.
+        assert!(
+            ip1.iter().any(|v| v.abs() > 1e-12),
+            "int3c2e_ip1 (p,s,s) output is all-zero: {ip1:?}"
+        );
+    }
+
+    // Determinism (D-10): repeated evaluation is bit-identical.
+    #[test]
+    fn test_int3c2e_ip1_determinism() {
+        let (basis, shells, op) = build_ip1_plan(1, 0, 0);
+        let (out1, _) = run(&basis, shells.clone(), op, Representation::Spheric).unwrap();
+        let (out2, _) = run(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(out1.len(), out2.len());
+        for (a, b) in out1.iter().zip(out2.iter()) {
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "int3c2e_ip1 output not bit-identical across two evaluations"
+            );
+        }
+    }
+
+    // Spinor (R5): int3c2e_ip1 with Representation::Spinor returns UnsupportedApi.
+    #[test]
+    fn test_int3c2e_ip1_spinor_unsupported() {
+        let (basis, shells, op) = build_ip1_plan(0, 0, 0);
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &q).unwrap();
+        plan.representation = Representation::Spinor;
+        plan.precision = PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 6];
+        let result = launch_center_3c2e_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "spinor int3c2e_ip1 should return UnsupportedApi, got: {result:?}"
+        );
+    }
+}
