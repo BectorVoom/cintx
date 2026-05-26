@@ -4359,7 +4359,7 @@
         "representation": "cart",
         "symbol": "int1e_ecp_iprinv_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4391,7 +4391,7 @@
         "representation": "sph",
         "symbol": "int1e_ecp_iprinv_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",

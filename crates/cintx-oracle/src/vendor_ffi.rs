@@ -1793,6 +1793,97 @@ pub fn vendor_ECPscalar_ipnuc_cart(
     }
 }
 
+/// Evaluate PySCF `ECPscalar_iprinv_sph` — per-nucleus ECP force
+/// (component_rank=3) sph (21-07, GRAD-09).
+///
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:420-453 (`ECPscalar_iprinv_sph`
+/// → `_one_shell_ecpbas` selects the single ECP shell on the atom indexed by
+/// `env[AS_RINV_ORIG_ATOM]`, then runs the SAME comp=3 `_deriv1_cart` driver as
+/// `ipnuc` on that one shell — no all-slot accumulation). The `out` buffer MUST
+/// hold `3 * nao_i * nao_j` f64s (`nao = CINTcgto_spheric`), with the same
+/// `[axis, ao_j, ao_i]` layout as the ipnuc variant.
+///
+/// IMPORTANT — the caller MUST set `env[AS_RINV_ORIG_ATOM] = <target atom index>`
+/// (slot 17, an INTEGER atom index) before calling, in addition to the
+/// `env[AS_ECPBAS_OFFSET]` / `env[AS_NECPBAS]` ECP slab packing the scalar
+/// wrappers require. A `shl_id < 0` (no ECP shell on that atom) makes PySCF
+/// return 0 without writing `out`.
+#[cfg(has_vendor_pyscf_nr_ecp)]
+#[allow(non_snake_case)]
+pub fn vendor_ECPscalar_iprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_spheric.
+    debug_assert!(
+        out.len() % 3 == 0,
+        "ECPscalar_iprinv_sph out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
+        out.len()
+    );
+    unsafe {
+        ffi::ECPscalar_iprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate PySCF `ECPscalar_iprinv_cart` — per-nucleus ECP force
+/// (component_rank=3) cart (21-07, GRAD-09).
+///
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:333-375 (`ECPscalar_iprinv_cart`
+/// → `_one_shell_ecpbas` single-atom selection + comp=3 `_deriv1_cart`). The
+/// `out` buffer MUST hold `3 * nao_i * nao_j` f64s (`nao = CINTcgto_cart`), same
+/// `[axis, ao_j, ao_i]` layout as the ipnuc variant.
+///
+/// IMPORTANT — the caller MUST set `env[AS_RINV_ORIG_ATOM] = <target atom index>`
+/// (slot 17) before calling. See the sph variant for full env-slot notes.
+#[cfg(has_vendor_pyscf_nr_ecp)]
+#[allow(non_snake_case)]
+pub fn vendor_ECPscalar_iprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_cart.
+    debug_assert!(
+        out.len() % 3 == 0,
+        "ECPscalar_iprinv_cart out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
+        out.len()
+    );
+    unsafe {
+        ffi::ECPscalar_iprinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // FFI ABI smoke test — catches symbol/ABI mismatches between cintx-oracle's
 // bindgen output and the vendored PySCF nr_ecp shared object before parity
