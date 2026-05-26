@@ -60,12 +60,12 @@
 - [x] **GRAD-02**: All 6 gradient families plus the `int3c2e_ip1` correction are registered in `compiled_manifest.lock.json` with `"component_rank":"3"` (per cart/sph/spinor representation), with matching RawApiId consts, legacy wrappers, and CAPI enum variants; `cargo build` regenerates `api_manifest.rs`; the manifest-audit xtask is green and every symbol resolves through `eval_raw` (returning `UnsupportedApi` from kernels until its kernel lands).
 - [x] **GRAD-03**: `int1e_ipovlp` (cart + sph, 3 components) matches vendored libcint 6.1.3 at atol=1e-12 on the H2O/STO-3G corpus.
 - [x] **GRAD-04**: `int1e_ipkin` (cart + sph, 3 components) matches vendored libcint 6.1.3 at atol=1e-12 on the H2O/STO-3G corpus.
-- [ ] **GRAD-05**: `int1e_ipnuc` (cart + sph, 3 components; ∇ on the bra center, summed over all nuclei) matches vendored libcint 6.1.3 at atol=1e-12.
-- [ ] **GRAD-06**: `int1e_iprinv` (cart + sph, 3 components; single rinv origin via the GRAD-01 env slot, no `-Z_C` factor) matches vendored libcint 6.1.3 at atol=1e-12.
-- [ ] **GRAD-07**: `int2e_ip1` (arity-4, 3 components; component-leading `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs`) matches vendored `int2e_ip1` at atol=1e-12 for s/p/d quartets.
-- [ ] **GRAD-08**: `int3c2e_ip1` ships a real derivative kernel that replaces the operator-blind scalar stub in `center_3c2e.rs`, and its oracle reference is flipped from the plain `vendor_int3c2e` to `vendor_int3c2e_ip1`; matches at atol=1e-12.
-- [ ] **GRAD-09**: `ECPscalar_iprinv` (per-nucleus ECP force; single rinv origin, no all-slot `-Z_C` accumulation) matches vendored libcint at atol=1e-12 on Cu/LANL2DZ — gated on confirming Phase 19's scalar-ECP K-Taylor byte-identity path (Risk R4).
-- [ ] **GRAD-10**: Phase verification + pyscf_rs hand-off: the component-leading F-order layout is validated against the vendor layout (Risk R3); cintx ROADMAP/STATE/REQUIREMENTS are updated; and a hand-off note records which pyscf_rs Phase 7 `workflow_dispatch` gradient arms now un-gate (and the `int3c2e_ip1` re-gating history).
+- [x] **GRAD-05**: `int1e_ipnuc` (cart + sph, 3 components; ∇ on the bra center, summed over all nuclei) matches vendored libcint 6.1.3 at atol=1e-12.
+- [x] **GRAD-06**: `int1e_iprinv` (cart + sph, 3 components; single rinv origin via the GRAD-01 env slot, no `-Z_C` factor) matches vendored libcint 6.1.3 at atol=1e-12.
+- [x] **GRAD-07**: `int2e_ip1` (arity-4, 3 components; component-leading `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs`) matches vendored `int2e_ip1` at atol=1e-12 for s/p/d quartets.
+- [x] **GRAD-08**: `int3c2e_ip1` ships a real derivative kernel that replaces the operator-blind scalar stub in `center_3c2e.rs`, and its oracle reference is flipped from the plain `vendor_int3c2e` to `vendor_int3c2e_ip1`; matches at atol=1e-12.
+- [x] **GRAD-09**: `ECPscalar_iprinv` (per-nucleus ECP force; single rinv origin, no all-slot `-Z_C` accumulation) matches vendored libcint at atol=1e-12 on Cu/LANL2DZ — gated on confirming Phase 19's scalar-ECP K-Taylor byte-identity path (Risk R4).
+- [x] **GRAD-10**: Phase verification + pyscf_rs hand-off: the component-leading F-order layout is validated against the vendor layout (Risk R3); cintx ROADMAP/STATE/REQUIREMENTS are updated; and a hand-off note records which pyscf_rs Phase 7 `workflow_dispatch` gradient arms now un-gate (and the `int3c2e_ip1` re-gating history).
 
 ## v2 Requirements
 
@@ -123,12 +123,12 @@
 | GRAD-02 | Phase 21 | Complete |
 | GRAD-03 | Phase 21 | Complete |
 | GRAD-04 | Phase 21 | Complete |
-| GRAD-05 | Phase 21 | Pending |
-| GRAD-06 | Phase 21 | Pending |
-| GRAD-07 | Phase 21 | Pending |
-| GRAD-08 | Phase 21 | Pending |
-| GRAD-09 | Phase 21 | Pending |
-| GRAD-10 | Phase 21 | Pending |
+| GRAD-05 | Phase 21 | Complete |
+| GRAD-06 | Phase 21 | Complete |
+| GRAD-07 | Phase 21 | Complete |
+| GRAD-08 | Phase 21 | Complete |
+| GRAD-09 | Phase 21 | Complete |
+| GRAD-10 | Phase 21 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 27 total (Phases 11-15)
