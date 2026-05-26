@@ -408,8 +408,8 @@ Plans:
 
 **Wave 4** *(blocked on Waves 1-3)* — int3c2e_ip1 repair + ECP gradient
 
-- [ ] 21-06-PLAN.md — Wave 4: `int3c2e_ip1` real derivative kernel (repair family 0) — same `gout_ip1` reuse in `center_3c2e.rs` (**depends on 21-05's `pub(crate)` exposure**). Flip oracle from plain `vendor_int3c2e` to `vendor_int3c2e_ip1`. [GRAD-08]
-- [ ] 21-07-PLAN.md — Wave 4: `ECPscalar_iprinv` — per-nucleus selector in `launch_ecp` (the `ipnuc` driver `deriv1_cart_pair` at `ecp.rs:1181` sums all ECP slots; iprinv selects one via the Wave-1 rinv origin) + drop the `-Z_C`/all-slot accumulation; reuse the salvaged `19-05` tables. **Pre-req: confirm scalar-ECP K-Taylor byte-identity (Risk R4).** Oracle: Cu/LANL2DZ iprinv vs vendor. [GRAD-09]
+- [x] 21-06-PLAN.md — Wave 4: `int3c2e_ip1` real derivative kernel (repair family 0) — same `gout_ip1` reuse in `center_3c2e.rs` (**depends on 21-05's `pub(crate)` exposure**). Flip oracle from plain `vendor_int3c2e` to `vendor_int3c2e_ip1`. [GRAD-08]
+- [x] 21-07-PLAN.md — Wave 4: `ECPscalar_iprinv` — per-nucleus selector in `launch_ecp` (the `ipnuc` driver `deriv1_cart_pair` at `ecp.rs:1181` sums all ECP slots; iprinv selects one via the Wave-1 rinv origin) + drop the `-Z_C`/all-slot accumulation; reuse the salvaged `19-05` tables. **Pre-req: confirm scalar-ECP K-Taylor byte-identity (Risk R4).** Oracle: Cu/LANL2DZ iprinv vs vendor. [GRAD-09]
 
 **Wave 5** *(blocked on Waves 1-4)* — verification + close-out
 
