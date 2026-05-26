@@ -934,17 +934,12 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
         mismatches += compare_buffers("cint3c1e_sph", &cintx_out, &vendor_out);
     }
 
-    // ─── int3c2e_ip1_sph ──────────────────────────────────────────────────────
-    {
-        let mut cintx_out = vec![0.0_f64; size_3];
-        unsafe {
-            eval_legacy_symbol("int3c2e_ip1_sph", &mut cintx_out, shls3, atm, bas, env)?;
-        }
-        let mut vendor_out = vec![0.0_f64; size_3];
-        let shls3_arr = [shls3[0], shls3[1], shls3[2]];
-        vendor_ffi::vendor_int3c2e_sph(&mut vendor_out, &shls3_arr, atm, natm, bas, nbas, env);
-        mismatches += compare_buffers("cint3c2e_ip1_sph", &cintx_out, &vendor_out);
-    }
+    // int3c2e_ip1 is a 3-component derivative (Phase 21-06), not a scalar base integral.
+    // Its byte-identity vs vendored libcint is verified by the dedicated, layout-aware
+    // tests/center_3c2e_parity.rs gate — it does not belong in this scalar legacy-wrapper
+    // check (a scalar buffer here would BufferTooSmall-bail, and vendor_int3c2e_sph is the
+    // wrong, non-gradient reference). The other gradient families (int1e_ip*, int2e_ip1) are
+    // likewise excluded from this function for the same reason.
 
     // ─── int1e_ovlp_cart ──────────────────────────────────────────────────────
     {
@@ -1049,17 +1044,8 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
         mismatches += compare_buffers("cint3c1e_p2_cart", &cintx_out, &vendor_out);
     }
 
-    // ─── int3c2e_ip1_cart ─────────────────────────────────────────────────────
-    {
-        let mut cintx_out = vec![0.0_f64; size_3_c];
-        unsafe {
-            eval_legacy_symbol("int3c2e_ip1_cart", &mut cintx_out, shls3, atm, bas, env)?;
-        }
-        let mut vendor_out = vec![0.0_f64; size_3_c];
-        let shls3_arr = [shls3[0], shls3[1], shls3[2]];
-        vendor_ffi::vendor_int3c2e_ip1_cart(&mut vendor_out, &shls3_arr, atm, natm, bas, nbas, env);
-        mismatches += compare_buffers("cint3c2e_ip1_cart", &cintx_out, &vendor_out);
-    }
+    // int3c2e_ip1_cart: see the int3c2e_ip1_sph note above — gradient byte-identity is owned
+    // by tests/center_3c2e_parity.rs, not this scalar legacy-wrapper check.
 
     // Remaining legacy symbols not numerically compared here:
     // - Spinor variants (cint1e_ovlp, cint1e_kin, etc.) return UnsupportedApi — correct behavior.
