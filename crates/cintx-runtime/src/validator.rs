@@ -170,6 +170,34 @@ pub fn validate_f12_env_params(
     Ok(())
 }
 
+/// Validates that iprinv-family operator env params include a rinv origin.
+///
+/// Returns `InvalidEnvParam` if `rinv_orig` is `None` for an operator whose name
+/// contains `"iprinv"`. Called before kernel launch so we surface a typed error
+/// before kernel entry — no garbage-origin evaluation, no UB (T-21-01-01/02).
+///
+/// The predicate uses `.contains("iprinv")` (not `==`) so it covers both
+/// `"iprinv"` (int1e_iprinv) and `"ecp_iprinv"` (ECPscalar_iprinv) variants.
+/// Non-iprinv operators (overlap, kinetic, nuclear-attraction, etc.) are never gated.
+pub fn validate_rinv_orig_env_params(
+    operator_name: &str,
+    params: &OperatorEnvParams,
+) -> Result<(), cintxRsError> {
+    if operator_name.contains("iprinv") {
+        match params.rinv_orig {
+            None => {
+                return Err(cintxRsError::InvalidEnvParam {
+                    param: "PTR_RINV_ORIG",
+                    reason: "env[4..6] (PTR_RINV_ORIG) must be set for iprinv operators"
+                        .to_owned(),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,5 +379,48 @@ mod tests {
             .expect("non-grids family should not be checked");
         validate_grids_env_params("origi", &params)
             .expect("non-grids family should not be checked");
+    }
+
+    #[test]
+    fn rinv_orig_default_is_none() {
+        let params = OperatorEnvParams::default();
+        assert!(params.rinv_orig.is_none(), "rinv_orig must default to None");
+    }
+
+    #[test]
+    fn validate_rinv_orig_rejects_none_for_iprinv() {
+        let params = OperatorEnvParams::default(); // rinv_orig: None
+        let err = validate_rinv_orig_env_params("iprinv", &params).unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "PTR_RINV_ORIG"),
+            "expected InvalidEnvParam(PTR_RINV_ORIG) for iprinv with None origin, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_rinv_orig_rejects_none_for_ecp_iprinv() {
+        let params = OperatorEnvParams::default(); // rinv_orig: None
+        let err = validate_rinv_orig_env_params("ecp_iprinv", &params).unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "PTR_RINV_ORIG"),
+            "expected InvalidEnvParam(PTR_RINV_ORIG) for ecp_iprinv with None origin, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_rinv_orig_accepts_non_iprinv() {
+        let params = OperatorEnvParams::default();
+        validate_rinv_orig_env_params("overlap", &params)
+            .expect("non-iprinv operator must not be gated by rinv-origin check");
+    }
+
+    #[test]
+    fn validate_rinv_orig_accepts_some() {
+        let params = OperatorEnvParams {
+            rinv_orig: Some([0.0, 0.0, 1.4]),
+            ..OperatorEnvParams::default()
+        };
+        validate_rinv_orig_env_params("iprinv", &params)
+            .expect("iprinv with rinv_orig=Some(...) must pass");
     }
 }

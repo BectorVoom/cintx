@@ -47,6 +47,10 @@ pub struct OperatorEnvParams {
     /// For grids integrals: NGRIDS (env[11]) and PTR_GRIDS (env[12]) parameters.
     /// Validator rejects grids family when grids_params is None or ngrids == 0.
     pub grids_params: Option<GridsEnvParams>,
+    /// PTR_RINV_ORIG value (env[4..6]) for iprinv/ECPscalar_iprinv kernels.
+    /// Must be present when operator_name contains "iprinv".
+    /// Absent (None) is allowed for all other operators.
+    pub rinv_orig: Option<[f64; 3]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
