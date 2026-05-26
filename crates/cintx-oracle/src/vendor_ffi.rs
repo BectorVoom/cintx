@@ -403,6 +403,122 @@ pub fn vendor_int1e_nuc_cart(
     }
 }
 
+/// Evaluate int1e_ipovlp_sph for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipovlp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipovlp_cart for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipovlp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkin_sph for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipkin_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkin_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkin_cart for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipkin_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkin_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int2e_cart for a single shell quartet using vendored libcint.
 ///
 /// `out` must be pre-allocated with ni*nj*nk*nl elements where

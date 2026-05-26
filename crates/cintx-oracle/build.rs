@@ -72,6 +72,8 @@ fn main() {
         // CINTgout2e_int2e_ip1 is in grad2.c; ipip1/ipvip1/ip1ip2 are in hess.c.
         "src/autocode/grad2.c",
         "src/autocode/hess.c",
+        // Phase 21 1e gradient autocode: int1e_ipovlp, int1e_ipkin, etc.
+        "src/autocode/grad1.c",
         // Phase 14 unstable-source family source files.
         "src/cint1e_grids.c",
         "src/g1e_grids.c",
@@ -233,6 +235,9 @@ fn main() {
         // extern in cint2e_f12.c but defined in the autocode files.
         .file(libcint_root.join("src/autocode/grad2.c"))
         .file(libcint_root.join("src/autocode/hess.c"))
+        // Phase 21 gradient 1e integrals: int1e_ipovlp/ipkin/ipnuc/iprinv and all
+        // derivatives in grad1.c (CINTgout1e_int1e_ipovlp, CINTgout1e_int1e_ipkin, etc).
+        .file(libcint_root.join("src/autocode/grad1.c"))
         // Phase 14 unstable-source family source files.
         // cint1e_grids.c + g1e_grids.c: int1e_grids* (NGRIDS/PTR_GRIDS env handling).
         // autocode/int1e_grids1.c: int1e_grids_ip/ipvip/spvsp/ipip derivative wrappers.
@@ -339,7 +344,7 @@ extern int ECPscalar_ipnuc_cart(double *out, int *dims, int *shls,
         .header(suppl_h.to_string_lossy())
         .clang_arg(format!("-I{}", out_dir.display()))
         .clang_arg(format!("-I{}", libcint_root.join("src").display()))
-        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c1e_p2_sph|int3c2e_sph|int3c2e_cart|int4c1e_sph|int4c1e_cart|int1e_ovlp_cart|int1e_kin_cart|int1e_nuc_cart|int2e_cart|int2c2e_cart|int3c1e_cart|int3c1e_p2_cart|int3c2e_ip1_cart|int1e_ovlp_spinor|int1e_kin_spinor|int1e_nuc_spinor|int2e_spinor|int2c2e_spinor|int3c1e_spinor|int3c2e_spinor|int2e_stg_sph|int2e_stg_ip1_sph|int2e_stg_ipip1_sph|int2e_stg_ipvip1_sph|int2e_stg_ip1ip2_sph|int2e_yp_sph|int2e_yp_ip1_sph|int2e_yp_ipip1_sph|int2e_yp_ipvip1_sph|int2e_yp_ip1ip2_sph|int1e_r2_origi_sph|int1e_r4_origi_sph|int1e_r2_origi_ip2_sph|int1e_r4_origi_ip2_sph|int1e_grids_sph|int1e_grids_ip_sph|int1e_grids_ipvip_sph|int1e_grids_spvsp_sph|int1e_grids_ipip_sph|int2e_breit_r1p2_spinor|int2e_breit_r2p2_spinor|int3c1e_r2_origk_sph|int3c1e_r4_origk_sph|int3c1e_r6_origk_sph|int3c1e_ip1_r2_origk_sph|int3c1e_ip1_r4_origk_sph|int3c1e_ip1_r6_origk_sph|int3c2e_sph_ssc|ECPscalar_sph|ECPscalar_cart|ECPscalar_ipnuc_sph|ECPscalar_ipnuc_cart|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer|CINTlen_cart|CINTlen_spinor|CINTcgto_cart|CINTcgto_spinor|CINTtot_pgto_spheric|CINTtot_pgto_spinor|CINTtot_cgto_cart|CINTtot_cgto_spheric|CINTtot_cgto_spinor|CINTshells_cart_offset|CINTshells_spheric_offset|CINTshells_spinor_offset|CINTgto_norm|CINTc2s_bra_sph")
+        .allowlist_function("int1e_ovlp_sph|int1e_kin_sph|int1e_nuc_sph|int2e_sph|int2c2e_sph|int3c1e_sph|int3c1e_p2_sph|int3c2e_sph|int3c2e_cart|int4c1e_sph|int4c1e_cart|int1e_ovlp_cart|int1e_kin_cart|int1e_nuc_cart|int2e_cart|int2c2e_cart|int3c1e_cart|int3c1e_p2_cart|int3c2e_ip1_cart|int1e_ovlp_spinor|int1e_kin_spinor|int1e_nuc_spinor|int2e_spinor|int2c2e_spinor|int3c1e_spinor|int3c2e_spinor|int2e_stg_sph|int2e_stg_ip1_sph|int2e_stg_ipip1_sph|int2e_stg_ipvip1_sph|int2e_stg_ip1ip2_sph|int2e_yp_sph|int2e_yp_ip1_sph|int2e_yp_ipip1_sph|int2e_yp_ipvip1_sph|int2e_yp_ip1ip2_sph|int1e_r2_origi_sph|int1e_r4_origi_sph|int1e_r2_origi_ip2_sph|int1e_r4_origi_ip2_sph|int1e_grids_sph|int1e_grids_ip_sph|int1e_grids_ipvip_sph|int1e_grids_spvsp_sph|int1e_grids_ipip_sph|int2e_breit_r1p2_spinor|int2e_breit_r2p2_spinor|int3c1e_r2_origk_sph|int3c1e_r4_origk_sph|int3c1e_r6_origk_sph|int3c1e_ip1_r2_origk_sph|int3c1e_ip1_r4_origk_sph|int3c1e_ip1_r6_origk_sph|int3c2e_sph_ssc|ECPscalar_sph|ECPscalar_cart|ECPscalar_ipnuc_sph|ECPscalar_ipnuc_cart|int1e_ipovlp_sph|int1e_ipovlp_cart|int1e_ipkin_sph|int1e_ipkin_cart|CINTcgto_spheric|CINTinit_optimizer|CINTdel_optimizer|CINTlen_cart|CINTlen_spinor|CINTcgto_cart|CINTcgto_spinor|CINTtot_pgto_spheric|CINTtot_pgto_spinor|CINTtot_cgto_cart|CINTtot_cgto_spheric|CINTtot_cgto_spinor|CINTshells_cart_offset|CINTshells_spheric_offset|CINTshells_spinor_offset|CINTgto_norm|CINTc2s_bra_sph")
         .allowlist_type("CINTOpt")
         .generate()
         .expect("failed to generate oracle libcint bindings");
