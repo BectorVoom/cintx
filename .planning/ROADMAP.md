@@ -394,7 +394,7 @@ Plans:
 Plans:
 **Wave 1** — rinv-origin env infrastructure + manifest registration (foundation)
 
-- [ ] 21-01-PLAN.md — Wave 1: `PTR_RINV_ORIG` env-slot plumbing (the `f12_zeta` 4-step pattern): `OperatorEnvParams.rinv_orig`, `raw.rs` env-read, `validator.rs` gate, thread into `one_electron`/`ecp` kernels; `with_rinv_origin` safe-API setter; env round-trip + validator-rejects-missing-origin unit tests. [GRAD-01]
+- [x] 21-01-PLAN.md — Wave 1: `PTR_RINV_ORIG` env-slot plumbing (the `f12_zeta` 4-step pattern): `OperatorEnvParams.rinv_orig`, `raw.rs` env-read, `validator.rs` gate, thread into `one_electron`/`ecp` kernels; `with_rinv_origin` safe-API setter; env round-trip + validator-rejects-missing-origin unit tests. [GRAD-01]
 - [ ] 21-02-PLAN.md — Wave 1: register all 6 families (+ `int3c2e_ip1` correction) in `compiled_manifest.lock.json` with `component_rank:"3"`; add RawApiId consts, legacy wrappers, CAPI enum variants; `cargo build` regenerates the manifest; manifest-audit xtask green; symbols resolve through `eval_raw` (UnsupportedApi from kernels until Wave 2/3). [GRAD-02]
 
 **Wave 2** *(blocked on Wave 1)* — 1e gradient kernels (no Rys risk except ipnuc; 21-04 runs after 21-03 — both edit `one_electron.rs`, executor serializes on the `files_modified` overlap)

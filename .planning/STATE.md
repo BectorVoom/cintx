@@ -4,13 +4,13 @@ milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
 status: Ready to execute
 stopped_at: "Completed Phase 20 Plan 10 (Gap 2a — kernel+math hardening for PREC-05 f32 correctness; 2 commits: 5ba79fb + 69a6a18)"
-last_updated: "2026-05-26T09:22:57.742Z"
+last_updated: "2026-05-26T09:38:22.705Z"
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 59
-  completed_plans: 51
-  percent: 86
+  completed_plans: 52
+  percent: 88
 ---
 
 # Project State
@@ -20,12 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 21 — coulomb-gradient-intors (planned, ready to execute)
+**Current focus:** Phase 21 — coulomb-gradient-intors
 
 ## Current Position
 
-Phase: 21
-Plan: Not started (8 plans across 5 waves)
+Phase: 21 (coulomb-gradient-intors) — EXECUTING
+Plan: 2 of 8
 Next: Execute Phase 21 — `/gsd:execute-phase 21`
 Resume: `.planning/phases/21-coulomb-gradient-intors/21-01-PLAN.md`
 
@@ -296,6 +296,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-21T14:11:17.653Z
+Last session: 2026-05-26T09:38:22.702Z
 Stopped at: Completed Phase 20 Plan 10 (Gap 2a — kernel+math hardening for PREC-05 f32 correctness; 2 commits: 5ba79fb + 69a6a18)
 Resume file: None

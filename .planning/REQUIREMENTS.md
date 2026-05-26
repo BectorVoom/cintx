@@ -56,7 +56,7 @@
 
 > The 6 plain-Coulomb first-derivative (∂/∂nuclear-coordinate) integral families every HF/DFT/MP2/CCSD analytical gradient needs, byte-identical to libcint 6.1.3, plus the `int3c2e_ip1` stub repair. Landing these un-gates pyscf_rs Phase 7's analytical-gradient numeric arms with zero pyscf_rs rework. Source: `.planning/notes/phase-21-coulomb-gradient-intors-PLAN.md`.
 
-- [ ] **GRAD-01**: `PTR_RINV_ORIG` env slot (`env[4..6]`) is plumbed end-to-end following the `f12_zeta` precedent — `OperatorEnvParams.rinv_orig: Option<[f64;3]>` field, `raw.rs::eval_raw` env-read, `validator.rs` gate (an `iprinv` operator without an origin is rejected), and the origin threaded into the `one_electron`/`ecp` kernels; a `with_rinv_origin`-style setter is exposed on the safe-API options. Env round-trip and validator-rejection unit tests pass.
+- [x] **GRAD-01**: `PTR_RINV_ORIG` env slot (`env[4..6]`) is plumbed end-to-end following the `f12_zeta` precedent — `OperatorEnvParams.rinv_orig: Option<[f64;3]>` field, `raw.rs::eval_raw` env-read, `validator.rs` gate (an `iprinv` operator without an origin is rejected), and the origin threaded into the `one_electron`/`ecp` kernels; a `with_rinv_origin`-style setter is exposed on the safe-API options. Env round-trip and validator-rejection unit tests pass.
 - [ ] **GRAD-02**: All 6 gradient families plus the `int3c2e_ip1` correction are registered in `compiled_manifest.lock.json` with `"component_rank":"3"` (per cart/sph/spinor representation), with matching RawApiId consts, legacy wrappers, and CAPI enum variants; `cargo build` regenerates `api_manifest.rs`; the manifest-audit xtask is green and every symbol resolves through `eval_raw` (returning `UnsupportedApi` from kernels until its kernel lands).
 - [ ] **GRAD-03**: `int1e_ipovlp` (cart + sph, 3 components) matches vendored libcint 6.1.3 at atol=1e-12 on the H2O/STO-3G corpus.
 - [ ] **GRAD-04**: `int1e_ipkin` (cart + sph, 3 components) matches vendored libcint 6.1.3 at atol=1e-12 on the H2O/STO-3G corpus.
@@ -119,7 +119,7 @@
 | ORAC-02 | Phase 15 | Complete |
 | ORAC-03 | Phase 15 | Complete |
 | ORAC-04 | Phase 15 | Complete |
-| GRAD-01 | Phase 21 | Pending |
+| GRAD-01 | Phase 21 | Complete |
 | GRAD-02 | Phase 21 | Pending |
 | GRAD-03 | Phase 21 | Pending |
 | GRAD-04 | Phase 21 | Pending |
