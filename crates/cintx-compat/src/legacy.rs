@@ -235,6 +235,72 @@ all_cint_wrappers!(
     RawApiId::INT3C2E_IP1_SPH,
     RawApiId::INT3C2E_IP1_SPINOR
 );
+all_cint_wrappers!(
+    cint1e_ipovlp_cart,
+    cint1e_ipovlp_sph,
+    cint1e_ipovlp,
+    cint1e_ipovlp_cart_optimizer,
+    cint1e_ipovlp_sph_optimizer,
+    cint1e_ipovlp_optimizer,
+    RawApiId::INT1E_IPOVLP_CART,
+    RawApiId::INT1E_IPOVLP_SPH,
+    RawApiId::INT1E_IPOVLP_SPINOR
+);
+all_cint_wrappers!(
+    cint1e_ipkin_cart,
+    cint1e_ipkin_sph,
+    cint1e_ipkin,
+    cint1e_ipkin_cart_optimizer,
+    cint1e_ipkin_sph_optimizer,
+    cint1e_ipkin_optimizer,
+    RawApiId::INT1E_IPKIN_CART,
+    RawApiId::INT1E_IPKIN_SPH,
+    RawApiId::INT1E_IPKIN_SPINOR
+);
+all_cint_wrappers!(
+    cint1e_ipnuc_cart,
+    cint1e_ipnuc_sph,
+    cint1e_ipnuc,
+    cint1e_ipnuc_cart_optimizer,
+    cint1e_ipnuc_sph_optimizer,
+    cint1e_ipnuc_optimizer,
+    RawApiId::INT1E_IPNUC_CART,
+    RawApiId::INT1E_IPNUC_SPH,
+    RawApiId::INT1E_IPNUC_SPINOR
+);
+all_cint_wrappers!(
+    cint1e_iprinv_cart,
+    cint1e_iprinv_sph,
+    cint1e_iprinv,
+    cint1e_iprinv_cart_optimizer,
+    cint1e_iprinv_sph_optimizer,
+    cint1e_iprinv_optimizer,
+    RawApiId::INT1E_IPRINV_CART,
+    RawApiId::INT1E_IPRINV_SPH,
+    RawApiId::INT1E_IPRINV_SPINOR
+);
+all_cint_wrappers!(
+    cint2e_ip1_cart,
+    cint2e_ip1_sph,
+    cint2e_ip1,
+    cint2e_ip1_cart_optimizer,
+    cint2e_ip1_sph_optimizer,
+    cint2e_ip1_optimizer,
+    RawApiId::INT2E_IP1_CART,
+    RawApiId::INT2E_IP1_SPH,
+    RawApiId::INT2E_IP1_SPINOR
+);
+all_cint_wrappers!(
+    cint1e_ecp_iprinv_cart,
+    cint1e_ecp_iprinv_sph,
+    cint1e_ecp_iprinv,
+    cint1e_ecp_iprinv_cart_optimizer,
+    cint1e_ecp_iprinv_sph_optimizer,
+    cint1e_ecp_iprinv_optimizer,
+    RawApiId::INT1E_ECP_IPRINV_CART,
+    RawApiId::INT1E_ECP_IPRINV_SPH,
+    RawApiId::INT1E_ECP_IPRINV_SPINOR
+);
 
 pub const LEGACY_WRAPPER_SYMBOLS: &[&str] = &[
     "cint1e_kin_cart",
@@ -282,6 +348,42 @@ pub const LEGACY_WRAPPER_SYMBOLS: &[&str] = &[
     "cint3c2e_ip1_cart_optimizer",
     "cint3c2e_ip1_sph_optimizer",
     "cint3c2e_ip1_optimizer",
+    "cint1e_ipovlp_cart",
+    "cint1e_ipovlp_sph",
+    "cint1e_ipovlp",
+    "cint1e_ipovlp_cart_optimizer",
+    "cint1e_ipovlp_sph_optimizer",
+    "cint1e_ipovlp_optimizer",
+    "cint1e_ipkin_cart",
+    "cint1e_ipkin_sph",
+    "cint1e_ipkin",
+    "cint1e_ipkin_cart_optimizer",
+    "cint1e_ipkin_sph_optimizer",
+    "cint1e_ipkin_optimizer",
+    "cint1e_ipnuc_cart",
+    "cint1e_ipnuc_sph",
+    "cint1e_ipnuc",
+    "cint1e_ipnuc_cart_optimizer",
+    "cint1e_ipnuc_sph_optimizer",
+    "cint1e_ipnuc_optimizer",
+    "cint1e_iprinv_cart",
+    "cint1e_iprinv_sph",
+    "cint1e_iprinv",
+    "cint1e_iprinv_cart_optimizer",
+    "cint1e_iprinv_sph_optimizer",
+    "cint1e_iprinv_optimizer",
+    "cint2e_ip1_cart",
+    "cint2e_ip1_sph",
+    "cint2e_ip1",
+    "cint2e_ip1_cart_optimizer",
+    "cint2e_ip1_sph_optimizer",
+    "cint2e_ip1_optimizer",
+    "cint1e_ecp_iprinv_cart",
+    "cint1e_ecp_iprinv_sph",
+    "cint1e_ecp_iprinv",
+    "cint1e_ecp_iprinv_cart_optimizer",
+    "cint1e_ecp_iprinv_sph_optimizer",
+    "cint1e_ecp_iprinv_optimizer",
 ];
 
 #[cfg(test)]
@@ -309,9 +411,19 @@ mod tests {
 
     fn misc_wrapper_macro(base_symbol: &str) -> Option<MiscWrapperMacro> {
         match base_symbol {
-            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e" | "int3c1e_p2" | "int3c2e_ip1" => {
-                Some(MiscWrapperMacro::AllCint)
-            }
+            "int1e_ovlp"
+            | "int1e_nuc"
+            | "int2e"
+            | "int2c2e"
+            | "int3c1e"
+            | "int3c1e_p2"
+            | "int3c2e_ip1"
+            | "int1e_ipovlp"
+            | "int1e_ipkin"
+            | "int1e_ipnuc"
+            | "int1e_iprinv"
+            | "int2e_ip1"
+            | "int1e_ecp_iprinv" => Some(MiscWrapperMacro::AllCint),
             "int1e_kin" => Some(MiscWrapperMacro::AllCint1e),
             _ => None,
         }

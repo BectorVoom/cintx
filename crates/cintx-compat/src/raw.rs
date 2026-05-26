@@ -158,6 +158,32 @@ impl RawApiId {
     pub const INT1E_ECP_IPNUC_CART: Self = Self::Symbol("int1e_ecp_ipnuc_cart");
     pub const INT1E_ECP_IPNUC_SPH: Self = Self::Symbol("int1e_ecp_ipnuc_sph");
 
+    // Phase 21 gradient families.
+    pub const INT1E_IPOVLP_CART: Self = Self::Symbol("int1e_ipovlp_cart");
+    pub const INT1E_IPOVLP_SPH: Self = Self::Symbol("int1e_ipovlp_sph");
+    pub const INT1E_IPOVLP_SPINOR: Self = Self::Symbol("int1e_ipovlp_spinor");
+
+    pub const INT1E_IPKIN_CART: Self = Self::Symbol("int1e_ipkin_cart");
+    pub const INT1E_IPKIN_SPH: Self = Self::Symbol("int1e_ipkin_sph");
+    pub const INT1E_IPKIN_SPINOR: Self = Self::Symbol("int1e_ipkin_spinor");
+
+    pub const INT1E_IPNUC_CART: Self = Self::Symbol("int1e_ipnuc_cart");
+    pub const INT1E_IPNUC_SPH: Self = Self::Symbol("int1e_ipnuc_sph");
+    pub const INT1E_IPNUC_SPINOR: Self = Self::Symbol("int1e_ipnuc_spinor");
+
+    pub const INT1E_IPRINV_CART: Self = Self::Symbol("int1e_iprinv_cart");
+    pub const INT1E_IPRINV_SPH: Self = Self::Symbol("int1e_iprinv_sph");
+    pub const INT1E_IPRINV_SPINOR: Self = Self::Symbol("int1e_iprinv_spinor");
+
+    pub const INT2E_IP1_CART: Self = Self::Symbol("int2e_ip1_cart");
+    pub const INT2E_IP1_SPH: Self = Self::Symbol("int2e_ip1_sph");
+    pub const INT2E_IP1_SPINOR: Self = Self::Symbol("int2e_ip1_spinor");
+
+    pub const INT1E_ECP_IPRINV_CART: Self = Self::Symbol("int1e_ecp_iprinv_cart");
+    pub const INT1E_ECP_IPRINV_SPH: Self = Self::Symbol("int1e_ecp_iprinv_sph");
+    /// Spinor form registered for surface completeness; kernel returns UnsupportedApi (D-03/R5).
+    pub const INT1E_ECP_IPRINV_SPINOR: Self = Self::Symbol("int1e_ecp_iprinv_spinor");
+
     fn symbol(self) -> &'static str {
         match self {
             Self::Symbol(symbol) => symbol,
