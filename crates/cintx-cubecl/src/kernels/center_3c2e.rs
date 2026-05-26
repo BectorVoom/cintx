@@ -12,6 +12,7 @@
 //! the 2e `ll` angular channel, with only one real "ket-side" angular axis.
 
 use crate::backend::ResolvedBackend;
+use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
 use crate::math::pdata::{PairData, compute_pdata_host};
 use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
@@ -312,6 +313,243 @@ fn transpose_ij_3idx(buf: &[f64], ni: usize, nj: usize, nk: usize) -> Vec<f64> {
 /// output float type `F: CintFloat`. Intermediate computations (G-tensor, cart_buf)
 /// remain `f64`; precision conversion happens only at the final staging write via
 /// `F::from_f64_lossy`. Preserves the li>=lj canonicalization + transpose-back.
+/// `int3c2e_ip1` gradient launch — the `∇_A` first-center derivative of the
+/// three-center two-electron Coulomb integral (GRAD-08 / Risk R1).
+///
+/// Mirrors `two_electron.rs::launch_two_electron_ip1`, applying the 3c2e Pitfall-4
+/// kl mapping (file header lines 6-12):
+///   - 2e "ij side"  ← real `(i, j)` (the bra; `i` raised to `li+1` for `∇_i`)
+///   - 2e `ll` slot   ← real `k` (the only real ket-side angular axis)
+///   - 2e `lk` slot   ← phantom s-function (`lk_ceil = 0`, exponent `ak = 0`)
+///
+/// Builds the plain Coulomb G-tensor through the SHARED 2e recurrence
+/// ([`fill_g_tensor_2e`]) with `li_ceil = li+1` headroom, reuses
+/// [`crate::kernels::f12::gout_ip1`] verbatim, and emits 3-component component-leading
+/// `[3, nk, nj, ni]` F-order (same convention as `int2e_ip1`).
+///
+/// Guards (fail-closed):
+///   - `Representation::Spinor` → `UnsupportedApi` (R5 / T-21-06-04).
+///   - `grad_shape.nroots > 5` → `UnsupportedApi` (R2 / T-21-06-04): the `li→li+1`
+///     raise can push high-l triples past the rys_root1..5 ceiling; reject BEFORE
+///     any rys dispatch.
+///
+/// No `swap_ij` canonicalization: the derivative acts on the first (`i`) shell, and
+/// the output keeps the caller's `(i, j, k)` shell order.
+#[allow(clippy::too_many_arguments)]
+fn launch_center_3c2e_ip1<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    shell_i: &cintx_core::Shell,
+    shell_j: &cintx_core::Shell,
+    shell_k: &cintx_core::Shell,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    // R5 / T-21-06-04: spinor gradient is not supported. Reject before any compute.
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor int3c2e_ip1 gradient".to_owned(),
+        });
+    }
+
+    // 3c2e kl mapping into the 2e shape (Pitfall-4): real k → 2e `ll` slot, phantom
+    // 2e `lk` slot = 0; bra `i` raised to `li+1` so `nabla1i_2e` can read index li+1.
+    let grad_shape = build_2e_shape(li as usize + 1, lj as usize, 0, lk as usize);
+
+    // R2 / T-21-06-04: the elevated li can push nroots past the rys_root1..5 ceiling.
+    // Reject fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
+    if grad_shape.nroots > 5 {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
+        });
+    }
+
+    let atoms = plan.basis.atoms();
+    let ri = atoms[shell_i.atom_index as usize].coord_bohr;
+    let rj = atoms[shell_j.atom_index as usize].coord_bohr;
+    let rk = atoms[shell_k.atom_index as usize].coord_bohr;
+
+    // From CINTinit_int3c2e_EnvVars (same prefactor as the scalar 3c2e path).
+    let common_factor =
+        (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let block_len = nci * ncj * nck; // per-component Cartesian AO product
+    let total_len = 3 * block_len;
+
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+
+    // Per-contraction-triple component-leading Cartesian accumulator.
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * total_len];
+
+    let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
+
+    for kp in 0..n_prim_k {
+        let ak = shell_k.exponents[kp];
+        for jp in 0..n_prim_j {
+            let aj = shell_j.exponents[jp];
+            for ip in 0..n_prim_i {
+                let ai = shell_i.exponents[ip];
+
+                // 3c2e mapping for the 2e G-tensor fill:
+                //   bra pair (i, j): ai, aj at ri, rj.
+                //   ket pair: phantom 2e `lk` shell (exponent 0, at the real-k center)
+                //   in the lk-slot; real k in the 2e `ll` slot (exponent ak at rk).
+                let g = fill_g_tensor_2e(
+                    ai, aj, 0.0, ak, &ri, &rj, &rk, &rk, grad_shape,
+                    common_factor,
+                );
+
+                // Reuse gout_ip1 verbatim (f12.rs). Called at BASE li (the G-tensor
+                // carries the li+1 headroom). With the phantom 2e lk=0, the gout
+                // n-walk [ll, lk, lj, li] collapses to [real_k, (phantom size 1),
+                // j, i] → effectively [k][j][i] (i fastest), matching the scalar
+                // 3c2e cart layout the cart_to_sph_3c2e transform expects.
+                let gout = crate::kernels::f12::gout_ip1(
+                    &g,
+                    &grad_f12_shape,
+                    li as usize,
+                    lj as usize,
+                    0, // phantom 2e lk slot
+                    lk as usize, // real k in the 2e ll slot
+                    ai,
+                );
+
+                for ci in 0..n_ctr_i {
+                    let coeff_i = shell_i.coefficients[ip * n_ctr_i + ci];
+                    for cj in 0..n_ctr_j {
+                        let coeff_j = shell_j.coefficients[jp * n_ctr_j + cj];
+                        for ck in 0..n_ctr_k {
+                            let coeff_k = shell_k.coefficients[kp * n_ctr_k + ck];
+                            let weight = coeff_i * coeff_j * coeff_k;
+                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len;
+                            // TRANSPOSE interleaved gout[n*3+comp] into component-leading.
+                            for n in 0..block_len {
+                                for comp in 0..3usize {
+                                    cart_blocks[base + comp * block_len + n] +=
+                                        weight * gout[n * 3 + comp];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Write component-leading `[3, nk, nj, ni]` F-order to staging. Per component,
+    // the per-triple block is the i-fastest `[nk][nj][ni]` Cartesian tensor — run
+    // the cart→sph 3c2e transform per component for the sph rep.
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dj = n_ctr_j * nsj;
+            let dk = n_ctr_k * nsk;
+            let sph_block = di * dj * dk;
+            for comp in 0..3usize {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
+                                + comp * block_len;
+                            let sph = cart_to_sph_3c2e(
+                                &cart_blocks[base..base + block_len],
+                                li,
+                                lj,
+                                lk,
+                            );
+                            for mk in 0..nsk {
+                                let kidx = ck * nsk + mk;
+                                for mj in 0..nsj {
+                                    let jidx = cj * nsj + mj;
+                                    for mi in 0..nsi {
+                                        let iidx = ci * nsi + mi;
+                                        let src = mi + nsi * (mj + nsj * mk);
+                                        let dst = staging_comp_base
+                                            + iidx
+                                            + di * (jidx + dj * kidx);
+                                        if dst < staging.len() {
+                                            staging[dst] = F::from_f64_lossy(sph[src]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nci;
+            let dj = n_ctr_j * ncj;
+            let dk = n_ctr_k * nck;
+            let cart_block = di * dj * dk;
+            for comp in 0..3usize {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
+                                + comp * block_len;
+                            let block = &cart_blocks[base..base + block_len];
+                            for kc in 0..nck {
+                                let kidx = ck * nck + kc;
+                                for jc in 0..ncj {
+                                    let jidx = cj * ncj + jc;
+                                    for ic in 0..nci {
+                                        let iidx = ci * nci + ic;
+                                        let src = ic + nci * (jc + ncj * kc);
+                                        let dst = staging_comp_base
+                                            + iidx
+                                            + di * (jidx + dj * kidx);
+                                        if dst < staging.len() {
+                                            staging[dst] = F::from_f64_lossy(block[src]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor int3c2e_ip1 rejected above"),
+    }
+
+    // Per-symbol nonzero sentinel (precision-aware; matches the scalar path).
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
 fn launch_center_3c2e_typed<F: CintFloat>(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
@@ -349,6 +587,25 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     let li_in = shell_i_in.ang_momentum;
     let lj_in = shell_j_in.ang_momentum;
     let lk = shell_k.ang_momentum;
+
+    // int3c2e_ip1 gradient path (Plan 21-06 / GRAD-08 / Risk R1).
+    //
+    // The scalar path below is operator-blind and silently returns the PLAIN 3c2e
+    // integral; pyscf-grad's DF-gradient runtime consumes `int3c2e_ip1` as the
+    // `∇_A` first-center DERIVATIVE. This branch ships the real derivative, reusing
+    // `gout_ip1` (f12.rs, made pub(crate) by 21-05) verbatim — the same `∇_i` math
+    // as `int2e_ip1` (two_electron.rs). It preserves the 3c2e Pitfall-4 kl mapping
+    // (file header lines 6-12): real k is mapped to the 2e `ll` slot and the 2e `lk`
+    // slot is a phantom s-function (`lk_ceil = 0`, exponent 0). The G-tensor is built
+    // through the SAME 2e recurrence (`fill_g_tensor_2e`) the contraction expects.
+    //
+    // After 21-02's manifest change `id.operator` for int3c2e_ip1 is "ip1".
+    if plan.descriptor.operator_name() == "ip1" {
+        return launch_center_3c2e_ip1::<F>(
+            plan, shell_i_in, shell_j_in, shell_k, li_in, lj_in, lk, staging,
+        );
+    }
+
     let swap_ij = li_in < lj_in;
     let (shell_i, shell_j, li, lj) = if swap_ij {
         (shell_j_in, shell_i_in, lj_in, li_in)
@@ -798,10 +1055,23 @@ mod ip1_tests {
             "(s,s,s) int3c2e_ip1 should produce 3 components, got {}",
             staging.len()
         );
-        // s-s-s ∇_i with off-center geometry: all 3 components nonzero.
+        // s-s-s ∇_i with the test geometry (all atoms in the z=0 plane): the x and y
+        // gradient components are nonzero; the z component vanishes by symmetry. A
+        // genuine 3-component derivative therefore fills ≥2 lanes with distinct
+        // nonzero values — the scalar stub (which broadcast a single scalar) would
+        // give 3 identical lanes. We assert at least 2 nonzero AND not all equal.
+        let nonzero = staging.iter().filter(|v| v.abs() > 1e-12).count();
         assert!(
-            staging.iter().all(|v| v.abs() > 1e-12),
-            "(s,s,s) int3c2e_ip1 must fill all 3 component lanes: {staging:?}"
+            nonzero >= 2,
+            "(s,s,s) int3c2e_ip1 must fill ≥2 component lanes (in-plane ∇_i): {staging:?}"
+        );
+        let all_equal = staging
+            .iter()
+            .all(|v| (v - staging[0]).abs() <= 1e-15);
+        assert!(
+            !all_equal,
+            "(s,s,s) int3c2e_ip1 lanes are all identical — the scalar stub (R1) is \
+             NOT closed: {staging:?}"
         );
 
         let (basis, shells, op) = build_ip1_plan(1, 0, 0);
