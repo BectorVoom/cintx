@@ -3879,7 +3879,7 @@
         "representation": "cart",
         "symbol": "int1e_ipovlp_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -3911,7 +3911,7 @@
         "representation": "sph",
         "symbol": "int1e_ipovlp_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -3975,7 +3975,7 @@
         "representation": "cart",
         "symbol": "int1e_ipkin_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4007,7 +4007,7 @@
         "representation": "sph",
         "symbol": "int1e_ipkin_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4071,7 +4071,7 @@
         "representation": "cart",
         "symbol": "int1e_ipnuc_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4103,7 +4103,7 @@
         "representation": "sph",
         "symbol": "int1e_ipnuc_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4167,7 +4167,7 @@
         "representation": "cart",
         "symbol": "int1e_iprinv_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4199,7 +4199,7 @@
         "representation": "sph",
         "symbol": "int1e_iprinv_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4263,7 +4263,7 @@
         "representation": "cart",
         "symbol": "int2e_ip1_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4295,7 +4295,7 @@
         "representation": "sph",
         "symbol": "int2e_ip1_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4455,7 +4455,7 @@
         "operator": "cint1e_ipovlp_cart",
         "symbol": "cint1e_ipovlp_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4487,7 +4487,7 @@
         "operator": "cint1e_ipovlp_sph",
         "symbol": "cint1e_ipovlp_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4519,7 +4519,7 @@
         "operator": "cint1e_ipovlp",
         "symbol": "cint1e_ipovlp"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4551,7 +4551,7 @@
         "operator": "cint1e_ipkin_cart",
         "symbol": "cint1e_ipkin_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4583,7 +4583,7 @@
         "operator": "cint1e_ipkin_sph",
         "symbol": "cint1e_ipkin_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4615,7 +4615,7 @@
         "operator": "cint1e_ipkin",
         "symbol": "cint1e_ipkin"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4647,7 +4647,7 @@
         "operator": "cint1e_ipnuc_cart",
         "symbol": "cint1e_ipnuc_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4679,7 +4679,7 @@
         "operator": "cint1e_ipnuc_sph",
         "symbol": "cint1e_ipnuc_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4711,7 +4711,7 @@
         "operator": "cint1e_ipnuc",
         "symbol": "cint1e_ipnuc"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4743,7 +4743,7 @@
         "operator": "cint1e_iprinv_cart",
         "symbol": "cint1e_iprinv_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4775,7 +4775,7 @@
         "operator": "cint1e_iprinv_sph",
         "symbol": "cint1e_iprinv_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4807,7 +4807,7 @@
         "operator": "cint1e_iprinv",
         "symbol": "cint1e_iprinv"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4839,7 +4839,7 @@
         "operator": "cint2e_ip1_cart",
         "symbol": "cint2e_ip1_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4871,7 +4871,7 @@
         "operator": "cint2e_ip1_sph",
         "symbol": "cint2e_ip1_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4903,7 +4903,7 @@
         "operator": "cint2e_ip1",
         "symbol": "cint2e_ip1"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4935,7 +4935,7 @@
         "operator": "cint2e_ip1_cart_optimizer",
         "symbol": "cint2e_ip1_cart_optimizer"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4967,7 +4967,7 @@
         "operator": "cint2e_ip1_sph_optimizer",
         "symbol": "cint2e_ip1_sph_optimizer"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4999,7 +4999,7 @@
         "operator": "cint2e_ip1_optimizer",
         "symbol": "cint2e_ip1_optimizer"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
