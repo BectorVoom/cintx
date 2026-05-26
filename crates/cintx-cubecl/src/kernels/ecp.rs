@@ -584,6 +584,46 @@ fn group_ecp_slots(ecp_shells: &[Arc<EcpShell>]) -> Vec<EcpSlot<'_>> {
     slots
 }
 
+/// Tolerance (bohr) for matching the `iprinv` rinv origin to an ECP-bearing
+/// atom's coordinate. The safe API supplies a coordinate origin (not the
+/// integer `env[AS_RINV_ORIG_ATOM]` index the vendor uses); a tight tolerance
+/// keeps the selection unambiguous while absorbing float round-trip noise
+/// through the env slab. Mirrors the per-nucleus selection intent of D-09.
+const IPRINV_ORIGIN_MATCH_TOL: f64 = 1e-10;
+
+/// `ECPscalar_iprinv` per-nucleus selector (D-09). Given the grouped ECP
+/// `slots`, the molecule's `atoms`, and the `iprinv` rinv `origin`, return the
+/// indices of the slots whose atom's `coord_bohr` matches `origin` within
+/// [`IPRINV_ORIGIN_MATCH_TOL`].
+///
+/// This is the differentiator from `ecp_ipnuc`: `ipnuc` accumulates the
+/// gradient over EVERY ECP slot (all atoms), while `iprinv` differentiates only
+/// the single atom selected by the rinv origin and drops the all-slot/`-Z_C`
+/// accumulation. The vendor `ECPscalar_iprinv_cart` (nr_ecp_deriv.c:333) does
+/// the same via `env[AS_RINV_ORIG_ATOM]` + `_one_shell_ecpbas`; cintx matches by
+/// coordinate because the safe API supplies a coordinate origin.
+///
+/// Returns an empty `Vec` when no atom matches the origin — mirroring the
+/// vendor's `_one_shell_ecpbas` returning `shl_id < 0` (→ a zero-filled output),
+/// never a panic and never selecting the wrong atom (T-21-07-02). A matched
+/// atom may host MORE than one slot (Local + several Projected channels); ALL
+/// of that atom's slots are selected (they all belong to the single selected
+/// nucleus), which is still strictly per-nucleus.
+fn select_iprinv_slots(slots: &[EcpSlot<'_>], atoms: &[Atom], origin: [f64; 3]) -> Vec<usize> {
+    slots
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, slot)| {
+            let ac = slot.atom_index as usize;
+            let coord = atoms.get(ac)?.coord_bohr;
+            let d2 = (coord[0] - origin[0]).powi(2)
+                + (coord[1] - origin[1]).powi(2)
+                + (coord[2] - origin[2]).powi(2);
+            (d2.sqrt() < IPRINV_ORIGIN_MATCH_TOL).then_some(idx)
+        })
+        .collect()
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Type-1 (Local) ECP driver — port of ECPtype1_cart.
 // Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5808-5991.
@@ -1348,6 +1388,15 @@ fn compute_type2_pair_grad(
 /// (`compute_type1_pair_grad` / `compute_type2_pair_grad`), writing F-order
 /// `[axis, ao_j, ao_i]` (axis slowest) and applying `cart_to_sph_1e` per axis
 /// for the spherical representation.
+///
+/// For the per-nucleus `int1e_ecp_iprinv_*` operator
+/// (`operator_name == "ecp_iprinv"`, component_rank=3, 21-07/D-09) it reuses the
+/// SAME comp=3 `deriv1_cart_pair` driver but selects ONLY the single ECP shell
+/// on the atom whose coordinate matches the rinv origin
+/// (`plan.operator_env_params.rinv_orig`) — dropping the `ipnuc` all-slot/`-Z_C`
+/// accumulation. An origin matching no atom yields a zero-filled output
+/// (mirroring the vendor `_one_shell_ecpbas` shl_id<0 → 0); the spinor iprinv
+/// representation fails closed with `UnsupportedApi` (R5).
 pub fn launch_ecp(
     backend: &ResolvedBackend,
     plan: &ExecutionPlan<'_>,
@@ -1369,13 +1418,19 @@ pub fn launch_ecp(
     let operator_name = plan.descriptor.operator_name();
     let is_gradient = match operator_name {
         "ecp" => false,
-        "ecp_ipnuc" => true,
+        // ecp_ipnuc: ∂/∂A_i gradient summed over ALL ECP slots (Phase 19-07).
+        // ecp_iprinv: ∂/∂A_i gradient on the SINGLE atom matching the rinv
+        //   origin, no all-slot/-Z_C accumulation (21-07, D-09).
+        "ecp_ipnuc" | "ecp_iprinv" => true,
         other => {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!("unknown ecp operator name: {other}"),
             });
         }
     };
+    // iprinv differs from ipnuc only in single-atom selection (D-09); both reuse
+    // the same comp=3 deriv1_cart_pair driver below.
+    let is_iprinv = operator_name == "ecp_iprinv";
 
     let shells = plan.shells.as_slice();
     if shells.len() != 2 {
@@ -1427,6 +1482,17 @@ pub fn launch_ecp(
     let ri = atoms[ai].coord_bohr;
     let rj = atoms[aj].coord_bohr;
 
+    // R5 (T-21-07-04): the spinor ECP gradient is NOT byte-identity-gated this
+    // phase. The scalar/ipnuc spinor path is the D-12 zero-write escape hatch,
+    // but `ecp_iprinv` is a fresh per-nucleus force surface added here — fail it
+    // CLOSED with a typed UnsupportedApi rather than emit unverified zeros, so a
+    // caller never silently trusts an iprinv spinor result (21-07 behavior spec).
+    if is_iprinv && matches!(plan.representation, Representation::Spinor) {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "int1e_ecp_iprinv_spinor (spinor ECP gradient, R5)".to_owned(),
+        });
+    }
+
     // Number of output components: 1 for scalar `ecp`, 3 for gradient
     // `ecp_ipnuc` (∂/∂A_i^{x,y,z}, F-order [axis, ao_j, ao_i] axis slowest).
     let n_comp = if is_gradient { 3 } else { 1 };
@@ -1463,7 +1529,37 @@ pub fn launch_ecp(
     let (rs_max, ws_max) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
 
     let slots = group_ecp_slots(ecp_shells);
-    for slot in &slots {
+
+    // D-09: `ecp_iprinv` is a per-nucleus selector. Resolve the rinv origin up
+    // front (the validator should reject a None origin before the kernel, but we
+    // fail typed — never panic, never read a garbage origin; mirrors the
+    // one_electron.rs iprinv defensive gate, T-21-07-02). Then select ONLY the
+    // slot(s) on the atom whose coordinate matches the origin. An origin matching
+    // no atom yields an empty selection → a zero-filled output (mirroring the
+    // vendor `_one_shell_ecpbas` shl_id<0 → 0 path). `ecp`/`ecp_ipnuc` are
+    // unaffected: they process every slot (None = "no restriction").
+    let iprinv_selected: Option<Vec<usize>> = if is_iprinv {
+        let origin =
+            plan.operator_env_params
+                .rinv_orig
+                .ok_or(cintxRsError::InvalidEnvParam {
+                    param: "PTR_RINV_ORIG",
+                    reason: "ecp_iprinv kernel reached with no rinv origin".to_owned(),
+                })?;
+        Some(select_iprinv_slots(&slots, atoms, origin))
+    } else {
+        None
+    };
+
+    for (slot_idx, slot) in slots.iter().enumerate() {
+        // iprinv: skip every slot NOT on the selected nucleus (no all-slot
+        // accumulation, no -Z_C). For an unmatched origin `iprinv_selected` is
+        // an empty Vec, so EVERY slot is skipped → zero output (T-21-07-03).
+        if let Some(selected) = &iprinv_selected
+            && !selected.contains(&slot_idx)
+        {
+            continue;
+        }
         let ac = slot.atom_index as usize;
         if ac >= atom_count {
             return Err(cintxRsError::InvalidShellAtomIndex { index: ac, atom_count });
@@ -1768,5 +1864,115 @@ mod tests {
         );
         assert_eq!(gctr.len(), 3 * nfi * nfj);
         assert!(gctr.iter().all(|v| v.is_finite()), "gradient must be finite");
+    }
+
+    // ── ecp_iprinv per-nucleus selector (21-07, D-09) ─────────────────────────
+
+    /// Build a small set of `Atom`s for selector tests (atomic_number is
+    /// irrelevant to iprinv — no `-Z_C` factor — so any positive value works).
+    fn mk_atoms(coords: &[[f64; 3]]) -> Vec<Atom> {
+        use cintx_core::atom::NuclearModel;
+        coords
+            .iter()
+            .enumerate()
+            .map(|(i, &c)| Atom::try_new((i as u16) + 1, c, NuclearModel::Point, None, None).unwrap())
+            .collect()
+    }
+
+    /// Build a single-primitive `EcpShell` on `atom_index` for slot grouping.
+    fn mk_ecp_shell_channel(atom_index: u32, channel: EcpChannel) -> Arc<EcpShell> {
+        EcpShell::try_new(
+            atom_index,
+            channel,
+            0, // radial_power
+            1, // nprim
+            1, // nctr
+            0, // so_type
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+        )
+        .map(Arc::new)
+        .unwrap()
+    }
+
+    /// Build a single Local-channel `EcpShell` on `atom_index` for slot grouping.
+    fn mk_ecp_shell(atom_index: u32) -> Arc<EcpShell> {
+        mk_ecp_shell_channel(atom_index, EcpChannel::Local)
+    }
+
+    /// The single-atom selector returns ONLY the slot(s) on the atom whose
+    /// coordinate matches the rinv origin — the key proof that `iprinv` is NOT
+    /// the all-slot `ipnuc` accumulation (D-09).
+    #[test]
+    fn iprinv_selects_only_the_origin_atom() {
+        // Two ECP-bearing atoms at distinct coordinates.
+        let atoms = mk_atoms(&[[0.0, 0.0, 0.0], [0.0, 0.0, 2.5]]);
+        let ecp_shells = [mk_ecp_shell(0), mk_ecp_shell(1)];
+        let slots = group_ecp_slots(&ecp_shells);
+        assert_eq!(slots.len(), 2, "two atoms → two Local slots");
+
+        // Origin == atom 1's coordinate → ONLY slot 1 selected.
+        let sel = select_iprinv_slots(&slots, &atoms, [0.0, 0.0, 2.5]);
+        assert_eq!(sel, vec![1], "iprinv at atom 1 must select only slot 1");
+
+        // Origin == atom 0's coordinate → ONLY slot 0 selected.
+        let sel0 = select_iprinv_slots(&slots, &atoms, [0.0, 0.0, 0.0]);
+        assert_eq!(sel0, vec![0], "iprinv at atom 0 must select only slot 0");
+
+        // A single nucleus with multiple channels: all its slots are selected
+        // (still strictly per-nucleus), proving we never silently drop channels.
+        let multi = [
+            mk_ecp_shell(0),
+            mk_ecp_shell_channel(0, EcpChannel::Projected(1)),
+        ];
+        let multi_slots = group_ecp_slots(&multi);
+        let multi_sel = select_iprinv_slots(&multi_slots, &atoms, [0.0, 0.0, 0.0]);
+        assert_eq!(
+            multi_sel.len(),
+            multi_slots.len(),
+            "all channels on the selected nucleus are kept"
+        );
+    }
+
+    /// An `iprinv` origin matching NO atom returns an empty selection (→ the
+    /// launcher writes a zero-filled output), mirroring the vendor
+    /// `_one_shell_ecpbas` shl_id<0 → 0 path — never a panic, never a
+    /// wrong-atom selection (T-21-07-02).
+    #[test]
+    fn iprinv_origin_matching_no_atom_selects_nothing() {
+        let atoms = mk_atoms(&[[0.0, 0.0, 0.0], [0.0, 0.0, 2.5]]);
+        let ecp_shells = [mk_ecp_shell(0), mk_ecp_shell(1)];
+        let slots = group_ecp_slots(&ecp_shells);
+        let sel = select_iprinv_slots(&slots, &atoms, [10.0, 10.0, 10.0]);
+        assert!(sel.is_empty(), "no-match origin selects no slot (zero output)");
+    }
+
+    /// The selector tolerance is tight: an origin off by more than
+    /// `IPRINV_ORIGIN_MATCH_TOL` does NOT match, while one within it does.
+    #[test]
+    fn iprinv_origin_match_is_tight() {
+        let atoms = mk_atoms(&[[1.0, 2.0, 3.0]]);
+        let ecp_shells = [mk_ecp_shell(0)];
+        let slots = group_ecp_slots(&ecp_shells);
+
+        // Within tolerance → match.
+        let near = select_iprinv_slots(&slots, &atoms, [1.0, 2.0, 3.0 + 1e-11]);
+        assert_eq!(near, vec![0], "origin within 1e-10 must match");
+
+        // Outside tolerance → no match.
+        let far = select_iprinv_slots(&slots, &atoms, [1.0, 2.0, 3.0 + 1e-6]);
+        assert!(far.is_empty(), "origin off by 1e-6 must NOT match");
+    }
+
+    /// `ecp_iprinv` is routed under the same canonical_family "ecp" launcher as
+    /// the scalar/ipnuc operators (the dispatcher resolves by family, then
+    /// branches on operator_name internally).
+    #[test]
+    fn iprinv_operator_routes_through_launch_ecp() {
+        assert!(
+            crate::kernels::resolve_family_name_for_tests("ecp").is_some(),
+            "ecp family (scalar + ipnuc + iprinv) must resolve to launch_ecp"
+        );
+        assert!(crate::kernels::supports_canonical_family("ecp"));
     }
 }
