@@ -87,6 +87,11 @@ pub struct FixtureParityResult {
     pub raw_vs_upstream: DiffSummary,
     pub raw_vs_optimizer: DiffSummary,
     pub layout_ok: bool,
+    /// True when the fixture carries no numeric parity obligation and was recorded as
+    /// passing without evaluation (e.g. spinor gradients, UnsupportedApi by design per
+    /// R5/D-03). Consumers like `oracle-covered-update` MUST NOT treat a skipped fixture
+    /// as oracle-covered.
+    pub skipped: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1105,7 +1110,7 @@ fn build_profile_parity_report(
         // numeric oracle-parity obligation, so record a passing (skipped) fixture result
         // rather than evaluating — keeps fixture_count == fixtures.len() without a mismatch.
         if fixture.component_count == 3 && fixture.representation == "spinor" {
-            let skipped = DiffSummary {
+            let noop_diff = DiffSummary {
                 max_abs_error: 0.0,
                 max_rel_error: 0.0,
                 within_tolerance: true,
@@ -1115,9 +1120,10 @@ fn build_profile_parity_report(
                 family: fixture.family.clone(),
                 representation: fixture.representation.clone(),
                 tolerance,
-                raw_vs_upstream: skipped,
-                raw_vs_optimizer: skipped,
+                raw_vs_upstream: noop_diff,
+                raw_vs_optimizer: noop_diff,
                 layout_ok: true,
+                skipped: true,
             });
             report_rows.push(json!({
                 "symbol": fixture.symbol,
@@ -1459,6 +1465,7 @@ fn build_profile_parity_report(
             raw_vs_upstream,
             raw_vs_optimizer,
             layout_ok: layout,
+            skipped: false,
         });
         report_rows.push(json!({
             "symbol": fixture.symbol,

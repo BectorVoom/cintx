@@ -28,6 +28,13 @@ pub fn run_oracle_covered_update() -> Result<()> {
             .with_context(|| format!("oracle parity failed for profile `{profile}`"))?;
 
         for fixture in &report.fixtures {
+            // Skipped fixtures carry no numeric parity obligation (e.g. spinor gradients,
+            // UnsupportedApi by design per R5/D-03). They are recorded as passing to keep
+            // fixture_count == fixtures.len(), but must NOT be stamped oracle_covered=true —
+            // doing so would be a false verification claim (threat T-21-08-02).
+            if fixture.skipped {
+                continue;
+            }
             covered_symbols.insert(fixture.symbol.clone());
         }
     }
