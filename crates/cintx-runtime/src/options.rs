@@ -115,6 +115,11 @@ pub struct ExecutionOptions {
     /// on the `ExecutionPlan` for F12-family operators.
     /// Must be non-zero for F12 calls (validated by `validate_f12_env_params` before kernel launch).
     pub f12_zeta: Option<f64>,
+    /// Rinv origin for iprinv operators (env[4..6] in the raw API).
+    /// When set, populates `operator_env_params.rinv_orig` on the `ExecutionPlan`.
+    /// Must be present for any operator whose name contains "iprinv"
+    /// (validated by `validate_rinv_orig_env_params` before kernel launch).
+    pub rinv_orig: Option<[f64; 3]>,
     /// AO symmetry packing requested by the caller. Phase 18 implements `S1` only;
     /// every other variant returns `FacadeError::UnsupportedAoSymmetry` from
     /// `SessionRequest::query_workspace`. `None` is the default and is treated as

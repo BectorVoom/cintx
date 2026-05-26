@@ -93,6 +93,17 @@ impl<'basis> SessionBuilder<'basis> {
         self
     }
 
+    /// Set the rinv origin for iprinv operators (env[4..6] in the raw API).
+    ///
+    /// When set, `operator_env_params.rinv_orig` is populated on the `ExecutionPlan`
+    /// for any operator whose name contains `"iprinv"`. Required for `int1e_iprinv`
+    /// and `ECPscalar_iprinv` integrals; validated by `validate_rinv_orig_env_params`
+    /// before kernel launch.
+    pub fn with_rinv_origin(mut self, origin: [f64; 3]) -> Self {
+        self.options.rinv_orig = Some(origin);
+        self
+    }
+
     pub fn build(self) -> SessionRequest<'basis> {
         SessionRequest::new(
             self.operator,

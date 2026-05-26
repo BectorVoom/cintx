@@ -190,6 +190,10 @@ impl<'basis> SessionQuery<'basis> {
         if let Some(zeta) = self.request.options().f12_zeta {
             plan.operator_env_params.f12_zeta = Some(zeta);
         }
+        // Propagate rinv_orig from ExecutionOptions to operator_env_params (safe API path, Plan 21-01).
+        if let Some(origin) = self.request.options().rinv_orig {
+            plan.operator_env_params.rinv_orig = Some(origin);
+        }
 
         enforce_safe_facade_policy_gate(
             plan.descriptor,

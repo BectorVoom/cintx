@@ -40,6 +40,14 @@ pub const BAS_SLOTS: usize = 8;
 /// incorrect results for 2e+ integrals that read PTR_RANGE_OMEGA or PTR_EXPCUTOFF.
 pub const PTR_ENV_START: usize = 20;
 
+/// Index range in the libcint env array for the rinv origin (x, y, z).
+///
+/// libcint defines `PTR_RINV_ORIG = 4` (three consecutive slots 4, 5, 6).
+/// Raw callers set `env[4..7] = [x, y, z]` (in Bohr) before calling any iprinv
+/// integral. This constant is the start index; the full origin occupies slots
+/// `PTR_RINV_ORIG`, `PTR_RINV_ORIG + 1`, `PTR_RINV_ORIG + 2`.
+pub const PTR_RINV_ORIG: usize = 4;
+
 /// Index of the F12/STG/YP zeta parameter in the libcint env array.
 ///
 /// libcint defines `PTR_F12_ZETA = 9` in `cint_bas.h`. Raw callers set `env[9] = zeta`
@@ -562,6 +570,23 @@ pub unsafe fn eval_raw(
         // Validate before dispatch so we return a typed error on bad input.
         cintx_runtime::validator::validate_f12_env_params("f12", &plan.operator_env_params)?;
     }
+    // Phase 21-01: Extract rinv_orig from env[PTR_RINV_ORIG..PTR_RINV_ORIG+3] for iprinv operators.
+    // Raw callers must set env[4..7] = [x, y, z] (in Bohr) before calling any iprinv integral.
+    // Guard with env.len() >= PTR_RINV_ORIG + 3 so a too-short env never indexes out of bounds
+    // (T-21-01-01); if the origin is still None after the read, validate_rinv_orig_env_params
+    // returns a typed InvalidEnvParam BEFORE kernel entry — no garbage-origin evaluation (T-21-01-02).
+    if is_iprinv_family_symbol(plan.descriptor.operator_symbol()) {
+        if env.len() >= PTR_RINV_ORIG + 3 {
+            let x = env[PTR_RINV_ORIG];
+            let y = env[PTR_RINV_ORIG + 1];
+            let z = env[PTR_RINV_ORIG + 2];
+            plan.operator_env_params.rinv_orig = Some([x, y, z]);
+        }
+        cintx_runtime::validator::validate_rinv_orig_env_params(
+            plan.descriptor.operator_name(),
+            &plan.operator_env_params,
+        )?;
+    }
     // Phase 19 D-05: ECP dispatch guard — reject before kernel launch when
     // env[AS_NECPBAS] is missing/zero/non-finite. Mirrors the F12 zeta gate
     // above (same insertion point, same error variant). Plan 04 wires the
@@ -703,6 +728,15 @@ fn is_f12_family_symbol(symbol: &str) -> bool {
 /// gating insertion point in `eval_raw`.
 fn is_ecp_family_symbol(symbol: &str) -> bool {
     symbol.starts_with("int1e_ecp_")
+}
+
+/// Phase 21-01: identifies iprinv-family operator symbols.
+///
+/// Returns `true` for any symbol whose name contains `"iprinv"` — covers
+/// `int1e_iprinv_{cart,sph,spinor}` and `int1e_ecp_iprinv_{cart,sph}`.
+/// Used to gate the PTR_RINV_ORIG env-read block in `eval_raw`.
+fn is_iprinv_family_symbol(symbol: &str) -> bool {
+    symbol.contains("iprinv")
 }
 
 fn parse_env_usize_param(
@@ -2144,5 +2178,35 @@ mod tests {
             matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "AS_NECPBAS"),
             "expected InvalidEnvParam(AS_NECPBAS) for zero necpbas, got: {err:?}"
         );
+    }
+
+    // --- PTR_RINV_ORIG (Plan 21-01) tests ---
+
+    /// Verify that PTR_RINV_ORIG is the correct libcint constant value (4).
+    #[test]
+    fn ptr_rinv_orig_is_4() {
+        assert_eq!(PTR_RINV_ORIG, 4, "PTR_RINV_ORIG must equal 4 (libcint constant)");
+    }
+
+    /// Verify that is_iprinv_family_symbol detects iprinv symbols correctly.
+    #[test]
+    fn is_iprinv_family_symbol_detects_iprinv() {
+        assert!(is_iprinv_family_symbol("int1e_iprinv_sph"));
+        assert!(is_iprinv_family_symbol("int1e_iprinv_cart"));
+        assert!(is_iprinv_family_symbol("int1e_ecp_iprinv_sph"));
+        assert!(is_iprinv_family_symbol("ECPscalar_iprinv_sph"));
+        // Sanity: non-iprinv symbols must not match
+        assert!(!is_iprinv_family_symbol("int1e_ovlp_sph"));
+        assert!(!is_iprinv_family_symbol("int1e_ipnuc_sph"));
+        assert!(!is_iprinv_family_symbol("int2e_sph"));
+    }
+
+    /// Verify that is_iprinv_family_symbol does NOT match non-iprinv ip* symbols.
+    #[test]
+    fn is_iprinv_family_symbol_does_not_match_ipovlp_ipkin_ipnuc() {
+        assert!(!is_iprinv_family_symbol("int1e_ipovlp_sph"));
+        assert!(!is_iprinv_family_symbol("int1e_ipkin_sph"));
+        assert!(!is_iprinv_family_symbol("int1e_ipnuc_sph"));
+        assert!(!is_iprinv_family_symbol("int2e_ip1_sph"));
     }
 }
