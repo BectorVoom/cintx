@@ -353,9 +353,14 @@ fn eval_3c2e(
     let nk = nsph(bas[sk * BAS_SLOTS + ANG_OF]);
     let mut out = vec![0.0_f64; ni * nj * nk];
     let shls = [si as i32, sj as i32, sk as i32];
+    // Phase 21-06: the plain electron-repulsion 3c2e family gate uses the PLAIN
+    // int3c2e_sph symbol (operator_name "electron-repulsion", scalar output). It
+    // previously borrowed INT3C2E_IP1_SPH while that kernel was an operator-blind
+    // scalar stub; now that int3c2e_ip1 ships the REAL 3-component derivative
+    // (R1 closed), this gate must use the plain symbol to match vendor_int3c2e_sph.
     unsafe {
         eval_raw(
-            RawApiId::INT3C2E_IP1_SPH,
+            RawApiId::Symbol("int3c2e_sph"),
             Some(&mut out),
             None,
             &shls,
@@ -1320,21 +1325,21 @@ fn vendor_ffi_3c2e_spinor_nonzero() {
     println!("vendor_ffi_3c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 3c2e spinor output");
 }
 
-/// Oracle parity gate for 3c2e spinor (3-center 2-electron integral) vs vendored libcint.
+/// R5 contract gate for 3c2e_ip1 spinor (Phase 21-06 / GRAD-08 / Risk R5).
 ///
-/// Tests int3c2e_spinor against vendored libcint 6.1.3 using H2O STO-3G shell
-/// triple (3,4,0) = (H1-1s, H2-1s, O-1s) at atol=1e-12.
-///
-/// Spinor wiring status: Representation::Spinor arm wired in Plan 04 via
-/// `cart_to_spinor_sf_3c2e`. Parity test active as of Plan 05.
+/// Before Phase 21-06, `INT3C2E_IP1_SPINOR` reached the operator-blind scalar 3c2e
+/// stub, which routed spinor through `cart_to_spinor_sf_3c2e` and (mis)matched plain
+/// `vendor_int3c2e_spinor`. Phase 21-06 ships the REAL int3c2e_ip1 derivative kernel,
+/// which REJECTS the spinor representation with `UnsupportedApi` (R5 / D-03 — gradient
+/// spinor transforms are out of scope). There is no dispatchable plain `int3c2e_spinor`
+/// manifest symbol, so plain 3c2e spinor coverage remains the vendor-side sanity check
+/// `vendor_ffi_3c2e_spinor_nonzero`. This gate now asserts the R5 fail-closed contract.
 #[test]
 #[cfg(has_vendor_libcint)]
 fn oracle_gate_3c2e_spinor() {
     use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_h2o_sto3g();
-    let natm = (atm.len() / ATM_SLOTS) as i32;
-    let nbas = (bas.len() / BAS_SLOTS) as i32;
 
     // Shells (3,4,0): H1-1s, H2-1s, O-1s — three different centers.
     let (si, sj, sk) = (3i32, 4i32, 0i32);
@@ -1343,12 +1348,12 @@ fn oracle_gate_3c2e_spinor() {
     let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
     let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
     let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
-    let nelems = ni_sp * nj_sp * nk_sp * 2;
-
-    let mut vendor_out = vec![0.0f64; nelems];
-    vendor_ffi::vendor_int3c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
-
+    // Allocate the full planner-sized buffer (3 gradient components × complex×2) so
+    // the dispatch reaches the kernel's R5 spinor guard rather than tripping the
+    // earlier planner BufferTooSmall check; the kernel must then return UnsupportedApi.
+    let nelems = 3 * ni_sp * nj_sp * nk_sp * 2;
     let mut cintx_out = vec![0.0f64; nelems];
+
     let eval_result = unsafe {
         eval_raw(
             RawApiId::INT3C2E_IP1_SPINOR,
@@ -1363,27 +1368,11 @@ fn oracle_gate_3c2e_spinor() {
         )
     };
 
-    let summary = eval_result.unwrap_or_else(|e| {
-        panic!("eval_raw INT3C2E_IP1_SPINOR failed for shells ({si},{sj},{sk}): {e:?}")
-    });
-
-    let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
-    let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
-
     assert!(
-        nonzero > 0,
-        "cintx int3c2e_spinor output is all zeros for shells ({si},{sj},{sk})"
-    );
-    assert_eq!(
-        mc, 0,
-        "oracle_gate_3c2e_spinor: {mc} mismatches at atol=1e-12 for shells ({si},{sj},{sk}), \
-         not0={}",
-        summary.not0
+        matches!(eval_result, Err(cintx_core::cintxRsError::UnsupportedApi { .. })),
+        "oracle_gate_3c2e_spinor (R5): int3c2e_ip1 spinor must return UnsupportedApi, \
+         got: {eval_result:?}"
     );
 
-    println!(
-        "oracle_gate_3c2e_spinor: PASS — mismatch_count=0, nonzero={nonzero}/{nelems}, \
-         not0={}",
-        summary.not0
-    );
+    println!("oracle_gate_3c2e_spinor: PASS — int3c2e_ip1 spinor correctly rejected (R5)");
 }

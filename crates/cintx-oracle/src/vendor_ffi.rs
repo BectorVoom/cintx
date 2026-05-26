@@ -868,6 +868,9 @@ pub fn vendor_int3c1e_p2_sph(
 
 /// Evaluate int3c2e_ip1_cart for a single shell triple using vendored libcint.
 ///
+/// `out` must be pre-allocated with 3 * ni * nj * nk elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni*nj*nk + n] for comp in 0..3.
+///
 /// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, ip1 variant).
 pub fn vendor_int3c2e_ip1_cart(
     out: &mut [f64],
@@ -880,6 +883,40 @@ pub fn vendor_int3c2e_ip1_cart(
 ) -> i32 {
     unsafe {
         ffi::int3c2e_ip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c2e_ip1_sph for a single shell triple using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj * nk elements (3 gradient components)
+/// where nX = CINTcgto_spheric(shls[X], bas).
+/// Layout: component-leading — out[comp * ni*nj*nk + n] for comp in 0..3.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, ip1
+/// variant, spherical). This is the REAL `∇_A` first-center derivative reference for
+/// the int3c2e_ip1 oracle gate (GRAD-08 / Risk R1) — NOT the plain int3c2e_sph.
+pub fn vendor_int3c2e_ip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ip1_sph(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,

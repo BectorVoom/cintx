@@ -164,7 +164,8 @@ fn test_center_3c2e_sph_h2o_sto3g_nonzero() {
                 let ni = shell_nsph[i_sh];
                 let nj = shell_nsph[j_sh];
                 let nk = shell_nsph[k_sh];
-                let n_elem = ni * nj * nk;
+                // Phase 21-06: int3c2e_ip1 is a 3-component derivative (3 * ni*nj*nk).
+                let n_elem = 3 * ni * nj * nk;
                 let shls = [i_sh as i32, j_sh as i32, k_sh as i32];
                 let mut out1 = vec![0.0_f64; n_elem];
                 let mut out2 = vec![0.0_f64; n_elem];
@@ -214,6 +215,11 @@ fn test_center_3c2e_sph_h2o_sto3g_nonzero() {
     );
 }
 
+// Phase 21-06 (GRAD-08 / Risk R1): int3c2e_ip1 now ships the REAL ∇_A derivative.
+// FLIPPED: the vendor reference is vendor_int3c2e_ip1_sph (the derivative), NOT
+// plain vendor_int3c2e_sph; the buffer is 3-component (3 * ni*nj*nk); the tolerance
+// is the Phase 15 unified atol=1e-12. The element-for-element comparison validates
+// the component-leading [3, nk, nj, ni] F-order (same convention as int2e_ip1).
 #[test]
 #[cfg(has_vendor_libcint)]
 fn test_center_3c2e_sph_h2o_sto3g_vendor_parity() {
@@ -221,7 +227,7 @@ fn test_center_3c2e_sph_h2o_sto3g_vendor_parity() {
 
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT3C2E_IP1_SPH;
-    let atol = 1e-9_f64;
+    let atol = 1e-12_f64;
 
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
@@ -237,13 +243,15 @@ fn test_center_3c2e_sph_h2o_sto3g_vendor_parity() {
                 let ni = shell_nsph[i_sh];
                 let nj = shell_nsph[j_sh];
                 let nk = shell_nsph[k_sh];
-                let n_elem = ni * nj * nk;
+                // 3-component derivative output (component-leading): 3 * ni*nj*nk.
+                let n_elem = 3 * ni * nj * nk;
                 let shls = [i_sh as i32, j_sh as i32, k_sh as i32];
 
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let mut cintx_out = vec![0.0_f64; n_elem];
 
-                vendor_ffi::vendor_int3c2e_sph(
+                // REAL derivative reference (R1 flip from plain vendor_int3c2e_sph).
+                vendor_ffi::vendor_int3c2e_ip1_sph(
                     &mut vendor_out,
                     &shls,
                     &atm,
@@ -279,10 +287,11 @@ fn test_center_3c2e_sph_h2o_sto3g_vendor_parity() {
         }
     }
 
-    assert!(any_nonzero, "int3c2e_sph outputs are all zeros");
+    assert!(any_nonzero, "int3c2e_ip1_sph outputs are all zeros");
     assert_eq!(
         mismatch_count, 0,
-        "int3c2e_sph vendor parity failed: {mismatch_count} elements exceed atol=1e-9"
+        "int3c2e_ip1_sph vendor parity failed: {mismatch_count} elements exceed atol=1e-12 \
+         vs the REAL vendor_int3c2e_ip1_sph derivative"
     );
 }
 
@@ -325,7 +334,8 @@ fn test_int3c2e_sph_h2o_sto3g_rocm_parity() {
                 let ni = shell_nsph[i_sh];
                 let nj = shell_nsph[j_sh];
                 let nk = shell_nsph[k_sh];
-                let n_elem = ni * nj * nk;
+                // Phase 21-06: int3c2e_ip1 is a 3-component derivative (3 * ni*nj*nk).
+                let n_elem = 3 * ni * nj * nk;
                 let shls = [i_sh as i32, j_sh as i32, k_sh as i32];
                 let mut out1 = vec![0.0_f64; n_elem];
                 let mut out2 = vec![0.0_f64; n_elem];
