@@ -519,6 +519,138 @@ pub fn vendor_int1e_ipkin_cart(
     }
 }
 
+/// Evaluate int1e_ipnuc_sph for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+///
+/// int1e_ipnuc is the hcore nuclear-attraction derivative: `∂/∂Ai` on the bra
+/// center, summed over ALL nuclei with the `-Z_C` charge factor. The vendor reads
+/// the nuclear charges/coords from atm/env; no special env slot is required.
+pub fn vendor_int1e_ipnuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnuc_cart for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipnuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_iprinv_sph for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+///
+/// int1e_iprinv is the per-atom Hellmann–Feynman force term: `∂/∂Ai` evaluated at
+/// a SINGLE rinv origin with factor `+1.0` (no `-Z_C`).
+///
+/// IMPORTANT: the caller MUST set `env[PTR_RINV_ORIG..PTR_RINV_ORIG+3]`
+/// (libcint `PTR_RINV_ORIG = 4`, i.e. `env[4], env[5], env[6]` = x, y, z) to the
+/// chosen origin BEFORE calling this function. The same env must be used for the
+/// matching cintx `eval_raw` call so both evaluate at the identical origin.
+pub fn vendor_int1e_iprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_iprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_iprinv_cart for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+///
+/// IMPORTANT: the caller MUST set `env[PTR_RINV_ORIG..PTR_RINV_ORIG+3]`
+/// (libcint `PTR_RINV_ORIG = 4`) to the chosen origin BEFORE calling this function
+/// (see `vendor_int1e_iprinv_sph`).
+pub fn vendor_int1e_iprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_iprinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int2e_cart for a single shell quartet using vendored libcint.
 ///
 /// `out` must be pre-allocated with ni*nj*nk*nl elements where
