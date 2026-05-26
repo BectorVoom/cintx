@@ -265,6 +265,205 @@ fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
     out
 }
 
+/// Apply the bra-center nabla (`∂/∂Ai`) to the 1e overlap G-tensor.
+///
+/// Corresponds to `CINTnabla1i_1e` in libcint `g1e.c` (the bra-side derivative).
+/// For `int1e_ipovlp`, the overlap G-tensor is built with `nmax = li + lj + 1`
+/// (one extra bra level so that `g[jx*dj + ix+1]` is valid for the nabla formula).
+///
+/// Formula per axis (nabla on axis a):
+///   ix == 0: g1[jx*dj + 0] = -2*ai * g[jx*dj + 1]
+///   ix >= 1: g1[jx*dj + ix] = ix * g[jx*dj + (ix-1)] + (-2*ai) * g[jx*dj + (ix+1)]
+///
+/// Component mixing rule (standard ip1 formula):
+///   s[0] = g1x[jx,ix] * g0y[jy,iy] * g0z[jz,iz]   (∂/∂Ax)
+///   s[1] = g0x[jx,ix] * g1y[jy,iy] * g0z[jz,iz]   (∂/∂Ay)
+///   s[2] = g0x[jx,ix] * g0y[jy,iy] * g1z[jz,iz]   (∂/∂Az)
+///
+/// Returns `Vec<f64>` of length `3 * nci * ncj` in component-leading layout:
+/// `out[comp * nci*ncj + cj_idx * nci + ci_idx]`.
+///
+/// # Arguments
+/// - `g`: the overlap G-tensor built with `nmax` (including +1 bra headroom)
+/// - `li`, `lj`: bra/ket angular momenta (base values)
+/// - `nmax`: the VRR max used when building g (= li + lj + 1 for ipovlp)
+/// - `ai`: bra Gaussian exponent
+fn contract_grad_1e_bra(g: &[f64], li: u8, lj: u8, nmax: u32, ai: f64) -> Vec<f64> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    // G-tensor shape: g_per_axis = (nmax+1) * (lj+1)
+    // dj = nmax+1 (stride between consecutive j-levels within one axis block)
+    let g_per_axis = ((nmax + 1) * (lj as u32 + 1)) as usize;
+    let dj = (nmax + 1) as usize;
+
+    let ci_comps = cart_comps(li);
+    let cj_comps = cart_comps(lj);
+
+    // Apply nabla1i to all 3 axes: g1[axis*g_per_axis + jx*dj + ix]
+    let ai2 = -2.0 * ai;
+    let mut g1 = vec![0.0_f64; 3 * g_per_axis];
+
+    for axis in 0..3usize {
+        let off = axis * g_per_axis;
+        for j in 0..=(lj as usize) {
+            let jbase = j * dj;
+            // ix = 0: f = -2*ai * g[ix+1]
+            g1[off + jbase] = ai2 * g[off + jbase + 1];
+            // ix >= 1: f = ix * g[ix-1] + (-2*ai) * g[ix+1]
+            for ix in 1..=(li as usize) {
+                g1[off + jbase + ix] = ix as f64 * g[off + jbase + ix - 1]
+                    + ai2 * g[off + jbase + ix + 1];
+            }
+        }
+    }
+
+    // Build 3-component output using axis-mixing rule:
+    //   comp 0 (∂/∂Ax): g1x * g0y * g0z
+    //   comp 1 (∂/∂Ay): g0x * g1y * g0z
+    //   comp 2 (∂/∂Az): g0x * g0y * g1z
+    let block_len = nci * ncj;
+    let mut out = vec![0.0_f64; 3 * block_len];
+
+    let gx = 0usize;
+    let gy = g_per_axis;
+    let gz = 2 * g_per_axis;
+
+    for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
+        for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
+            let nx = jx as usize * dj + ix as usize;
+            let ny = jy as usize * dj + iy as usize;
+            let nz = jz as usize * dj + iz as usize;
+
+            let g0x = g[gx + nx];
+            let g0y = g[gy + ny];
+            let g0z = g[gz + nz];
+            let g1x = g1[gx + nx];
+            let g1y = g1[gy + ny];
+            let g1z = g1[gz + nz];
+
+            let n = cj_idx * nci + ci_idx;
+            out[0 * block_len + n] += g1x * g0y * g0z;
+            out[1 * block_len + n] += g0x * g1y * g0z;
+            out[2 * block_len + n] += g0x * g0y * g1z;
+        }
+    }
+
+    out
+}
+
+/// Compute the bra-derivative of the kinetic integral (`int1e_ipkin`).
+///
+/// For `int1e_ipkin = ∂/∂Ai of (-0.5 * ∇^2)`, the formula is derived by applying
+/// the product rule. The kinetic integrand is:
+///   T_ij = -0.5 * (d2x*g0y*g0z + g0x*d2y*g0z + g0x*g0y*d2z)
+/// where d2a = D_j^2(g0a) is the second ket-derivative on axis a.
+///
+/// Since ∂/∂Ax_i commutes with D_j^2 (they act on different indices), and ∂g0y/∂Ax = 0
+/// (the y-axis g-tensor is not affected by Ax), the bra-derivative simplifies to:
+///   ∂T/∂Ax = -0.5 * ( D_j^2(g1x)*g0y*g0z + g1x*d2y*g0z + g1x*g0y*d2z )
+///   ∂T/∂Ay = -0.5 * ( d2x*g1y*g0z + g0x*D_j^2(g1y)*g0z + g0x*g1y*d2z )
+///   ∂T/∂Az = -0.5 * ( d2x*g0y*g1z + g0x*d2y*g1z + g0x*g0y*D_j^2(g1z) )
+///
+/// where g1a = nabla1i(g0a) (bra-derivative on axis a).
+///
+/// The G-tensor is built with `lj_ext = lj + 2` (kinetic headroom) and
+/// `nmax = li + lj + 3` (kinetic +2 AND nabla +1 extra bra level).
+///
+/// Returns `Vec<f64>` of length `3 * nci * ncj` in component-leading layout.
+fn contract_ipkin(g: &[f64], li: u8, lj: u8, nmax: u32, ai: f64, aj: f64) -> Vec<f64> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    // G-tensor was built with lj_ext = lj+2, nmax = li+lj+3
+    let lj_ext = lj as u32 + 2;
+    let g_per_axis = ((nmax + 1) * (lj_ext + 1)) as usize;
+    let dj = (nmax + 1) as usize;
+
+    let ci_comps = cart_comps(li);
+    let cj_comps = cart_comps(lj);
+
+    // Step 1: Apply nabla1i on bra i-index across all 3 axes (over full lj_ext j-range).
+    let ai2 = -2.0 * ai;
+    let mut g1 = vec![0.0_f64; 3 * g_per_axis];
+
+    for axis in 0..3usize {
+        let off = axis * g_per_axis;
+        for j in 0..=(lj_ext as usize) {
+            let jbase = j * dj;
+            g1[off + jbase] = ai2 * g[off + jbase + 1];
+            for ix in 1..=(li as usize) {
+                g1[off + jbase + ix] = ix as f64 * g[off + jbase + ix - 1]
+                    + ai2 * g[off + jbase + ix + 1];
+            }
+        }
+    }
+
+    // Step 2: Apply D_j^2 (ket kinetic) to both g0 and g1 over the base lj range.
+    // D_j^2(f)[j, i] = jf*(jf-1)*f[j-2,i] - 2*aj*(2*jf+1)*f[j,i] + 4*aj^2*f[j+2,i]
+    let mut d2g0 = vec![0.0_f64; 3 * g_per_axis]; // D_j^2(g0)
+    let mut d2g1 = vec![0.0_f64; 3 * g_per_axis]; // D_j^2(g1)
+
+    for axis in 0..3usize {
+        let off = axis * g_per_axis;
+        for j in 0..=(lj as usize) {
+            let jf = j as f64;
+            for i_idx in 0..=(li as usize) {
+                let nx = j * dj + i_idx;
+                let g0_lo = if j >= 2 { g[off + nx - 2 * dj] } else { 0.0 };
+                let g1_lo = if j >= 2 { g1[off + nx - 2 * dj] } else { 0.0 };
+                d2g0[off + nx] = 4.0 * aj * aj * g[off + nx + 2 * dj]
+                    - 2.0 * aj * (2.0 * jf + 1.0) * g[off + nx]
+                    + jf * (jf - 1.0) * g0_lo;
+                d2g1[off + nx] = 4.0 * aj * aj * g1[off + nx + 2 * dj]
+                    - 2.0 * aj * (2.0 * jf + 1.0) * g1[off + nx]
+                    + jf * (jf - 1.0) * g1_lo;
+            }
+        }
+    }
+
+    // Step 3: Build 3-component output using the ipkin axis-mixing formula.
+    let block_len = nci * ncj;
+    let mut out = vec![0.0_f64; 3 * block_len];
+
+    let gx = 0usize;
+    let gy = g_per_axis;
+    let gz = 2 * g_per_axis;
+
+    for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
+        for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
+            let nx = jx as usize * dj + ix as usize;
+            let ny = jy as usize * dj + iy as usize;
+            let nz = jz as usize * dj + iz as usize;
+
+            let g0x = g[gx + nx];
+            let g0y = g[gy + ny];
+            let g0z = g[gz + nz];
+            let g1x = g1[gx + nx];
+            let g1y = g1[gy + ny];
+            let g1z = g1[gz + nz];
+            let d2x0 = d2g0[gx + nx];
+            let d2y0 = d2g0[gy + ny];
+            let d2z0 = d2g0[gz + nz];
+            let d2x1 = d2g1[gx + nx];
+            let d2y1 = d2g1[gy + ny];
+            let d2z1 = d2g1[gz + nz];
+
+            // ∂T/∂Ax = -0.5*(D_j^2(g1x)*g0y*g0z + g1x*d2y0*g0z + g1x*g0y*d2z0)
+            let s0 = -0.5 * (d2x1 * g0y * g0z + g1x * d2y0 * g0z + g1x * g0y * d2z0);
+            // ∂T/∂Ay = -0.5*(d2x0*g1y*g0z + g0x*D_j^2(g1y)*g0z + g0x*g1y*d2z0)
+            let s1 = -0.5 * (d2x0 * g1y * g0z + g0x * d2y1 * g0z + g0x * g1y * d2z0);
+            // ∂T/∂Az = -0.5*(d2x0*g0y*g1z + g0x*d2y0*g1z + g0x*g0y*D_j^2(g1z))
+            let s2 = -0.5 * (d2x0 * g0y * g1z + g0x * d2y0 * g1z + g0x * g0y * d2z1);
+
+            let n = cj_idx * nci + ci_idx;
+            out[0 * block_len + n] += s0;
+            out[1 * block_len + n] += s1;
+            out[2 * block_len + n] += s2;
+        }
+    }
+
+    out
+}
+
 /// Compute nuclear attraction integrals for one primitive pair, all atoms.
 ///
 /// Uses Rys quadrature with Boys-weighted VRR.
@@ -487,10 +686,19 @@ fn launch_one_electron_typed<F: CintFloat>(
     let is_overlap = op_name == "overlap";
     let is_kinetic = op_name == "kinetic";
     let is_nuclear = op_name == "nuclear-attraction";
+    let is_ipovlp = op_name == "ipovlp";
+    let is_ipkin = op_name == "ipkin";
 
-    if !is_overlap && !is_kinetic && !is_nuclear {
+    if !is_overlap && !is_kinetic && !is_nuclear && !is_ipovlp && !is_ipkin {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("1e operator '{}' is not supported", op_name),
+        });
+    }
+
+    // Spinor gradient: not supported (Risk R5 / D-03).
+    if (is_ipovlp || is_ipkin) && plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("spinor int1e gradient '{}' is not supported", op_name),
         });
     }
 
@@ -499,6 +707,147 @@ fn launch_one_electron_typed<F: CintFloat>(
     let ncj = ncart(lj);
     let nsi = nsph(li);
     let nsj = nsph(lj);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Gradient path (ipovlp / ipkin) — 3-component output
+    // ─────────────────────────────────────────────────────────────────────────
+    if is_ipovlp || is_ipkin {
+        // Primitive loop over (pi, pj) pairs — one 3-component block per contraction pair.
+        // The gradient path uses n_ctr_i == n_ctr_j == 1 for now (STO-3G/cc-pVDZ segmented);
+        // generally-contracted gradient shells are deferred (same as spinor path above).
+        let n_prim_i = shell_i.nprim as usize;
+        let n_prim_j = shell_j.nprim as usize;
+        let n_ctr_i = shell_i.nctr as usize;
+        let n_ctr_j = shell_j.nctr as usize;
+
+        // 3-component cart accumulator: [3 * nci * ncj] per contraction pair.
+        let block_len = nci * ncj;
+        let total_len = 3 * block_len;
+        let mut cart_3comp = vec![0.0_f64; n_ctr_i * n_ctr_j * total_len];
+
+        for pi in 0..n_prim_i {
+            let ai = shell_i.exponents[pi];
+            for pj in 0..n_prim_j {
+                let aj = shell_j.exponents[pj];
+                let pd = compute_pdata_host(
+                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+                );
+
+                let prim_3c = if is_ipovlp {
+                    // ipovlp: build overlap G-tensor with nmax = li+lj+1 (bra +1 headroom)
+                    let nmax = (li + lj) as u32 + 1;
+                    let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32);
+                    contract_grad_1e_bra(&g, li, lj, nmax, ai)
+                } else {
+                    // ipkin: build G-tensor with lj_ext=lj+2 AND nmax=li+lj+3 (kin +2 + bra +1)
+                    let nmax = (li + lj) as u32 + 3;
+                    let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32 + 2);
+                    contract_ipkin(&g, li, lj, nmax, ai, aj)
+                };
+
+                for ci in 0..n_ctr_i {
+                    let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                    for cj in 0..n_ctr_j {
+                        let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                        let weight = coeff_i * coeff_j;
+                        let base = (ci * n_ctr_j + cj) * total_len;
+                        for k in 0..total_len {
+                            cart_3comp[base + k] += weight * prim_3c[k];
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply sp normalization scale to all components.
+        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+        if (sp_scale - 1.0).abs() > 1e-15 {
+            for v in cart_3comp.iter_mut() {
+                *v *= sp_scale;
+            }
+        }
+
+        // Write to staging: component-leading layout staging[comp * ni*nj + n].
+        // For sph: transform each component separately; for cart: copy directly.
+        match plan.representation {
+            Representation::Spheric => {
+                let ni_sph = n_ctr_i * nsi;
+                let nj_sph = n_ctr_j * nsj;
+                let sph_block = ni_sph * nj_sph;
+                for comp in 0..3usize {
+                    for ci in 0..n_ctr_i {
+                        for cj in 0..n_ctr_j {
+                            let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
+                            cart_to_sph_1e(&cart_3comp[cart_base..cart_base + block_len], &mut sph_tmp, li, lj);
+                            let staging_comp_base = comp * sph_block;
+                            for mj in 0..nsj {
+                                let jj = cj * nsj + mj;
+                                for mi in 0..nsi {
+                                    let ii = ci * nsi + mi;
+                                    let dst = staging_comp_base + ii + jj * ni_sph;
+                                    if dst < staging.len() {
+                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Representation::Cart => {
+                let ni_cart = n_ctr_i * nci;
+                let nj_cart = n_ctr_j * ncj;
+                let cart_block = ni_cart * nj_cart;
+                for comp in 0..3usize {
+                    for ci in 0..n_ctr_i {
+                        for cj in 0..n_ctr_j {
+                            let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                            let block = &cart_3comp[src_base..src_base + block_len];
+                            let staging_comp_base = comp * cart_block;
+                            for jc in 0..ncj {
+                                let jj = cj * ncj + jc;
+                                for ic in 0..nci {
+                                    let ii = ci * nci + ic;
+                                    let dst = staging_comp_base + ii + jj * ni_cart;
+                                    if dst < staging.len() {
+                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Representation::Spinor => {
+                // Already rejected above.
+                unreachable!("spinor gradient rejected earlier")
+            }
+        }
+
+        // Nonzero sentinel
+        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+        let not0 = staging
+            .iter()
+            .filter(|&&v| v.abs() > nonzero_threshold)
+            .count() as i32;
+
+        let staging_bytes = staging.len() * std::mem::size_of::<F>();
+        return Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: staging_bytes,
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes: staging_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scalar path (overlap / kinetic / nuclear)
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Primitive loop over (pi, pj) pairs
     let n_prim_i = shell_i.nprim as usize;
@@ -1284,5 +1633,180 @@ mod tests {
             "generally-contracted d(nctr=2)-f(nctr=2) cross-block not symmetric: max |Δ| = {max_asym}"
         );
         assert!(ab.iter().any(|v| v.abs() > 1e-10), "d_gc-f_gc block unexpectedly all-zero");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-01: ipovlp s-s component count
+    // For an s,s shell pair (li=lj=0, nci=ncj=1), ipovlp must return 3 elements
+    // (3 components × 1×1).  For a p,s pair (li=1,lj=0, nci=3, ncj=1), 9 elements.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_ipovlp_component_count() {
+        let ai = 1.0_f64;
+        let aj = 0.8_f64;
+        let ri = [0.0_f64; 3];
+        let rj = [1.4, 0.0, 0.0];
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+
+        // s,s: expect 3 elements
+        let nmax_ss = 0u32 + 1;
+        let g_ss = fill_g_tensor_overlap(&pd, ri, rj, nmax_ss, 0);
+        let out_ss = contract_grad_1e_bra(&g_ss, 0, 0, nmax_ss, ai);
+        assert_eq!(out_ss.len(), 3, "s-s ipovlp should return 3 components");
+
+        // p,s: expect 9 elements
+        let li_p = 1u8;
+        let nmax_ps = (li_p as u32) + 0 + 1;
+        let g_ps = fill_g_tensor_overlap(&pd, ri, rj, nmax_ps, 0);
+        let out_ps = contract_grad_1e_bra(&g_ps, li_p, 0, nmax_ps, ai);
+        assert_eq!(out_ps.len(), 3 * ncart(li_p) * 1, "p-s ipovlp should return 9 components");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-02: ipovlp determinism
+    // Two evaluations of the same shell pair must be bit-identical.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_ipovlp_determinism() {
+        let ai = 1.23_f64;
+        let aj = 0.57_f64;
+        let ri = [0.0_f64; 3];
+        let rj = [1.4, 0.5, 0.0];
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let nmax = 1u32 + 1; // s-p: li=0, lj=1
+        let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, 1);
+
+        let out1 = contract_grad_1e_bra(&g, 0, 1, nmax, ai);
+        let out2 = contract_grad_1e_bra(&g, 0, 1, nmax, ai);
+        for (a, b) in out1.iter().zip(out2.iter()) {
+            assert_eq!(a.to_bits(), b.to_bits(), "ipovlp output not bit-identical on two calls");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-03: ipovlp z-component non-zero for z-displaced s-s pair
+    // For two s-functions displaced along z, the overlap derivative ∂S/∂Az ≠ 0
+    // and the x/y components should be zero (by symmetry of the z-displacement).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_ipovlp_z_component_z_displacement() {
+        let ai = 1.0_f64;
+        let aj = 1.0_f64;
+        let ri = [0.0_f64; 3];
+        let rj = [0.0, 0.0, 1.4]; // pure z displacement
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let nmax = 0u32 + 1; // s-s with +1 headroom
+        let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, 0);
+        let out = contract_grad_1e_bra(&g, 0, 0, nmax, ai);
+        // out = [s_x, s_y, s_z] (3 components, each is a single value for s-s)
+        let sx = out[0]; // comp 0 * block_len 1 + 0
+        let sy = out[1];
+        let sz = out[2];
+        assert!(
+            sx.abs() < 1e-14,
+            "x-component should be ~0 for z-displacement, got {sx:.3e}"
+        );
+        assert!(
+            sy.abs() < 1e-14,
+            "y-component should be ~0 for z-displacement, got {sy:.3e}"
+        );
+        assert!(
+            sz.abs() > 1e-6,
+            "z-component should be nonzero for z-displacement, got {sz:.3e}"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-04: ipovlp spinor returns UnsupportedApi
+    // Dispatching ipovlp with Representation::Spinor must return UnsupportedApi.
+    // Tests the spinor guard in launch_one_electron_typed directly by constructing
+    // a minimal plan with Representation::Spinor on the ipovlp_sph operator (the
+    // sph OperatorId is used to get a valid workspace, then we force Spinor on the plan).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_ipovlp_spinor_returns_unsupported() {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
+        use cintx_ops::resolver::Resolver;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        // Use sph op for workspace query (accepted), then set Spinor on the plan.
+        let op_sph = Resolver::descriptor_by_symbol("int1e_ipovlp_sph")
+            .expect("int1e_ipovlp_sph must be in manifest")
+            .id;
+
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
+        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Spheric,
+            Arc::from(vec![1.0_f64].into_boxed_slice()),
+            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let all_shells: Arc<[Arc<Shell>]> = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
+
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
+        // Force spinor representation on the plan to exercise the spinor guard.
+        plan.representation = Representation::Spinor;
+        plan.precision = cintx_core::PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 3];
+
+        let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "spinor ipovlp should return UnsupportedApi, got: {:?}", result
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-05: ipkin s-s component count (3 elements)
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_ipkin_component_count() {
+        let ai = 1.0_f64;
+        let aj = 0.8_f64;
+        let ri = [0.0_f64; 3];
+        let rj = [1.4, 0.0, 0.0];
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+
+        // s-s: nmax = li + lj + 3 = 3
+        let nmax = 3u32;
+        let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, 0u32 + 2); // lj_ext = lj+2 = 2
+        let out = contract_ipkin(&g, 0, 0, nmax, ai, aj);
+        assert_eq!(out.len(), 3, "s-s ipkin should return 3 components");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-06: ipkin determinism
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn test_ipkin_determinism() {
+        let ai = 1.23_f64;
+        let aj = 0.57_f64;
+        let ri = [0.0_f64; 3];
+        let rj = [1.4, 0.5, 0.0];
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let li = 0u8;
+        let lj = 0u8;
+        let nmax = (li as u32) + (lj as u32) + 3;
+        let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32 + 2);
+
+        let out1 = contract_ipkin(&g, li, lj, nmax, ai, aj);
+        let out2 = contract_ipkin(&g, li, lj, nmax, ai, aj);
+        for (a, b) in out1.iter().zip(out2.iter()) {
+            assert_eq!(a.to_bits(), b.to_bits(), "ipkin output not bit-identical on two calls");
+        }
     }
 }
