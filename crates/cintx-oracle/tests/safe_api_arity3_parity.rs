@@ -7,16 +7,17 @@
 //! Arity-3 cintx kernels write F-order matching vendor output directly — no
 //! transpose needed (precedent: `crates/cintx-oracle/src/compare.rs:811-833`).
 //!
-//! NOTE: cintx's `int3c2e_ip1_*` kernels currently compute the plain 3c2e
-//! integral (no IP1 derivative). The parity reference for those two tests is
-//! therefore `vendor_int3c2e_{cart,sph}` (plain), NOT `vendor_int3c2e_ip1_*`.
-//! This is the same wiring used by the passing raw-path test at
-//! `crates/cintx-oracle/tests/center_3c2e_parity.rs:222-287`. See
-//! `.planning/phases/18-sessionrequest-arity-ge3-dispatch/18-RESEARCH.md`
-//! Item 5 / A6 / R6 for the full disposition. When/if a future phase ships an
-//! actual IP1 derivative kernel, this file must be updated to use
-//! `vendor_int3c2e_ip1_{cart,sph}` (which will then return a 3-vector gradient
-//! sized `ni*nj*nk*3`).
+//! NOTE (Phase 21-06 / GRAD-08 / Risk R1 — kernel-misnomer CLOSED): cintx's
+//! `int3c2e_ip1_*` kernels now compute the REAL `∇_A` first-center derivative
+//! (`crates/cintx-cubecl/src/kernels/center_3c2e.rs::launch_center_3c2e_ip1`,
+//! reusing `gout_ip1` verbatim). The parity reference for those two tests is now
+//! `vendor_int3c2e_ip1_{cart,sph}` (the derivative), NOT plain
+//! `vendor_int3c2e_{cart,sph}`. The output is a 3-component gradient sized
+//! `3 * ni*nj*nk`, component-leading F-order (`[3, nk, nj, ni]`, ni fastest) —
+//! the same convention validated for `int2e_ip1` in
+//! `crates/cintx-oracle/tests/two_electron_ip1_parity.rs`. The element-for-element
+//! comparison against libcint's own component-leading order IS the layout gate.
+//! See `.planning/phases/21-coulomb-gradient-intors/21-CONTEXT.md` (D-07 / R1).
 //!
 //! NOTE (Phase 18 Gap 2 / `/gsd:debug int3c1e-p2-divergence`):
 //! cintx's `int3c1e_p2_*` kernels are an identical kernel-misnomer to
@@ -440,8 +441,9 @@ fn test_int3c1e_p2_cart_safe_api_parity() {
     );
 }
 
-// NOTE: cintx int3c2e_ip1_* currently computes plain 3c2e (kernel misnomer);
-// parity reference is vendor_int3c2e_*, not vendor_int3c2e_ip1_*.
+// Phase 21-06 (GRAD-08 / R1): cintx int3c2e_ip1_* now ships the REAL ∇_A
+// derivative; parity reference is vendor_int3c2e_ip1_*, NOT plain vendor_int3c2e_*.
+// Output is 3-component (component_rank "3" → multiplier 3), sized 3 * ni*nj*nk.
 #[test]
 #[cfg(has_vendor_libcint)]
 fn test_int3c2e_ip1_cart_safe_api_parity() {
@@ -461,9 +463,9 @@ fn test_int3c2e_ip1_cart_safe_api_parity() {
                 let ni = shells[i].ao_per_shell();
                 let nj = shells[j].ao_per_shell();
                 let nk = shells[k].ao_per_shell();
-                // cintx int3c2e_ip1_* kernel computes plain 3c2e (component_rank: "" -> multiplier 1).
-                // Buffer size is ni*nj*nk (NOT ni*nj*nk*3). See RESEARCH.md Item 5 + A6.
-                let n_elem = ni * nj * nk;
+                // REAL ip1 derivative: 3 components (component_rank "3"). Buffer is
+                // 3 * ni*nj*nk, component-leading F-order [3, nk, nj, ni] (R1/GRAD-08).
+                let n_elem = 3 * ni * nj * nk;
 
                 let safe_out = collect_safe_api_tuple_buffer(
                     OperatorId::new(19),
@@ -474,13 +476,13 @@ fn test_int3c2e_ip1_cart_safe_api_parity() {
 
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let shls = [i as i32, j as i32, k as i32];
-                // Plain vendor_int3c2e_cart (no _ip1 suffix); see RESEARCH.md Item 5 / A6.
-                cintx_oracle::vendor_ffi::vendor_int3c2e_cart(
+                // REAL derivative reference vendor_int3c2e_ip1_cart (3-component, R1 flip).
+                cintx_oracle::vendor_ffi::vendor_int3c2e_ip1_cart(
                     &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
                 );
 
                 assert_eq!(safe_out.len(), vendor_out.len(),
-                    "int3c2e_ip1 buffer length mismatch — check kernel vs vendor wiring (RESEARCH.md Item 5/A6)");
+                    "int3c2e_ip1 buffer length mismatch — kernel must emit 3 * ni*nj*nk (GRAD-08)");
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -500,7 +502,7 @@ fn test_int3c2e_ip1_cart_safe_api_parity() {
     assert_eq!(
         total_mismatches, 0,
         "int3c2e_ip1_cart safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
-         vs vendored libcint (plain int3c2e_cart, NOT _ip1_) over {tuples_checked} triples"
+         vs vendored libcint (REAL int3c2e_ip1_cart derivative) over {tuples_checked} triples"
     );
 }
 
@@ -700,8 +702,9 @@ fn test_int3c1e_p2_sph_safe_api_parity() {
     );
 }
 
-// NOTE: cintx int3c2e_ip1_* currently computes plain 3c2e (kernel misnomer);
-// parity reference is vendor_int3c2e_*, not vendor_int3c2e_ip1_*.
+// Phase 21-06 (GRAD-08 / R1): cintx int3c2e_ip1_* now ships the REAL ∇_A
+// derivative; parity reference is vendor_int3c2e_ip1_*, NOT plain vendor_int3c2e_*.
+// Output is 3-component (component_rank "3" → multiplier 3), sized 3 * ni*nj*nk.
 #[test]
 #[cfg(has_vendor_libcint)]
 fn test_int3c2e_ip1_sph_safe_api_parity() {
@@ -721,9 +724,9 @@ fn test_int3c2e_ip1_sph_safe_api_parity() {
                 let ni = shells[i].ao_per_shell();
                 let nj = shells[j].ao_per_shell();
                 let nk = shells[k].ao_per_shell();
-                // cintx int3c2e_ip1_* kernel computes plain 3c2e (component_rank: "" -> multiplier 1).
-                // Buffer size is ni*nj*nk (NOT ni*nj*nk*3). See RESEARCH.md Item 5 + A6.
-                let n_elem = ni * nj * nk;
+                // REAL ip1 derivative: 3 components (component_rank "3"). Buffer is
+                // 3 * ni*nj*nk, component-leading F-order [3, nk, nj, ni] (R1/GRAD-08).
+                let n_elem = 3 * ni * nj * nk;
 
                 let safe_out = collect_safe_api_tuple_buffer(
                     OperatorId::new(20),
@@ -734,14 +737,13 @@ fn test_int3c2e_ip1_sph_safe_api_parity() {
 
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let shls = [i as i32, j as i32, k as i32];
-                // Plain vendor_int3c2e_sph (no _ip1 suffix); pre-existing wrapper.
-                // Same wiring as the passing raw-path test at center_3c2e_parity.rs:222-287.
-                cintx_oracle::vendor_ffi::vendor_int3c2e_sph(
+                // REAL derivative reference vendor_int3c2e_ip1_sph (3-component, R1 flip).
+                cintx_oracle::vendor_ffi::vendor_int3c2e_ip1_sph(
                     &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
                 );
 
                 assert_eq!(safe_out.len(), vendor_out.len(),
-                    "int3c2e_ip1 buffer length mismatch — check kernel vs vendor wiring (RESEARCH.md Item 5/A6)");
+                    "int3c2e_ip1 buffer length mismatch — kernel must emit 3 * ni*nj*nk (GRAD-08)");
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -761,7 +763,7 @@ fn test_int3c2e_ip1_sph_safe_api_parity() {
     assert_eq!(
         total_mismatches, 0,
         "int3c2e_ip1_sph safe API: {total_mismatches} elements exceed atol={ATOL:.0e}/rtol={RTOL:.0e} \
-         vs vendored libcint (plain int3c2e_sph, NOT _ip1_) over {tuples_checked} triples"
+         vs vendored libcint (REAL int3c2e_ip1_sph derivative) over {tuples_checked} triples"
     );
 }
 

@@ -327,7 +327,7 @@
         "representation": "cart",
         "symbol": "int3c2e_ip1_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -359,7 +359,7 @@
         "representation": "sph",
         "symbol": "int3c2e_ip1_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
