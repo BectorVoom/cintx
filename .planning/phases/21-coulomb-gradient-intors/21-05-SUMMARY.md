@@ -140,6 +140,11 @@ None — no new network/auth/file-access surface. The only new trust boundary (h
 - 21-06 (`int3c2e_ip1`) can now reuse the same `pub(crate)` `gout_ip1`/`F12Shape` and the established "build_2e_shape(li+1,…) + fill_g_tensor + gout_ip1 + transpose to component-leading" pattern (the 3c2e kl-mapping uses `build_2e_shape(li+1, lj, 0, lk)` per its file header).
 - No blockers.
 
+## Self-Check: PASSED
+
+- Files verified present: `21-05-SUMMARY.md`, `two_electron_ip1_parity.rs`, `two_electron.rs`, `vendor_ffi.rs`.
+- Commits verified present: `1704717` (refactor), `f814c13` (test RED), `0ab4e3d` (feat GREEN), `839f392` (test), `333a742` (docs).
+
 ---
 *Phase: 21-coulomb-gradient-intors*
 *Completed: 2026-05-26*
