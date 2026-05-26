@@ -22,6 +22,7 @@
 - [ ] **Phase 18: SessionRequest Arity ≥3 Dispatch (issue #11 Task 2)** - Extend `SessionRequest::evaluate` to dispatch arity-3 and arity-4 shell tuples (covering `int2e_*`, `int3c1e*`, `int3c2e_*`, `int4c1e_*`) through the existing operator catalog with F-order AO layout matching libcint memory layout.
 - [x] **Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (issue #11 Task 1)** (completed 2026-05-20) - Implement Type-1 (Coulomb-like) and Type-2 (spin-orbit-like) ECP projectors and expose them through `SessionRequest` alongside ordinary one-electron operators. Cu/LANL2DZ in the oracle corpus provides a byte-identity gate against libcint.
 - [x] **Phase 20: Generic Float Precision (f64/f32 Switch)** - Parameterize the cintx compute path (CubeCL kernels, shared `#[cube]` math, staging buffers, safe-API outputs) over a generic `F: Float` so callers pick f64 (default, byte-identity) or f32 (loose-tolerance, unlocks non-`SHADER_F64` GPUs) via `evaluate::<F>()`. Raw compat `env`/`atm`/`bas` and the C ABI shim stay f64. Milestone-sized cross-cutting refactor (~3,396 f64 sites, 8 crates) planned as a single phase per operator decision 2026-05-20. (8/8 plans executed; verification gaps_found 2026-05-21; gap-closure plans 20-09..20-11 added — PREC-02 Complex<F> + PREC-05 f32 multi-component/f12, see 20-VERIFICATION.md) (completed 2026-05-21)
+- [ ] **Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`)** - Implement the 6 plain-Coulomb first-derivative integral families every HF/DFT/MP2/CCSD analytical gradient needs (`int2e_ip1`, `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc`, `int1e_iprinv`, `ECPscalar_iprinv`), byte-identical to libcint 6.1.3 under the oracle gate, and repair the registered-but-stubbed `int3c2e_ip1`. Adds the missing `PTR_RINV_ORIG` env slot. Un-gates pyscf_rs Phase 7's analytical-gradient numeric arms with zero pyscf_rs rework.
 
 ## Progress
 
@@ -47,6 +48,7 @@
 | Phase 18: SessionRequest Arity ≥3 Dispatch | v1.3 | 0/4 | Planned | - |
 | Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 8/8 | Complete | 2026-05-20 |
 | Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 11/11 | Complete | 2026-05-21 |
+| Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`) | v1.3 | 0/8 | Planned | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
 
@@ -368,3 +370,60 @@ Plans:
 **Wave 9** *(blocked on 20-10)*
 
 - [x] 20-11-PLAN.md — Gap 2b (PREC-05): vendor-gated f32 oracle tests for a multi-component / f12-derivative operator (`int2e_stg_ip1_sph`, ncomp=3 — the CR-01/CR-02 corruption regime) driving `evaluate::<f32>()` at the empirical f32 floor; load-bearing (FAILS pre-20-10); FROZEN f64 gate untouched.
+
+### Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`)
+
+**Goal**: cintx implements the 6 plain-Coulomb first-derivative (∂/∂nuclear-coordinate) integral families that every HF/DFT/MP2/CCSD analytical gradient needs — `int2e_ip1`, `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc`, `int1e_iprinv`, `ECPscalar_iprinv` — byte-identical to libcint 6.1.3 under the oracle gate, and repairs the registered-but-stubbed `int3c2e_ip1` (currently an operator-blind scalar kernel that silently returns the non-derivative integral). Adds the missing `PTR_RINV_ORIG` env slot. Landing these un-gates pyscf_rs Phase 7's analytical-gradient numeric arms (RHF/UHF/RKS/UKS/MP2/CCSD + CPHF + geomopt) with zero pyscf_rs rework — only a `workflow_dispatch` gate flips, because the dispatch shape + component-leading layout are already wired in pyscf-gto.
+**Depends on**: Phase 18 (arity-≥3 `SessionRequest` dispatch — required only for the `int2e_ip1` *safe-API* path; the raw/compat `eval_raw` path already dispatches arity-4, so the raw arm can land independently). Phases 8-10 (the shared `#[cube]` Boys/Rys/Obara-Saika math + per-family kernels the gradient reuses), Phase 19 (the scalar-ECP K-Taylor byte-identity foundation `ECPscalar_iprinv` builds on — Risk R4).
+**Requirements**: GRAD-01, GRAD-02, GRAD-03, GRAD-04, GRAD-05, GRAD-06, GRAD-07, GRAD-08, GRAD-09, GRAD-10
+**Success Criteria** (what must be TRUE):
+
+  1. The `PTR_RINV_ORIG` env slot (`env[4..6]`) is plumbed end-to-end following the `f12_zeta` precedent: `OperatorEnvParams.rinv_orig: Option<[f64;3]>` field, `raw.rs::eval_raw` env-read, `validator.rs` gate (an `iprinv` operator without an origin is rejected), origin threaded into the `one_electron`/`ecp` kernels, and a `with_rinv_origin`-style setter on the safe-API options; env round-trip + validator-rejection unit tests pass. (GRAD-01)
+  2. All 6 gradient families plus the `int3c2e_ip1` correction are registered in `compiled_manifest.lock.json` with `"component_rank":"3"` per representation, with matching RawApiId consts, legacy wrappers, and CAPI enum variants; `cargo build` regenerates `api_manifest.rs`; the manifest-audit xtask is green and every symbol resolves through `eval_raw` (kernels may return `UnsupportedApi` until they land). (GRAD-02)
+  3. `int1e_ipovlp` (cart + sph, 3 components) matches vendored libcint 6.1.3 at atol=1e-12 on the H2O/STO-3G corpus. (GRAD-03)
+  4. `int1e_ipkin` (cart + sph, 3 components) matches vendored libcint 6.1.3 at atol=1e-12. (GRAD-04)
+  5. `int1e_ipnuc` (cart + sph, 3 components; ∇ on the bra center, summed over all nuclei) matches vendored libcint 6.1.3 at atol=1e-12. (GRAD-05)
+  6. `int1e_iprinv` (cart + sph, 3 components; single rinv origin via the GRAD-01 env slot, no `-Z_C` factor) matches vendored libcint 6.1.3 at atol=1e-12. (GRAD-06)
+  7. `int2e_ip1` (arity-4, 3 components; component-leading `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs`) matches vendored `int2e_ip1` at atol=1e-12 for s/p/d quartets. (GRAD-07)
+  8. `int3c2e_ip1` ships a real derivative kernel replacing the operator-blind scalar stub in `center_3c2e.rs`, and its oracle reference is flipped from the plain `vendor_int3c2e` to `vendor_int3c2e_ip1`; matches at atol=1e-12. (GRAD-08)
+  9. `ECPscalar_iprinv` (per-nucleus ECP force; single rinv origin, no all-slot `-Z_C` accumulation) matches vendored libcint at atol=1e-12 on Cu/LANL2DZ, after confirming Phase 19's scalar-ECP K-Taylor byte-identity path (Risk R4). (GRAD-09)
+  10. Phase verification + pyscf_rs hand-off: the component-leading F-order layout is validated against the vendor layout (Risk R3); cintx ROADMAP/STATE/REQUIREMENTS are updated; a hand-off note records which pyscf_rs Phase 7 `workflow_dispatch` gradient arms now un-gate. (GRAD-10)
+
+**Plans**: 8 plans
+
+Plans:
+**Wave 1** — rinv-origin env infrastructure + manifest registration (foundation)
+
+- [ ] 21-01-PLAN.md — Wave 1: `PTR_RINV_ORIG` env-slot plumbing (the `f12_zeta` 4-step pattern): `OperatorEnvParams.rinv_orig`, `raw.rs` env-read, `validator.rs` gate, thread into `one_electron`/`ecp` kernels; `with_rinv_origin` safe-API setter; env round-trip + validator-rejects-missing-origin unit tests. [GRAD-01]
+- [ ] 21-02-PLAN.md — Wave 1: register all 6 families (+ `int3c2e_ip1` correction) in `compiled_manifest.lock.json` with `component_rank:"3"`; add RawApiId consts, legacy wrappers, CAPI enum variants; `cargo build` regenerates the manifest; manifest-audit xtask green; symbols resolve through `eval_raw` (UnsupportedApi from kernels until Wave 2/3). [GRAD-02]
+
+**Wave 2** *(blocked on Wave 1)* — 1e gradient kernels (no Rys risk except ipnuc)
+
+- [ ] 21-03-PLAN.md — Wave 2: `int1e_ipovlp` + `int1e_ipkin` — `nabla1i` on the overlap/kinetic G-tensors (Obara-Saika; the `contract_kinetic` `CINTnabla1j_1e` code at `one_electron.rs:208` is the pattern). Oracle vs `vendor_int1e_ipovlp`/`ipkin` at atol=1e-12. [GRAD-03, GRAD-04]
+- [ ] 21-04-PLAN.md — Wave 2: `int1e_ipnuc` (∇ on bra, sum over all atoms) + `int1e_iprinv` (single origin via the Wave-1 env slot, no `-Z_C` factor). Both reuse the `gout_ip1` nabla on the nuclear Rys tensor; differ only in atom-loop vs single-origin and prefactor. Oracle vs vendor at atol=1e-12. [GRAD-05, GRAD-06]
+
+**Wave 3** *(blocked on Wave 1; independent of Wave 2)* — 2e + 3c2e gradient kernels (Rys)
+
+- [ ] 21-05-PLAN.md — Wave 3: `int2e_ip1` — new gradient path in `two_electron.rs`: `build_2e_shape(li+1, lj, lk, ll)`, `fill_g_tensor_2e` + `rys_roots_host`, then `gout_ip1` (reused from `f12.rs`). Component-leading `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs`. Oracle vs `vendor_int2e_ip1` at atol=1e-12 for s/p/d. Confirm pyscf-gto's call path (raw vs safe / Phase 18) before committing the surface (Risk R6). [GRAD-07]
+- [ ] 21-06-PLAN.md — Wave 3: `int3c2e_ip1` real derivative kernel (repair family 0) — same `gout_ip1` reuse in `center_3c2e.rs`; flip oracle from plain `vendor_int3c2e` to `vendor_int3c2e_ip1`. [GRAD-08]
+
+**Wave 4** *(blocked on Waves 1-3)* — ECP gradient + close-out
+
+- [ ] 21-07-PLAN.md — Wave 4: `ECPscalar_iprinv` — per-nucleus selector in `launch_ecp` (the `ipnuc` driver `deriv1_cart_pair` at `ecp.rs:1181` sums all ECP slots; iprinv selects one via the Wave-1 rinv origin) + drop the `-Z_C`/all-slot accumulation; reuse the salvaged `19-05` tables. **Pre-req: confirm scalar-ECP K-Taylor byte-identity (Risk R4).** Oracle: Cu/LANL2DZ iprinv vs vendor. [GRAD-09]
+- [ ] 21-08-PLAN.md — Wave 4: phase verification + the pyscf_rs hand-off note (which Phase 7 `workflow_dispatch` arms un-gate, `int3c2e_ip1` re-gating history); validate component-leading F-order vs vendor layout (Risk R3); update cintx ROADMAP/STATE/REQUIREMENTS. [GRAD-10]
+
+**Risks**:
+
+  - **R1** — `int3c2e_ip1` is a latent silent-wrong RUNTIME path (verified): `center_3c2e.rs::launch_center_3c2e_typed` is operator-blind, scalar-output, no derivative. The oracle "passes" only because it references plain `vendor_int3c2e`; pyscf_rs's DF-grad runtime consumes it as a derivative. Fixed in 21-06.
+  - **R2** — Rys roots >5 for high-l: the gradient's `li+1` pushes f/g quartets past nroots=5 (unsupported, same ceiling as base int2e). Document the l-limit; gate high-l grads behind the deferred Wheeler-fallback work, not this phase.
+  - **R3** — F-order component-layout mismatch: pyscf-gto declares component-leading `[3, …]` F-order in `layout_table.rs`; the kernel staging must match exactly or pyscf-rs repacks wrong. Validate against vendor layout in the oracle.
+  - **R4** — ECP scalar K-Taylor: `ECPscalar_iprinv` byte-identity is only reachable if the scalar ECP primitives are PySCF-exact (K_TAB/ECPrad_part), not the old direct-quadrature approximation. Confirm Phase 19's Cu/LANL2DZ gate exercises the exact path before starting 21-07; otherwise insert a K-Taylor-port plan first.
+  - **R5** — spinor variants: the manifest carries `spinor` representations, but pyscf_rs needs only `sph`/`cart`. Scope spinor gradient kernels OUT (register-but-`UnsupportedApi`) unless a consumer needs them.
+  - **R6** — Phase 18 coupling: `int2e_ip1` safe-API needs arity-4 dispatch (Phase 18). De-risk by confirming pyscf-gto's call path (raw vs safe) up front; the raw/compat arm can land independently of Phase 18.
+
+**Notes**:
+
+  - Source proposal: `.planning/notes/phase-21-coulomb-gradient-intors-PLAN.md` (drafted 2026-05-26, verified against the tree).
+  - The first-derivative machinery is generic and already exists: `gout_ip1` + `nabla1i_2e`/`nabla1j_2e`/`nabla1k_2e` in `crates/cintx-cubecl/src/kernels/f12.rs:590-785` contain zero F12-specific logic and implement the standard libcint `∂/∂A χ_l = -2α·χ_{l+1} + l·χ_{l-1}` identity — reused verbatim for the plain-Coulomb families.
+  - Consumer / driver: pyscf_rs Phase 7 (Gradients + Geomopt); see pyscf_rs `.planning/phases/07-gradients-geomopt/07-RESEARCH.md` §"Gradient-Integral Availability Matrix".
+  - Wave 2 and the raw-path of Wave 3 are independent of Phase 18; only the `int2e_ip1` safe-API arm is Phase-18-coupled.
