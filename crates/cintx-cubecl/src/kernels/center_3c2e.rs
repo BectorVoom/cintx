@@ -407,9 +407,22 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                 //   bra pair (i, j): ai, aj at ri, rj.
                 //   ket pair: phantom 2e `lk` shell (exponent 0, at the real-k center)
                 //   in the lk-slot; real k in the 2e `ll` slot (exponent ak at rk).
+                //
+                // `fill_g_tensor_2e` computes the bra-ket Rys prefactor but NOT the
+                // intra-pair Gaussian product factors — those come from the pdata
+                // `fac` (g1e.c:134) and must be folded into `fac_env`, exactly as
+                // `launch_two_electron_ip1` does (`quartet_fac = common_factor *
+                // pdata_ij.fac * pdata_kl.fac`). For the phantom-real_k ket pair the
+                // product factor is `exp(-0) = 1`, but we compute it for fidelity.
+                let pdata_ij = compute_pdata_host(
+                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+                );
+                let pdata_kl = compute_pdata_host(
+                    0.0, ak, rk[0], rk[1], rk[2], rk[0], rk[1], rk[2], 1.0, 1.0,
+                );
+                let fac_env = common_factor * pdata_ij.fac * pdata_kl.fac;
                 let g = fill_g_tensor_2e(
-                    ai, aj, 0.0, ak, &ri, &rj, &rk, &rk, grad_shape,
-                    common_factor,
+                    ai, aj, 0.0, ak, &ri, &rj, &rk, &rk, grad_shape, fac_env,
                 );
 
                 // Reuse gout_ip1 verbatim (f12.rs). Called at BASE li (the G-tensor
