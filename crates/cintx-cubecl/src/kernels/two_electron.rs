@@ -847,3 +847,222 @@ pub fn launch_two_electron(
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// int2e_ip1 gradient tests (Plan 21-05)
+//
+// The behavior contract (per the plan):
+//   - nroots guard: a quartet whose gradient nroots = (li+1+lj+lk+ll)/2+1 > 5
+//     (e.g. an all-f quartet) returns UnsupportedApi; an s/p/d quartet does not.
+//   - component count: an (s,s,s,s) quartet produces 3 outputs; a (p,s,s,s)
+//     quartet produces 3 * 3*1*1*1 = 9.
+//   - determinism: repeated evaluation is bit-identical (ordered reduction, D-10).
+//   - spinor: int2e_ip1 with Representation::Spinor returns UnsupportedApi (R5).
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(all(test, feature = "cpu"))]
+mod ip1_tests {
+    use super::*;
+    use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+    use crate::specialization::SpecializationKey;
+    use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell, ShellTuple};
+    use cintx_ops::resolver::Resolver;
+    use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+    use std::sync::Arc;
+
+    /// Build a 4-shell same-l quartet plan for the int2e_ip1 sph operator.
+    ///
+    /// Returns the plan plus a correctly-sized f64 staging buffer (the runtime
+    /// planner already multiplies the AO product by the manifest `component_rank=3`).
+    fn build_ip1_plan(
+        l: u8,
+        rep: Representation,
+    ) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
+        // Two atoms so the four shells are not all on the same center (a same-center
+        // s,s,s,s ERI gradient is nonzero only off-center; off-center keeps the math
+        // exercised, but for the unit contract we only need shape/guard behavior).
+        let atom0 = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom1 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom0, atom1].into_boxed_slice());
+
+        let mk = |atom_index: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_index,
+                    l,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.8_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
+        let s0 = mk(0);
+        let s1 = mk(1);
+        let s2 = mk(0);
+        let s3 = mk(1);
+
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![s0.clone(), s1.clone(), s2.clone(), s3.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = ShellTuple::try_from_iter([s0, s1, s2, s3]).unwrap();
+
+        let op = Resolver::descriptor_by_symbol("int2e_ip1_sph")
+            .expect("int2e_ip1_sph must be in manifest")
+            .id;
+        let _ = rep;
+        (basis, shells, op)
+    }
+
+    /// Build a (li, lj, lk, ll) quartet plan with explicit per-shell angular momenta.
+    fn build_ip1_plan_lll(
+        li: u8,
+        lj: u8,
+        lk: u8,
+        ll: u8,
+    ) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
+        let atom0 = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom1 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom0, atom1].into_boxed_slice());
+
+        let mk = |atom_index: u32, l: u8| {
+            Arc::new(
+                Shell::try_new(
+                    atom_index,
+                    l,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.8_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
+        let s0 = mk(0, li);
+        let s1 = mk(1, lj);
+        let s2 = mk(0, lk);
+        let s3 = mk(1, ll);
+
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![s0.clone(), s1.clone(), s2.clone(), s3.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = ShellTuple::try_from_iter([s0, s1, s2, s3]).unwrap();
+
+        let op = Resolver::descriptor_by_symbol("int2e_ip1_sph")
+            .expect("int2e_ip1_sph must be in manifest")
+            .id;
+        (basis, shells, op)
+    }
+
+    fn run_ip1(
+        basis: &BasisSet,
+        shells: ShellTuple,
+        op: cintx_core::OperatorId,
+        rep: Representation,
+    ) -> Result<(Vec<f64>, ExecutionStats), cintxRsError> {
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op, rep, basis, shells.clone(), &opts)?;
+        let mut plan = ExecutionPlan::new(op, rep, basis, shells, &q)?;
+        plan.precision = cintx_core::PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+
+        // Size staging to the planner-declared output element count (includes the
+        // 3-component axis via component_rank=3).
+        let out_elems = plan.output_layout.staging_elements;
+        let mut staging = vec![0.0_f64; out_elems];
+        let stats = launch_two_electron_typed::<f64>(&backend, &plan, &spec, &mut staging)?;
+        Ok((staging, stats))
+    }
+
+    // nroots guard (R2 / T-21-05-01): an all-f quartet has gradient
+    // nroots = (3+1 + 3 + 3 + 3)/2 + 1 = 13/2 + 1 = 7 > 5 → UnsupportedApi.
+    // An s/p/d quartet (max d,d,d,d → gradient nroots = (2+1+2+2+2)/2+1 = 5) is OK.
+    #[test]
+    fn test_int2e_ip1_nroots_guard() {
+        let (basis, shells, op) = build_ip1_plan_lll(3, 3, 3, 3);
+        let result = run_ip1(&basis, shells, op, Representation::Spheric);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "all-f int2e_ip1 quartet (nroots=7) must return UnsupportedApi, got: {:?}",
+            result.map(|(s, _)| s.len())
+        );
+
+        // (d,d,d,d) gradient nroots = (2+1+2+2+2)/2 + 1 = 4 + 1 = 5 ≤ 5 → allowed.
+        let (basis, shells, op) = build_ip1_plan_lll(2, 2, 2, 2);
+        let ok = run_ip1(&basis, shells, op, Representation::Spheric);
+        assert!(
+            ok.is_ok(),
+            "(d,d,d,d) int2e_ip1 quartet (nroots=5) must be allowed, got: {:?}",
+            ok.err()
+        );
+    }
+
+    // Component count: (s,s,s,s) → 3 nonzero-capable outputs; (p,s,s,s) → 9 (sph p = 3).
+    #[test]
+    fn test_int2e_ip1_component_count() {
+        let (basis, shells, op) = build_ip1_plan(0, Representation::Spheric);
+        let (staging, _stats) = run_ip1(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(
+            staging.len(),
+            3,
+            "(s,s,s,s) int2e_ip1 should produce 3 components, got {}",
+            staging.len()
+        );
+
+        let (basis, shells, op) = build_ip1_plan_lll(1, 0, 0, 0);
+        let (staging, _stats) = run_ip1(&basis, shells, op, Representation::Spheric).unwrap();
+        // sph p = 3 AOs; 3 components × 3×1×1×1 = 9.
+        assert_eq!(
+            staging.len(),
+            9,
+            "(p,s,s,s) int2e_ip1 should produce 9 outputs, got {}",
+            staging.len()
+        );
+    }
+
+    // Determinism (D-10): repeated evaluation is bit-identical.
+    #[test]
+    fn test_int2e_ip1_determinism() {
+        let (basis, shells, op) = build_ip1_plan_lll(1, 1, 0, 0);
+        let (out1, _) = run_ip1(&basis, shells.clone(), op, Representation::Spheric).unwrap();
+        let (out2, _) = run_ip1(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(out1.len(), out2.len());
+        for (a, b) in out1.iter().zip(out2.iter()) {
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "int2e_ip1 output not bit-identical across two evaluations"
+            );
+        }
+    }
+
+    // Spinor (R5): int2e_ip1 with Representation::Spinor returns UnsupportedApi.
+    #[test]
+    fn test_int2e_ip1_spinor_unsupported() {
+        // Build with sph for a valid workspace query, then force Spinor on the plan.
+        let (basis, shells, op) = build_ip1_plan(0, Representation::Spheric);
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &q).unwrap();
+        plan.representation = Representation::Spinor;
+        plan.precision = cintx_core::PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 6];
+        let result = launch_two_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "spinor int2e_ip1 should return UnsupportedApi, got: {:?}",
+            result
+        );
+    }
+}
