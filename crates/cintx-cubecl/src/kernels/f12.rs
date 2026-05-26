@@ -77,24 +77,33 @@ const F12_IPVIP1: F12Variant = F12Variant { i_inc: 1, j_inc: 1, k_inc: 0, l_inc:
 const F12_IP1IP2: F12Variant = F12Variant { i_inc: 1, j_inc: 0, k_inc: 1, l_inc: 0, ncomp: 9 };
 
 /// Stride/layout metadata for F12 (identical structure to two_electron's TwoEShape).
+///
+/// `pub(crate)` so the plain-Coulomb gradient launchers (`two_electron.rs::int2e_ip1`,
+/// `center_3c2e.rs::int3c2e_ip1`) can construct one from their own `build_2e_shape`
+/// result and feed it to [`gout_ip1`] / [`nabla1i_2e`]. The first-derivative math
+/// in those two functions is F12-free (it implements the standard libcint
+/// `∂/∂A χ_l = -2α·χ_{l+1} + l·χ_{l-1}` / `CINTnabla1i_2e`); only the G-tensor
+/// fill (`fill_g_tensor_f12` via `stg_roots_host`) is F12-specific. Sharing these
+/// symbols lets the plain-Coulomb gradients reuse the exact verbatim derivative
+/// math (Phase 21 D-04) instead of re-deriving it.
 #[derive(Clone, Copy, Debug)]
-struct F12Shape {
-    nroots: usize,
-    nmax: usize,
-    mmax: usize,
-    li: usize,
-    lj: usize,
-    lk: usize,
-    ll: usize,
-    ibase: bool,
-    kbase: bool,
-    di: usize,
-    dk: usize,
-    dl: usize,
-    dj: usize,
-    g2d_ijmax: usize,
-    g2d_klmax: usize,
-    g_size: usize,
+pub(crate) struct F12Shape {
+    pub(crate) nroots: usize,
+    pub(crate) nmax: usize,
+    pub(crate) mmax: usize,
+    pub(crate) li: usize,
+    pub(crate) lj: usize,
+    pub(crate) lk: usize,
+    pub(crate) ll: usize,
+    pub(crate) ibase: bool,
+    pub(crate) kbase: bool,
+    pub(crate) di: usize,
+    pub(crate) dk: usize,
+    pub(crate) dl: usize,
+    pub(crate) dj: usize,
+    pub(crate) g2d_ijmax: usize,
+    pub(crate) g2d_klmax: usize,
+    pub(crate) g_size: usize,
 }
 
 /// Build F12 shape using ceiling nroots formula from g2e_f12.c line 75:
@@ -587,7 +596,7 @@ fn fill_g_tensor_inner(
 /// Formula (per axis):
 ///   f[n @ i=0] = -2*ai * g[n+di]
 ///   f[n @ i>=1] = i * g[n-di] + (-2*ai) * g[n+di]
-fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ai: f64, shape: &F12Shape) {
+pub(crate) fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ai: f64, shape: &F12Shape) {
     let ai2 = -2.0 * ai;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -724,7 +733,12 @@ fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
 ///
 /// Matches `CINTgout2e_int2e_ip1` in autocode/grad2.c.
 /// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z).
-fn gout_ip1(
+///
+/// `pub(crate)` (Phase 21 D-04): shared verbatim with `two_electron.rs::int2e_ip1`
+/// and `center_3c2e.rs::int3c2e_ip1` — the plain-Coulomb gradients feed it the
+/// plain `fill_g_tensor_2e` G-tensor (rys roots) instead of the F12 stg-roots
+/// tensor; the contraction math here is identical for both.
+pub(crate) fn gout_ip1(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
