@@ -4,7 +4,14 @@ pub mod center_3c2e;
 #[cfg(feature = "with-4c1e")]
 pub mod center_4c1e;
 pub mod ecp;
-#[cfg(feature = "with-f12")]
+// The `f12` module is always compiled: its derivative math (`gout_ip1`,
+// `nabla1i_2e`, `F12Shape`) is F12-free and is reused verbatim by the
+// base-profile plain-Coulomb gradients (`two_electron.rs::int2e_ip1`,
+// `center_3c2e.rs::int3c2e_ip1` — Phase 21 D-04). The F12-specific
+// FAMILY launcher (`launch_f12`) and the `"f12"` dispatch registration stay
+// gated behind `with-f12` below, so F12 OPERATORS remain rejected in the base
+// profile. Its dependencies (`math::stg`, `validate_f12_env_params`) are
+// already ungated, so the module compiles cleanly without `with-f12`.
 pub mod f12;
 pub mod one_electron;
 pub mod two_electron;
