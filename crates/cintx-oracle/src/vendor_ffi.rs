@@ -682,6 +682,78 @@ pub fn vendor_int2e_cart(
     }
 }
 
+/// Evaluate int2e_ip1_sph for a single shell quartet using vendored libcint.
+///
+/// The two-electron force `∇_A <ij|kl>` (3 gradient components on electron 1).
+///
+/// `out` must be pre-allocated with `3 * ni*nj*nk*nl` elements where
+/// nX = CINTcgto_spheric(shls[X], bas).
+///
+/// `shls` is `[i, j, k, l]` — four shell indices.
+///
+/// LAYOUT: libcint writes **component-leading** F-order — `out[comp * (ni*nj*nk*nl) + n]`
+/// for comp in 0..3, where the per-component block `n` walks the AO product i-fastest
+/// (i.e. `[nl][nk][nj][ni]` with `ni` fastest, matching pyscf-gto `layout_table.rs`).
+/// The cintx `int2e_ip1` kernel emits this identical layout, so the byte-identity
+/// element-for-element comparison in `two_electron_ip1_parity.rs` IS the F-order /
+/// component-leading layout validation (Risk R3).
+pub fn vendor_int2e_ip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means use default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL
+            ptr::null_mut(), // cache = NULL (let libcint allocate)
+        )
+    }
+}
+
+/// Evaluate int2e_ip1_cart for a single shell quartet using vendored libcint.
+///
+/// Cartesian analog of [`vendor_int2e_ip1_sph`]. `out` must be pre-allocated with
+/// `3 * ni*nj*nk*nl` elements where nX = CINTcgto_cart(shls[X], bas).
+///
+/// LAYOUT: component-leading F-order — `out[comp * (ni*nj*nk*nl) + n]` (same
+/// convention as the sph wrapper; see its doc for the R3 layout note).
+pub fn vendor_int2e_ip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int2c2e_cart for a single shell pair using vendored libcint.
 ///
 /// `shls` is `[i, k]` — two shell indices (2-center 2-electron integral).
