@@ -209,3 +209,10 @@ main repo (`fix/general-contraction-nctr-1e`) instead of the worktree. Caught be
 commit (#3097/#3099): reverted the main-repo staging, captured the edits as a patch, and
 re-applied them inside the worktree. All subsequent operations used the worktree-absolute
 path and `git -C "$WT"`. No commits were made to the main repo.
+
+## Self-Check: PASSED
+
+- Created files exist: `21-06-SUMMARY.md`, `deferred-items.md`.
+- Commits exist: 78cecd1 (RED), 5cf4442 (GREEN), 1527591 (oracle flip), 7fc6769 (SUMMARY).
+- Key implementation present: `launch_center_3c2e_ip1`, `vendor_int3c2e_ip1_sph`,
+  oracle references flipped in both `safe_api_arity3_parity.rs` and `center_3c2e_parity.rs`.
