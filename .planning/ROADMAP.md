@@ -399,7 +399,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)* — 1e gradient kernels (no Rys risk except ipnuc; 21-04 runs after 21-03 — both edit `one_electron.rs`, executor serializes on the `files_modified` overlap)
 
-- [ ] 21-03-PLAN.md — Wave 2: `int1e_ipovlp` + `int1e_ipkin` — `nabla1i` on the overlap/kinetic G-tensors (Obara-Saika; the `contract_kinetic` `CINTnabla1j_1e` code at `one_electron.rs:208` is the pattern). Oracle vs `vendor_int1e_ipovlp`/`ipkin` at atol=1e-12. [GRAD-03, GRAD-04]
+- [x] 21-03-PLAN.md — Wave 2: `int1e_ipovlp` + `int1e_ipkin` — `nabla1i` on the overlap/kinetic G-tensors (Obara-Saika; the `contract_kinetic` `CINTnabla1j_1e` code at `one_electron.rs:208` is the pattern). Oracle vs `vendor_int1e_ipovlp`/`ipkin` at atol=1e-12. [GRAD-03, GRAD-04]
 - [ ] 21-04-PLAN.md — Wave 2: `int1e_ipnuc` (∇ on bra, sum over all atoms) + `int1e_iprinv` (single origin via the Wave-1 env slot, no `-Z_C` factor). Both reuse the `gout_ip1` nabla on the nuclear Rys tensor; differ only in atom-loop vs single-origin and prefactor. Oracle vs vendor at atol=1e-12. [GRAD-05, GRAD-06]
 
 **Wave 3** *(blocked on Wave 1)* — int2e_ip1 (Rys; also exposes `gout_ip1`/`F12Shape` as `pub(crate)` for Wave 4)

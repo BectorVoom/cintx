@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
 status: Ready to execute
-stopped_at: "Completed Phase 20 Plan 10 (Gap 2a — kernel+math hardening for PREC-05 f32 correctness; 2 commits: 5ba79fb + 69a6a18)"
-last_updated: "2026-05-26T09:47:59.535Z"
+stopped_at: Completed 21-03-PLAN.md
+last_updated: "2026-05-26T10:08:33.270Z"
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 59
-  completed_plans: 53
-  percent: 90
+  completed_plans: 54
+  percent: 92
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 21 (coulomb-gradient-intors) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Next: Execute Phase 21 — `/gsd:execute-phase 21`
 Resume: `.planning/phases/21-coulomb-gradient-intors/21-01-PLAN.md`
 
@@ -113,6 +113,7 @@ Resume: `.planning/phases/21-coulomb-gradient-intors/21-01-PLAN.md`
 | Phase 20 P10 | 7 | 4 tasks | 11 files |
 | Phase 20-precision-generic-f64-f32-switch P11 | 15 | 2 tasks | 3 files |
 | Phase 21 P02 | 15 | 2 tasks | 5 files |
+| Phase 21 P03 | 25 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -275,6 +276,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 20-10]: WR-05 device path: used F::EPSILON (CubeCL Float const, verified from cubecl-core-0.10.0) not F::new(f64::EPSILON as f32 * 0.5); host uses num_traits F::epsilon(); both yield the same type-appropriate epsilon
 - [Phase 20-10]: WR-05 f64 impact: F::epsilon() for f64 == 2.22e-16 vs old DBL_EPSILON_HALF 1.11e-16; factor-of-2 within f64 oracle guard band (atol=1e-12); no precision branch needed
 - [Phase 20-10]: WR-03: compute_pdata_host converts ALL inputs to f64 first; Gaussian-product exponential fac = (-ai*aj/zeta_ab*rr).exp() always f64-precision regardless of F; trailing .to_f64().unwrap_or() removed (values already f64 after input conversion)
+- [Phase ?]: nmax headroom for ipovlp: nmax = li+lj+1 (one extra bra level so nabla ix+1 access is valid)
+- [Phase ?]: nmax headroom for ipkin: nmax = li+lj+3 (kinetic +2 for D_j^2 jx+2 access + nabla +1 for ix+1 access)
+- [Phase ?]: Spinor gradient returns UnsupportedApi (R5/D-03): guard placed before gradient compute path
 
 ### Roadmap Evolution
 
@@ -297,6 +301,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-26T09:47:59.531Z
-Stopped at: Completed Phase 20 Plan 10 (Gap 2a — kernel+math hardening for PREC-05 f32 correctness; 2 commits: 5ba79fb + 69a6a18)
+Last session: 2026-05-26T10:08:33.266Z
+Stopped at: Completed 21-03-PLAN.md
 Resume file: None
