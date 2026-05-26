@@ -235,46 +235,38 @@ all_cint_wrappers!(
     RawApiId::INT3C2E_IP1_SPH,
     RawApiId::INT3C2E_IP1_SPINOR
 );
-all_cint_wrappers!(
+// int1e_ipovlp uses ALL_CINT1E in libcint 6.1.3 (src/autocode/grad1.c) — no optimizer wrappers.
+all_cint1e_wrappers!(
     cint1e_ipovlp_cart,
     cint1e_ipovlp_sph,
     cint1e_ipovlp,
-    cint1e_ipovlp_cart_optimizer,
-    cint1e_ipovlp_sph_optimizer,
-    cint1e_ipovlp_optimizer,
     RawApiId::INT1E_IPOVLP_CART,
     RawApiId::INT1E_IPOVLP_SPH,
     RawApiId::INT1E_IPOVLP_SPINOR
 );
-all_cint_wrappers!(
+// int1e_ipkin uses ALL_CINT1E in libcint 6.1.3 (src/autocode/grad1.c) — no optimizer wrappers.
+all_cint1e_wrappers!(
     cint1e_ipkin_cart,
     cint1e_ipkin_sph,
     cint1e_ipkin,
-    cint1e_ipkin_cart_optimizer,
-    cint1e_ipkin_sph_optimizer,
-    cint1e_ipkin_optimizer,
     RawApiId::INT1E_IPKIN_CART,
     RawApiId::INT1E_IPKIN_SPH,
     RawApiId::INT1E_IPKIN_SPINOR
 );
-all_cint_wrappers!(
+// int1e_ipnuc uses ALL_CINT1E in libcint 6.1.3 (src/autocode/grad1.c) — no optimizer wrappers.
+all_cint1e_wrappers!(
     cint1e_ipnuc_cart,
     cint1e_ipnuc_sph,
     cint1e_ipnuc,
-    cint1e_ipnuc_cart_optimizer,
-    cint1e_ipnuc_sph_optimizer,
-    cint1e_ipnuc_optimizer,
     RawApiId::INT1E_IPNUC_CART,
     RawApiId::INT1E_IPNUC_SPH,
     RawApiId::INT1E_IPNUC_SPINOR
 );
-all_cint_wrappers!(
+// int1e_iprinv uses ALL_CINT1E in libcint 6.1.3 (src/autocode/grad1.c) — no optimizer wrappers.
+all_cint1e_wrappers!(
     cint1e_iprinv_cart,
     cint1e_iprinv_sph,
     cint1e_iprinv,
-    cint1e_iprinv_cart_optimizer,
-    cint1e_iprinv_sph_optimizer,
-    cint1e_iprinv_optimizer,
     RawApiId::INT1E_IPRINV_CART,
     RawApiId::INT1E_IPRINV_SPH,
     RawApiId::INT1E_IPRINV_SPINOR
@@ -290,17 +282,9 @@ all_cint_wrappers!(
     RawApiId::INT2E_IP1_SPH,
     RawApiId::INT2E_IP1_SPINOR
 );
-all_cint_wrappers!(
-    cint1e_ecp_iprinv_cart,
-    cint1e_ecp_iprinv_sph,
-    cint1e_ecp_iprinv,
-    cint1e_ecp_iprinv_cart_optimizer,
-    cint1e_ecp_iprinv_sph_optimizer,
-    cint1e_ecp_iprinv_optimizer,
-    RawApiId::INT1E_ECP_IPRINV_CART,
-    RawApiId::INT1E_ECP_IPRINV_SPH,
-    RawApiId::INT1E_ECP_IPRINV_SPINOR
-);
+// int1e_ecp_iprinv (ECPscalar_iprinv) has no ALL_CINT/ALL_CINT1E wrapper in libcint 6.1.3
+// misc.h — ECP integrals are not exposed via the cint* legacy macro surface. The operator
+// rows (INT1E_ECP_IPRINV_{CART,SPH,SPINOR}) remain in raw.rs for the safe/CAPI dispatch path.
 
 pub const LEGACY_WRAPPER_SYMBOLS: &[&str] = &[
     "cint1e_kin_cart",
@@ -351,39 +335,21 @@ pub const LEGACY_WRAPPER_SYMBOLS: &[&str] = &[
     "cint1e_ipovlp_cart",
     "cint1e_ipovlp_sph",
     "cint1e_ipovlp",
-    "cint1e_ipovlp_cart_optimizer",
-    "cint1e_ipovlp_sph_optimizer",
-    "cint1e_ipovlp_optimizer",
     "cint1e_ipkin_cart",
     "cint1e_ipkin_sph",
     "cint1e_ipkin",
-    "cint1e_ipkin_cart_optimizer",
-    "cint1e_ipkin_sph_optimizer",
-    "cint1e_ipkin_optimizer",
     "cint1e_ipnuc_cart",
     "cint1e_ipnuc_sph",
     "cint1e_ipnuc",
-    "cint1e_ipnuc_cart_optimizer",
-    "cint1e_ipnuc_sph_optimizer",
-    "cint1e_ipnuc_optimizer",
     "cint1e_iprinv_cart",
     "cint1e_iprinv_sph",
     "cint1e_iprinv",
-    "cint1e_iprinv_cart_optimizer",
-    "cint1e_iprinv_sph_optimizer",
-    "cint1e_iprinv_optimizer",
     "cint2e_ip1_cart",
     "cint2e_ip1_sph",
     "cint2e_ip1",
     "cint2e_ip1_cart_optimizer",
     "cint2e_ip1_sph_optimizer",
     "cint2e_ip1_optimizer",
-    "cint1e_ecp_iprinv_cart",
-    "cint1e_ecp_iprinv_sph",
-    "cint1e_ecp_iprinv",
-    "cint1e_ecp_iprinv_cart_optimizer",
-    "cint1e_ecp_iprinv_sph_optimizer",
-    "cint1e_ecp_iprinv_optimizer",
 ];
 
 #[cfg(test)]
@@ -418,13 +384,14 @@ mod tests {
             | "int3c1e"
             | "int3c1e_p2"
             | "int3c2e_ip1"
+            | "int2e_ip1" => Some(MiscWrapperMacro::AllCint),
+            // ALL_CINT1E families (libcint 6.1.3 src/autocode/grad1.c + intor1.c) — no optimizer wrappers.
+            "int1e_kin"
             | "int1e_ipovlp"
             | "int1e_ipkin"
             | "int1e_ipnuc"
-            | "int1e_iprinv"
-            | "int2e_ip1"
-            | "int1e_ecp_iprinv" => Some(MiscWrapperMacro::AllCint),
-            "int1e_kin" => Some(MiscWrapperMacro::AllCint1e),
+            | "int1e_iprinv" => Some(MiscWrapperMacro::AllCint1e),
+            // int1e_ecp_iprinv (ECP) has no misc.h cint* wrapper at all.
             _ => None,
         }
     }
