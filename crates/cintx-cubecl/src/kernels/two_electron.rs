@@ -555,6 +555,288 @@ fn contract_2e_cart(g: &[f64], shape: TwoEShape, li: u8, lj: u8, lk: u8, ll: u8)
     out
 }
 
+/// Bridge a plain-2e [`TwoEShape`] into the [`crate::kernels::f12::F12Shape`] that
+/// [`crate::kernels::f12::gout_ip1`] / `nabla1i_2e` consume.
+///
+/// The two structs carry the IDENTICAL field set (di/dj/dk/dl/nroots/nmax/mmax/
+/// li/lj/lk/ll/ibase/kbase/g2d_ijmax/g2d_klmax/g_size). The gradient math is
+/// F12-free, so this 1:1 field copy lets the plain-Coulomb gradient reuse the
+/// exact verbatim derivative code (Phase 21 D-04).
+#[inline]
+fn two_e_shape_as_f12(shape: &TwoEShape) -> crate::kernels::f12::F12Shape {
+    crate::kernels::f12::F12Shape {
+        nroots: shape.nroots,
+        nmax: shape.nmax,
+        mmax: shape.mmax,
+        li: shape.li,
+        lj: shape.lj,
+        lk: shape.lk,
+        ll: shape.ll,
+        ibase: shape.ibase,
+        kbase: shape.kbase,
+        di: shape.di,
+        dk: shape.dk,
+        dl: shape.dl,
+        dj: shape.dj,
+        g2d_ijmax: shape.g2d_ijmax,
+        g2d_klmax: shape.g2d_klmax,
+        g_size: shape.g_size,
+    }
+}
+
+/// `int2e_ip1` gradient launch — the ∇_A <ij|kl> two-electron force (GRAD-07).
+///
+/// Builds the plain Coulomb G-tensor with `li_ceil = li+1` headroom
+/// ([`fill_g_tensor_2e`] via `rys_roots_host`), reuses
+/// [`crate::kernels::f12::gout_ip1`] verbatim on it, and emits component-leading
+/// `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs` (Risk R3).
+///
+/// Guards (fail-closed):
+///   - `grad_shape.nroots > 5` → `UnsupportedApi` (R2 / T-21-05-01): the li→li+1
+///     raise can push high-l f/g quartets past the rys_root1..5 ceiling; we reject
+///     BEFORE any rys dispatch so we never index a nonexistent rys_root.
+///   - `Representation::Spinor` → `UnsupportedApi` (R5 / T-21-05-04).
+#[allow(clippy::too_many_arguments)]
+fn launch_two_electron_ip1<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
+    common_factor: f64,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    // Spinor gradient: not supported (R5 / D-03). Reject before any compute.
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor int2e_ip1 gradient".to_owned(),
+        });
+    }
+
+    // li → li+1 headroom shape (D-06). gout_ip1's nabla1i_2e reads up to index li+1.
+    let grad_shape = build_2e_shape(li as usize + 1, lj as usize, lk as usize, ll as usize);
+
+    // R2 / T-21-05-01: the elevated li can push nroots past the rys_root1..5 ceiling.
+    // Reject fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
+    if grad_shape.nroots > 5 {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_j = &shells[1];
+    let shell_k = &shells[2];
+    let shell_l = &shells[3];
+
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let block_len = nfi * nfj * nfk * nfl;
+    let total_len = 3 * block_len; // 3 components × Cartesian AO product
+
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+    let nsl = nsph(ll);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_prim_l = shell_l.nprim as usize;
+
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+    let n_ctr_l = shell_l.nctr as usize;
+
+    // Per-contraction-quad component-leading Cartesian accumulator: one
+    // `3 * nfi*nfj*nfk*nfl` block per (ci,cj,ck,cl) quad (mirrors the scalar 2e
+    // general-contraction layout). For all-nctr==1 this is a single block.
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * total_len];
+
+    let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
+
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pj in 0..n_prim_j {
+            let aj = shell_j.exponents[pj];
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            for pk in 0..n_prim_k {
+                let ak = shell_k.exponents[pk];
+                for pl in 0..n_prim_l {
+                    let al = shell_l.exponents[pl];
+                    let pdata_kl = compute_pdata_host(
+                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                    );
+                    let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+
+                    // Plain Coulomb G-tensor at the elevated li (li+1 headroom).
+                    let g = fill_g_tensor_2e(
+                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                    );
+
+                    // Reuse gout_ip1 verbatim (f12.rs). It returns interleaved
+                    // out[n*3+comp]; n walks [cl, ck, cj, ci] (ll slowest, li fastest).
+                    // gout_ip1 is called at BASE li (the G-tensor carries li+1 headroom).
+                    let gout = crate::kernels::f12::gout_ip1(
+                        &g,
+                        &grad_f12_shape,
+                        li as usize,
+                        lj as usize,
+                        lk as usize,
+                        ll as usize,
+                        ai,
+                    );
+
+                    for ci in 0..n_ctr_i {
+                        let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                        for cj in 0..n_ctr_j {
+                            let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                            for ck in 0..n_ctr_k {
+                                let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                                for cl in 0..n_ctr_l {
+                                    let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
+                                    let weight = coeff_i * coeff_j * coeff_k * coeff_l;
+                                    let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l
+                                        + cl)
+                                        * total_len;
+                                    // TRANSPOSE interleaved gout[n*3+comp] into the
+                                    // component-leading block: cart[comp*block + n].
+                                    for n in 0..block_len {
+                                        for comp in 0..3usize {
+                                            cart_blocks[base + comp * block_len + n] +=
+                                                weight * gout[n * 3 + comp];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Write component-leading `[3, nl, nk, nj, ni]` F-order to staging.
+    // For each component, the per-quad block is the i-fastest `[nl][nk][nj][ni]`
+    // Cartesian tensor — run the cart→sph transform per component for the sph rep.
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dj = n_ctr_j * nsj;
+            let dk = n_ctr_k * nsk;
+            let dl = n_ctr_l * nsl;
+            let sph_block = di * dj * dk * dl;
+            for comp in 0..3usize {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let sph = cart_to_sph_2e(
+                                    &cart_blocks[base..base + block_len],
+                                    li,
+                                    lj,
+                                    lk,
+                                    ll,
+                                );
+                                for ml in 0..nsl {
+                                    let lidx = cl * nsl + ml;
+                                    for mk in 0..nsk {
+                                        let kidx = ck * nsk + mk;
+                                        for mj in 0..nsj {
+                                            let jidx = cj * nsj + mj;
+                                            for mi in 0..nsi {
+                                                let iidx = ci * nsi + mi;
+                                                let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                if dst < staging.len() {
+                                                    staging[dst] = F::from_f64_lossy(sph[src]);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nfi;
+            let dj = n_ctr_j * nfj;
+            let dk = n_ctr_k * nfk;
+            let dl = n_ctr_l * nfl;
+            let cart_block = di * dj * dk * dl;
+            for comp in 0..3usize {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let block = &cart_blocks[base..base + block_len];
+                                for lc in 0..nfl {
+                                    let lidx = cl * nfl + lc;
+                                    for kc in 0..nfk {
+                                        let kidx = ck * nfk + kc;
+                                        for jc in 0..nfj {
+                                            let jidx = cj * nfj + jc;
+                                            for ic in 0..nfi {
+                                                let iidx = ci * nfi + ic;
+                                                let src = ic + nfi * (jc + nfj * (kc + nfk * lc));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                if dst < staging.len() {
+                                                    staging[dst] = F::from_f64_lossy(block[src]);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor int2e_ip1 rejected above"),
+    }
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
 /// Generic inner for the 2e launcher. See `launch_two_electron` for the dispatch rationale.
 ///
 /// Intermediate computations (G-tensor, cart_buf) remain `f64`; output staging
@@ -633,6 +915,42 @@ fn launch_two_electron_typed<F: CintFloat>(
     let n_ctr_j = shell_j.nctr as usize;
     let n_ctr_k = shell_k.nctr as usize;
     let n_ctr_l = shell_l.nctr as usize;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // int2e_ip1 gradient path (Plan 21-05 / GRAD-07).
+    //
+    // The two-electron force ∇_A <ij|kl> — the highest-impact term in every
+    // analytical HF/DFT/MP2/CCSD gradient. The first-derivative math is the
+    // standard libcint `∂/∂A χ_l = -2α·χ_{l+1} + l·χ_{l-1}` (`CINTnabla1i_2e`),
+    // reused VERBATIM from f12.rs (`gout_ip1` / `nabla1i_2e`, made pub(crate) in
+    // Task 0). The only difference vs the F12 gradient is the G-tensor source:
+    // here we feed `gout_ip1` the PLAIN Coulomb G-tensor from `fill_g_tensor_2e`
+    // (`rys_roots_host`) instead of the F12 stg-roots tensor (D-04).
+    //
+    // The G-tensor is built with `li_ceil = li + 1` headroom so `nabla1i_2e` can
+    // read up to index li+1; `gout_ip1` is then called at BASE li (the documented
+    // headroom recipe from f12.rs:584-585 + 1163-1168).
+    //
+    // Output is component-leading `[3, nl, nk, nj, ni]` F-order: `gout_ip1`
+    // returns interleaved `out[n*3+comp]` where `n` walks `[cl, ck, cj, ci]`
+    // (ll slowest, li fastest); we TRANSPOSE to `staging[comp*block + n]`
+    // matching pyscf-gto `layout_table.rs` (Risk R3, validated vs vendor in the
+    // oracle test).
+    if plan.descriptor.operator_name() == "ip1" {
+        return launch_two_electron_ip1::<F>(
+            plan,
+            li,
+            lj,
+            lk,
+            ll,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            staging,
+        );
+    }
 
     // Per-contraction-quad Cartesian accumulators (mirrors the one_electron.rs
     // general-contraction fix, cintx 9af2164). A generally-contracted shell
