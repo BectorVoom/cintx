@@ -67,6 +67,66 @@
 - [x] **GRAD-09**: `ECPscalar_iprinv` (per-nucleus ECP force; single rinv origin, no all-slot `-Z_C` accumulation) matches vendored libcint at atol=1e-12 on Cu/LANL2DZ — gated on confirming Phase 19's scalar-ECP K-Taylor byte-identity path (Risk R4).
 - [x] **GRAD-10**: Phase verification + pyscf_rs hand-off: the component-leading F-order layout is validated against the vendor layout (Risk R3); cintx ROADMAP/STATE/REQUIREMENTS are updated; and a hand-off note records which pyscf_rs Phase 7 `workflow_dispatch` gradient arms now un-gate (and the `int3c2e_ip1` re-gating history).
 
+## v1.4 Requirements
+
+> Full libcint 6.1.3 family parity: implement every remaining (~140) integral family to byte-identity at atol=1e-12 under the vendor-gated oracle (`--features cpu` + `CINTX_ORACLE_BUILD_VENDOR=1`). High angular-momentum (d/f) byte-identity is IN SCOPE (FND-02). Source: `.planning/research/SUMMARY-v1.4.md`.
+>
+> **Per-family surface (v1.4 scope decision):** each family is `manifest row (component_rank) → RawApiId const → kernel → vendor FFI (vendor_int*) + byte-identity oracle parity test → flip oracle_covered`. The C ABI shim (`cintx-capi`) enum variants and the legacy `cint*` wrappers (`cintx-compat/legacy.rs`) are **NOT** added for v1.4 families — the oracle byte-identity gate exercises the raw `eval_raw` + vendor-FFI path only, so those C-interop surfaces add ceremony without contributing to validation (and were the chief source of Phase-21 drift). They can be added later per C-consumer need. The inbound **vendor FFI is kept** — it is the libcint reference the byte-identity test compares against.
+
+### Foundations
+
+- [ ] **FND-01**: `PTR_COMMON_ORIG` gauge-origin env slot (`env[1..3]`) is plumbed end-to-end following the `PTR_RINV_ORIG` precedent — `OperatorEnvParams.common_orig: Option<[f64;3]>`, `raw.rs::eval_raw` env-read, validator gate, `with_common_origin` safe-API setter; a non-zero gauge-origin oracle fixture exists and is the parity gate for moments + GIAO. Env round-trip + validator unit tests pass.
+- [ ] **FND-02**: Rys `nroots≥6` Wheeler-fallback is implemented so high angular-momentum (d/f) shells reach byte-identity; closes `.planning/todos/pending/rys-nroots-ge6-wheeler-fallback.md`. No family returns `UnsupportedApi` purely due to `nroots>5`.
+- [ ] **FND-03**: Complex/imaginary output capability — `complex_interleaved` is set per-family from driver routing (not the representation string), `assert_flat_buffer_contract` fires on the flag, and staging is sized `2×ncomp×…`; a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API without silent zeroing.
+- [ ] **FND-04**: Spinor-derivative transform (Gap B1) — `cart_to_spinor_sf_derivative_*` in `c2spinor.rs`; `int1e_ipovlp_spinor` and sibling `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity at atol=1e-12 (closes the Phase-21 R5/D-03 deferral).
+- [ ] **FND-05**: Spin-included `c2s_si` 4-block (`gc_x/gc_y/gc_z/gc_1`) spinor transform + σ·p G-tensor assembler module — validated against a kappa-bearing relativistic oracle fixture at atol=1e-12; the σ-coupling matches libcint `c2s_si_1e`.
+- [ ] **FND-06**: High-rank (component_rank 9/27/81) staging is fail-closed — an upfront size assertion replaces the `if dst < staging.len()` scatter guards (no silent partial writes), and the chunk planner's OOM-safe-stop is re-validated at rank 81.
+
+### Group 1 — Remaining 1st-Derivatives
+
+- [ ] **DRV1-01**: `int2e_ip2` (arity-4, ∇ on the ket bra-center) matches vendored libcint 6.1.3 at atol=1e-12 (cart+sph).
+- [ ] **DRV1-02**: `int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip` (∇ on both bra and ket) match at atol=1e-12 (cart+sph).
+- [ ] **DRV1-03**: `int3c1e_ip1` and `int3c1e_iprinv` match at atol=1e-12 (cart+sph).
+- [ ] **DRV1-04**: `int2c2e_ip1` and `int2c2e_ip2` match at atol=1e-12 (cart+sph).
+- [ ] **DRV1-05**: `int3c2e_ip2` matches at atol=1e-12 (cart+sph).
+
+### Group 2 — Hessian & Higher-Order Derivatives
+
+- [ ] **HESS-01**: `int1e_ipipovlp`, `int1e_ipipnuc`, `int1e_ipipkin`, `int1e_ipiprinv` (component_rank=9) match at atol=1e-12 (cart+sph).
+- [ ] **HESS-02**: The 2e Hessian set (`int2e_ipip1`, `int2e_ipvip1`, `int2e_ip1ip2`, `int2e_ipip1ipip2`) — promoted from `unstable` where present — match at atol=1e-12 (cart+sph).
+- [ ] **HESS-03**: `int2c2e_ipip1`, `int3c2e_ipip1`, `int3c2e_ipip2` match at atol=1e-12 (cart+sph).
+- [ ] **HESS-04**: 3rd/4th-order families (`int1e_ipipipnuc`, `int1e_ipipipiprinv`, and siblings) match at atol=1e-12 (cart+sph), with `ng[]`-driven bra+ket headroom.
+
+### Group 3 — Position / Multipole Moments
+
+- [ ] **MOM-01**: Dipole `int1e_r` (and `int1e_r_origj`) match at atol=1e-12 against a non-zero gauge-origin fixture (cart+sph).
+- [ ] **MOM-02**: `int1e_rr`, `int1e_r2`, `int1e_z`, `int1e_zz` (and `_origj` variants) match at atol=1e-12 (cart+sph).
+- [ ] **MOM-03**: `int1e_rrr`, `int1e_rrrr`, `int1e_r4` (octupole/hexadecapole) match at atol=1e-12 (cart+sph), ket-side headroom from `ng[1]`.
+- [ ] **MOM-04**: `int1e_p4`, `int1e_drinv`, plain `int1e_rinv`, `int1e_irp` match at atol=1e-12 (cart+sph).
+
+### Group 4 — Relativistic Spin-Operator (spinor)
+
+- [ ] **REL-01**: `int1e_spsp`, `int1e_spnucsp`, `int1e_sprinvsp` match vendored libcint at atol=1e-12 (spinor) via the FND-05 `c2s_si` path.
+- [ ] **REL-02**: `int1e_srsr`, `int1e_sr`/`srnucsr`, `int1e_sigma`, `int1e_sp` match at atol=1e-12 (spinor).
+- [ ] **REL-03**: `int2e_spsp1`, `int2e_srsr1` (and `spsp1spsp2`/`srsr1srsr2`) match at atol=1e-12 (spinor).
+- [ ] **REL-04**: `int2e_ssp1ssp2`, `int2e_sps1sps2`, `int2e_vsp1*`, `int2e_spv1*` match at atol=1e-12 (spinor).
+
+### Group 5 — GIAO / Magnetic-Property (NMR)
+
+- [ ] **GIAO-01**: Spin-free 1e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`) — purely imaginary — match at atol=1e-12 (cart+sph) via FND-03.
+- [ ] **GIAO-02**: 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12.
+- [ ] **GIAO-03**: GIAO×σ slice (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) match at atol=1e-12 (spinor) via FND-05.
+
+### Group 6 — Gauge / Breit–Gaunt 2e (apex)
+
+- [ ] **BREIT-01**: `int2e_gauge_r1_{ssp,sps}{ssp,sps}` (4 symbols) match vendored libcint at atol=1e-12 (spinor).
+- [ ] **BREIT-02**: `int2e_gauge_r2_{ssp,sps}{ssp,sps}` (4 symbols) match at atol=1e-12 (spinor).
+- [ ] **BREIT-03**: Gaunt `ssp/sps` families match at atol=1e-12 (spinor), reusing the existing `launch_breit` decomposition.
+
+### Full-Parity Verification
+
+- [ ] **PARITY-01**: `manifest-audit` is green with EVERY libcint 6.1.3 family `oracle_covered=true` for its physical representations (cart/sph; spinor where physical, with σ families spinor-only); the full vendor-gated oracle suite is green; and the "unsupported libcint families" list (vs `cint_funcs.h` + supplemental headers) is empty. Full API parity is mechanically verifiable.
+
 ## v2 Requirements
 
 ### Expanded Coverage
@@ -87,6 +147,8 @@
 | CUDA/ROCm/Metal backend implementation | Architecture supports them via ResolvedBackend, but only wgpu+cpu in scope |
 | h-function (l>=5) angular momentum | Register pressure risk, defer until g-function validated across all families |
 | Screening/batching optimizations | Performance work after correctness is proven |
+| C ABI (`cintx-capi`) enum variants for v1.4 families | C ABI shim is optional third-priority surface; new families are validated through the raw `eval_raw` + vendor-FFI byte-identity oracle path. Add later per C-consumer need. |
+| Legacy `cint*` wrappers for v1.4 families | The oracle byte-identity gate does not exercise the `cint*` legacy surface; it adds ceremony (and Phase-21-style misc.h-rule drift) without contributing to validation. Add later if a C-style consumer needs the libcint names. |
 
 ## Traceability
 
