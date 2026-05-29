@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Full libcint 6.1.3 Family Parity
 status: planning
-last_updated: "2026-05-27T00:00:00.000Z"
-last_activity: 2026-05-27
+last_updated: "2026-05-29T00:00:00.000Z"
+last_activity: 2026-05-29
 progress:
   total_phases: 10
   completed_phases: 0
@@ -26,7 +26,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 Phase: 22 — Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG)
 Plan: — (not yet planned)
-Status: Roadmapped — ready for /gsd:plan-phase 22
+Status: Context gathered — ready for /gsd:plan-phase 22
+Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
 Last activity: 2026-05-29 — Completed quick task 260529-gbf: ecp.rs Type-1 angular splice ported from a host nested loop into a generic-float CubeCL #[cube(launch)] device kernel (ecp_angular_kernel<F: Float> + run_ecp_angular_device::<R>) routed through the resolved backend (rocm=HipRuntime); the level-adaptive Gauss-Chebyshev radial machinery + modified-spherical-Bessel/Taylor special functions remain host-side (cannot satisfy #[cube] constraints — kept as marshaling per CLAUDE.md); Type-2 two-dgemm splice deferred to follow-up. f64 byte-identity preserved (device-vs-host max-abs-diff 0.0; vendor CPU parity green at atol=1e-12/rtol=0.0); rocm random int1e_ecp_sph idempotency oracle passing (mismatch_count=0 across 48 cases, any_nonzero=true) on the AMD gfx1152 GPU
 
 **v1.4 phase sequence (dependency-ordered):**
