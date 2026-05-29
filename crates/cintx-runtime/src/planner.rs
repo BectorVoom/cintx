@@ -51,6 +51,10 @@ pub struct OperatorEnvParams {
     /// Must be present when operator_name contains "iprinv".
     /// Absent (None) is allowed for all other operators.
     pub rinv_orig: Option<[f64; 3]>,
+    /// PTR_COMMON_ORIG value (env[1..3]) — gauge origin for moment/GIAO families.
+    /// None defaults to [0,0,0] (libcint reads unset env as zero); consumers use
+    /// `common_orig.unwrap_or([0.0; 3])`. Validator checks finiteness only (D-01).
+    pub common_orig: Option<[f64; 3]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
