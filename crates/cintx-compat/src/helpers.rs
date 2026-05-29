@@ -226,19 +226,24 @@ pub fn CINTgto_norm(n: i32, a: f64) -> f64 {
     if !a.is_finite() || a <= 0.0 || n < 0 {
         return 0.0;
     }
-    // (2n-1)!! double factorial: 1 for n=0, 1 for n=1, 3 for n=2, 15 for n=3, ...
-    // Matches libcint misc.c CINTgto_norm formula:
-    // norm = sqrt( fac2(2n-1) * PI^0.5 / (2a)^(n+1.5) )
-    let fac = {
+    // libcint 6.1.3 misc.c::CINTgto_norm closed form (Schlegel & Frisch, IJQC 54(1995) 83-87):
+    //   norm = sqrt( 2^(2n+3) * (n+1)! * (2a)^(n+1.5) / ((2n+2)! * sqrt(pi)) )
+    // This replaces the prior INVERTED formula (which put (2a)^(n+1.5) in the
+    // denominator and used (2n-1)!!, making the norm shrink with a). The factorials
+    // are computed as exact f64 products (the oracle grid tests n in 0..5; f64 holds
+    // these integer factorials exactly up to ~n<=8).
+    let factorial = |m: i32| -> f64 {
         let mut f = 1.0_f64;
-        let mut k = 2 * n - 1;
-        while k > 0 {
+        let mut k = 2_i32;
+        while k <= m {
             f *= k as f64;
-            k -= 2;
+            k += 1;
         }
         f
     };
-    (fac * std::f64::consts::PI.sqrt() / (2.0 * a).powf(n as f64 + 1.5)).sqrt()
+    let num = 2.0_f64.powi(2 * n + 3) * factorial(n + 1) * (2.0 * a).powf(n as f64 + 1.5);
+    let den = factorial(2 * n + 2) * std::f64::consts::PI.sqrt();
+    (num / den).sqrt()
 }
 
 #[cfg(test)]
