@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 22 — Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG)
 Plan: — (not yet planned)
 Status: Roadmapped — ready for /gsd:plan-phase 22
-Last activity: 2026-05-29 — Completed quick task 260529-e69: center_3c1e refactored to a generic-float CubeCL #[cube] device kernel; rocm random oracle test passing (mismatch_count=0 across 64 random cases) on AMD Radeon 860M / ROCm 7.1.1
+Last activity: 2026-05-29 — Completed quick task 260529-exs: center_3c2e refactored to generic-float CubeCL #[cube] device kernels for BOTH numeric paths (scalar 3c2e + int3c2e_ip1 gradient), routed through the resolved backend (rocm=HipRuntime); rocm random int3c2e_ip1_sph idempotency oracle passing (mismatch_count=0 across 64 cases) plus the registered h2o ip1 parity (mismatch_count=0 across 125 triples) on the AMD GPU
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -311,6 +311,7 @@ None yet.
 | 260509-c6d | update cubecl version 0.10.0 in all repository | 2026-05-08 | aa59ceb | [260509-c6d-update-cubecl-version-0-10-0-in-all-repo](./quick/260509-c6d-update-cubecl-version-0-10-0-in-all-repo/) |
 | 260529-r2g | refactor center_2c2e to a generic-float #[cube] device kernel + rocm random oracle test | 2026-05-29 | 194edae | [260529-r2g-center-2c2e-cubecl-gpu-kernel](./quick/260529-r2g-center-2c2e-cubecl-gpu-kernel/) |
 | 260529-e69 | refactor center_3c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | bd24b8e | [260529-e69-refactor-center-3c1e-rs-to-cubecl-kernel](./quick/260529-e69-refactor-center-3c1e-rs-to-cubecl-kernel/) |
+| 260529-exs | refactor center_3c2e to generic-float CubeCL #[cube] device kernels (scalar + int3c2e_ip1) + rocm random oracle test | 2026-05-29 | cc83ec3 | [260529-exs-center-3c2e-cubecl-kernel](./quick/260529-exs-center-3c2e-cubecl-kernel/) |
 
 ## Session Continuity
 
