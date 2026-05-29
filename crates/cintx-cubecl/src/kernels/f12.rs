@@ -1086,6 +1086,11 @@ fn gout_ip1ip2(
 }
 
 /// Contract [gx|gy|gz] into Cartesian 2e tensor for F12 (identical to two_electron version).
+///
+/// As of quick-260529-i2q the base / `ncomp == 1` path runs on-device via
+/// [`run_f12_cart_contraction_on_backend`]; this host reference is retained as the
+/// byte-identity oracle for the device-vs-host equivalence tests (cfg(test)).
+#[cfg_attr(not(test), allow(dead_code))]
 fn contract_f12_cart(g: &[f64], shape: F12Shape, li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> {
     let nfi = ncart(li);
     let nfj = ncart(lj);
@@ -1416,8 +1421,6 @@ fn f12_kernel_core(
     variant: &F12Variant,
     is_stg: bool,
 ) -> Result<ExecutionStats, cintxRsError> {
-    let _ = backend;
-
     let shells = plan.shells.as_slice();
     if shells.len() < 4 {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -1524,7 +1527,14 @@ fn f12_kernel_core(
                             ai, aj, ak, al, &ri, &rj, &rk, &rl,
                             shape, quartet_fac, zeta, is_stg,
                         );
-                        let prim_cart = contract_f12_cart(&g, shape, li_u8, lj_u8, lk_u8, ll_u8);
+                        // Base Cartesian contraction now runs on-device as a
+                        // #[cube(launch)] kernel dispatched onto the resolved
+                        // backend's ComputeClient (quick-260529-i2q). Launches at
+                        // f64 with the SAME nested summation order as the host
+                        // `contract_f12_cart`, so byte-identity is preserved.
+                        let prim_cart = run_f12_cart_contraction_on_backend(
+                            backend, &g, shape, li_u8, lj_u8, lk_u8, ll_u8,
+                        );
 
                         for ci in 0..n_ctr_i {
                             let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
