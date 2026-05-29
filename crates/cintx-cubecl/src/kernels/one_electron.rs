@@ -2899,11 +2899,26 @@ fn launch_one_electron_typed<F: CintFloat>(
                     requested: "spinor 1e with general contraction (nctr>1)".to_owned(),
                 });
             }
-            // cart_blocks is exactly one nci*ncj block here — identical to the old
-            // cart_buf. Matches libcint c2s_sf_1e for int1e_*_spinor.
+            // cart_blocks is exactly one nci*ncj block here (nctr=1 enforced above).
+            // The device scalar kernel emits it ket-major / bra-fastest
+            // (block[cj*nci + ci]), but cart_to_spinor_sf_2d reads bra-major /
+            // ket-fastest (cart[bra*ncj + ket], see c2spinor.rs apply_bra_block:
+            // cart[n*ncj + j]). Transpose to bra-major before the spin-free
+            // cart→spinor transform so the bra/ket coefficient roles line up with
+            // libcint c2s_sf_1e — identical to the GRADIENT arm fix (260529-jtd).
+            // For square symmetric blocks (an s side, or the intrinsically
+            // transpose-symmetric overlap p×p block) this is a no-op, which is why a
+            // NON-SQUARE asymmetric p×d cross block is the configuration that surfaces
+            // the orientation.
             let kappa_i = shell_i.kappa;
             let kappa_j = shell_j.kappa;
-            cart_to_spinor_sf_2d::<F>(staging, &cart_blocks, li, kappa_i, lj, kappa_j)?;
+            let mut cart_bra_major = vec![0.0f64; nci * ncj];
+            for ic in 0..nci {
+                for jc in 0..ncj {
+                    cart_bra_major[ic * ncj + jc] = cart_blocks[jc * nci + ic];
+                }
+            }
+            cart_to_spinor_sf_2d::<F>(staging, &cart_bra_major, li, kappa_i, lj, kappa_j)?;
         }
         Representation::Cart => {
             // Each contraction block is column-major [nci, ncj] (bra fastest:
