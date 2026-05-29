@@ -512,6 +512,15 @@ impl OracleRawInputs {
         //    grid-coord index env[PTR_GRIDS] is filled in step 5 once known.
         env[NGRIDS] = 1.0;
 
+        // 2b. F12/STG/YP correlation-factor exponent on its designated libcint
+        //     reserved slot. Required so the shared-inputs.env profile parity can
+        //     evaluate the F12-family fixtures (int2e_stg_*/int2e_yp_*): the cintx
+        //     runtime validator fail-closes F12 plans when env[PTR_F12_ZETA] is
+        //     0.0. 1.2 is the documented typical zeta (mirrors build_h2o_sto3g_f12).
+        //     Non-F12 integrals ignore env[9], so base/with-4c1e and all Coulomb
+        //     results are unchanged; env[PTR_RANGE_OMEGA]=env[8] stays 0.0.
+        env[PTR_F12_ZETA] = 1.2;
+
         // 3. Atom coordinate (0,0,0) at >= PTR_ENV_START.
         let coord_ptr = env.len() as i32;
         env.extend_from_slice(&[0.0, 0.0, 0.0]);
@@ -1118,7 +1127,9 @@ mod tests {
         );
 
         // Every reserved slot env[0..PTR_ENV_START] is 0.0 EXCEPT the two
-        // legitimate grid slots: env[NGRIDS] (==1.0) and env[PTR_GRIDS] (the index).
+        // legitimate grid slots — env[NGRIDS] (==1.0) and env[PTR_GRIDS] (the
+        // index) — and env[PTR_F12_ZETA] (==1.2, the F12/STG/YP correlation-factor
+        // exponent). env[PTR_RANGE_OMEGA]=env[8] must STILL be 0.0 (asserted above).
         for slot in 0..PTR_ENV_START {
             if slot == NGRIDS {
                 assert_eq!(inputs.env[slot], 1.0, "env[NGRIDS] must be 1.0 (one grid point)");
@@ -1126,6 +1137,11 @@ mod tests {
                 assert_eq!(
                     inputs.env[slot], grid_coord_index,
                     "env[PTR_GRIDS] must hold the grid-coord index"
+                );
+            } else if slot == PTR_F12_ZETA {
+                assert_eq!(
+                    inputs.env[slot], 1.2,
+                    "env[PTR_F12_ZETA] must be 1.2 (F12 correlation-factor exponent)"
                 );
             } else {
                 assert_eq!(
