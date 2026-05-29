@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 22 — Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG)
 Plan: — (not yet planned)
 Status: Roadmapped — ready for /gsd:plan-phase 22
-Last activity: 2026-05-29 — Completed quick task 260529-fsa: center_4c1e refactored from a host f64 quartet loop into a real generic-float CubeCL #[cube(launch)] device kernel (center_4c1e_kernel + run_4c1e_device::<R>) routed through the resolved backend (rocm=HipRuntime); polynomial-recurrence G-tensor (nroots=1, z-axis-only fac), 4-branch HRR, and 4-center cart contraction all ported on-device; f64 byte-identity preserved; rocm random int4c1e_sph idempotency oracle passing (mismatch_count=0 across 64 cases at atol=1e-12/rtol=1e-10) on the AMD GPU
+Last activity: 2026-05-29 — Completed quick task 260529-gbf: ecp.rs Type-1 angular splice ported from a host nested loop into a generic-float CubeCL #[cube(launch)] device kernel (ecp_angular_kernel<F: Float> + run_ecp_angular_device::<R>) routed through the resolved backend (rocm=HipRuntime); the level-adaptive Gauss-Chebyshev radial machinery + modified-spherical-Bessel/Taylor special functions remain host-side (cannot satisfy #[cube] constraints — kept as marshaling per CLAUDE.md); Type-2 two-dgemm splice deferred to follow-up. f64 byte-identity preserved (device-vs-host max-abs-diff 0.0; vendor CPU parity green at atol=1e-12/rtol=0.0); rocm random int1e_ecp_sph idempotency oracle passing (mismatch_count=0 across 48 cases, any_nonzero=true) on the AMD gfx1152 GPU
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -313,6 +313,7 @@ None yet.
 | 260529-e69 | refactor center_3c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | bd24b8e | [260529-e69-refactor-center-3c1e-rs-to-cubecl-kernel](./quick/260529-e69-refactor-center-3c1e-rs-to-cubecl-kernel/) |
 | 260529-exs | refactor center_3c2e to generic-float CubeCL #[cube] device kernels (scalar + int3c2e_ip1) + rocm random oracle test | 2026-05-29 | cc83ec3 | [260529-exs-center-3c2e-cubecl-kernel](./quick/260529-exs-center-3c2e-cubecl-kernel/) |
 | 260529-fsa | refactor center_4c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | b7f5519 | [260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel](./quick/260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel/) |
+| 260529-gbf | refactor ecp.rs to a generic-float CubeCL #[cube] device kernel (Type-1 angular splice) + rocm random oracle test | 2026-05-29 | 55b4a88 | [260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge](./quick/260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge/) |
 
 ## Session Continuity
 
