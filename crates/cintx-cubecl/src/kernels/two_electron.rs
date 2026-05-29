@@ -40,6 +40,11 @@ fn common_fac_sp(l: u8) -> f64 {
 }
 
 /// Enumerate Cartesian component triples (ix, iy, iz) with ix+iy+iz = l.
+///
+/// Test-only since quick-260529-q4k: the scalar 2e contraction now runs on-device
+/// (`two_electron_scalar_kernel`); `contract_2e_cart` / `cart_comps` remain as the
+/// host cross-check reference used by `device_tests`.
+#[cfg(test)]
 fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
     let mut comps = Vec::new();
     let l = l as i32;
@@ -530,6 +535,11 @@ pub(crate) fn fill_g_tensor_2e(
 
 /// Contract `[gx|gy|gz]` into Cartesian 2e tensor with output order:
 /// `out[i + j*nfi + k*nfi*nfj + l*nfi*nfj*nfk]` (i fastest, l slowest).
+///
+/// Test-only since quick-260529-q4k (see `cart_comps` note): the production scalar
+/// 2e path runs `two_electron_scalar_kernel` on-device; this host reference is the
+/// `device_tests` cross-check oracle.
+#[cfg(test)]
 fn contract_2e_cart(g: &[f64], shape: TwoEShape, li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> {
     let nfi = ncart(li);
     let nfj = ncart(lj);
