@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use cintx_compat::helpers::{CINTcgto_cart, CINTcgto_spheric, CINTcgto_spinor};
 use cintx_compat::raw::{
     ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
-    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_F12_ZETA, PTR_ZETA,
+    PTR_COEFF, PTR_COMMON_ORIG, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_F12_ZETA, PTR_ZETA,
 };
 use cintx_core::Representation;
 use cintx_ops::resolver::{HelperKind, ManifestEntry, Resolver};
@@ -142,6 +142,29 @@ pub fn build_h2o_sto3g_f12(zeta: f64) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let (atm, bas, mut env) = build_h2o_sto3g();
     // PTR_F12_ZETA = 9 — within the PTR_ENV_START global params block.
     env[PTR_F12_ZETA] = zeta;
+    (atm, bas, env)
+}
+
+/// Default NON-ZERO gauge origin for the Phase 22 fixture (Bohr).
+/// Non-trivial on all three axes so a populated `common_orig` is distinguishable
+/// from the `[0,0,0]` default (CONTEXT line 103: a zero origin proves nothing).
+pub const COMMON_ORIG_FIXTURE_ORIGIN: [f64; 3] = [0.5, -0.3, 0.8];
+
+/// H2O/STO-3G fixture with a NON-ZERO gauge origin set at env[PTR_COMMON_ORIG..+3].
+///
+/// Data infrastructure for moment (Phase 24) / GIAO (Phase 26) byte-identity parity.
+/// Phase 22 (FND-01) only builds + round-trips this fixture; no consuming kernel exists yet (D-03).
+pub fn build_h2o_sto3g_common_orig() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    build_h2o_sto3g_common_orig_at(COMMON_ORIG_FIXTURE_ORIGIN)
+}
+
+/// H2O/STO-3G fixture with an explicit gauge origin set at env[PTR_COMMON_ORIG..+3].
+pub fn build_h2o_sto3g_common_orig_at(origin: [f64; 3]) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    let (atm, bas, mut env) = build_h2o_sto3g();
+    // PTR_COMMON_ORIG = 1 — gauge origin in the PTR_ENV_START global params block.
+    env[PTR_COMMON_ORIG] = origin[0];
+    env[PTR_COMMON_ORIG + 1] = origin[1];
+    env[PTR_COMMON_ORIG + 2] = origin[2];
     (atm, bas, env)
 }
 
