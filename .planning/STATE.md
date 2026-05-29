@@ -29,7 +29,7 @@ Phase: 23
 Plan: Not started
 Status: Executing Phase 22
 Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
-Last activity: 2026-05-29 - Completed quick task 260529-j7d: port 1e gradient operators (ipovlp/ipkin/ipnuc/iprinv) to CubeCL device kernels (rocm oracle mismatch_count=0)
+Last activity: 2026-05-29 - Completed quick task 260529-jtd: implement spinor int1e gradient (R5/D-03), vendor parity vs libcint = 0 mismatches
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -321,6 +321,7 @@ None yet.
 | 260529-i2q | refactor f12.rs base Cartesian contraction to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | 45a4a17 | [260529-i2q-refactor-f12-rs-to-cubecl-device-kernel-](./quick/260529-i2q-refactor-f12-rs-to-cubecl-device-kernel-/) |
 | 260529-imi | refactor one_electron.rs scalar operators (ovlp/kin/nuc) to a generic-float CubeCL #[cube] device kernel + rocm random oracle test (mismatch_count=0, 48 cases) | 2026-05-29 | 23eb85d | [260529-imi-refactor-one-electron-rs-to-cubecl-kerne](./quick/260529-imi-refactor-one-electron-rs-to-cubecl-kerne/) |
 | 260529-j7d | port the 1e gradient operators (ipovlp/ipkin/ipnuc/iprinv) in one_electron.rs to generic-float CubeCL #[cube] device kernels + rocm random oracle test (mismatch_count=0, 48 cases × 4 ops) | 2026-05-29 | 9f3b9b2 | [260529-j7d-port-the-1e-gradient-operators-ipovlp-ip](./quick/260529-j7d-port-the-1e-gradient-operators-ipovlp-ip/) |
+| 260529-jtd | implement spinor int1e gradient (ipovlp/ipkin/ipnuc/iprinv) via on-device cart gradient + host per-component cart→spinor transform; was UnsupportedApi (R5/D-03). Vendor parity vs libcint 6.1.3 = 0 mismatches, all 4 ops | 2026-05-29 | fb02060 | [260529-jtd-implement-spinor-int1e-gradient-ipovlp-i](./quick/260529-jtd-implement-spinor-int1e-gradient-ipovlp-i/) |
 
 ## Session Continuity
 
