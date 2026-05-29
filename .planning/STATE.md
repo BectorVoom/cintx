@@ -28,7 +28,7 @@ Phase: 22 — Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG)
 Plan: — (not yet planned)
 Status: Context gathered — ready for /gsd:plan-phase 22
 Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
-Last activity: 2026-05-29 — Completed quick task 260529-gbf: ecp.rs Type-1 angular splice ported from a host nested loop into a generic-float CubeCL #[cube(launch)] device kernel (ecp_angular_kernel<F: Float> + run_ecp_angular_device::<R>) routed through the resolved backend (rocm=HipRuntime); the level-adaptive Gauss-Chebyshev radial machinery + modified-spherical-Bessel/Taylor special functions remain host-side (cannot satisfy #[cube] constraints — kept as marshaling per CLAUDE.md); Type-2 two-dgemm splice deferred to follow-up. f64 byte-identity preserved (device-vs-host max-abs-diff 0.0; vendor CPU parity green at atol=1e-12/rtol=0.0); rocm random int1e_ecp_sph idempotency oracle passing (mismatch_count=0 across 48 cases, any_nonzero=true) on the AMD gfx1152 GPU
+Last activity: 2026-05-29 — Completed quick task 260529-hin: ecp.rs Type-2 (Projected) two-dgemm angular splice ported into a generic-float CubeCL #[cube(launch)] device kernel (ecp_type2_angular_kernel<F: Float> + run_ecp_type2_angular_device::<R> + run_ecp_type2_splice_on_backend) routed through the resolved backend (rocm=HipRuntime), completing the ECP GPU port begun in 260529-gbf (Type-1). No device-local Array: each host dgemm `buf` entry is recomputed inline preserving f64 summation order. The adaptive Gauss-Chebyshev radial machinery + Bessel/Taylor special functions remain host-side marshaling. f64 byte-identity preserved (device-vs-host max-abs-diff 0.0; vendor CPU parity 8/8 green at atol=1e-12/rtol=0.0); `let _ = backend` removed from ecp_type2_cart; gradient drivers device-backed transitively. rocm random int1e_ecp_sph oracle: mismatch_count=0 across 48 cases; Type-2 device path proven exercised (Cu/LANL2DZ Projected channels lc∈{0,1}; temporary trace observed 12,288 Type-2 dispatches, since removed) on the AMD gfx1152 GPU
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -315,6 +315,7 @@ None yet.
 | 260529-exs | refactor center_3c2e to generic-float CubeCL #[cube] device kernels (scalar + int3c2e_ip1) + rocm random oracle test | 2026-05-29 | cc83ec3 | [260529-exs-center-3c2e-cubecl-kernel](./quick/260529-exs-center-3c2e-cubecl-kernel/) |
 | 260529-fsa | refactor center_4c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | b7f5519 | [260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel](./quick/260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel/) |
 | 260529-gbf | refactor ecp.rs to a generic-float CubeCL #[cube] device kernel (Type-1 angular splice) + rocm random oracle test | 2026-05-29 | 55b4a88 | [260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge](./quick/260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge/) |
+| 260529-hin | port the ECP Type-2 two-dgemm angular splice to a generic-float CubeCL #[cube] device kernel + rocm oracle | 2026-05-29 | d3405f4 | [260529-hin-port-the-ecp-type-2-two-dgemm-angular-sp](./quick/260529-hin-port-the-ecp-type-2-two-dgemm-angular-sp/) |
 
 ## Session Continuity
 
