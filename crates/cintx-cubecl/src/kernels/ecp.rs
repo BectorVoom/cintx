@@ -49,10 +49,14 @@
 //! validation / marshaling — it has data-dependent termination, dynamic loop
 //! bounds and special functions that the Phase 8 P02 `cond_br` MLIR limitation
 //! forbids under `#[cube]`. Those helpers feed flat f64 buffers into the device
-//! kernel. The Type-2 angular splice (a two-`dgemm` matmul) remains host-side
-//! this task; a Type-2 matmul device kernel is a follow-up. The Cu/LANL2DZ
-//! oracle still drives the device kernel on every case via the Local (Type-1)
-//! channel.
+//! kernel. As of quick-260529-hin the Type-2 **angular splice** (the two-`dgemm`
+//! matmul at the tail of `ecp_type2_cart`) ALSO runs on-device via
+//! [`run_ecp_type2_splice_on_backend`] / [`ecp_type2_angular_kernel`] — generic
+//! over `F: Float`, launched at f64 with the same dgemm summation order
+//! (recomputing each intermediate `buf` entry inline, no device-local scratch) so
+//! byte-identity is preserved. Only the Phase-A adaptive radial machinery stays
+//! host-side as marshaling. The Cu/LANL2DZ oracle drives BOTH the Local (Type-1)
+//! and Projected (Type-2) device kernels on every case.
 //!
 //! ## Normalization & coordinate convention
 //!
@@ -1335,14 +1339,11 @@ fn ecp_type2_cart(
     rs_max: &[f64],
     ws_max: &[f64],
 ) {
-    // Type-2's angular splice is a two-`dgemm` (matmul) contraction, structurally
-    // distinct from Type-1's triple-product splice that `ecp_angular_kernel`
-    // ports. Threading `backend` keeps the driver signature uniform (so the
-    // gradient drivers and `launch_ecp` pass it through), and a Type-2 matmul
-    // device kernel is a follow-up; the dgemm splice stays host-side this task
-    // (quick-260529-gbf). The Cu/LANL2DZ oracle still exercises the device kernel
-    // via the Local (Type-1) channel on every case.
-    let _ = backend;
+    // Type-2's angular splice (the two-`dgemm` matmul at the tail of this driver)
+    // runs on-device as `ecp_type2_angular_kernel` via `run_ecp_type2_splice_on_backend`
+    // (quick-260529-hin), generic over F, f64-internal, byte-identity preserved.
+    // The `backend` is dispatched per (ic,jc) contraction tuple below; only the
+    // Phase-A adaptive Gauss-Chebyshev radial machinery stays host as marshaling.
     let li = shell_i.ang_momentum as usize;
     let lj = shell_j.ang_momentum as usize;
     let npi = shell_i.nprim as usize;
@@ -1376,8 +1377,8 @@ fn ecp_type2_cart(
     let ljlc1 = lj + lc + 1;
     let d2 = lilc1 * ljlc1;
     let d3 = lilj1 * d2;
-    let im = nfi * dlc;
-    let mq = dlc * ljlc1;
+    // `im = nfi*dlc` / `mq = dlc*ljlc1` (the dgemm dims) are now recomputed inside
+    // `run_ecp_type2_angular_device`; the host driver no longer materializes them.
 
     let nrs_alloc = 1usize << LEVEL_MAX;
     // rad_all[(ic*ncj+jc)*d3 + lab*d2 + i*ljlc1 + j]
@@ -1509,44 +1510,32 @@ fn ecp_type2_cart(
     // angi laid out [(a)*nfi*dlc*lilc1 + mi*dlc*lilc1 + m*lilc1 + n]
     // (type2_facs_ang writes facs[(a+b+c)*nfi*dlclmb + mi*dlclmb + m*dlambda + n]
     //  where dlclmb = dlambda*dlc; we slice per-`a` block below).
-    let mut buf = vec![0.0f64; nfi * dlc * ljlc1];
+    // The two-`dgemm` angular splice now runs on-device via the
+    // `ecp_type2_angular_kernel` #[cube(launch)] kernel (quick-260529-hin), once
+    // per (ic,jc) contraction tuple. The device kernel folds `common_fac` in and
+    // accumulates across the (i,j) angular pair, returning an `nfi*nfj` block in
+    // F-order `block[col2*nfi + row]`; the host scatters it into the
+    // contraction-major `gctr` with a plain `+=` (NO extra multiply — `common_fac`
+    // is already applied in-kernel, matching the prior host scatter target).
     for ic in 0..nci {
         for jc in 0..ncj {
             let prad = &rad_all[(ic * ncj + jc) * d3..(ic * ncj + jc) * d3 + d3];
-            for i in 0..=li {
-                for j in 0..=lj {
-                    // dgemm_(N,N, m=ljlc1, n=im, k=lilc1,
-                    //        A=prad+(i+j)*d2 [ljlc1 x lilc1, col-major],
-                    //        B=angi+i*nfi*dlc*lilc1 [lilc1 x im, col-major],
-                    //        C=buf [ljlc1 x im, col-major])
-                    let a = &prad[(i + j) * d2..(i + j) * d2 + d2]; // d2 = lilc1*ljlc1
-                    let b_off = i * nfi * dlc * lilc1;
-                    let b = &angi[b_off..b_off + lilc1 * im];
-                    for col in 0..im {
-                        for row in 0..ljlc1 {
-                            let mut s = 0.0;
-                            for kk in 0..lilc1 {
-                                s += a[kk * ljlc1 + row] * b[col * lilc1 + kk];
-                            }
-                            buf[col * ljlc1 + row] = s;
-                        }
-                    }
-                    // dgemm_(T,N, m=nfi, n=nfj, k=mq=dlc*ljlc1,
-                    //        alpha=common_fac, A=buf [mq x nfi, col-major -> A^T],
-                    //        B=angj+j*nfj*dlc*ljlc1 [mq x nfj, col-major],
-                    //        beta=1, C=gctr+jc*nfj*di+ic*nfi [nfi x nfj, ld=di])
-                    let c_off = jc * nfj * di + ic * nfi;
-                    let bj_off = j * nfj * dlc * ljlc1;
-                    let bj = &angj[bj_off..bj_off + mq * nfj];
-                    for col in 0..nfj {
-                        for row in 0..nfi {
-                            let mut s = 0.0;
-                            for kk in 0..mq {
-                                s += buf[row * mq + kk] * bj[col * mq + kk];
-                            }
-                            gctr[c_off + col * di + row] += common_fac * s;
-                        }
-                    }
+            let block = run_ecp_type2_splice_on_backend(
+                backend,
+                li as u32,
+                lj as u32,
+                lc as u32,
+                prad,
+                &angi,
+                &angj,
+                common_fac,
+            );
+            // Scatter into gctr at c_off = jc*nfj*di + ic*nfi (di = nci*nfi), the
+            // exact target the host two-dgemm wrote (gctr[c_off + col2*di + row]).
+            let c_off = jc * nfj * di + ic * nfi;
+            for col2 in 0..nfj {
+                for row in 0..nfi {
+                    gctr[c_off + col2 * di + row] += block[col2 * nfi + row];
                 }
             }
         }
