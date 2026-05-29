@@ -1016,11 +1016,25 @@ pub fn vendor_CINTgto_norm(n: i32, a: f64) -> f64 {
 
 /// Cart-to-spherical transform for bra index.
 ///
-/// Writes the spherical representation into `sph`. The returned pointer points
-/// to `sph` (C convention). We ignore it and use the output slice directly.
+/// libcint's `CINTc2s_bra_sph` does NOT always write into the `sph` argument:
+/// for l<2 (s/p, non-PYPZPX) it returns `gcart` WITHOUT touching `gsph`, and the
+/// RETURNED `*mut f64` is the authoritative result. For l>=2 it writes `gsph`
+/// (ket-blocked) and returns that same pointer. We therefore copy the returned
+/// pointer into `sph` so callers always read the correct result.
+///
+/// The `ret != sph.as_mut_ptr()` guard skips the redundant self-copy for l>=2.
+/// For l<2 the returned pointer aliases the `cart` input (which lives across the
+/// call), so `std::ptr::copy` (memmove-safe) is sound even on overlap. `n` is
+/// clamped to `sph.len()` to prevent any out-of-bounds write.
 pub fn vendor_CINTc2s_bra_sph(sph: &mut [f64], nket: i32, cart: &[f64], l: i32) {
     unsafe {
-        ffi::CINTc2s_bra_sph(sph.as_mut_ptr(), nket, cart.as_ptr() as *mut f64, l);
+        let ret = ffi::CINTc2s_bra_sph(sph.as_mut_ptr(), nket, cart.as_ptr() as *mut f64, l);
+        // nket * nsph(l) = nket * (2l+1)
+        let n = (nket.max(0) as usize) * ((2 * l.max(0) + 1) as usize);
+        let n = n.min(sph.len());
+        if !ret.is_null() && ret != sph.as_mut_ptr() {
+            std::ptr::copy(ret, sph.as_mut_ptr(), n);
+        }
     }
 }
 
