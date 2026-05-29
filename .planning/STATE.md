@@ -29,7 +29,7 @@ Phase: 23
 Plan: Not started
 Status: Executing Phase 22
 Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
-Last activity: 2026-05-29 - Completed quick task 260529-mqo: CINTc2s_bra_sph dual-defect fix; helper/transform parity block fully cleared, gate now reaches a pre-existing cint2e legacy-wrapper divergence
+Last activity: 2026-05-29 - Completed quick task 260529-ne7: conformant sample() env layout; cint2e divergence fixed, base + with-4c1e gate profiles pass clean (with-f12 now fail-closed on missing PTR_F12_ZETA — follow-up)
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -326,6 +326,7 @@ None yet.
 | 260529-lbr | fix CINTshells_{cart,spheric,spinor}_offset to match libcint i<nbas semantics (write nbas start-offsets, drop trailing ao_loc[nbas] total). Unblocks vendor oracle gate past helper check; surfaced a separate pre-existing CINTgto_norm helper mismatch (follow-up) | 2026-05-29 | 3bf0682 | [260529-lbr-fix-cintshells-cart-spheric-spinor-offse](./quick/260529-lbr-fix-cintshells-cart-spheric-spinor-offse/) |
 | 260529-mfh | fix CINTgto_norm to libcint misc.c closed form (was inverted formula, all 15 (l,a) failed). Vendor parity 0 mismatches; gate now advances to next pre-existing blocker CINTc2s_bra_sph | 2026-05-29 | 8db9fcb | [260529-mfh-fix-cintgto-norm-to-match-libcint-misc-c](./quick/260529-mfh-fix-cintgto-norm-to-match-libcint-misc-c/) |
 | 260529-mqo | fix CINTc2s_bra_sph both defects: vendor FFI wrapper now honors libcint's returned *mut f64 (l<2 returns gcart, not gsph), and cintx stub now applies real per-l bra c2s via pub c2s_coeff. Vendor parity 0 mismatches; gate CLEARS the full helper/transform block → now hits a pre-existing cint2e_sph/cart 2e-integral divergence (cintx=1.709e-3 vs vendor=3.22e-4) in verify_legacy_wrapper_parity | 2026-05-29 | 1e5bf0a | [260529-mqo-fix-cintc2s-bra-sph-both-defects-vendor-](./quick/260529-mqo-fix-cintc2s-bra-sph-both-defects-vendor-/) |
+| 260529-ne7 | fix OracleRawInputs::sample() to libcint-conformant PTR_ENV_START=20 env layout (was packing data onto reserved slots; env[8]=PTR_RANGE_OMEGA made vendor compute range-separated 2e). cint2e divergence GONE; base + with-4c1e gate profiles PASS CLEAN. Exposed that the old layout accidentally supplied env[9]=PTR_F12_ZETA → with-f12 profiles now correctly fail-closed (F12 fixtures need a real zeta injection, follow-up) | 2026-05-29 | 3b4ced5 | [260529-ne7-fix-oraclerawinputs-sample-env-layout-to](./quick/260529-ne7-fix-oraclerawinputs-sample-env-layout-to/) |
 
 ## Session Continuity
 
