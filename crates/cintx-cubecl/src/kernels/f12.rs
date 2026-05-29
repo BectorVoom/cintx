@@ -22,6 +22,9 @@ use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_4d;
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats, validator::validate_f12_env_params};
+use cubecl::Runtime;
+use cubecl::client::ComputeClient;
+use cubecl::prelude::*;
 use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI`.
@@ -1133,6 +1136,266 @@ fn contract_f12_cart(g: &[f64], shape: F12Shape, li: u8, lj: u8, lk: u8, ll: u8)
     out
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F12 base Cartesian-contraction splice — `#[cube(launch)]` device kernel,
+// generic over F (quick task 260529-i2q). Mirrors the ECP Type-1 angular-splice
+// port (ecp.rs `ecp_angular_kernel` / `run_ecp_angular_device` /
+// `run_ecp_angular_splice_on_backend`, quick-260529-gbf).
+//
+// CLAUDE.md mandates CubeCL as the primary compute backend with host CPU work
+// limited to planning/validation/marshaling. The F12 base variant's Cartesian
+// contraction (`contract_f12_cart`: the bounded `[gx|gy|gz] -> cart tensor`
+// triple-product accumulation, the base / `ncomp == 1` analog of the ECP angular
+// splice) is the part that ports cleanly to `#[cube]`: it consumes the
+// host-precomputed flat f64 `g` tensor and does bounded triple-product arithmetic
+// over `irys` with NO special functions, NO break/continue. The G-tensor fill
+// (`fill_g_tensor_f12` via `stg_roots_host`), the adaptive root machinery and the
+// sph/spinor transforms STAY host-side as marshaling.
+//
+// `cart_comps` enumeration stays host-side (marshaling); the kernel consumes flat
+// u32 power triples (`[mi*3 + axis]`, like ECP's `cart_comps_flat_u32`). The
+// kernel computes the FULL `nfi*nfj*nfk*nfl` Cartesian block in ONE launch (single
+// work item, `if UNIT_POS == 0`), preserving the host nested loop order
+// (l outer, then k, j, i, irys inner) so the f64 result is byte-identical.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Flatten `cart_comps(l)` into the `[mi*3 + axis]` u32 triple layout the device
+/// kernel consumes (marshaling — keeps `cart_comps` enumeration host-side).
+/// Mirrors `ecp.rs::cart_comps_flat_u32`.
+// Wired into `f12_kernel_core` in quick-260529-i2q Task 2; until then it is only
+// exercised by the device-vs-host equivalence tests.
+#[cfg_attr(not(test), allow(dead_code))]
+fn cart_comps_flat_u32(l: u8) -> Vec<u32> {
+    let mut out = Vec::with_capacity(ncart(l) * 3);
+    for (lx, ly, lz) in cart_comps(l) {
+        out.push(lx as u32);
+        out.push(ly as u32);
+        out.push(lz as u32);
+    }
+    out
+}
+
+/// F12 base Cartesian-contraction device kernel, generic over `F: Float`.
+///
+/// Computes the full `nfi*nfj*nfk*nfl` Cartesian block (the base / `ncomp == 1`
+/// variant of `contract_f12_cart`) in ONE launch (single work item,
+/// `UNIT_POS == 0`). All math uses `F` arithmetic, statement-form `if`, `u32`
+/// indices, and `while` loops bounded by runtime `u32` component counts — no
+/// for/break/continue, no special functions, no device-local `Array` scratch
+/// (inline-recompute, like ECP Type-2). The nested loop order (l outer, then k,
+/// j, i, with `irys` 0..nroots innermost) is IDENTICAL to the host driver
+/// `contract_f12_cart` so the f64 summation order — and hence byte-identity — is
+/// preserved.
+///
+/// Args mirror `contract_f12_cart`:
+/// - `g`: the flat `[gx|gy|gz]` buffer; `gx_off=0`, `gy_off=g_size`, `gz_off=2*g_size`.
+/// - `comps_i/j/k/l`: flat u32 cartesian-power triples (3 entries per component).
+/// - `out`: the `nfi*nfj*nfk*nfl` Cartesian block.
+/// - scalars (u32): `nfi, nfj, nfk, nfl, nroots, di, dk, dl, dj, g_size`.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn f12_cart_contraction_kernel<F: Float + CubeElement>(
+    g: &Array<F>,
+    comps_i: &Array<u32>,
+    comps_j: &Array<u32>,
+    comps_k: &Array<u32>,
+    comps_l: &Array<u32>,
+    out: &mut Array<F>,
+    nfi: u32,
+    nfj: u32,
+    nfk: u32,
+    nfl: u32,
+    nroots: u32,
+    di: u32,
+    dk: u32,
+    dl: u32,
+    dj: u32,
+    g_size: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let gx_off = 0u32;
+        let gy_off = g_size;
+        let gz_off = 2u32 * g_size;
+
+        // Zero the output block.
+        let out_len = nfi * nfj * nfk * nfl;
+        let mut oz = 0u32;
+        while oz < out_len {
+            out[oz as usize] = F::new(0.0);
+            oz += 1u32;
+        }
+
+        // 4-nested component loop (l outer, then k, j, i) × inner irys
+        // accumulation — IDENTICAL order to the host `contract_f12_cart`.
+        let mut l_idx = 0u32;
+        while l_idx < nfl {
+            let lx = comps_l[(l_idx * 3u32) as usize];
+            let ly = comps_l[(l_idx * 3u32 + 1u32) as usize];
+            let lz = comps_l[(l_idx * 3u32 + 2u32) as usize];
+            let mut k_idx = 0u32;
+            while k_idx < nfk {
+                let kx = comps_k[(k_idx * 3u32) as usize];
+                let ky = comps_k[(k_idx * 3u32 + 1u32) as usize];
+                let kz = comps_k[(k_idx * 3u32 + 2u32) as usize];
+                let mut j_idx = 0u32;
+                while j_idx < nfj {
+                    let jx = comps_j[(j_idx * 3u32) as usize];
+                    let jy = comps_j[(j_idx * 3u32 + 1u32) as usize];
+                    let jz = comps_j[(j_idx * 3u32 + 2u32) as usize];
+                    let mut i_idx = 0u32;
+                    while i_idx < nfi {
+                        let ix = comps_i[(i_idx * 3u32) as usize];
+                        let iy = comps_i[(i_idx * 3u32 + 1u32) as usize];
+                        let iz = comps_i[(i_idx * 3u32 + 2u32) as usize];
+
+                        let mut sum = F::new(0.0);
+                        let mut irys = 0u32;
+                        while irys < nroots {
+                            let x_idx = irys + ix * di + kx * dk + lx * dl + jx * dj;
+                            let y_idx = irys + iy * di + ky * dk + ly * dl + jy * dj;
+                            let z_idx = irys + iz * di + kz * dk + lz * dl + jz * dj;
+                            let gx = g[(gx_off + x_idx) as usize];
+                            let gy = g[(gy_off + y_idx) as usize];
+                            let gz = g[(gz_off + z_idx) as usize];
+                            sum += gx * gy * gz;
+                            irys += 1u32;
+                        }
+
+                        let out_idx =
+                            i_idx + j_idx * nfi + k_idx * nfi * nfj + l_idx * nfi * nfj * nfk;
+                        out[out_idx as usize] = sum;
+                        i_idx += 1u32;
+                    }
+                    j_idx += 1u32;
+                }
+                k_idx += 1u32;
+            }
+            l_idx += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`f12_cart_contraction_kernel`] at `f64` on a resolved backend's
+/// client, reading back the `nfi*nfj*nfk*nfl` Cartesian block.
+///
+/// Generic over `R: Runtime` so the same path serves CPU, ROCm, etc. Intermediate
+/// device compute is `f64` (F12 keeps f64 staging; the byte-identity gate is
+/// f64/CPU-vs-C). Mirrors `ecp.rs::run_ecp_angular_device`.
+// Wired into `f12_kernel_core` in quick-260529-i2q Task 2; until then it is only
+// exercised by the device-vs-host equivalence tests.
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn run_f12_cart_contraction_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    g: &[f64],
+    shape: F12Shape,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+) -> Vec<f64> {
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let out_len = nfi * nfj * nfk * nfl;
+
+    let comps_i = cart_comps_flat_u32(li);
+    let comps_j = cart_comps_flat_u32(lj);
+    let comps_k = cart_comps_flat_u32(lk);
+    let comps_l = cart_comps_flat_u32(ll);
+
+    // Sanity (T-i2q-01): buffer lengths must match what the kernel indexes, or
+    // the device kernel reads out of bounds.
+    debug_assert_eq!(g.len(), 3 * shape.g_size, "f12 cart: g len != 3*g_size");
+    debug_assert_eq!(comps_i.len(), nfi * 3, "f12 cart: comps_i len != nfi*3");
+    debug_assert_eq!(comps_j.len(), nfj * 3, "f12 cart: comps_j len != nfj*3");
+    debug_assert_eq!(comps_k.len(), nfk * 3, "f12 cart: comps_k len != nfk*3");
+    debug_assert_eq!(comps_l.len(), nfl * 3, "f12 cart: comps_l len != nfl*3");
+
+    let g_h = client.create_from_slice(f64::as_bytes(g));
+    let comps_i_h = client.create_from_slice(u32::as_bytes(&comps_i));
+    let comps_j_h = client.create_from_slice(u32::as_bytes(&comps_j));
+    let comps_k_h = client.create_from_slice(u32::as_bytes(&comps_k));
+    let comps_l_h = client.create_from_slice(u32::as_bytes(&comps_l));
+
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    f12_cart_contraction_kernel::launch::<f64, R>(
+        client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(g_h, g.len()) },
+        unsafe { ArrayArg::from_raw_parts(comps_i_h, comps_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(comps_j_h, comps_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(comps_k_h, comps_k.len()) },
+        unsafe { ArrayArg::from_raw_parts(comps_l_h, comps_l.len()) },
+        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+        nfi as u32,
+        nfj as u32,
+        nfk as u32,
+        nfl as u32,
+        shape.nroots as u32,
+        shape.di as u32,
+        shape.dk as u32,
+        shape.dl as u32,
+        shape.dj as u32,
+        shape.g_size as u32,
+    );
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// Backend-dispatch wrapper for the F12 base Cartesian contraction: routes the
+/// `#[cube(launch)]` [`f12_cart_contraction_kernel`] onto the resolved backend's
+/// device client (Cpu => CpuRuntime, Rocm => HipRuntime, Wgpu, Cuda, Metal — each
+/// `#[cfg]`-gated), mirroring `ecp.rs::run_ecp_angular_splice_on_backend`. Runs at
+/// f64 (F12 keeps f64 staging / byte-identity gate). Returns the
+/// `nfi*nfj*nfk*nfl` block.
+// Wired into `f12_kernel_core` in quick-260529-i2q Task 2.
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn run_f12_cart_contraction_on_backend(
+    backend: &ResolvedBackend,
+    g: &[f64],
+    shape: F12Shape,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_f12_cart_contraction_device::<cubecl::cpu::CpuRuntime>(
+            client, g, shape, li, lj, lk, ll,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => {
+            run_f12_cart_contraction_device::<cubecl_wgpu::WgpuRuntime>(
+                client, g, shape, li, lj, lk, ll,
+            )
+        }
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_f12_cart_contraction_device::<cubecl_cuda::CudaRuntime>(
+            client, g, shape, li, lj, lk, ll,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => {
+            run_f12_cart_contraction_device::<cubecl_hip::HipRuntime>(
+                client, g, shape, li, lj, lk, ll,
+            )
+        }
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            run_f12_cart_contraction_device::<cubecl_wgpu::WgpuRuntime>(
+                client, g, shape, li, lj, lk, ll,
+            )
+        }
+    }
+}
+
 /// Shared F12 kernel core called by all 10 entry points.
 ///
 /// Follows the same structure as `launch_two_electron` in `two_electron.rs` with the
@@ -1947,5 +2210,161 @@ mod tests {
         assert_eq!(F12_IP1IP2.k_inc, 1);
         assert_eq!(F12_IP1IP2.l_inc, 0);
         assert_eq!(F12_IP1IP2.ncomp, 9);
+    }
+
+    // ── F12 base Cartesian-contraction splice: device-vs-host equivalence ──
+    // (quick task 260529-i2q). The device kernel must reproduce the host
+    // `contract_f12_cart` byte-for-byte (identical f64 summation order).
+    #[cfg(feature = "cpu")]
+    mod f12_cart_device_cross_check {
+        use super::super::*;
+
+        fn cpu_client() -> ComputeClient<cubecl::cpu::CpuRuntime> {
+            cubecl::cpu::CpuRuntime::client(&Default::default())
+        }
+
+        /// Tiny LCG so the synthetic `g` buffer is deterministic and reproducible.
+        struct Lcg(u64);
+        impl Lcg {
+            fn new(seed: u64) -> Self {
+                Lcg(seed)
+            }
+            fn next_f64(&mut self) -> f64 {
+                // Numerical-Recipes LCG; map to [-1, 1).
+                self.0 = self
+                    .0
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let u = (self.0 >> 11) as f64 / (1u64 << 53) as f64;
+                2.0 * u - 1.0
+            }
+        }
+
+        /// f64 device-vs-host equivalence: max-abs-diff MUST be exactly 0.0
+        /// (identical f64 op order ⇒ byte-identity).
+        fn assert_f64_byte_identity(li: u8, lj: u8, lk: u8, ll: u8, seed: u64) {
+            let shape = build_f12_shape(li as usize, lj as usize, lk as usize, ll as usize);
+            // Synthetic flat [gx|gy|gz] buffer (3 * g_size entries).
+            let mut rng = Lcg::new(seed);
+            let g: Vec<f64> = (0..3 * shape.g_size).map(|_| rng.next_f64()).collect();
+
+            let host = contract_f12_cart(&g, shape, li, lj, lk, ll);
+            let dev = run_f12_cart_contraction_device::<cubecl::cpu::CpuRuntime>(
+                &cpu_client(),
+                &g,
+                shape,
+                li,
+                lj,
+                lk,
+                ll,
+            );
+            assert_eq!(
+                host.len(),
+                dev.len(),
+                "len mismatch li={li} lj={lj} lk={lk} ll={ll}"
+            );
+            let mut max_diff = 0.0_f64;
+            let mut any_nonzero = false;
+            for (&h, &d) in host.iter().zip(dev.iter()) {
+                if h.abs() > 1e-18 {
+                    any_nonzero = true;
+                }
+                max_diff = max_diff.max((h - d).abs());
+            }
+            assert_eq!(
+                max_diff, 0.0,
+                "f12 cart device/host f64 max-abs-diff must be 0.0 (li={li} lj={lj} lk={lk} ll={ll}), got {max_diff:e}"
+            );
+            assert!(
+                any_nonzero,
+                "host reference all zeros (li={li} lj={lj} lk={lk} ll={ll})"
+            );
+        }
+
+        #[test]
+        fn f12_cart_device_matches_host_f64() {
+            // All-s quartet plus quartets exercising p-shell cart_comps / strides.
+            let quartets: [(u8, u8, u8, u8); 5] = [
+                (0, 0, 0, 0),
+                (1, 0, 0, 0),
+                (0, 1, 0, 0),
+                (1, 1, 0, 0),
+                (1, 0, 1, 0),
+            ];
+            for (idx, &(li, lj, lk, ll)) in quartets.iter().enumerate() {
+                assert_f64_byte_identity(
+                    li,
+                    lj,
+                    lk,
+                    ll,
+                    0x9E3779B97F4A7C15 ^ (idx as u64).wrapping_mul(0x100000001B3),
+                );
+            }
+        }
+
+        /// Generic-F: launching the SAME kernel at F=f32 on CpuRuntime reproduces
+        /// the f32-rounded host result within f32 eps. Proves
+        /// `f12_cart_contraction_kernel` is genuinely generic over `F: Float`.
+        #[test]
+        fn f12_cart_device_generic_f32_within_eps() {
+            let (li, lj, lk, ll) = (1u8, 1u8, 0u8, 0u8);
+            let shape = build_f12_shape(li as usize, lj as usize, lk as usize, ll as usize);
+            let mut rng = Lcg::new(0xDEADBEEFCAFEF00D);
+            let g: Vec<f64> = (0..3 * shape.g_size).map(|_| rng.next_f64()).collect();
+            let host = contract_f12_cart(&g, shape, li, lj, lk, ll);
+
+            let nfi = ncart(li);
+            let nfj = ncart(lj);
+            let nfk = ncart(lk);
+            let nfl = ncart(ll);
+            let out_len = nfi * nfj * nfk * nfl;
+            let comps_i = cart_comps_flat_u32(li);
+            let comps_j = cart_comps_flat_u32(lj);
+            let comps_k = cart_comps_flat_u32(lk);
+            let comps_l = cart_comps_flat_u32(ll);
+
+            let client = cpu_client();
+            let g_f32: Vec<f32> = g.iter().map(|&v| v as f32).collect();
+            let g_h = client.create_from_slice(f32::as_bytes(&g_f32));
+            let comps_i_h = client.create_from_slice(u32::as_bytes(&comps_i));
+            let comps_j_h = client.create_from_slice(u32::as_bytes(&comps_j));
+            let comps_k_h = client.create_from_slice(u32::as_bytes(&comps_k));
+            let comps_l_h = client.create_from_slice(u32::as_bytes(&comps_l));
+            let out_zero = vec![0.0_f32; out_len];
+            let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+
+            f12_cart_contraction_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+                &client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(g_h, g_f32.len()) },
+                unsafe { ArrayArg::from_raw_parts(comps_i_h, comps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(comps_j_h, comps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(comps_k_h, comps_k.len()) },
+                unsafe { ArrayArg::from_raw_parts(comps_l_h, comps_l.len()) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                nfi as u32,
+                nfj as u32,
+                nfk as u32,
+                nfl as u32,
+                shape.nroots as u32,
+                shape.di as u32,
+                shape.dk as u32,
+                shape.dl as u32,
+                shape.dj as u32,
+                shape.g_size as u32,
+            );
+            let raw = client.read_one_unchecked(out_h);
+            let dev_f32 = &f32::from_bytes(&raw)[0..out_len];
+
+            for (&h, &d) in host.iter().zip(dev_f32.iter()) {
+                let diff = (h as f32 - d).abs();
+                let thr = 1e-4_f32 + 1e-4_f32 * (h.abs() as f32);
+                assert!(
+                    diff <= thr,
+                    "f32 device result not within eps: host={h:e} dev={d:e} diff={diff:e}"
+                );
+            }
+        }
     }
 }
