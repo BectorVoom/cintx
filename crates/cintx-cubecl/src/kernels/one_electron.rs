@@ -21,7 +21,7 @@ use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
-use crate::transform::c2spinor::cart_to_spinor_sf_2d;
+use crate::transform::c2spinor::{cart_to_spinor_sf_2d, spinor_len};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -2506,15 +2506,6 @@ fn launch_one_electron_typed<F: CintFloat>(
         });
     }
 
-    // Spinor gradient: not supported (Risk R5 / D-03).
-    if (is_ipovlp || is_ipkin || is_ipnuc || is_iprinv)
-        && plan.representation == Representation::Spinor
-    {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: format!("spinor int1e gradient '{}' is not supported", op_name),
-        });
-    }
-
     // Output sizes
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -2687,8 +2678,52 @@ fn launch_one_electron_typed<F: CintFloat>(
                 }
             }
             Representation::Spinor => {
-                // Already rejected above.
-                unreachable!("spinor gradient rejected earlier")
+                // Spin-free cart→spinor transform applied PER COMPONENT, mirroring the
+                // SCALAR spinor 1e path (one_electron.rs ~line 2857). The 3-component
+                // Cartesian gradient is already on-device; the c2s_sf_1e analogue stays
+                // host-side per project convention. General contraction (nctr>1) is not
+                // wired for the spinor transform — same guard as the scalar spinor path.
+                if n_ctr_i != 1 || n_ctr_j != 1 {
+                    return Err(cintxRsError::UnsupportedApi {
+                        requested: "spinor 1e gradient with general contraction (nctr>1)"
+                            .to_owned(),
+                    });
+                }
+                // di/dj are the spinor component counts; each spinor block is
+                // di*dj*2 interleaved-complex F elements (the per-component staging stride).
+                let di = spinor_len(li, shell_i.kappa as i32);
+                let dj = spinor_len(lj, shell_j.kappa as i32);
+                let spinor_block = di * dj * 2;
+                // nctr=1 → cart pair base is 0, total_len = 3 * block_len.
+                for comp in 0..3usize {
+                    let src_base = comp * block_len;
+                    let block = &cart_3comp[src_base..src_base + block_len];
+                    let staging_comp_base = comp * spinor_block;
+                    // The device gradient kernels emit each per-component Cartesian
+                    // block ket-major / bra-fastest (`block[cj_idx*nci + ci_idx]`),
+                    // but `cart_to_spinor_sf_2d` expects its `cart` argument
+                    // bra-major / ket-fastest (`cart[bra*ncj + ket]`, see
+                    // c2spinor.rs apply_bra_block: `cart[n*ncj + j]`). Transpose each
+                    // per-component block into bra-major before the spin-free
+                    // cart→spinor transform so the bra/ket coefficient roles line up
+                    // with libcint c2s_sf_1e. (For square symmetric blocks this is a
+                    // no-op, which is why the asymmetric nuclear-gradient operators
+                    // ipnuc/iprinv are the ones that surface the orientation.)
+                    let mut block_bra_major = vec![0.0f64; block_len];
+                    for ic in 0..nci {
+                        for jc in 0..ncj {
+                            block_bra_major[ic * ncj + jc] = block[jc * nci + ic];
+                        }
+                    }
+                    cart_to_spinor_sf_2d::<F>(
+                        &mut staging[staging_comp_base..staging_comp_base + spinor_block],
+                        &block_bra_major,
+                        li,
+                        shell_i.kappa,
+                        lj,
+                        shell_j.kappa,
+                    )?;
+                }
             }
         }
 
@@ -4333,15 +4368,20 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Test GRAD-04: ipovlp spinor returns UnsupportedApi
-    // Dispatching ipovlp with Representation::Spinor must return UnsupportedApi.
-    // Tests the spinor guard in launch_one_electron_typed directly by constructing
-    // a minimal plan with Representation::Spinor on the ipovlp_sph operator (the
-    // sph OperatorId is used to get a valid workspace, then we force Spinor on the plan).
+    // Test helper: build a forced-Spinor gradient plan for the given int1e_ip*_sph
+    // operator symbol, on a 2-atom H2-like fixture with two `l` shells (kappa=0).
+    // The sph OperatorId is used to query a valid workspace; we then force
+    // Representation::Spinor on the plan to exercise the spinor gradient arm.
+    // Returns (plan, basis-backed ShellTuple already inside the plan).
     // ─────────────────────────────────────────────────────────────────────────
     #[cfg(feature = "cpu")]
-    #[test]
-    fn test_ipovlp_spinor_returns_unsupported() {
+    fn run_forced_spinor_grad(
+        op_symbol: &str,
+        l: u8,
+        nctr: u16,
+        rinv_orig: Option<[f64; 3]>,
+        staging_len: usize,
+    ) -> Result<Vec<f64>, cintxRsError> {
         use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
         use crate::specialization::SpecializationKey;
         use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
@@ -4349,37 +4389,42 @@ mod tests {
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
         use std::sync::Arc;
 
-        // Use sph op for workspace query (accepted), then set Spinor on the plan.
-        let op_sph = Resolver::descriptor_by_symbol("int1e_ipovlp_sph")
-            .expect("int1e_ipovlp_sph must be in manifest")
+        let op_sph = Resolver::descriptor_by_symbol(op_symbol)
+            .unwrap_or_else(|e| panic!("{op_symbol} must be in manifest: {e:?}"))
             .id;
 
         let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
+
+        let nctr_usize = nctr as usize;
+        // 1 primitive, nctr contractions (coeff length = nprim * nctr).
+        let exps: Vec<f64> = vec![1.0_f64];
+        let coeffs: Vec<f64> = vec![1.0_f64; nctr_usize];
+
         let shell_a = Arc::new(
             Shell::try_new(
                 0,
-                0,
+                l,
                 1,
-                1,
+                nctr,
                 0,
                 Representation::Spheric,
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(exps.clone().into_boxed_slice()),
+                Arc::from(coeffs.clone().into_boxed_slice()),
             )
             .unwrap(),
         );
         let shell_b = Arc::new(
             Shell::try_new(
                 1,
-                0,
+                l,
                 1,
-                1,
+                nctr,
                 0,
                 Representation::Spheric,
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(exps.into_boxed_slice()),
+                Arc::from(coeffs.into_boxed_slice()),
             )
             .unwrap(),
         );
@@ -4389,30 +4434,54 @@ mod tests {
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let q = query_workspace(
-            op_sph,
-            Representation::Spheric,
-            &basis,
-            shells.clone(),
-            &opts,
-        )
-        .unwrap();
+        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts)
+            .unwrap();
         let mut plan =
             ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
-        // Force spinor representation on the plan to exercise the spinor guard.
+        // Force spinor representation on the plan to exercise the spinor gradient arm.
         plan.representation = Representation::Spinor;
         plan.precision = cintx_core::PrecisionKind::F64;
+        if let Some(o) = rinv_orig {
+            plan.operator_env_params.rinv_orig = Some(o);
+        }
 
         let spec = SpecializationKey::from_plan(&plan);
         let cpu_client = resolve_cpu_client().unwrap();
         let backend = ResolvedBackend::Cpu(cpu_client);
-        let mut staging = vec![0.0_f64; 3];
+        let mut staging = vec![0.0_f64; staging_len];
+        launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging)?;
+        Ok(staging)
+    }
 
-        let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-04: ipovlp spinor (nctr=1) evaluates and writes a 3-component
+    // interleaved-complex staging of length 3 * di * dj * 2 (di=dj=spinor_len(0,0)=2).
+    // Replaces the prior UnsupportedApi rejection (Risk R5 / D-03), now implemented.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_ipovlp_spinor_grad_evaluates() {
+        // di = dj = spinor_len(0, 0) = 2; spinor_block = 2*2*2 = 8; total = 24.
+        let result = run_forced_spinor_grad("int1e_ipovlp_sph", 0, 1, None, 24);
+        let staging = result.expect("spinor ipovlp gradient (nctr=1) should evaluate");
+        assert!(
+            staging.iter().any(|v| v.abs() > 1e-14),
+            "spinor ipovlp gradient staging is all-zero"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-04b: ipovlp spinor gradient with general contraction (nctr>1)
+    // still returns UnsupportedApi (guard preserved).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_ipovlp_spinor_grad_nctr_gt1_returns_unsupported() {
+        // Oversize staging so the nctr>1 guard (not a bounds issue) is what fires.
+        let result = run_forced_spinor_grad("int1e_ipovlp_sph", 0, 2, None, 256);
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor ipovlp should return UnsupportedApi, got: {:?}",
-            result
+            "spinor ipovlp gradient with nctr>1 should return UnsupportedApi, got: {result:?}"
         );
     }
 
@@ -4640,161 +4709,48 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Test GRAD-11: ipnuc spinor returns UnsupportedApi
+    // Test GRAD-04c: ipkin spinor (nctr=1) evaluates and writes a 3-component
+    // interleaved-complex staging of length 3 * di * dj * 2 (di=dj=2 for s/s).
     // ─────────────────────────────────────────────────────────────────────────
     #[cfg(feature = "cpu")]
     #[test]
-    fn test_ipnuc_spinor_returns_unsupported() {
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
-        use crate::specialization::SpecializationKey;
-        use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
-        use cintx_ops::resolver::Resolver;
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use std::sync::Arc;
-
-        let op_sph = Resolver::descriptor_by_symbol("int1e_ipnuc_sph")
-            .expect("int1e_ipnuc_sph must be in manifest")
-            .id;
-
-        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
-        let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
-        let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
-        let shell_a = Arc::new(
-            Shell::try_new(
-                0,
-                0,
-                1,
-                1,
-                0,
-                Representation::Spheric,
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-            )
-            .unwrap(),
-        );
-        let shell_b = Arc::new(
-            Shell::try_new(
-                1,
-                0,
-                1,
-                1,
-                0,
-                Representation::Spheric,
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-            )
-            .unwrap(),
-        );
-        let all_shells: Arc<[Arc<Shell>]> =
-            Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
-        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
-        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
-
-        let opts = ExecutionOptions::default();
-        let q = query_workspace(
-            op_sph,
-            Representation::Spheric,
-            &basis,
-            shells.clone(),
-            &opts,
-        )
-        .unwrap();
-        let mut plan =
-            ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
-        plan.representation = Representation::Spinor;
-        plan.precision = cintx_core::PrecisionKind::F64;
-
-        let spec = SpecializationKey::from_plan(&plan);
-        let cpu_client = resolve_cpu_client().unwrap();
-        let backend = ResolvedBackend::Cpu(cpu_client);
-        let mut staging = vec![0.0_f64; 3];
-
-        let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+    fn test_ipkin_spinor_grad_evaluates() {
+        let result = run_forced_spinor_grad("int1e_ipkin_sph", 0, 1, None, 24);
+        let staging = result.expect("spinor ipkin gradient (nctr=1) should evaluate");
         assert!(
-            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor ipnuc should return UnsupportedApi, got: {:?}",
-            result
+            staging.iter().any(|v| v.abs() > 1e-14),
+            "spinor ipkin gradient staging is all-zero"
         );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Test GRAD-12: iprinv spinor returns UnsupportedApi (even with a valid origin)
-    // The spinor guard fires before the origin is consumed.
+    // Test GRAD-11: ipnuc spinor (nctr=1) evaluates (replaces the old
+    // UnsupportedApi rejection — Risk R5 / D-03 closed).
     // ─────────────────────────────────────────────────────────────────────────
     #[cfg(feature = "cpu")]
     #[test]
-    fn test_iprinv_spinor_returns_unsupported() {
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
-        use crate::specialization::SpecializationKey;
-        use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
-        use cintx_ops::resolver::Resolver;
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use std::sync::Arc;
-
-        let op_sph = Resolver::descriptor_by_symbol("int1e_iprinv_sph")
-            .expect("int1e_iprinv_sph must be in manifest")
-            .id;
-
-        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
-        let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
-        let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
-        let shell_a = Arc::new(
-            Shell::try_new(
-                0,
-                0,
-                1,
-                1,
-                0,
-                Representation::Spheric,
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-            )
-            .unwrap(),
-        );
-        let shell_b = Arc::new(
-            Shell::try_new(
-                1,
-                0,
-                1,
-                1,
-                0,
-                Representation::Spheric,
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-            )
-            .unwrap(),
-        );
-        let all_shells: Arc<[Arc<Shell>]> =
-            Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
-        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
-        let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
-
-        let opts = ExecutionOptions::default();
-        let q = query_workspace(
-            op_sph,
-            Representation::Spheric,
-            &basis,
-            shells.clone(),
-            &opts,
-        )
-        .unwrap();
-        let mut plan =
-            ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
-        plan.representation = Representation::Spinor;
-        plan.precision = cintx_core::PrecisionKind::F64;
-        // Even with a valid origin set, the spinor guard must fire first.
-        plan.operator_env_params.rinv_orig = Some([0.0, 0.0, 0.0]);
-
-        let spec = SpecializationKey::from_plan(&plan);
-        let cpu_client = resolve_cpu_client().unwrap();
-        let backend = ResolvedBackend::Cpu(cpu_client);
-        let mut staging = vec![0.0_f64; 3];
-
-        let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+    fn test_ipnuc_spinor_grad_evaluates() {
+        let result = run_forced_spinor_grad("int1e_ipnuc_sph", 0, 1, None, 24);
+        let staging = result.expect("spinor ipnuc gradient (nctr=1) should evaluate");
         assert!(
-            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor iprinv should return UnsupportedApi, got: {:?}",
-            result
+            staging.iter().any(|v| v.abs() > 1e-14),
+            "spinor ipnuc gradient staging is all-zero"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test GRAD-12: iprinv spinor (nctr=1) evaluates with a valid rinv origin.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_iprinv_spinor_grad_evaluates() {
+        // iprinv needs a resolved rinv origin (env[PTR_RINV_ORIG]).
+        let result =
+            run_forced_spinor_grad("int1e_iprinv_sph", 0, 1, Some([0.0, 0.0, 0.0]), 24);
+        let staging = result.expect("spinor iprinv gradient (nctr=1) should evaluate");
+        assert!(
+            staging.iter().any(|v| v.abs() > 1e-14),
+            "spinor iprinv gradient staging is all-zero"
         );
     }
 }
