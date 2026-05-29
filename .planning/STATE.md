@@ -29,7 +29,7 @@ Phase: 23
 Plan: Not started
 Status: Executing Phase 22
 Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
-Last activity: 2026-05-29 - Completed quick task 260529-nt1: F12 zeta injection — full vendor oracle gate now GREEN across all 4 profiles (mismatch_count=0 vs libcint 6.1.3)
+Last activity: 2026-05-29 - Completed quick task 260529-q4k: ported two_electron.rs scalar int2e to a generic-float CubeCL #[cube(launch)] device kernel on all 5 backends (incl. ROCm/HIP); rocm random vendor parity mismatch_count=0 across 96 quartets, f64 byte-identity preserved (13/13 lib tests green)
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -328,6 +328,7 @@ None yet.
 | 260529-mqo | fix CINTc2s_bra_sph both defects: vendor FFI wrapper now honors libcint's returned *mut f64 (l<2 returns gcart, not gsph), and cintx stub now applies real per-l bra c2s via pub c2s_coeff. Vendor parity 0 mismatches; gate CLEARS the full helper/transform block → now hits a pre-existing cint2e_sph/cart 2e-integral divergence (cintx=1.709e-3 vs vendor=3.22e-4) in verify_legacy_wrapper_parity | 2026-05-29 | 1e5bf0a | [260529-mqo-fix-cintc2s-bra-sph-both-defects-vendor-](./quick/260529-mqo-fix-cintc2s-bra-sph-both-defects-vendor-/) |
 | 260529-ne7 | fix OracleRawInputs::sample() to libcint-conformant PTR_ENV_START=20 env layout (was packing data onto reserved slots; env[8]=PTR_RANGE_OMEGA made vendor compute range-separated 2e). cint2e divergence GONE; base + with-4c1e gate profiles PASS CLEAN. Exposed that the old layout accidentally supplied env[9]=PTR_F12_ZETA → with-f12 profiles now correctly fail-closed (F12 fixtures need a real zeta injection, follow-up) | 2026-05-29 | 3b4ced5 | [260529-ne7-fix-oraclerawinputs-sample-env-layout-to](./quick/260529-ne7-fix-oraclerawinputs-sample-env-layout-to/) |
 | 260529-nt1 | set env[PTR_F12_ZETA]=1.2 in OracleRawInputs::sample() (conformant designated F12-zeta slot) so F12/STG/YP oracle parity has a valid zeta. **Full vendor oracle gate now GREEN: all 4 profiles (base, with-f12, with-4c1e, with-f12+with-4c1e) PASS CLEAN, mismatch_count=0 each** vs libcint 6.1.3; F12 family matches vendor numerically | 2026-05-29 | aba9af5 | [260529-nt1-set-env-ptr-f12-zeta-1-2-in-oraclerawinp](./quick/260529-nt1-set-env-ptr-f12-zeta-1-2-in-oraclerawinp/) |
+| 260529-q4k | refactor two_electron.rs scalar int2e (4-center ERI) to a generic-float CubeCL #[cube(launch)] device kernel (G-tensor build + all 4 HRR branches + Cartesian contraction on-device, comptime nroots, host-computed strides as runtime u32) dispatched on all 5 backends incl. ROCm/HIP; int2e_ip1 gradient stays host. ROCm random vendor parity: mismatch_count=0, any_nonzero=true across 96 quartets (int2e_sph+cart) vs libcint 6.1.3. f64 byte-identity preserved (safe_api_arity4 + two_electron_ip1 + 13/13 lib tests green) | 2026-05-29 | b967cc4 | [260529-q4k-two-electron-gpu-port](./quick/260529-q4k-two-electron-gpu-port/) |
 
 ## Session Continuity
 
