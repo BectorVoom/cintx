@@ -24,3 +24,6 @@ target
 # Added by cargo
 
 /target
+
+# GSD per-agent git worktrees (ephemeral; never commit, never index)
+.claude/worktrees/
