@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 22 — Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG)
 Plan: — (not yet planned)
 Status: Roadmapped — ready for /gsd:plan-phase 22
-Last activity: 2026-05-29 — Completed quick task 260529-exs: center_3c2e refactored to generic-float CubeCL #[cube] device kernels for BOTH numeric paths (scalar 3c2e + int3c2e_ip1 gradient), routed through the resolved backend (rocm=HipRuntime); rocm random int3c2e_ip1_sph idempotency oracle passing (mismatch_count=0 across 64 cases) plus the registered h2o ip1 parity (mismatch_count=0 across 125 triples) on the AMD GPU
+Last activity: 2026-05-29 — Completed quick task 260529-fsa: center_4c1e refactored from a host f64 quartet loop into a real generic-float CubeCL #[cube(launch)] device kernel (center_4c1e_kernel + run_4c1e_device::<R>) routed through the resolved backend (rocm=HipRuntime); polynomial-recurrence G-tensor (nroots=1, z-axis-only fac), 4-branch HRR, and 4-center cart contraction all ported on-device; f64 byte-identity preserved; rocm random int4c1e_sph idempotency oracle passing (mismatch_count=0 across 64 cases at atol=1e-12/rtol=1e-10) on the AMD GPU
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -312,6 +312,7 @@ None yet.
 | 260529-r2g | refactor center_2c2e to a generic-float #[cube] device kernel + rocm random oracle test | 2026-05-29 | 194edae | [260529-r2g-center-2c2e-cubecl-gpu-kernel](./quick/260529-r2g-center-2c2e-cubecl-gpu-kernel/) |
 | 260529-e69 | refactor center_3c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | bd24b8e | [260529-e69-refactor-center-3c1e-rs-to-cubecl-kernel](./quick/260529-e69-refactor-center-3c1e-rs-to-cubecl-kernel/) |
 | 260529-exs | refactor center_3c2e to generic-float CubeCL #[cube] device kernels (scalar + int3c2e_ip1) + rocm random oracle test | 2026-05-29 | cc83ec3 | [260529-exs-center-3c2e-cubecl-kernel](./quick/260529-exs-center-3c2e-cubecl-kernel/) |
+| 260529-fsa | refactor center_4c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | b7f5519 | [260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel](./quick/260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel/) |
 
 ## Session Continuity
 
