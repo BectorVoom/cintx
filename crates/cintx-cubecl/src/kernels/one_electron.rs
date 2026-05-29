@@ -2699,13 +2699,25 @@ fn launch_one_electron_typed<F: CintFloat>(
                     let src_base = comp * block_len;
                     let block = &cart_3comp[src_base..src_base + block_len];
                     let staging_comp_base = comp * spinor_block;
-                    // Each per-component cart block is layout-identical to the scalar
-                    // single block (verified: scalar/grad arms feed cart_to_sph_1e
-                    // identically), so we pass it to cart_to_spinor_sf_2d exactly as
-                    // the scalar path passes its single block.
+                    // The device gradient kernels emit each per-component Cartesian
+                    // block ket-major / bra-fastest (`block[cj_idx*nci + ci_idx]`),
+                    // but `cart_to_spinor_sf_2d` expects its `cart` argument
+                    // bra-major / ket-fastest (`cart[bra*ncj + ket]`, see
+                    // c2spinor.rs apply_bra_block: `cart[n*ncj + j]`). Transpose each
+                    // per-component block into bra-major before the spin-free
+                    // cart→spinor transform so the bra/ket coefficient roles line up
+                    // with libcint c2s_sf_1e. (For square symmetric blocks this is a
+                    // no-op, which is why the asymmetric nuclear-gradient operators
+                    // ipnuc/iprinv are the ones that surface the orientation.)
+                    let mut block_bra_major = vec![0.0f64; block_len];
+                    for ic in 0..nci {
+                        for jc in 0..ncj {
+                            block_bra_major[ic * ncj + jc] = block[jc * nci + ic];
+                        }
+                    }
                     cart_to_spinor_sf_2d::<F>(
                         &mut staging[staging_comp_base..staging_comp_base + spinor_block],
-                        block,
+                        &block_bra_major,
                         li,
                         shell_i.kappa,
                         lj,
