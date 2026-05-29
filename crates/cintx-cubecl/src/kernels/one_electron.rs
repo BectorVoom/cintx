@@ -15,15 +15,28 @@ use crate::backend::ResolvedBackend;
 use crate::math::obara_saika::{hrr_step_host, vrr_step_host};
 use crate::math::pdata::compute_pdata_host;
 use crate::math::rys::rys_roots_host;
+use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_2d;
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
+use cubecl::Runtime;
+use cubecl::client::ComputeClient;
+use cubecl::prelude::*;
 
 /// sqrt(pi) constant — used in G-tensor base case normalization.
 /// Matches libcint `g1e.c` `SQRTPI = sqrt(M_PI)`.
 const SQRTPI: f64 = 1.7724538509055159_f64;
+
+/// Rys `PIE4 = pi/4` constant passed into the device `rys_root{1..5}` kernels.
+/// Matches `rys_roots.c` `PIE4`. Used by the on-device nuclear-attraction arm.
+const PIE4: f64 = 0.78539816339744827900_f64;
+
+/// Maximum `nroots` the device Rys kernels (`rys_root1..5`) can evaluate for the
+/// on-device nuclear-attraction arm. `nrys = (li + lj) / 2 + 1`, so this covers
+/// `li + lj <= 8`. Same `MAX_DEVICE_NROOTS` guard the 2c2e device kernel uses.
+const MAX_DEVICE_NROOTS: usize = 5;
 
 /// Spherical harmonic normalization prefactor for s and p shells.
 ///
@@ -136,10 +149,719 @@ fn fill_g_tensor_overlap(
     g
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Device kernel — `#[cube(launch)]`, generic over `F: Float`
+//
+//  Ports the SCALAR 1e arms (overlap / kinetic / nuclear-attraction) of
+//  `launch_one_electron_typed` onto the CubeCL device, following the proven
+//  `center_2c2e.rs::center_2c2e_kernel` / `run_2c2e_device` template EXACTLY.
+//
+//  `#[comptime] op_kind` selects the operator branch (0=overlap, 1=kinetic,
+//  2=nuclear) at JIT specialization time — no runtime operator dispatch inside
+//  the hot path, mirroring 2c2e's comptime `nroots`. `#[comptime] nroots`
+//  selects the `rys_root{1..5}` device fn for the nuclear arm; for
+//  overlap/kinetic it is fixed at 1 (no Rys quadrature, fixed-center VRR).
+//
+//  The kernel computes pair data (zeta, fac, aij2, P) IN-KERNEL in `F` so the
+//  whole arithmetic core is genuinely generic over `F` (the host `compute_pdata`
+//  returns f64-typed `PairData`, which would force f64; the 2c2e kernel likewise
+//  recomputes its products inline to stay generic). The vrr_step / vrr_2e_step /
+//  hrr_step / rys_rootN device fns are all `#[cube]` and called directly — this
+//  is allowed (they are NOT plain-fn calls).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// On-device scalar 1e G-tensor fill + contraction for ONE shell pair.
+///
+/// Single work item (`UNIT_POS == 0`), faithful correctness-first port of the
+/// host scalar pipeline (`fill_g_tensor_overlap` + `contract_overlap` /
+/// `contract_kinetic` / `contract_nuclear`). Iterates the primitive pairs
+/// (pi,pj) and contraction pairs (ci,cj) in-kernel and accumulates ONE
+/// `nci*ncj` Cartesian block per (ci,cj) into `cart_out`, laid out
+/// contraction-major / bra-fastest exactly as the host scalar path does:
+/// block base `(ci*nctr_j + cj) * (nci*ncj)`, element `out[cj_idx*nci + ci_idx]`.
+///
+/// Scratch buffers `g` (overlap/kinetic G-tensor or per-root nuclear G-tensor),
+/// `urys`/`wrys` (Rys roots, nuclear only) and the `cart_out` accumulator are
+/// passed as `&mut Array<F>` and zeroed in-kernel before use, exactly like 2c2e.
+///
+/// Source: libcint-master/src/g1e.c `CINTg1e_ovlp` / `CINTg1e_nuc`,
+///         autocode/intor1.c `CINTgout1e_int1e_kin`.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn one_electron_scalar_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    atom_coords: &Array<F>,
+    atom_charges: &Array<F>,
+    g: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    pie4: F,
+    sqrtpi: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    natm: u32,
+    #[comptime] op_kind: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        // Bind the comptime nroots to a runtime u32 (mirrors 2c2e `let nrys = nroots`).
+        let nrys = nroots;
+        // ── G-tensor sizing (mirrors the host scalar path) ───────────────────
+        // overlap : nmax = li+lj      , lj_ext = lj
+        // kinetic : nmax = li+lj+2    , lj_ext = lj+2  (D_j^2 needs jx+2 access)
+        // nuclear : nmax = li+lj      , lj_ext = lj
+        let mut nmax = li + lj;
+        let mut lj_ext = lj;
+        if comptime!(op_kind == 1u32) {
+            nmax = li + lj + 2u32;
+            lj_ext = lj + 2u32;
+        }
+        let dj = nmax + 1u32; // stride between consecutive j-levels within an axis block
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let out_total = nctr_i * nctr_j * block_len;
+
+        // Zero the full accumulation buffer.
+        let mut oi = 0u32;
+        while oi < out_total {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        // `pi_const` is passed in as a runtime scalar so the f64 path keeps full
+        // PI precision (F::new only accepts f32).
+
+        // ── Primitive loop ───────────────────────────────────────────────────
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                // Pair data, computed in-kernel in F (norm_i = norm_j = 1.0).
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                // ── Build the per-primitive Cartesian block into a temporary
+                //    region of `cart_out`? No — accumulate directly per (ci,cj)
+                //    with the contraction weight, mirroring the host scatter.
+                //
+                // To avoid recomputing the (operator-specific) G-tensor for every
+                // contraction pair, build it ONCE per primitive pair into `g`
+                // (and for nuclear, accumulate the per-atom/per-root contributions
+                // into a primitive Cartesian buffer stored in the FIRST block of
+                // `cart_out`'s scratch — but cart_out is the live accumulator, so
+                // instead we re-contract per (ci,cj) from the shared `g`).
+                //
+                // Overlap / kinetic: a single `g` is shared by all (ci,cj).
+                // Nuclear: the per-root accumulation is folded into `g`-derived
+                //          contraction below, recomputed per primitive (atoms loop
+                //          inside), independent of (ci,cj). We therefore build a
+                //          per-primitive Cartesian block `prim` on the fly inside
+                //          the (ci,cj) loop by reading `g` (ovlp/kin) or by the
+                //          nuclear root loop. For determinism + simplicity we
+                //          compute the primitive Cartesian block ONCE here for
+                //          ovlp/kin (store in `g`-derived reads) and for nuclear we
+                //          recompute the root accumulation inside the contraction.
+
+                if comptime!(op_kind == 0u32) {
+                    // ===== OVERLAP G-tensor (fixed-center VRR + HRR) =====
+                    let mut gi = 0u32;
+                    while gi < total_g {
+                        g[gi as usize] = F::new(0.0);
+                        gi += 1u32;
+                    }
+                    // Base case: gx[0]=1, gy[0]=1, gz[0]=fac*SQRTPI*PI/(zeta*sqrt(zeta))
+                    g[gx as usize] = F::new(1.0);
+                    g[gy as usize] = F::new(1.0);
+                    g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+
+                    // VRR on bra (center i): rijrx = P - Ri, per axis sub-block.
+                    one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                    one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                    one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+
+                    // HRR to ket center on all 3 axes: rirj = Ri - Rj.
+                    if lj >= 1u32 {
+                        one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj);
+                        one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
+                        one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
+                    }
+                } else if comptime!(op_kind == 1u32) {
+                    // ===== KINETIC: overlap G-tensor with lj+2 HRR levels =====
+                    let mut gi = 0u32;
+                    while gi < total_g {
+                        g[gi as usize] = F::new(0.0);
+                        gi += 1u32;
+                    }
+                    g[gx as usize] = F::new(1.0);
+                    g[gy as usize] = F::new(1.0);
+                    g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+
+                    one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                    one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                    one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+
+                    // HRR to lj_ext = lj+2 levels.
+                    if lj_ext >= 1u32 {
+                        one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                        one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                        one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                    }
+                }
+                // (Nuclear builds its G-tensor per-root inside the contraction below.)
+
+                // ── Contract into every (ci,cj) contraction block ────────────
+                let mut ci = 0u32;
+                while ci < nctr_i {
+                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                    let mut cj = 0u32;
+                    while cj < nctr_j {
+                        let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                        let weight = coeff_i_val * coeff_j_val;
+                        let base = (ci * nctr_j + cj) * block_len;
+
+                        // Iterate Cartesian component triples (cj outer, ci inner),
+                        // matching the host cart_comps ordering (lx descending).
+                        let mut cj_idx = 0u32;
+                        let mut ja = 0u32;
+                        while ja <= lj {
+                            let jx = lj - ja;
+                            let lj_minus_jx = lj - jx;
+                            let mut jb = 0u32;
+                            while jb <= lj_minus_jx {
+                                let jy = lj_minus_jx - jb;
+                                let jz = lj - jx - jy;
+
+                                let mut ci_idx = 0u32;
+                                let mut ia = 0u32;
+                                while ia <= li {
+                                    let ix = li - ia;
+                                    let li_minus_ix = li - ix;
+                                    let mut ib = 0u32;
+                                    while ib <= li_minus_ix {
+                                        let iy = li_minus_ix - ib;
+                                        let iz = li - ix - iy;
+
+                                        let mut val = F::new(0.0);
+
+                                        if comptime!(op_kind == 0u32) {
+                                            // Overlap: vx*vy*vz from shared g.
+                                            let vx = g[(gx + jx * dj + ix) as usize];
+                                            let vy = g[(gy + jy * dj + iy) as usize];
+                                            let vz = g[(gz + jz * dj + iz) as usize];
+                                            val = vx * vy * vz;
+                                        } else if comptime!(op_kind == 1u32) {
+                                            // Kinetic: T = -0.5*(g3x*g0y*g0z + ...)
+                                            let nx = jx * dj + ix;
+                                            let ny = jy * dj + iy;
+                                            let nz = jz * dj + iz;
+                                            let vx0 = g[(gx + nx) as usize];
+                                            let vy0 = g[(gy + ny) as usize];
+                                            let vz0 = g[(gz + nz) as usize];
+
+                                            let g3x =
+                                                one_electron_kin_d2::<F>(g, gx, nx, dj, jx, aj);
+                                            let g3y =
+                                                one_electron_kin_d2::<F>(g, gy, ny, dj, jy, aj);
+                                            let g3z =
+                                                one_electron_kin_d2::<F>(g, gz, nz, dj, jz, aj);
+                                            val = F::new(-0.5)
+                                                * (g3x * vy0 * vz0
+                                                    + vx0 * g3y * vz0
+                                                    + vx0 * vy0 * g3z);
+                                        } else {
+                                            // Nuclear: sum over atoms and Rys roots.
+                                            let mut atom = 0u32;
+                                            while atom < natm {
+                                                let z_c = atom_charges[atom as usize];
+                                                let rcx = atom_coords[(atom * 3u32) as usize];
+                                                let rcy =
+                                                    atom_coords[(atom * 3u32 + 1u32) as usize];
+                                                let rcz =
+                                                    atom_coords[(atom * 3u32 + 2u32) as usize];
+
+                                                // crij = C - P
+                                                let crijx = rcx - px;
+                                                let crijy = rcy - py;
+                                                let crijz = rcz - pz;
+                                                let x_boys = zeta
+                                                    * (crijx * crijx
+                                                        + crijy * crijy
+                                                        + crijz * crijz);
+
+                                                // Rys roots/weights (comptime nroots).
+                                                if comptime!(nroots == 1u32) {
+                                                    rys_root1::<F>(x_boys, urys, wrys, pie4);
+                                                } else if comptime!(nroots == 2u32) {
+                                                    rys_root2::<F>(x_boys, urys, wrys, pie4);
+                                                } else if comptime!(nroots == 3u32) {
+                                                    rys_root3::<F>(x_boys, urys, wrys, pie4);
+                                                } else if comptime!(nroots == 4u32) {
+                                                    rys_root4::<F>(x_boys, urys, wrys, pie4);
+                                                } else {
+                                                    rys_root5::<F>(x_boys, urys, wrys, pie4);
+                                                }
+
+                                                // fac1 = 2*PI*(-Z_C)*fac/zeta
+                                                let neg_z = F::new(0.0) - z_c;
+                                                let fac1 =
+                                                    F::new(2.0) * pi_const * neg_z * fac / zeta;
+
+                                                let mut irys: u32 = 0u32;
+                                                while irys < nrys {
+                                                    let u_n = urys[irys as usize];
+                                                    let w_n = wrys[irys as usize];
+                                                    let tau = u_n / (F::new(1.0) + u_n);
+                                                    let rt = aij2 * (F::new(1.0) - tau);
+
+                                                    let c00x = (px - rix) + tau * crijx;
+                                                    let c00y = (py - riy) + tau * crijy;
+                                                    let c00z = (pz - riz) + tau * crijz;
+
+                                                    // Build per-root G-tensor in `g`.
+                                                    let mut gi2 = 0u32;
+                                                    while gi2 < total_g {
+                                                        g[gi2 as usize] = F::new(0.0);
+                                                        gi2 += 1u32;
+                                                    }
+                                                    g[gx as usize] = F::new(1.0);
+                                                    g[gy as usize] = F::new(1.0);
+                                                    g[gz as usize] = fac1 * w_n;
+
+                                                    one_electron_vrr2e_axis::<F>(
+                                                        g, gx, c00x, rt, nmax,
+                                                    );
+                                                    one_electron_vrr2e_axis::<F>(
+                                                        g, gy, c00y, rt, nmax,
+                                                    );
+                                                    one_electron_vrr2e_axis::<F>(
+                                                        g, gz, c00z, rt, nmax,
+                                                    );
+                                                    if lj >= 1u32 {
+                                                        one_electron_hrr_axis::<F>(
+                                                            g, gx, rirjx, dj, nmax, lj,
+                                                        );
+                                                        one_electron_hrr_axis::<F>(
+                                                            g, gy, rirjy, dj, nmax, lj,
+                                                        );
+                                                        one_electron_hrr_axis::<F>(
+                                                            g, gz, rirjz, dj, nmax, lj,
+                                                        );
+                                                    }
+
+                                                    let vx = g[(gx + jx * dj + ix) as usize];
+                                                    let vy = g[(gy + jy * dj + iy) as usize];
+                                                    let vz = g[(gz + jz * dj + iz) as usize];
+                                                    val += vx * vy * vz;
+
+                                                    irys += 1u32;
+                                                }
+                                                atom += 1u32;
+                                            }
+                                        }
+
+                                        cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
+                                            weight * val;
+
+                                        ci_idx += 1u32;
+                                        ib += 1u32;
+                                    }
+                                    ia += 1u32;
+                                }
+
+                                cj_idx += 1u32;
+                                jb += 1u32;
+                            }
+                            ja += 1u32;
+                        }
+
+                        cj += 1u32;
+                    }
+                    ci += 1u32;
+                }
+
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Per-axis 1e overlap VRR into the `g` sub-block starting at `base`.
+///
+/// Writes `g[base + n]` for `n = 1..=nmax` using the fixed-center recurrence,
+/// reproducing `vrr_step` on a sub-block (the `#[cube]` `vrr_step` only operates
+/// from index 0, so the multi-axis case needs an explicit base offset).
+#[cube]
+fn one_electron_vrr_axis<F: Float>(g: &mut Array<F>, base: u32, rijrx: F, aij2: F, nmax: u32) {
+    if nmax >= 1u32 {
+        g[(base + 1u32) as usize] = rijrx * g[base as usize];
+        let mut n = 1u32;
+        while n < nmax {
+            g[(base + n + 1u32) as usize] = F::cast_from(n) * aij2 * g[(base + n - 1u32) as usize]
+                + rijrx * g[(base + n) as usize];
+            n += 1u32;
+        }
+    }
+}
+
+/// Per-axis 2e (root-dependent) VRR into the `g` sub-block starting at `base`.
+///
+/// Writes `g[base + n]` for `n = 1..=nmax` using `c00` / `b10 = rt` — the nuclear
+/// attraction root recurrence (`vrr_2e_step` on a sub-block with explicit base).
+#[cube]
+fn one_electron_vrr2e_axis<F: Float>(g: &mut Array<F>, base: u32, c00: F, b10: F, nmax: u32) {
+    if nmax >= 1u32 {
+        g[(base + 1u32) as usize] = c00 * g[base as usize];
+        let mut n = 1u32;
+        while n < nmax {
+            g[(base + n + 1u32) as usize] = F::cast_from(n) * b10 * g[(base + n - 1u32) as usize]
+                + c00 * g[(base + n) as usize];
+            n += 1u32;
+        }
+    }
+}
+
+/// Per-axis HRR into the `g` sub-block starting at `base` (i-stride = 1).
+///
+/// Shifts angular momentum to the ket center, building j-levels `1..=lj`,
+/// reproducing `hrr_step` on a sub-block with explicit base offset.
+#[cube]
+fn one_electron_hrr_axis<F: Float>(
+    g: &mut Array<F>,
+    base: u32,
+    rirj: F,
+    dj: u32,
+    li_max: u32,
+    lj: u32,
+) {
+    let mut j = 1u32;
+    while j <= lj {
+        let i_max = li_max - j;
+        let mut i = 0u32;
+        while i <= i_max {
+            let idx_out = base + j * dj + i;
+            let idx_hi = base + (j - 1u32) * dj + (i + 1u32);
+            let idx_lo = base + (j - 1u32) * dj + i;
+            g[idx_out as usize] = g[idx_hi as usize] + rirj * g[idx_lo as usize];
+            i += 1u32;
+        }
+        j += 1u32;
+    }
+}
+
+/// Second ket-derivative `D_j^2(g0)[j, i]` on one axis (kinetic operator).
+///
+/// `g3 = jx*(jx-1)*g0[jx-2] - 2*aj*(2*jx+1)*g0[jx] + 4*aj^2*g0[jx+2]`, stepping
+/// `±2` j-levels (`±2*dj` in the flat index). `nx = jx*dj + ix` is the base flat
+/// offset within the axis sub-block at `base`. Matches `contract_kinetic`.
+#[cube]
+fn one_electron_kin_d2<F: Float>(g: &Array<F>, base: u32, nx: u32, dj: u32, jx: u32, aj: F) -> F {
+    let g_hi = g[(base + nx + 2u32 * dj) as usize];
+    let v0 = g[(base + nx) as usize];
+    let jxf = F::cast_from(jx);
+    let mut lo = F::new(0.0);
+    if jx >= 2u32 {
+        lo = g[(base + nx - 2u32 * dj) as usize];
+    }
+    F::new(4.0) * aj * aj * g_hi - F::new(2.0) * aj * (F::new(2.0) * jxf + F::new(1.0)) * v0
+        + jxf * (jxf - F::new(1.0)) * lo
+}
+
+/// Dispatch [`one_electron_scalar_kernel`] at `f64` on a resolved backend's
+/// client and read back the contraction-major Cartesian accumulator.
+///
+/// Generic over `R: Runtime` so the same path serves CPU, ROCm, etc. Intermediate
+/// device compute is `f64` (module-level precision policy, mirroring 2c2e). The
+/// `op_kind` / `nroots` comptime args are selected at the `launch::<f64, R>` call
+/// site by a small host-side match (CubeCL cannot pass comptime args dynamically).
+#[allow(clippy::too_many_arguments)]
+fn run_1e_scalar_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    op_kind: u32,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    atom_coords: &[f64],
+    atom_charges: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let (nmax_u, lj_ext_u) = if op_kind == 1 {
+        (li_u + lj_u + 2, lj_u + 2)
+    } else {
+        (li_u + lj_u, lj_u)
+    };
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * nci * ncj;
+    let nroots_u = nroots as usize;
+    let natm = atom_charges.len() as u32;
+
+    // Input buffers.
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+    // atom_coords / atom_charges must be non-empty (CubeCL Array len > 0).
+    let coords_src = if atom_coords.is_empty() {
+        &[0.0_f64][..]
+    } else {
+        atom_coords
+    };
+    let charges_src = if atom_charges.is_empty() {
+        &[0.0_f64][..]
+    } else {
+        atom_charges
+    };
+    let coords_h = client.create_from_slice(f64::as_bytes(coords_src));
+    let charges_h = client.create_from_slice(f64::as_bytes(charges_src));
+
+    // Scratch + output buffers.
+    let g_zero = vec![0.0_f64; 3 * g_per_axis];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let rys_zero = vec![0.0_f64; nroots_u];
+    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    // Comptime op_kind / nroots: select the monomorphization at the call site.
+    macro_rules! launch_with {
+        ($op:expr, $nr:expr) => {
+            one_electron_scalar_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()) },
+                unsafe { ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_per_axis) },
+                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                PIE4,
+                SQRTPI,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                natm,
+                $op,
+                $nr,
+            )
+        };
+    }
+
+    // overlap (op_kind=0) / kinetic (op_kind=1) use nroots=1 (no Rys).
+    // nuclear (op_kind=2) selects rys_rootN for nroots in 1..=5.
+    if op_kind == 0 {
+        launch_with!(0u32, 1u32);
+    } else if op_kind == 1 {
+        launch_with!(1u32, 1u32);
+    } else {
+        match nroots {
+            1 => launch_with!(2u32, 1u32),
+            2 => launch_with!(2u32, 2u32),
+            3 => launch_with!(2u32, 3u32),
+            4 => launch_with!(2u32, 4u32),
+            _ => launch_with!(2u32, 5u32),
+        }
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_1e_scalar_device`] — copies the exact arm
+/// set used by `center_2c2e.rs` / `f12.rs` (Cpu/Wgpu/Cuda/Rocm/Metal).
+#[allow(clippy::too_many_arguments)]
+fn run_1e_scalar_on_backend(
+    backend: &ResolvedBackend,
+    op_kind: u32,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    atom_coords: &[f64],
+    atom_charges: &[f64],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_1e_scalar_device::<cubecl::cpu::CpuRuntime>(
+            client,
+            op_kind,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            atom_coords,
+            atom_charges,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_1e_scalar_device::<cubecl_wgpu::WgpuRuntime>(
+            client,
+            op_kind,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            atom_coords,
+            atom_charges,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_1e_scalar_device::<cubecl_cuda::CudaRuntime>(
+            client,
+            op_kind,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            atom_coords,
+            atom_charges,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_1e_scalar_device::<cubecl_hip::HipRuntime>(
+            client,
+            op_kind,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            atom_coords,
+            atom_charges,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_1e_scalar_device::<cubecl_wgpu::WgpuRuntime>(
+            client,
+            op_kind,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            atom_coords,
+            atom_charges,
+        ),
+    }
+}
+
 /// Contract G-tensor elements for the overlap operator.
 ///
 /// Loops over all (ix+jx, iy+jy, iz+jz) Cartesian products and returns the
 /// flat cartesian integral buffer of size ncart(li) * ncart(lj).
+///
+/// Host f64 reference — used by the device-vs-host cross-check and unit tests
+/// (the live scalar path now computes via [`one_electron_scalar_kernel`]).
+#[cfg(test)]
 fn contract_overlap(g: &[f64], li: u8, lj: u8, nmax: u32) -> Vec<f64> {
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -205,6 +927,10 @@ fn contract_overlap(g: &[f64], li: u8, lj: u8, nmax: u32) -> Vec<f64> {
 /// Requires G-tensor built with `lj_ext = lj + 2` HRR j-levels so that `g0[jx+2]`
 /// (accessed via `jx*dj + 2*dj`) is valid. `nmax = li + lj + 2` ensures the VRR
 /// bra has enough levels for the HRR to shift two extra quanta to the ket.
+///
+/// Host f64 reference — used by the device-vs-host cross-check and unit tests
+/// (the live scalar path now computes via [`one_electron_scalar_kernel`]).
+#[cfg(test)]
 fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -240,18 +966,15 @@ fn contract_kinetic(g: &[f64], li: u8, lj: u8, nmax: u32, aj: f64) -> Vec<f64> {
             // g0[jx+2, ix] = g[gx + (jx+2)*dj + ix] = g[gx + nx + 2*dj]  (valid since lj_ext=lj+2)
             // g0[jx-2, ix] = g[gx + (jx-2)*dj + ix] = g[gx + nx - 2*dj]  (valid only when jx >= 2)
             let jxf = jx as f64;
-            let g3x = 4.0 * aj * aj * g[gx + nx + 2 * dj]
-                - 2.0 * aj * (2.0 * jxf + 1.0) * vx0
+            let g3x = 4.0 * aj * aj * g[gx + nx + 2 * dj] - 2.0 * aj * (2.0 * jxf + 1.0) * vx0
                 + jxf * (jxf - 1.0) * if jx >= 2 { g[gx + nx - 2 * dj] } else { 0.0 };
 
             let jyf = jy as f64;
-            let g3y = 4.0 * aj * aj * g[gy + ny + 2 * dj]
-                - 2.0 * aj * (2.0 * jyf + 1.0) * vy0
+            let g3y = 4.0 * aj * aj * g[gy + ny + 2 * dj] - 2.0 * aj * (2.0 * jyf + 1.0) * vy0
                 + jyf * (jyf - 1.0) * if jy >= 2 { g[gy + ny - 2 * dj] } else { 0.0 };
 
             let jzf = jz as f64;
-            let g3z = 4.0 * aj * aj * g[gz + nz + 2 * dj]
-                - 2.0 * aj * (2.0 * jzf + 1.0) * vz0
+            let g3z = 4.0 * aj * aj * g[gz + nz + 2 * dj] - 2.0 * aj * (2.0 * jzf + 1.0) * vz0
                 + jzf * (jzf - 1.0) * if jz >= 2 { g[gz + nz - 2 * dj] } else { 0.0 };
 
             // T = -0.5 * (g3x*g0y*g0z + g0x*g3y*g0z + g0x*g0y*g3z)
@@ -311,8 +1034,8 @@ fn contract_grad_1e_bra(g: &[f64], li: u8, lj: u8, nmax: u32, ai: f64) -> Vec<f6
             g1[off + jbase] = ai2 * g[off + jbase + 1];
             // ix >= 1: f = ix * g[ix-1] + (-2*ai) * g[ix+1]
             for ix in 1..=(li as usize) {
-                g1[off + jbase + ix] = ix as f64 * g[off + jbase + ix - 1]
-                    + ai2 * g[off + jbase + ix + 1];
+                g1[off + jbase + ix] =
+                    ix as f64 * g[off + jbase + ix - 1] + ai2 * g[off + jbase + ix + 1];
             }
         }
     }
@@ -391,8 +1114,8 @@ fn contract_ipkin(g: &[f64], li: u8, lj: u8, nmax: u32, ai: f64, aj: f64) -> Vec
             let jbase = j * dj;
             g1[off + jbase] = ai2 * g[off + jbase + 1];
             for ix in 1..=(li as usize) {
-                g1[off + jbase + ix] = ix as f64 * g[off + jbase + ix - 1]
-                    + ai2 * g[off + jbase + ix + 1];
+                g1[off + jbase + ix] =
+                    ix as f64 * g[off + jbase + ix - 1] + ai2 * g[off + jbase + ix + 1];
             }
         }
     }
@@ -468,6 +1191,10 @@ fn contract_ipkin(g: &[f64], li: u8, lj: u8, nmax: u32, ai: f64, aj: f64) -> Vec
 ///
 /// Uses Rys quadrature with Boys-weighted VRR.
 /// Reference: g1e.c lines 208-320 (CINTg1e_nuc).
+///
+/// Host f64 reference — used by the device-vs-host cross-check and unit tests
+/// (the live scalar path now computes via [`one_electron_scalar_kernel`]).
+#[cfg(test)]
 fn contract_nuclear(
     pd: &crate::math::pdata::PairData,
     ri: [f64; 3],
@@ -500,8 +1227,7 @@ fn contract_nuclear(
         let crij = [rc[0] - rp[0], rc[1] - rp[1], rc[2] - rp[2]];
 
         // Boys argument x = zeta * |P - C|^2
-        let x_boys =
-            pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
+        let x_boys = pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
 
         // Get Rys roots and weights. Dispatch through the general nroots=1..5
         // host quadrature so high-l nuclear attraction (li+lj>=4 → nrys_roots>=3,
@@ -618,10 +1344,10 @@ fn contract_nuclear(
                     let vy = g_root[gy_off + jy as usize * dj + iy as usize];
                     let vz = g_root[gz_off + jz as usize * dj + iz as usize];
                     // Column-major (bra fastest): out[ket*nci + bra]. This is the layout
-            // cart_to_sph_1e reads (cart_buf[j*nci+ci]) and pyscf-rs stitches
-            // (block[ii+jj*ni]). Row-major here silently transposed cross-l blocks
-            // (li!=lj, both>0: p-d/p-f/d-g) since only those have nci,ncj both >1.
-            out[cj_idx * nci + ci_idx] += vx * vy * vz;
+                    // cart_to_sph_1e reads (cart_buf[j*nci+ci]) and pyscf-rs stitches
+                    // (block[ii+jj*ni]). Row-major here silently transposed cross-l blocks
+                    // (li!=lj, both>0: p-d/p-f/d-g) since only those have nci,ncj both >1.
+                    out[cj_idx * nci + ci_idx] += vx * vy * vz;
                 }
             }
         }
@@ -690,8 +1416,7 @@ fn contract_nuclear_grad(
         let crij = [rc[0] - rp[0], rc[1] - rp[1], rc[2] - rp[2]];
 
         // Boys argument x = zeta * |P - C|^2.
-        let x_boys =
-            pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
+        let x_boys = pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
 
         let (u_arr, w_arr) = rys_roots_host(nrys_roots as usize, x_boys);
 
@@ -853,8 +1578,8 @@ fn launch_one_electron_typed<F: CintFloat>(
         });
     }
 
-    // Suppress backend: host-side pipeline executes natively without GPU dispatch.
-    let _ = backend;
+    // `backend` is consumed by the scalar device-kernel dispatch below
+    // (`run_1e_scalar_on_backend`). The gradient + spinor arms remain host-side.
 
     let shells = plan.shells.as_slice();
     if shells.len() < 2 {
@@ -921,12 +1646,14 @@ fn launch_one_electron_typed<F: CintFloat>(
         // should have rejected a None origin before reaching the kernel, but we fail
         // typed (never panic, never read a garbage origin) — T-21-04-01 (defensive gate).
         let iprinv_origin: Option<[f64; 3]> = if is_iprinv {
-            Some(plan.operator_env_params.rinv_orig.ok_or(
-                cintxRsError::InvalidEnvParam {
-                    param: "PTR_RINV_ORIG",
-                    reason: "iprinv kernel reached with no rinv origin".to_owned(),
-                },
-            )?)
+            Some(
+                plan.operator_env_params
+                    .rinv_orig
+                    .ok_or(cintxRsError::InvalidEnvParam {
+                        param: "PTR_RINV_ORIG",
+                        reason: "iprinv kernel reached with no rinv origin".to_owned(),
+                    })?,
+            )
         } else {
             None
         };
@@ -959,9 +1686,8 @@ fn launch_one_electron_typed<F: CintFloat>(
             let ai = shell_i.exponents[pi];
             for pj in 0..n_prim_j {
                 let aj = shell_j.exponents[pj];
-                let pd = compute_pdata_host(
-                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-                );
+                let pd =
+                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
                 let prim_3c = if is_ipovlp {
                     // ipovlp: build overlap G-tensor with nmax = li+lj+1 (bra +1 headroom)
@@ -1016,7 +1742,12 @@ fn launch_one_electron_typed<F: CintFloat>(
                         for cj in 0..n_ctr_j {
                             let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
                             let mut sph_tmp = vec![0.0_f64; nsi * nsj];
-                            cart_to_sph_1e(&cart_3comp[cart_base..cart_base + block_len], &mut sph_tmp, li, lj);
+                            cart_to_sph_1e(
+                                &cart_3comp[cart_base..cart_base + block_len],
+                                &mut sph_tmp,
+                                li,
+                                lj,
+                            );
                             let staging_comp_base = comp * sph_block;
                             for mj in 0..nsj {
                                 let jj = cj * nsj + mj;
@@ -1063,7 +1794,11 @@ fn launch_one_electron_typed<F: CintFloat>(
         }
 
         // Nonzero sentinel
-        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+            1e-12
+        } else {
+            1e-18
+        });
         let not0 = staging
             .iter()
             .filter(|&&v| v.abs() > nonzero_threshold)
@@ -1086,7 +1821,19 @@ fn launch_one_electron_typed<F: CintFloat>(
     // Scalar path (overlap / kinetic / nuclear)
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Primitive loop over (pi, pj) pairs
+    // Scalar/gradient fork rationale (no silent narrowing):
+    //   This task ports ONLY the three scalar operators (overlap/kinetic/nuclear)
+    //   onto the CubeCL device kernel (`one_electron_scalar_kernel`). The gradient
+    //   operators (ipovlp/ipkin/ipnuc/iprinv) — handled in the block above and
+    //   returned before reaching here — and the spinor representation KEEP their
+    //   existing host code paths unchanged. Each derivative is a distinct
+    //   nabla1i / D_j^2 mixing pipeline with +1/+2 angular headroom; porting all
+    //   four kernels plus the spinor transform on-device exceeds a single
+    //   quick-task budget. On-device port of the gradient + spinor arms is
+    //   deferred to a follow-up quick task — scalar-at-minimum scoping per the
+    //   task constraint, matching how 3c2e/ECP staged their device-kernel ports.
+
+    // Primitive / contraction counts.
     let n_prim_i = shell_i.nprim as usize;
     let n_prim_j = shell_j.nprim as usize;
     let n_ctr_i = shell_i.nctr as usize;
@@ -1094,64 +1841,75 @@ fn launch_one_electron_typed<F: CintFloat>(
 
     // Per-contraction-pair Cartesian accumulators. Generally-contracted shells
     // (nctr>1, e.g. ANO/ANO-RCC) emit ONE nci*ncj Cartesian block per (ci,cj)
-    // contraction pair. The contraction index is the OUTER (slow) AO index within
-    // each shell axis and the angular component the inner index — libcint
-    // "contraction-major" AO ordering (matches PySCF sph_labels: 2px,2py,2pz,
-    // 3px,3py,3pz,...). For the segmented case (n_ctr_i == n_ctr_j == 1) this is
-    // a single block and the result is byte-identical to the prior single-buffer
-    // path. Block (ci,cj) starts at flat offset (ci*n_ctr_j + cj) * block_len.
+    // contraction pair, contraction-major / bra-fastest. Block (ci,cj) starts at
+    // flat offset (ci*n_ctr_j + cj) * block_len. The device kernel produces this
+    // exact layout, so the readback is the same `cart_blocks` the host loop built.
     let block_len = nci * ncj;
-    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * block_len];
 
-    for pi in 0..n_prim_i {
-        let ai = shell_i.exponents[pi];
-        // norm_i: normalization factor; use 1.0 per-primitive (coefficients carry norms)
-        let norm_i = 1.0_f64;
+    // Operator → comptime op_kind + nroots for the device kernel.
+    //   overlap = 0 (nroots=1, no Rys)
+    //   kinetic = 1 (nroots=1, no Rys)
+    //   nuclear = 2 (nroots = (li+lj)/2 + 1, Rys quadrature)
+    let (op_kind, nroots) = if is_overlap {
+        (0u32, 1u32)
+    } else if is_kinetic {
+        (1u32, 1u32)
+    } else {
+        (2u32, (li as u32 + lj as u32) / 2 + 1)
+    };
 
-        for pj in 0..n_prim_j {
-            let aj = shell_j.exponents[pj];
-            let norm_j = 1.0_f64;
-
-            // Pair data
-            let pd = compute_pdata_host(
-                ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], norm_i, norm_j,
-            );
-
-            // Compute integral for this primitive pair
-            let prim_buf = if is_overlap {
-                let nmax = (li + lj) as u32;
-                let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32);
-                contract_overlap(&g, li, lj, nmax)
-            } else if is_kinetic {
-                // Kinetic requires two extra j-levels (lj+2) so D_j^2 can access g0[jx+2].
-                // HRR to lj+2 levels requires nmax = li + lj + 2 VRR bra levels so
-                // there are enough starting points for the two extra HRR steps.
-                let nmax = (li + lj) as u32 + 2;
-                let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32 + 2);
-                contract_kinetic(&g, li, lj, nmax, aj)
-            } else {
-                // Nuclear attraction
-                contract_nuclear(&pd, ri, rj, li, lj, atoms)
-            };
-
-            // Scatter this primitive pair into every contraction block, weighted by
-            // that contraction's coefficient pair. Shell coefficient layout is
-            // coefficients[pi * n_ctr + ctr_idx] (libcint convention). Each (ci,cj)
-            // block accumulates independently — the previous code summed every
-            // (ci,cj) pair into a single buffer, truncating nctr>1 shells.
-            for ci in 0..n_ctr_i {
-                let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
-                for cj in 0..n_ctr_j {
-                    let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
-                    let weight = coeff_i * coeff_j;
-                    let base = (ci * n_ctr_j + cj) * block_len;
-                    for k in 0..block_len {
-                        cart_blocks[base + k] += weight * prim_buf[k];
-                    }
-                }
-            }
-        }
+    // Device Rys kernels cover nroots<=5 (li+lj<=8). H2O/STO-3G stays well within.
+    if op_kind == 2 && nroots as usize > MAX_DEVICE_NROOTS {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "cubecl_1e",
+            detail: format!(
+                "device 1e nuclear kernel supports nroots<={MAX_DEVICE_NROOTS} (l_i+l_j<=8); \
+                 got nroots={nroots} for l_i={li}, l_j={lj}"
+            ),
+        });
     }
+
+    // Flatten the f64 primitive data the kernel reads.
+    let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+    let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+    let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+    let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+
+    // Nuclear: flatten ALL atom coords + charges (-Z_C) in passed order for a
+    // bit-stable reduction (mirrors `contract_nuclear`'s atom loop, D-10).
+    let (atom_coords, atom_charges): (Vec<f64>, Vec<f64>) = if op_kind == 2 {
+        let mut coords = Vec::with_capacity(atoms.len() * 3);
+        let mut charges = Vec::with_capacity(atoms.len());
+        for atom in atoms {
+            coords.extend_from_slice(&atom.coord_bohr);
+            charges.push(atom.atomic_number as f64);
+        }
+        (coords, charges)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+
+    // Dispatch the scalar arm onto the resolved backend's device client (f64).
+    let cart_blocks = run_1e_scalar_on_backend(
+        backend,
+        op_kind,
+        nroots,
+        li as u32,
+        lj as u32,
+        n_prim_i as u32,
+        n_prim_j as u32,
+        n_ctr_i as u32,
+        n_ctr_j as u32,
+        ri,
+        rj,
+        &exps_i,
+        &exps_j,
+        &coeff_i,
+        &coeff_j,
+        &atom_coords,
+        &atom_charges,
+    );
+    let mut cart_blocks = cart_blocks;
 
     // Apply the libcint `CINTcommon_fac_sp` normalization scale to the
     // accumulated Cartesian buffer.  libcint moves the spherical normalization
@@ -1244,7 +2002,11 @@ fn launch_one_electron_typed<F: CintFloat>(
     // WR-06: use a precision-aware sentinel so f32 stale lanes (< f32 noise floor ~1e-7)
     // are not counted. The outer F32 arm already bounds staging to out_elems, so this
     // scan cannot touch stale upper-half lanes.
-    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -1300,7 +2062,12 @@ pub fn launch_one_electron(
                     provided: staging_f32.len(),
                 });
             }
-            launch_one_electron_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
+            launch_one_electron_typed::<f32>(
+                backend,
+                plan,
+                specialization,
+                &mut staging_f32[..out_elems],
+            )
         }
     }
 }
@@ -1373,7 +2140,8 @@ mod tests {
         let rj = [1.4_f64, 0.0, 0.0];
 
         let pd_same = compute_pdata_host(ai, aj, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0);
-        let pd_disp = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let pd_disp =
+            compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
         let nmax = 0u32;
         let g_same = fill_g_tensor_overlap(&pd_same, [0.0; 3], [0.0; 3], nmax, 0);
@@ -1419,7 +2187,10 @@ mod tests {
         // T = -0.5*(d2x*gy[0]*gz[0] + gx[0]*d2y*gz[0] + gx[0]*gy[0]*d2z)
         // The minus sign is needed because D_j^2 g < 0 for Gaussians.
         let t_ss = -0.5 * (d2x * gy[0] * gz_arr[0] + gx[0] * d2y * gz_arr[0] + gx[0] * gy[0] * d2z);
-        assert!(t_ss > 0.0, "s-s kinetic integral should be positive, got {t_ss}");
+        assert!(
+            t_ss > 0.0,
+            "s-s kinetic integral should be positive, got {t_ss}"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1455,29 +2226,65 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_precision_dispatch_f64_inner_positive_overlap() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
         let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(OperatorId::new(0), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(OperatorId::new(0), Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan = ExecutionPlan::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .unwrap();
         plan.precision = PrecisionKind::F64;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -1489,8 +2296,16 @@ mod tests {
         // RED: compile fails until launch_one_electron_typed is defined.
         let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
         assert!(result.is_ok(), "f64 inner should succeed: {:?}", result);
-        assert!(staging[0].is_finite(), "f64 overlap should be finite, got {}", staging[0]);
-        assert!(staging[0] > 0.0, "s-s overlap should be positive, got {}", staging[0]);
+        assert!(
+            staging[0].is_finite(),
+            "f64 overlap should be finite, got {}",
+            staging[0]
+        );
+        assert!(
+            staging[0] > 0.0,
+            "s-s overlap should be positive, got {}",
+            staging[0]
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1500,29 +2315,65 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_precision_dispatch_f32_inner_positive_overlap() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
         let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(OperatorId::new(0), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(OperatorId::new(0), Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan = ExecutionPlan::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .unwrap();
         plan.precision = PrecisionKind::F32;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -1536,8 +2387,16 @@ mod tests {
         // RED: compile fails until launch_one_electron_typed is defined.
         let result = launch_one_electron_typed::<f32>(&backend, &plan, &spec, &mut staging_f32);
         assert!(result.is_ok(), "f32 inner should succeed: {:?}", result);
-        assert!(staging_f32[0].is_finite(), "f32 overlap should be finite, got {}", staging_f32[0]);
-        assert!(staging_f32[0] > 0.0, "s-s overlap (f32) should be positive, got {}", staging_f32[0]);
+        assert!(
+            staging_f32[0].is_finite(),
+            "f32 overlap should be finite, got {}",
+            staging_f32[0]
+        );
+        assert!(
+            staging_f32[0] > 0.0,
+            "s-s overlap (f32) should be positive, got {}",
+            staging_f32[0]
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1547,12 +2406,294 @@ mod tests {
     fn test_rys_root2_host_valid_roots() {
         for x in [0.01, 0.5, 2.0, 5.0, 15.0, 35.0, 45.0] {
             let (u, w) = rys_root2_host(x);
-            assert!(u[0] >= 0.0, "root u[0] should be non-negative for x={x}, got {}", u[0]);
-            assert!(u[1] >= 0.0, "root u[1] should be non-negative for x={x}, got {}", u[1]);
-            assert!(w[0] > 0.0, "weight w[0] should be positive for x={x}, got {}", w[0]);
-            assert!(w[1] > 0.0, "weight w[1] should be positive for x={x}, got {}", w[1]);
-            assert!(u[0] <= u[1], "roots should be ordered u[0] <= u[1] for x={x}");
+            assert!(
+                u[0] >= 0.0,
+                "root u[0] should be non-negative for x={x}, got {}",
+                u[0]
+            );
+            assert!(
+                u[1] >= 0.0,
+                "root u[1] should be non-negative for x={x}, got {}",
+                u[1]
+            );
+            assert!(
+                w[0] > 0.0,
+                "weight w[0] should be positive for x={x}, got {}",
+                w[0]
+            );
+            assert!(
+                w[1] > 0.0,
+                "weight w[1] should be positive for x={x}, got {}",
+                w[1]
+            );
+            assert!(
+                u[0] <= u[1],
+                "roots should be ordered u[0] <= u[1] for x={x}"
+            );
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Device-vs-host cross-check (CpuRuntime, f64): the new
+    // `run_1e_scalar_device::<CpuRuntime>` device kernel must reproduce the host
+    // `contract_overlap` / `contract_kinetic` / `contract_nuclear` references
+    // within atol=1e-12 + rtol=1e-10, for li,lj in
+    // {(0,0),(0,1),(1,0),(1,1),(2,2)}. Modeled on
+    // `center_2c2e.rs::assert_device_matches_host`.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    fn cpu_client_1e() -> cubecl::client::ComputeClient<cubecl::cpu::CpuRuntime> {
+        use cubecl::Runtime;
+        cubecl::cpu::CpuRuntime::client(&Default::default())
+    }
+
+    /// Host overlap reference: single-primitive, single-contraction shell pair.
+    #[cfg(feature = "cpu")]
+    fn host_overlap_block(
+        ai: f64,
+        aj: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        li: u8,
+        lj: u8,
+    ) -> Vec<f64> {
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let nmax = (li + lj) as u32;
+        let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32);
+        contract_overlap(&g, li, lj, nmax)
+    }
+
+    /// Host kinetic reference.
+    #[cfg(feature = "cpu")]
+    fn host_kinetic_block(
+        ai: f64,
+        aj: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        li: u8,
+        lj: u8,
+    ) -> Vec<f64> {
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let nmax = (li + lj) as u32 + 2;
+        let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32 + 2);
+        contract_kinetic(&g, li, lj, nmax, aj)
+    }
+
+    /// Host nuclear reference (single-primitive) over an atom slab.
+    #[cfg(feature = "cpu")]
+    fn host_nuclear_block(
+        ai: f64,
+        aj: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        li: u8,
+        lj: u8,
+        atoms: &[cintx_core::Atom],
+    ) -> Vec<f64> {
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        contract_nuclear(&pd, ri, rj, li, lj, atoms)
+    }
+
+    #[cfg(feature = "cpu")]
+    fn assert_close(host: &[f64], dev: &[f64], tag: &str) {
+        assert_eq!(host.len(), dev.len(), "length mismatch ({tag})");
+        for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
+            let diff = (h - d).abs();
+            let thr = 1e-12 + 1e-10 * h.abs();
+            assert!(
+                diff <= thr,
+                "device/host mismatch ({tag}) idx={idx}: host={h:.15e} dev={d:.15e} diff={diff:.3e}"
+            );
+        }
+    }
+
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_device_matches_host_overlap() {
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.6_f64, 0.5, 0.7];
+        let ai = 0.9_f64;
+        let aj = 1.3_f64;
+        for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1), (2, 2)] {
+            let host = host_overlap_block(ai, aj, ri, rj, li, lj);
+            let dev = run_1e_scalar_device::<cubecl::cpu::CpuRuntime>(
+                &cpu_client_1e(),
+                0,
+                1,
+                li as u32,
+                lj as u32,
+                1,
+                1,
+                1,
+                1,
+                ri,
+                rj,
+                &[ai],
+                &[aj],
+                &[1.0],
+                &[1.0],
+                &[],
+                &[],
+            );
+            assert_close(&host, &dev, &format!("overlap li={li} lj={lj}"));
+        }
+    }
+
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_device_matches_host_kinetic() {
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.6_f64, 0.5, 0.7];
+        let ai = 0.9_f64;
+        let aj = 1.3_f64;
+        for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1), (2, 2)] {
+            let host = host_kinetic_block(ai, aj, ri, rj, li, lj);
+            let dev = run_1e_scalar_device::<cubecl::cpu::CpuRuntime>(
+                &cpu_client_1e(),
+                1,
+                1,
+                li as u32,
+                lj as u32,
+                1,
+                1,
+                1,
+                1,
+                ri,
+                rj,
+                &[ai],
+                &[aj],
+                &[1.0],
+                &[1.0],
+                &[],
+                &[],
+            );
+            assert_close(&host, &dev, &format!("kinetic li={li} lj={lj}"));
+        }
+    }
+
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_device_matches_host_nuclear() {
+        use cintx_core::{Atom, NuclearModel};
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.6_f64, 0.5, 0.7];
+        let ai = 0.9_f64;
+        let aj = 1.3_f64;
+        let atoms = [
+            Atom::try_new(8, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap(),
+            Atom::try_new(1, [0.4, 0.3, 0.9], NuclearModel::Point, None, None).unwrap(),
+        ];
+        // Flatten atom slab for the device call (coords in passed order, +Z charges;
+        // the kernel applies the -Z_C sign internally via fac1).
+        let mut coords = Vec::new();
+        let mut charges = Vec::new();
+        for a in &atoms {
+            coords.extend_from_slice(&a.coord_bohr);
+            charges.push(a.atomic_number as f64);
+        }
+        // contract_nuclear only implements nrys<=2 (li+lj<=3) for the host ref, so
+        // limit the cross-check pairs to li+lj<=3 (overlap/kinetic cover (2,2)).
+        for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1)] {
+            let nroots = (li as u32 + lj as u32) / 2 + 1;
+            let host = host_nuclear_block(ai, aj, ri, rj, li, lj, &atoms);
+            let dev = run_1e_scalar_device::<cubecl::cpu::CpuRuntime>(
+                &cpu_client_1e(),
+                2,
+                nroots,
+                li as u32,
+                lj as u32,
+                1,
+                1,
+                1,
+                1,
+                ri,
+                rj,
+                &[ai],
+                &[aj],
+                &[1.0],
+                &[1.0],
+                &coords,
+                &charges,
+            );
+            assert_close(&host, &dev, &format!("nuclear li={li} lj={lj}"));
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Genericity evidence: the kernel compiles and runs for F=f32 — an s-s
+    // overlap on CpuRuntime returns a finite positive value. Same shape as
+    // `center_2c2e.rs::test_center_2c2e_kernel_generic_f32`.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn test_one_electron_scalar_kernel_generic_f32() {
+        let client = cpu_client_1e();
+        let exps_i = [1.0_f32];
+        let exps_j = [1.0_f32];
+        let coeff_i = [1.0_f32];
+        let coeff_j = [1.0_f32];
+        let coords = [0.0_f32]; // unused for overlap, must be len>0
+        let charges = [0.0_f32];
+        // overlap s-s: nmax=0, lj_ext=0, g_per_axis=1 → 3 g elements; out_len=1.
+        let g_zero = [0.0_f32; 3];
+        let rys_zero = [0.0_f32; 1];
+        let out_zero = [0.0_f32; 1];
+
+        let exps_i_h = client.create_from_slice(f32::as_bytes(&exps_i));
+        let exps_j_h = client.create_from_slice(f32::as_bytes(&exps_j));
+        let coeff_i_h = client.create_from_slice(f32::as_bytes(&coeff_i));
+        let coeff_j_h = client.create_from_slice(f32::as_bytes(&coeff_j));
+        let coords_h = client.create_from_slice(f32::as_bytes(&coords));
+        let charges_h = client.create_from_slice(f32::as_bytes(&charges));
+        let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
+        let u_h = client.create_from_slice(f32::as_bytes(&rys_zero));
+        let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
+        let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+
+        one_electron_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_j_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coords_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(charges_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(g_h, 3) },
+            unsafe { ArrayArg::from_raw_parts(u_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(w_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
+            0.0_f32, // rix
+            0.0,     // riy
+            0.0,     // riz
+            0.0,     // rjx
+            0.0,     // rjy
+            1.4,     // rjz
+            PIE4 as f32,
+            SQRTPI as f32,
+            std::f64::consts::PI as f32,
+            0,    // li
+            0,    // lj
+            1,    // nprim_i
+            1,    // nprim_j
+            1,    // nctr_i
+            1,    // nctr_j
+            0,    // natm (unused for overlap)
+            0u32, // op_kind = overlap
+            1u32, // nroots
+        );
+
+        let raw = client.read_one_unchecked(out_h);
+        let out = f32::from_bytes(&raw)[0];
+        assert!(
+            out.is_finite(),
+            "f32 1e overlap kernel result must be finite"
+        );
+        assert!(
+            out > 0.0,
+            "s-s 1e overlap f32 result should be positive: {out}"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1566,12 +2707,14 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_general_contraction_s_parity() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple};
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple,
+        };
         use cintx_ops::resolver::Resolver;
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use std::sync::Arc;
 
         // Resolve the spherical-overlap operator id (int1e_ovlp_sph is its own
         // manifest entry; OperatorId::new(0) is the cart variant). This exercises
@@ -1591,8 +2734,10 @@ mod tests {
             let basis = BasisSet::try_new(atoms, all).unwrap();
             let shells = ShellTuple::try_from_iter([sa, sb]).unwrap();
             let opts = ExecutionOptions::default();
-            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-            let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
+            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts)
+                .unwrap();
+            let mut plan =
+                ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
             plan.precision = PrecisionKind::F64;
             let spec = SpecializationKey::from_plan(&plan);
             let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
@@ -1607,24 +2752,81 @@ mod tests {
         let coeffs_c0: Arc<[f64]> = Arc::from(vec![0.6_f64, 0.4].into_boxed_slice());
         let coeffs_c1: Arc<[f64]> = Arc::from(vec![-0.3_f64, 0.9].into_boxed_slice());
 
-        let gc = Arc::new(Shell::try_new(0, 0, 2, 2, 0, Representation::Spheric, exps.clone(), coeffs_gc).unwrap());
-        let c0 = Arc::new(Shell::try_new(0, 0, 2, 1, 0, Representation::Spheric, exps.clone(), coeffs_c0).unwrap());
-        let c1 = Arc::new(Shell::try_new(0, 0, 2, 1, 0, Representation::Spheric, exps, coeffs_c1).unwrap());
+        let gc = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                2,
+                2,
+                0,
+                Representation::Spheric,
+                exps.clone(),
+                coeffs_gc,
+            )
+            .unwrap(),
+        );
+        let c0 = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                2,
+                1,
+                0,
+                Representation::Spheric,
+                exps.clone(),
+                coeffs_c0,
+            )
+            .unwrap(),
+        );
+        let c1 = Arc::new(
+            Shell::try_new(0, 0, 2, 1, 0, Representation::Spheric, exps, coeffs_c1).unwrap(),
+        );
 
         let block = overlap(gc.clone(), gc.clone());
-        assert_eq!(block.len(), 4, "gc s nctr=2 self-overlap must be a 2x2 block, got {}", block.len());
+        assert_eq!(
+            block.len(),
+            4,
+            "gc s nctr=2 self-overlap must be a 2x2 block, got {}",
+            block.len()
+        );
 
         let s00 = overlap(c0.clone(), c0.clone())[0];
         let s01 = overlap(c0.clone(), c1.clone())[0];
         let s11 = overlap(c1.clone(), c1.clone())[0];
 
         // Contraction-major, bra-fastest (di_sph = 2, nsi = 1): block[ci + cj*2].
-        assert!((block[0] - s00).abs() < 1e-12, "S[0,0] {} vs {}", block[0], s00);
-        assert!((block[2] - s01).abs() < 1e-12, "S[0,1] {} vs {}", block[2], s01);
-        assert!((block[1] - s01).abs() < 1e-12, "S[1,0] {} vs {}", block[1], s01);
-        assert!((block[3] - s11).abs() < 1e-12, "S[1,1] {} vs {}", block[3], s11);
-        assert!(block[0] > 0.0 && block[3] > 0.0, "diagonal must be positive (PSD)");
-        assert!((block[1] - block[2]).abs() < 1e-12, "block must be symmetric");
+        assert!(
+            (block[0] - s00).abs() < 1e-12,
+            "S[0,0] {} vs {}",
+            block[0],
+            s00
+        );
+        assert!(
+            (block[2] - s01).abs() < 1e-12,
+            "S[0,1] {} vs {}",
+            block[2],
+            s01
+        );
+        assert!(
+            (block[1] - s01).abs() < 1e-12,
+            "S[1,0] {} vs {}",
+            block[1],
+            s01
+        );
+        assert!(
+            (block[3] - s11).abs() < 1e-12,
+            "S[1,1] {} vs {}",
+            block[3],
+            s11
+        );
+        assert!(
+            block[0] > 0.0 && block[3] > 0.0,
+            "diagonal must be positive (PSD)"
+        );
+        assert!(
+            (block[1] - block[2]).abs() < 1e-12,
+            "block must be symmetric"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1638,12 +2840,14 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_general_contraction_p_parity_contraction_major() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple};
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple,
+        };
         use cintx_ops::resolver::Resolver;
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use std::sync::Arc;
 
         // Resolve the spherical-overlap operator id (int1e_ovlp_sph is its own
         // manifest entry; OperatorId::new(0) is the cart variant). This exercises
@@ -1662,12 +2866,15 @@ mod tests {
                 ]
                 .into_boxed_slice(),
             );
-            let all: Arc<[Arc<Shell>]> = Arc::from(vec![bra.clone(), ket.clone()].into_boxed_slice());
+            let all: Arc<[Arc<Shell>]> =
+                Arc::from(vec![bra.clone(), ket.clone()].into_boxed_slice());
             let basis = BasisSet::try_new(atoms, all).unwrap();
             let shells = ShellTuple::try_from_iter([bra, ket]).unwrap();
             let opts = ExecutionOptions::default();
-            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-            let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
+            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts)
+                .unwrap();
+            let mut plan =
+                ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
             plan.precision = PrecisionKind::F64;
             let spec = SpecializationKey::from_plan(&plan);
             let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
@@ -1682,30 +2889,82 @@ mod tests {
         let p_c0_co: Arc<[f64]> = Arc::from(vec![0.7_f64, 0.3].into_boxed_slice());
         let p_c1_co: Arc<[f64]> = Arc::from(vec![0.2_f64, 0.8].into_boxed_slice());
 
-        let p_gc = Arc::new(Shell::try_new(0, 1, 2, 2, 0, Representation::Spheric, p_exps.clone(), p_gc_co).unwrap());
-        let p_c0 = Arc::new(Shell::try_new(0, 1, 2, 1, 0, Representation::Spheric, p_exps.clone(), p_c0_co).unwrap());
-        let p_c1 = Arc::new(Shell::try_new(0, 1, 2, 1, 0, Representation::Spheric, p_exps, p_c1_co).unwrap());
-        let s_ket = Arc::new(Shell::try_new(
-            1, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![0.9_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-        ).unwrap());
+        let p_gc = Arc::new(
+            Shell::try_new(
+                0,
+                1,
+                2,
+                2,
+                0,
+                Representation::Spheric,
+                p_exps.clone(),
+                p_gc_co,
+            )
+            .unwrap(),
+        );
+        let p_c0 = Arc::new(
+            Shell::try_new(
+                0,
+                1,
+                2,
+                1,
+                0,
+                Representation::Spheric,
+                p_exps.clone(),
+                p_c0_co,
+            )
+            .unwrap(),
+        );
+        let p_c1 = Arc::new(
+            Shell::try_new(0, 1, 2, 1, 0, Representation::Spheric, p_exps, p_c1_co).unwrap(),
+        );
+        let s_ket = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![0.9_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
 
         let block = overlap(p_gc, s_ket.clone()); // 6x1: di_sph=2*3=6, dj=1
-        assert_eq!(block.len(), 6, "gc p nctr=2 vs s must be a 6x1 block, got {}", block.len());
+        assert_eq!(
+            block.len(),
+            6,
+            "gc p nctr=2 vs s must be a 6x1 block, got {}",
+            block.len()
+        );
 
         let seg0 = overlap(p_c0, s_ket.clone()); // 3 components of contraction 0
-        let seg1 = overlap(p_c1, s_ket);         // 3 components of contraction 1
+        let seg1 = overlap(p_c1, s_ket); // 3 components of contraction 1
         assert_eq!(seg0.len(), 3);
         assert_eq!(seg1.len(), 3);
 
         // Contraction-major: rows [0..3) = contraction 0, rows [3..6) = contraction 1.
         for m in 0..3 {
-            assert!((block[m] - seg0[m]).abs() < 1e-12, "ctr0 comp {m}: {} vs {}", block[m], seg0[m]);
-            assert!((block[3 + m] - seg1[m]).abs() < 1e-12, "ctr1 comp {m}: {} vs {}", block[3 + m], seg1[m]);
+            assert!(
+                (block[m] - seg0[m]).abs() < 1e-12,
+                "ctr0 comp {m}: {} vs {}",
+                block[m],
+                seg0[m]
+            );
+            assert!(
+                (block[3 + m] - seg1[m]).abs() < 1e-12,
+                "ctr1 comp {m}: {} vs {}",
+                block[3 + m],
+                seg1[m]
+            );
         }
         // The gc block must NOT be truncated: contraction-1 rows are non-zero.
-        assert!(block[3..6].iter().any(|v| v.abs() > 1e-12), "contraction-1 rows must be populated, not truncated to zero");
+        assert!(
+            block[3..6].iter().any(|v| v.abs() > 1e-12),
+            "contraction-1 rows must be populated, not truncated to zero"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1719,12 +2978,14 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_cross_l_overlap_is_symmetric() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple};
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple,
+        };
         use cintx_ops::resolver::Resolver;
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use std::sync::Arc;
 
         // Integral block for an ORDERED shell pair drawn from a FIXED 2-shell mol
         // (la on atom 0 @ origin, lb on atom 1 @ displaced). `swapped=false` gives
@@ -1743,24 +3004,47 @@ mod tests {
                 ]
                 .into_boxed_slice(),
             );
-            let s_la = Arc::new(Shell::try_new(
-                0, la, 1, 1, 0, Representation::Spheric,
-                Arc::from(vec![0.9_f64].into_boxed_slice()),
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-            ).unwrap());
-            let s_lb = Arc::new(Shell::try_new(
-                1, lb, 1, 1, 0, Representation::Spheric,
-                Arc::from(vec![0.6_f64].into_boxed_slice()),
-                Arc::from(vec![1.0_f64].into_boxed_slice()),
-            ).unwrap());
-            let all: Arc<[Arc<Shell>]> = Arc::from(vec![s_la.clone(), s_lb.clone()].into_boxed_slice());
+            let s_la = Arc::new(
+                Shell::try_new(
+                    0,
+                    la,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.9_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            );
+            let s_lb = Arc::new(
+                Shell::try_new(
+                    1,
+                    lb,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.6_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            );
+            let all: Arc<[Arc<Shell>]> =
+                Arc::from(vec![s_la.clone(), s_lb.clone()].into_boxed_slice());
             let basis = BasisSet::try_new(atoms, all).unwrap();
-            let (bra, ket) = if swapped { (s_lb.clone(), s_la.clone()) } else { (s_la.clone(), s_lb.clone()) };
+            let (bra, ket) = if swapped {
+                (s_lb.clone(), s_la.clone())
+            } else {
+                (s_la.clone(), s_lb.clone())
+            };
             let n = bra.ao_per_shell() * ket.ao_per_shell();
             let shells = ShellTuple::try_from_iter([bra, ket]).unwrap();
             let opts = ExecutionOptions::default();
-            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-            let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
+            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts)
+                .unwrap();
+            let mut plan =
+                ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
             plan.precision = PrecisionKind::F64;
             let spec = SpecializationKey::from_plan(&plan);
             let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
@@ -1796,7 +3080,10 @@ mod tests {
                     "{op_sym} cross-l l=({la},{lb}) not symmetric: max |M_ab - M_ba^T| = {max_asym}"
                 );
                 // Sanity: the block is not all-zero (real integral at this separation).
-                assert!(ab.iter().any(|v| v.abs() > 1e-10), "{op_sym} l=({la},{lb}) block unexpectedly all-zero");
+                assert!(
+                    ab.iter().any(|v| v.abs() > 1e-10),
+                    "{op_sym} l=({la},{lb}) block unexpectedly all-zero"
+                );
             }
         }
     }
@@ -1810,12 +3097,14 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_general_contraction_high_l_cross_block_is_symmetric() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple};
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell, ShellTuple,
+        };
         use cintx_ops::resolver::Resolver;
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use std::sync::Arc;
 
         let op = Resolver::descriptor_by_symbol("int1e_ovlp_sph")
             .expect("int1e_ovlp_sph in manifest")
@@ -1836,16 +3125,47 @@ mod tests {
                 ]
                 .into_boxed_slice(),
             );
-            let d_gc = Arc::new(Shell::try_new(0, 2, 2, 2, 0, Representation::Spheric, d_exps.clone(), d_co.clone()).unwrap());
-            let f_gc = Arc::new(Shell::try_new(1, 3, 2, 2, 0, Representation::Spheric, f_exps.clone(), f_co.clone()).unwrap());
-            let all: Arc<[Arc<Shell>]> = Arc::from(vec![d_gc.clone(), f_gc.clone()].into_boxed_slice());
+            let d_gc = Arc::new(
+                Shell::try_new(
+                    0,
+                    2,
+                    2,
+                    2,
+                    0,
+                    Representation::Spheric,
+                    d_exps.clone(),
+                    d_co.clone(),
+                )
+                .unwrap(),
+            );
+            let f_gc = Arc::new(
+                Shell::try_new(
+                    1,
+                    3,
+                    2,
+                    2,
+                    0,
+                    Representation::Spheric,
+                    f_exps.clone(),
+                    f_co.clone(),
+                )
+                .unwrap(),
+            );
+            let all: Arc<[Arc<Shell>]> =
+                Arc::from(vec![d_gc.clone(), f_gc.clone()].into_boxed_slice());
             let basis = BasisSet::try_new(atoms, all).unwrap();
-            let (bra, ket) = if swapped { (f_gc.clone(), d_gc.clone()) } else { (d_gc.clone(), f_gc.clone()) };
+            let (bra, ket) = if swapped {
+                (f_gc.clone(), d_gc.clone())
+            } else {
+                (d_gc.clone(), f_gc.clone())
+            };
             let n = bra.ao_per_shell() * ket.ao_per_shell();
             let shells = ShellTuple::try_from_iter([bra, ket]).unwrap();
             let opts = ExecutionOptions::default();
-            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-            let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
+            let query = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts)
+                .unwrap();
+            let mut plan =
+                ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &query).unwrap();
             plan.precision = PrecisionKind::F64;
             let spec = SpecializationKey::from_plan(&plan);
             let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
@@ -1869,7 +3189,10 @@ mod tests {
             max_asym < 1e-12,
             "generally-contracted d(nctr=2)-f(nctr=2) cross-block not symmetric: max |Δ| = {max_asym}"
         );
-        assert!(ab.iter().any(|v| v.abs() > 1e-10), "d_gc-f_gc block unexpectedly all-zero");
+        assert!(
+            ab.iter().any(|v| v.abs() > 1e-10),
+            "d_gc-f_gc block unexpectedly all-zero"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1896,7 +3219,11 @@ mod tests {
         let nmax_ps = (li_p as u32) + 0 + 1;
         let g_ps = fill_g_tensor_overlap(&pd, ri, rj, nmax_ps, 0);
         let out_ps = contract_grad_1e_bra(&g_ps, li_p, 0, nmax_ps, ai);
-        assert_eq!(out_ps.len(), 3 * ncart(li_p) * 1, "p-s ipovlp should return 9 components");
+        assert_eq!(
+            out_ps.len(),
+            3 * ncart(li_p) * 1,
+            "p-s ipovlp should return 9 components"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1916,7 +3243,11 @@ mod tests {
         let out1 = contract_grad_1e_bra(&g, 0, 1, nmax, ai);
         let out2 = contract_grad_1e_bra(&g, 0, 1, nmax, ai);
         for (a, b) in out1.iter().zip(out2.iter()) {
-            assert_eq!(a.to_bits(), b.to_bits(), "ipovlp output not bit-identical on two calls");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "ipovlp output not bit-identical on two calls"
+            );
         }
     }
 
@@ -1963,12 +3294,12 @@ mod tests {
     #[cfg(feature = "cpu")]
     #[test]
     fn test_ipovlp_spinor_returns_unsupported() {
-        use std::sync::Arc;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
         use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
         use cintx_ops::resolver::Resolver;
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use std::sync::Arc;
 
         // Use sph op for workspace query (accepted), then set Spinor on the plan.
         let op_sph = Resolver::descriptor_by_symbol("int1e_ipovlp_sph")
@@ -1978,19 +3309,48 @@ mod tests {
         let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
-        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let all_shells: Arc<[Arc<Shell>]> = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
+        let q = query_workspace(
+            op_sph,
+            Representation::Spheric,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
         // Force spinor representation on the plan to exercise the spinor guard.
         plan.representation = Representation::Spinor;
         plan.precision = cintx_core::PrecisionKind::F64;
@@ -2003,7 +3363,8 @@ mod tests {
         let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor ipovlp should return UnsupportedApi, got: {:?}", result
+            "spinor ipovlp should return UnsupportedApi, got: {:?}",
+            result
         );
     }
 
@@ -2043,7 +3404,11 @@ mod tests {
         let out1 = contract_ipkin(&g, li, lj, nmax, ai, aj);
         let out2 = contract_ipkin(&g, li, lj, nmax, ai, aj);
         for (a, b) in out1.iter().zip(out2.iter()) {
-            assert_eq!(a.to_bits(), b.to_bits(), "ipkin output not bit-identical on two calls");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "ipkin output not bit-identical on two calls"
+            );
         }
     }
 
@@ -2068,7 +3433,11 @@ mod tests {
 
         // p,s: 9 elements
         let out_ps = contract_nuclear_grad(&pd, ri, rj, 1, 0, ai, &origins_ss);
-        assert_eq!(out_ps.len(), 3 * ncart(1) * 1, "p-s ipnuc should return 9 components");
+        assert_eq!(
+            out_ps.len(),
+            3 * ncart(1) * 1,
+            "p-s ipnuc should return 9 components"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -2091,7 +3460,11 @@ mod tests {
         let out1 = contract_nuclear_grad(&pd, ri, rj, 0, 1, ai, &origins);
         let out2 = contract_nuclear_grad(&pd, ri, rj, 0, 1, ai, &origins);
         for (a, b) in out1.iter().zip(out2.iter()) {
-            assert_eq!(a.to_bits(), b.to_bits(), "ipnuc output not bit-identical on two calls");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "ipnuc output not bit-identical on two calls"
+            );
         }
     }
 
@@ -2113,13 +3486,19 @@ mod tests {
         let out_b = contract_nuclear_grad(&pd, ri, rj, 0, 0, ai, &[([0.7_f64, 0.3, 0.2], 1.0)]);
 
         // Nonzero output for both.
-        assert!(out_a.iter().any(|v| v.abs() > 1e-12), "iprinv output should be nonzero");
+        assert!(
+            out_a.iter().any(|v| v.abs() > 1e-12),
+            "iprinv output should be nonzero"
+        );
         // Different origins must produce a different result.
         let any_diff = out_a
             .iter()
             .zip(out_b.iter())
             .any(|(a, b)| (a - b).abs() > 1e-10);
-        assert!(any_diff, "different rinv origins must produce different output (origin consumed)");
+        assert!(
+            any_diff,
+            "different rinv origins must produce different output (origin consumed)"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -2130,12 +3509,12 @@ mod tests {
     #[cfg(feature = "cpu")]
     #[test]
     fn test_iprinv_none_origin_returns_typed_error() {
-        use std::sync::Arc;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
         use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
         use cintx_ops::resolver::Resolver;
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use std::sync::Arc;
 
         let op_sph = Resolver::descriptor_by_symbol("int1e_iprinv_sph")
             .expect("int1e_iprinv_sph must be in manifest")
@@ -2144,22 +3523,54 @@ mod tests {
         let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
-        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let all_shells: Arc<[Arc<Shell>]> = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
+        let q = query_workspace(
+            op_sph,
+            Representation::Spheric,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
         // Leave plan.operator_env_params.rinv_orig as None (the defensive case).
         plan.precision = cintx_core::PrecisionKind::F64;
-        assert!(plan.operator_env_params.rinv_orig.is_none(), "test precondition: origin must be None");
+        assert!(
+            plan.operator_env_params.rinv_orig.is_none(),
+            "test precondition: origin must be None"
+        );
 
         let spec = SpecializationKey::from_plan(&plan);
         let cpu_client = resolve_cpu_client().unwrap();
@@ -2168,8 +3579,15 @@ mod tests {
 
         let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
         assert!(
-            matches!(result, Err(cintxRsError::InvalidEnvParam { param: "PTR_RINV_ORIG", .. })),
-            "iprinv with None origin should return InvalidEnvParam, got: {:?}", result
+            matches!(
+                result,
+                Err(cintxRsError::InvalidEnvParam {
+                    param: "PTR_RINV_ORIG",
+                    ..
+                })
+            ),
+            "iprinv with None origin should return InvalidEnvParam, got: {:?}",
+            result
         );
     }
 
@@ -2179,12 +3597,12 @@ mod tests {
     #[cfg(feature = "cpu")]
     #[test]
     fn test_ipnuc_spinor_returns_unsupported() {
-        use std::sync::Arc;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
         use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
         use cintx_ops::resolver::Resolver;
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use std::sync::Arc;
 
         let op_sph = Resolver::descriptor_by_symbol("int1e_ipnuc_sph")
             .expect("int1e_ipnuc_sph must be in manifest")
@@ -2193,19 +3611,48 @@ mod tests {
         let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
-        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let all_shells: Arc<[Arc<Shell>]> = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
+        let q = query_workspace(
+            op_sph,
+            Representation::Spheric,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
         plan.representation = Representation::Spinor;
         plan.precision = cintx_core::PrecisionKind::F64;
 
@@ -2217,7 +3664,8 @@ mod tests {
         let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor ipnuc should return UnsupportedApi, got: {:?}", result
+            "spinor ipnuc should return UnsupportedApi, got: {:?}",
+            result
         );
     }
 
@@ -2228,12 +3676,12 @@ mod tests {
     #[cfg(feature = "cpu")]
     #[test]
     fn test_iprinv_spinor_returns_unsupported() {
-        use std::sync::Arc;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
         use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
         use cintx_ops::resolver::Resolver;
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
-        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use std::sync::Arc;
 
         let op_sph = Resolver::descriptor_by_symbol("int1e_iprinv_sph")
             .expect("int1e_iprinv_sph must be in manifest")
@@ -2242,19 +3690,48 @@ mod tests {
         let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom2 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms: Arc<[Atom]> = Arc::from(vec![atom, atom2].into_boxed_slice());
-        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let all_shells: Arc<[Arc<Shell>]> = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Spheric,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
+        let q = query_workspace(
+            op_sph,
+            Representation::Spheric,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
         plan.representation = Representation::Spinor;
         plan.precision = cintx_core::PrecisionKind::F64;
         // Even with a valid origin set, the spinor guard must fire first.
@@ -2268,7 +3745,8 @@ mod tests {
         let result = launch_one_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor iprinv should return UnsupportedApi, got: {:?}", result
+            "spinor iprinv should return UnsupportedApi, got: {:?}",
+            result
         );
     }
 }
