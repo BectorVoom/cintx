@@ -21,7 +21,7 @@ use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
-use crate::transform::c2spinor::cart_to_spinor_sf_2d;
+use crate::transform::c2spinor::{cart_to_spinor_sf_2d, spinor_len};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -2506,15 +2506,6 @@ fn launch_one_electron_typed<F: CintFloat>(
         });
     }
 
-    // Spinor gradient: not supported (Risk R5 / D-03).
-    if (is_ipovlp || is_ipkin || is_ipnuc || is_iprinv)
-        && plan.representation == Representation::Spinor
-    {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: format!("spinor int1e gradient '{}' is not supported", op_name),
-        });
-    }
-
     // Output sizes
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -2687,8 +2678,40 @@ fn launch_one_electron_typed<F: CintFloat>(
                 }
             }
             Representation::Spinor => {
-                // Already rejected above.
-                unreachable!("spinor gradient rejected earlier")
+                // Spin-free cart→spinor transform applied PER COMPONENT, mirroring the
+                // SCALAR spinor 1e path (one_electron.rs ~line 2857). The 3-component
+                // Cartesian gradient is already on-device; the c2s_sf_1e analogue stays
+                // host-side per project convention. General contraction (nctr>1) is not
+                // wired for the spinor transform — same guard as the scalar spinor path.
+                if n_ctr_i != 1 || n_ctr_j != 1 {
+                    return Err(cintxRsError::UnsupportedApi {
+                        requested: "spinor 1e gradient with general contraction (nctr>1)"
+                            .to_owned(),
+                    });
+                }
+                // di/dj are the spinor component counts; each spinor block is
+                // di*dj*2 interleaved-complex F elements (the per-component staging stride).
+                let di = spinor_len(li, shell_i.kappa as i32);
+                let dj = spinor_len(lj, shell_j.kappa as i32);
+                let spinor_block = di * dj * 2;
+                // nctr=1 → cart pair base is 0, total_len = 3 * block_len.
+                for comp in 0..3usize {
+                    let src_base = comp * block_len;
+                    let block = &cart_3comp[src_base..src_base + block_len];
+                    let staging_comp_base = comp * spinor_block;
+                    // Each per-component cart block is layout-identical to the scalar
+                    // single block (verified: scalar/grad arms feed cart_to_sph_1e
+                    // identically), so we pass it to cart_to_spinor_sf_2d exactly as
+                    // the scalar path passes its single block.
+                    cart_to_spinor_sf_2d::<F>(
+                        &mut staging[staging_comp_base..staging_comp_base + spinor_block],
+                        block,
+                        li,
+                        shell_i.kappa,
+                        lj,
+                        shell_j.kappa,
+                    )?;
+                }
             }
         }
 
