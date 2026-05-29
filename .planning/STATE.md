@@ -29,7 +29,7 @@ Phase: 23
 Plan: Not started
 Status: Executing Phase 22
 Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
-Last activity: 2026-05-29
+Last activity: 2026-05-29 - Completed quick task 260529-imi: port scalar 1e operators to CubeCL device kernel (rocm oracle mismatch_count=0)
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -319,6 +319,7 @@ None yet.
 | 260529-gbf | refactor ecp.rs to a generic-float CubeCL #[cube] device kernel (Type-1 angular splice) + rocm random oracle test | 2026-05-29 | 55b4a88 | [260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge](./quick/260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge/) |
 | 260529-hin | port the ECP Type-2 two-dgemm angular splice to a generic-float CubeCL #[cube] device kernel + rocm oracle | 2026-05-29 | d3405f4 | [260529-hin-port-the-ecp-type-2-two-dgemm-angular-sp](./quick/260529-hin-port-the-ecp-type-2-two-dgemm-angular-sp/) |
 | 260529-i2q | refactor f12.rs base Cartesian contraction to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | 45a4a17 | [260529-i2q-refactor-f12-rs-to-cubecl-device-kernel-](./quick/260529-i2q-refactor-f12-rs-to-cubecl-device-kernel-/) |
+| 260529-imi | refactor one_electron.rs scalar operators (ovlp/kin/nuc) to a generic-float CubeCL #[cube] device kernel + rocm random oracle test (mismatch_count=0, 48 cases) | 2026-05-29 | 23eb85d | [260529-imi-refactor-one-electron-rs-to-cubecl-kerne](./quick/260529-imi-refactor-one-electron-rs-to-cubecl-kerne/) |
 
 ## Session Continuity
 
