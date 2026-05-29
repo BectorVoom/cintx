@@ -40,6 +40,15 @@ pub const BAS_SLOTS: usize = 8;
 /// incorrect results for 2e+ integrals that read PTR_RANGE_OMEGA or PTR_EXPCUTOFF.
 pub const PTR_ENV_START: usize = 20;
 
+/// Index range in the libcint env array for the common (gauge) origin (x, y, z).
+///
+/// libcint defines `PTR_COMMON_ORIG = 1` (three consecutive slots 1, 2, 3).
+/// Raw callers set `env[1..4] = [x, y, z]` (in Bohr) as the gauge origin for
+/// moment / GIAO families. Unset (zero) reads as the default origin `[0,0,0]`;
+/// consumers use `common_orig.unwrap_or([0.0; 3])`. This constant is the start
+/// index; the origin occupies `PTR_COMMON_ORIG`, `+1`, `+2`.
+pub const PTR_COMMON_ORIG: usize = 1;
+
 /// Index range in the libcint env array for the rinv origin (x, y, z).
 ///
 /// libcint defines `PTR_RINV_ORIG = 4` (three consecutive slots 4, 5, 6).
@@ -613,6 +622,19 @@ pub unsafe fn eval_raw(
             &plan.operator_env_params,
         )?;
     }
+    // Phase 22 FND-01: extract common_orig (gauge origin) from env[PTR_COMMON_ORIG..PTR_COMMON_ORIG+3].
+    // D-02: operator-AGNOSTIC — read unconditionally; no operator-name guard exists yet (moments/GIAO
+    // add their own dispatch in Phases 24/26). Only the bounds guard (T-22-01) prevents OOB indexing.
+    if env.len() >= PTR_COMMON_ORIG + 3 {
+        let x = env[PTR_COMMON_ORIG];
+        let y = env[PTR_COMMON_ORIG + 1];
+        let z = env[PTR_COMMON_ORIG + 2];
+        plan.operator_env_params.common_orig = Some([x, y, z]);
+    }
+    cintx_runtime::validator::validate_common_orig_env_params(
+        plan.descriptor.operator_name(),
+        &plan.operator_env_params,
+    )?;
     // Phase 19 D-05: ECP dispatch guard — reject before kernel launch when
     // env[AS_NECPBAS] is missing/zero/non-finite. Mirrors the F12 zeta gate
     // above (same insertion point, same error variant). Plan 04 wires the

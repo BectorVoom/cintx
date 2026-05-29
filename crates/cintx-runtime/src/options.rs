@@ -120,6 +120,11 @@ pub struct ExecutionOptions {
     /// Must be present for any operator whose name contains "iprinv"
     /// (validated by `validate_rinv_orig_env_params` before kernel launch).
     pub rinv_orig: Option<[f64; 3]>,
+    /// Common (gauge) origin (env[1..3] in the raw API), used by moment/GIAO families.
+    /// When set, populates `operator_env_params.common_orig` on the `ExecutionPlan`.
+    /// Unset (None) defaults to [0,0,0] (libcint reads unset env as zero); finiteness-
+    /// validated by `validate_common_orig_env_params`, NOT presence-validated (D-01).
+    pub common_orig: Option<[f64; 3]>,
     /// AO symmetry packing requested by the caller. Phase 18 implements `S1` only;
     /// every other variant returns `FacadeError::UnsupportedAoSymmetry` from
     /// `SessionRequest::query_workspace`. `None` is the default and is treated as

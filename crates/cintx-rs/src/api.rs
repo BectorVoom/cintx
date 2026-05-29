@@ -194,6 +194,10 @@ impl<'basis> SessionQuery<'basis> {
         if let Some(origin) = self.request.options().rinv_orig {
             plan.operator_env_params.rinv_orig = Some(origin);
         }
+        // Propagate common_orig from ExecutionOptions to operator_env_params (safe API path, Plan 22-01).
+        if let Some(origin) = self.request.options().common_orig {
+            plan.operator_env_params.common_orig = Some(origin);
+        }
 
         enforce_safe_facade_policy_gate(
             plan.descriptor,

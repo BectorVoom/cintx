@@ -104,6 +104,16 @@ impl<'basis> SessionBuilder<'basis> {
         self
     }
 
+    /// Set the common (gauge) origin (env[1..3] in the raw API) for moment/GIAO families.
+    ///
+    /// When set, `operator_env_params.common_orig` is populated on the `ExecutionPlan`.
+    /// Unset defaults to `[0,0,0]` (libcint reads unset env as zero); the value is
+    /// finiteness-validated (NaN/inf rejected) by `validate_common_orig_env_params`.
+    pub fn with_common_origin(mut self, origin: [f64; 3]) -> Self {
+        self.options.common_orig = Some(origin);
+        self
+    }
+
     pub fn build(self) -> SessionRequest<'basis> {
         SessionRequest::new(
             self.operator,
