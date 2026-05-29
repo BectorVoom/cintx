@@ -1394,6 +1394,127 @@ pub fn vendor_int1e_nuc_spinor(
     }
 }
 
+// ---- 1e spinor GRADIENT integral vendor FFI wrappers ----
+// These are 3-component gradient operators. Output buffer layout:
+//   `3 * ni_sp * nj_sp * 2` f64 values — 3 Cartesian gradient components,
+//   each an interleaved real/imaginary spinor block, component-leading
+//   (out[comp * ni_sp * nj_sp * 2 + ...]). ni_sp = CINTcgto_spinor(shls[0]),
+//   nj_sp = CINTcgto_spinor(shls[1]).
+
+/// Evaluate int1e_ipovlp_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * 2` f64 elements
+/// (3 gradient components × interleaved-complex spinor block).
+pub fn vendor_int1e_ipovlp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkin_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_ipkin_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkin_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnuc_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_ipnuc_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnuc_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_iprinv_spinor for a single shell pair using vendored libcint.
+///
+/// The rinv origin must be set in `env[PTR_RINV_ORIG..+3]` by the caller.
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_iprinv_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_iprinv_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 // ---- Multi-center spinor integral vendor FFI wrappers ----
 // Output buffer layout: product of spinor component counts × 2 f64 values
 // (interleaved re/im pairs), where each nX_sp = CINTcgto_spinor(shls[X]).
