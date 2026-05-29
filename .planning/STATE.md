@@ -1,16 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.4
-milestone_name: Full libcint 6.1.3 Family Parity
-status: planning
-last_updated: "2026-05-29T00:00:00.000Z"
-last_activity: 2026-05-29
+milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
+status: executing
+stopped_at: Completed 21-03-PLAN.md
+last_updated: "2026-05-29T04:07:04.302Z"
+last_activity: 2026-05-29 -- Phase 22 planning complete
 progress:
-  total_phases: 10
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 21
+  completed_phases: 11
+  total_plans: 61
+  completed_plans: 59
+  percent: 97
 ---
 
 # Project State
@@ -26,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 Phase: 22 — Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG)
 Plan: — (not yet planned)
-Status: Context gathered — ready for /gsd:plan-phase 22
+Status: Ready to execute
 Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
-Last activity: 2026-05-29 — Completed quick task 260529-hin: ecp.rs Type-2 (Projected) two-dgemm angular splice ported into a generic-float CubeCL #[cube(launch)] device kernel (ecp_type2_angular_kernel<F: Float> + run_ecp_type2_angular_device::<R> + run_ecp_type2_splice_on_backend) routed through the resolved backend (rocm=HipRuntime), completing the ECP GPU port begun in 260529-gbf (Type-1). No device-local Array: each host dgemm `buf` entry is recomputed inline preserving f64 summation order. The adaptive Gauss-Chebyshev radial machinery + Bessel/Taylor special functions remain host-side marshaling. f64 byte-identity preserved (device-vs-host max-abs-diff 0.0; vendor CPU parity 8/8 green at atol=1e-12/rtol=0.0); `let _ = backend` removed from ecp_type2_cart; gradient drivers device-backed transitively. rocm random int1e_ecp_sph oracle: mismatch_count=0 across 48 cases; Type-2 device path proven exercised (Cu/LANL2DZ Projected channels lc∈{0,1}; temporary trace observed 12,288 Type-2 dispatches, since removed) on the AMD gfx1152 GPU
+Last activity: 2026-05-29 -- Phase 22 planning complete
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
