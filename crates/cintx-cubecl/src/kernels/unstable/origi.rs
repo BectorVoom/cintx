@@ -27,7 +27,8 @@
 use super::shared::{SQRTPI, cart_comps, common_fac_sp, make_exec_stats};
 use crate::backend::ResolvedBackend;
 use crate::math::obara_saika::{hrr_step_host, vrr_step_host};
-use crate::math::pdata::{PairData, compute_pdata_host};
+use crate::math::pdata::PairData;
+use crate::math::pdata::compute_pdata_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use cintx_core::{Representation, cintxRsError};
