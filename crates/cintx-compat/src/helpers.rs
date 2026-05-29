@@ -251,10 +251,12 @@ mod tests {
     }
 
     #[test]
-    fn helper_offsets_write_prefix_sums() {
+    fn helper_offsets_match_libcint_i_lt_nbas() {
         let bas = sample_bas();
         let mut offsets = vec![0; 3];
         CINTshells_cart_offset(&mut offsets, &bas, 2).unwrap();
-        assert_eq!(offsets, vec![0, 1, 7]);
+        // libcint cint_bas.c shells_cgto_offset uses i<nbas: writes ao_loc[0..nbas-1] only; ao_loc[nbas] (index 2) stays at its zero init. Total (7) lives in CINTtot_cgto_cart.
+        assert_eq!(offsets, vec![0, 1, 0]);
+        assert_eq!(CINTtot_cgto_cart(&bas, 2).unwrap(), 7);
     }
 }
