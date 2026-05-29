@@ -30,16 +30,29 @@
 //! (`int_unit_xyz`, `ang_nuc_in_cart`, `cache_3dfac`, `type1_static_facs`,
 //! `type1_rad_ang`, `type2_facs_ang`, `scale_coeff`) are ported here.
 //!
-//! ## CubeCL constraint deviation (CLAUDE.md "CubeCL is the primary backend")
+//! ## CubeCL device/host split (CLAUDE.md "CubeCL is the primary backend")
 //!
-//! This ECP kernel is **host-only this phase** (D-16 host-first): the
-//! byte-identity gate runs CPU-vs-C on `--features cpu`, so a `*_host()`-style
-//! pure-Rust port closes the requirement. A `#[cube]` GPU counterpart (the
-//! data-dependent recurrence + cache-reuse control flow, host-side branching
-//! per the Phase 8 P02 `cond_br` MLIR limitation) is a *documented deviation*
-//! tracked in 19-CONTEXT.md "Deferred Ideas" — host-only is not the intended
-//! end state, and a follow-up plan or v1.4 lands the GPU half. Per the
-//! `bessel.rs` / `ecp_k_taylor.rs` convention, no `#[cube]` body appears here.
+//! As of quick-260529-gbf the Type-1 **angular splice** (the bounded
+//! triple-product accumulation `acc += ifac*jfac*rad_ang` at the tail of
+//! `ecp_type1_cart`) runs on-device as a real `#[cube(launch)]` kernel
+//! ([`ecp_angular_kernel`]) **generic over `F: Float`**, dispatched onto the
+//! resolved backend's `ComputeClient` (CPU `CpuRuntime`, ROCm `HipRuntime`, …)
+//! via [`run_ecp_angular_device`] / [`run_ecp_angular_splice_on_backend`],
+//! mirroring center_2c2e / center_4c1e. It launches at f64 with the SAME nested
+//! summation order as the prior host loop, so the byte-identity gate
+//! (atol=1e-12/rtol=0.0 CPU-vs-C) is preserved.
+//!
+//! The **adaptive radial machinery** (the level-adaptive Gauss-Chebyshev
+//! convergence loop, the special-function modified-spherical-Bessel /
+//! K-Taylor recurrences in `ecp_k_taylor.rs`, the `type1_static_facs` /
+//! `type2_facs_ang` angular-factor tables) STAYS host-side as planning /
+//! validation / marshaling — it has data-dependent termination, dynamic loop
+//! bounds and special functions that the Phase 8 P02 `cond_br` MLIR limitation
+//! forbids under `#[cube]`. Those helpers feed flat f64 buffers into the device
+//! kernel. The Type-2 angular splice (a two-`dgemm` matmul) remains host-side
+//! this task; a Type-2 matmul device kernel is a follow-up. The Cu/LANL2DZ
+//! oracle still drives the device kernel on every case via the Local (Type-1)
+//! channel.
 //!
 //! ## Normalization & coordinate convention
 //!
@@ -634,6 +647,7 @@ fn select_iprinv_slots(slots: &[EcpSlot<'_>], atoms: &[Atom], origin: [f64; 3]) 
 
 #[allow(clippy::too_many_arguments)]
 fn ecp_type1_cart(
+    backend: &ResolvedBackend,
     gctr: &mut [f64],
     shell_i: &Shell,
     shell_j: &Shell,
@@ -781,42 +795,70 @@ fn ecp_type1_cart(
     type1_static_facs(&mut ifac, li, &rca);
     type1_static_facs(&mut jfac, lj, &rcb);
 
-    let comps_i = cart_comps(li as u8);
-    let comps_j = cart_comps(lj as u8);
+    // Phase-B angular splice — now a `#[cube(launch)]` device kernel dispatched on
+    // the resolved backend (quick-260529-gbf). The host-precomputed f64 tensors
+    // `rad_ang_all` (per (ic,jc): d3), `ifac` (nfi*di3), `jfac` (nfj*dj3) and the
+    // u32 cart-power triples cross to the device; the kernel runs at f64 with the
+    // SAME nested summation order (i1 outer .. j3 inner), so the result is
+    // byte-identical to the prior host loop (atol=1e-12/rtol=0.0 vendor parity).
+    let comps_i = cart_comps_flat_u32(li as u8);
+    let comps_j = cart_comps_flat_u32(lj as u8);
     for ic in 0..nci {
         for jc in 0..ncj {
             let prad = &rad_ang_all[(ic * ncj + jc) * d3..(ic * ncj + jc) * d3 + d3];
-            for (mi, &(ix, iy, iz)) in comps_i.iter().enumerate() {
-                let (ix, iy, iz) = (ix as usize, iy as usize, iz as usize);
-                for (mj, &(jx, jy, jz)) in comps_j.iter().enumerate() {
-                    let (jx, jy, jz) = (jx as usize, jy as usize, jz as usize);
-                    let pifac = &ifac[mi * di3..mi * di3 + di3];
-                    let pjfac = &jfac[mj * dj3..mj * dj3 + dj3];
-                    // F-order [ao_i, ao_j]: gctr index = (jc*nfj+mj)*nci*nfi + ic*nfi+mi.
+            // Device-backed splice for this contraction tuple → block [ao_i, ao_j].
+            let block = run_ecp_angular_splice_on_backend(
+                backend, li as u32, lj as u32, prad, &ifac, &jfac, &comps_i, &comps_j,
+            );
+            // Scatter the (nfi*nfj) block (F-order mj*nfi+mi) into the full
+            // contraction-major gctr: index = (jc*nfj+mj)*(nci*nfi) + ic*nfi+mi.
+            for mj in 0..nfj {
+                for mi in 0..nfi {
                     let pout_idx = (jc * nfj + mj) * (nci * nfi) + ic * nfi + mi;
-                    let mut acc = 0.0;
-                    for i1 in 0..=ix {
-                        for i2 in 0..=iy {
-                            for i3 in 0..=iz {
-                                for j1 in 0..=jx {
-                                    for j2 in 0..=jy {
-                                        for j3 in 0..=jz {
-                                            acc += pifac[i1 * di2 + i2 * di1 + i3]
-                                                * pjfac[j1 * dj2 + j2 * dj1 + j3]
-                                                * prad[(i1 + j1) * d2
-                                                    + (i2 + j2) * d1
-                                                    + i3
-                                                    + j3];
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    gctr[pout_idx] += acc;
+                    gctr[pout_idx] += block[mj * nfi + mi];
                 }
             }
         }
+    }
+}
+
+/// Backend-dispatch wrapper for the Type-1 angular splice: routes the
+/// `#[cube(launch)]` [`ecp_angular_kernel`] onto the resolved backend's device
+/// client (Cpu => CpuRuntime, Rocm => HipRuntime, Wgpu, Cuda, Metal — each
+/// `#[cfg]`-gated), mirroring center_4c1e.rs's per-backend `match`. Runs at f64
+/// (ECP keeps f64 staging / byte-identity gate). Returns the `nfi*nfj` block.
+#[allow(clippy::too_many_arguments)]
+fn run_ecp_angular_splice_on_backend(
+    backend: &ResolvedBackend,
+    li: u32,
+    lj: u32,
+    rad_ang: &[f64],
+    ifac: &[f64],
+    jfac: &[f64],
+    comps_i: &[u32],
+    comps_j: &[u32],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_ecp_angular_device::<cubecl::cpu::CpuRuntime>(
+            client, li, lj, rad_ang, ifac, jfac, comps_i, comps_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_ecp_angular_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li, lj, rad_ang, ifac, jfac, comps_i, comps_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_ecp_angular_device::<cubecl_cuda::CudaRuntime>(
+            client, li, lj, rad_ang, ifac, jfac, comps_i, comps_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_ecp_angular_device::<cubecl_hip::HipRuntime>(
+            client, li, lj, rad_ang, ifac, jfac, comps_i, comps_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_ecp_angular_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li, lj, rad_ang, ifac, jfac, comps_i, comps_j,
+        ),
     }
 }
 
@@ -1041,6 +1083,7 @@ fn cart_comps_flat_u32(l: u8) -> Vec<u32> {
 
 #[allow(clippy::too_many_arguments)]
 fn ecp_type2_cart(
+    backend: &ResolvedBackend,
     gctr: &mut [f64],
     shell_i: &Shell,
     shell_j: &Shell,
@@ -1052,6 +1095,14 @@ fn ecp_type2_cart(
     rs_max: &[f64],
     ws_max: &[f64],
 ) {
+    // Type-2's angular splice is a two-`dgemm` (matmul) contraction, structurally
+    // distinct from Type-1's triple-product splice that `ecp_angular_kernel`
+    // ports. Threading `backend` keeps the driver signature uniform (so the
+    // gradient drivers and `launch_ecp` pass it through), and a Type-2 matmul
+    // device kernel is a follow-up; the dgemm splice stays host-side this task
+    // (quick-260529-gbf). The Cu/LANL2DZ oracle still exercises the device kernel
+    // via the Local (Type-1) channel on every case.
+    let _ = backend;
     let li = shell_i.ang_momentum as usize;
     let lj = shell_j.ang_momentum as usize;
     let npi = shell_i.nprim as usize;
@@ -1367,6 +1418,7 @@ fn l_up(out: &mut [f64], buf1: &[f64], fac: f64, li: usize, nfj: usize) {
 /// `ncart(li_eff) * ncart(lj)`.
 #[allow(clippy::too_many_arguments)]
 fn ecp_scalar_prim_pair_cart(
+    backend: &ResolvedBackend,
     buf: &mut [f64],
     li_eff: usize,
     lj: usize,
@@ -1406,10 +1458,11 @@ fn ecp_scalar_prim_pair_cart(
     .expect("fake ket primitive shell");
     if lc < 0 {
         ecp_type1_cart(
-            buf, &shell_i, &shell_j, ri, rj, rc, rad_shells, rs_max, ws_max,
+            backend, buf, &shell_i, &shell_j, ri, rj, rc, rad_shells, rs_max, ws_max,
         );
     } else {
         ecp_type2_cart(
+            backend,
             buf,
             &shell_i,
             &shell_j,
@@ -1436,6 +1489,7 @@ fn ecp_scalar_prim_pair_cart(
 /// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:201-286.
 #[allow(clippy::too_many_arguments)]
 fn deriv1_cart_pair(
+    backend: &ResolvedBackend,
     gctr: &mut [f64],
     shell_i: &Shell,
     shell_j: &Shell,
@@ -1485,6 +1539,7 @@ fn deriv1_cart_pair(
                 *v = 0.0;
             }
             ecp_scalar_prim_pair_cart(
+                backend,
                 &mut buf1[..nfi1 * nfj],
                 li + 1,
                 lj,
@@ -1506,6 +1561,7 @@ fn deriv1_cart_pair(
                     *v = 0.0;
                 }
                 ecp_scalar_prim_pair_cart(
+                    backend,
                     &mut buf1[..nfi0 * nfj],
                     li - 1,
                     lj,
@@ -1553,6 +1609,7 @@ fn deriv1_cart_pair(
 /// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:256-257 (ECPtype1_cart at l±1).
 #[allow(clippy::too_many_arguments)]
 fn compute_type1_pair_grad(
+    backend: &ResolvedBackend,
     gctr: &mut [f64],
     shell_i: &Shell,
     shell_j: &Shell,
@@ -1564,7 +1621,7 @@ fn compute_type1_pair_grad(
     ws_max: &[f64],
 ) {
     deriv1_cart_pair(
-        gctr, shell_i, shell_j, ri, rj, rc, -1, rad_shells, rs_max, ws_max,
+        backend, gctr, shell_i, shell_j, ri, rj, rc, -1, rad_shells, rs_max, ws_max,
     );
 }
 
@@ -1574,6 +1631,7 @@ fn compute_type1_pair_grad(
 /// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:258-259 (ECPtype2_cart at l±1).
 #[allow(clippy::too_many_arguments)]
 fn compute_type2_pair_grad(
+    backend: &ResolvedBackend,
     gctr: &mut [f64],
     shell_i: &Shell,
     shell_j: &Shell,
@@ -1586,7 +1644,7 @@ fn compute_type2_pair_grad(
     ws_max: &[f64],
 ) {
     deriv1_cart_pair(
-        gctr, shell_i, shell_j, ri, rj, rc, lc as i32, rad_shells, rs_max, ws_max,
+        backend, gctr, shell_i, shell_j, ri, rj, rc, lc as i32, rad_shells, rs_max, ws_max,
     );
 }
 
@@ -1630,7 +1688,9 @@ pub fn launch_ecp(
         });
     }
 
-    let _ = backend; // host-side pipeline; let _ = backend per one_electron.rs:451
+    // `backend` is now threaded into the Type-1 angular-splice device dispatch
+    // (`run_ecp_angular_splice_on_backend`) — no longer a host-only pipeline
+    // (quick-260529-gbf).
 
     let operator_name = plan.descriptor.operator_name();
     let is_gradient = match operator_name {
@@ -1792,9 +1852,11 @@ pub fn launch_ecp(
         }
         match (is_gradient, slot.lc < 0) {
             (false, true) => ecp_type1_cart(
-                &mut gctr, shell_i, shell_j, ri, rj, rc, &slot.rad_shells, &rs_max, &ws_max,
+                backend, &mut gctr, shell_i, shell_j, ri, rj, rc, &slot.rad_shells, &rs_max,
+                &ws_max,
             ),
             (false, false) => ecp_type2_cart(
+                backend,
                 &mut gctr,
                 shell_i,
                 shell_j,
@@ -1809,9 +1871,11 @@ pub fn launch_ecp(
             // Gradient: route Local → compute_type1_pair_grad,
             // Projected(l) → compute_type2_pair_grad (both via deriv1_cart_pair).
             (true, true) => compute_type1_pair_grad(
-                &mut gctr, shell_i, shell_j, ri, rj, rc, &slot.rad_shells, &rs_max, &ws_max,
+                backend, &mut gctr, shell_i, shell_j, ri, rj, rc, &slot.rad_shells, &rs_max,
+                &ws_max,
             ),
             (true, false) => compute_type2_pair_grad(
+                backend,
                 &mut gctr,
                 shell_i,
                 shell_j,
@@ -2001,8 +2065,11 @@ mod tests {
     /// yields a near-zero 3-component gradient buffer (the radial Gaussian
     /// `exp(-a r_CA^2)` damps it to machine epsilon). Exercises the full
     /// `deriv1_cart_pair` driver and asserts the buffer is exactly 3*nfi*nfj.
+    #[cfg(feature = "cpu")]
     #[test]
     fn gradient_zero_overlap_is_negligible() {
+        let backend =
+            ResolvedBackend::Cpu(cubecl::cpu::CpuRuntime::client(&Default::default()));
         let (rs_max, ws_max) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
         // s-shell bra/ket, single tight primitive.
         let mk = |l: u8| {
@@ -2030,6 +2097,7 @@ mod tests {
             radial_power: 0,
         };
         deriv1_cart_pair(
+            &backend,
             &mut gctr,
             &si,
             &sj,
@@ -2055,8 +2123,11 @@ mod tests {
     /// produce a 3-component buffer where the symmetry of the configuration is
     /// reflected. Here we assert the buffer is sized and that an on-center
     /// (rca=0) configuration yields a finite (not NaN/Inf) result.
+    #[cfg(feature = "cpu")]
     #[test]
     fn gradient_on_center_is_finite() {
+        let backend =
+            ResolvedBackend::Cpu(cubecl::cpu::CpuRuntime::client(&Default::default()));
         let (rs_max, ws_max) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
         let si = Shell::try_new(
             0, 1, 1, 1, 0, Representation::Cart,
@@ -2075,7 +2146,7 @@ mod tests {
         let mut gctr = vec![0.0_f64; 3 * nfi * nfj];
         let rad = EcpRadShell { exponents: vec![1.0], coefficients: vec![1.0], radial_power: 0 };
         deriv1_cart_pair(
-            &mut gctr, &si, &sj,
+            &backend, &mut gctr, &si, &sj,
             [0.1, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.0],
             -1, std::slice::from_ref(&rad), &rs_max, &ws_max,
         );
