@@ -1687,4 +1687,289 @@ mod tests {
             _ => panic!("Expected UnsupportedApi error"),
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Device kernel cross-check: the CubeCL kernel (on CpuRuntime, f64) must
+    // reproduce the host `fill_4c1e_g_tensor` + branch-selected `hrr_*_4d` +
+    // `contract_4c1e_cart` reference for a single primitive quartet.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[cfg(feature = "cpu")]
+    mod device_cross_check {
+        use super::super::*;
+
+        fn cpu_client() -> ComputeClient<cubecl::cpu::CpuRuntime> {
+            cubecl::cpu::CpuRuntime::client(&Default::default())
+        }
+
+        /// Host reference: single-primitive single-contraction shell quartet,
+        /// reproducing exactly the device kernel's per-primitive arithmetic.
+        #[allow(clippy::too_many_arguments)]
+        fn host_cart_4c1e(
+            li: u8,
+            lj: u8,
+            lk: u8,
+            ll: u8,
+            ai: f64,
+            aj: f64,
+            ak: f64,
+            al: f64,
+            ri: [f64; 3],
+            rj: [f64; 3],
+            rk: [f64; 3],
+            rl: [f64; 3],
+            common_factor: f64,
+        ) -> Vec<f64> {
+            let shape = build_4c1e_shape(li as usize, lj as usize, lk as usize, ll as usize);
+
+            let aij = ai + aj;
+            let akl = ak + al;
+            let aijkl = aij + akl;
+
+            let rij = [
+                (ai * ri[0] + aj * rj[0]) / aij,
+                (ai * ri[1] + aj * rj[1]) / aij,
+                (ai * ri[2] + aj * rj[2]) / aij,
+            ];
+            let rkl = [
+                (ak * rk[0] + al * rl[0]) / akl,
+                (ak * rk[1] + al * rl[1]) / akl,
+                (ak * rk[2] + al * rl[2]) / akl,
+            ];
+
+            let dx_ij = ri[0] - rj[0];
+            let dy_ij = ri[1] - rj[1];
+            let dz_ij = ri[2] - rj[2];
+            let rr_ij = dx_ij * dx_ij + dy_ij * dy_ij + dz_ij * dz_ij;
+            let fac_ij = f64::exp(-ai * aj / aij * rr_ij);
+
+            let dx_kl = rk[0] - rl[0];
+            let dy_kl = rk[1] - rl[1];
+            let dz_kl = rk[2] - rl[2];
+            let rr_kl = dx_kl * dx_kl + dy_kl * dy_kl + dz_kl * dz_kl;
+            let fac_kl = f64::exp(-ak * al / akl * rr_kl);
+
+            let a0 = aij * akl / aijkl;
+            let dx_ijkl = rij[0] - rkl[0];
+            let dy_ijkl = rij[1] - rkl[1];
+            let dz_ijkl = rij[2] - rkl[2];
+            let rr_ijkl = dx_ijkl * dx_ijkl + dy_ijkl * dy_ijkl + dz_ijkl * dz_ijkl;
+            let fac_ijkl = f64::exp(-a0 * rr_ijkl);
+
+            let quartet_fac = common_factor * fac_ij * fac_kl * fac_ijkl;
+
+            let mut g = vec![0.0_f64; 3 * shape.g_size];
+            fill_4c1e_g_tensor(
+                &mut g, &shape, ri, rj, rk, rl, rij, rkl, aij, akl, quartet_fac,
+            );
+
+            let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+            let rkrl = [rk[0] - rl[0], rk[1] - rl[1], rk[2] - rl[2]];
+
+            if shape.kbase {
+                if shape.ibase {
+                    hrr_ik2d_4d(&mut g, &shape, rirj, rkrl);
+                } else {
+                    hrr_kj2d_4d(&mut g, &shape, rirj, rkrl);
+                }
+            } else if shape.ibase {
+                hrr_il2d_4d(&mut g, &shape, rirj, rkrl);
+            } else {
+                hrr_lj2d_4d(&mut g, &shape, rirj, rkrl);
+            }
+
+            contract_4c1e_cart(&g, &shape, li, lj, lk, ll)
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn assert_device_matches_host(
+            li: u8,
+            lj: u8,
+            lk: u8,
+            ll: u8,
+            ai: f64,
+            aj: f64,
+            ak: f64,
+            al: f64,
+        ) {
+            // Distinct, spread-out centers so the cross-pair exponential does
+            // not underflow to all-zeros.
+            let ri = [0.0_f64, 0.0, 0.0];
+            let rj = [0.7_f64, -0.4, 0.2];
+            let rk = [-0.5_f64, 0.9, 0.6];
+            let rl = [0.3_f64, 0.5, -0.8];
+            let common_factor = SQRTPI
+                * std::f64::consts::PI
+                * common_fac_sp(li)
+                * common_fac_sp(lj)
+                * common_fac_sp(lk)
+                * common_fac_sp(ll);
+
+            let host = host_cart_4c1e(
+                li, lj, lk, ll, ai, aj, ak, al, ri, rj, rk, rl, common_factor,
+            );
+            let dev = run_4c1e_device::<cubecl::cpu::CpuRuntime>(
+                &cpu_client(),
+                li as u32,
+                lj as u32,
+                lk as u32,
+                ll as u32,
+                1,
+                1,
+                1,
+                1,
+                ri,
+                rj,
+                rk,
+                rl,
+                common_factor,
+                &[ai],
+                &[aj],
+                &[ak],
+                &[al],
+                &[1.0],
+                &[1.0],
+                &[1.0],
+                &[1.0],
+            );
+
+            assert_eq!(
+                host.len(),
+                dev.len(),
+                "length mismatch for li={li} lj={lj} lk={lk} ll={ll}"
+            );
+            let mut any_nonzero = false;
+            for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
+                if h.abs() > 1e-18 {
+                    any_nonzero = true;
+                }
+                let diff = (h - d).abs();
+                let thr = 1e-12 + 1e-10 * h.abs();
+                assert!(
+                    diff <= thr,
+                    "device/host mismatch li={li} lj={lj} lk={lk} ll={ll} idx={idx}: \
+                     host={h:.15e} dev={d:.15e} diff={diff:.3e}"
+                );
+            }
+            assert!(
+                any_nonzero,
+                "host reference produced all zeros for li={li} lj={lj} lk={lk} ll={ll} — \
+                 exponents/geometry underflowed"
+            );
+        }
+
+        #[test]
+        fn test_device_matches_host_ssss() {
+            assert_device_matches_host(0, 0, 0, 0, 1.0, 1.2, 0.8, 0.9);
+        }
+
+        #[test]
+        fn test_device_matches_host_psss() {
+            // li>0: exercises ibase + i-HRR branch (hrr_il2d_4d).
+            assert_device_matches_host(1, 0, 0, 0, 0.9, 1.1, 0.7, 1.3);
+        }
+
+        #[test]
+        fn test_device_matches_host_sssp() {
+            // ll>0, kbase=false: exercises hrr_lj2d_4d l-HRR branch.
+            assert_device_matches_host(0, 0, 0, 1, 0.8, 1.0, 0.6, 1.2);
+        }
+
+        #[test]
+        fn test_device_matches_host_spsp() {
+            // lj>0 (ibase=false) + ll>0 (kbase=false): hrr_lj2d_4d mixed.
+            assert_device_matches_host(0, 1, 0, 1, 1.1, 0.7, 0.9, 0.8);
+        }
+
+        #[test]
+        fn test_device_matches_host_ppss() {
+            // li==lj (ibase=false, nmax=2): ij pair both nonzero.
+            assert_device_matches_host(1, 1, 0, 0, 0.6, 0.9, 1.2, 1.0);
+        }
+
+        #[test]
+        fn test_device_matches_host_pssp() {
+            // li>0 (ibase=true) + ll>0 (kbase=false): hrr_il2d_4d.
+            assert_device_matches_host(1, 0, 0, 1, 1.0, 0.8, 1.1, 0.7);
+        }
+
+        /// Genericity evidence: launch center_4c1e_kernel at f32 on CpuRuntime
+        /// for s-s-s-s and assert the result is finite.
+        #[test]
+        fn test_center_4c1e_kernel_generic_f32() {
+            let client = cpu_client();
+            // s-s-s-s: nmax=0, mmax=0 → dli=dlj=dlk=dll=1, g_size=1, buf db=1
+            // bigger=0 → buf_size = 1*(0+1)=1.
+            let exps = [1.0_f32];
+            let coeff = [1.0_f32];
+            let g_zero = [0.0_f32; 3];
+            let buf_zero = [0.0_f32; 1];
+            let out_zero = [0.0_f32; 1];
+
+            let exps_i_h = client.create_from_slice(f32::as_bytes(&exps));
+            let exps_j_h = client.create_from_slice(f32::as_bytes(&exps));
+            let exps_k_h = client.create_from_slice(f32::as_bytes(&exps));
+            let exps_l_h = client.create_from_slice(f32::as_bytes(&exps));
+            let coeff_i_h = client.create_from_slice(f32::as_bytes(&coeff));
+            let coeff_j_h = client.create_from_slice(f32::as_bytes(&coeff));
+            let coeff_k_h = client.create_from_slice(f32::as_bytes(&coeff));
+            let coeff_l_h = client.create_from_slice(f32::as_bytes(&coeff));
+            let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
+            let buf_h = client.create_from_slice(f32::as_bytes(&buf_zero));
+            let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+
+            let common_factor = (SQRTPI
+                * std::f64::consts::PI
+                * common_fac_sp(0)
+                * common_fac_sp(0)
+                * common_fac_sp(0)
+                * common_fac_sp(0)) as f32;
+
+            center_4c1e_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+                &client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(exps_l_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(coeff_k_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(coeff_l_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(g_h, 3) },
+                unsafe { ArrayArg::from_raw_parts(buf_h, 1) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
+                0.0_f32,
+                0.0,
+                0.0,
+                0.7,
+                -0.4,
+                0.2,
+                -0.5,
+                0.9,
+                0.6,
+                0.3,
+                0.5,
+                -0.8,
+                common_factor,
+                0,
+                0,
+                0,
+                0,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+            );
+
+            let raw = client.read_one_unchecked(out_h);
+            let out = f32::from_bytes(&raw)[0];
+            assert!(out.is_finite(), "f32 4c1e kernel result must be finite: {out}");
+            assert!(out > 0.0, "s-s-s-s 4c1e f32 result should be positive: {out}");
+        }
+    }
 }
