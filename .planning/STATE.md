@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Completed 21-03-PLAN.md
-last_updated: "2026-05-29T04:39:24.784Z"
-last_activity: 2026-05-29
+stopped_at: Phase 23 context gathered
+last_updated: "2026-05-29T12:52:35.513Z"
+last_activity: "2026-05-29 - Completed quick task 260529-q4k: ported two_electron.rs scalar int2e to a generic-float CubeCL #[cube(launch)] device kernel on all 5 backends (incl. ROCm/HIP); rocm random vendor parity mismatch_count=0 across 96 quartets, f64 byte-identity preserved (13/13 lib tests green)"
 progress:
   total_phases: 21
   completed_phases: 12
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 23
 Plan: Not started
 Status: Executing Phase 22
-Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
+Resume file: .planning/phases/23-group-1-remaining-1st-derivative-families-cart-sph/23-CONTEXT.md
 Last activity: 2026-05-29 - Completed quick task 260529-q4k: ported two_electron.rs scalar int2e to a generic-float CubeCL #[cube(launch)] device kernel on all 5 backends (incl. ROCm/HIP); rocm random vendor parity mismatch_count=0 across 96 quartets, f64 byte-identity preserved (13/13 lib tests green)
 
 **v1.4 phase sequence (dependency-ordered):**
@@ -332,6 +332,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-26T10:08:33.266Z
-Stopped at: Completed 21-03-PLAN.md
+Last session: 2026-05-29T12:52:35.504Z
+Stopped at: Phase 23 context gathered
 Resume file: None
