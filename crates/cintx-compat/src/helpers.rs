@@ -260,7 +260,28 @@ mod tests {
         assert_eq!(CINTcgtos_spheric(1, &bas).unwrap(), 6);
         assert_eq!(CINTtot_cgto_spheric(&bas, 2).unwrap(), 7);
         assert_eq!(CINTtot_pgto_spheric(&bas, 2).unwrap(), 5);
-        assert!(CINTgto_norm(1, 0.5) > 0.0);
+        // libcint 6.1.3 misc.c::CINTgto_norm closed form, verified value (atol 1e-12).
+        assert!(
+            (CINTgto_norm(0, 0.5) - 1.502251088929885).abs() < 1e-12,
+            "CINTgto_norm(0,0.5) = {} expected 1.502251088929885",
+            CINTgto_norm(0, 0.5)
+        );
+        // n=4,a=2.5 verified closed-form value.
+        assert!(
+            (CINTgto_norm(4, 2.5) - 16.34007804382598).abs() < 1e-9,
+            "CINTgto_norm(4,2.5) = {} expected 16.34007804382598",
+            CINTgto_norm(4, 2.5)
+        );
+        // Norm GROWS with exponent `a` (the prior inverted formula made it shrink).
+        assert!(
+            CINTgto_norm(2, 2.5) > CINTgto_norm(2, 0.5),
+            "CINTgto_norm must increase with a: norm(2,2.5)={} norm(2,0.5)={}",
+            CINTgto_norm(2, 2.5),
+            CINTgto_norm(2, 0.5)
+        );
+        // Defensive guard: invalid input returns 0.0, no panic/NaN/Inf.
+        assert_eq!(CINTgto_norm(-1, 0.5), 0.0);
+        assert_eq!(CINTgto_norm(1, 0.0), 0.0);
     }
 
     #[test]
