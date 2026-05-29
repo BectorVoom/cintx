@@ -49,10 +49,14 @@
 //! validation / marshaling — it has data-dependent termination, dynamic loop
 //! bounds and special functions that the Phase 8 P02 `cond_br` MLIR limitation
 //! forbids under `#[cube]`. Those helpers feed flat f64 buffers into the device
-//! kernel. The Type-2 angular splice (a two-`dgemm` matmul) remains host-side
-//! this task; a Type-2 matmul device kernel is a follow-up. The Cu/LANL2DZ
-//! oracle still drives the device kernel on every case via the Local (Type-1)
-//! channel.
+//! kernel. As of quick-260529-hin the Type-2 **angular splice** (the two-`dgemm`
+//! matmul at the tail of `ecp_type2_cart`) ALSO runs on-device via
+//! [`run_ecp_type2_splice_on_backend`] / [`ecp_type2_angular_kernel`] — generic
+//! over `F: Float`, launched at f64 with the same dgemm summation order
+//! (recomputing each intermediate `buf` entry inline, no device-local scratch) so
+//! byte-identity is preserved. Only the Phase-A adaptive radial machinery stays
+//! host-side as marshaling. The Cu/LANL2DZ oracle drives BOTH the Local (Type-1)
+//! and Projected (Type-2) device kernels on every case.
 //!
 //! ## Normalization & coordinate convention
 //!
@@ -1077,6 +1081,246 @@ fn cart_comps_flat_u32(l: u8) -> Vec<u32> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Type-2 (Projected) angular splice — `#[cube(launch)]` device kernel, generic
+// over F (quick-260529-hin follow-up to -gbf, which ported only Type-1).
+//
+// CLAUDE.md mandates CubeCL as the primary compute backend with host work limited
+// to planning/validation/marshaling. Type-2's angular contraction (the two-`dgemm`
+// matmul at the tail of `ecp_type2_cart`, ported from nr_ecp.c:5505-5510) is fully
+// bounded arithmetic — all loop bounds derive from comptime `li`/`lj`/`lc`; NO
+// break/continue, NO special functions — and therefore belongs on-device, same as
+// the Type-1 splice. The adaptive Gauss-Chebyshev radial machinery (Phase A) STAYS
+// host-side (data-dependent convergence, special functions).
+//
+// Byte-identity: the host materializes an intermediate `buf` (dgemm-1 output) then
+// consumes it in dgemm-2. Each `buf` entry is an independent inner sum, so the
+// device kernel RECOMPUTES each entry inline at the moment dgemm-2 reads it — this
+// is bit-exact because the dgemm-1 inner sum (over `kk in 0..lilc1`) and the
+// dgemm-2 contraction (over `kk2 in 0..mq`) are evaluated in the SAME order as the
+// host loops. This avoids a device-local Array scratch (no proven `Array::new`
+// precedent in center_2c2e/3c2e/4c1e — those accumulate in registers). The host
+// `buf[row*mq+kk2]` equals dgemm-1's `buf[col*ljlc1+row2]` with
+//   col = row*dlc + kk2/ljlc1 ,  row2 = kk2 - (kk2/ljlc1)*ljlc1
+// (derived: row*mq+kk2 == col*ljlc1+row2 with mq = dlc*ljlc1).
+//
+// Per (ic,jc) contraction tuple this kernel computes ONE `nfi*nfj` block in F-order
+// `cart_out[col2*nfi + row]`, accumulating across the i in 0..=li, j in 0..=lj loop
+// (mirroring the host `gctr += ...` accumulation), `common_fac` folded in-kernel so
+// the host scatter is a trivial `+=` (matching the Type-1 template).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Type-2 angular-splice device kernel for ONE (ic=0,jc=0) contraction tuple,
+/// generic over `F: Float`. Single work item (`UNIT_POS == 0`). All math uses
+/// `F` arithmetic, statement-form `if`, `u32` indices and `while` loops bounded by
+/// the runtime-`u32` angular momenta — no break/continue, no special functions
+/// (those stay host-side). Reproduces the host two-`dgemm` splice
+/// (`ecp_type2_cart`, ecp.rs:1272-1309) bit-for-bit at f64.
+///
+/// Source of the splice arithmetic: vendor/pyscf-nr-ecp/src/nr_ecp.c:5505-5510.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn ecp_type2_angular_kernel<F: Float + CubeElement>(
+    prad: &Array<F>,
+    angi: &Array<F>,
+    angj: &Array<F>,
+    cart_out: &mut Array<F>,
+    common_fac: F,
+    li: u32,
+    lj: u32,
+    lc: u32,
+    nfi: u32,
+    nfj: u32,
+) {
+    if UNIT_POS == 0u32 {
+        // Strides — recomputed from the runtime u32 args (mirror the host driver).
+        let dlc = lc * 2u32 + 1u32;
+        let lilc1 = li + lc + 1u32;
+        let ljlc1 = lj + lc + 1u32;
+        let d2 = lilc1 * ljlc1;
+        // `im = nfi*dlc` is the dgemm-1 column count; here `col` is derived inline
+        // per dgemm-2 index (col = row*dlc + kk2/ljlc1, ∈ 0..im) so `im` is implicit.
+        let mq = dlc * ljlc1;
+
+        // Zero the output block (nci=ncj=1 per launch → block = nfi*nfj).
+        let out_len = nfi * nfj;
+        let mut oi = 0u32;
+        while oi < out_len {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        // Accumulate over the angular pair (i in 0..=li, j in 0..=lj), matching the
+        // host `for i / for j` order. a/b/bj base offsets recomputed per (i,j).
+        let mut i = 0u32;
+        while i <= li {
+            let mut j = 0u32;
+            while j <= lj {
+                let a_base = (i + j) * d2; // prad block: lilc1 x ljlc1 (col-major)
+                let b_base = i * nfi * dlc * lilc1; // angi block: lilc1 x im (col-major)
+                let bj_base = j * nfj * dlc * ljlc1; // angj block: mq x nfj (col-major)
+
+                // dgemm-2: gctr[c_off + col2*di + row] += common_fac
+                //            * Σ_kk2(0..mq) buf[row*mq+kk2] * bj[col2*mq+kk2]
+                let mut row = 0u32;
+                while row < nfi {
+                    let mut col2 = 0u32;
+                    while col2 < nfj {
+                        let mut acc = F::new(0.0);
+                        let mut kk2 = 0u32;
+                        while kk2 < mq {
+                            // buf[row*mq+kk2] == dgemm-1 buf[col*ljlc1+row2] with
+                            //   col  = row*dlc + kk2/ljlc1   (∈ 0..im)
+                            //   row2 = kk2 - (kk2/ljlc1)*ljlc1  (∈ 0..ljlc1)
+                            let qd = kk2 / ljlc1;
+                            let col = row * dlc + qd;
+                            let row2 = kk2 - qd * ljlc1;
+                            // dgemm-1: bufv = Σ_kk(0..lilc1) a[kk*ljlc1+row2] * b[col*lilc1+kk]
+                            let mut bufv = F::new(0.0);
+                            let mut kk = 0u32;
+                            while kk < lilc1 {
+                                let a_idx = a_base + kk * ljlc1 + row2;
+                                let b_idx = b_base + col * lilc1 + kk;
+                                bufv += prad[a_idx as usize] * angi[b_idx as usize];
+                                kk += 1u32;
+                            }
+                            let bj_idx = bj_base + col2 * mq + kk2;
+                            acc += bufv * angj[bj_idx as usize];
+                            kk2 += 1u32;
+                        }
+                        // F-order [ao_i, ao_j] within this (ic=0,jc=0) tuple;
+                        // accumulate across (i,j) and fold common_fac in-kernel.
+                        let out_idx = col2 * nfi + row;
+                        cart_out[out_idx as usize] += common_fac * acc;
+                        col2 += 1u32;
+                    }
+                    row += 1u32;
+                }
+                j += 1u32;
+            }
+            i += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`ecp_type2_angular_kernel`] at `f64` on a resolved backend's client
+/// for ONE (ic=0,jc=0) contraction tuple, reading back the `nfi*nfj` block
+/// (already `common_fac`-scaled in-kernel, F-order `col2*nfi+row`).
+///
+/// Generic over `R: Runtime` (CPU, ROCm, …). Intermediate device compute is `f64`
+/// (ECP keeps f64 staging; the byte-identity gate is f64/CPU-vs-C). `prad` is the
+/// single-tuple slice (`d3 = (li+lj+1)*lilc1*ljlc1`); `angi`/`angj` are the full
+/// `type2_facs_ang` tables.
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn run_ecp_type2_angular_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    li: u32,
+    lj: u32,
+    lc: u32,
+    prad: &[f64],
+    angi: &[f64],
+    angj: &[f64],
+    common_fac: f64,
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let lc_u = lc as usize;
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let out_len = nfi * nfj;
+
+    // Sanity (T-hin-01): buffer lengths derived from li/lj/lc must match the host
+    // tensor lengths exactly, or the kernel reads out of bounds on-device. Same
+    // formulas as the host driver (`ecp_type2_cart`).
+    let dlc = lc_u * 2 + 1;
+    let lilc1 = li_u + lc_u + 1;
+    let ljlc1 = lj_u + lc_u + 1;
+    let d2 = lilc1 * ljlc1;
+    let d3 = (li_u + lj_u + 1) * d2;
+    debug_assert_eq!(prad.len(), d3, "ecp type2: prad len != d3");
+    debug_assert_eq!(
+        angi.len(),
+        (li_u + 1) * nfi * dlc * lilc1,
+        "ecp type2: angi len != (li+1)*nfi*dlc*lilc1"
+    );
+    debug_assert_eq!(
+        angj.len(),
+        (lj_u + 1) * nfj * dlc * ljlc1,
+        "ecp type2: angj len != (lj+1)*nfj*dlc*ljlc1"
+    );
+
+    let prad_h = client.create_from_slice(f64::as_bytes(prad));
+    let angi_h = client.create_from_slice(f64::as_bytes(angi));
+    let angj_h = client.create_from_slice(f64::as_bytes(angj));
+
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    ecp_type2_angular_kernel::launch::<f64, R>(
+        client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(prad_h, prad.len()) },
+        unsafe { ArrayArg::from_raw_parts(angi_h, angi.len()) },
+        unsafe { ArrayArg::from_raw_parts(angj_h, angj.len()) },
+        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+        common_fac,
+        li,
+        lj,
+        lc,
+        nfi as u32,
+        nfj as u32,
+    );
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// Backend-dispatch wrapper for the Type-2 angular splice: routes the
+/// `#[cube(launch)]` [`ecp_type2_angular_kernel`] onto the resolved backend's
+/// device client (Cpu => CpuRuntime, Rocm => HipRuntime, Wgpu, Cuda, Metal — each
+/// `#[cfg]`-gated), mirroring [`run_ecp_angular_splice_on_backend`]. Runs at f64
+/// (ECP keeps f64 staging / byte-identity gate). Returns the `nfi*nfj` block
+/// (`common_fac`-scaled in-kernel, F-order `col2*nfi+row`).
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn run_ecp_type2_splice_on_backend(
+    backend: &ResolvedBackend,
+    li: u32,
+    lj: u32,
+    lc: u32,
+    prad: &[f64],
+    angi: &[f64],
+    angj: &[f64],
+    common_fac: f64,
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_ecp_type2_angular_device::<cubecl::cpu::CpuRuntime>(
+            client, li, lj, lc, prad, angi, angj, common_fac,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_ecp_type2_angular_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li, lj, lc, prad, angi, angj, common_fac,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_ecp_type2_angular_device::<cubecl_cuda::CudaRuntime>(
+            client, li, lj, lc, prad, angi, angj, common_fac,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_ecp_type2_angular_device::<cubecl_hip::HipRuntime>(
+            client, li, lj, lc, prad, angi, angj, common_fac,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            run_ecp_type2_angular_device::<cubecl_wgpu::WgpuRuntime>(
+                client, li, lj, lc, prad, angi, angj, common_fac,
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Type-2 (Projected) ECP driver — port of ECPtype2_cart.
 // Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5337-5515.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1095,14 +1339,11 @@ fn ecp_type2_cart(
     rs_max: &[f64],
     ws_max: &[f64],
 ) {
-    // Type-2's angular splice is a two-`dgemm` (matmul) contraction, structurally
-    // distinct from Type-1's triple-product splice that `ecp_angular_kernel`
-    // ports. Threading `backend` keeps the driver signature uniform (so the
-    // gradient drivers and `launch_ecp` pass it through), and a Type-2 matmul
-    // device kernel is a follow-up; the dgemm splice stays host-side this task
-    // (quick-260529-gbf). The Cu/LANL2DZ oracle still exercises the device kernel
-    // via the Local (Type-1) channel on every case.
-    let _ = backend;
+    // Type-2's angular splice (the two-`dgemm` matmul at the tail of this driver)
+    // runs on-device as `ecp_type2_angular_kernel` via `run_ecp_type2_splice_on_backend`
+    // (quick-260529-hin), generic over F, f64-internal, byte-identity preserved.
+    // The `backend` is dispatched per (ic,jc) contraction tuple below; only the
+    // Phase-A adaptive Gauss-Chebyshev radial machinery stays host as marshaling.
     let li = shell_i.ang_momentum as usize;
     let lj = shell_j.ang_momentum as usize;
     let npi = shell_i.nprim as usize;
@@ -1136,8 +1377,8 @@ fn ecp_type2_cart(
     let ljlc1 = lj + lc + 1;
     let d2 = lilc1 * ljlc1;
     let d3 = lilj1 * d2;
-    let im = nfi * dlc;
-    let mq = dlc * ljlc1;
+    // `im = nfi*dlc` / `mq = dlc*ljlc1` (the dgemm dims) are now recomputed inside
+    // `run_ecp_type2_angular_device`; the host driver no longer materializes them.
 
     let nrs_alloc = 1usize << LEVEL_MAX;
     // rad_all[(ic*ncj+jc)*d3 + lab*d2 + i*ljlc1 + j]
@@ -1269,44 +1510,32 @@ fn ecp_type2_cart(
     // angi laid out [(a)*nfi*dlc*lilc1 + mi*dlc*lilc1 + m*lilc1 + n]
     // (type2_facs_ang writes facs[(a+b+c)*nfi*dlclmb + mi*dlclmb + m*dlambda + n]
     //  where dlclmb = dlambda*dlc; we slice per-`a` block below).
-    let mut buf = vec![0.0f64; nfi * dlc * ljlc1];
+    // The two-`dgemm` angular splice now runs on-device via the
+    // `ecp_type2_angular_kernel` #[cube(launch)] kernel (quick-260529-hin), once
+    // per (ic,jc) contraction tuple. The device kernel folds `common_fac` in and
+    // accumulates across the (i,j) angular pair, returning an `nfi*nfj` block in
+    // F-order `block[col2*nfi + row]`; the host scatters it into the
+    // contraction-major `gctr` with a plain `+=` (NO extra multiply — `common_fac`
+    // is already applied in-kernel, matching the prior host scatter target).
     for ic in 0..nci {
         for jc in 0..ncj {
             let prad = &rad_all[(ic * ncj + jc) * d3..(ic * ncj + jc) * d3 + d3];
-            for i in 0..=li {
-                for j in 0..=lj {
-                    // dgemm_(N,N, m=ljlc1, n=im, k=lilc1,
-                    //        A=prad+(i+j)*d2 [ljlc1 x lilc1, col-major],
-                    //        B=angi+i*nfi*dlc*lilc1 [lilc1 x im, col-major],
-                    //        C=buf [ljlc1 x im, col-major])
-                    let a = &prad[(i + j) * d2..(i + j) * d2 + d2]; // d2 = lilc1*ljlc1
-                    let b_off = i * nfi * dlc * lilc1;
-                    let b = &angi[b_off..b_off + lilc1 * im];
-                    for col in 0..im {
-                        for row in 0..ljlc1 {
-                            let mut s = 0.0;
-                            for kk in 0..lilc1 {
-                                s += a[kk * ljlc1 + row] * b[col * lilc1 + kk];
-                            }
-                            buf[col * ljlc1 + row] = s;
-                        }
-                    }
-                    // dgemm_(T,N, m=nfi, n=nfj, k=mq=dlc*ljlc1,
-                    //        alpha=common_fac, A=buf [mq x nfi, col-major -> A^T],
-                    //        B=angj+j*nfj*dlc*ljlc1 [mq x nfj, col-major],
-                    //        beta=1, C=gctr+jc*nfj*di+ic*nfi [nfi x nfj, ld=di])
-                    let c_off = jc * nfj * di + ic * nfi;
-                    let bj_off = j * nfj * dlc * ljlc1;
-                    let bj = &angj[bj_off..bj_off + mq * nfj];
-                    for col in 0..nfj {
-                        for row in 0..nfi {
-                            let mut s = 0.0;
-                            for kk in 0..mq {
-                                s += buf[row * mq + kk] * bj[col * mq + kk];
-                            }
-                            gctr[c_off + col * di + row] += common_fac * s;
-                        }
-                    }
+            let block = run_ecp_type2_splice_on_backend(
+                backend,
+                li as u32,
+                lj as u32,
+                lc as u32,
+                prad,
+                &angi,
+                &angj,
+                common_fac,
+            );
+            // Scatter into gctr at c_off = jc*nfj*di + ic*nfi (di = nci*nfi), the
+            // exact target the host two-dgemm wrote (gctr[c_off + col2*di + row]).
+            let c_off = jc * nfj * di + ic * nfi;
+            for col2 in 0..nfj {
+                for row in 0..nfi {
+                    gctr[c_off + col2 * di + row] += block[col2 * nfi + row];
                 }
             }
         }
@@ -2447,6 +2676,180 @@ mod tests {
                 assert!(
                     diff <= thr,
                     "f32 device result not within eps: host={h:e} dev={d:e} diff={diff:e}"
+                );
+            }
+        }
+
+        // ── Type-2 (two-dgemm) angular splice: device-vs-host (quick 260529-hin) ──
+
+        /// Host reference for the Type-2 two-`dgemm` splice for a SINGLE (ic=0,jc=0)
+        /// tuple — the EXACT arithmetic + loop order of `ecp_type2_cart`'s tail
+        /// (ecp.rs:1272-1309), including the materialized `buf` intermediate,
+        /// computed in f64. The device kernel must reproduce this byte-for-byte.
+        #[allow(clippy::too_many_arguments)]
+        fn host_type2_splice(
+            li: usize,
+            lj: usize,
+            lc: usize,
+            prad: &[f64],
+            angi: &[f64],
+            angj: &[f64],
+            common_fac: f64,
+        ) -> Vec<f64> {
+            let nfi = ncart(li as u8);
+            let nfj = ncart(lj as u8);
+            let dlc = lc * 2 + 1;
+            let lilc1 = li + lc + 1;
+            let ljlc1 = lj + lc + 1;
+            let d2 = lilc1 * ljlc1;
+            let im = nfi * dlc;
+            let mq = dlc * ljlc1;
+            // Single (ic=0,jc=0) tuple: di = nfi, c_off = 0.
+            let di = nfi;
+            let mut gctr = vec![0.0_f64; nfi * nfj];
+            let mut buf = vec![0.0_f64; nfi * dlc * ljlc1];
+            for i in 0..=li {
+                for j in 0..=lj {
+                    let a = &prad[(i + j) * d2..(i + j) * d2 + d2];
+                    let b_off = i * nfi * dlc * lilc1;
+                    let b = &angi[b_off..b_off + lilc1 * im];
+                    for col in 0..im {
+                        for row in 0..ljlc1 {
+                            let mut s = 0.0;
+                            for kk in 0..lilc1 {
+                                s += a[kk * ljlc1 + row] * b[col * lilc1 + kk];
+                            }
+                            buf[col * ljlc1 + row] = s;
+                        }
+                    }
+                    let bj_off = j * nfj * dlc * ljlc1;
+                    let bj = &angj[bj_off..bj_off + mq * nfj];
+                    for col in 0..nfj {
+                        for row in 0..nfi {
+                            let mut s = 0.0;
+                            for kk in 0..mq {
+                                s += buf[row * mq + kk] * bj[col * mq + kk];
+                            }
+                            gctr[col * di + row] += common_fac * s;
+                        }
+                    }
+                }
+            }
+            gctr
+        }
+
+        fn random_type2_inputs(
+            li: usize,
+            lj: usize,
+            lc: usize,
+            seed: u64,
+        ) -> (Vec<f64>, Vec<f64>, Vec<f64>, f64) {
+            let mut rng = Lcg::new(seed);
+            let nfi = ncart(li as u8);
+            let nfj = ncart(lj as u8);
+            let dlc = lc * 2 + 1;
+            let lilc1 = li + lc + 1;
+            let ljlc1 = lj + lc + 1;
+            let d2 = lilc1 * ljlc1;
+            let d3 = (li + lj + 1) * d2;
+            let prad: Vec<f64> = (0..d3).map(|_| rng.next_f64()).collect();
+            let angi: Vec<f64> = (0..(li + 1) * nfi * dlc * lilc1).map(|_| rng.next_f64()).collect();
+            let angj: Vec<f64> = (0..(lj + 1) * nfj * dlc * ljlc1).map(|_| rng.next_f64()).collect();
+            // common_fac: a positive-ish nonzero scalar in (0, 2).
+            let common_fac = rng.next_f64() + 1.0;
+            (prad, angi, angj, common_fac)
+        }
+
+        /// f64 device-vs-host equivalence for the Type-2 splice: max-abs-diff MUST
+        /// be exactly 0.0 (identical f64 op order ⇒ byte-identity).
+        fn assert_type2_f64_byte_identity(li: usize, lj: usize, lc: usize, seed: u64) {
+            let (prad, angi, angj, common_fac) = random_type2_inputs(li, lj, lc, seed);
+            let host = host_type2_splice(li, lj, lc, &prad, &angi, &angj, common_fac);
+            let dev = run_ecp_type2_angular_device::<cubecl::cpu::CpuRuntime>(
+                &cpu_client(),
+                li as u32,
+                lj as u32,
+                lc as u32,
+                &prad,
+                &angi,
+                &angj,
+                common_fac,
+            );
+            assert_eq!(host.len(), dev.len(), "len mismatch li={li} lj={lj} lc={lc}");
+            let mut max_diff = 0.0_f64;
+            let mut any_nonzero = false;
+            for (&h, &d) in host.iter().zip(dev.iter()) {
+                if h.abs() > 1e-18 {
+                    any_nonzero = true;
+                }
+                max_diff = max_diff.max((h - d).abs());
+            }
+            assert_eq!(
+                max_diff, 0.0,
+                "ecp type2 device/host f64 max-abs-diff must be 0.0 (li={li} lj={lj} lc={lc}), got {max_diff:e}"
+            );
+            assert!(any_nonzero, "host type2 reference all zeros (li={li} lj={lj} lc={lc})");
+        }
+
+        #[test]
+        fn ecp_type2_angular_device_matches_host_f64() {
+            // (li,lj) up to (2,2) × lc in {0,1,2}.
+            for (li, lj) in [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0), (0, 2), (2, 1), (1, 2), (2, 2)] {
+                for lc in [0usize, 1, 2] {
+                    let seed = 0xA5A5_5A5A_C3C3_3C3C ^ ((li * 31 + lj * 7 + lc) as u64);
+                    assert_type2_f64_byte_identity(li, lj, lc, seed);
+                }
+            }
+        }
+
+        /// Generic-F: running the SAME Type-2 kernel at F=f32 on CpuRuntime
+        /// reproduces the f64 result cast to f32 within f32 eps. Proves
+        /// `ecp_type2_angular_kernel` is genuinely generic over `F: Float`.
+        #[test]
+        fn ecp_type2_angular_device_generic_f32_within_eps() {
+            let (li, lj, lc) = (2usize, 1usize, 1usize);
+            let (prad, angi, angj, common_fac) =
+                random_type2_inputs(li, lj, lc, 0xF00DCAFE_DEADBEEF);
+            let host = host_type2_splice(li, lj, lc, &prad, &angi, &angj, common_fac);
+
+            let nfi = ncart(li as u8);
+            let nfj = ncart(lj as u8);
+            let out_len = nfi * nfj;
+
+            let client = cpu_client();
+            let prad_f32: Vec<f32> = prad.iter().map(|&v| v as f32).collect();
+            let angi_f32: Vec<f32> = angi.iter().map(|&v| v as f32).collect();
+            let angj_f32: Vec<f32> = angj.iter().map(|&v| v as f32).collect();
+            let prad_h = client.create_from_slice(f32::as_bytes(&prad_f32));
+            let angi_h = client.create_from_slice(f32::as_bytes(&angi_f32));
+            let angj_h = client.create_from_slice(f32::as_bytes(&angj_f32));
+            let out_zero = vec![0.0_f32; out_len];
+            let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+
+            ecp_type2_angular_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+                &client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(prad_h, prad_f32.len()) },
+                unsafe { ArrayArg::from_raw_parts(angi_h, angi_f32.len()) },
+                unsafe { ArrayArg::from_raw_parts(angj_h, angj_f32.len()) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                common_fac as f32,
+                li as u32,
+                lj as u32,
+                lc as u32,
+                nfi as u32,
+                nfj as u32,
+            );
+            let raw = client.read_one_unchecked(out_h);
+            let dev_f32 = &f32::from_bytes(&raw)[0..out_len];
+
+            for (&h, &d) in host.iter().zip(dev_f32.iter()) {
+                let diff = (h as f32 - d).abs();
+                let thr = 1e-3_f32 + 1e-3_f32 * (h.abs() as f32);
+                assert!(
+                    diff <= thr,
+                    "type2 f32 device result not within eps: host={h:e} dev={d:e} diff={diff:e}"
                 );
             }
         }
