@@ -26,6 +26,7 @@ Deliver libcint-compatible results through a Rust-native API surface that stays 
 - [x] Oracle tolerance unified to atol=1e-12 for every family with catch-all tolerance and manifest-driven oracle eligibility; four-profile manifest lock regenerated with oracle_covered=true on all 110 stable/optional entries; CI oracle gate uses matrix strategy. Validated in Phase 15: Oracle Tolerance Unification & Manifest Lock Closure.
 - [x] ECP Type-1/Type-2 evaluator (ECP-01..05): `int1e_ecp_{cart,sph}` scalar + `int1e_ecp_ipnuc_{cart,sph}` gradient pass byte-identity vs vendored PySCF nr_ecp at atol=1e-12 over Cu/LANL2DZ, dispatched through the standard `SessionRequest::evaluate` safe-API surface; exact K-Taylor radial machinery ported host-first with byte-locked `.bin` tables + CI drift-gate; optional non-blocking libecpint secondary oracle. Validated in Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator (v1.3).
 - [x] Plain-Coulomb gradient integral families (GRAD-01..10): the 6 first-derivative families every analytical gradient needs — `int2e_ip1`, `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc`, `int1e_iprinv`, `ECPscalar_iprinv` — plus the repaired `int3c2e_ip1` derivative kernel, all byte-identical to libcint 6.1.3 at atol=1e-12 under the vendor-gated oracle suite. Adds the `PTR_RINV_ORIG` env slot; component-leading `[3,…]` F-order matches pyscf-gto. Spinor gradients are registered-but-`UnsupportedApi` (R5/D-03). Validated in Phase 21: Plain-Coulomb Gradient Integral Families (v1.3).
+- [x] Gauge-origin env slot (FND-01): `PTR_COMMON_ORIG` (env[1..3]) is plumbed end-to-end on the `PTR_RINV_ORIG` precedent — operator-agnostic env read on the raw path, `.with_common_origin([x,y,z])` builder → `ExecutionOptions` → plan on the safe path, with a finiteness validator (NaN/inf rejected, `None` defaults to `[0,0,0]`) enforced symmetrically on BOTH paths. A committed non-zero H2O/STO-3G oracle fixture (`build_h2o_sto3g_common_orig`) + raw↔plan round-trip test prove the slot reads `env[1..3]`; this fixture is the parity gate for moments (Phase 24) and GIAO (Phases 26/30). Validated in Phase 22: Gauge-Origin Env Slot (Gap A — `PTR_COMMON_ORIG`) (v1.4).
 
 ### Active
 
@@ -94,4 +95,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-26 — started milestone v1.4 Full libcint 6.1.3 Family Parity (v1.3 complete)*
+*Last updated: 2026-05-29 — Phase 22 complete (FND-01 gauge-origin `PTR_COMMON_ORIG` env slot + non-zero oracle fixture); v1.4 in progress*
