@@ -317,6 +317,7 @@ None yet.
 | 260529-fsa | refactor center_4c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | b7f5519 | [260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel](./quick/260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel/) |
 | 260529-gbf | refactor ecp.rs to a generic-float CubeCL #[cube] device kernel (Type-1 angular splice) + rocm random oracle test | 2026-05-29 | 55b4a88 | [260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge](./quick/260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge/) |
 | 260529-hin | port the ECP Type-2 two-dgemm angular splice to a generic-float CubeCL #[cube] device kernel + rocm oracle | 2026-05-29 | d3405f4 | [260529-hin-port-the-ecp-type-2-two-dgemm-angular-sp](./quick/260529-hin-port-the-ecp-type-2-two-dgemm-angular-sp/) |
+| 260529-i2q | refactor f12.rs base Cartesian contraction to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | 45a4a17 | [260529-i2q-refactor-f12-rs-to-cubecl-device-kernel-](./quick/260529-i2q-refactor-f12-rs-to-cubecl-device-kernel-/) |
 
 ## Session Continuity
 
