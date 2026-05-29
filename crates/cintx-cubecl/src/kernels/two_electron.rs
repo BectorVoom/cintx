@@ -9,15 +9,26 @@
 use crate::backend::ResolvedBackend;
 use crate::math::pdata::compute_pdata_host;
 use crate::math::rys::rys_roots_host;
+use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_4d;
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
+use cubecl::Runtime;
+use cubecl::client::ComputeClient;
+use cubecl::prelude::*;
 use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI`.
 const SQRTPI: f64 = 1.7724538509055159_f64;
+
+/// Rys `PIE4 = pi/4` constant passed into the device `rys_root{1..5}` kernels.
+const PIE4: f64 = 0.78539816339744827900_f64;
+
+/// Maximum `nroots` the device Rys kernels (`rys_root1..5`) can evaluate.
+/// Scalar 2e `nroots = (li+lj+lk+ll)/2 + 1`, so this covers `l-sum <= 8`.
+const MAX_DEVICE_NROOTS: usize = 5;
 
 /// Spherical harmonic normalization prefactor for s and p shells.
 fn common_fac_sp(l: u8) -> f64 {
@@ -601,6 +612,802 @@ pub(crate) fn two_e_shape_as_f12(shape: &TwoEShape) -> crate::kernels::f12::F12S
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Scalar 2e device kernel — `#[cube(launch)]`, generic over `F: Float`
+//
+//  Faithful inline port of the host SCALAR pipeline
+//  `fill_g_tensor_2e` → `contract_2e_cart`, accumulated over all primitive
+//  quartets (pi,pj,pk,pl) and contraction quads (ci,cj,ck,cl) into a per-quad
+//  i-fastest Cartesian block buffer. Intermediate arithmetic in `F` (run at f64
+//  by the launcher), output written to `cart_out` in `F`.
+//
+//  ALL strides (di,dk,dl,dj,g_size,nmax,mmax,g2d_ijmax,g2d_klmax) plus the
+//  ibase/kbase flags are computed host-side via `build_2e_shape` and passed in as
+//  runtime u32 — the adaptive dli/dlj/dlk/dll branch logic is NOT recomputed
+//  on-device (avoids if-expressions). `#[comptime] nroots` selects rys_root{1..5}.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Single-work-item scalar 2e kernel. See module note above.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn two_electron_scalar_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    exps_k: &Array<F>,
+    exps_l: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    coeff_k: &Array<F>,
+    coeff_l: &Array<F>,
+    g: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    rkx: F,
+    rky: F,
+    rkz: F,
+    rlx: F,
+    rly: F,
+    rlz: F,
+    common_factor: F,
+    pie4: F,
+    li: u32,
+    lj: u32,
+    lk: u32,
+    ll: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nprim_k: u32,
+    nprim_l: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    nctr_k: u32,
+    nctr_l: u32,
+    di: u32,
+    dk: u32,
+    dl: u32,
+    dj: u32,
+    g_size: u32,
+    nmax: u32,
+    mmax: u32,
+    g2d_ijmax: u32,
+    g2d_klmax: u32,
+    ibase: u32,
+    kbase: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let nrys = nroots;
+        let gy_off = g_size;
+        let gz_off = 2u32 * g_size;
+        let total_g = 3u32 * g_size;
+
+        let nfi = (li + 1u32) * (li + 2u32) / 2u32;
+        let nfj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let nfk = (lk + 1u32) * (lk + 2u32) / 2u32;
+        let nfl = (ll + 1u32) * (ll + 2u32) / 2u32;
+        let block_len = nfi * nfj * nfk * nfl;
+        let out_len = nctr_i * nctr_j * nctr_k * nctr_l * block_len;
+
+        // Zero the per-quad accumulation buffer.
+        let mut oi = 0u32;
+        while oi < out_len {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        // Primitive quartet loop.
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+                let aij = ai + aj;
+                // Gaussian product center for ij and the bra overlap exponential.
+                let rijx = (ai * rix + aj * rjx) / aij;
+                let rijy = (ai * riy + aj * rjy) / aij;
+                let rijz = (ai * riz + aj * rjz) / aij;
+                let dxij = rix - rjx;
+                let dyij = riy - rjy;
+                let dzij = riz - rjz;
+                let rr_ij = dxij * dxij + dyij * dyij + dzij * dzij;
+                let fac_ij = F::exp(-ai * aj / aij * rr_ij);
+
+                let mut pk = 0u32;
+                while pk < nprim_k {
+                    let ak = exps_k[pk as usize];
+                    let mut pl = 0u32;
+                    while pl < nprim_l {
+                        let al = exps_l[pl as usize];
+                        let akl = ak + al;
+                        let rklx = (ak * rkx + al * rlx) / akl;
+                        let rkly = (ak * rky + al * rly) / akl;
+                        let rklz = (ak * rkz + al * rlz) / akl;
+                        let dxkl = rkx - rlx;
+                        let dykl = rky - rly;
+                        let dzkl = rkz - rlz;
+                        let rr_kl = dxkl * dxkl + dykl * dykl + dzkl * dzkl;
+                        let fac_kl = F::exp(-ak * al / akl * rr_kl);
+
+                        let xij_kl = rijx - rklx;
+                        let yij_kl = rijy - rkly;
+                        let zij_kl = rijz - rklz;
+                        let rr = xij_kl * xij_kl + yij_kl * yij_kl + zij_kl * zij_kl;
+
+                        let a1 = aij * akl;
+                        let a0 = a1 / (aij + akl);
+                        let x_rys = a0 * rr;
+
+                        // Rys roots/weights (comptime nroots branch).
+                        if comptime!(nroots == 1u32) {
+                            rys_root1::<F>(x_rys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 2u32) {
+                            rys_root2::<F>(x_rys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 3u32) {
+                            rys_root3::<F>(x_rys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 4u32) {
+                            rys_root4::<F>(x_rys, urys, wrys, pie4);
+                        } else {
+                            rys_root5::<F>(x_rys, urys, wrys, pie4);
+                        }
+
+                        // ibase/kbase-selected reference centers (rijrx / rklrx)
+                        // and the HRR displacement vectors rirj / rkrl.
+                        let mut rx_ij_x = rjx;
+                        let mut rx_ij_y = rjy;
+                        let mut rx_ij_z = rjz;
+                        let mut rirjx = rjx - rix;
+                        let mut rirjy = rjy - riy;
+                        let mut rirjz = rjz - riz;
+                        if ibase == 1u32 {
+                            rx_ij_x = rix;
+                            rx_ij_y = riy;
+                            rx_ij_z = riz;
+                            rirjx = rix - rjx;
+                            rirjy = riy - rjy;
+                            rirjz = riz - rjz;
+                        }
+                        let mut rx_kl_x = rlx;
+                        let mut rx_kl_y = rly;
+                        let mut rx_kl_z = rlz;
+                        let mut rkrlx = rlx - rkx;
+                        let mut rkrly = rly - rky;
+                        let mut rkrlz = rlz - rkz;
+                        if kbase == 1u32 {
+                            rx_kl_x = rkx;
+                            rx_kl_y = rky;
+                            rx_kl_z = rkz;
+                            rkrlx = rkx - rlx;
+                            rkrly = rky - rly;
+                            rkrlz = rkz - rlz;
+                        }
+
+                        let rijrxx = rijx - rx_ij_x;
+                        let rijrxy = rijy - rx_ij_y;
+                        let rijrxz = rijz - rx_ij_z;
+                        let rklrxx = rklx - rx_kl_x;
+                        let rklrxy = rkly - rx_kl_y;
+                        let rklrxz = rklz - rx_kl_z;
+
+                        let fac1 = F::sqrt(a0 / (a1 * a1 * a1))
+                            * common_factor
+                            * fac_ij
+                            * fac_kl;
+
+                        // ── Build the [gx|gy|gz] tensor ───────────────────────
+                        let mut gi = 0u32;
+                        while gi < total_g {
+                            g[gi as usize] = F::new(0.0);
+                            gi += 1u32;
+                        }
+                        let mut irys = 0u32;
+                        while irys < nrys {
+                            g[irys as usize] = F::new(1.0);
+                            g[(gy_off + irys) as usize] = F::new(1.0);
+                            g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
+                            irys += 1u32;
+                        }
+
+                        let mut irys2 = 0u32;
+                        while irys2 < nrys {
+                            let u2 = a0 * urys[irys2 as usize];
+                            let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
+                            let tmp5 = u2 * tmp4;
+                            let tmp1 = F::new(2.0) * tmp5;
+                            let tmp2 = tmp1 * akl;
+                            let tmp3 = tmp1 * aij;
+                            let b00 = tmp5;
+                            let b10 = tmp5 + tmp4 * akl;
+                            let b01 = tmp5 + tmp4 * aij;
+
+                            // Per-axis c00/c0p then inline vrr_fill_axis.
+                            let mut axis = 0u32;
+                            while axis < 3u32 {
+                                let off = axis * g_size;
+                                let mut xkl = xij_kl;
+                                let mut rijrx = rijrxx;
+                                let mut rklrx = rklrxx;
+                                if axis == 1u32 {
+                                    xkl = yij_kl;
+                                    rijrx = rijrxy;
+                                    rklrx = rklrxy;
+                                }
+                                if axis == 2u32 {
+                                    xkl = zij_kl;
+                                    rijrx = rijrxz;
+                                    rklrx = rklrxz;
+                                }
+                                let c00 = rijrx - tmp2 * xkl;
+                                let c0p = rklrx + tmp3 * xkl;
+
+                                // Inline vrr_fill_axis(g[off..], irys2, nmax, mmax,
+                                //   dn=g2d_ijmax, dm=g2d_klmax, c00, c0p, b10, b01, b00).
+                                let root = irys2;
+                                let dn = g2d_ijmax;
+                                let dm = g2d_klmax;
+
+                                if nmax > 0u32 {
+                                    let mut s0 = g[(off + root) as usize];
+                                    let mut s1 = c00 * s0;
+                                    g[(off + root + dn) as usize] = s1;
+                                    let mut n = 1u32;
+                                    while n < nmax {
+                                        let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
+                                        g[(off + root + (n + 1u32) * dn) as usize] = s2;
+                                        s0 = s1;
+                                        s1 = s2;
+                                        n += 1u32;
+                                    }
+                                }
+
+                                if mmax > 0u32 {
+                                    let mut s0 = g[(off + root) as usize];
+                                    let mut s1 = c0p * s0;
+                                    g[(off + root + dm) as usize] = s1;
+                                    let mut m = 1u32;
+                                    while m < mmax {
+                                        let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
+                                        g[(off + root + (m + 1u32) * dm) as usize] = s2;
+                                        s0 = s1;
+                                        s1 = s2;
+                                        m += 1u32;
+                                    }
+
+                                    if nmax > 0u32 {
+                                        let mut s0n = g[(off + root + dn) as usize];
+                                        let mut s1n = c0p * s0n + b00 * g[(off + root) as usize];
+                                        g[(off + root + dn + dm) as usize] = s1n;
+                                        let mut m2 = 1u32;
+                                        while m2 < mmax {
+                                            let s2n = c0p * s1n
+                                                + F::cast_from(m2) * b01 * s0n
+                                                + b00 * g[(off + root + m2 * dm) as usize];
+                                            g[(off + root + dn + (m2 + 1u32) * dm) as usize] = s2n;
+                                            s0n = s1n;
+                                            s1n = s2n;
+                                            m2 += 1u32;
+                                        }
+                                    }
+                                }
+
+                                if nmax > 0u32 {
+                                    let mut m3 = 1u32;
+                                    while m3 <= mmax {
+                                        let offm = m3 * dm;
+                                        let jbase = offm + root;
+                                        let mut s0 = g[(off + jbase) as usize];
+                                        let mut s1 = g[(off + jbase + dn) as usize];
+                                        let mut n2 = 1u32;
+                                        while n2 < nmax {
+                                            let s2 = c00 * s1
+                                                + F::cast_from(n2) * b10 * s0
+                                                + F::cast_from(m3)
+                                                    * b00
+                                                    * g[(off + jbase + n2 * dn - dm) as usize];
+                                            g[(off + jbase + (n2 + 1u32) * dn) as usize] = s2;
+                                            s0 = s1;
+                                            s1 = s2;
+                                            n2 += 1u32;
+                                        }
+                                        m3 += 1u32;
+                                    }
+                                }
+
+                                axis += 1u32;
+                            }
+                            irys2 += 1u32;
+                        }
+
+                        // ── HRR transfer (branch by kbase/ibase) ──────────────
+                        // Each axis block is at off = axis*g_size.
+                        let mut axis2 = 0u32;
+                        while axis2 < 3u32 {
+                            let off = axis2 * g_size;
+                            let mut rirj = rirjx;
+                            let mut rkrl = rkrlx;
+                            if axis2 == 1u32 {
+                                rirj = rirjy;
+                                rkrl = rkrly;
+                            }
+                            if axis2 == 2u32 {
+                                rirj = rirjz;
+                                rkrl = rkrlz;
+                            }
+
+                            if kbase == 1u32 {
+                                if ibase == 1u32 {
+                                    // ik2d: i then k done; transfer dl←dk (ll), dj←di (lj).
+                                    // ll loop
+                                    let mut l = 1u32;
+                                    while l <= ll {
+                                        let mut k = 0u32;
+                                        while k <= (mmax - l) {
+                                            let mut i = 0u32;
+                                            while i <= nmax {
+                                                let ptr = l * dl + k * dk + i * di;
+                                                let mut r = 0u32;
+                                                while r < nrys {
+                                                    let idx = ptr + r;
+                                                    g[(off + idx) as usize] = rkrl
+                                                        * g[(off + idx - dl) as usize]
+                                                        + g[(off + idx - dl + dk) as usize];
+                                                    r += 1u32;
+                                                }
+                                                i += 1u32;
+                                            }
+                                            k += 1u32;
+                                        }
+                                        l += 1u32;
+                                    }
+                                    let mut j = 1u32;
+                                    while j <= lj {
+                                        let mut l2 = 0u32;
+                                        while l2 <= ll {
+                                            let mut k2 = 0u32;
+                                            while k2 <= lk {
+                                                let ptr = j * dj + l2 * dl + k2 * dk;
+                                                let mut i2 = 0u32;
+                                                while i2 <= (nmax - j) {
+                                                    let pbase = ptr + i2 * di;
+                                                    let mut r = 0u32;
+                                                    while r < nrys {
+                                                        let idx = pbase + r;
+                                                        g[(off + idx) as usize] = rirj
+                                                            * g[(off + idx - dj) as usize]
+                                                            + g[(off + idx - dj + di) as usize];
+                                                        r += 1u32;
+                                                    }
+                                                    i2 += 1u32;
+                                                }
+                                                k2 += 1u32;
+                                            }
+                                            l2 += 1u32;
+                                        }
+                                        j += 1u32;
+                                    }
+                                } else {
+                                    // kj2d: i raise (dj←di), then l raise (dl←dk).
+                                    let mut i = 1u32;
+                                    while i <= li {
+                                        let mut j = 0u32;
+                                        while j <= (nmax - i) {
+                                            let mut k = 0u32;
+                                            while k <= mmax {
+                                                let ptr = j * dj + k * dk + i * di;
+                                                let mut r = 0u32;
+                                                while r < nrys {
+                                                    let idx = ptr + r;
+                                                    g[(off + idx) as usize] = rirj
+                                                        * g[(off + idx - di) as usize]
+                                                        + g[(off + idx - di + dj) as usize];
+                                                    r += 1u32;
+                                                }
+                                                k += 1u32;
+                                            }
+                                            j += 1u32;
+                                        }
+                                        i += 1u32;
+                                    }
+                                    let mut j2 = 0u32;
+                                    while j2 <= lj {
+                                        let mut l = 1u32;
+                                        while l <= ll {
+                                            let mut k = 0u32;
+                                            while k <= (mmax - l) {
+                                                let ptr = j2 * dj + l * dl + k * dk;
+                                                let mut n = 0u32;
+                                                while n < dk {
+                                                    let idx = ptr + n;
+                                                    g[(off + idx) as usize] = rkrl
+                                                        * g[(off + idx - dl) as usize]
+                                                        + g[(off + idx - dl + dk) as usize];
+                                                    n += 1u32;
+                                                }
+                                                k += 1u32;
+                                            }
+                                            l += 1u32;
+                                        }
+                                        j2 += 1u32;
+                                    }
+                                }
+                            } else if ibase == 1u32 {
+                                // il2d: k raise (dk←... using dl), then j raise (dj←di).
+                                let mut k = 1u32;
+                                while k <= lk {
+                                    let mut l = 0u32;
+                                    while l <= (mmax - k) {
+                                        let mut i = 0u32;
+                                        while i <= nmax {
+                                            let ptr = l * dl + k * dk + i * di;
+                                            let mut r = 0u32;
+                                            while r < nrys {
+                                                let idx = ptr + r;
+                                                g[(off + idx) as usize] = rkrl
+                                                    * g[(off + idx - dk) as usize]
+                                                    + g[(off + idx - dk + dl) as usize];
+                                                r += 1u32;
+                                            }
+                                            i += 1u32;
+                                        }
+                                        l += 1u32;
+                                    }
+                                    k += 1u32;
+                                }
+                                let mut j = 1u32;
+                                while j <= lj {
+                                    let mut l = 0u32;
+                                    while l <= ll {
+                                        let mut k2 = 0u32;
+                                        while k2 <= lk {
+                                            let ptr = j * dj + l * dl + k2 * dk;
+                                            let mut i2 = 0u32;
+                                            while i2 <= (nmax - j) {
+                                                let pbase = ptr + i2 * di;
+                                                let mut r = 0u32;
+                                                while r < nrys {
+                                                    let idx = pbase + r;
+                                                    g[(off + idx) as usize] = rirj
+                                                        * g[(off + idx - dj) as usize]
+                                                        + g[(off + idx - dj + di) as usize];
+                                                    r += 1u32;
+                                                }
+                                                i2 += 1u32;
+                                            }
+                                            k2 += 1u32;
+                                        }
+                                        l += 1u32;
+                                    }
+                                    j += 1u32;
+                                }
+                            } else {
+                                // lj2d: i raise (dj←di), then k raise (dl←dk).
+                                let mut i = 1u32;
+                                while i <= li {
+                                    let mut j = 0u32;
+                                    while j <= (nmax - i) {
+                                        let mut l = 0u32;
+                                        while l <= mmax {
+                                            let ptr = j * dj + l * dl + i * di;
+                                            let mut r = 0u32;
+                                            while r < nrys {
+                                                let idx = ptr + r;
+                                                g[(off + idx) as usize] = rirj
+                                                    * g[(off + idx - di) as usize]
+                                                    + g[(off + idx - di + dj) as usize];
+                                                r += 1u32;
+                                            }
+                                            l += 1u32;
+                                        }
+                                        j += 1u32;
+                                    }
+                                    i += 1u32;
+                                }
+                                let mut j2 = 0u32;
+                                while j2 <= lj {
+                                    let mut k = 1u32;
+                                    while k <= lk {
+                                        let mut l = 0u32;
+                                        while l <= (mmax - k) {
+                                            let ptr = j2 * dj + l * dl + k * dk;
+                                            let mut n = 0u32;
+                                            while n < dk {
+                                                let idx = ptr + n;
+                                                g[(off + idx) as usize] = rkrl
+                                                    * g[(off + idx - dk) as usize]
+                                                    + g[(off + idx - dk + dl) as usize];
+                                                n += 1u32;
+                                            }
+                                            l += 1u32;
+                                        }
+                                        k += 1u32;
+                                    }
+                                    j2 += 1u32;
+                                }
+                            }
+
+                            axis2 += 1u32;
+                        }
+
+                        // ── Contract into per-quad Cartesian blocks ───────────
+                        // Descending cart_comps over (l,k,j,i); i fastest.
+                        let mut l_idx = 0u32;
+                        let mut la = 0u32;
+                        while la <= ll {
+                            let lx = ll - la;
+                            let ll_minus = ll - lx;
+                            let mut lb = 0u32;
+                            while lb <= ll_minus {
+                                let ly = ll_minus - lb;
+                                let lz = ll - lx - ly;
+
+                                let mut k_idx = 0u32;
+                                let mut ka = 0u32;
+                                while ka <= lk {
+                                    let kx = lk - ka;
+                                    let lk_minus = lk - kx;
+                                    let mut kb = 0u32;
+                                    while kb <= lk_minus {
+                                        let ky = lk_minus - kb;
+                                        let kz = lk - kx - ky;
+
+                                        let mut j_idx = 0u32;
+                                        let mut ja = 0u32;
+                                        while ja <= lj {
+                                            let jx = lj - ja;
+                                            let lj_minus = lj - jx;
+                                            let mut jb = 0u32;
+                                            while jb <= lj_minus {
+                                                let jy = lj_minus - jb;
+                                                let jz = lj - jx - jy;
+
+                                                let mut i_idx = 0u32;
+                                                let mut ia = 0u32;
+                                                while ia <= li {
+                                                    let ix = li - ia;
+                                                    let li_minus = li - ix;
+                                                    let mut ib = 0u32;
+                                                    while ib <= li_minus {
+                                                        let iy = li_minus - ib;
+                                                        let iz = li - ix - iy;
+
+                                                        let mut sum = F::new(0.0);
+                                                        let mut r = 0u32;
+                                                        while r < nrys {
+                                                            let xi = r
+                                                                + ix * di
+                                                                + kx * dk
+                                                                + lx * dl
+                                                                + jx * dj;
+                                                            let yi = r
+                                                                + iy * di
+                                                                + ky * dk
+                                                                + ly * dl
+                                                                + jy * dj;
+                                                            let zi = r
+                                                                + iz * di
+                                                                + kz * dk
+                                                                + lz * dl
+                                                                + jz * dj;
+                                                            sum += g[xi as usize]
+                                                                * g[(gy_off + yi) as usize]
+                                                                * g[(gz_off + zi) as usize];
+                                                            r += 1u32;
+                                                        }
+
+                                                        // Accumulate into every
+                                                        // contraction quad block.
+                                                        let mut ci = 0u32;
+                                                        while ci < nctr_i {
+                                                            let cvi =
+                                                                coeff_i[(pi * nctr_i + ci) as usize];
+                                                            let mut cj = 0u32;
+                                                            while cj < nctr_j {
+                                                                let cvj = coeff_j
+                                                                    [(pj * nctr_j + cj) as usize];
+                                                                let mut ck = 0u32;
+                                                                while ck < nctr_k {
+                                                                    let cvk = coeff_k[(pk
+                                                                        * nctr_k
+                                                                        + ck)
+                                                                        as usize];
+                                                                    let mut cl = 0u32;
+                                                                    while cl < nctr_l {
+                                                                        let cvl = coeff_l[(pl
+                                                                            * nctr_l
+                                                                            + cl)
+                                                                            as usize];
+                                                                        let weight =
+                                                                            cvi * cvj * cvk * cvl;
+                                                                        let qbase = (((ci
+                                                                            * nctr_j
+                                                                            + cj)
+                                                                            * nctr_k
+                                                                            + ck)
+                                                                            * nctr_l
+                                                                            + cl)
+                                                                            * block_len;
+                                                                        let oidx = qbase
+                                                                            + i_idx
+                                                                            + j_idx * nfi
+                                                                            + k_idx * nfi * nfj
+                                                                            + l_idx
+                                                                                * nfi
+                                                                                * nfj
+                                                                                * nfk;
+                                                                        cart_out[oidx as usize] +=
+                                                                            weight * sum;
+                                                                        cl += 1u32;
+                                                                    }
+                                                                    ck += 1u32;
+                                                                }
+                                                                cj += 1u32;
+                                                            }
+                                                            ci += 1u32;
+                                                        }
+
+                                                        i_idx += 1u32;
+                                                        ib += 1u32;
+                                                    }
+                                                    ia += 1u32;
+                                                }
+                                                j_idx += 1u32;
+                                                jb += 1u32;
+                                            }
+                                            ja += 1u32;
+                                        }
+                                        k_idx += 1u32;
+                                        kb += 1u32;
+                                    }
+                                    ka += 1u32;
+                                }
+                                l_idx += 1u32;
+                                lb += 1u32;
+                            }
+                            la += 1u32;
+                        }
+
+                        pl += 1u32;
+                    }
+                    pk += 1u32;
+                }
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`two_electron_scalar_kernel`] at `f64` on a resolved backend client
+/// and read back the per-quad Cartesian accumulation buffer (`out_len`).
+#[allow(clippy::too_many_arguments)]
+fn run_2e_scalar_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    li: u32,
+    lj: u32,
+    lk: u32,
+    ll: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nprim_k: u32,
+    nprim_l: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    nctr_k: u32,
+    nctr_l: u32,
+    di: u32,
+    dk: u32,
+    dl: u32,
+    dj: u32,
+    g_size: u32,
+    nmax: u32,
+    mmax: u32,
+    g2d_ijmax: u32,
+    g2d_klmax: u32,
+    ibase: u32,
+    kbase: u32,
+    nroots: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
+    common_factor: f64,
+    exps_i: &[f64],
+    exps_j: &[f64],
+    exps_k: &[f64],
+    exps_l: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    coeff_k: &[f64],
+    coeff_l: &[f64],
+    out_len: usize,
+) -> Vec<f64> {
+    let nroots_u = nroots as usize;
+    let g_size_u = g_size as usize;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let exps_k_h = client.create_from_slice(f64::as_bytes(exps_k));
+    let exps_l_h = client.create_from_slice(f64::as_bytes(exps_l));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+    let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
+    let coeff_l_h = client.create_from_slice(f64::as_bytes(coeff_l));
+
+    let g_zero = vec![0.0_f64; 3 * g_size_u];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let rys_zero = vec![0.0_f64; nroots_u];
+    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    two_electron_scalar_kernel::launch::<f64, R>(
+        client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
+        unsafe { ArrayArg::from_raw_parts(exps_l_h, exps_l.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_l_h, coeff_l.len()) },
+        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size_u) },
+        unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
+        unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
+        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+        ri[0],
+        ri[1],
+        ri[2],
+        rj[0],
+        rj[1],
+        rj[2],
+        rk[0],
+        rk[1],
+        rk[2],
+        rl[0],
+        rl[1],
+        rl[2],
+        common_factor,
+        PIE4,
+        li,
+        lj,
+        lk,
+        ll,
+        nprim_i,
+        nprim_j,
+        nprim_k,
+        nprim_l,
+        nctr_i,
+        nctr_j,
+        nctr_k,
+        nctr_l,
+        di,
+        dk,
+        dl,
+        dj,
+        g_size,
+        nmax,
+        mmax,
+        g2d_ijmax,
+        g2d_klmax,
+        ibase,
+        kbase,
+        nroots,
+    );
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
 /// `int2e_ip1` gradient launch — the ∇_A <ij|kl> two-electron force (GRAD-07).
 ///
 /// Builds the plain Coulomb G-tensor with `li_ceil = li+1` headroom
@@ -1180,6 +1987,286 @@ pub fn launch_two_electron(
             }
             launch_two_electron_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scalar 2e device-vs-host cross-check + f32 genericity (quick task 260529-q4k)
+//
+// The device kernel must reproduce the host
+// `contract_2e_cart(fill_g_tensor_2e(...))` Cartesian buffer for a single
+// primitive/contraction pair across all four HRR branches (ibase/kbase ∈
+// {true,false} via li>lj / lk>ll), and must compile+launch for F = f32.
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(all(test, feature = "cpu"))]
+mod device_tests {
+    use super::*;
+
+    fn cpu_client() -> ComputeClient<cubecl::cpu::CpuRuntime> {
+        cubecl::cpu::CpuRuntime::client(&Default::default())
+    }
+
+    /// Host single-pair Cartesian reference: fill_g_tensor_2e → contract_2e_cart
+    /// for one primitive and one contraction (coeff weights applied).
+    #[allow(clippy::too_many_arguments)]
+    fn host_cart_2e(
+        li: u8,
+        lj: u8,
+        lk: u8,
+        ll: u8,
+        ai: f64,
+        aj: f64,
+        ak: f64,
+        al: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        rk: [f64; 3],
+        rl: [f64; 3],
+        common_factor: f64,
+        ci: f64,
+        cj: f64,
+        ck: f64,
+        cl: f64,
+    ) -> Vec<f64> {
+        let shape = build_2e_shape(li as usize, lj as usize, lk as usize, ll as usize);
+        let pdata_ij =
+            compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let pdata_kl =
+            compute_pdata_host(ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0);
+        let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+        let g = fill_g_tensor_2e(ai, aj, ak, al, &ri, &rj, &rk, &rl, shape, quartet_fac);
+        let prim_cart = contract_2e_cart(&g, shape, li, lj, lk, ll);
+        let weight = ci * cj * ck * cl;
+        prim_cart.iter().map(|&v| v * weight).collect()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assert_device_matches_host(
+        li: u8,
+        lj: u8,
+        lk: u8,
+        ll: u8,
+        ai: f64,
+        aj: f64,
+        ak: f64,
+        al: f64,
+    ) {
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.0_f64, 0.0, 1.1];
+        let rk = [0.7_f64, 0.0, 0.0];
+        let rl = [0.0_f64, 0.9, 0.0];
+        let ci = 0.9_f64;
+        let cj = 1.1_f64;
+        let ck = 0.8_f64;
+        let cl = 1.2_f64;
+        let common_factor = (PI * PI * PI) * 2.0 / SQRTPI
+            * common_fac_sp(li)
+            * common_fac_sp(lj)
+            * common_fac_sp(lk)
+            * common_fac_sp(ll);
+        let shape = build_2e_shape(li as usize, lj as usize, lk as usize, ll as usize);
+        let nfi = ncart(li);
+        let nfj = ncart(lj);
+        let nfk = ncart(lk);
+        let nfl = ncart(ll);
+        let out_len = nfi * nfj * nfk * nfl;
+
+        let host = host_cart_2e(
+            li, lj, lk, ll, ai, aj, ak, al, ri, rj, rk, rl, common_factor, ci, cj, ck, cl,
+        );
+        let dev = run_2e_scalar_device::<cubecl::cpu::CpuRuntime>(
+            &cpu_client(),
+            li as u32,
+            lj as u32,
+            lk as u32,
+            ll as u32,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            shape.di as u32,
+            shape.dk as u32,
+            shape.dl as u32,
+            shape.dj as u32,
+            shape.g_size as u32,
+            shape.nmax as u32,
+            shape.mmax as u32,
+            shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32,
+            shape.ibase as u32,
+            shape.kbase as u32,
+            shape.nroots as u32,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            &[ai],
+            &[aj],
+            &[ak],
+            &[al],
+            &[ci],
+            &[cj],
+            &[ck],
+            &[cl],
+            out_len,
+        );
+
+        assert_eq!(
+            host.len(),
+            dev.len(),
+            "length mismatch for ({li},{lj},{lk},{ll})"
+        );
+        for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
+            let diff = (h - d).abs();
+            let thr = 1e-12 + 1e-10 * h.abs();
+            assert!(
+                diff <= thr,
+                "device/host mismatch ({li},{lj},{lk},{ll}) idx={idx}: host={h:.15e} dev={d:.15e} diff={diff:.3e}"
+            );
+        }
+    }
+
+    // (s,s,s,s): nroots=1, ibase=false, kbase=false → lj2d branch.
+    #[test]
+    fn test_2e_device_ssss() {
+        assert_device_matches_host(0, 0, 0, 0, 1.0, 0.8, 0.9, 1.1);
+    }
+
+    // (p,s,s,s): li>lj → ibase=true; lk==ll → kbase=false → il2d branch.
+    #[test]
+    fn test_2e_device_psss() {
+        assert_device_matches_host(1, 0, 0, 0, 0.8, 1.0, 0.9, 1.1);
+    }
+
+    // (s,p,s,s): li<lj → ibase=false; kbase=false → lj2d branch.
+    #[test]
+    fn test_2e_device_spss() {
+        assert_device_matches_host(0, 1, 0, 0, 1.0, 0.8, 0.9, 1.1);
+    }
+
+    // (p,p,s,s): li==lj → ibase=false, lj2d branch with i+k mixing.
+    #[test]
+    fn test_2e_device_ppss() {
+        assert_device_matches_host(1, 1, 0, 0, 0.8, 0.9, 1.0, 1.1);
+    }
+
+    // (d,s,s,s): higher li, ibase=true → il2d branch, nroots=2.
+    #[test]
+    fn test_2e_device_dsss() {
+        assert_device_matches_host(2, 0, 0, 0, 0.7, 1.0, 0.9, 1.1);
+    }
+
+    // (s,s,p,s): lk>ll → kbase=true, ibase=false → kj2d branch.
+    #[test]
+    fn test_2e_device_sspsk() {
+        assert_device_matches_host(0, 0, 1, 0, 1.0, 0.8, 0.9, 1.1);
+    }
+
+    // (p,s,p,s): ibase=true, kbase=true → ik2d branch (the 4th HRR branch).
+    #[test]
+    fn test_2e_device_psps() {
+        assert_device_matches_host(1, 0, 1, 0, 0.8, 1.0, 0.9, 1.1);
+    }
+
+    // (p,p,p,p): nroots=3, full b00 cross-coupling, lj2d branch.
+    #[test]
+    fn test_2e_device_pppp() {
+        assert_device_matches_host(1, 1, 1, 1, 0.8, 0.9, 1.0, 1.1);
+    }
+
+    /// Genericity: the kernel compiles AND launches for F = f32. An s-s-s-s f32
+    /// launch yields a finite result.
+    #[test]
+    fn test_two_electron_scalar_kernel_generic_f32() {
+        let client = cpu_client();
+        let shape = build_2e_shape(0, 0, 0, 0);
+        let g_size = shape.g_size;
+        let g_zero = vec![0.0_f32; 3 * g_size];
+        let rys_zero = vec![0.0_f32; shape.nroots];
+        let out_zero = [0.0_f32; 1];
+
+        let one = [1.0_f32];
+        let exps_i_h = client.create_from_slice(f32::as_bytes(&one));
+        let exps_j_h = client.create_from_slice(f32::as_bytes(&one));
+        let exps_k_h = client.create_from_slice(f32::as_bytes(&one));
+        let exps_l_h = client.create_from_slice(f32::as_bytes(&one));
+        let coeff_i_h = client.create_from_slice(f32::as_bytes(&one));
+        let coeff_j_h = client.create_from_slice(f32::as_bytes(&one));
+        let coeff_k_h = client.create_from_slice(f32::as_bytes(&one));
+        let coeff_l_h = client.create_from_slice(f32::as_bytes(&one));
+        let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
+        let u_h = client.create_from_slice(f32::as_bytes(&rys_zero));
+        let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
+        let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+
+        let common_factor =
+            ((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0)
+                * common_fac_sp(0) * common_fac_sp(0)) as f32;
+
+        two_electron_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(exps_l_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_j_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_k_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_l_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size) },
+            unsafe { ArrayArg::from_raw_parts(u_h, shape.nroots) },
+            unsafe { ArrayArg::from_raw_parts(w_h, shape.nroots) },
+            unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
+            0.0_f32,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.1,
+            0.7,
+            0.0,
+            0.0,
+            0.0,
+            0.9,
+            0.0,
+            common_factor,
+            PIE4 as f32,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            shape.di as u32,
+            shape.dk as u32,
+            shape.dl as u32,
+            shape.dj as u32,
+            shape.g_size as u32,
+            shape.nmax as u32,
+            shape.mmax as u32,
+            shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32,
+            shape.ibase as u32,
+            shape.kbase as u32,
+            1u32,
+        );
+
+        let raw = client.read_one_unchecked(out_h);
+        let out = f32::from_bytes(&raw)[0];
+        assert!(out.is_finite(), "f32 scalar 2e kernel result must be finite");
     }
 }
 
