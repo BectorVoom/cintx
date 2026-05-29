@@ -1,6 +1,28 @@
 //! `origi` family: origin-displaced r^n one-electron integrals
-//! (`cint1e_a.c`). Split out of the original single-file `unstable.rs`;
-//! move-only — function bodies are unchanged.
+//! (`cint1e_a.c`).
+//!
+//! # Host / device split (quick-260529-twi Task 2)
+//!
+//! The SCALAR r2/r4 paths (`int1e_r2_origi_sph`, `int1e_r4_origi_sph`) now run a
+//! real CubeCL `#[cube(launch)]` device kernel ([`origi_scalar_kernel`]) generic
+//! over `F: Float`, dispatched on all five `ResolvedBackend` arms
+//! (CPU / Wgpu / Cuda / ROCm-HIP / Metal) via [`run_origi_scalar_on_backend`].
+//! The kernel builds the per-primitive overlap G-tensor (VRR + HRR) at the origi
+//! ceiling angular momentum and performs the r2/r4 Cartesian contraction
+//! ON-DEVICE, in f64-internal / F-output, accumulating ONE `nci*ncj` Cartesian
+//! block (i-major: `out[ci_idx*ncj + cj_idx]`) summed over every primitive pair
+//! AND contraction pair -- exactly matching the host scalar path.
+//!
+//! ON HOST (host part of the split, UNCHANGED): the `cart_to_sph_1e`
+//! coefficient-table transform (its tables are host-only) + the `common_fac_sp`
+//! s/p normalization + the AO scatter into `staging`.
+//!
+//! DEFERRED-TO-HOST (documented, mirrors the 1e/2e ports deferring derivative
+//! sub-paths): the `ip2` variants (`int1e_r2_origi_ip2_sph`,
+//! `int1e_r4_origi_ip2_sph`) keep their existing host path. The ip2 path adds a
+//! second `G1E_D_J` ket-derivative ladder (`g1e_d_j` + `contract_origi_*_ip2`)
+//! that is a separable port; it is left on host this task and selected by an
+//! early branch on `origi_variant` inside `launch_origi`.
 
 use super::shared::{SQRTPI, cart_comps, common_fac_sp, make_exec_stats};
 use crate::backend::ResolvedBackend;
@@ -10,7 +32,17 @@ use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
+use cubecl::Runtime;
+use cubecl::client::ComputeClient;
+use cubecl::prelude::*;
 use std::f64::consts::PI;
+
+/// Maximum bra+ket angular ceiling the device G-tensor path supports. origi's
+/// scalar contraction reads i-shifts up to +4 (r4), so the G-tensor must already
+/// carry that headroom (it does: `nmax = li_ceil + lj_ceil`). This fail-closed
+/// guard mirrors the `MAX_DEVICE_NROOTS` guard in `one_electron.rs`; origi uses no
+/// Rys roots (pure overlap recurrence), so it bounds the combined ceiling instead.
+const MAX_DEVICE_LSUM: u32 = 12;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Origi family: origin-displaced r^n 1e integrals
@@ -81,6 +113,10 @@ fn g1e_d_j(g: &[f64], g_size: usize, li: usize, lj: usize, _lk: usize, dj: usize
 
 /// Contract origi r^2 gout: sum over xyz of g3[ix]*g0[iy]*g0[iz]
 /// where g3 = G1E_R_I(G1E_R_I(g0)). g3 is g shifted by 2 in i-direction.
+///
+/// Host reference for the device port (`origi_scalar_kernel`); the live scalar
+/// path now runs on-device, so this is retained as the device-vs-host oracle.
+#[allow(dead_code)]
 fn contract_origi_r2(g0: &[f64], g_size: usize, li: u8, lj: u8, dj: usize) -> Vec<f64> {
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -138,6 +174,10 @@ fn contract_origi_r2(g0: &[f64], g_size: usize, li: u8, lj: u8, dj: usize) -> Ve
 /// = g0[ix+4]*g0[iy]*g0[iz] + 2*g0[ix+2]*g0[iy+2]*g0[iz]
 ///   + 2*g0[ix+2]*g0[iy]*g0[iz+2] + g0[ix]*g0[iy+4]*g0[iz]
 ///   + 2*g0[ix]*g0[iy+2]*g0[iz+2] + g0[ix]*g0[iy]*g0[iz+4]
+///
+/// Host reference for the device port (`origi_scalar_kernel`); the live scalar
+/// path now runs on-device, so this is retained as the device-vs-host oracle.
+#[allow(dead_code)]
 fn contract_origi_r4(g0: &[f64], g_size: usize, li: u8, lj: u8, dj: usize) -> Vec<f64> {
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -330,8 +370,6 @@ pub fn launch_origi(
     _spec: &SpecializationKey,
     staging: &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError> {
-    let _ = backend;
-
     let op_name = plan.descriptor.operator_name();
     let variant = origi_variant(op_name)?;
 
@@ -373,31 +411,69 @@ pub fn launch_origi(
     let n_ctr_i = shell_i.nctr as usize;
     let n_ctr_j = shell_j.nctr as usize;
 
-    for pi in 0..n_prim_i {
-        let ai = shell_i.exponents[pi];
-        for pj in 0..n_prim_j {
-            let aj = shell_j.exponents[pj];
-            let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+    // r_power encodes the scalar r^n operator: r2 -> 2, r4 -> 4. The ip2 variants
+    // carry j_inc>0 and stay on host (deferred -- see module doc).
+    let is_scalar = variant.j_inc == 0;
+    let r_power: u32 = variant.i_inc as u32; // 2 for r2, 4 for r4
 
-            // Build G-tensor with the origi ceiling angular momentum
-            let g = fill_g_tensor_origi(&pd, ri, rj, nmax, lj_ceil);
+    if is_scalar {
+        // -- DEVICE PATH (origi scalar r2/r4) --------------------------------
+        // Fail-closed guard on the combined angular ceiling (overlap recurrence,
+        // no Rys roots -- bounds nmax instead of nroots).
+        if nmax > MAX_DEVICE_LSUM {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "cubecl_origi",
+                detail: format!(
+                    "origi scalar device path requires nmax <= {MAX_DEVICE_LSUM}, got {nmax}"
+                ),
+            });
+        }
 
-            // Contract based on variant
-            let prim_buf = match op_name {
-                "r2_origi" => contract_origi_r2(&g, g_per_axis, li, lj, dj),
-                "r4_origi" => contract_origi_r4(&g, g_per_axis, li, lj, dj),
-                "r2_origi_ip2" => contract_origi_r2_ip2(&g, g_per_axis, li, lj, dj, aj),
-                "r4_origi_ip2" => contract_origi_r4_ip2(&g, g_per_axis, li, lj, dj, aj),
-                _ => unreachable!(),
-            };
+        let dev = run_origi_scalar_on_backend(
+            backend,
+            r_power,
+            li as u32,
+            lj as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            ri,
+            rj,
+            &shell_i.exponents[..n_prim_i],
+            &shell_j.exponents[..n_prim_j],
+            &shell_i.coefficients[..n_prim_i * n_ctr_i],
+            &shell_j.coefficients[..n_prim_j * n_ctr_j],
+        );
+        let copy = cart_buf.len().min(dev.len());
+        cart_buf[..copy].copy_from_slice(&dev[..copy]);
+    } else {
+        // -- HOST PATH (origi ip2 variants -- deferred) ----------------------
+        for pi in 0..n_prim_i {
+            let ai = shell_i.exponents[pi];
+            for pj in 0..n_prim_j {
+                let aj = shell_j.exponents[pj];
+                let pd =
+                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
-            for ci in 0..n_ctr_i {
-                let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
-                for cj in 0..n_ctr_j {
-                    let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
-                    let weight = coeff_i * coeff_j;
-                    for k in 0..prim_buf.len() {
-                        cart_buf[k] += weight * prim_buf[k];
+                // Build G-tensor with the origi ceiling angular momentum
+                let g = fill_g_tensor_origi(&pd, ri, rj, nmax, lj_ceil);
+
+                // Contract based on variant
+                let prim_buf = match op_name {
+                    "r2_origi_ip2" => contract_origi_r2_ip2(&g, g_per_axis, li, lj, dj, aj),
+                    "r4_origi_ip2" => contract_origi_r4_ip2(&g, g_per_axis, li, lj, dj, aj),
+                    _ => unreachable!("scalar variants take the device path"),
+                };
+
+                for ci in 0..n_ctr_i {
+                    let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                    for cj in 0..n_ctr_j {
+                        let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                        let weight = coeff_i * coeff_j;
+                        for k in 0..prim_buf.len() {
+                            cart_buf[k] += weight * prim_buf[k];
+                        }
                     }
                 }
             }
@@ -492,4 +568,555 @@ fn fill_g_tensor_origi(
     }
 
     g
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Device kernel — `#[cube(launch)]`, generic over `F: Float`
+//
+//  On-device port of the host scalar origi pipeline
+//  (`fill_g_tensor_origi` -> `contract_origi_r2` / `contract_origi_r4`).
+//  Single work item (`UNIT_POS == 0`): iterates primitive pairs (pi,pj) and
+//  contraction pairs (ci,cj) in-kernel and accumulates ONE `nci*ncj` Cartesian
+//  block (i-major: `out[ci_idx*ncj + cj_idx]`) summed over all (pi,pj)x(ci,cj),
+//  matching the host `cart_buf` exactly. f64-internal / F-output.
+//
+//  The `#[comptime] r_power` arg (2 or 4) selects the r2 vs r4 contraction
+//  branch via `comptime!`. The overlap G-tensor is built at the origi ceiling
+//  angular momentum (nmax = li + r_power + lj), reusing the per-axis VRR/HRR
+//  `#[cube]` helpers below (direct `#[cube]` calls are allowed — they are NOT
+//  plain-fn calls).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Per-axis 1e overlap VRR into the `g` sub-block starting at `base`
+/// (fixed-center recurrence; stride 1). Mirrors `vrr_step_host`.
+#[cube]
+fn origi_vrr_axis<F: Float>(g: &mut Array<F>, base: u32, rijrx: F, aij2: F, nmax: u32) {
+    if nmax >= 1u32 {
+        g[(base + 1u32) as usize] = rijrx * g[base as usize];
+        let mut n = 1u32;
+        while n < nmax {
+            g[(base + n + 1u32) as usize] = F::cast_from(n) * aij2 * g[(base + n - 1u32) as usize]
+                + rijrx * g[(base + n) as usize];
+            n += 1u32;
+        }
+    }
+}
+
+/// Per-axis HRR into the `g` sub-block starting at `base` (i-stride = 1).
+/// Mirrors `hrr_step_host` with `di = 1`.
+#[cube]
+fn origi_hrr_axis<F: Float>(g: &mut Array<F>, base: u32, rirj: F, dj: u32, li_max: u32, lj: u32) {
+    let mut j = 1u32;
+    while j <= lj {
+        let i_max = li_max - j;
+        let mut i = 0u32;
+        while i <= i_max {
+            let idx_out = base + j * dj + i;
+            let idx_hi = base + (j - 1u32) * dj + (i + 1u32);
+            let idx_lo = base + (j - 1u32) * dj + i;
+            g[idx_out as usize] = g[idx_hi as usize] + rirj * g[idx_lo as usize];
+            i += 1u32;
+        }
+        j += 1u32;
+    }
+}
+
+/// On-device scalar origi r2/r4 G-tensor fill + contraction for ONE shell pair.
+///
+/// Faithful port of `fill_g_tensor_origi` + `contract_origi_r2`/`contract_origi_r4`.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn origi_scalar_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    g: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    sqrtpi: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    #[comptime] r_power: u32,
+) {
+    if UNIT_POS == 0u32 {
+        // Origi ceiling angular momentum: li_ceil = li + r_power, lj_ceil = lj.
+        let li_ceil = li + r_power;
+        let nmax = li_ceil + lj;
+        let dj = nmax + 1u32; // stride between consecutive j-levels within an axis
+        let g_per_axis = (nmax + 1u32) * (lj + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+
+        // Zero the single accumulation block.
+        let mut oi = 0u32;
+        while oi < block_len {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        let rirjx = rix - rjx;
+        let rirjy = riy - rjy;
+        let rirjz = riz - rjz;
+
+        // -- Primitive loop --------------------------------------------------
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                // Pair data in F (norm_i = norm_j = 1.0), matching compute_pdata_host.
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                // Build the overlap G-tensor for this primitive pair into `g`.
+                let mut gi = 0u32;
+                while gi < total_g {
+                    g[gi as usize] = F::new(0.0);
+                    gi += 1u32;
+                }
+                g[gx as usize] = F::new(1.0);
+                g[gy as usize] = F::new(1.0);
+                g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+
+                origi_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                origi_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                origi_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+
+                if lj >= 1u32 {
+                    origi_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj);
+                    origi_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
+                    origi_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
+                }
+
+                // Contract into the single block over all (ci,cj).
+                let mut ci = 0u32;
+                while ci < nctr_i {
+                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                    let mut cj = 0u32;
+                    while cj < nctr_j {
+                        let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                        let weight = coeff_i_val * coeff_j_val;
+
+                        // Cartesian component loops: ci outer, cj inner; lx descending
+                        // (matches host cart_comps). Output index = ci_idx*ncj + cj_idx.
+                        let mut ci_idx = 0u32;
+                        let mut ia = 0u32;
+                        while ia <= li {
+                            let ix = li - ia;
+                            let li_minus_ix = li - ix;
+                            let mut ib = 0u32;
+                            while ib <= li_minus_ix {
+                                let iy = li_minus_ix - ib;
+                                let iz = li - ix - iy;
+
+                                let mut cj_idx = 0u32;
+                                let mut ja = 0u32;
+                                while ja <= lj {
+                                    let jx = lj - ja;
+                                    let lj_minus_jx = lj - jx;
+                                    let mut jb = 0u32;
+                                    while jb <= lj_minus_jx {
+                                        let jy = lj_minus_jx - jb;
+                                        let jz = lj - jx - jy;
+
+                                        let bx = jx * dj + ix;
+                                        let by = jy * dj + iy;
+                                        let bz = jz * dj + iz;
+
+                                        // g0 reads at i-shift 0/2/4.
+                                        let g0x = g[(gx + bx) as usize];
+                                        let g0y = g[(gy + by) as usize];
+                                        let g0z = g[(gz + bz) as usize];
+                                        let g2x = g[(gx + bx + 2u32) as usize];
+                                        let g2y = g[(gy + by + 2u32) as usize];
+                                        let g2z = g[(gz + bz + 2u32) as usize];
+
+                                        let mut val = F::new(0.0);
+                                        if comptime!(r_power == 2u32) {
+                                            // r^2: g2x*g0y*g0z + g0x*g2y*g0z + g0x*g0y*g2z
+                                            val = g2x * g0y * g0z
+                                                + g0x * g2y * g0z
+                                                + g0x * g0y * g2z;
+                                        } else {
+                                            // r^4: g4x*g0y*g0z + 2*g2x*g2y*g0z
+                                            //    + 2*g2x*g0y*g2z + g0x*g4y*g0z
+                                            //    + 2*g0x*g2y*g2z + g0x*g0y*g4z
+                                            let g4x = g[(gx + bx + 4u32) as usize];
+                                            let g4y = g[(gy + by + 4u32) as usize];
+                                            let g4z = g[(gz + bz + 4u32) as usize];
+                                            val = g4x * g0y * g0z
+                                                + F::new(2.0) * g2x * g2y * g0z
+                                                + F::new(2.0) * g2x * g0y * g2z
+                                                + g0x * g4y * g0z
+                                                + F::new(2.0) * g0x * g2y * g2z
+                                                + g0x * g0y * g4z;
+                                        }
+
+                                        cart_out[(ci_idx * ncj + cj_idx) as usize] += weight * val;
+
+                                        cj_idx += 1u32;
+                                        jb += 1u32;
+                                    }
+                                    ja += 1u32;
+                                }
+
+                                ci_idx += 1u32;
+                                ib += 1u32;
+                            }
+                            ia += 1u32;
+                        }
+
+                        cj += 1u32;
+                    }
+                    ci += 1u32;
+                }
+
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`origi_scalar_kernel`] at `f64` on a resolved backend's client and
+/// read back the i-major Cartesian accumulator (one `nci*ncj` block). Generic
+/// over `R: Runtime`; device compute is `f64` (module precision policy). The
+/// `r_power` comptime arg is selected at the `launch::<f64, R>` call site by a
+/// host-side match (CubeCL cannot pass comptime args dynamically).
+#[allow(clippy::too_many_arguments)]
+fn run_origi_scalar_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    r_power: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + (r_power as usize) + lj_u;
+    let g_per_axis = (nmax_u + 1) * (lj_u + 1);
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = nci * ncj;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+
+    let g_zero = vec![0.0_f64; 3 * g_per_axis];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    macro_rules! launch_with {
+        ($rp:expr) => {
+            origi_scalar_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_per_axis) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                SQRTPI,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                $rp,
+            )
+        };
+    }
+
+    if r_power == 2 {
+        launch_with!(2u32);
+    } else {
+        launch_with!(4u32);
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_origi_scalar_device`] — copies the exact arm
+/// set used by `one_electron.rs::run_1e_scalar_on_backend` (Cpu/Wgpu/Cuda/Rocm/Metal).
+#[allow(clippy::too_many_arguments)]
+fn run_origi_scalar_on_backend(
+    backend: &ResolvedBackend,
+    r_power: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_origi_scalar_device::<cubecl::cpu::CpuRuntime>(
+            client, r_power, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_origi_scalar_device::<cubecl_wgpu::WgpuRuntime>(
+            client, r_power, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_origi_scalar_device::<cubecl_cuda::CudaRuntime>(
+            client, r_power, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_origi_scalar_device::<cubecl_hip::HipRuntime>(
+            client, r_power, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_origi_scalar_device::<cubecl_wgpu::WgpuRuntime>(
+            client, r_power, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "cpu")]
+mod tests {
+    use super::*;
+
+    fn cpu_client() -> cubecl::client::ComputeClient<cubecl::cpu::CpuRuntime> {
+        use cubecl::Runtime;
+        cubecl::cpu::CpuRuntime::client(&Default::default())
+    }
+
+    /// Host reference: single-primitive, single-contraction origi scalar block.
+    fn host_origi_block(
+        ai: f64,
+        aj: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        li: u8,
+        lj: u8,
+        r_power: u32,
+    ) -> Vec<f64> {
+        let li_ceil = li as u32 + r_power;
+        let lj_ceil = lj as u32;
+        let nmax = li_ceil + lj_ceil;
+        let g_per_axis = ((nmax + 1) * (lj_ceil + 1)) as usize;
+        let dj = (nmax + 1) as usize;
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let g = fill_g_tensor_origi(&pd, ri, rj, nmax, lj_ceil);
+        if r_power == 2 {
+            contract_origi_r2(&g, g_per_axis, li, lj, dj)
+        } else {
+            contract_origi_r4(&g, g_per_axis, li, lj, dj)
+        }
+    }
+
+    fn assert_close(host: &[f64], dev: &[f64], tag: &str) {
+        assert_eq!(host.len(), dev.len(), "length mismatch ({tag})");
+        for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
+            let diff = (h - d).abs();
+            let thr = 1e-12 + 1e-10 * h.abs();
+            assert!(
+                diff <= thr,
+                "device/host mismatch ({tag}) idx={idx}: host={h:.15e} dev={d:.15e} diff={diff:.3e}"
+            );
+        }
+    }
+
+    /// Device-vs-host cross-check for r2 AND r4 over (s,s),(p,s),(s,p),(p,p),(d,s).
+    #[test]
+    fn test_device_matches_host_origi_scalar() {
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.6_f64, 0.5, 0.7];
+        let ai = 0.9_f64;
+        let aj = 1.3_f64;
+        for &r_power in &[2u32, 4u32] {
+            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1), (2, 0)] {
+                let host = host_origi_block(ai, aj, ri, rj, li, lj, r_power);
+                let dev = run_origi_scalar_device::<cubecl::cpu::CpuRuntime>(
+                    &cpu_client(),
+                    r_power,
+                    li as u32,
+                    lj as u32,
+                    1,
+                    1,
+                    1,
+                    1,
+                    ri,
+                    rj,
+                    &[ai],
+                    &[aj],
+                    &[1.0],
+                    &[1.0],
+                );
+                assert_close(&host, &dev, &format!("origi r{r_power} li={li} lj={lj}"));
+            }
+        }
+    }
+
+    /// Multi-primitive / multi-contraction device-vs-host parity (exercises the
+    /// in-kernel (pi,pj)x(ci,cj) accumulation against the host loop).
+    #[test]
+    fn test_device_matches_host_origi_multiprim() {
+        let ri = [0.1_f64, 0.0, 0.0];
+        let rj = [0.6_f64, 0.5, 0.7];
+        let exps_i = [1.7_f64, 0.5];
+        let exps_j = [2.1_f64, 0.8];
+        let coeff_i = [0.6_f64, 0.4]; // nprim=2, nctr=1
+        let coeff_j = [0.7_f64, 0.3];
+        for &r_power in &[2u32, 4u32] {
+            for &(li, lj) in &[(0u8, 0u8), (1, 0), (1, 1)] {
+                // Host reference: full primitive + contraction accumulation.
+                let li_ceil = li as u32 + r_power;
+                let nmax = li_ceil + lj as u32;
+                let g_per_axis = ((nmax + 1) * (lj as u32 + 1)) as usize;
+                let dj = (nmax + 1) as usize;
+                let nci = ncart(li);
+                let ncj = ncart(lj);
+                let mut host = vec![0.0_f64; nci * ncj];
+                for pi in 0..2usize {
+                    for pj in 0..2usize {
+                        let pd = compute_pdata_host(
+                            exps_i[pi], exps_j[pj], ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0,
+                            1.0,
+                        );
+                        let g = fill_g_tensor_origi(&pd, ri, rj, nmax, lj as u32);
+                        let prim = if r_power == 2 {
+                            contract_origi_r2(&g, g_per_axis, li, lj, dj)
+                        } else {
+                            contract_origi_r4(&g, g_per_axis, li, lj, dj)
+                        };
+                        let w = coeff_i[pi] * coeff_j[pj];
+                        for k in 0..prim.len() {
+                            host[k] += w * prim[k];
+                        }
+                    }
+                }
+                let dev = run_origi_scalar_device::<cubecl::cpu::CpuRuntime>(
+                    &cpu_client(),
+                    r_power,
+                    li as u32,
+                    lj as u32,
+                    2,
+                    2,
+                    1,
+                    1,
+                    ri,
+                    rj,
+                    &exps_i,
+                    &exps_j,
+                    &coeff_i,
+                    &coeff_j,
+                );
+                assert_close(&host, &dev, &format!("origi-mp r{r_power} li={li} lj={lj}"));
+            }
+        }
+    }
+
+    /// Genericity: the kernel compiles and launches for `F = f32` (s-s yields a
+    /// finite output). Same shape as `one_electron.rs`'s f32 smoke test.
+    #[test]
+    fn test_origi_scalar_kernel_generic_f32() {
+        let client = cpu_client();
+        let exps_i = [1.0_f32];
+        let exps_j = [1.0_f32];
+        let coeff_i = [1.0_f32];
+        let coeff_j = [1.0_f32];
+        // s-s, r_power=2: li=lj=0 -> nmax=2, g_per_axis=3 -> 9 g elements; out_len=1.
+        let g_zero = [0.0_f32; 9];
+        let out_zero = [0.0_f32; 1];
+
+        let exps_i_h = client.create_from_slice(f32::as_bytes(&exps_i));
+        let exps_j_h = client.create_from_slice(f32::as_bytes(&exps_j));
+        let coeff_i_h = client.create_from_slice(f32::as_bytes(&coeff_i));
+        let coeff_j_h = client.create_from_slice(f32::as_bytes(&coeff_j));
+        let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
+        let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+
+        origi_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_j_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(g_h, 9) },
+            unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
+            0.0_f32, // rix
+            0.0,     // riy
+            0.0,     // riz
+            0.0,     // rjx
+            0.0,     // rjy
+            1.4,     // rjz
+            SQRTPI as f32,
+            std::f64::consts::PI as f32,
+            0,    // li
+            0,    // lj
+            1,    // nprim_i
+            1,    // nprim_j
+            1,    // nctr_i
+            1,    // nctr_j
+            2u32, // r_power
+        );
+
+        let raw = client.read_one_unchecked(out_h);
+        let out = f32::from_bytes(&raw)[0];
+        assert!(out.is_finite(), "f32 origi r2 kernel result must be finite");
+        assert!(out > 0.0, "s-s origi r2 f32 result should be positive: {out}");
+    }
 }
