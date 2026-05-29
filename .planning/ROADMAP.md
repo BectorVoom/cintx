@@ -500,7 +500,7 @@ depend on FND-02 (Wheeler nroots≥6).
 Plans:
 
 **Wave 1**
-- [ ] 22-01-PLAN.md — Core PTR_COMMON_ORIG slot plumbing: const + OperatorEnvParams.common_orig field + operator-agnostic eval_raw env[1..3] read + finiteness validator (D-01) + ExecutionOptions.common_orig + with_common_origin setter + api.rs propagation.
+- [x] 22-01-PLAN.md — Core PTR_COMMON_ORIG slot plumbing: const + OperatorEnvParams.common_orig field + operator-agnostic eval_raw env[1..3] read + finiteness validator (D-01) + ExecutionOptions.common_orig + with_common_origin setter + api.rs propagation.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 22-02-PLAN.md — Non-zero gauge-origin H2O/STO-3G oracle fixture (data infra for Phases 24/26) + raw<->plan slot round-trip test (D-03 slot verification, no consuming kernel).
