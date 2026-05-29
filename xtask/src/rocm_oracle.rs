@@ -17,9 +17,15 @@
 //! Profile semantics mirror `oracle_compare`'s `--profile` allowlist:
 //! - `base` (default): activates only the `rocm` feature.
 //! - `with-f12`, `with-4c1e`, `with-f12+with-4c1e`: append the corresponding
-//!   feature(s); rocm is always on. Note that the rocm tests currently only
-//!   cover the base family (7 tests across 5 files); higher profiles compile
-//!   and run cleanly but exercise no additional rocm-specific tests.
+//!   feature(s); rocm is always on. Note that the rocm tests cover the base
+//!   family; higher profiles compile and run cleanly but exercise no additional
+//!   rocm-specific tests.
+//!
+//! The base rocm suite now also covers ECP: `ecp_random_rocm_parity.rs`
+//! (`test_ecp_sph_random_rocm_idempotency`, quick-260529-gbf) drives the safe
+//! API `int1e_ecp_sph` on the ROCm device, exercising the `ecp_angular_kernel`
+//! `#[cube(launch)]` device path. ECP has no with-* feature, so it runs under
+//! the base profile (rocm only) with no profile flag.
 
 use anyhow::{Context, Result};
 use std::process::Command;
