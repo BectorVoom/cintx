@@ -1682,9 +1682,6 @@ fn launch_two_electron_typed<F: CintFloat>(
         });
     }
 
-    // Host-side implementation (no CubeCL launch path here).
-    let _ = backend;
-
     let shells = plan.shells.as_slice();
     if shells.len() < 4 {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -1776,62 +1773,98 @@ fn launch_two_electron_typed<F: CintFloat>(
         );
     }
 
-    // Per-contraction-quad Cartesian accumulators (mirrors the one_electron.rs
-    // general-contraction fix, cintx 9af2164). A generally-contracted shell
-    // (nctr>1 — e.g. cc-pVDZ's 9s→3s / 4p→2p blocks) emits ONE
-    // nfi*nfj*nfk*nfl Cartesian block PER (ci,cj,ck,cl) contraction quad. The
-    // contraction index is the OUTER (slow) AO index within each shell axis and
-    // the angular component the inner index — libcint "contraction-major" AO
-    // ordering. For the segmented case (all nctr==1) this is a single block,
-    // byte-identical to the prior single-buffer path. Block (ci,cj,ck,cl) starts
-    // at flat offset (((ci*n_ctr_j + cj)*n_ctr_k + ck)*n_ctr_l + cl) * block_len.
-    // The previous code summed every contraction quad into ONE buffer and
-    // scattered it as if nctr==1, leaving the inner-contraction AO blocks zero
-    // (near-zero ERIs → SCF divergence for cc-pVDZ etc.).
-    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * block_len];
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scalar 2e device dispatch (quick task 260529-q4k).
+    //
+    // The per-(ci,cj,ck,cl) i-fastest Cartesian block accumulation
+    // (`fill_g_tensor_2e` → `contract_2e_cart`, weighted + summed over every
+    // primitive and contraction quad) now runs in the `two_electron_scalar_kernel`
+    // `#[cube(launch)]` device kernel via `run_2e_scalar_device`, dispatched on
+    // the resolved backend (CPU / Wgpu / Cuda / ROCm / Metal). The returned
+    // `cart_blocks` has the IDENTICAL layout the host loop produced (block
+    // (ci,cj,ck,cl) at offset (((ci*n_ctr_j+cj)*n_ctr_k+ck)*n_ctr_l+cl)*block_len,
+    // i fastest within each block), so the representation-dispatch host scatter
+    // below (cart_to_sph_2e / cart_to_spinor_sf_4d + contraction-major AO scatter)
+    // consumes it unchanged — the host part of the honest host/device split.
+    // ─────────────────────────────────────────────────────────────────────────
 
-    for pi in 0..n_prim_i {
-        let ai = shell_i.exponents[pi];
-        for pj in 0..n_prim_j {
-            let aj = shell_j.exponents[pj];
-            let pdata_ij = compute_pdata_host(
-                ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-            );
-            for pk in 0..n_prim_k {
-                let ak = shell_k.exponents[pk];
-                for pl in 0..n_prim_l {
-                    let al = shell_l.exponents[pl];
-                    let pdata_kl = compute_pdata_host(
-                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
-                    );
-                    let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
-
-                    let g = fill_g_tensor_2e(ai, aj, ak, al, &ri, &rj, &rk, &rl, shape, quartet_fac);
-                    let prim_cart = contract_2e_cart(&g, shape, li, lj, lk, ll);
-
-                    for ci in 0..n_ctr_i {
-                        let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
-                        for cj in 0..n_ctr_j {
-                            let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
-                            for ck in 0..n_ctr_k {
-                                let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
-                                for cl in 0..n_ctr_l {
-                                    let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
-                                    let weight = coeff_i * coeff_j * coeff_k * coeff_l;
-                                    let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l
-                                        + cl)
-                                        * block_len;
-                                    for idx in 0..block_len {
-                                        cart_blocks[base + idx] += weight * prim_cart[idx];
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    // Fail-closed nroots guard BEFORE any dispatch (mirrors 2c2e's MAX_DEVICE_NROOTS):
+    // scalar nroots = (li+lj+lk+ll)/2+1; >5 means l-sum>8, outside rys_root1..5.
+    if shape.nroots > MAX_DEVICE_NROOTS {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "cubecl_2e",
+            detail: format!(
+                "device 2e kernel supports nroots<={MAX_DEVICE_NROOTS} (l_i+l_j+l_k+l_l<=8); \
+                 got nroots={} for l=({li},{lj},{lk},{ll})",
+                shape.nroots
+            ),
+        });
     }
+
+    // Flatten the f64 per-shell exps/coeffs the kernel reads.
+    let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+    let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+    let exps_k: Vec<f64> = shell_k.exponents[..n_prim_k].to_vec();
+    let exps_l: Vec<f64> = shell_l.exponents[..n_prim_l].to_vec();
+    let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+    let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+    let coeff_k: Vec<f64> = shell_k.coefficients[..n_prim_k * n_ctr_k].to_vec();
+    let coeff_l: Vec<f64> = shell_l.coefficients[..n_prim_l * n_ctr_l].to_vec();
+
+    let out_len = n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * block_len;
+
+    let cart_blocks: Vec<f64> = match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_2e_scalar_device::<cubecl::cpu::CpuRuntime>(
+            client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
+            n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
+            shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
+            ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
+            &coeff_k, &coeff_l, out_len,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_2e_scalar_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
+            n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
+            shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
+            ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
+            &coeff_k, &coeff_l, out_len,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_2e_scalar_device::<cubecl_cuda::CudaRuntime>(
+            client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
+            n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
+            shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
+            ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
+            &coeff_k, &coeff_l, out_len,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_2e_scalar_device::<cubecl_hip::HipRuntime>(
+            client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
+            n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
+            shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
+            ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
+            &coeff_k, &coeff_l, out_len,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_2e_scalar_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
+            n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
+            shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
+            ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
+            &coeff_k, &coeff_l, out_len,
+        ),
+    };
 
     // Representation dispatch: intermediate transforms use f64 temp buffers;
     // final values cast to F via F::from_f64_lossy.
