@@ -1,28 +1,57 @@
 #![allow(non_snake_case)]
 
 use cintx_core::cintxRsError;
-use cintx_cubecl::transform::{c2s, c2spinor};
-use cintx_cubecl::transform::c2s::ncart;
+use cintx_cubecl::transform::c2spinor;
+use cintx_cubecl::transform::c2s::{c2s_coeff, ncart, nsph};
 
-fn copy_cart_into_target(target: &mut [f64], cart: &[f64]) -> Result<(), cintxRsError> {
-    if target.len() < cart.len() {
-        return Err(cintxRsError::BufferTooSmall {
-            required: cart.len(),
-            provided: target.len(),
-        });
-    }
-    target[..cart.len()].copy_from_slice(cart);
-    Ok(())
-}
-
+/// Apply the real per-l bra cart->sph transform, mirroring libcint's
+/// `*_bra_cart2spheric` (cart2sph.c). Ket-blocked layout: for each ket block,
+/// write `nsph(l)` spherical values (sph-row fastest), advancing `sph` by
+/// `nsph(l)` and `cart` by `ncart(l)` per ket.
+///
+/// For l=0 and l=1 the C2S coefficient table is the identity (non-PYPZPX), so
+/// internal callers `CINTc2s_ket_sph` / `CINTc2s_ket_sph1` (which pass l=0) are
+/// preserved exactly.
+///
+/// NOTE on l>4: `c2s::c2s_coeff` returns 0.0 for l>4 (its accessor contract).
+/// This transform therefore zeroes the output for l>4; the vendor gate only
+/// exercises l in 0..=4. l>4 support is intentionally not added here.
 pub fn CINTc2s_bra_sph(
     sph: &mut [f64],
-    _nket: i32,
+    nket: i32,
     cart: &[f64],
-    _l: i32,
+    l: i32,
 ) -> Result<(), cintxRsError> {
-    copy_cart_into_target(sph, cart)?;
-    c2s::cart_to_spheric_staging(&mut sph[..cart.len()])
+    let lu = l.max(0) as u8;
+    let nc = ncart(lu);
+    let ns = nsph(lu);
+    let nk = nket.max(0) as usize;
+
+    let required_cart = nk * nc;
+    if cart.len() < required_cart {
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_cart,
+            provided: cart.len(),
+        });
+    }
+    let required_sph = nk * ns;
+    if sph.len() < required_sph {
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_sph,
+            provided: sph.len(),
+        });
+    }
+
+    for k in 0..nk {
+        for m in 0..ns {
+            let mut acc = 0.0f64;
+            for c in 0..nc {
+                acc += c2s_coeff(lu, m, c) * cart[k * nc + c];
+            }
+            sph[k * ns + m] = acc;
+        }
+    }
+    Ok(())
 }
 
 pub fn CINTc2s_ket_sph(
@@ -239,14 +268,89 @@ pub fn CINTc2s_iket_spinor_si1(
 mod tests {
     use super::*;
 
+    /// l=0 (s-shell) must be the identity. Internal callers CINTc2s_ket_sph /
+    /// CINTc2s_ket_sph1 funnel through CINTc2s_bra_sph(.., 0, .., 0); this pins
+    /// the path they depend on. Expected PASS even before the fix (stub identity).
     #[test]
-    fn spherical_transform_entry_points_work() {
-        // cart_to_spheric_staging is a no-op — real c2s is done per-shell
-        // in cart_to_sph_1e(). This test verifies the compat shim copies
-        // cart data through without error.
-        let mut out = vec![0.0; 4];
-        CINTc2s_bra_sph(&mut out, 1, &[1.0, 2.0, 3.0, 4.0], 1).unwrap();
-        assert_eq!(out, vec![1.0, 2.0, 3.0, 4.0]);
+    fn bra_sph_l0_identity() {
+        let mut out = vec![0.0; 1]; // nsph(0) = 1
+        CINTc2s_bra_sph(&mut out, 1, &[7.0], 0).unwrap();
+        assert_eq!(out, vec![7.0]);
+    }
+
+    /// l=1 (p-shell, non-PYPZPX) is the identity in libcint. Expected PASS even
+    /// before the fix (stub identity). 3 cart (ncart(1)) -> 3 sph (nsph(1)).
+    #[test]
+    fn bra_sph_l1_identity() {
+        let mut out = vec![0.0; 3];
+        CINTc2s_bra_sph(&mut out, 1, &[1.0, 2.0, 3.0], 1).unwrap();
+        assert_eq!(out, vec![1.0, 2.0, 3.0]);
+    }
+
+    /// l=2 (d-shell): real cart->sph transform. RED against the identity stub.
+    /// cart = [xx, xy, xz, yy, yz, zz]; sph rows m=-2..+2 from C2S_L2.
+    #[test]
+    fn bra_sph_l2_d_transform() {
+        let cart = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let mut sph = vec![0.0; 5]; // nsph(2) = 5
+        CINTc2s_bra_sph(&mut sph, 1, &cart, 2).unwrap();
+
+        let expected = [
+            1.092548430592079070 * cart[1],                                   // m=-2 dxy
+            1.092548430592079070 * cart[4],                                   // m=-1 dyz
+            -0.315391565252520002 * cart[0] - 0.315391565252520002 * cart[3]  // m= 0 dz2
+                + 0.630783130505040012 * cart[5],
+            1.092548430592079070 * cart[2],                                   // m=+1 dxz
+            0.546274215296039535 * cart[0] - 0.546274215296039535 * cart[3],  // m=+2 dx2y2
+        ];
+        for m in 0..5 {
+            assert!(
+                (sph[m] - expected[m]).abs() < 1e-12,
+                "d-transform sph[{m}] = {} expected {}",
+                sph[m],
+                expected[m]
+            );
+        }
+    }
+
+    /// l=2 with nket=2: ket-blocked layout (sph row fastest, advance per ket).
+    /// RED against the identity stub.
+    #[test]
+    fn bra_sph_l2_nket2_blocking() {
+        // two ket blocks of 6 cart values each
+        let cart = [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, // block 0
+            7.0, 8.0, 9.0, 10.0, 11.0, 12.0, // block 1
+        ];
+        let mut sph = vec![0.0; 10]; // 2 * nsph(2)
+        CINTc2s_bra_sph(&mut sph, 2, &cart, 2).unwrap();
+
+        let d_transform = |c: &[f64]| -> [f64; 5] {
+            [
+                1.092548430592079070 * c[1],
+                1.092548430592079070 * c[4],
+                -0.315391565252520002 * c[0] - 0.315391565252520002 * c[3]
+                    + 0.630783130505040012 * c[5],
+                1.092548430592079070 * c[2],
+                0.546274215296039535 * c[0] - 0.546274215296039535 * c[3],
+            ]
+        };
+        let exp0 = d_transform(&cart[0..6]);
+        let exp1 = d_transform(&cart[6..12]);
+        for m in 0..5 {
+            assert!(
+                (sph[m] - exp0[m]).abs() < 1e-12,
+                "block0 sph[{m}] = {} expected {}",
+                sph[m],
+                exp0[m]
+            );
+            assert!(
+                (sph[5 + m] - exp1[m]).abs() < 1e-12,
+                "block1 sph[{m}] = {} expected {}",
+                sph[5 + m],
+                exp1[m]
+            );
+        }
     }
 
     /// Verify CINTc2s_ket_spinor_sf1 delegates to cart_to_spinor_sf correctly.

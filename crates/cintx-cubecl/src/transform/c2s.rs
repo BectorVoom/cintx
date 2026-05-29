@@ -178,7 +178,7 @@ pub fn cart_to_sph_1e<F: CintFloat>(cart_buf: &[F], sph_buf: &mut [F], li: u8, l
 ///
 /// Returns 0.0 for l > 4 (unsupported — caller should validate before calling).
 #[inline]
-fn c2s_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
+pub fn c2s_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
     match l {
         0 => C2S_L0[m_row][cart_col],
         1 => C2S_L1[m_row][cart_col],
