@@ -13,18 +13,31 @@
 
 use crate::backend::ResolvedBackend;
 use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
-use crate::math::pdata::{PairData, compute_pdata_host};
+use crate::math::pdata::compute_pdata_host;
+#[cfg(test)]
+use crate::math::pdata::PairData;
+#[cfg(test)]
 use crate::math::rys::rys_roots_host;
+use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_3c2e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_3c2e;
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
+use cubecl::Runtime;
+use cubecl::client::ComputeClient;
+use cubecl::prelude::*;
 
 use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI = sqrt(M_PI)`.
 const SQRTPI: f64 = 1.7724538509055159_f64;
+
+/// Rys `PIE4 = pi/4` constant passed into the device `rys_root{1..5}` kernels.
+const PIE4: f64 = 0.78539816339744827900_f64;
+
+/// Maximum `nroots` the device Rys kernels (`rys_root1..5`) can evaluate.
+const MAX_DEVICE_NROOTS: usize = 5;
 
 /// Spherical harmonic normalization prefactor for s and p shells.
 ///
@@ -42,7 +55,9 @@ fn common_fac_sp(l: u8) -> f64 {
 
 /// Enumerate Cartesian component triples (ix, iy, iz) with ix+iy+iz = l.
 ///
-/// Follows libcint `CINTcart_comp` ordering.
+/// Follows libcint `CINTcart_comp` ordering. Host reference (the device kernels
+/// reproduce this ordering inline) kept for the host-vs-device cross-checks.
+#[cfg(test)]
 fn cart_comps(l: u8) -> Vec<(usize, usize, usize)> {
     let mut comps = Vec::new();
     let l = l as i32;
@@ -67,6 +82,10 @@ fn cart_comps(l: u8) -> Vec<(usize, usize, usize)> {
 /// This is the shared 2e recurrence stage before ij-HRR splitting:
 /// - `n` corresponds to combined `(i+j)` angular order
 /// - `m` corresponds to real third-center `k` angular order (2e ll-slot)
+///
+/// Host f64 reference of the exact device algorithm — kept under `#[cfg(test)]`
+/// as the device-vs-host cross-check reference (the device kernel inlines it).
+#[cfg(test)]
 fn fill_g_tensor_3c2e(
     pair: &PairData,
     ak: f64,
@@ -192,6 +211,9 @@ fn fill_g_tensor_3c2e(
 ///
 /// Input:  `[axis][m][n][root]` from `fill_g_tensor_3c2e`
 /// Output: `[axis][root][k][j][i]` (i fastest inside each root block).
+///
+/// Host f64 reference — kept under `#[cfg(test)]` (the device kernel inlines it).
+#[cfg(test)]
 fn split_ij_hrr(
     g2d: &[f64],
     li: u8,
@@ -251,6 +273,9 @@ fn split_ij_hrr(
 ///
 /// Output layout: i fastest, j middle, k slowest:
 /// `out[(k * ncj + j) * nci + i]`.
+///
+/// Host f64 reference — kept under `#[cfg(test)]` (the device kernel inlines it).
+#[cfg(test)]
 fn contract_3c2e(g: &[f64], li: u8, lj: u8, lk: u8, nrys_roots: usize) -> Vec<f64> {
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -305,6 +330,550 @@ fn transpose_ij_3idx(buf: &[f64], ni: usize, nj: usize, nk: usize) -> Vec<f64> {
         }
     }
     out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Scalar 3c2e device kernel — `#[cube(launch)]`, generic over `F: Float`
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Scalar 3c2e G-tensor fill (2e recurrence) + ij-HRR split + Cartesian
+/// contraction for one shell triple, on-device.
+///
+/// Single work item (`UNIT_POS == 0`) — a faithful, correctness-first port of the
+/// host pipeline (`fill_g_tensor_3c2e` → `split_ij_hrr` → `contract_3c2e`) inlined
+/// per the `#[cube]` authoring rules (no plain-fn calls; the device `rys_root{1..5}`
+/// are the only callees). The kernel runs in canonical `li>=lj` order — the host
+/// launcher decides the `swap_ij` and transposes the read-back buffer.
+///
+/// `#[comptime] nroots` selects the `rys_root{1..5}` device function at JIT time.
+///
+/// Layout of `g` (size `3 * g_size`, the 2e-style 2D fill, root-fastest):
+/// `g[axis*g_size + m*dm + n*dn + root]` with `dn = nrys`,
+/// `dm = nrys*(nmax+1)`, `g_size = nrys*(nmax+1)*(mmax+1)`, `nmax = li+lj`,
+/// `mmax = lk`.
+///
+/// Layout of `g_split` (size `3 * split_size`, after the j-HRR transfer):
+/// `g_split[axis*split_size + ((root*nk + k)*nj + j)*ni + i]` with `ni = li+1`,
+/// `nj = lj+1`, `nk = lk+1`, `split_size = nrys*nk*nj*ni`.
+///
+/// `cart_out` (size `nci*ncj*nck`, i fastest, k slowest) is zeroed in-kernel and
+/// accumulated over all primitive and contraction triples.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    exps_k: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    coeff_k: &Array<F>,
+    g: &mut Array<F>,
+    g_split: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    work: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    rkx: F,
+    rky: F,
+    rkz: F,
+    common_factor: F,
+    pie4: F,
+    li: u32,
+    lj: u32,
+    lk: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nprim_k: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    nctr_k: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let nrys = nroots;
+        let nmax = li + lj;
+        let mmax = lk;
+        let dn = nrys;
+        let dm = nrys * (nmax + 1u32);
+        let g_size = nrys * (nmax + 1u32) * (mmax + 1u32);
+        let total_g = 3u32 * g_size;
+
+        let ni = li + 1u32;
+        let nj = lj + 1u32;
+        let nk = lk + 1u32;
+        let split_size = nrys * nk * nj * ni;
+        let total_split = 3u32 * split_size;
+        let work_stride = nmax + 1u32;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let nck = (lk + 1u32) * (lk + 2u32) / 2u32;
+        let out_len = nci * ncj * nck;
+
+        // Zero the accumulation buffer.
+        let mut oi = 0u32;
+        while oi < out_len {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        // rirj = ri - rj (for the j-HRR transfer).
+        let rirj_x = rix - rjx;
+        let rirj_y = riy - rjy;
+        let rirj_z = riz - rjz;
+
+        let mut kp = 0u32;
+        while kp < nprim_k {
+            let ak = exps_k[kp as usize];
+            let mut jp = 0u32;
+            while jp < nprim_j {
+                let aj = exps_j[jp as usize];
+                let mut ip = 0u32;
+                while ip < nprim_i {
+                    let ai = exps_i[ip as usize];
+
+                    // ── Inlined Gaussian-product pdata (compute_pdata_host) ──
+                    // zeta_ab = ai+aj; center_p = (ai*ri+aj*rj)/zeta_ab;
+                    // fac = exp(-ai*aj/zeta_ab * |ri-rj|^2).
+                    let zeta_ab = ai + aj;
+                    let px = (ai * rix + aj * rjx) / zeta_ab;
+                    let py = (ai * riy + aj * rjy) / zeta_ab;
+                    let pz = (ai * riz + aj * rjz) / zeta_ab;
+                    let rij_x = rix - rjx;
+                    let rij_y = riy - rjy;
+                    let rij_z = riz - rjz;
+                    let rr_ij = rij_x * rij_x + rij_y * rij_y + rij_z * rij_z;
+                    let pair_fac = F::exp(-ai * aj / zeta_ab * rr_ij);
+
+                    // 2e-style pair: aij = zeta_ab, akl = ak.
+                    let aij = zeta_ab;
+                    let akl = ak;
+                    // Displacement P - Rk.
+                    let xij_kl = px - rkx;
+                    let yij_kl = py - rky;
+                    let zij_kl = pz - rkz;
+                    let rr = xij_kl * xij_kl + yij_kl * yij_kl + zij_kl * zij_kl;
+
+                    let a1 = aij * akl;
+                    let a0 = a1 / (aij + akl);
+                    let fac_env = common_factor * pair_fac;
+                    let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * fac_env;
+                    let x_rys = a0 * rr;
+
+                    // rijrx = P - Ri (the bra-side reference displacement).
+                    let rijrx_x = px - rix;
+                    let rijrx_y = py - riy;
+                    let rijrx_z = pz - riz;
+
+                    // Rys roots/weights for this primitive triple.
+                    if comptime!(nroots == 1u32) {
+                        rys_root1::<F>(x_rys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 2u32) {
+                        rys_root2::<F>(x_rys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 3u32) {
+                        rys_root3::<F>(x_rys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 4u32) {
+                        rys_root4::<F>(x_rys, urys, wrys, pie4);
+                    } else {
+                        rys_root5::<F>(x_rys, urys, wrys, pie4);
+                    }
+
+                    // ── Fill the 2D G-tensor (fill_g_tensor_3c2e) ──────────────
+                    let mut gi = 0u32;
+                    while gi < total_g {
+                        g[gi as usize] = F::new(0.0);
+                        gi += 1u32;
+                    }
+
+                    let mut irys = 0u32;
+                    while irys < nrys {
+                        let u2 = a0 * urys[irys as usize];
+                        let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
+                        let tmp5 = u2 * tmp4;
+                        let b00 = tmp5;
+                        let b10 = tmp5 + tmp4 * akl;
+                        let b01 = tmp5 + tmp4 * aij;
+                        let tmp2 = F::new(2.0) * tmp5 * akl;
+                        let tmp3 = F::new(2.0) * tmp5 * aij;
+
+                        // Base case: gx=gy=1, gz=w*fac1.
+                        g[irys as usize] = F::new(1.0);
+                        g[(g_size + irys) as usize] = F::new(1.0);
+                        g[(2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
+
+                        let mut axis = 0u32;
+                        while axis < 3u32 {
+                            let base = axis * g_size;
+                            // Per-axis displacement components.
+                            let mut d = xij_kl;
+                            let mut rx = rijrx_x;
+                            if axis == 1u32 {
+                                d = yij_kl;
+                                rx = rijrx_y;
+                            }
+                            if axis == 2u32 {
+                                d = zij_kl;
+                                rx = rijrx_z;
+                            }
+                            let c00a = rx - tmp2 * d;
+                            let c0pa = tmp3 * d;
+
+                            // VRR in combined ij direction (n-axis), nmax = li+lj.
+                            if nmax >= 1u32 {
+                                let mut s_prev = g[(base + irys) as usize];
+                                let mut s1 = c00a * s_prev;
+                                g[(base + irys + dn) as usize] = s1;
+                                let mut n = 1u32;
+                                while n < nmax {
+                                    let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
+                                    g[(base + irys + (n + 1u32) * dn) as usize] = s2;
+                                    s_prev = s1;
+                                    s1 = s2;
+                                    n += 1u32;
+                                }
+                            }
+
+                            // VRR in mapped k(ll)-direction (m-axis), mmax = lk.
+                            if mmax >= 1u32 {
+                                let mut s_prev = g[(base + irys) as usize];
+                                let mut s1 = c0pa * s_prev;
+                                g[(base + irys + dm) as usize] = s1;
+                                let mut m = 1u32;
+                                while m < mmax {
+                                    let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
+                                    g[(base + irys + (m + 1u32) * dm) as usize] = s2;
+                                    s_prev = s1;
+                                    s1 = s2;
+                                    m += 1u32;
+                                }
+
+                                // n>0 ladders over m with b00 cross term.
+                                if nmax >= 1u32 {
+                                    let mut n = 1u32;
+                                    while n <= nmax {
+                                        let i_off = irys + n * dn;
+                                        let s0_k0 = g[(base + i_off) as usize];
+                                        let prev_i_k0 =
+                                            g[(base + irys + (n - 1u32) * dn) as usize];
+                                        let mut s1 = c0pa * s0_k0 + b00 * prev_i_k0;
+                                        g[(base + i_off + dm) as usize] = s1;
+                                        let mut s_prev = s0_k0;
+                                        let mut m = 1u32;
+                                        while m < mmax {
+                                            let prev_i_km = g[(base
+                                                + irys
+                                                + (n - 1u32) * dn
+                                                + m * dm)
+                                                as usize];
+                                            let s2 = c0pa * s1
+                                                + F::cast_from(m) * b01 * s_prev
+                                                + b00 * prev_i_km;
+                                            g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
+                                            s_prev = s1;
+                                            s1 = s2;
+                                            m += 1u32;
+                                        }
+                                        n += 1u32;
+                                    }
+                                }
+                            }
+
+                            axis += 1u32;
+                        }
+
+                        irys += 1u32;
+                    }
+
+                    // ── split_ij_hrr: recover (i,j) channels via j-HRR ─────────
+                    let mut gsi = 0u32;
+                    while gsi < total_split {
+                        g_split[gsi as usize] = F::new(0.0);
+                        gsi += 1u32;
+                    }
+
+                    let mut axis2 = 0u32;
+                    while axis2 < 3u32 {
+                        let axis_in_off = axis2 * g_size;
+                        let axis_out_off = axis2 * split_size;
+                        let mut rirj = rirj_x;
+                        if axis2 == 1u32 {
+                            rirj = rirj_y;
+                        }
+                        if axis2 == 2u32 {
+                            rirj = rirj_z;
+                        }
+
+                        let mut k = 0u32;
+                        while k <= mmax {
+                            let mut root = 0u32;
+                            while root < nrys {
+                                // Load the i-base ladder into `work` (rows = j, cols = i-base).
+                                let mut i = 0u32;
+                                while i <= nmax {
+                                    work[i as usize] =
+                                        g[(axis_in_off + root + i * dn + k * dm) as usize];
+                                    i += 1u32;
+                                }
+
+                                // HRR transfer along j.
+                                let mut j = 1u32;
+                                while j <= lj {
+                                    let prev = (j - 1u32) * work_stride;
+                                    let cur = j * work_stride;
+                                    let i_max = nmax - j;
+                                    let mut i2 = 0u32;
+                                    while i2 <= i_max {
+                                        work[(cur + i2) as usize] = rirj
+                                            * work[(prev + i2) as usize]
+                                            + work[(prev + i2 + 1u32) as usize];
+                                        i2 += 1u32;
+                                    }
+                                    j += 1u32;
+                                }
+
+                                // Scatter (i in 0..=li, j in 0..=lj) into g_split.
+                                let mut jj = 0u32;
+                                while jj <= lj {
+                                    let mut ii = 0u32;
+                                    while ii <= li {
+                                        let out_idx = ((root * nk + k) * nj + jj) * ni + ii;
+                                        g_split[(axis_out_off + out_idx) as usize] =
+                                            work[(jj * work_stride + ii) as usize];
+                                        ii += 1u32;
+                                    }
+                                    jj += 1u32;
+                                }
+
+                                root += 1u32;
+                            }
+                            k += 1u32;
+                        }
+                        axis2 += 1u32;
+                    }
+
+                    // ── contract_3c2e: triple cart_comps contraction ───────────
+                    // Output i fastest, j middle, k slowest.
+                    let gx_off = 0u32;
+                    let gy_off = split_size;
+                    let gz_off = 2u32 * split_size;
+
+                    // Contraction coefficients (canonical nctr handling: one block).
+                    let mut cci = 0u32;
+                    while cci < nctr_i {
+                        let coeff_i_val = coeff_i[(ip * nctr_i + cci) as usize];
+                        let mut ccj = 0u32;
+                        while ccj < nctr_j {
+                            let coeff_j_val = coeff_j[(jp * nctr_j + ccj) as usize];
+                            let mut cck = 0u32;
+                            while cck < nctr_k {
+                                let coeff_k_val = coeff_k[(kp * nctr_k + cck) as usize];
+                                let weight = coeff_i_val * coeff_j_val * coeff_k_val;
+
+                                // k cart triples (descending nested-while), k slowest.
+                                let mut k_idx = 0u32;
+                                let mut ka = 0u32;
+                                while ka <= lk {
+                                    let kx = lk - ka;
+                                    let lk_minus_kx = lk - kx;
+                                    let mut kb = 0u32;
+                                    while kb <= lk_minus_kx {
+                                        let ky = lk_minus_kx - kb;
+                                        let kz = lk - kx - ky;
+
+                                        // j cart triples.
+                                        let mut j_idx = 0u32;
+                                        let mut ja = 0u32;
+                                        while ja <= lj {
+                                            let jx = lj - ja;
+                                            let lj_minus_jx = lj - jx;
+                                            let mut jb = 0u32;
+                                            while jb <= lj_minus_jx {
+                                                let jy = lj_minus_jx - jb;
+                                                let jz = lj - jx - jy;
+
+                                                // i cart triples (i fastest).
+                                                let mut i_idx = 0u32;
+                                                let mut ia = 0u32;
+                                                while ia <= li {
+                                                    let ix = li - ia;
+                                                    let li_minus_ix = li - ix;
+                                                    let mut ib = 0u32;
+                                                    while ib <= li_minus_ix {
+                                                        let iy = li_minus_ix - ib;
+                                                        let iz = li - ix - iy;
+
+                                                        let mut val = F::new(0.0);
+                                                        let mut root2 = 0u32;
+                                                        while root2 < nrys {
+                                                            let idx_x = ((root2 * nk + kx) * nj
+                                                                + jx)
+                                                                * ni
+                                                                + ix;
+                                                            let idx_y = ((root2 * nk + ky) * nj
+                                                                + jy)
+                                                                * ni
+                                                                + iy;
+                                                            let idx_z = ((root2 * nk + kz) * nj
+                                                                + jz)
+                                                                * ni
+                                                                + iz;
+                                                            val += g_split
+                                                                [(gx_off + idx_x) as usize]
+                                                                * g_split
+                                                                    [(gy_off + idx_y) as usize]
+                                                                * g_split
+                                                                    [(gz_off + idx_z) as usize];
+                                                            root2 += 1u32;
+                                                        }
+                                                        let out_idx =
+                                                            (k_idx * ncj + j_idx) * nci + i_idx;
+                                                        cart_out[out_idx as usize] +=
+                                                            weight * val;
+
+                                                        i_idx += 1u32;
+                                                        ib += 1u32;
+                                                    }
+                                                    ia += 1u32;
+                                                }
+
+                                                j_idx += 1u32;
+                                                jb += 1u32;
+                                            }
+                                            ja += 1u32;
+                                        }
+
+                                        k_idx += 1u32;
+                                        kb += 1u32;
+                                    }
+                                    ka += 1u32;
+                                }
+
+                                cck += 1u32;
+                            }
+                            ccj += 1u32;
+                        }
+                        cci += 1u32;
+                    }
+
+                    ip += 1u32;
+                }
+                jp += 1u32;
+            }
+            kp += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`center_3c2e_scalar_kernel`] at `f64` on a resolved backend's client
+/// and read back the Cartesian accumulation buffer (`nci*ncj*nck`, i fastest).
+///
+/// Generic over `R: Runtime` so the same path serves CPU, ROCm, etc. Intermediate
+/// device compute is `f64` (module precision policy). Runs in canonical `li>=lj`
+/// order — the caller decides the `swap_ij` and transposes the read-back.
+#[allow(clippy::too_many_arguments)]
+fn run_3c2e_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    li: u32,
+    lj: u32,
+    lk: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nprim_k: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    nctr_k: u32,
+    nroots: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    common_factor: f64,
+    exps_i: &[f64],
+    exps_j: &[f64],
+    exps_k: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    coeff_k: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let lk_u = lk as usize;
+    let nroots_u = nroots as usize;
+    let nmax = li_u + lj_u;
+    let mmax = lk_u;
+    let g_size = nroots_u * (nmax + 1) * (mmax + 1);
+    let split_size = nroots_u * (lk_u + 1) * (lj_u + 1) * (li_u + 1);
+    let work_len = (lj_u + 1) * (nmax + 1);
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let nck = (lk_u + 1) * (lk_u + 2) / 2;
+    let out_len = nci * ncj * nck;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let exps_k_h = client.create_from_slice(f64::as_bytes(exps_k));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+    let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
+
+    let g_zero = vec![0.0_f64; 3 * g_size];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let gs_zero = vec![0.0_f64; 3 * split_size];
+    let gs_h = client.create_from_slice(f64::as_bytes(&gs_zero));
+    let rys_zero = vec![0.0_f64; nroots_u];
+    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let work_zero = vec![0.0_f64; work_len];
+    let work_h = client.create_from_slice(f64::as_bytes(&work_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    center_3c2e_scalar_kernel::launch::<f64, R>(
+        client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
+        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size) },
+        unsafe { ArrayArg::from_raw_parts(gs_h, 3 * split_size) },
+        unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
+        unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
+        unsafe { ArrayArg::from_raw_parts(work_h, work_len) },
+        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+        ri[0],
+        ri[1],
+        ri[2],
+        rj[0],
+        rj[1],
+        rj[2],
+        rk[0],
+        rk[1],
+        rk[2],
+        common_factor,
+        PIE4,
+        li,
+        lj,
+        lk,
+        nprim_i,
+        nprim_j,
+        nprim_k,
+        nctr_i,
+        nctr_j,
+        nctr_k,
+        nroots,
+    );
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
 }
 
 /// Generic inner for the 3c2e launcher.
@@ -579,9 +1148,6 @@ fn launch_center_3c2e_typed<F: CintFloat>(
         });
     }
 
-    // Host-side execution: no GPU dispatch in this phase.
-    let _ = backend;
-
     let shells = plan.shells.as_slice();
     if shells.len() < 3 {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -626,7 +1192,7 @@ fn launch_center_3c2e_typed<F: CintFloat>(
         (shell_i_in, shell_j_in, li_in, lj_in)
     };
     let nrys_roots = (li as usize + lj as usize + lk as usize) / 2 + 1;
-    if nrys_roots > 5 {
+    if nrys_roots > MAX_DEVICE_NROOTS {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{nrys_roots}"),
         });
@@ -645,14 +1211,16 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     let common_factor =
         (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
 
+    // `rirj` is recomputed inside the device kernel from ri/rj; keep the host-side
+    // value only as documentation of the canonical-order displacement.
+    let _ = rirj;
+
     let nci = ncart(li);
     let ncj = ncart(lj);
     let nck = ncart(lk);
     let nsi_in = nsph(li_in);
     let nsj_in = nsph(lj_in);
     let nsk = nsph(lk);
-
-    let mut cart_buf = vec![0.0_f64; nci * ncj * nck];
 
     let n_prim_i = shell_i.nprim as usize;
     let n_prim_j = shell_j.nprim as usize;
@@ -661,41 +1229,47 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     let n_ctr_j = shell_j.nctr as usize;
     let n_ctr_k = shell_k.nctr as usize;
 
-    for kp in 0..n_prim_k {
-        let ak = shell_k.exponents[kp];
+    // Flatten the f64 primitive data the kernel reads (canonical li>=lj order).
+    let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+    let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+    let exps_k: Vec<f64> = shell_k.exponents[..n_prim_k].to_vec();
+    let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+    let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+    let coeff_k: Vec<f64> = shell_k.coefficients[..n_prim_k * n_ctr_k].to_vec();
 
-        for jp in 0..n_prim_j {
-            let aj = shell_j.exponents[jp];
-
-            for ip in 0..n_prim_i {
-                let ai = shell_i.exponents[ip];
-
-                let pair = compute_pdata_host(
-                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-                );
-                let fac_env = common_factor * pair.fac;
-                let g2d = fill_g_tensor_3c2e(
-                    &pair, ak, ri, rk, li, lj, lk, nrys_roots, fac_env,
-                );
-                let g_split = split_ij_hrr(&g2d, li, lj, lk, nrys_roots, rirj);
-                let prim_buf = contract_3c2e(&g_split, li, lj, lk, nrys_roots);
-
-                for ck in 0..n_ctr_k {
-                    let coeff_k = shell_k.coefficients[kp * n_ctr_k + ck];
-                    for cj in 0..n_ctr_j {
-                        let coeff_j = shell_j.coefficients[jp * n_ctr_j + cj];
-                        for ci in 0..n_ctr_i {
-                            let coeff_i = shell_i.coefficients[ip * n_ctr_i + ci];
-                            let weight = coeff_i * coeff_j * coeff_k;
-                            for idx in 0..prim_buf.len() {
-                                cart_buf[idx] += weight * prim_buf[idx];
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Dispatch onto the resolved backend's device client (compute in f64).
+    let cart_buf: Vec<f64> = match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_3c2e_device::<cubecl::cpu::CpuRuntime>(
+            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
+            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
+            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_3c2e_device::<cubecl_cuda::CudaRuntime>(
+            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
+            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_3c2e_device::<cubecl_hip::HipRuntime>(
+            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
+            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
+            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
+            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+        ),
+    };
 
     let cart_out = if swap_ij {
         // libcint's 3c2e recurrence chooses ibase adaptively (li > lj).
@@ -923,6 +1497,232 @@ mod tests {
         let out = contract_3c2e(&g_split, 0, 0, 0, 1);
         assert_eq!(out.len(), 1);
         assert!(out[0].abs() > 1e-20, "contracted s-s-s 3c2e value must be non-zero");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scalar 3c2e device-vs-host cross-check (CpuRuntime, f64). The CubeCL kernel
+// (`center_3c2e_scalar_kernel`) must reproduce the host pipeline
+// (`fill_g_tensor_3c2e` → `split_ij_hrr` → `contract_3c2e`) exactly.
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(all(test, feature = "cpu"))]
+mod scalar_device_tests {
+    use super::*;
+
+    /// Host reference: single-primitive single-contraction shell triple the same
+    /// way the device kernel does, in canonical li>=lj order.
+    fn host_cart_3c2e(
+        ai: f64,
+        aj: f64,
+        ak: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        rk: [f64; 3],
+        li: u8,
+        lj: u8,
+        lk: u8,
+        common_factor: f64,
+        coeff_i: f64,
+        coeff_j: f64,
+        coeff_k: f64,
+    ) -> Vec<f64> {
+        let nrys = (li as usize + lj as usize + lk as usize) / 2 + 1;
+        let pair = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let fac_env = common_factor * pair.fac;
+        let g2d = fill_g_tensor_3c2e(&pair, ak, ri, rk, li, lj, lk, nrys, fac_env);
+        let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+        let g_split = split_ij_hrr(&g2d, li, lj, lk, nrys, rirj);
+        let prim = contract_3c2e(&g_split, li, lj, lk, nrys);
+        let weight = coeff_i * coeff_j * coeff_k;
+        prim.iter().map(|&v| weight * v).collect()
+    }
+
+    fn cpu_client() -> ComputeClient<cubecl::cpu::CpuRuntime> {
+        cubecl::cpu::CpuRuntime::client(&Default::default())
+    }
+
+    /// Cross-check: requires li>=lj (the device kernel runs in canonical order).
+    fn assert_device_matches_host_3c2e(li: u8, lj: u8, lk: u8, ai: f64, aj: f64, ak: f64) {
+        assert!(li >= lj, "cross-check requires canonical li>=lj order");
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.3_f64, 0.0, 0.5];
+        let rk = [0.0_f64, 0.7, 0.2];
+        let coeff_i = 0.9_f64;
+        let coeff_j = 1.1_f64;
+        let coeff_k = 0.8_f64;
+        let common_factor = (PI * PI * PI) * 2.0 / SQRTPI
+            * common_fac_sp(li)
+            * common_fac_sp(lj)
+            * common_fac_sp(lk);
+        let nrys = (li as usize + lj as usize + lk as usize) / 2 + 1;
+
+        let host = host_cart_3c2e(
+            ai, aj, ak, ri, rj, rk, li, lj, lk, common_factor, coeff_i, coeff_j, coeff_k,
+        );
+        let dev = run_3c2e_device::<cubecl::cpu::CpuRuntime>(
+            &cpu_client(),
+            li as u32,
+            lj as u32,
+            lk as u32,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            nrys as u32,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &[ai],
+            &[aj],
+            &[ak],
+            &[coeff_i],
+            &[coeff_j],
+            &[coeff_k],
+        );
+
+        assert_eq!(host.len(), dev.len(), "length mismatch li={li} lj={lj} lk={lk}");
+        for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
+            let diff = (h - d).abs();
+            let thr = 1e-12 + 1e-10 * h.abs();
+            assert!(
+                diff <= thr,
+                "device/host 3c2e mismatch li={li} lj={lj} lk={lk} idx={idx}: \
+                 host={h:.15e} dev={d:.15e} diff={diff:.3e}"
+            );
+        }
+    }
+
+    /// Cross-check the inlined Gaussian-product pdata against `compute_pdata_host`.
+    #[test]
+    fn test_3c2e_inlined_pdata_matches_host() {
+        // s-s-s device run reduces to the pdata fac × Rys weight; the
+        // device-vs-host cross-check below already validates the full chain,
+        // but pin the pdata math directly too.
+        let ai = 0.8_f64;
+        let aj = 1.3_f64;
+        let ri = [0.1_f64, -0.2, 0.3];
+        let rj = [0.4_f64, 0.5, -0.6];
+        let pair = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let zeta_ab = ai + aj;
+        let px = (ai * ri[0] + aj * rj[0]) / zeta_ab;
+        let rij = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+        let rr = rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2];
+        let fac = (-ai * aj / zeta_ab * rr).exp();
+        assert!((pair.zeta_ab - zeta_ab).abs() < 1e-15, "zeta_ab mismatch");
+        assert!((pair.center_p_x - px).abs() < 1e-15, "center_p mismatch");
+        assert!((pair.fac - fac).abs() < 1e-15, "fac mismatch");
+    }
+
+    #[test]
+    fn test_device_matches_host_sss() {
+        assert_device_matches_host_3c2e(0, 0, 0, 0.8, 1.0, 1.2);
+    }
+
+    #[test]
+    fn test_device_matches_host_ssp() {
+        assert_device_matches_host_3c2e(0, 0, 1, 0.8, 1.0, 1.2);
+    }
+
+    #[test]
+    fn test_device_matches_host_pss() {
+        assert_device_matches_host_3c2e(1, 0, 0, 1.3, 0.8, 0.9);
+    }
+
+    #[test]
+    fn test_device_matches_host_sps_canonical() {
+        // s-p-s in the caller maps to canonical li>=lj as p(i)-s(j)-s(k).
+        assert_device_matches_host_3c2e(1, 0, 0, 0.7, 1.1, 0.6);
+    }
+
+    #[test]
+    fn test_device_matches_host_psp() {
+        assert_device_matches_host_3c2e(1, 0, 1, 0.9, 0.5, 0.7);
+    }
+
+    #[test]
+    fn test_device_matches_host_pps() {
+        // li>0 and lj>0: exercises the j-HRR transfer.
+        assert_device_matches_host_3c2e(1, 1, 0, 0.6, 0.9, 0.8);
+    }
+
+    /// Genericity: the scalar kernel compiles and runs at `F = f32`. Launch an
+    /// s-s-s triple at f32 on the CPU runtime and assert a finite result.
+    #[test]
+    fn test_center_3c2e_kernel_generic_f32() {
+        let client = cpu_client();
+        // nroots=1, g_size=1, split_size=1, work_len=1, out_len=1.
+        let exps = [1.0_f32];
+        let coeff = [1.0_f32];
+        let g_zero = [0.0_f32; 3];
+        let gs_zero = [0.0_f32; 3];
+        let rys_zero = [0.0_f32; 1];
+        let work_zero = [0.0_f32; 1];
+        let out_zero = [0.0_f32; 1];
+
+        let mk = |s: &[f32]| client.create_from_slice(f32::as_bytes(s));
+        let exps_i_h = mk(&exps);
+        let exps_j_h = mk(&exps);
+        let exps_k_h = mk(&exps);
+        let coeff_i_h = mk(&coeff);
+        let coeff_j_h = mk(&coeff);
+        let coeff_k_h = mk(&coeff);
+        let g_h = mk(&g_zero);
+        let gs_h = mk(&gs_zero);
+        let u_h = mk(&rys_zero);
+        let w_h = mk(&rys_zero);
+        let work_h = mk(&work_zero);
+        let out_h = mk(&out_zero);
+
+        let common_factor =
+            ((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0) * common_fac_sp(0))
+                as f32;
+
+        center_3c2e_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_j_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(coeff_k_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(g_h, 3) },
+            unsafe { ArrayArg::from_raw_parts(gs_h, 3) },
+            unsafe { ArrayArg::from_raw_parts(u_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(w_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(work_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
+            0.0_f32,
+            0.0,
+            0.0,
+            0.3,
+            0.0,
+            0.5,
+            0.0,
+            0.7,
+            0.2,
+            common_factor,
+            PIE4 as f32,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1u32,
+        );
+
+        let raw = client.read_one_unchecked(out_h);
+        let out = f32::from_bytes(&raw)[0];
+        assert!(out.is_finite(), "f32 3c2e kernel result must be finite");
+        assert!(out > 0.0, "s-s-s 3c2e f32 result should be positive: {out}");
     }
 }
 
