@@ -59,7 +59,7 @@
 | Phase 19: `int1e_ecp_*` Type-1/Type-2 Evaluator | v1.3 | 8/8 | Complete | 2026-05-20 |
 | Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 11/11 | Complete | 2026-05-21 |
 | Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`) | v1.3 | 0/8 | Planned | - |
-| Phase 22: Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG) | v1.4 | 0/0 | Not started | - |
+| Phase 22: Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG) | v1.4 | 0/2 | Planned | - |
 | Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 0/0 | Not started | - |
 | Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 0/0 | Not started | - |
 | Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 0/0 | Not started | - |
@@ -492,10 +492,15 @@ depend on FND-02 (Wheeler nroots≥6).
 **Success Criteria** (what must be TRUE):
 
   1. `OperatorEnvParams` carries a new `common_orig: Option<[f64;3]>` field and `raw.rs::eval_raw` reads `env[PTR_COMMON_ORIG=1..3]` into it via a read block that mirrors the `PTR_RINV_ORIG` block; an env round-trip unit test passes (FND-01).
-  2. A `with_common_origin`-style setter is exposed on the safe-API options, and the validator gates families that require the slot (a family that reads the common origin without one set is rejected with a typed error, mirroring `validate_rinv_orig_env_params`); a validator-rejection unit test passes (FND-01).
+  2. A `with_common_origin`-style setter is exposed on the safe-API options, and a `validate_common_orig_env_params` validator enforces **finiteness, not presence** (per 22-CONTEXT D-01 — `None` defaults to `[0,0,0]` and is valid; only a `Some(NaN/inf)` is rejected with a typed `InvalidEnvParam`). The env-read is **operator-agnostic** (D-02 — no operator-name predicate). D-01 validator unit tests pass (FND-01).
   3. A non-zero gauge-origin oracle fixture (H2O/STO-3G with `env[PTR_COMMON_ORIG] != 0`) is added to `fixtures.rs` and is the declared parity gate for Phases 24 (moments) and 26/30 (GIAO) — a zero-origin-only test is documented as a vacuous gate for this slot (FND-01).
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 22-01-PLAN.md — Core PTR_COMMON_ORIG slot plumbing: const + OperatorEnvParams.common_orig field + operator-agnostic eval_raw env[1..3] read + finiteness validator (D-01) + ExecutionOptions.common_orig + with_common_origin setter + api.rs propagation.
+- [ ] 22-02-PLAN.md — Non-zero gauge-origin H2O/STO-3G oracle fixture (data infra for Phases 24/26) + raw<->plan slot round-trip test (D-03 slot verification, no consuming kernel).
 
 ### Phase 23: Group 1 — Remaining 1st-Derivative Families (cart/sph)
 
