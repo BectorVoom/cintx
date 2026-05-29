@@ -188,23 +188,36 @@ fn write_offsets(
     nbas: i32,
     count_fn: fn(i32, &[i32]) -> Result<usize, cintxRsError>,
 ) -> Result<(), cintxRsError> {
-    let shell_count = shell_count(nbas, bas)?;
-    let needed = shell_count.saturating_add(1);
-    if ao_loc.len() < needed {
+    // libcint cint_bas.c shells_cgto_offset: i<nbas, writes ao_loc[0..nbas-1]; ao_loc[nbas] left untouched.
+    let count = shell_count(nbas, bas)?;
+    // Required length is exactly nbas (NOT nbas+1); the trailing ao_loc[nbas] slot is never written.
+    if ao_loc.len() < count {
         return Err(cintxRsError::BufferTooSmall {
-            required: needed,
+            required: count,
             provided: ao_loc.len(),
         });
     }
 
-    let mut offset = 0usize;
+    // nbas == 0: libcint's unconditional ao_loc[0]=0 is OOB; cintx guards the index-0 write
+    // behind count >= 1 and never panics. Required length 0 in that case.
+    if count == 0 {
+        return Ok(());
+    }
+
     ao_loc[0] = 0;
-    for shell in 0..shell_count {
-        offset = offset.saturating_add(count_fn(shell as i32, bas)?);
-        ao_loc[shell + 1] = i32::try_from(offset).map_err(|_| cintxRsError::ChunkPlanFailed {
-            from: "compat_helpers",
-            detail: "ao offset overflowed i32".to_owned(),
+    for i in 1..count {
+        let added = i32::try_from(count_fn((i - 1) as i32, bas)?).map_err(|_| {
+            cintxRsError::ChunkPlanFailed {
+                from: "compat_helpers",
+                detail: "ao offset overflowed i32".to_owned(),
+            }
         })?;
+        ao_loc[i] = ao_loc[i - 1]
+            .checked_add(added)
+            .ok_or(cintxRsError::ChunkPlanFailed {
+                from: "compat_helpers",
+                detail: "ao offset overflowed i32".to_owned(),
+            })?;
     }
     Ok(())
 }
