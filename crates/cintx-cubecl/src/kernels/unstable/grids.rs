@@ -1,16 +1,51 @@
 //! `grids` family: grid-point integrals with the NGRIDS env parameter
-//! (`cint1e_grids.c`). Split out of the original single-file `unstable.rs`;
-//! move-only — function bodies are unchanged.
+//! (`cint1e_grids.c`).
+//!
+//! HOST/DEVICE SPLIT (quick-260529-twi, Phase 21 D-04 honest split):
+//!
+//! ON DEVICE (`grids_scalar_kernel<F>`, generic over `F: Float`): the SCALAR
+//! nuclear-like `int1e_grids_sph` per-(grid-point, primitive-pair) Cartesian
+//! G-tensor build — the Rys-quadrature VRR (`vrr_2e`) + bra→ket HRR + the
+//! `gx*gy*gz` Cartesian contraction (the body of `grids_contract_nuclear_like`),
+//! in f64-internal / F-output. The pair data (center_p, zeta_ab, aij2, fac) is
+//! computed host-side via `compute_pdata_host` and passed as scalars; the kernel
+//! is dispatched once per (grid, prim-pair) and the host accumulates over
+//! contractions, exactly mirroring `launch_grids_kernel`'s loop.
+//!
+//! ON HOST (host part of the split, UNCHANGED): the `cart_to_sph_1e` transform +
+//! the grids-layout AO scatter into `staging`, plus the `compute_pdata_host`
+//! pair-data setup.
+//!
+//! DEFERRED TO HOST (documented, separable follow-up ports, mirroring the 1e/2e
+//! derivative-deferral precedent): the derivative variants `grids_ip` / `_ipip` /
+//! `_ipvip` / `_spvsp` keep their host contraction (`grids_contract_ip` etc.).
+//!
+//! ⚠ PRE-EXISTING UPSTREAM BLOCKER (NOT caused by this port): `eval_raw` rejects
+//! the grids 4-element shell tuple with `InvalidShellTuple { expected: 2, got: 4 }`,
+//! so the public `eval_raw(RawApiId::Symbol("int1e_grids_sph"))` path — and the
+//! `unstable_source_parity.rs` grids CPU-vs-vendor tests — FAIL at baseline,
+//! independently of the GPU port. Consequently the grids ROCm oracle is a DIRECT
+//! device-vs-host parity (`run_grids_nuclear_device::<HipRuntime>` vs the host
+//! `grids_contract_nuclear_like`), NOT a vendor-via-eval_raw comparison. See
+//! `tests/grids_random_rocm_parity.rs`.
 
 use super::shared::{apply_nabla_i_3axis, apply_nabla_j_3axis, cart_comps, common_fac_sp};
 use crate::backend::ResolvedBackend;
 use crate::math::obara_saika::{hrr_step_host, vrr_2e_step_host};
 use crate::math::pdata::compute_pdata_host;
-use crate::math::rys::{rys_root1_host, rys_root2_host};
+use crate::math::rys::{rys_root1, rys_root1_host, rys_root2, rys_root2_host};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use cintx_core::cintxRsError;
 use cintx_runtime::{ExecutionPlan, ExecutionStats, planner::GridsEnvParams};
+use cubecl::Runtime;
+use cubecl::client::ComputeClient;
+use cubecl::prelude::*;
+
+/// Rys `PIE4 = pi/4` passed into the device `rys_root{1,2}` kernels.
+const GRIDS_PIE4: f64 = 0.78539816339744827900_f64;
+/// Fail-closed device guard: the scalar grids path uses nroots ∈ {1,2}.
+const GRIDS_MAX_DEVICE_NROOTS: u32 = 2;
 
 /// Compute the Rys-quadrature G-tensor for one primitive pair and one "nuclear" center.
 ///
@@ -139,6 +174,307 @@ fn grids_contract_nuclear_like(
     }
 
     out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DEVICE: grids scalar nuclear-like kernel (#[cube(launch)], generic over F).
+//  On-device port of `grids_contract_nuclear_like` for ONE primitive pair and
+//  ONE grid point — Rys VRR + bra→ket HRR + gx*gy*gz Cartesian contraction.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Per-axis 2e vertical recurrence (stride 1): mirrors `vrr_2e_step_host`.
+#[cube]
+fn grids_vrr_axis<F: Float>(g: &mut Array<F>, off: u32, c00: F, b10: F, nmax: u32) {
+    g[(off + 1u32) as usize] = c00 * g[off as usize];
+    let mut n = 1u32;
+    while n < nmax {
+        g[(off + n + 1u32) as usize] =
+            F::cast_from(n) * b10 * g[(off + n - 1u32) as usize] + c00 * g[(off + n) as usize];
+        n += 1u32;
+    }
+}
+
+/// Per-axis horizontal recurrence (di=1, ket stride `dj`): mirrors `hrr_step_host`.
+#[cube]
+fn grids_hrr_axis<F: Float>(g: &mut Array<F>, off: u32, rirj: F, dj: u32, li_max: u32, lj: u32) {
+    let mut j = 1u32;
+    while j <= lj {
+        let i_max = li_max - j;
+        let mut i = 0u32;
+        while i <= i_max {
+            let idx_out = off + j * dj + i;
+            let idx_hi = off + (j - 1u32) * dj + (i + 1u32);
+            let idx_lo = off + (j - 1u32) * dj + i;
+            g[idx_out as usize] = g[idx_hi as usize] + rirj * g[idx_lo as usize];
+            i += 1u32;
+        }
+        j += 1u32;
+    }
+}
+
+/// On-device `grids_contract_nuclear_like` for ONE primitive pair + ONE grid
+/// point. Writes the `nci*ncj` Cartesian block (i-major: `out[ci*ncj + cj]`),
+/// accumulated over the Rys roots. Pair data (rp=center_p, zeta_ab, aij2, fac)
+/// is host-computed (via `compute_pdata_host`) and passed as scalars.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn grids_scalar_kernel<F: Float + CubeElement>(
+    g: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    rcx: F,
+    rcy: F,
+    rcz: F,
+    rpx: F,
+    rpy: F,
+    rpz: F,
+    zeta_ab: F,
+    aij2: F,
+    fac: F,
+    pie4: F,
+    two_pi: F,
+    li: u32,
+    lj: u32,
+    nmax: u32,
+    lj_hrr: u32,
+    dj: u32,
+    g_per_axis: u32,
+    nci: u32,
+    ncj: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let block = nci * ncj;
+        let mut oi = 0u32;
+        while oi < block {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        let gx_off = 0u32;
+        let gy_off = g_per_axis;
+        let gz_off = 2u32 * g_per_axis;
+
+        let crijx = rcx - rpx;
+        let crijy = rcy - rpy;
+        let crijz = rcz - rpz;
+        let x_boys = zeta_ab * (crijx * crijx + crijy * crijy + crijz * crijz);
+
+        if comptime!(nroots == 1u32) {
+            rys_root1::<F>(x_boys, urys, wrys, pie4);
+        } else {
+            rys_root2::<F>(x_boys, urys, wrys, pie4);
+        }
+
+        let fac1 = two_pi * fac / zeta_ab;
+        let total_g = 3u32 * g_per_axis;
+
+        let nrys = nroots;
+        let mut nr: u32 = 0u32;
+        while nr < nrys {
+            let mut gi = 0u32;
+            while gi < total_g {
+                g[gi as usize] = F::new(0.0);
+                gi += 1u32;
+            }
+
+            let u_n = urys[nr as usize];
+            let w_n = wrys[nr as usize];
+            let tau = u_n / (F::new(1.0) + u_n);
+            let rt = aij2 * (F::new(1.0) - tau);
+
+            let c00x = (rpx - rix) + tau * crijx;
+            let c00y = (rpy - riy) + tau * crijy;
+            let c00z = (rpz - riz) + tau * crijz;
+
+            g[gx_off as usize] = F::new(1.0);
+            g[gy_off as usize] = F::new(1.0);
+            g[gz_off as usize] = fac1 * w_n;
+
+            if nmax >= 1u32 {
+                grids_vrr_axis::<F>(g, gx_off, c00x, rt, nmax);
+                grids_vrr_axis::<F>(g, gy_off, c00y, rt, nmax);
+                grids_vrr_axis::<F>(g, gz_off, c00z, rt, nmax);
+            }
+
+            if lj_hrr >= 1u32 {
+                grids_hrr_axis::<F>(g, gx_off, rix - rjx, dj, nmax, lj_hrr);
+                grids_hrr_axis::<F>(g, gy_off, riy - rjy, dj, nmax, lj_hrr);
+                grids_hrr_axis::<F>(g, gz_off, riz - rjz, dj, nmax, lj_hrr);
+            }
+
+            // Cartesian contraction — ci outer, cj inner, lx descending (matches
+            // host `cart_comps` + `out[ci_idx*ncj + cj_idx]`).
+            let mut ci_idx = 0u32;
+            let mut ia = 0u32;
+            while ia <= li {
+                let ix = li - ia;
+                let li_minus_ix = li - ix;
+                let mut ib = 0u32;
+                while ib <= li_minus_ix {
+                    let iy = li_minus_ix - ib;
+                    let iz = li - ix - iy;
+
+                    let mut cj_idx = 0u32;
+                    let mut ja = 0u32;
+                    while ja <= lj {
+                        let jx = lj - ja;
+                        let lj_minus_jx = lj - jx;
+                        let mut jb = 0u32;
+                        while jb <= lj_minus_jx {
+                            let jy = lj_minus_jx - jb;
+                            let jz = lj - jx - jy;
+
+                            let vx = g[(gx_off + jx * dj + ix) as usize];
+                            let vy = g[(gy_off + jy * dj + iy) as usize];
+                            let vz = g[(gz_off + jz * dj + iz) as usize];
+                            cart_out[(ci_idx * ncj + cj_idx) as usize] += vx * vy * vz;
+
+                            cj_idx += 1u32;
+                            jb += 1u32;
+                        }
+                        ja += 1u32;
+                    }
+                    ci_idx += 1u32;
+                    ib += 1u32;
+                }
+                ia += 1u32;
+            }
+
+            nr += 1u32;
+        }
+    }
+}
+
+/// Host dispatcher: run `grids_scalar_kernel` for ONE prim-pair + ONE grid point
+/// on runtime `R`, returning the `nci*ncj` f64 Cartesian block.
+#[allow(clippy::too_many_arguments)]
+fn run_grids_nuclear_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nmax: u32,
+    lj_hrr: u32,
+    dj: u32,
+    g_per_axis: u32,
+    nci: u32,
+    ncj: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    rp: [f64; 3],
+    zeta_ab: f64,
+    aij2: f64,
+    fac: f64,
+) -> Vec<f64> {
+    let out_len = (nci * ncj) as usize;
+    let g_zero = vec![0.0_f64; 3 * g_per_axis as usize];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let rys_zero = vec![0.0_f64; nroots as usize];
+    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let two_pi = 2.0 * std::f64::consts::PI;
+
+    macro_rules! launch_with {
+        ($nr:expr) => {
+            grids_scalar_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_per_axis as usize) },
+                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots as usize) },
+                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots as usize) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0], ri[1], ri[2],
+                rj[0], rj[1], rj[2],
+                rc[0], rc[1], rc[2],
+                rp[0], rp[1], rp[2],
+                zeta_ab,
+                aij2,
+                fac,
+                GRIDS_PIE4,
+                two_pi,
+                li,
+                lj,
+                nmax,
+                lj_hrr,
+                dj,
+                g_per_axis,
+                nci,
+                ncj,
+                $nr,
+            )
+        };
+    }
+    if nroots == 1 {
+        launch_with!(1u32);
+    } else {
+        launch_with!(2u32);
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for the grids scalar nuclear-like device kernel
+/// (Cpu / Wgpu / Cuda / ROCm-HIP / Metal). Rocm → `cubecl_hip::HipRuntime`.
+#[allow(clippy::too_many_arguments)]
+fn run_grids_nuclear_on_backend(
+    backend: &ResolvedBackend,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nmax: u32,
+    lj_hrr: u32,
+    dj: u32,
+    g_per_axis: u32,
+    nci: u32,
+    ncj: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    rp: [f64; 3],
+    zeta_ab: f64,
+    aij2: f64,
+    fac: f64,
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_grids_nuclear_device::<cubecl::cpu::CpuRuntime>(
+            client, nroots, li, lj, nmax, lj_hrr, dj, g_per_axis, nci, ncj, ri, rj, rc, rp,
+            zeta_ab, aij2, fac,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_grids_nuclear_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li, lj, nmax, lj_hrr, dj, g_per_axis, nci, ncj, ri, rj, rc, rp,
+            zeta_ab, aij2, fac,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_grids_nuclear_device::<cubecl_cuda::CudaRuntime>(
+            client, nroots, li, lj, nmax, lj_hrr, dj, g_per_axis, nci, ncj, ri, rj, rc, rp,
+            zeta_ab, aij2, fac,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_grids_nuclear_device::<cubecl_hip::HipRuntime>(
+            client, nroots, li, lj, nmax, lj_hrr, dj, g_per_axis, nci, ncj, ri, rj, rc, rp,
+            zeta_ab, aij2, fac,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_grids_nuclear_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li, lj, nmax, lj_hrr, dj, g_per_axis, nci, ncj, ri, rj, rc, rp,
+            zeta_ab, aij2, fac,
+        ),
+    }
 }
 
 /// Compute grids-ip (nabla_i) Cartesian integral for one primitive pair at one grid point.
@@ -705,8 +1041,9 @@ pub fn launch_grids(
         });
     }
 
-    // Suppress backend: host-side pipeline executes natively.
-    let _ = backend;
+    // The scalar nuclear-like arm dispatches its per-(grid, prim-pair) Cartesian
+    // G-tensor build to the CubeCL device (run_grids_nuclear_on_backend); the
+    // derivative arms (ip/ipip/ipvip/spvsp) stay host (documented split).
 
     let shells = plan.shells.as_slice();
     if shells.len() < 2 {
@@ -757,7 +1094,24 @@ pub fn launch_grids(
                 });
             }
             launch_grids_kernel(plan, grids_params, ncomp, &mut staging[..required], |pd, ri, rj, rc, _ai, _aj, li, lj| {
-                grids_contract_nuclear_like(pd, ri, rj, rc, li, lj, 0, 0)
+                let nci = ncart(li) as u32;
+                let ncj = ncart(lj) as u32;
+                let nmax = (li + lj) as u32;
+                let lj_hrr = lj as u32;
+                let dj = nmax + 1;
+                let g_per_axis = (nmax + 1) * (lj_hrr + 1);
+                let nroots = (li + lj) as u32 / 2 + 1;
+                // Fail-closed: the device kernel wires rys_root{1,2} (nroots<=2),
+                // covering the s/p shells this scalar path targets. Higher-L pairs
+                // fall back to the host reference (byte-identical algorithm).
+                if nroots > GRIDS_MAX_DEVICE_NROOTS {
+                    return grids_contract_nuclear_like(pd, ri, rj, rc, li, lj, 0, 0);
+                }
+                let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
+                run_grids_nuclear_on_backend(
+                    backend, nroots, li as u32, lj as u32, nmax, lj_hrr, dj, g_per_axis, nci, ncj,
+                    ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac,
+                )
             })?;
             Ok(grids_stats(plan, required))
         }
@@ -822,5 +1176,181 @@ pub fn launch_grids(
                 requested: format!("grids operator '{}' is not supported", other),
             })
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "cpu")]
+mod tests {
+    use super::*;
+    use cubecl::Runtime;
+
+    fn cpu_client() -> ComputeClient<cubecl::cpu::CpuRuntime> {
+        cubecl::cpu::CpuRuntime::client(&Default::default())
+    }
+
+    /// Derive the device dispatch params + run the device kernel for one
+    /// prim-pair + one grid point, mirroring the `launch_grids` scalar closure.
+    fn device_grids_block<R: Runtime>(
+        client: &ComputeClient<R>,
+        ai: f64,
+        aj: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        rc: [f64; 3],
+        li: u8,
+        lj: u8,
+    ) -> Vec<f64> {
+        let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+        let nci = ncart(li) as u32;
+        let ncj = ncart(lj) as u32;
+        let nmax = (li + lj) as u32;
+        let lj_hrr = lj as u32;
+        let dj = nmax + 1;
+        let g_per_axis = (nmax + 1) * (lj_hrr + 1);
+        let nroots = (li + lj) as u32 / 2 + 1;
+        let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
+        run_grids_nuclear_device::<R>(
+            client, nroots, li as u32, lj as u32, nmax, lj_hrr, dj, g_per_axis, nci, ncj, ri, rj,
+            rc, rp, pd.zeta_ab, pd.aij2, pd.fac,
+        )
+    }
+
+    fn assert_close(host: &[f64], dev: &[f64], tag: &str) {
+        assert_eq!(host.len(), dev.len(), "length mismatch ({tag})");
+        for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
+            let diff = (h - d).abs();
+            let thr = 1e-12 + 1e-10 * h.abs();
+            assert!(
+                diff <= thr,
+                "grids device/host mismatch ({tag}) idx={idx}: host={h:.15e} dev={d:.15e} diff={diff:.3e}"
+            );
+        }
+    }
+
+    /// Device-vs-host cross-check (CpuRuntime, f64): the on-device
+    /// `grids_scalar_kernel` reproduces the host `grids_contract_nuclear_like`
+    /// nuclear-like Cartesian block within atol=1e-12 / rtol=1e-10, for shell
+    /// pairs (s,s),(p,s),(s,p),(p,p) against two distinct grid points.
+    #[test]
+    fn test_device_matches_host_grids() {
+        let client = cpu_client();
+        let ai = 0.9_f64;
+        let aj = 1.3_f64;
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.6_f64, 0.5, 0.7];
+        for rc in [[0.3_f64, -0.4, 0.8], [-0.7_f64, 0.2, 1.1]] {
+            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1)] {
+                let pd =
+                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+                let host = grids_contract_nuclear_like(&pd, ri, rj, rc, li, lj, 0, 0);
+                let dev = device_grids_block(&client, ai, aj, ri, rj, rc, li, lj);
+                assert_close(&host, &dev, &format!("grids li={li} lj={lj} rc={rc:?}"));
+            }
+        }
+    }
+
+    /// Genericity smoke test: `grids_scalar_kernel` monomorphizes and launches for
+    /// `F = f32` (s-s pair), producing finite output.
+    #[test]
+    fn test_grids_scalar_kernel_generic_f32() {
+        let client = cpu_client();
+        let g_zero = vec![0.0_f32; 3];
+        let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
+        let rys_zero = vec![0.0_f32; 1];
+        let u_h = client.create_from_slice(f32::as_bytes(&rys_zero));
+        let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
+        let out_zero = vec![0.0_f32; 1];
+        let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+        grids_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3) },
+            unsafe { ArrayArg::from_raw_parts(u_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(w_h, 1) },
+            unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
+            0.0_f32, 0.0_f32, 0.0_f32,
+            0.6_f32, 0.5_f32, 0.7_f32,
+            0.3_f32, -0.4_f32, 0.8_f32,
+            0.27_f32, 0.225_f32, 0.315_f32,
+            2.2_f32,
+            0.5_f32,
+            0.6_f32,
+            GRIDS_PIE4 as f32,
+            (2.0 * std::f64::consts::PI) as f32,
+            0u32, 0u32, 0u32, 0u32, 1u32, 1u32, 1u32, 1u32,
+            1u32,
+        );
+        let raw = client.read_one_unchecked(out_h);
+        let out = f32::from_bytes(&raw);
+        assert!(out[0].is_finite(), "grids f32 kernel produced non-finite output");
+    }
+
+    /// ROCm device-vs-host parity oracle for the grids scalar nuclear-like path.
+    ///
+    /// Because the public `eval_raw` path is blocked upstream for grids
+    /// (`InvalidShellTuple { expected: 2, got: 4 }`, a PRE-EXISTING baseline
+    /// failure unrelated to this GPU port), the grids ROCm validation is a DIRECT
+    /// device-vs-host comparison on the real AMD GPU: `grids_scalar_kernel` on the
+    /// HIP runtime vs the host `grids_contract_nuclear_like`, over many randomized
+    /// shell pairs / grid points. `#[ignore]` + `CINTX_ROCM_ORACLE=1` gated.
+    #[cfg(feature = "rocm")]
+    #[test]
+    #[ignore]
+    fn test_grids_device_vs_host_rocm() {
+        assert_eq!(
+            std::env::var("CINTX_ROCM_ORACLE").as_deref(),
+            Ok("1"),
+            "ROCm oracle must be invoked with CINTX_ROCM_ORACLE=1 (and CINTX_BACKEND=rocm)."
+        );
+        let client = cubecl_hip::HipRuntime::client(&Default::default());
+
+        // Deterministic LCG (Numerical Recipes) for reproducible jitter.
+        let mut state: u64 = 0x5ec0_ec90_2605_2c10;
+        let mut uniform = |lo: f64, hi: f64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let frac = (state >> 11) as f64 / (1u64 << 53) as f64;
+            lo + frac * (hi - lo)
+        };
+
+        let mut mismatch_count = 0usize;
+        let mut any_nonzero = false;
+        let mut cases = 0usize;
+
+        for _ in 0..16 {
+            let ai = uniform(0.4, 2.5);
+            let aj = uniform(0.4, 2.5);
+            let ri = [0.0, 0.0, 0.0];
+            let rj = [uniform(-0.8, 0.8), uniform(-0.8, 0.8), uniform(0.2, 1.4)];
+            let rc = [uniform(-1.0, 1.0), uniform(-1.0, 1.0), uniform(-1.0, 1.0)];
+            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1)] {
+                let pd =
+                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+                let host = grids_contract_nuclear_like(&pd, ri, rj, rc, li, lj, 0, 0);
+                let dev = device_grids_block(&client, ai, aj, ri, rj, rc, li, lj);
+                assert_eq!(host.len(), dev.len(), "len mismatch li={li} lj={lj}");
+                for (&h, &d) in host.iter().zip(dev.iter()) {
+                    if (h - d).abs() > 1e-12 + 1e-10 * h.abs() {
+                        mismatch_count += 1;
+                    }
+                    if h.abs() > 1e-18 {
+                        any_nonzero = true;
+                    }
+                }
+                cases += 1;
+            }
+        }
+
+        println!(
+            "grids_device_vs_host_rocm: cases={cases} mismatch_count={mismatch_count} any_nonzero={any_nonzero}"
+        );
+        assert!(any_nonzero, "grids ROCm: all-zero output — kernel appears stubbed");
+        assert_eq!(
+            mismatch_count, 0,
+            "grids ROCm device-vs-host: {mismatch_count} mismatch(es) at atol=1e-12/rtol=1e-10"
+        );
     }
 }
