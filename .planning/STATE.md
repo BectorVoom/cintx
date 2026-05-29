@@ -29,7 +29,7 @@ Phase: 23
 Plan: Not started
 Status: Executing Phase 22
 Resume file: .planning/phases/22-gauge-origin-env-slot-gap-a-ptr-common-orig/22-CONTEXT.md
-Last activity: 2026-05-29 - Completed quick task 260529-lbr: CINTshells_*_offset libcint parity fix (vendor gate now surfaces a separate pre-existing CINTgto_norm mismatch)
+Last activity: 2026-05-29 - Completed quick task 260529-mfh: CINTgto_norm libcint-parity fix (vendor gate now advances to CINTc2s_bra_sph)
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -324,6 +324,7 @@ None yet.
 | 260529-jtd | implement spinor int1e gradient (ipovlp/ipkin/ipnuc/iprinv) via on-device cart gradient + host per-component cart→spinor transform; was UnsupportedApi (R5/D-03). Vendor parity vs libcint 6.1.3 = 0 mismatches, all 4 ops | 2026-05-29 | fb02060 | [260529-jtd-implement-spinor-int1e-gradient-ipovlp-i](./quick/260529-jtd-implement-spinor-int1e-gradient-ipovlp-i/) |
 | 260529-kke | fix scalar spinor int1e cart→spinor block-orientation bug (transpose ket-major→bra-major before cart_to_spinor_sf_2d); proven via asymmetric p×d vendor parity (ovlp/kin/nuc: 232→0 mismatches vs libcint 6.1.3) | 2026-05-29 | f4230c6 | [260529-kke-fix-scalar-spinor-int1e-cart-to-spinor-b](./quick/260529-kke-fix-scalar-spinor-int1e-cart-to-spinor-b/) |
 | 260529-lbr | fix CINTshells_{cart,spheric,spinor}_offset to match libcint i<nbas semantics (write nbas start-offsets, drop trailing ao_loc[nbas] total). Unblocks vendor oracle gate past helper check; surfaced a separate pre-existing CINTgto_norm helper mismatch (follow-up) | 2026-05-29 | 3bf0682 | [260529-lbr-fix-cintshells-cart-spheric-spinor-offse](./quick/260529-lbr-fix-cintshells-cart-spheric-spinor-offse/) |
+| 260529-mfh | fix CINTgto_norm to libcint misc.c closed form (was inverted formula, all 15 (l,a) failed). Vendor parity 0 mismatches; gate now advances to next pre-existing blocker CINTc2s_bra_sph | 2026-05-29 | 8db9fcb | [260529-mfh-fix-cintgto-norm-to-match-libcint-misc-c](./quick/260529-mfh-fix-cintgto-norm-to-match-libcint-misc-c/) |
 
 ## Session Continuity
 
