@@ -740,26 +740,22 @@ pub fn vendor_int1e_ipnucip_cart(
     }
 }
 
-/// Safe wrapper for the vendored libcint `CINTrys_roots(nroots, x, lower, u, w)`
+/// Safe wrapper for the vendored libcint `CINTrys_roots(nroots, x, u, w)`
 /// root/weight dispatcher (Phase 25 FND-02 — the byte-identity reference for the
-/// host Wheeler nroots>=6 port). `lower == 0.0` exercises the long-range path
-/// (`CINTrys_roots_for_x_lower_0`), which is the only path Phase 25 needs.
+/// host Wheeler nroots>=6 port). The C signature is
+/// `int CINTrys_roots(int nroots, double x, double *u, double *w)` (rys_roots.c:57),
+/// the `lower == 0` long-range path; the short-range `lower != 0` dispatcher is a
+/// separate symbol (`CINTsr_rys_roots`) and is out of scope for Phase 25.
 ///
-/// Returns `(roots, weights)` each of length `nroots`. The rys symbols are
-/// already compiled into the vendor static lib (build.rs:200-204) and matched by
-/// the `CINT.*` allowlist regex, so no build.rs change is required.
+/// Returns `(roots, weights)` each of length `nroots`. The rys symbols are already
+/// compiled into the vendor static lib (build.rs rys source list); `CINTrys_roots`
+/// is allowlisted + declared in the supplemental header (build.rs).
 pub fn vendor_CINTrys_roots(nroots: i32, x: f64) -> (Vec<f64>, Vec<f64>) {
     let n = nroots.max(0) as usize;
     let mut u = vec![0.0f64; n];
     let mut w = vec![0.0f64; n];
     unsafe {
-        ffi::CINTrys_roots(
-            nroots as c_int,
-            x as c_double,
-            0.0 as c_double,
-            u.as_mut_ptr(),
-            w.as_mut_ptr(),
-        );
+        ffi::CINTrys_roots(nroots, x, u.as_mut_ptr(), w.as_mut_ptr());
     }
     (u, w)
 }

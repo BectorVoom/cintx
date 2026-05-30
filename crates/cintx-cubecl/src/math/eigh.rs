@@ -64,16 +64,128 @@ pub(crate) fn dlarrk(n: usize, iw: usize, gl: f64, gu: f64, d: &[f64], e2: &[f64
 }
 
 /// `_dlaneg`: Sturm negcount.  eigh.c:897.  Plan acceptance criterion.
+///
+/// Returns the number of eigenvalues of the symmetric tridiagonal `(d, e)` strictly
+/// less than `sigma`, via the LDL^T Sturm sequence. `e[i]` is the (i,i+1) off-diagonal.
 pub(crate) fn dlaneg(n: usize, d: &[f64], e: &[f64], sigma: f64) -> i32 {
     let mut neg = 0i32;
     let mut p = d[0] - sigma;
     if p < 0.0 { neg += 1; }
     for i in 1..n {
-        if p == 0.0 { p = f64::MIN_POSITIVE; }
+        if p == 0.0 { p = -f64::MIN_POSITIVE; }
         p = d[i] - sigma - e[i-1] * e[i-1] / p;
         if p < 0.0 { neg += 1; }
     }
     neg
+}
+
+/// Compensated (Kahan/Neumaier) running sum for the Rayleigh quotient — keeps the
+/// dot products `v^T T v` and `v^T v` accurate to ~1 ulp despite cancellation.
+#[inline]
+fn comp_add(sum: &mut f64, c: &mut f64, x: f64) {
+    let y = x - *c;
+    let t = *sum + y;
+    *c = (t - *sum) - y;
+    *sum = t;
+}
+
+/// Rayleigh-quotient eigenvalue refinement using the accurate QL eigenvectors.
+///
+/// For an eigenvector `v` accurate to O(eps), the Rayleigh quotient
+/// `lambda = (v^T T v) / (v^T v)` is accurate to O(eps^2). We compute both
+/// quadratic forms with compensated summation. `vec[k*n + j]` is component j of the
+/// k-th (ascending) eigenvector. `d`/`e` are the ORIGINAL tridiagonal.
+fn refine_eigenvalues_rayleigh(n: usize, d: &[f64], e: &[f64], vec: &[f64], eig: &mut [f64]) {
+    for k in 0..n {
+        let v = &vec[k * n..k * n + n];
+        // num = v^T T v ; den = v^T v
+        let (mut num, mut numc) = (0.0f64, 0.0f64);
+        let (mut den, mut denc) = (0.0f64, 0.0f64);
+        for row in 0..n {
+            let mut tv = d[row] * v[row];
+            if row > 0 {
+                tv += e[row - 1] * v[row - 1];
+            }
+            if row < n - 1 {
+                tv += e[row] * v[row + 1];
+            }
+            comp_add(&mut num, &mut numc, v[row] * tv);
+            comp_add(&mut den, &mut denc, v[row] * v[row]);
+        }
+        let denom = den + denc;
+        if denom > 0.0 {
+            eig[k] = (num + numc) / denom;
+        }
+    }
+}
+
+/// Sturm-bisection eigenvalue refinement (MRRR `_dlarrk` kernel, eigh.c:62).
+///
+/// Each QL eigenvalue `eig[k]` (ascending) is the k-th smallest, so it is the unique
+/// root of `count(sigma) == k+1` transition. We bisect a tight bracket around the QL
+/// estimate until the interval collapses to f64 ulp, giving high RELATIVE accuracy —
+/// essential because the Rys transform `r/(1-r)` amplifies absolute eigenvalue error
+/// near r=1. The bracket starts from the midpoints to adjacent QL eigenvalues (the
+/// eigenvalues are simple for these well-separated Jacobi/Laguerre matrices).
+fn refine_eigenvalues_bisection(n: usize, d: &[f64], e: &[f64], eig: &mut [f64]) {
+    // Gershgorin bound for global fallback brackets.
+    let mut gmin = d[0] - e[0].abs();
+    let mut gmax = d[0] + e[0].abs();
+    for i in 1..n {
+        let r = e[i - 1].abs() + if i < n - 1 { e[i].abs() } else { 0.0 };
+        gmin = gmin.min(d[i] - r);
+        gmax = gmax.max(d[i] + r);
+    }
+    let span = (gmax - gmin).abs().max(1.0);
+
+    let eig_copy = eig.to_vec();
+    for k in 0..n {
+        let target = (k + 1) as i32; // count(sigma) >= target marks the k-th eigenvalue.
+        let est = eig_copy[k];
+        // Tight bracket around the incoming (Rayleigh-refined) estimate: a few ulp
+        // wide, expanded geometrically only if the eigenvalue is not yet enclosed.
+        let scale = est.abs().max(span * 1e-3);
+        let mut width = scale * 1e-10;
+        let (mut lo, mut hi);
+        let mut ok = false;
+        for _ in 0..60 {
+            lo = est - width;
+            hi = est + width;
+            if dlaneg(n, d, e, lo) < target && dlaneg(n, d, e, hi) >= target {
+                ok = true;
+                break;
+            }
+            width *= 4.0;
+        }
+        if !ok {
+            // Fallback: neighbour-midpoint / Gershgorin bracket.
+            lo = if k == 0 { gmin } else { 0.5 * (eig_copy[k - 1] + eig_copy[k]) };
+            hi = if k == n - 1 { gmax } else { 0.5 * (eig_copy[k] + eig_copy[k + 1]) };
+            if lo > hi {
+                std::mem::swap(&mut lo, &mut hi);
+            }
+            if dlaneg(n, d, e, lo) >= target || dlaneg(n, d, e, hi) < target {
+                lo = gmin - span * 1e-12;
+                hi = gmax + span * 1e-12;
+            }
+        } else {
+            lo = est - width;
+            hi = est + width;
+        }
+        // Bisection to ulp.
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if mid <= lo || mid >= hi {
+                break;
+            }
+            if dlaneg(n, d, e, mid) < target {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        eig[k] = 0.5 * (lo + hi);
+    }
 }
 
 /// `_dlarrf`: RRR shift stub.  eigh.c:853.  Plan acceptance criterion.
@@ -302,6 +414,14 @@ pub fn cint_diagonalize(
 
     assert!(n <= MXRYSROOTS, "cint_diagonalize: n={n} > MXRYSROOTS={MXRYSROOTS}");
 
+    // Preserve the ORIGINAL tridiagonal for the Sturm-bisection eigenvalue
+    // refinement below (QL destroys d/e). `e_orig[i]` is the (i,i+1) off-diagonal.
+    let d_orig: Vec<f64> = diag[0..n].to_vec();
+    let mut e_orig: Vec<f64> = vec![0.0; n];
+    for i in 0..n - 1 {
+        e_orig[i] = diag_off1[i];
+    }
+
     // Working copies.
     let mut d: Vec<f64> = diag[0..n].to_vec();
     // e needs length n (e[n-1] = 0 scratch per NR convention).
@@ -323,8 +443,7 @@ pub fn cint_diagonalize(
     let mut idx: Vec<usize> = (0..n).collect();
     idx.sort_by(|&a, &b| d[a].partial_cmp(&d[b]).unwrap_or(std::cmp::Ordering::Equal));
 
-    let d_sorted: Vec<f64> = idx.iter().map(|&i| d[i]).collect();
-    eig[0..n].copy_from_slice(&d_sorted);
+    let mut d_sorted: Vec<f64> = idx.iter().map(|&i| d[i]).collect();
 
     // vec[new_i * n + j] = component j of new_i-th eigenvector (ascending order)
     //                    = z[j * n + old_col]  (column old_col of z).
@@ -333,6 +452,18 @@ pub fn cint_diagonalize(
             vec[new_i * n + j] = z[j * n + old_col];
         }
     }
+
+    // High-relative-accuracy eigenvalue refinement (MRRR-style, RESEARCH Open
+    // Question 2 / Pitfall): QL eigenvalues carry ~1e-15 ABSOLUTE error, which the
+    // downstream Rys transform `r/(1-r)` amplifies by 1/(1-r)^2 at the largest root,
+    // pushing the root past the atol=1e-12 gate. Two-stage polish:
+    //   1. Rayleigh quotient (lambda = v^T T v) in double-double using the accurate
+    //      QL eigenvectors — gives lambda to the eigenvector accuracy squared.
+    //   2. A few inverse-iteration / Sturm-bisection steps to lock the last bits.
+    refine_eigenvalues_rayleigh(n, &d_orig, &e_orig, vec, &mut d_sorted);
+    refine_eigenvalues_bisection(n, &d_orig, &e_orig, &mut d_sorted);
+
+    eig[0..n].copy_from_slice(&d_sorted);
     0
 }
 
