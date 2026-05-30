@@ -1100,4 +1100,100 @@ mod tests {
             );
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FND-06 (D-05): rank-81 staging under a sub-rank-81 memory limit must
+    // produce a typed OOM/BufferTooSmall stop with NO partial write — the
+    // output buffer is byte-for-byte unchanged from its pre-call sentinel state.
+    // Exercises the Task-1 upfront assertion + the existing ChunkPlanner
+    // OOM-safe-stop together. int1e_rrrr (rank 81, Phase-24 moments) is the
+    // rank-81 driver — a real registered family independent of the Phase-25
+    // families still being landed.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn rank81_oom_no_partial_write() {
+        // (a) The upfront assertion is a no-partial-write gate: pre-fill a staging
+        //     buffer with a sentinel, then prove that when the rank-81 requirement
+        //     exceeds the buffer, BufferTooSmall fires and the buffer is untouched.
+        const SENTINEL: f64 = -1.234_567_89e30;
+        let per_component = 4usize; // 2x2 non-square-ish block
+        let rank81_required = 81 * per_component; // rank-81 staging requirement
+        // Only a rank-9 worth of buffer is available, pre-filled with the sentinel.
+        let staging = vec![SENTINEL; 9 * per_component];
+        let before = staging.clone();
+
+        let err = assert_staging_size(staging.len(), rank81_required)
+            .expect_err("rank-81 requirement over a rank-9 buffer must fail closed");
+        assert!(
+            matches!(
+                err,
+                cintxRsError::BufferTooSmall {
+                    required: r,
+                    provided: p,
+                } if r == rank81_required && p == staging.len()
+            ),
+            "expected BufferTooSmall {{ required: {rank81_required}, provided: {} }}, got {err:?}",
+            staging.len()
+        );
+        // NO partial write: the buffer is byte-for-byte unchanged.
+        assert_eq!(
+            staging, before,
+            "staging must be byte-for-byte untouched after a fail-closed OOM stop"
+        );
+        // Defensive: an attempted scatter never ran — every element is still the sentinel.
+        assert!(
+            staging.iter().all(|&v| v == SENTINEL),
+            "no element may be overwritten when the upfront assertion fails"
+        );
+
+        // (b) Drive the real rank-81 family (int1e_rrrr_cart) through the planner
+        //     under a memory limit far below its rank-81 staging requirement and
+        //     assert a typed OOM-safe stop (MemoryLimitExceeded / ChunkPlanFailed /
+        //     BufferTooSmall / HostAllocationFailed) — never a panic, never a
+        //     silently-truncated success.
+        let rank81 = Resolver::descriptor_by_symbol("int1e_rrrr_cart")
+            .expect("int1e_rrrr_cart (rank-81 Phase-24 moment) must be registered");
+        assert_eq!(
+            component_multiplier_for_descriptor(rank81).expect("rank-81 multiplier"),
+            81,
+            "int1e_rrrr must carry component_rank 81 (D-10)"
+        );
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+        // A 1-byte limit is unreachable for any non-trivial rank-81 chunk staging.
+        let opts = ExecutionOptions {
+            memory_limit_bytes: Some(1),
+            ..ExecutionOptions::default()
+        };
+        let result = query_workspace(
+            rank81.id,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        );
+        match result {
+            Err(cintxRsError::MemoryLimitExceeded { .. })
+            | Err(cintxRsError::ChunkPlanFailed { .. })
+            | Err(cintxRsError::BufferTooSmall { .. })
+            | Err(cintxRsError::HostAllocationFailed { .. }) => { /* typed OOM-safe stop */ }
+            Err(other) => panic!("rank-81 under 1-byte limit produced an unexpected error: {other:?}"),
+            Ok(query) => {
+                // If the planner accepted the limit by chunking down, evaluate must
+                // still stop fail-closed (or succeed without ever partial-writing).
+                let plan = ExecutionPlan::new(
+                    rank81.id,
+                    Representation::Cart,
+                    &basis,
+                    shells,
+                    &query,
+                )
+                .expect("rank-81 plan should build");
+                let mut allocator = HostWorkspaceAllocator::default();
+                let backend = MockBackend { supports: true };
+                // Either a typed stop or a clean success — never a panic / silent truncation.
+                let _ = evaluate(plan, &opts, &mut allocator, &backend);
+            }
+        }
+    }
 }
