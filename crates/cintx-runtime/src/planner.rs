@@ -258,7 +258,14 @@ pub fn evaluate(
         );
 
         let mut workspace = allocator.try_alloc(chunk.bytes, plan.workspace.alignment)?;
-        let mut staging = try_alloc_staging(staging_elements_for_chunk(&plan, chunk)?)?;
+        // FND-06 (D-04): required staging elements for this chunk =
+        // component_multiplier * per_component_elements (the layout already folded
+        // component_rank into staging_elements). This is the SINGLE contract point.
+        let required_elements = staging_elements_for_chunk(&plan, chunk)?;
+        let mut staging = try_alloc_staging(required_elements)?;
+        // Prove the buffer is large enough BEFORE handing it to the backend scatter.
+        // Fail-closed with a typed BufferTooSmall stop and NO partial write if not.
+        assert_staging_size(staging.len(), required_elements)?;
 
         {
             let mut io =
@@ -348,6 +355,32 @@ fn try_alloc_staging(elements: usize) -> Result<Vec<f64>, cintxRsError> {
         .map_err(|_| cintxRsError::HostAllocationFailed { bytes })?;
     staging.resize(elements, 0.0);
     Ok(staging)
+}
+
+/// FND-06 (D-04): the SINGLE upfront staging-size contract point.
+///
+/// Proves the allocated staging buffer is large enough to hold
+/// `required_elements = component_multiplier * per_component_elements` BEFORE any
+/// kernel scatter runs. Once this assertion holds, every per-element
+/// `staging[dst] = v` scatter in the kernels is unconditional and in-bounds by
+/// construction — replacing the 18+ per-element `if dst < staging.len()` guards
+/// (which silently DROPPED trailing components, the 260530-9ay truncation bug).
+///
+/// Returns `Err(cintxRsError::BufferTooSmall { required, provided })` if the
+/// buffer is undersized — a typed fail-closed stop with NO partial write, per
+/// the CLAUDE.md "fallible allocation + typed failure + no partial writes"
+/// non-negotiable.
+fn assert_staging_size(
+    staging_len: usize,
+    required_elements: usize,
+) -> Result<(), cintxRsError> {
+    if staging_len < required_elements {
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_elements,
+            provided: staging_len,
+        });
+    }
+    Ok(())
 }
 
 fn estimate_workspace_request(
@@ -1022,5 +1055,49 @@ mod tests {
         assert_eq!(large.len(), 1024, "large staging alloc must have 1024 f64 entries");
         // All entries initialized to 0.0 (no partial writes).
         assert!(large.iter().all(|&v| v == 0.0), "staging buffer must be zero-initialized");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FND-06 (D-04): the SINGLE upfront staging-size assertion at the planner
+    // boundary. When required_elements = component_multiplier *
+    // per_component_elements exceeds the allocated staging length, the boundary
+    // returns Err(BufferTooSmall { required, provided }) and never hands an
+    // undersized buffer to the kernel scatter. For a correctly-sized buffer
+    // (rank 9/27/81 with adequate memory), the assertion passes (Ok).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn staging_buffer_too_small() {
+        // Undersized: a rank-81 family needs 81 * per_component elements; an
+        // under-allocated buffer must be rejected with a typed BufferTooSmall stop.
+        let per_component = 4usize; // e.g. a 2x2 bra×ket block
+        let required = 81 * per_component; // rank-81 staging requirement
+        let undersized = 9 * per_component; // only rank-9 worth allocated
+
+        let err = assert_staging_size(undersized, required)
+            .expect_err("undersized staging must be rejected, not silently truncated");
+        assert!(
+            matches!(
+                err,
+                cintxRsError::BufferTooSmall {
+                    required: r,
+                    provided: p,
+                } if r == required && p == undersized
+            ),
+            "expected BufferTooSmall {{ required: {required}, provided: {undersized} }}, got {err:?}"
+        );
+
+        // Correctly-sized staging for ranks 9 / 27 / 81 must pass (Ok).
+        for rank in [9usize, 27, 81] {
+            let need = rank * per_component;
+            assert!(
+                assert_staging_size(need, need).is_ok(),
+                "exact-sized rank-{rank} staging ({need} elements) must pass the assertion"
+            );
+            // Over-allocation (f64 buffer holding > required) also passes.
+            assert!(
+                assert_staging_size(need + 1, need).is_ok(),
+                "over-allocated rank-{rank} staging must pass the assertion"
+            );
+        }
     }
 }
