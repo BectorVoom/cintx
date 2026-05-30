@@ -18,7 +18,8 @@ findings:
   warning: 4
   info: 4
   total: 8
-status: issues_found
+warnings_fixed: 4
+status: warnings_resolved
 ---
 
 # Phase 24: Code Review Report
@@ -26,7 +27,18 @@ status: issues_found
 **Reviewed:** 2026-05-30T07:44:33Z
 **Depth:** standard
 **Files Reviewed:** 9
-**Status:** issues_found
+**Status:** warnings_resolved (all 4 Warning findings fixed via `/gsd:code-review 24 --fix`; 4 Info findings deferred by scope)
+
+## Fix Log (2026-05-30)
+
+| Finding | Commit | Resolution |
+|---------|--------|------------|
+| WR-01 | `6bc6f44` | Collapsed triplicated moment `(op_mode→order,rank)` mapping into a single `const fn moment_params`; dispatcher + device comptime match + `run_1e_moment_device` now share it, guarded by `debug_assert_eq!`. |
+| WR-02 | `66f3ef4` | Replaced per-element `if dst < staging.len()` soft guards with an upfront `staging.len() >= rank*block` check returning typed `CintxRsError::BufferTooSmall`; fails closed (no partial writes). |
+| WR-03 | `6419d13` | Added `moment_genctr_parity.rs` — nctr>1 (bra p-shell nctr=2), non-square, cross-center `int1e_rr` vendor byte-identity case. Passes at atol=1e-12; no real bug uncovered. |
+| WR-04 | `5c7190d` | Added `assert_components_match_vendor_support` — per-component non-zero gate so a zeroed trailing component cannot slip through for high-rank families. |
+
+Verification after fixes: workspace build clean; cubecl 280 / compat 43 / ops 11 lib tests; 18/18 baseline moment parity + 2/2 new genctr parity under the vendor double-gate; one_electron_parity 8/8 + one_electron_grad_parity 6/6 (no regression on the shared staging path).
 
 ## Summary
 
