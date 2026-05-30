@@ -60,7 +60,7 @@
 | Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 11/11 | Complete | 2026-05-21 |
 | Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`) | v1.3 | 0/8 | Planned | - |
 | Phase 22: Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG) | v1.4 | 0/2 | Planned | - |
-| Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 0/0 | Not started | - |
+| Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 0/5 | Planned | - |
 | Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 0/0 | Not started | - |
 | Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 0/0 | Not started | - |
 | Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/0 | Not started | - |
@@ -519,7 +519,24 @@ Plans:
   5. `int3c2e_ip2` matches at atol=1e-12 (cart + sph) (DRV1-05).
   6. Each family is registered with its `component_rank`, dispatches through `eval_raw`, has a dedicated `vendor_*` parity test executing under both `--features cpu` and `CINTX_ORACLE_BUILD_VENDOR=1` (`running N>0 tests`), and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+> **Scope note:** cluster C (DRV1-02, the rank-9 both-side `int1e_ipovlpip/ipkinip/ipnucip`) is ALREADY COMPLETE and vendor-verified (commit `319d055`). The plans below cover only the remaining clusters A & B (6 families); plan 05 is a DRV1-02 regression guard that re-runs the existing cluster-C parity test (no re-implementation).
+
+Plans:
+
+**Wave 1** — engine plumbing + DRV1-02 regression guard (parallel; disjoint files)
+- [ ] 23-01-PLAN.md — Promote `nabla1j_2e`/`nabla1k_2e` to `pub(crate)`, add `nabla1l_2e` (mirror `nabla1l_breit` for the 3c2e `ll`-slot), and a nabla-parameterized single-side contraction in `f12.rs` (unblocks clusters A). []
+- [ ] 23-05-PLAN.md — DRV1-02 regression guard: re-run the existing cluster-C `one_electron_grad_both_parity` vendor test under the double gate (no source change). [DRV1-02]
+
+**Wave 2** *(blocked on 23-01)* — cluster A part 1 (pure Phase-21 reuse)
+- [ ] 23-02-PLAN.md — `int2e_ip2` (nabla1k on ket bra-center k) + `int2c2e_ip1/ip2` (nabla1i/k, lj=ll=0); manifest rank-3 ×3 reps, RawApiId, dispatch (center_2c2e dispatch ADDED), vendor FFI + 2 parity tests at atol=1e-12. [DRV1-01, DRV1-04]
+
+**Wave 3** *(blocked on 23-01, 23-02 — shares registration files with 23-02)* — cluster A part 2 (Pitfall 2)
+- [ ] 23-03-PLAN.md — `int3c2e_ip2` (∇ on auxiliary k → cintx `ll` slot → `nabla1l_2e`, NOT nabla1k); manifest rank-3 ×3 reps, RawApiId, dispatch, vendor FFI + parity test; assert ip2≠ip1; atol=1e-12. [DRV1-05]
+
+**Wave 4** *(blocked on 23-03 — shares registration files)* — cluster B (the 3c1e pair; the only new base kernel)
+- [ ] 23-04-PLAN.md — `int3c1e_ip1` (overlap deriv, no Rys) + `int3c1e_iprinv` (NEW Rys-driven `fill_g_tensor_3c1e_nuc` base reusing `rys_roots_host` + the plumbed `PTR_RINV_ORIG`; fail-closed at nroots>5/fff); manifest rank-3 ×3 reps ×2, RawApiId, dispatch (center_3c1e dispatch ADDED), vendor FFI + parity test; atol=1e-12; capi/legacy untouched. [DRV1-03]
 
 ### Phase 24: Group 3 — Position / Multipole-Moment Integrals
 
