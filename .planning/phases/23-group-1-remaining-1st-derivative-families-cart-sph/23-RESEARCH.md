@@ -463,22 +463,26 @@ already there; clone that addition). `[VERIFIED: build.rs:51-80, 207-250, 358]`
 (stride adjustment, nabla1l vs remap, Rys reuse), not WHETHER, and resolve by reading the named
 cintx functions during the task. No user confirmation needed before planning.
 
-## Open Questions
+## Open Questions (RESOLVED at planning, 2026-05-30)
 
-1. **int3c2e_ip2: add `nabla1l_2e` or remap the g-tensor?**
+1. **int3c2e_ip2: add `nabla1l_2e` or remap the g-tensor?** — **RESOLVED: add `nabla1l_2e`.**
    - What we know: ip2 derives the auxiliary k; cintx maps real-k to the 2e `ll` slot; no
      `nabla1l_2e` exists (but `nabla1l_breit` does as a reference).
    - What's unclear: which is less code/risk given the 3c2e `ibase/kbase` HRR branch.
    - Recommendation: plan `nabla1l_2e` (isolated, mirrors nabla1k); fall back to remap if the
      `ll`-slot strides prove awkward. Either way the oracle parity test is the arbiter.
+   - **Decision:** plan 23-01 adds `nabla1l_2e` (mirroring `nabla1l_breit`); plan 23-03 uses it
+     on the `ll` slot for int3c2e_ip2. The oracle parity test remains the arbiter.
 
-2. **int3c1e_iprinv host-vs-device split for the new Rys base.**
+2. **int3c1e_iprinv host-vs-device split for the new Rys base.** — **RESOLVED: device `#[cube]`.**
    - What we know: cluster-C and 3c2e_ip1 run the full numeric core on-device (`#[cube]`).
    - What's unclear: whether the new 3c1e-nuc g-tensor + Rys loop is ported to `#[cube]` in this
      phase or staged host-side first (the CubeCL authoring rules — no plain-fn calls, F::exp/sqrt,
      u32/i32 — apply to any device port).
    - Recommendation: device kernel to match the project's CubeCL-primary constraint and the
      cluster-C precedent; the radial/Rys machinery is already device-proven in 2c2e/3c2e.
+   - **Decision:** plan 23-04 Task 3 ports the new `fill_g_tensor_3c1e_nuc` Rys base to
+     `#[cube]` (device), per CubeCL-primary + cluster-C precedent.
 
 ## Project Constraints (from CLAUDE.md)
 
