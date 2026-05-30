@@ -810,6 +810,1076 @@ pub fn vendor_int1e_iprinv_cart(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 24: position / multipole-moment family vendor wrappers (cart + sph).
+// Cloned verbatim from `vendor_int1e_iprinv_{sph,cart}` — only the `ffi::int1e_*`
+// call and the doc-comment differ. `out` is sized RANK*ni*nj component-leading;
+// the test caller owns sizing. Base families (26) + `_origj` variants (12) = 38.
+// NOTE: there is NO int1e_rrr_origj / int1e_rrrr_origj symbol in libcint 6.1.3
+// (confirmed by grep of src/autocode/intor1.c) — they are intentionally absent.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Evaluate int1e_r_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_r_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_r_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rr_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+pub fn vendor_int1e_rr_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rr_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rr_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+pub fn vendor_int1e_rr_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rr_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rrr_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 27 * ni * nj elements (component_rank=27).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..27.
+pub fn vendor_int1e_rrr_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rrr_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rrr_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 27 * ni * nj elements (component_rank=27).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..27.
+pub fn vendor_int1e_rrr_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rrr_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rrrr_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 81 * ni * nj elements (component_rank=81).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..81.
+pub fn vendor_int1e_rrrr_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rrrr_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rrrr_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 81 * ni * nj elements (component_rank=81).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..81.
+pub fn vendor_int1e_rrrr_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rrrr_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r2_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_r2_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r2_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_r2_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r4_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_r4_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r4_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r4_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_r4_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r4_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_z_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_z_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_z_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_z_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_z_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_z_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_zz_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_zz_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_zz_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_zz_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_zz_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_zz_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_p4_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_p4_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_p4_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_p4_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_p4_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_p4_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_irp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+pub fn vendor_int1e_irp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_irp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_irp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+pub fn vendor_int1e_irp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_irp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rinv_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+///
+/// IMPORTANT: the caller MUST set `env[PTR_RINV_ORIG..PTR_RINV_ORIG+3]`
+/// (libcint `PTR_RINV_ORIG = 4`) to the single rinv center BEFORE calling.
+/// A zero rinv origin is trivially-passing and disallowed (Phase 24 D-04).
+pub fn vendor_int1e_rinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rinv_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+///
+/// IMPORTANT: the caller MUST set `env[PTR_RINV_ORIG..PTR_RINV_ORIG+3]`
+/// (libcint `PTR_RINV_ORIG = 4`) to the single rinv center BEFORE calling.
+/// A zero rinv origin is trivially-passing and disallowed (Phase 24 D-04).
+pub fn vendor_int1e_rinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_drinv_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+///
+/// IMPORTANT: the caller MUST set `env[PTR_RINV_ORIG..PTR_RINV_ORIG+3]`
+/// (libcint `PTR_RINV_ORIG = 4`) to the single rinv center BEFORE calling.
+/// A zero rinv origin is trivially-passing and disallowed (Phase 24 D-04).
+pub fn vendor_int1e_drinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_drinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_drinv_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+///
+/// IMPORTANT: the caller MUST set `env[PTR_RINV_ORIG..PTR_RINV_ORIG+3]`
+/// (libcint `PTR_RINV_ORIG = 4`) to the single rinv center BEFORE calling.
+/// A zero rinv origin is trivially-passing and disallowed (Phase 24 D-04).
+pub fn vendor_int1e_drinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_drinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r_origj_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_r_origj_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r_origj_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r_origj_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_r_origj_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r_origj_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rr_origj_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+pub fn vendor_int1e_rr_origj_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rr_origj_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_rr_origj_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+pub fn vendor_int1e_rr_origj_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_rr_origj_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r2_origj_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_r2_origj_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r2_origj_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r2_origj_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_r2_origj_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r2_origj_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r4_origj_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_r4_origj_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r4_origj_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_r4_origj_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_r4_origj_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r4_origj_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_z_origj_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_z_origj_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_z_origj_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_z_origj_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_z_origj_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_z_origj_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_zz_origj_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_zz_origj_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_zz_origj_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_zz_origj_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 1 * ni * nj elements (component_rank=1).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..1.
+pub fn vendor_int1e_zz_origj_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_zz_origj_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+
 /// Evaluate int2e_cart for a single shell quartet using vendored libcint.
 ///
 /// `out` must be pre-allocated with ni*nj*nk*nl elements where

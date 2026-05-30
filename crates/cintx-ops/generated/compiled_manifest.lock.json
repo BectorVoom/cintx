@@ -4529,6 +4529,1734 @@
       "stability": "stable"
     },
     {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rinv",
+        "representation": "cart",
+        "symbol": "int1e_rinv_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rinv",
+        "representation": "sph",
+        "symbol": "int1e_rinv_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rinv",
+        "representation": "spinor",
+        "symbol": "int1e_rinv_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "drinv",
+        "representation": "cart",
+        "symbol": "int1e_drinv_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "drinv",
+        "representation": "sph",
+        "symbol": "int1e_drinv_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "drinv",
+        "representation": "spinor",
+        "symbol": "int1e_drinv_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rr",
+        "representation": "cart",
+        "symbol": "int1e_rr_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rr",
+        "representation": "sph",
+        "symbol": "int1e_rr_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rr",
+        "representation": "spinor",
+        "symbol": "int1e_rr_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "27",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rrr",
+        "representation": "cart",
+        "symbol": "int1e_rrr_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "27",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rrr",
+        "representation": "sph",
+        "symbol": "int1e_rrr_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "27",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rrr",
+        "representation": "spinor",
+        "symbol": "int1e_rrr_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "81",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rrrr",
+        "representation": "cart",
+        "symbol": "int1e_rrrr_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "81",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rrrr",
+        "representation": "sph",
+        "symbol": "int1e_rrrr_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "81",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rrrr",
+        "representation": "spinor",
+        "symbol": "int1e_rrrr_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r2",
+        "representation": "cart",
+        "symbol": "int1e_r2_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r2",
+        "representation": "sph",
+        "symbol": "int1e_r2_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r2",
+        "representation": "spinor",
+        "symbol": "int1e_r2_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r4",
+        "representation": "cart",
+        "symbol": "int1e_r4_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r4",
+        "representation": "sph",
+        "symbol": "int1e_r4_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r4",
+        "representation": "spinor",
+        "symbol": "int1e_r4_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rr_origj",
+        "representation": "cart",
+        "symbol": "int1e_rr_origj_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rr_origj",
+        "representation": "sph",
+        "symbol": "int1e_rr_origj_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "rr_origj",
+        "representation": "spinor",
+        "symbol": "int1e_rr_origj_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r2_origj",
+        "representation": "cart",
+        "symbol": "int1e_r2_origj_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r2_origj",
+        "representation": "sph",
+        "symbol": "int1e_r2_origj_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r2_origj",
+        "representation": "spinor",
+        "symbol": "int1e_r2_origj_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r4_origj",
+        "representation": "cart",
+        "symbol": "int1e_r4_origj_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r4_origj",
+        "representation": "sph",
+        "symbol": "int1e_r4_origj_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r4_origj",
+        "representation": "spinor",
+        "symbol": "int1e_r4_origj_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r",
+        "representation": "cart",
+        "symbol": "int1e_r_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r",
+        "representation": "sph",
+        "symbol": "int1e_r_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r",
+        "representation": "spinor",
+        "symbol": "int1e_r_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "z",
+        "representation": "cart",
+        "symbol": "int1e_z_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "z",
+        "representation": "sph",
+        "symbol": "int1e_z_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "z",
+        "representation": "spinor",
+        "symbol": "int1e_z_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "zz",
+        "representation": "cart",
+        "symbol": "int1e_zz_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "zz",
+        "representation": "sph",
+        "symbol": "int1e_zz_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "zz",
+        "representation": "spinor",
+        "symbol": "int1e_zz_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r_origj",
+        "representation": "cart",
+        "symbol": "int1e_r_origj_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r_origj",
+        "representation": "sph",
+        "symbol": "int1e_r_origj_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "r_origj",
+        "representation": "spinor",
+        "symbol": "int1e_r_origj_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "z_origj",
+        "representation": "cart",
+        "symbol": "int1e_z_origj_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "z_origj",
+        "representation": "sph",
+        "symbol": "int1e_z_origj_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "z_origj",
+        "representation": "spinor",
+        "symbol": "int1e_z_origj_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "zz_origj",
+        "representation": "cart",
+        "symbol": "int1e_zz_origj_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "zz_origj",
+        "representation": "sph",
+        "symbol": "int1e_zz_origj_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "zz_origj",
+        "representation": "spinor",
+        "symbol": "int1e_zz_origj_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "p4",
+        "representation": "cart",
+        "symbol": "int1e_p4_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "p4",
+        "representation": "sph",
+        "symbol": "int1e_p4_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "p4",
+        "representation": "spinor",
+        "symbol": "int1e_p4_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "irp",
+        "representation": "cart",
+        "symbol": "int1e_irp_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "irp",
+        "representation": "sph",
+        "symbol": "int1e_irp_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "irp",
+        "representation": "spinor",
+        "symbol": "int1e_irp_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",

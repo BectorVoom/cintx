@@ -51,7 +51,7 @@ use super::shared::{apply_nabla_i_3axis, apply_nabla_j_3axis, cart_comps, common
 use crate::backend::ResolvedBackend;
 use crate::math::obara_saika::{hrr_step_host, vrr_2e_step_host};
 use crate::math::pdata::compute_pdata_host;
-use crate::math::rys::{rys_root1, rys_root1_host, rys_root2, rys_root2_host};
+use crate::math::rys::{rys_root1, rys_root2, rys_roots_host};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use cintx_core::cintxRsError;
@@ -104,13 +104,12 @@ fn grids_contract_nuclear_like(
     let x_boys = pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
 
     // Get Rys roots and weights
-    let (u_arr, w_arr) = if nrys_roots == 1 {
-        let (u0, w0) = rys_root1_host(x_boys);
-        ([u0, 0.0], [w0, 0.0])
-    } else {
-        let (u, w) = rys_root2_host(x_boys);
-        (u, w)
-    };
+    // Rys roots/weights sized to nrys_roots (1..=5). The device kernels wire only
+    // rys_root{1,2} (GRIDS_MAX_DEVICE_NROOTS); this host fallback handles nroots>2,
+    // so the arrays MUST have nrys_roots entries (not a fixed 2) or the loop below
+    // indexes out of bounds. rys_roots_host is byte-identical to rys_root{1,2}_host
+    // for nroots<=2 and correct for 3..=5 (fail-closed >5 — deferred Wheeler).
+    let (u_arr, w_arr) = rys_roots_host(nrys_roots as usize, x_boys);
 
     // Grids prefactor: 2*pi * fac / zeta (same as nuclear but no -Z_c charge factor)
     let fac1 = 2.0 * std::f64::consts::PI * pd.fac / pd.zeta_ab;
@@ -1042,13 +1041,12 @@ fn grids_contract_ip(
     let crij = [rc[0] - rp[0], rc[1] - rp[1], rc[2] - rp[2]];
     let x_boys = pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
 
-    let (u_arr, w_arr) = if nrys_roots == 1 {
-        let (u0, w0) = rys_root1_host(x_boys);
-        ([u0, 0.0], [w0, 0.0])
-    } else {
-        let (u, w) = rys_root2_host(x_boys);
-        (u, w)
-    };
+    // Rys roots/weights sized to nrys_roots (1..=5). The device kernels wire only
+    // rys_root{1,2} (GRIDS_MAX_DEVICE_NROOTS); this host fallback handles nroots>2,
+    // so the arrays MUST have nrys_roots entries (not a fixed 2) or the loop below
+    // indexes out of bounds. rys_roots_host is byte-identical to rys_root{1,2}_host
+    // for nroots<=2 and correct for 3..=5 (fail-closed >5 — deferred Wheeler).
+    let (u_arr, w_arr) = rys_roots_host(nrys_roots as usize, x_boys);
 
     let fac1 = 2.0 * std::f64::consts::PI * pd.fac / pd.zeta_ab;
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
@@ -1141,13 +1139,12 @@ fn grids_contract_ipip(
     let crij = [rc[0] - rp[0], rc[1] - rp[1], rc[2] - rp[2]];
     let x_boys = pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
 
-    let (u_arr, w_arr) = if nrys_roots == 1 {
-        let (u0, w0) = rys_root1_host(x_boys);
-        ([u0, 0.0], [w0, 0.0])
-    } else {
-        let (u, w) = rys_root2_host(x_boys);
-        (u, w)
-    };
+    // Rys roots/weights sized to nrys_roots (1..=5). The device kernels wire only
+    // rys_root{1,2} (GRIDS_MAX_DEVICE_NROOTS); this host fallback handles nroots>2,
+    // so the arrays MUST have nrys_roots entries (not a fixed 2) or the loop below
+    // indexes out of bounds. rys_roots_host is byte-identical to rys_root{1,2}_host
+    // for nroots<=2 and correct for 3..=5 (fail-closed >5 — deferred Wheeler).
+    let (u_arr, w_arr) = rys_roots_host(nrys_roots as usize, x_boys);
 
     let fac1 = 2.0 * std::f64::consts::PI * pd.fac / pd.zeta_ab;
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
@@ -1271,13 +1268,12 @@ fn grids_contract_ipvip(
     let crij = [rc[0] - rp[0], rc[1] - rp[1], rc[2] - rp[2]];
     let x_boys = pd.zeta_ab * (crij[0] * crij[0] + crij[1] * crij[1] + crij[2] * crij[2]);
 
-    let (u_arr, w_arr) = if nrys_roots == 1 {
-        let (u0, w0) = rys_root1_host(x_boys);
-        ([u0, 0.0], [w0, 0.0])
-    } else {
-        let (u, w) = rys_root2_host(x_boys);
-        (u, w)
-    };
+    // Rys roots/weights sized to nrys_roots (1..=5). The device kernels wire only
+    // rys_root{1,2} (GRIDS_MAX_DEVICE_NROOTS); this host fallback handles nroots>2,
+    // so the arrays MUST have nrys_roots entries (not a fixed 2) or the loop below
+    // indexes out of bounds. rys_roots_host is byte-identical to rys_root{1,2}_host
+    // for nroots<=2 and correct for 3..=5 (fail-closed >5 — deferred Wheeler).
+    let (u_arr, w_arr) = rys_roots_host(nrys_roots as usize, x_boys);
 
     let fac1 = 2.0 * std::f64::consts::PI * pd.fac / pd.zeta_ab;
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];

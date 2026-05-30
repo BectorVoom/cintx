@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: executing
-stopped_at: Phase 23 context gathered
-last_updated: "2026-05-30T02:30:01.160Z"
-last_activity: 2026-05-30 -- Phase 23 execution started
+status: verifying
+stopped_at: Phase 25 context gathered
+last_updated: "2026-05-30T08:59:08.653Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 21
-  completed_phases: 12
-  total_plans: 66
-  completed_plans: 61
-  percent: 92
+  completed_phases: 14
+  total_plans: 71
+  completed_plans: 71
+  percent: 100
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 23 — group-1-remaining-1st-derivative-families-cart-sph
+**Current focus:** Phase 24 — group-3-position-multipole-moment-integrals
 
 ## Current Position
 
-Phase: 23 (group-1-remaining-1st-derivative-families-cart-sph) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 23
-Resume file: .planning/phases/23-group-1-remaining-1st-derivative-families-cart-sph/23-CONTEXT.md
-Last activity: 2026-05-30 -- Phase 23 execution started
+Phase: 25
+Plan: Not started
+Status: Phase complete — ready for verification
+Resume file: .planning/phases/25-group-2-hessian-higher-order-derivatives/25-CONTEXT.md
+Last activity: 2026-05-30
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -45,7 +45,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 **Velocity:**
 
-- Total plans completed: 26
+- Total plans completed: 36
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -58,6 +58,8 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | 20 | 11 | - | - |
 | 21 | 8 | - | - |
 | 22 | 2 | - | - |
+| 23 | 5 | - | - |
+| 24 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -128,6 +130,11 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 20-precision-generic-f64-f32-switch P11 | 15 | 2 tasks | 3 files |
 | Phase 21 P02 | 15 | 2 tasks | 5 files |
 | Phase 21 P03 | 25 min | 2 tasks | 4 files |
+| Phase 24 P24-01 | 18 | 3 tasks | 8 files |
+| Phase 24 P24-02 | 70min | 2 tasks | 9 files |
+| Phase 24 P24-03 | 28 | 1 tasks | 5 files |
+| Phase 24 P24-04 | 38 | 1 tasks | 5 files |
+| Phase 24 P24-05 | 22 | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -293,6 +300,15 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: nmax headroom for ipovlp: nmax = li+lj+1 (one extra bra level so nabla ix+1 access is valid)
 - [Phase ?]: nmax headroom for ipkin: nmax = li+lj+3 (kinetic +2 for D_j^2 jx+2 access + nabla +1 for ix+1 access)
 - [Phase ?]: Spinor gradient returns UnsupportedApi (R5/D-03): guard placed before gradient compute path
+- [Phase ?]: [Phase 24-01]: Only the 12 source-confirmed _origj symbols (r/rr/r2/r4/z/zz) registered — no rrr_origj/rrrr_origj exist in libcint 6.1.3 intor1.c (OQ-3)
+- [Phase ?]: [Phase 24-01]: rinv/drinv parity tests inject a NON-ZERO rinv center via env_with_rinv_origin (PTR_RINV_ORIG, not PTR_COMMON_ORIG) per D-04/OQ-1; zero origin trivially-passing and disallowed
+- [Phase ?]: [Phase 24-01]: OQ-2 cart_offset lib-unit failure reproduced at pre-phase-20 commit 8997703 → standalone harness bug; Phase 24 integration gate de-blocked
+- [Phase ?]: [Phase 24-01]: rank-parameterized vendor_parity sizes every buffer rank*ni*nj (D-08); parity #[test] bodies gated on has_vendor_libcint as the Nyquist RED target for plans 02-05
+- [Phase 24]: Cluster A moment kernel: ONE parameterized #[cube] kernel for r/rr/rrr/rrrr/r2/r4/z/zz + _origj; per-axis moment ladder m_p = Sum_t C(p,t) drj^(p-t) overlap[jx+t] (closed-form of libcint CINTx1j_1e) reproduces verbatim gout order, proven by atol=1e-12 vendor parity
+- [Phase 24]: origin-source branch (D-02) is host-side: drj = rj - origin (common_orig for base, rj for _origj so drj=0 = libcint G1E_R_J pointer shift); no new env code
+- [Phase 24]: _origj parity tests use a CROSS-center non-square block (H1-1s x O-2p); same-center even-moment _origj integrals are identically zero (vendor included)
+- [Phase ?]: [Phase 24-03]: rinv/drinv read env[PTR_RINV_ORIG] (env[4..6]) NOT PTR_COMMON_ORIG (D-04/OQ-1); separate is_rinv_family_symbol gate. int1e_rinv = scalar nuclear Rys arm with atom-loop dropped to single rinv-center origin, charge=+1 no -Z_C; int1e_drinv = D_I+D_J of the rinv G-tensor (transl-invariance grad), rank 3, bra+1/ket+1 headroom; both fail-closed nroots>5. Vendor parity 0 at atol=1e-12 cart+sph
+- [Phase 24]: int1e_p4 (∇⁴, rank 1) = Laplacian-of-Laplacian on the overlap G-tensor (no Rys), BOTH-side +2 headroom (ng={2,2,...}, nmax=li+lj+4); built from d_i_1e_into/d_j_1e_into as four tensors (g0, D_J², D_I², D_I²·D_J²); rank-1 contraction s0+2s4+2s8+s40+2s44+s80 verbatim from intor1.c:2534; even+origin-free → CROSS-center non-square parity block (H1-1s × O-2p); fail-closed li+lj+4>8; vendor parity 0 at atol=1e-12 cart+sph.
 
 ### Roadmap Evolution
 
@@ -331,9 +347,12 @@ None yet.
 | 260529-q4k | refactor two_electron.rs scalar int2e (4-center ERI) to a generic-float CubeCL #[cube(launch)] device kernel (G-tensor build + all 4 HRR branches + Cartesian contraction on-device, comptime nroots, host-computed strides as runtime u32) dispatched on all 5 backends incl. ROCm/HIP; int2e_ip1 gradient stays host. ROCm random vendor parity: mismatch_count=0, any_nonzero=true across 96 quartets (int2e_sph+cart) vs libcint 6.1.3. f64 byte-identity preserved (safe_api_arity4 + two_electron_ip1 + 13/13 lib tests green) | 2026-05-29 | b967cc4 | [260529-q4k-two-electron-gpu-port](./quick/260529-q4k-two-electron-gpu-port/) |
 | 260529-twi | refactor ALL of unstable.rs (origi/grids/breit/origk/ssc) to generic-float CubeCL #[cube(launch)] device kernels + rocm oracles. First split the 3511-line file into a per-family module dir (unstable/{mod,shared,origi,grids,breit,origk,ssc}.rs, behavior-preserving). Then ported each family's scalar path on-device (host keeps c2s/spinor + AO scatter; derivative sub-paths origi-ip2/origk-ip1/grids-derivs + breit gout/spinor deferred-to-host, documented). ROCm vendor parity mismatch_count=0: origi 96, origk 144, ssc 48, breit 48 (spinor, non-square) cases. grids vendor oracle BLOCKED by pre-existing eval_raw InvalidShellTuple{expected:2,got:4} (baseline noise, not this port) → validated by direct in-crate device-vs-host on ROCm (64 cases, 0 mismatch) + a blocker-lock test. 16/16 in-crate device tests green; unstable_source_parity baseline 8/15 unchanged (no regression) | 2026-05-30 | 5a6d71f | [260529-twi-refactor-unstable-rs-kernels-to-generic-](./quick/260529-twi-refactor-unstable-rs-kernels-to-generic-/) |
 | 260530-9ay | fix + GPU-port the deferred unstable derivative sub-paths (origi-ip2, origk-ip1, grids ip/ipip/ipvip/spvsp). ROOT CAUSE was a manifest bug, not math: these ops had component_rank=1 in compiled_manifest.lock.json so the planner under-allocated the workspace and launch_* dropped all components past the first (zeros). Corrected ranks (origi-ip2/origk-ip1=3, grids ip=3, ipip/ipvip=9, spvsp=4) → CPU vendor parity restored for origi-ip2 r2/r4 + origk-ip1 r2/r4. Then ported all to #[cube(launch)] device kernels (origi_ip2_kernel, origk_ip1_kernel, one grids_deriv_kernel comptime op_kind) on all 5 backends. ROCm: origi-ip2 vendor parity 96/0; origk-ip1 r2/r4 0; grids derivs device-vs-host 0 (vendor blocked by pre-existing InvalidShellTuple). RESIDUAL (not fixed, documented): origk-ip1 r6 diverges ~6% from libcint on the y-component at top k-power — cintx self-consistent (ip1=grad(scalar), FD-verified) + scalar matches vendor, but ip1_r6 ≠ vendor; root cause not isolated. 26/26 in-crate device tests green; unstable_source_parity 12/23 (was 8/23), no regressions | 2026-05-30 | 51017b9 | [260530-9ay-fix-gpu-port-deferred-unstable-derivativ](./quick/260530-9ay-fix-gpu-port-deferred-unstable-derivativ/) |
+| 260530-iiq | fix WR-03: int3c1e general-contraction (nctr>1) support — nctr-blocked output for the scalar + ip1 + iprinv launchers (center_3c1e.rs). The mandated empirical block-ordering step uncovered a deeper root cause: the libcint env coefficient block is COLUMN-MAJOR (env[ci*nprim+ip]) while cintx Shells are ROW-MAJOR (coeff[ip*nctr+ci]); the eval_raw env→Shell parse copied verbatim, silently TRANSPOSING nctr>1 coefficients for EVERY family's raw path (latent — no prior nctr>1 parity test existed). Fixed with a transpose at the env→Shell boundary in raw.rs. New int3c1e_genctr_parity vendor test 6/6 byte-identical at atol=1e-12 (cart+sph, non-square p(nctr=2)×d×s) for scalar+ip1+iprinv. nctr==1 preserved across families (int3c1e_ip 5/5, center_3c1e 2/2, one_electron 6/6, two_electron 2/2; cubecl --lib 280, compat 43, ops 11). Device #[cube] kernels unchanged. Closes WR-03. | 2026-05-30 | 9be0141 | [260530-iiq-int3c1e-general-contraction-nctr-1-suppo](./quick/260530-iiq-int3c1e-general-contraction-nctr-1-suppo/) |
+| 260530-j62 | fix CR-01: make the unstable-source profile-membership check in raw.rs validate_profile_and_source_gate REACHABLE. Two is_source_only() blocks collapsed to one — the first returned Ok() early, making the second's is_compiled_in_profile check dead code (a source-only op in no available profile was silently accepted). The code-review's literal suggestion (check only "unstable-source") was WRONG: active_manifest_profile() never returns "unstable-source" and two source-only int2e symbols ship in BASE profiles, so the correct rule is accept iff compiled in the active profile OR unstable-source, else reject. Verified: compat 43, cubecl --lib 280, unstable_source_parity 23/23 (--features cpu,unstable-source-api + vendor) — no source family falsely rejected. | 2026-05-30 | 108dfe2 | [260530-j62-fix-cr-01-unreachable-unstable-source-pr](./quick/260530-j62-fix-cr-01-unreachable-unstable-source-pr/) |
+| 260530-k0s | fix the pre-existing grids derivative host-fallback Rys-root undersize bug (surfaced by the ROCm device oracle). grids_contract_{nuclear_like,ip,ipip,ipvip} computed nrys_roots up to 5 but fetched only 2 roots (rys_root1/2_host), so the device->host fallback for nroots>2 panicked 'index out of bounds: len 2 index 2'. Replaced with rys_roots_host(nrys_roots) (byte-identical for nroots<=2, correct 3..=5); spvsp delegates to ipvip (covered). Verified: grids_random_rocm_parity now passes on gfx1152 (was panicking); unstable_source_parity 23/23; cubecl --lib 280. | 2026-05-30 | 1395aae | [260530-k0s-fix-grids-ipvip-rys-root-array-undersize](./quick/260530-k0s-fix-grids-ipvip-rys-root-array-undersize/) |
 
 ## Session Continuity
 
-Last session: 2026-05-29T12:52:35.504Z
-Stopped at: Phase 23 context gathered
+Last session: 2026-05-30T08:59:08.648Z
+Stopped at: Phase 25 context gathered
 Resume file: None

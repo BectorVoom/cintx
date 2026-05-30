@@ -84,11 +84,11 @@
 
 ### Group 1 — Remaining 1st-Derivatives
 
-- [ ] **DRV1-01**: `int2e_ip2` (arity-4, ∇ on the ket bra-center) matches vendored libcint 6.1.3 at atol=1e-12 (cart+sph).
-- [ ] **DRV1-02**: `int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip` (∇ on both bra and ket) match at atol=1e-12 (cart+sph).
-- [ ] **DRV1-03**: `int3c1e_ip1` and `int3c1e_iprinv` match at atol=1e-12 (cart+sph).
-- [ ] **DRV1-04**: `int2c2e_ip1` and `int2c2e_ip2` match at atol=1e-12 (cart+sph).
-- [ ] **DRV1-05**: `int3c2e_ip2` matches at atol=1e-12 (cart+sph).
+- [x] **DRV1-01**: `int2e_ip2` (arity-4, ∇ on the ket bra-center) matches vendored libcint 6.1.3 at atol=1e-12 (cart+sph).
+- [x] **DRV1-02**: `int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip` (∇ on both bra and ket) match at atol=1e-12 (cart+sph).
+- [x] **DRV1-03**: `int3c1e_ip1` and `int3c1e_iprinv` match at atol=1e-12 (cart+sph).
+- [x] **DRV1-04**: `int2c2e_ip1` and `int2c2e_ip2` match at atol=1e-12 (cart+sph).
+- [x] **DRV1-05**: `int3c2e_ip2` matches at atol=1e-12 (cart+sph).
 
 ### Group 2 — Hessian & Higher-Order Derivatives
 
@@ -99,10 +99,10 @@
 
 ### Group 3 — Position / Multipole Moments
 
-- [ ] **MOM-01**: Dipole `int1e_r` (and `int1e_r_origj`) match at atol=1e-12 against a non-zero gauge-origin fixture (cart+sph).
-- [ ] **MOM-02**: `int1e_rr`, `int1e_r2`, `int1e_z`, `int1e_zz` (and `_origj` variants) match at atol=1e-12 (cart+sph).
-- [ ] **MOM-03**: `int1e_rrr`, `int1e_rrrr`, `int1e_r4` (octupole/hexadecapole) match at atol=1e-12 (cart+sph), ket-side headroom from `ng[1]`.
-- [ ] **MOM-04**: `int1e_p4`, `int1e_drinv`, plain `int1e_rinv`, `int1e_irp` match at atol=1e-12 (cart+sph).
+- [x] **MOM-01**: Dipole `int1e_r` (and `int1e_r_origj`) match at atol=1e-12 against a non-zero gauge-origin fixture (cart+sph).
+- [x] **MOM-02**: `int1e_rr`, `int1e_r2`, `int1e_z`, `int1e_zz` (and `_origj` variants) match at atol=1e-12 (cart+sph).
+- [x] **MOM-03**: `int1e_rrr`, `int1e_rrrr`, `int1e_r4` (octupole/hexadecapole) match at atol=1e-12 (cart+sph), ket-side headroom from `ng[1]`.
+- [x] **MOM-04**: `int1e_p4`, `int1e_drinv`, plain `int1e_rinv`, `int1e_irp` match at atol=1e-12 (cart+sph).
 
 ### Group 4 — Relativistic Spin-Operator (spinor)
 
@@ -192,15 +192,15 @@
 | GRAD-09 | Phase 21 | Complete |
 | GRAD-10 | Phase 21 | Complete |
 | FND-01 | Phase 22 | Complete |
-| DRV1-01 | Phase 23 | Pending |
-| DRV1-02 | Phase 23 | Pending |
-| DRV1-03 | Phase 23 | Pending |
-| DRV1-04 | Phase 23 | Pending |
-| DRV1-05 | Phase 23 | Pending |
-| MOM-01 | Phase 24 | Pending |
-| MOM-02 | Phase 24 | Pending |
-| MOM-03 | Phase 24 | Pending |
-| MOM-04 | Phase 24 | Pending |
+| DRV1-01 | Phase 23 | Complete |
+| DRV1-02 | Phase 23 | Complete |
+| DRV1-03 | Phase 23 | Complete |
+| DRV1-04 | Phase 23 | Complete |
+| DRV1-05 | Phase 23 | Complete |
+| MOM-01 | Phase 24 | Complete |
+| MOM-02 | Phase 24 | Complete |
+| MOM-03 | Phase 24 | Complete |
+| MOM-04 | Phase 24 | Complete |
 | HESS-01 | Phase 25 | Pending |
 | HESS-02 | Phase 25 | Pending |
 | HESS-03 | Phase 25 | Pending |

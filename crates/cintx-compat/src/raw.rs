@@ -184,6 +184,98 @@ impl RawApiId {
     pub const INT1E_IPRINV_SPH: Self = Self::Symbol("int1e_iprinv_sph");
     pub const INT1E_IPRINV_SPINOR: Self = Self::Symbol("int1e_iprinv_spinor");
 
+    // Phase 24 Cluster B (MOM-04): plain single-center 1/r Coulomb potential.
+    // `int1e_rinv` (rank 1) is the int1e_nuc Rys kernel evaluated at the
+    // PTR_RINV_ORIG slot (env[4..6], D-04/OQ-1 correction — NOT PTR_COMMON_ORIG),
+    // with charge=+1 and NO atom-sum. `int1e_drinv` (rank 3) is its gradient wrt
+    // the rinv center C (= D_I + D_J of the rinv G-tensor). Spinor forms registered
+    // for surface completeness; the kernel returns UnsupportedApi (D-09).
+    pub const INT1E_RINV_CART: Self = Self::Symbol("int1e_rinv_cart");
+    pub const INT1E_RINV_SPH: Self = Self::Symbol("int1e_rinv_sph");
+    pub const INT1E_RINV_SPINOR: Self = Self::Symbol("int1e_rinv_spinor");
+
+    pub const INT1E_DRINV_CART: Self = Self::Symbol("int1e_drinv_cart");
+    pub const INT1E_DRINV_SPH: Self = Self::Symbol("int1e_drinv_sph");
+    pub const INT1E_DRINV_SPINOR: Self = Self::Symbol("int1e_drinv_spinor");
+
+    // Phase 24 Cluster C/D (MOM-04) symbol declarations. The p4 (∇⁴, rank 1) and
+    // irp (i·r×∇, rank 9) FAMILIES are now FULLY registered: manifest rows,
+    // on-device `#[cube]` kernels, vendor FFI wrappers, and vendor parity tests
+    // are all in place. A p4/irp dispatch resolves to a real kernel and is
+    // byte-checked against libcint. Spinor forms are registered for surface
+    // completeness; the kernel returns UnsupportedApi (D-09).
+    pub const INT1E_P4_CART: Self = Self::Symbol("int1e_p4_cart");
+    pub const INT1E_P4_SPH: Self = Self::Symbol("int1e_p4_sph");
+    pub const INT1E_P4_SPINOR: Self = Self::Symbol("int1e_p4_spinor");
+
+    pub const INT1E_IRP_CART: Self = Self::Symbol("int1e_irp_cart");
+    pub const INT1E_IRP_SPH: Self = Self::Symbol("int1e_irp_sph");
+    pub const INT1E_IRP_SPINOR: Self = Self::Symbol("int1e_irp_spinor");
+
+    // Phase 24 Cluster A (MOM-01/02/03): overlap-derived position-tensor moment
+    // families. Each `_origj` variant is its OWN operator/symbol (D-02): the shared
+    // moment kernel branches on origin-source (env[PTR_COMMON_ORIG] for the base
+    // family, ket basis center rj for `_origj`). Spinor forms registered for surface
+    // completeness; the kernel returns UnsupportedApi (D-09). Symbol strings MUST
+    // exactly match the manifest lock entries.
+    pub const INT1E_R_CART: Self = Self::Symbol("int1e_r_cart");
+    pub const INT1E_R_SPH: Self = Self::Symbol("int1e_r_sph");
+    pub const INT1E_R_SPINOR: Self = Self::Symbol("int1e_r_spinor");
+
+    pub const INT1E_Z_CART: Self = Self::Symbol("int1e_z_cart");
+    pub const INT1E_Z_SPH: Self = Self::Symbol("int1e_z_sph");
+    pub const INT1E_Z_SPINOR: Self = Self::Symbol("int1e_z_spinor");
+
+    pub const INT1E_ZZ_CART: Self = Self::Symbol("int1e_zz_cart");
+    pub const INT1E_ZZ_SPH: Self = Self::Symbol("int1e_zz_sph");
+    pub const INT1E_ZZ_SPINOR: Self = Self::Symbol("int1e_zz_spinor");
+
+    pub const INT1E_R_ORIGJ_CART: Self = Self::Symbol("int1e_r_origj_cart");
+    pub const INT1E_R_ORIGJ_SPH: Self = Self::Symbol("int1e_r_origj_sph");
+    pub const INT1E_R_ORIGJ_SPINOR: Self = Self::Symbol("int1e_r_origj_spinor");
+
+    pub const INT1E_Z_ORIGJ_CART: Self = Self::Symbol("int1e_z_origj_cart");
+    pub const INT1E_Z_ORIGJ_SPH: Self = Self::Symbol("int1e_z_origj_sph");
+    pub const INT1E_Z_ORIGJ_SPINOR: Self = Self::Symbol("int1e_z_origj_spinor");
+
+    pub const INT1E_ZZ_ORIGJ_CART: Self = Self::Symbol("int1e_zz_origj_cart");
+    pub const INT1E_ZZ_ORIGJ_SPH: Self = Self::Symbol("int1e_zz_origj_sph");
+    pub const INT1E_ZZ_ORIGJ_SPINOR: Self = Self::Symbol("int1e_zz_origj_spinor");
+
+    // Phase 24 Cluster A high-rank tensors + trace contractions (MOM-02/03).
+    // rrr/rrrr have NO `_origj` symbol in libcint 6.1.3 (OQ-3) — not registered.
+    pub const INT1E_RR_CART: Self = Self::Symbol("int1e_rr_cart");
+    pub const INT1E_RR_SPH: Self = Self::Symbol("int1e_rr_sph");
+    pub const INT1E_RR_SPINOR: Self = Self::Symbol("int1e_rr_spinor");
+
+    pub const INT1E_RRR_CART: Self = Self::Symbol("int1e_rrr_cart");
+    pub const INT1E_RRR_SPH: Self = Self::Symbol("int1e_rrr_sph");
+    pub const INT1E_RRR_SPINOR: Self = Self::Symbol("int1e_rrr_spinor");
+
+    pub const INT1E_RRRR_CART: Self = Self::Symbol("int1e_rrrr_cart");
+    pub const INT1E_RRRR_SPH: Self = Self::Symbol("int1e_rrrr_sph");
+    pub const INT1E_RRRR_SPINOR: Self = Self::Symbol("int1e_rrrr_spinor");
+
+    pub const INT1E_R2_CART: Self = Self::Symbol("int1e_r2_cart");
+    pub const INT1E_R2_SPH: Self = Self::Symbol("int1e_r2_sph");
+    pub const INT1E_R2_SPINOR: Self = Self::Symbol("int1e_r2_spinor");
+
+    pub const INT1E_R4_CART: Self = Self::Symbol("int1e_r4_cart");
+    pub const INT1E_R4_SPH: Self = Self::Symbol("int1e_r4_sph");
+    pub const INT1E_R4_SPINOR: Self = Self::Symbol("int1e_r4_spinor");
+
+    pub const INT1E_RR_ORIGJ_CART: Self = Self::Symbol("int1e_rr_origj_cart");
+    pub const INT1E_RR_ORIGJ_SPH: Self = Self::Symbol("int1e_rr_origj_sph");
+    pub const INT1E_RR_ORIGJ_SPINOR: Self = Self::Symbol("int1e_rr_origj_spinor");
+
+    pub const INT1E_R2_ORIGJ_CART: Self = Self::Symbol("int1e_r2_origj_cart");
+    pub const INT1E_R2_ORIGJ_SPH: Self = Self::Symbol("int1e_r2_origj_sph");
+    pub const INT1E_R2_ORIGJ_SPINOR: Self = Self::Symbol("int1e_r2_origj_spinor");
+
+    pub const INT1E_R4_ORIGJ_CART: Self = Self::Symbol("int1e_r4_origj_cart");
+    pub const INT1E_R4_ORIGJ_SPH: Self = Self::Symbol("int1e_r4_origj_sph");
+    pub const INT1E_R4_ORIGJ_SPINOR: Self = Self::Symbol("int1e_r4_origj_spinor");
+
     // Phase 23 both-side rank-9 1e families (spinor returns UnsupportedApi, D-06).
     pub const INT1E_IPOVLPIP_CART: Self = Self::Symbol("int1e_ipovlpip_cart");
     pub const INT1E_IPOVLPIP_SPH: Self = Self::Symbol("int1e_ipovlpip_sph");
@@ -659,7 +751,14 @@ pub unsafe fn eval_raw(
     // Guard with env.len() >= PTR_RINV_ORIG + 3 so a too-short env never indexes out of bounds
     // (T-21-01-01); if the origin is still None after the read, validate_rinv_orig_env_params
     // returns a typed InvalidEnvParam BEFORE kernel entry — no garbage-origin evaluation (T-21-01-02).
-    if is_iprinv_family_symbol(plan.descriptor.operator_symbol()) {
+    // Phase 24 D-04 / OQ-1: plain int1e_rinv / int1e_drinv are single-center 1/r
+    // potentials. They read the SAME rinv-origin slot (env[PTR_RINV_ORIG], i.e.
+    // env[4..6]) as iprinv — NOT the gauge/common origin slot (env[1..3]) used by
+    // the moment families. The rinv center is read here so the kernel evaluates at
+    // a caller-supplied non-zero origin; a zero origin is trivially-passing and the
+    // parity tests inject a non-zero center via env_with_rinv_origin.
+    let sym = plan.descriptor.operator_symbol();
+    if is_iprinv_family_symbol(sym) || is_rinv_family_symbol(sym) {
         if env.len() >= PTR_RINV_ORIG + 3 {
             let x = env[PTR_RINV_ORIG];
             let y = env[PTR_RINV_ORIG + 1];
@@ -855,6 +954,17 @@ fn is_iprinv_family_symbol(symbol: &str) -> bool {
     symbol.contains("iprinv")
 }
 
+/// Phase 24 D-04 / OQ-1: identifies plain rinv-family operator symbols
+/// (`int1e_rinv_*`, `int1e_drinv_*`) that read PTR_RINV_ORIG (env[4..6]).
+///
+/// Distinct from [`is_iprinv_family_symbol`]: matches only the plain single-center
+/// `int1e_rinv` / `int1e_drinv` families, NOT the gradient `iprinv` family (which
+/// has its own gate). `int1e_drinv` contains the substring `rinv` but is matched
+/// explicitly by prefix so the two gates never overlap.
+fn is_rinv_family_symbol(symbol: &str) -> bool {
+    symbol.starts_with("int1e_rinv_") || symbol.starts_with("int1e_drinv_")
+}
+
 fn parse_env_usize_param(
     env: &[f64],
     index: usize,
@@ -989,11 +1099,17 @@ fn validated_4c1e_error(reason: &str) -> cintxRsError {
 
 fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(), cintxRsError> {
     let symbol = descriptor.operator_symbol();
+    let profile = active_manifest_profile();
 
-    // Source-only symbols use the "unstable-source" profile and are gated by the
-    // unstable-source-api feature. When the feature is enabled, skip the profile
-    // check (the source gate below handles authorization). When the feature is
-    // disabled, reject with a clear message regardless of the base profile.
+    // Source-only symbols are gated by the `unstable-source-api` feature. Once that
+    // gate passes the symbol must still be compiled into a profile available in THIS
+    // build — either the active base/with-* profile (a few source-only `2e` symbols
+    // ship there) OR the dedicated `unstable-source` profile (origi/grids/breit/origk/
+    // ssc). A source-only symbol compiled into NEITHER is rejected, not silently
+    // accepted. CR-01: this membership check was previously unreachable dead code
+    // behind an early `return Ok(())`. `active_manifest_profile()` never returns
+    // "unstable-source", so checking only that profile (the old dead block's logic)
+    // would wrongly reject the base-profile source `2e` symbols — hence the OR.
     if descriptor.is_source_only() {
         if !unstable_source_api_enabled() {
             return Err(cintxRsError::UnsupportedApi {
@@ -1002,32 +1118,19 @@ fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(
                 ),
             });
         }
-        // Feature is enabled: source gate passed, skip profile check.
+        if !descriptor.is_compiled_in_profile(profile)
+            && !descriptor.is_compiled_in_profile("unstable-source")
+        {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "raw api {symbol} is not compiled in active profile {profile} or the unstable-source profile"
+                ),
+            });
+        }
         return Ok(());
     }
 
     // Non-source-only symbols: check the active compiled profile.
-    let profile = active_manifest_profile();
-
-    // Source-only symbols require the unstable-source-api feature gate and are
-    // compiled in the "unstable-source" manifest profile, not the base/with-* profiles.
-    if descriptor.is_source_only() {
-        if !unstable_source_api_enabled() {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!(
-                    "source-only symbol {symbol} requires feature `unstable-source-api`"
-                ),
-            });
-        }
-        // Source-only entries use "unstable-source" profile — check that instead of active profile
-        if !descriptor.is_compiled_in_profile("unstable-source") {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!("raw api {symbol} is not compiled in unstable-source profile"),
-            });
-        }
-        return Ok(());
-    }
-
     if !descriptor.is_compiled_in_profile(profile) {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("raw api {symbol} is not compiled in active profile {profile}"),
@@ -1379,11 +1482,25 @@ fn build_typed_basis_and_shell_tuple(
                 from: "raw_shells",
                 detail: "nprim*nctr overflowed usize".to_owned(),
             })?;
-        let coefficients = Arc::<[f64]>::from(
-            env.slice("PTR_COEFF", record.coeff_offset(), coefficient_len)?
-                .to_vec()
-                .into_boxed_slice(),
-        );
+        // WR-03: the libcint env coefficient block is COLUMN-MAJOR — the value for
+        // primitive `p` of contraction column `c` is stored at `env[c*nprim + p]`
+        // (see CINTprim_to_ctr_0 in g1e.c: `c0 = coeff[nprim*i]`). cintx's internal
+        // `Shell.coefficients` convention is ROW-MAJOR (`coeff[p*nctr + c]`, the
+        // layout every launcher reads, e.g. `coefficients[ip*nctr_i + ci]`).
+        // Transpose column-major → row-major here so the raw/ABI path agrees with
+        // the safe-API path for general-contraction (nctr>1) shells. For nctr==1
+        // (and nprim==1) the two layouts coincide, so this is byte-identical for the
+        // single-contraction common case.
+        let coeff_raw = env.slice("PTR_COEFF", record.coeff_offset(), coefficient_len)?;
+        let nprim_usize = usize::from(nprim);
+        let nctr_usize = usize::from(nctr);
+        let mut coeff_rowmajor = vec![0.0_f64; coefficient_len];
+        for c in 0..nctr_usize {
+            for p in 0..nprim_usize {
+                coeff_rowmajor[p * nctr_usize + c] = coeff_raw[c * nprim_usize + p];
+            }
+        }
+        let coefficients = Arc::<[f64]>::from(coeff_rowmajor.into_boxed_slice());
 
         let shell = Shell::try_new(
             atom_index,
