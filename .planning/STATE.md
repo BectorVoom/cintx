@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: executing
-stopped_at: Phase 23 context gathered
-last_updated: "2026-05-30T04:11:38.029Z"
-last_activity: 2026-05-30
+status: completed
+stopped_at: Phase 24 context gathered
+last_updated: "2026-05-30T05:52:21.441Z"
+last_activity: "2026-05-30 - Completed quick task 260530-iiq: int3c1e general-contraction (nctr>1) fix + raw.rs coeff transpose"
 progress:
   total_phases: 21
   completed_phases: 13
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 24
 Plan: Not started
 Status: Phase 23 complete; quick task 260530-iiq (int3c1e nctr>1 / WR-03) complete
-Resume file: .planning/phases/23-group-1-remaining-1st-derivative-families-cart-sph/23-CONTEXT.md
+Resume file: .planning/phases/24-group-3-position-multipole-moment-integrals/24-CONTEXT.md
 Last activity: 2026-05-30 - Completed quick task 260530-iiq: int3c1e general-contraction (nctr>1) fix + raw.rs coeff transpose
 
 **v1.4 phase sequence (dependency-ordered):**
@@ -338,6 +338,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-29T12:52:35.504Z
-Stopped at: Phase 23 context gathered
+Last session: 2026-05-30T05:52:21.435Z
+Stopped at: Phase 24 context gathered
 Resume file: None
