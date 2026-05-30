@@ -19,7 +19,8 @@ findings:
   info: 4
   total: 8
 warnings_fixed: 4
-status: warnings_resolved
+info_fixed: 4
+status: all_resolved
 ---
 
 # Phase 24: Code Review Report
@@ -27,7 +28,7 @@ status: warnings_resolved
 **Reviewed:** 2026-05-30T07:44:33Z
 **Depth:** standard
 **Files Reviewed:** 9
-**Status:** warnings_resolved (all 4 Warning findings fixed via `/gsd:code-review 24 --fix`; 4 Info findings deferred by scope)
+**Status:** all_resolved (all 4 Warning findings fixed via `/gsd:code-review 24 --fix`; all 4 Info findings fixed via `/gsd:code-review 24 --fix --all`)
 
 ## Fix Log (2026-05-30)
 
@@ -38,7 +39,18 @@ status: warnings_resolved
 | WR-03 | `6419d13` | Added `moment_genctr_parity.rs` — nctr>1 (bra p-shell nctr=2), non-square, cross-center `int1e_rr` vendor byte-identity case. Passes at atol=1e-12; no real bug uncovered. |
 | WR-04 | `5c7190d` | Added `assert_components_match_vendor_support` — per-component non-zero gate so a zeroed trailing component cannot slip through for high-rank families. |
 
-Verification after fixes: workspace build clean; cubecl 280 / compat 43 / ops 11 lib tests; 18/18 baseline moment parity + 2/2 new genctr parity under the vendor double-gate; one_electron_parity 8/8 + one_electron_grad_parity 6/6 (no regression on the shared staging path).
+Verification after warning fixes: workspace build clean; cubecl 280 / compat 43 / ops 11 lib tests; 18/18 baseline moment parity + 2/2 new genctr parity under the vendor double-gate; one_electron + one_electron_grad parity green (no regression on the shared staging path).
+
+### Info fixes (2026-05-30, via `--fix --all`)
+
+| Finding | Commit | Resolution |
+|---------|--------|------------|
+| IN-01 | `1857b1b` | Data-drove the `_origj` origin-source selection — `is_origj` now rides the `moment_dispatch` tuple instead of being re-derived from the `op_name.ends_with("_origj")` string suffix. |
+| IN-02 | `41fc6ad` | Made the `op_mode` `zz` arm explicit (`7u32 =>`) and the catch-all `unreachable!("invalid moment op_mode …")` (host-side dispatch match — `unreachable!` permitted). |
+| IN-03 | `cc78ff8` | Extracted the shared host-side `write_component_leading_staging::<F>` helper, called from all four Phase-24 family paths (moment/rinv-drinv/p4/irp); behavior byte-identical. Phase-23/bra-grad/scalar paths left untouched (out of scope, different shape). |
+| IN-04 | `0479e34` | Updated the stale `RawApiId` doc comment — p4/irp are now fully registered; removed the "land in plans 24-04/24-05 / fails closed at resolver" forward reference. |
+
+Verification after Info fixes: build clean; cubecl 280 / compat 43 / ops 11; moment parity 20/20 (18 + 2 genctr) under the vendor double-gate; one_electron + one_electron_grad parity green. **All 8 findings (4 Warning + 4 Info) resolved.**
 
 ## Summary
 
