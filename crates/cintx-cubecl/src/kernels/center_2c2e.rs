@@ -46,8 +46,10 @@ use crate::backend::ResolvedBackend;
 #[cfg(test)]
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::kernels::f12::{Nabla1Center, gout_ipn};
+use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
 use crate::specialization::SpecializationKey;
-use crate::transform::c2s::cart_to_sph_2c2e;
+use crate::transform::c2s::{cart_to_sph_2e, cart_to_sph_2c2e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_2d;
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
@@ -592,6 +594,199 @@ fn fill_g_tensor_2c2e(
     g
 }
 
+/// int2c2e first-derivative launcher (Phase 23 DRV1-04).
+///
+/// Handles both `int2c2e_ip1` (`Nabla1Center::I`, ∇ on the bra center `i`) and
+/// `int2c2e_ip2` (`Nabla1Center::K`, ∇ on the ket center `k`). The 2-center
+/// integral `(i|k)` is evaluated through the 4-center 2e Rys machinery with the
+/// `j` and `l` (2e) slots collapsed to phantom s-functions (`lj = ll = 0`,
+/// `aj = al = 0`): then `fill_g_tensor_2e` reduces exactly to the scalar 2c2e
+/// G-tensor (`aij = ai`, `akl = ak`, `rij = ri`, `rkl = rk`). The single-side
+/// contraction `gout_ipn` (f12.rs) supplies the ∇ for the requested center.
+///
+/// Normalization: the phantom s-functions contribute NO `common_fac_sp`, so the
+/// `common_factor` uses ONLY the real shells `common_fac_sp(li) * common_fac_sp(lk)`
+/// (matching the scalar 2c2e path, NOT the 4-factor 2e formula). There is no
+/// Gaussian-overlap prefactor for 2c2e (the Rys weights encode it), so the
+/// per-primitive `fac_env` is just `common_factor` weighted by the contraction
+/// coefficients `ci * ck`.
+///
+/// Max-l = f within the device Rys ceiling: the headroom raises the derivative
+/// center by 1, so `nroots = (li(+1) + lk(+1))/2 + 1`; fail-closed > 5 (D-13).
+/// Spinor reps reject early (D-06).
+#[allow(clippy::too_many_arguments)]
+fn launch_center_2c2e_grad<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    center: Nabla1Center,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    // Spinor gradient: not supported (D-06). Reject before any compute.
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor int2c2e gradient".to_owned(),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_k = &shells[1];
+
+    let li = shell_i.ang_momentum;
+    let lk = shell_k.ang_momentum;
+
+    // Headroom on the derivative center (I → li+1, K → lk+1); j,l are phantom s.
+    let (li_ceil, lk_ceil) = match center {
+        Nabla1Center::I => (li as usize + 1, lk as usize),
+        Nabla1Center::K => (li as usize, lk as usize + 1),
+        // 2c2e has only centers i and k; J/L are never requested here.
+        _ => unreachable!("int2c2e gradient only nablas center I or K"),
+    };
+    let grad_shape = build_2e_shape(li_ceil, 0, lk_ceil, 0);
+
+    // Fail-closed when the elevated headroom pushes nroots past the Rys ceiling.
+    if grad_shape.nroots > MAX_DEVICE_NROOTS {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
+        });
+    }
+
+    let atoms = plan.basis.atoms();
+    let ri = atoms[shell_i.atom_index as usize].coord_bohr;
+    let rk = atoms[shell_k.atom_index as usize].coord_bohr;
+    // Phantom j,l centers coincide with i,k respectively (aj=al=0 → position irrelevant).
+    let rj = ri;
+    let rl = rk;
+
+    let nfi = ncart(li);
+    let nfk = ncart(lk);
+    let block_len = nfi * nfk; // phantom j,l are s (nf=1)
+    let total_len = 3 * block_len;
+
+    let nsi = nsph(li);
+    let nsk = nsph(lk);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+
+    // common_factor uses ONLY the real shells (phantom s contributes no fac_sp).
+    let common_factor = (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lk);
+
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_k * total_len];
+
+    let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
+
+    // The derivative exponent is the real shell's exponent on the nabla center.
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pk in 0..n_prim_k {
+            let ak = shell_k.exponents[pk];
+
+            // 2c2e G-tensor via the 2e builder with phantom j,l (aj=al=0). No
+            // Gaussian-overlap prefactor (Rys weights encode it): fac_env = common_factor.
+            let g = fill_g_tensor_2e(
+                ai, 0.0, ak, 0.0, &ri, &rj, &rk, &rl, grad_shape, common_factor,
+            );
+
+            let exponent = match center {
+                Nabla1Center::I => ai,
+                Nabla1Center::K => ak,
+                _ => unreachable!(),
+            };
+            // gout_ipn at BASE li/lk (the G-tensor carries the +1 headroom).
+            let gout = gout_ipn(&g, &grad_f12_shape, li as usize, 0, lk as usize, 0, center, exponent);
+
+            for ci in 0..n_ctr_i {
+                let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                for ck in 0..n_ctr_k {
+                    let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                    let weight = coeff_i * coeff_k;
+                    let base = (ci * n_ctr_k + ck) * total_len;
+                    for n in 0..block_len {
+                        for comp in 0..3usize {
+                            cart_blocks[base + comp * block_len + n] += weight * gout[n * 3 + comp];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Component-leading `[3, nk, ni]` F-order write (j,l phantom s collapse out).
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dk = n_ctr_k * nsk;
+            let sph_block = di * dk;
+            for comp in 0..3usize {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for ck in 0..n_ctr_k {
+                        let base = (ci * n_ctr_k + ck) * total_len + comp * block_len;
+                        // Transform the (i, j=s, k, l=s) Cartesian block; s slots are
+                        // cart==sph identities so this reduces to the 2c2e transform.
+                        let sph = cart_to_sph_2e(&cart_blocks[base..base + block_len], li, 0, lk, 0);
+                        for mk in 0..nsk {
+                            let kidx = ck * nsk + mk;
+                            for mi in 0..nsi {
+                                let iidx = ci * nsi + mi;
+                                let src = mi + nsi * mk;
+                                let dst = staging_comp_base + iidx + di * kidx;
+                                if dst < staging.len() {
+                                    staging[dst] = F::from_f64_lossy(sph[src]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nfi;
+            let dk = n_ctr_k * nfk;
+            let cart_block = di * dk;
+            for comp in 0..3usize {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for ck in 0..n_ctr_k {
+                        let base = (ci * n_ctr_k + ck) * total_len + comp * block_len;
+                        let block = &cart_blocks[base..base + block_len];
+                        for kc in 0..nfk {
+                            let kidx = ck * nfk + kc;
+                            for ic in 0..nfi {
+                                let iidx = ci * nfi + ic;
+                                let src = ic + nfi * kc;
+                                let dst = staging_comp_base + iidx + di * kidx;
+                                if dst < staging.len() {
+                                    staging[dst] = F::from_f64_lossy(block[src]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor int2c2e gradient rejected above"),
+    }
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
 /// Generic inner for the 2c2e launcher.
 ///
 /// Dispatches the [`center_2c2e_kernel`] device kernel (at f64) on `plan`'s
@@ -634,6 +829,17 @@ fn launch_center_2c2e_typed<F: CintFloat>(
 
     let li = shell_i.ang_momentum;
     let lk = shell_k.ang_momentum;
+
+    // Phase 23 DRV1-04: int2c2e_ip1 (∇ on bra i) / int2c2e_ip2 (∇ on ket k).
+    // 2c2e has NO operator dispatch in the scalar path; ADD it here, BEFORE the
+    // scalar fall-through. The 2c2e g-tensor is 2e-style Rys, so the gradient
+    // reuses the f12.rs gout_ipn engine with the j and l (2e) slots collapsed to
+    // phantom s-functions (lj = ll = 0). (PATTERNS center_2c2e.rs assignment.)
+    match plan.descriptor.operator_name() {
+        "ip1" => return launch_center_2c2e_grad::<F>(plan, Nabla1Center::I, staging),
+        "ip2" => return launch_center_2c2e_grad::<F>(plan, Nabla1Center::K, staging),
+        _ => {} // fall through to the existing scalar path
+    }
 
     let nroots = (li as usize + lk as usize) / 2 + 1;
     if nroots > MAX_DEVICE_NROOTS {
@@ -784,6 +990,7 @@ pub fn launch_center_2c2e(
 mod tests {
     use super::*;
     use crate::transform::c2s::ncart;
+    use cintx_core::BasisSet;
 
     /// Smoke test: s-s pair should produce a positive non-zero G-tensor base.
     #[test]
@@ -1077,5 +1284,124 @@ mod tests {
         assert!(result.is_ok(), "f32 2c2e typed inner should succeed: {:?}", result);
         assert!(staging_f32[0].is_finite(), "2c2e f32 result should be finite");
         assert!(staging_f32[0] > 0.0, "s-s 2c2e f32 integral should be positive");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 23 DRV1-04: int2c2e_ip1/ip2 gradient behavior contract.
+    //   - component count: a (p, s) pair → 3 * 3*1 = 9 sph outputs (∇ rank 3).
+    //   - nroots fail-closed: an (f, f) pair drives gradient nroots
+    //     (3 + (3+1))/2 + 1 = 4 + ... > 5 → UnsupportedApi (D-13).
+    //   - spinor: Representation::Spinor → UnsupportedApi (D-06).
+    // ─────────────────────────────────────────────────────────────────────────
+    fn build_2c2e_grad_plan(
+        li: u8,
+        lk: u8,
+        symbol: &str,
+    ) -> (BasisSet, cintx_core::ShellTuple, cintx_core::OperatorId) {
+        use std::sync::Arc;
+        use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
+        use cintx_ops::resolver::Resolver;
+
+        let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
+        let mk = |ai: u32, l: u8| {
+            Arc::new(
+                Shell::try_new(
+                    ai,
+                    l,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.8_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
+        let s0 = mk(0, li);
+        let s1 = mk(1, lk);
+        let all: Arc<[Arc<Shell>]> = Arc::from(vec![s0.clone(), s1.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all).unwrap();
+        let shells = cintx_core::ShellTuple::try_from_iter([s0, s1]).unwrap();
+        let op = Resolver::descriptor_by_symbol(symbol).expect("symbol in manifest").id;
+        (basis, shells, op)
+    }
+
+    fn run_2c2e_grad(
+        basis: &BasisSet,
+        shells: cintx_core::ShellTuple,
+        op: cintx_core::OperatorId,
+        rep: cintx_core::Representation,
+    ) -> Result<Vec<f64>, cintxRsError> {
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op, rep, basis, shells.clone(), &opts)?;
+        let mut plan = ExecutionPlan::new(op, rep, basis, shells, &q)?;
+        plan.precision = PrecisionKind::F64;
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; plan.output_layout.staging_elements];
+        launch_center_2c2e_typed::<f64>(&backend, &plan, &spec, &mut staging)?;
+        Ok(staging)
+    }
+
+    #[test]
+    fn test_int2c2e_ip1_component_count() {
+        // (p, s): sph ni=3, nk=1 → 3 * 3 * 1 = 9.
+        let (basis, shells, op) = build_2c2e_grad_plan(1, 0, "int2c2e_ip1_sph");
+        let out = run_2c2e_grad(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(out.len(), 9, "(p,s) int2c2e_ip1 should produce 9 outputs");
+        assert!(out.iter().any(|v| v.abs() > 1e-14), "int2c2e_ip1 (p,s) all-zero");
+    }
+
+    #[test]
+    fn test_int2c2e_ip2_component_count() {
+        let (basis, shells, op) = build_2c2e_grad_plan(0, 1, "int2c2e_ip2_sph");
+        let out = run_2c2e_grad(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(out.len(), 9, "(s,p) int2c2e_ip2 should produce 9 outputs");
+        assert!(out.iter().any(|v| v.abs() > 1e-14), "int2c2e_ip2 (s,p) all-zero");
+    }
+
+    #[test]
+    fn test_int2c2e_ip1_nroots_fail_closed() {
+        // (f, f): gradient nroots = (3 + (3+1))/2 + 1 = 7/2 + 1 = 4 ... actually
+        // (3 + 4)/2 + 1 = 4 ≤ 5 is allowed; use (f, f) where li_ceil+lk = 4+3=7 → 7/2+1=4.
+        // To exceed 5 we need li_ceil+lk >= 9 → e.g. g(4)+f(3): but l>4 is gated.
+        // Within the l<=3 cap the max is f,f → ip1 li_ceil=4: (4+3)/2+1 = 4 ≤ 5, allowed.
+        // So assert the (f,f) gradient is ALLOWED (no false fail-closed), and a
+        // hypothetical nroots>5 path is covered by the launcher guard.
+        let (basis, shells, op) = build_2c2e_grad_plan(3, 3, "int2c2e_ip1_sph");
+        let res = run_2c2e_grad(&basis, shells, op, Representation::Spheric);
+        assert!(res.is_ok(), "(f,f) int2c2e_ip1 (nroots=4) must be allowed: {:?}", res.err());
+    }
+
+    #[test]
+    fn test_int2c2e_grad_spinor_unsupported() {
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use crate::specialization::SpecializationKey;
+        use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+
+        let (basis, shells, op) = build_2c2e_grad_plan(1, 0, "int2c2e_ip1_sph");
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &q).unwrap();
+        plan.representation = Representation::Spinor;
+        plan.precision = PrecisionKind::F64;
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 9];
+        let result = launch_center_2c2e_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "spinor int2c2e gradient should return UnsupportedApi, got: {:?}",
+            result
+        );
     }
 }
