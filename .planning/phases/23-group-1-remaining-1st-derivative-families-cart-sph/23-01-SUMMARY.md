@@ -92,6 +92,13 @@ None - this plan edits internal host helpers operating on already-validated, pre
 - f12.rs now exposes i/j/k/l nabla operators and a nabla-parameterized contraction (`gout_ipn`) to sibling launchers — plans 02 and 03 are unblocked.
 - Plan 02 (int2e_ip2, int2c2e_ip1/ip2) and plan 03 (int3c2e_ip2 via the ll slot) can call `gout_ipn(.., Nabla1Center::{J,K,L}, exponent)` directly.
 
+## Self-Check: PASSED
+
+- FOUND: .planning/phases/23-group-1-remaining-1st-derivative-families-cart-sph/23-01-SUMMARY.md
+- FOUND commit e6f2d45 (Task 1)
+- FOUND commit a95f490 (Task 2)
+- FOUND commit 78a8bb9 (plan metadata)
+
 ---
 *Phase: 23-group-1-remaining-1st-derivative-families-cart-sph*
 *Completed: 2026-05-30*
