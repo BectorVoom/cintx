@@ -170,6 +170,58 @@ pub fn validate_f12_env_params(
     Ok(())
 }
 
+/// Validates that iprinv-family operator env params include a rinv origin.
+///
+/// Returns `InvalidEnvParam` if `rinv_orig` is `None` for an operator whose name
+/// contains `"iprinv"`. Called before kernel launch so we surface a typed error
+/// before kernel entry — no garbage-origin evaluation, no UB (T-21-01-01/02).
+///
+/// The predicate uses `.contains("iprinv")` (not `==`) so it covers both
+/// `"iprinv"` (int1e_iprinv) and `"ecp_iprinv"` (ECPscalar_iprinv) variants.
+/// Non-iprinv operators (overlap, kinetic, nuclear-attraction, etc.) are never gated.
+pub fn validate_rinv_orig_env_params(
+    operator_name: &str,
+    params: &OperatorEnvParams,
+) -> Result<(), cintxRsError> {
+    if operator_name.contains("iprinv") {
+        match params.rinv_orig {
+            None => {
+                return Err(cintxRsError::InvalidEnvParam {
+                    param: "PTR_RINV_ORIG",
+                    reason: "env[4..6] (PTR_RINV_ORIG) must be set for iprinv operators"
+                        .to_owned(),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Validates the common (gauge) origin env params.
+///
+/// D-01 (diverges from `validate_rinv_orig_env_params`): `None` is VALID — an unset
+/// gauge origin defaults to `[0,0,0]` (libcint reads unset env as zero), so this is a
+/// FINITENESS check, not a presence check. Only a `Some([..])` containing a non-finite
+/// component (NaN/inf) is rejected.
+///
+/// D-02: operator-AGNOSTIC — no operator-name predicate. No dispatchable consumer exists
+/// in this phase (moments/GIAO add their own in Phases 24/26), so a name-list would be dead.
+pub fn validate_common_orig_env_params(
+    _operator_name: &str,
+    params: &OperatorEnvParams,
+) -> Result<(), cintxRsError> {
+    if let Some(origin) = params.common_orig {
+        if origin.iter().any(|v| !v.is_finite()) {
+            return Err(cintxRsError::InvalidEnvParam {
+                param: "PTR_COMMON_ORIG",
+                reason: "env[1..3] (PTR_COMMON_ORIG) gauge origin must be finite".to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,5 +403,87 @@ mod tests {
             .expect("non-grids family should not be checked");
         validate_grids_env_params("origi", &params)
             .expect("non-grids family should not be checked");
+    }
+
+    #[test]
+    fn rinv_orig_default_is_none() {
+        let params = OperatorEnvParams::default();
+        assert!(params.rinv_orig.is_none(), "rinv_orig must default to None");
+    }
+
+    #[test]
+    fn validate_rinv_orig_rejects_none_for_iprinv() {
+        let params = OperatorEnvParams::default(); // rinv_orig: None
+        let err = validate_rinv_orig_env_params("iprinv", &params).unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "PTR_RINV_ORIG"),
+            "expected InvalidEnvParam(PTR_RINV_ORIG) for iprinv with None origin, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_rinv_orig_rejects_none_for_ecp_iprinv() {
+        let params = OperatorEnvParams::default(); // rinv_orig: None
+        let err = validate_rinv_orig_env_params("ecp_iprinv", &params).unwrap_err();
+        assert!(
+            matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "PTR_RINV_ORIG"),
+            "expected InvalidEnvParam(PTR_RINV_ORIG) for ecp_iprinv with None origin, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_rinv_orig_accepts_non_iprinv() {
+        let params = OperatorEnvParams::default();
+        validate_rinv_orig_env_params("overlap", &params)
+            .expect("non-iprinv operator must not be gated by rinv-origin check");
+    }
+
+    #[test]
+    fn validate_rinv_orig_accepts_some() {
+        let params = OperatorEnvParams {
+            rinv_orig: Some([0.0, 0.0, 1.4]),
+            ..OperatorEnvParams::default()
+        };
+        validate_rinv_orig_env_params("iprinv", &params)
+            .expect("iprinv with rinv_orig=Some(...) must pass");
+    }
+
+    #[test]
+    fn common_orig_default_is_none() {
+        assert!(OperatorEnvParams::default().common_orig.is_none());
+    }
+
+    #[test]
+    fn validate_common_orig_accepts_none() {
+        let params = OperatorEnvParams::default();
+        validate_common_orig_env_params("int1e_ovlp", &params)
+            .expect("common_orig=None must pass (defaults to [0,0,0])");
+    }
+
+    #[test]
+    fn validate_common_orig_accepts_some_finite() {
+        let params = OperatorEnvParams {
+            common_orig: Some([0.5, -1.2, 0.0]),
+            ..OperatorEnvParams::default()
+        };
+        validate_common_orig_env_params("", &params)
+            .expect("finite gauge origin must pass");
+    }
+
+    #[test]
+    fn validate_common_orig_rejects_non_finite() {
+        for bad in [
+            [f64::NAN, 0.0, 0.0],
+            [0.0, f64::INFINITY, 0.0],
+            [0.0, 0.0, f64::NEG_INFINITY],
+        ] {
+            let params = OperatorEnvParams { common_orig: Some(bad), ..OperatorEnvParams::default() };
+            let err = validate_common_orig_env_params("int1e_r", &params)
+                .expect_err("non-finite gauge origin must be rejected");
+            match err {
+                cintxRsError::InvalidEnvParam { param, .. } => assert_eq!(param, "PTR_COMMON_ORIG"),
+                other => panic!("expected InvalidEnvParam, got {other:?}"),
+            }
+        }
     }
 }

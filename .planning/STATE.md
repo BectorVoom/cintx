@@ -1,16 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: "Milestone: Safe API Closure for pyscf_rs Consumer"
-status: Milestone complete
-stopped_at: "Completed Phase 20 Plan 10 (Gap 2a — kernel+math hardening for PREC-05 f32 correctness; 2 commits: 5ba79fb + 69a6a18)"
-last_updated: "2026-05-21T14:23:44.581Z"
+milestone: v1.4
+milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
+status: executing
+stopped_at: Phase 23 context gathered
+last_updated: "2026-05-30T02:30:01.160Z"
+last_activity: 2026-05-30 -- Phase 23 execution started
 progress:
-  total_phases: 10
-  completed_phases: 10
-  total_plans: 51
-  completed_plans: 51
-  percent: 100
+  total_phases: 21
+  completed_phases: 12
+  total_plans: 66
+  completed_plans: 61
+  percent: 92
 ---
 
 # Project State
@@ -20,20 +21,31 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 20 — precision-generic-f64-f32-switch
+**Current focus:** Phase 23 — group-1-remaining-1st-derivative-families-cart-sph
 
 ## Current Position
 
-Phase: 20
-Plan: Not started
-Next: Phase 20 Plan 11 (Gap 2b closure — PREC-05 f32 multi-component/f12-derivative oracle tests)
-Resume: `.planning/phases/20-precision-generic-f64-f32-switch/20-10-SUMMARY.md`
+Phase: 23 (group-1-remaining-1st-derivative-families-cart-sph) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 23
+Resume file: .planning/phases/23-group-1-remaining-1st-derivative-families-cart-sph/23-CONTEXT.md
+Last activity: 2026-05-30 -- Phase 23 execution started
+
+**v1.4 phase sequence (dependency-ordered):**
+22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
+25 Group 2 Hessian (HESS, FND-02 Wheeler, FND-06 fail-closed) →
+26 Group 5 spin-free GIAO (GIAO-01/02, FND-03 complex) →
+27 Gap B1 spinor-derivative (FND-04) → 28 Gap B2 c2s_si + σ·p (FND-05) →
+29 Group 4 relativistic σ (REL) → 30 Group 5 GIAO×σ (GIAO-03) →
+31 Group 6 gauge/Breit-Gaunt + full-parity (BREIT, PARITY-01).
+
+Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 16
+- Total plans completed: 26
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -44,6 +56,8 @@ Resume: `.planning/phases/20-precision-generic-f64-f32-switch/20-10-SUMMARY.md`
 | 02 | 7 | 107 min | 15.3 min |
 | 19 | 3 | 28 min | 9.3 min |
 | 20 | 11 | - | - |
+| 21 | 8 | - | - |
+| 22 | 2 | - | - |
 
 **Recent Trend:**
 
@@ -112,6 +126,8 @@ Resume: `.planning/phases/20-precision-generic-f64-f32-switch/20-10-SUMMARY.md`
 | Phase 20 P01 | 5 | 3 tasks | 5 files |
 | Phase 20 P10 | 7 | 4 tasks | 11 files |
 | Phase 20-precision-generic-f64-f32-switch P11 | 15 | 2 tasks | 3 files |
+| Phase 21 P02 | 15 | 2 tasks | 5 files |
+| Phase 21 P03 | 25 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -274,6 +290,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 20-10]: WR-05 device path: used F::EPSILON (CubeCL Float const, verified from cubecl-core-0.10.0) not F::new(f64::EPSILON as f32 * 0.5); host uses num_traits F::epsilon(); both yield the same type-appropriate epsilon
 - [Phase 20-10]: WR-05 f64 impact: F::epsilon() for f64 == 2.22e-16 vs old DBL_EPSILON_HALF 1.11e-16; factor-of-2 within f64 oracle guard band (atol=1e-12); no precision branch needed
 - [Phase 20-10]: WR-03: compute_pdata_host converts ALL inputs to f64 first; Gaussian-product exponential fac = (-ai*aj/zeta_ab*rr).exp() always f64-precision regardless of F; trailing .to_f64().unwrap_or() removed (values already f64 after input conversion)
+- [Phase ?]: nmax headroom for ipovlp: nmax = li+lj+1 (one extra bra level so nabla ix+1 access is valid)
+- [Phase ?]: nmax headroom for ipkin: nmax = li+lj+3 (kinetic +2 for D_j^2 jx+2 access + nabla +1 for ix+1 access)
+- [Phase ?]: Spinor gradient returns UnsupportedApi (R5/D-03): guard placed before gradient compute path
 
 ### Roadmap Evolution
 
@@ -293,9 +312,28 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260509-c6d | update cubecl version 0.10.0 in all repository | 2026-05-08 | aa59ceb | [260509-c6d-update-cubecl-version-0-10-0-in-all-repo](./quick/260509-c6d-update-cubecl-version-0-10-0-in-all-repo/) |
+| 260529-r2g | refactor center_2c2e to a generic-float #[cube] device kernel + rocm random oracle test | 2026-05-29 | 194edae | [260529-r2g-center-2c2e-cubecl-gpu-kernel](./quick/260529-r2g-center-2c2e-cubecl-gpu-kernel/) |
+| 260529-e69 | refactor center_3c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | bd24b8e | [260529-e69-refactor-center-3c1e-rs-to-cubecl-kernel](./quick/260529-e69-refactor-center-3c1e-rs-to-cubecl-kernel/) |
+| 260529-exs | refactor center_3c2e to generic-float CubeCL #[cube] device kernels (scalar + int3c2e_ip1) + rocm random oracle test | 2026-05-29 | cc83ec3 | [260529-exs-center-3c2e-cubecl-kernel](./quick/260529-exs-center-3c2e-cubecl-kernel/) |
+| 260529-fsa | refactor center_4c1e to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | b7f5519 | [260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel](./quick/260529-fsa-refactor-center-4c1e-rs-to-cubecl-kernel/) |
+| 260529-gbf | refactor ecp.rs to a generic-float CubeCL #[cube] device kernel (Type-1 angular splice) + rocm random oracle test | 2026-05-29 | 55b4a88 | [260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge](./quick/260529-gbf-refactor-ecp-rs-to-cubecl-kernel-with-ge/) |
+| 260529-hin | port the ECP Type-2 two-dgemm angular splice to a generic-float CubeCL #[cube] device kernel + rocm oracle | 2026-05-29 | d3405f4 | [260529-hin-port-the-ecp-type-2-two-dgemm-angular-sp](./quick/260529-hin-port-the-ecp-type-2-two-dgemm-angular-sp/) |
+| 260529-i2q | refactor f12.rs base Cartesian contraction to a generic-float CubeCL #[cube] device kernel + rocm random oracle test | 2026-05-29 | 45a4a17 | [260529-i2q-refactor-f12-rs-to-cubecl-device-kernel-](./quick/260529-i2q-refactor-f12-rs-to-cubecl-device-kernel-/) |
+| 260529-imi | refactor one_electron.rs scalar operators (ovlp/kin/nuc) to a generic-float CubeCL #[cube] device kernel + rocm random oracle test (mismatch_count=0, 48 cases) | 2026-05-29 | 23eb85d | [260529-imi-refactor-one-electron-rs-to-cubecl-kerne](./quick/260529-imi-refactor-one-electron-rs-to-cubecl-kerne/) |
+| 260529-j7d | port the 1e gradient operators (ipovlp/ipkin/ipnuc/iprinv) in one_electron.rs to generic-float CubeCL #[cube] device kernels + rocm random oracle test (mismatch_count=0, 48 cases × 4 ops) | 2026-05-29 | 9f3b9b2 | [260529-j7d-port-the-1e-gradient-operators-ipovlp-ip](./quick/260529-j7d-port-the-1e-gradient-operators-ipovlp-ip/) |
+| 260529-jtd | implement spinor int1e gradient (ipovlp/ipkin/ipnuc/iprinv) via on-device cart gradient + host per-component cart→spinor transform; was UnsupportedApi (R5/D-03). Vendor parity vs libcint 6.1.3 = 0 mismatches, all 4 ops | 2026-05-29 | fb02060 | [260529-jtd-implement-spinor-int1e-gradient-ipovlp-i](./quick/260529-jtd-implement-spinor-int1e-gradient-ipovlp-i/) |
+| 260529-kke | fix scalar spinor int1e cart→spinor block-orientation bug (transpose ket-major→bra-major before cart_to_spinor_sf_2d); proven via asymmetric p×d vendor parity (ovlp/kin/nuc: 232→0 mismatches vs libcint 6.1.3) | 2026-05-29 | f4230c6 | [260529-kke-fix-scalar-spinor-int1e-cart-to-spinor-b](./quick/260529-kke-fix-scalar-spinor-int1e-cart-to-spinor-b/) |
+| 260529-lbr | fix CINTshells_{cart,spheric,spinor}_offset to match libcint i<nbas semantics (write nbas start-offsets, drop trailing ao_loc[nbas] total). Unblocks vendor oracle gate past helper check; surfaced a separate pre-existing CINTgto_norm helper mismatch (follow-up) | 2026-05-29 | 3bf0682 | [260529-lbr-fix-cintshells-cart-spheric-spinor-offse](./quick/260529-lbr-fix-cintshells-cart-spheric-spinor-offse/) |
+| 260529-mfh | fix CINTgto_norm to libcint misc.c closed form (was inverted formula, all 15 (l,a) failed). Vendor parity 0 mismatches; gate now advances to next pre-existing blocker CINTc2s_bra_sph | 2026-05-29 | 8db9fcb | [260529-mfh-fix-cintgto-norm-to-match-libcint-misc-c](./quick/260529-mfh-fix-cintgto-norm-to-match-libcint-misc-c/) |
+| 260529-mqo | fix CINTc2s_bra_sph both defects: vendor FFI wrapper now honors libcint's returned *mut f64 (l<2 returns gcart, not gsph), and cintx stub now applies real per-l bra c2s via pub c2s_coeff. Vendor parity 0 mismatches; gate CLEARS the full helper/transform block → now hits a pre-existing cint2e_sph/cart 2e-integral divergence (cintx=1.709e-3 vs vendor=3.22e-4) in verify_legacy_wrapper_parity | 2026-05-29 | 1e5bf0a | [260529-mqo-fix-cintc2s-bra-sph-both-defects-vendor-](./quick/260529-mqo-fix-cintc2s-bra-sph-both-defects-vendor-/) |
+| 260529-ne7 | fix OracleRawInputs::sample() to libcint-conformant PTR_ENV_START=20 env layout (was packing data onto reserved slots; env[8]=PTR_RANGE_OMEGA made vendor compute range-separated 2e). cint2e divergence GONE; base + with-4c1e gate profiles PASS CLEAN. Exposed that the old layout accidentally supplied env[9]=PTR_F12_ZETA → with-f12 profiles now correctly fail-closed (F12 fixtures need a real zeta injection, follow-up) | 2026-05-29 | 3b4ced5 | [260529-ne7-fix-oraclerawinputs-sample-env-layout-to](./quick/260529-ne7-fix-oraclerawinputs-sample-env-layout-to/) |
+| 260529-nt1 | set env[PTR_F12_ZETA]=1.2 in OracleRawInputs::sample() (conformant designated F12-zeta slot) so F12/STG/YP oracle parity has a valid zeta. **Full vendor oracle gate now GREEN: all 4 profiles (base, with-f12, with-4c1e, with-f12+with-4c1e) PASS CLEAN, mismatch_count=0 each** vs libcint 6.1.3; F12 family matches vendor numerically | 2026-05-29 | aba9af5 | [260529-nt1-set-env-ptr-f12-zeta-1-2-in-oraclerawinp](./quick/260529-nt1-set-env-ptr-f12-zeta-1-2-in-oraclerawinp/) |
+| 260529-q4k | refactor two_electron.rs scalar int2e (4-center ERI) to a generic-float CubeCL #[cube(launch)] device kernel (G-tensor build + all 4 HRR branches + Cartesian contraction on-device, comptime nroots, host-computed strides as runtime u32) dispatched on all 5 backends incl. ROCm/HIP; int2e_ip1 gradient stays host. ROCm random vendor parity: mismatch_count=0, any_nonzero=true across 96 quartets (int2e_sph+cart) vs libcint 6.1.3. f64 byte-identity preserved (safe_api_arity4 + two_electron_ip1 + 13/13 lib tests green) | 2026-05-29 | b967cc4 | [260529-q4k-two-electron-gpu-port](./quick/260529-q4k-two-electron-gpu-port/) |
+| 260529-twi | refactor ALL of unstable.rs (origi/grids/breit/origk/ssc) to generic-float CubeCL #[cube(launch)] device kernels + rocm oracles. First split the 3511-line file into a per-family module dir (unstable/{mod,shared,origi,grids,breit,origk,ssc}.rs, behavior-preserving). Then ported each family's scalar path on-device (host keeps c2s/spinor + AO scatter; derivative sub-paths origi-ip2/origk-ip1/grids-derivs + breit gout/spinor deferred-to-host, documented). ROCm vendor parity mismatch_count=0: origi 96, origk 144, ssc 48, breit 48 (spinor, non-square) cases. grids vendor oracle BLOCKED by pre-existing eval_raw InvalidShellTuple{expected:2,got:4} (baseline noise, not this port) → validated by direct in-crate device-vs-host on ROCm (64 cases, 0 mismatch) + a blocker-lock test. 16/16 in-crate device tests green; unstable_source_parity baseline 8/15 unchanged (no regression) | 2026-05-30 | 5a6d71f | [260529-twi-refactor-unstable-rs-kernels-to-generic-](./quick/260529-twi-refactor-unstable-rs-kernels-to-generic-/) |
+| 260530-9ay | fix + GPU-port the deferred unstable derivative sub-paths (origi-ip2, origk-ip1, grids ip/ipip/ipvip/spvsp). ROOT CAUSE was a manifest bug, not math: these ops had component_rank=1 in compiled_manifest.lock.json so the planner under-allocated the workspace and launch_* dropped all components past the first (zeros). Corrected ranks (origi-ip2/origk-ip1=3, grids ip=3, ipip/ipvip=9, spvsp=4) → CPU vendor parity restored for origi-ip2 r2/r4 + origk-ip1 r2/r4. Then ported all to #[cube(launch)] device kernels (origi_ip2_kernel, origk_ip1_kernel, one grids_deriv_kernel comptime op_kind) on all 5 backends. ROCm: origi-ip2 vendor parity 96/0; origk-ip1 r2/r4 0; grids derivs device-vs-host 0 (vendor blocked by pre-existing InvalidShellTuple). RESIDUAL (not fixed, documented): origk-ip1 r6 diverges ~6% from libcint on the y-component at top k-power — cintx self-consistent (ip1=grad(scalar), FD-verified) + scalar matches vendor, but ip1_r6 ≠ vendor; root cause not isolated. 26/26 in-crate device tests green; unstable_source_parity 12/23 (was 8/23), no regressions | 2026-05-30 | 51017b9 | [260530-9ay-fix-gpu-port-deferred-unstable-derivativ](./quick/260530-9ay-fix-gpu-port-deferred-unstable-derivativ/) |
 
 ## Session Continuity
 
-Last session: 2026-05-21T14:11:17.653Z
-Stopped at: Completed Phase 20 Plan 10 (Gap 2a — kernel+math hardening for PREC-05 f32 correctness; 2 commits: 5ba79fb + 69a6a18)
+Last session: 2026-05-29T12:52:35.504Z
+Stopped at: Phase 23 context gathered
 Resume file: None

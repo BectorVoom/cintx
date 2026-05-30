@@ -403,6 +403,413 @@ pub fn vendor_int1e_nuc_cart(
     }
 }
 
+/// Evaluate int1e_ipovlp_sph for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipovlp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipovlp_cart for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipovlp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkin_sph for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipkin_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkin_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkin_cart for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipkin_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkin_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnuc_sph for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+///
+/// int1e_ipnuc is the hcore nuclear-attraction derivative: `∂/∂Ai` on the bra
+/// center, summed over ALL nuclei with the `-Z_C` charge factor. The vendor reads
+/// the nuclear charges/coords from atm/env; no special env slot is required.
+pub fn vendor_int1e_ipnuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnuc_cart for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+pub fn vendor_int1e_ipnuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ── Phase 23 both-side rank-9 1e families (9 = 3×3 components, component-leading
+//    out[comp * ni * nj + n] for comp in 0..9). ────────────────────────────────
+
+/// Evaluate int1e_ipovlpip_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipovlpip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlpip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipovlpip_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipovlpip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlpip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkinip_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipkinip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkinip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkinip_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipkinip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkinip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnucip_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipnucip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnucip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnucip_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipnucip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnucip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_iprinv_sph for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+///
+/// int1e_iprinv is the per-atom Hellmann–Feynman force term: `∂/∂Ai` evaluated at
+/// a SINGLE rinv origin with factor `+1.0` (no `-Z_C`).
+///
+/// IMPORTANT: the caller MUST set `env[PTR_RINV_ORIG..PTR_RINV_ORIG+3]`
+/// (libcint `PTR_RINV_ORIG = 4`, i.e. `env[4], env[5], env[6]` = x, y, z) to the
+/// chosen origin BEFORE calling this function. The same env must be used for the
+/// matching cintx `eval_raw` call so both evaluate at the identical origin.
+pub fn vendor_int1e_iprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_iprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_iprinv_cart for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+///
+/// IMPORTANT: the caller MUST set `env[PTR_RINV_ORIG..PTR_RINV_ORIG+3]`
+/// (libcint `PTR_RINV_ORIG = 4`) to the chosen origin BEFORE calling this function
+/// (see `vendor_int1e_iprinv_sph`).
+pub fn vendor_int1e_iprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_iprinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int2e_cart for a single shell quartet using vendored libcint.
 ///
 /// `out` must be pre-allocated with ni*nj*nk*nl elements where
@@ -420,6 +827,249 @@ pub fn vendor_int2e_cart(
 ) -> i32 {
     unsafe {
         ffi::int2e_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ip1_sph for a single shell quartet using vendored libcint.
+///
+/// The two-electron force `∇_A <ij|kl>` (3 gradient components on electron 1).
+///
+/// `out` must be pre-allocated with `3 * ni*nj*nk*nl` elements where
+/// nX = CINTcgto_spheric(shls[X], bas).
+///
+/// `shls` is `[i, j, k, l]` — four shell indices.
+///
+/// LAYOUT: libcint writes **component-leading** F-order — `out[comp * (ni*nj*nk*nl) + n]`
+/// for comp in 0..3, where the per-component block `n` walks the AO product i-fastest
+/// (i.e. `[nl][nk][nj][ni]` with `ni` fastest, matching pyscf-gto `layout_table.rs`).
+/// The cintx `int2e_ip1` kernel emits this identical layout, so the byte-identity
+/// element-for-element comparison in `two_electron_ip1_parity.rs` IS the F-order /
+/// component-leading layout validation (Risk R3).
+pub fn vendor_int2e_ip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means use default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL
+            ptr::null_mut(), // cache = NULL (let libcint allocate)
+        )
+    }
+}
+
+/// Evaluate int2e_ip1_cart for a single shell quartet using vendored libcint.
+///
+/// Cartesian analog of [`vendor_int2e_ip1_sph`]. `out` must be pre-allocated with
+/// `3 * ni*nj*nk*nl` elements where nX = CINTcgto_cart(shls[X], bas).
+///
+/// LAYOUT: component-leading F-order — `out[comp * (ni*nj*nk*nl) + n]` (same
+/// convention as the sph wrapper; see its doc for the R3 layout note).
+pub fn vendor_int2e_ip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ip2_sph for a single shell quartet using vendored libcint.
+///
+/// Phase 23 DRV1-01 (`int2e_ip2` — ∇ on the 2nd-electron bra-center k). 4-shell
+/// arity (`shls = [i, j, k, l]`). `out` must be pre-allocated with
+/// `3 * ni*nj*nk*nl` elements where nX = CINTcgto_spheric(shls[X], bas).
+///
+/// LAYOUT: component-leading F-order — `out[comp * (ni*nj*nk*nl) + n]` (same
+/// convention as `vendor_int2e_ip1_sph`).
+pub fn vendor_int2e_ip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ip2_cart for a single shell quartet using vendored libcint.
+///
+/// Cartesian analog of [`vendor_int2e_ip2_sph`].
+pub fn vendor_int2e_ip2_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ip2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2c2e_ip1_sph for a single shell pair using vendored libcint.
+///
+/// Phase 23 DRV1-04 (`int2c2e_ip1` — ∇ on bra center i). 2-shell arity
+/// (`shls = [i, k]`). `out` must be pre-allocated with `3 * ni*nk` elements
+/// where nX = CINTcgto_spheric(shls[X], bas).
+pub fn vendor_int2c2e_ip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2c2e_ip1_cart for a single shell pair using vendored libcint.
+pub fn vendor_int2c2e_ip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2c2e_ip2_sph for a single shell pair using vendored libcint.
+///
+/// Phase 23 DRV1-04 (`int2c2e_ip2` — ∇ on ket center k). 2-shell arity.
+pub fn vendor_int2c2e_ip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2c2e_ip2_cart for a single shell pair using vendored libcint.
+pub fn vendor_int2c2e_ip2_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ip2_cart(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,
@@ -476,6 +1126,128 @@ pub fn vendor_int3c1e_cart(
 ) -> i32 {
     unsafe {
         ffi::int3c1e_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 23 DRV1-03: int3c1e_ip1 (∇ on bra i of the 3-center OVERLAP) and
+// int3c1e_iprinv (∇ on bra i of the 3-center rinv-COULOMB, Rys-driven). Both are
+// arity-3, rank-3 derivative families. iprinv reads env[PTR_RINV_ORIG..+3]; the
+// caller MUST set a non-zero rinv origin in env[4..6] before invoking.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Evaluate int3c1e_ip1_sph for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]` — three shell indices. Output is rank-3
+/// (3 components × ni*nj*nk), component-leading.
+pub fn vendor_int3c1e_ip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_ip1_cart for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]` — three shell indices. Output is rank-3.
+pub fn vendor_int3c1e_ip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_iprinv_sph for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]`. The caller MUST set env[PTR_RINV_ORIG..+3] (env[4..6])
+/// to the desired rinv origin before calling. Output is rank-3.
+pub fn vendor_int3c1e_iprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_iprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_iprinv_cart for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]`. The caller MUST set env[PTR_RINV_ORIG..+3] (env[4..6])
+/// to the desired rinv origin before calling. Output is rank-3.
+pub fn vendor_int3c1e_iprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_iprinv_cart(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,
@@ -548,6 +1320,9 @@ pub fn vendor_int3c1e_p2_sph(
 
 /// Evaluate int3c2e_ip1_cart for a single shell triple using vendored libcint.
 ///
+/// `out` must be pre-allocated with 3 * ni * nj * nk elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni*nj*nk + n] for comp in 0..3.
+///
 /// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, ip1 variant).
 pub fn vendor_int3c2e_ip1_cart(
     out: &mut [f64],
@@ -560,6 +1335,107 @@ pub fn vendor_int3c2e_ip1_cart(
 ) -> i32 {
     unsafe {
         ffi::int3c2e_ip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c2e_ip1_sph for a single shell triple using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj * nk elements (3 gradient components)
+/// where nX = CINTcgto_spheric(shls[X], bas).
+/// Layout: component-leading — out[comp * ni*nj*nk + n] for comp in 0..3.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, ip1
+/// variant, spherical). This is the REAL `∇_A` first-center derivative reference for
+/// the int3c2e_ip1 oracle gate (GRAD-08 / Risk R1) — NOT the plain int3c2e_sph.
+pub fn vendor_int3c2e_ip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c2e_ip2_cart for a single shell triple using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj * nk elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni*nj*nk + n] for comp in 0..3.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, ip2
+/// variant: ∇ on the auxiliary `k` center — `G2E_D_K` on the real aux k per
+/// int3c2e.c:99, in cintx's layout the 2e `ll` slot).
+pub fn vendor_int3c2e_ip2_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ip2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c2e_ip2_sph for a single shell triple using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj * nk elements (3 gradient components)
+/// where nX = CINTcgto_spheric(shls[X], bas).
+/// Layout: component-leading — out[comp * ni*nj*nk + n] for comp in 0..3.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, ip2
+/// variant, spherical). This is the `∇` auxiliary-`k`-center DERIVATIVE reference
+/// for the int3c2e_ip2 oracle gate (DRV1-05).
+pub fn vendor_int3c2e_ip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ip2_sph(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,
@@ -659,11 +1535,25 @@ pub fn vendor_CINTgto_norm(n: i32, a: f64) -> f64 {
 
 /// Cart-to-spherical transform for bra index.
 ///
-/// Writes the spherical representation into `sph`. The returned pointer points
-/// to `sph` (C convention). We ignore it and use the output slice directly.
+/// libcint's `CINTc2s_bra_sph` does NOT always write into the `sph` argument:
+/// for l<2 (s/p, non-PYPZPX) it returns `gcart` WITHOUT touching `gsph`, and the
+/// RETURNED `*mut f64` is the authoritative result. For l>=2 it writes `gsph`
+/// (ket-blocked) and returns that same pointer. We therefore copy the returned
+/// pointer into `sph` so callers always read the correct result.
+///
+/// The `ret != sph.as_mut_ptr()` guard skips the redundant self-copy for l>=2.
+/// For l<2 the returned pointer aliases the `cart` input (which lives across the
+/// call), so `std::ptr::copy` (memmove-safe) is sound even on overlap. `n` is
+/// clamped to `sph.len()` to prevent any out-of-bounds write.
 pub fn vendor_CINTc2s_bra_sph(sph: &mut [f64], nket: i32, cart: &[f64], l: i32) {
     unsafe {
-        ffi::CINTc2s_bra_sph(sph.as_mut_ptr(), nket, cart.as_ptr() as *mut f64, l);
+        let ret = ffi::CINTc2s_bra_sph(sph.as_mut_ptr(), nket, cart.as_ptr() as *mut f64, l);
+        // nket * nsph(l) = nket * (2l+1)
+        let n = (nket.max(0) as usize) * ((2 * l.max(0) + 1) as usize);
+        let n = n.min(sph.len());
+        if !ret.is_null() && ret != sph.as_mut_ptr() {
+            std::ptr::copy(ret, sph.as_mut_ptr(), n);
+        }
     }
 }
 
@@ -1023,6 +1913,127 @@ pub fn vendor_int1e_nuc_spinor(
 ) -> i32 {
     unsafe {
         ffi::int1e_nuc_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ---- 1e spinor GRADIENT integral vendor FFI wrappers ----
+// These are 3-component gradient operators. Output buffer layout:
+//   `3 * ni_sp * nj_sp * 2` f64 values — 3 Cartesian gradient components,
+//   each an interleaved real/imaginary spinor block, component-leading
+//   (out[comp * ni_sp * nj_sp * 2 + ...]). ni_sp = CINTcgto_spinor(shls[0]),
+//   nj_sp = CINTcgto_spinor(shls[1]).
+
+/// Evaluate int1e_ipovlp_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * 2` f64 elements
+/// (3 gradient components × interleaved-complex spinor block).
+pub fn vendor_int1e_ipovlp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkin_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_ipkin_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkin_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnuc_spinor for a single shell pair using vendored libcint.
+///
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_ipnuc_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnuc_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_iprinv_spinor for a single shell pair using vendored libcint.
+///
+/// The rinv origin must be set in `env[PTR_RINV_ORIG..+3]` by the caller.
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_iprinv_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_iprinv_spinor(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,
@@ -1422,6 +2433,97 @@ pub fn vendor_ECPscalar_ipnuc_cart(
     );
     unsafe {
         ffi::ECPscalar_ipnuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate PySCF `ECPscalar_iprinv_sph` — per-nucleus ECP force
+/// (component_rank=3) sph (21-07, GRAD-09).
+///
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:420-453 (`ECPscalar_iprinv_sph`
+/// → `_one_shell_ecpbas` selects the single ECP shell on the atom indexed by
+/// `env[AS_RINV_ORIG_ATOM]`, then runs the SAME comp=3 `_deriv1_cart` driver as
+/// `ipnuc` on that one shell — no all-slot accumulation). The `out` buffer MUST
+/// hold `3 * nao_i * nao_j` f64s (`nao = CINTcgto_spheric`), with the same
+/// `[axis, ao_j, ao_i]` layout as the ipnuc variant.
+///
+/// IMPORTANT — the caller MUST set `env[AS_RINV_ORIG_ATOM] = <target atom index>`
+/// (slot 17, an INTEGER atom index) before calling, in addition to the
+/// `env[AS_ECPBAS_OFFSET]` / `env[AS_NECPBAS]` ECP slab packing the scalar
+/// wrappers require. A `shl_id < 0` (no ECP shell on that atom) makes PySCF
+/// return 0 without writing `out`.
+#[cfg(has_vendor_pyscf_nr_ecp)]
+#[allow(non_snake_case)]
+pub fn vendor_ECPscalar_iprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_spheric.
+    debug_assert!(
+        out.len() % 3 == 0,
+        "ECPscalar_iprinv_sph out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
+        out.len()
+    );
+    unsafe {
+        ffi::ECPscalar_iprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate PySCF `ECPscalar_iprinv_cart` — per-nucleus ECP force
+/// (component_rank=3) cart (21-07, GRAD-09).
+///
+/// Source: vendor/pyscf-nr-ecp/src/nr_ecp_deriv.c:333-375 (`ECPscalar_iprinv_cart`
+/// → `_one_shell_ecpbas` single-atom selection + comp=3 `_deriv1_cart`). The
+/// `out` buffer MUST hold `3 * nao_i * nao_j` f64s (`nao = CINTcgto_cart`), same
+/// `[axis, ao_j, ao_i]` layout as the ipnuc variant.
+///
+/// IMPORTANT — the caller MUST set `env[AS_RINV_ORIG_ATOM] = <target atom index>`
+/// (slot 17) before calling. See the sph variant for full env-slot notes.
+#[cfg(has_vendor_pyscf_nr_ecp)]
+#[allow(non_snake_case)]
+pub fn vendor_ECPscalar_iprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_cart.
+    debug_assert!(
+        out.len() % 3 == 0,
+        "ECPscalar_iprinv_cart out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
+        out.len()
+    );
+    unsafe {
+        ffi::ECPscalar_iprinv_cart(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,

@@ -87,6 +87,11 @@ pub struct FixtureParityResult {
     pub raw_vs_upstream: DiffSummary,
     pub raw_vs_optimizer: DiffSummary,
     pub layout_ok: bool,
+    /// True when the fixture carries no numeric parity obligation and was recorded as
+    /// passing without evaluation (e.g. spinor gradients, UnsupportedApi by design per
+    /// R5/D-03). Consumers like `oracle-covered-update` MUST NOT treat a skipped fixture
+    /// as oracle-covered.
+    pub skipped: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -319,6 +324,25 @@ fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
         "int3c2e_ip1_cart" => Some(RawApiId::INT3C2E_IP1_CART),
         "int3c2e_ip1_sph" => Some(RawApiId::INT3C2E_IP1_SPH),
         "int3c2e_ip1_spinor" => Some(RawApiId::INT3C2E_IP1_SPINOR),
+        // Coulomb-gradient families (Phase 21) — registered in the base profile by 21-02
+        // alongside int3c2e_ip1; their raw-api mappings belong here for the same reason.
+        // (Spinor gradients are excluded from the parity matrix in fixtures.rs per R5/D-03,
+        // but the map stays complete: these are valid raw symbols that resolve at dispatch.)
+        "int1e_ipovlp_cart" => Some(RawApiId::INT1E_IPOVLP_CART),
+        "int1e_ipovlp_sph" => Some(RawApiId::INT1E_IPOVLP_SPH),
+        "int1e_ipovlp_spinor" => Some(RawApiId::INT1E_IPOVLP_SPINOR),
+        "int1e_ipkin_cart" => Some(RawApiId::INT1E_IPKIN_CART),
+        "int1e_ipkin_sph" => Some(RawApiId::INT1E_IPKIN_SPH),
+        "int1e_ipkin_spinor" => Some(RawApiId::INT1E_IPKIN_SPINOR),
+        "int1e_ipnuc_cart" => Some(RawApiId::INT1E_IPNUC_CART),
+        "int1e_ipnuc_sph" => Some(RawApiId::INT1E_IPNUC_SPH),
+        "int1e_ipnuc_spinor" => Some(RawApiId::INT1E_IPNUC_SPINOR),
+        "int1e_iprinv_cart" => Some(RawApiId::INT1E_IPRINV_CART),
+        "int1e_iprinv_sph" => Some(RawApiId::INT1E_IPRINV_SPH),
+        "int1e_iprinv_spinor" => Some(RawApiId::INT1E_IPRINV_SPINOR),
+        "int2e_ip1_cart" => Some(RawApiId::INT2E_IP1_CART),
+        "int2e_ip1_sph" => Some(RawApiId::INT2E_IP1_SPH),
+        "int2e_ip1_spinor" => Some(RawApiId::INT2E_IP1_SPINOR),
         "int3c2e_cart" => Some(RawApiId::Symbol("int3c2e_cart")),
         "int3c2e_sph" => Some(RawApiId::Symbol("int3c2e_sph")),
         "int4c1e_cart" => Some(RawApiId::INT4C1E_CART),
@@ -397,6 +421,19 @@ unsafe fn eval_legacy_symbol(
         "int3c2e_ip1_spinor" => unsafe {
             legacy::cint3c2e_ip1(Some(out), shls, atm, bas, env, None)
         },
+        // Phase 21 Coulomb-gradient families. int1e_ip* are ALL_CINT1E wrappers (no opt arg,
+        // like int1e_kin); int2e_ip1 is an ALL_CINT wrapper (opt arg, like int2e). Spinor
+        // gradients are excluded from the parity matrix (R5/D-03), so only cart/sph proxy here.
+        "int1e_ipovlp_cart" => unsafe { legacy::cint1e_ipovlp_cart(Some(out), shls, atm, bas, env) },
+        "int1e_ipovlp_sph" => unsafe { legacy::cint1e_ipovlp_sph(Some(out), shls, atm, bas, env) },
+        "int1e_ipkin_cart" => unsafe { legacy::cint1e_ipkin_cart(Some(out), shls, atm, bas, env) },
+        "int1e_ipkin_sph" => unsafe { legacy::cint1e_ipkin_sph(Some(out), shls, atm, bas, env) },
+        "int1e_ipnuc_cart" => unsafe { legacy::cint1e_ipnuc_cart(Some(out), shls, atm, bas, env) },
+        "int1e_ipnuc_sph" => unsafe { legacy::cint1e_ipnuc_sph(Some(out), shls, atm, bas, env) },
+        "int1e_iprinv_cart" => unsafe { legacy::cint1e_iprinv_cart(Some(out), shls, atm, bas, env) },
+        "int1e_iprinv_sph" => unsafe { legacy::cint1e_iprinv_sph(Some(out), shls, atm, bas, env) },
+        "int2e_ip1_cart" => unsafe { legacy::cint2e_ip1_cart(Some(out), shls, atm, bas, env, None) },
+        "int2e_ip1_sph" => unsafe { legacy::cint2e_ip1_sph(Some(out), shls, atm, bas, env, None) },
         // Optional families currently lack dedicated legacy wrapper entry points.
         // Use the raw symbol path as the upstream proxy until wrappers land.
         "int2e_stg_sph"
@@ -897,17 +934,12 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
         mismatches += compare_buffers("cint3c1e_sph", &cintx_out, &vendor_out);
     }
 
-    // ─── int3c2e_ip1_sph ──────────────────────────────────────────────────────
-    {
-        let mut cintx_out = vec![0.0_f64; size_3];
-        unsafe {
-            eval_legacy_symbol("int3c2e_ip1_sph", &mut cintx_out, shls3, atm, bas, env)?;
-        }
-        let mut vendor_out = vec![0.0_f64; size_3];
-        let shls3_arr = [shls3[0], shls3[1], shls3[2]];
-        vendor_ffi::vendor_int3c2e_sph(&mut vendor_out, &shls3_arr, atm, natm, bas, nbas, env);
-        mismatches += compare_buffers("cint3c2e_ip1_sph", &cintx_out, &vendor_out);
-    }
+    // int3c2e_ip1 is a 3-component derivative (Phase 21-06), not a scalar base integral.
+    // Its byte-identity vs vendored libcint is verified by the dedicated, layout-aware
+    // tests/center_3c2e_parity.rs gate — it does not belong in this scalar legacy-wrapper
+    // check (a scalar buffer here would BufferTooSmall-bail, and vendor_int3c2e_sph is the
+    // wrong, non-gradient reference). The other gradient families (int1e_ip*, int2e_ip1) are
+    // likewise excluded from this function for the same reason.
 
     // ─── int1e_ovlp_cart ──────────────────────────────────────────────────────
     {
@@ -1012,17 +1044,8 @@ pub fn verify_legacy_wrapper_parity(inputs: &OracleRawInputs) -> Result<()> {
         mismatches += compare_buffers("cint3c1e_p2_cart", &cintx_out, &vendor_out);
     }
 
-    // ─── int3c2e_ip1_cart ─────────────────────────────────────────────────────
-    {
-        let mut cintx_out = vec![0.0_f64; size_3_c];
-        unsafe {
-            eval_legacy_symbol("int3c2e_ip1_cart", &mut cintx_out, shls3, atm, bas, env)?;
-        }
-        let mut vendor_out = vec![0.0_f64; size_3_c];
-        let shls3_arr = [shls3[0], shls3[1], shls3[2]];
-        vendor_ffi::vendor_int3c2e_ip1_cart(&mut vendor_out, &shls3_arr, atm, natm, bas, nbas, env);
-        mismatches += compare_buffers("cint3c2e_ip1_cart", &cintx_out, &vendor_out);
-    }
+    // int3c2e_ip1_cart: see the int3c2e_ip1_sph note above — gradient byte-identity is owned
+    // by tests/center_3c2e_parity.rs, not this scalar legacy-wrapper check.
 
     // Remaining legacy symbols not numerically compared here:
     // - Spinor variants (cint1e_ovlp, cint1e_kin, etc.) return UnsupportedApi — correct behavior.
@@ -1066,6 +1089,43 @@ fn build_profile_parity_report(
         let mut layout_ok = None;
 
         let tolerance = tolerance_for_family(&fixture.family);
+
+        // Spinor gradients (component_count == 3, spinor representation) are registered for
+        // surface completeness but their cart->spinor gradient transform is intentionally
+        // UnsupportedApi (Phase 21 R5/D-03, "registered-but-unimplemented"). They carry no
+        // numeric oracle-parity obligation, so record a passing (skipped) fixture result
+        // rather than evaluating — keeps fixture_count == fixtures.len() without a mismatch.
+        if fixture.component_count == 3 && fixture.representation == "spinor" {
+            let noop_diff = DiffSummary {
+                max_abs_error: 0.0,
+                max_rel_error: 0.0,
+                within_tolerance: true,
+            };
+            fixture_results.push(FixtureParityResult {
+                symbol: fixture.symbol.clone(),
+                family: fixture.family.clone(),
+                representation: fixture.representation.clone(),
+                tolerance,
+                raw_vs_upstream: noop_diff,
+                raw_vs_optimizer: noop_diff,
+                layout_ok: true,
+                skipped: true,
+            });
+            report_rows.push(json!({
+                "symbol": fixture.symbol,
+                "family": fixture.family,
+                "representation": fixture.representation,
+                "skipped": "spinor gradient transform unsupported by design (R5/D-03)",
+                "tolerance": {
+                    "family": tolerance.family,
+                    "atol": tolerance.atol,
+                    "rtol": tolerance.rtol,
+                    "zero_threshold": tolerance.zero_threshold,
+                },
+                "fixture_mismatches": [],
+            }));
+            continue;
+        }
 
         let Some(api) = raw_api_for_fixture(fixture) else {
             push_mismatch(
@@ -1391,6 +1451,7 @@ fn build_profile_parity_report(
             raw_vs_upstream,
             raw_vs_optimizer,
             layout_ok: layout,
+            skipped: false,
         });
         report_rows.push(json!({
             "symbol": fixture.symbol,

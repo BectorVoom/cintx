@@ -190,6 +190,24 @@ impl<'basis> SessionQuery<'basis> {
         if let Some(zeta) = self.request.options().f12_zeta {
             plan.operator_env_params.f12_zeta = Some(zeta);
         }
+        // Propagate rinv_orig from ExecutionOptions to operator_env_params (safe API path, Plan 21-01).
+        if let Some(origin) = self.request.options().rinv_orig {
+            plan.operator_env_params.rinv_orig = Some(origin);
+        }
+        // Propagate common_orig from ExecutionOptions to operator_env_params (safe API path, Plan 22-01).
+        if let Some(origin) = self.request.options().common_orig {
+            plan.operator_env_params.common_orig = Some(origin);
+        }
+        // Phase 22 FND-01 (gap closure): finiteness-validate the gauge origin on the safe-API
+        // path too. Mirrors the raw-path guard in cintx-compat raw.rs so the builder doc
+        // contract ("NaN/inf rejected by validate_common_orig_env_params") holds on BOTH paths
+        // — a `.with_common_origin([NaN, ..])` caller now gets InvalidEnvParam, not a silent
+        // garbage origin threaded into the plan.
+        cintx_runtime::validator::validate_common_orig_env_params(
+            plan.descriptor.operator_name(),
+            &plan.operator_env_params,
+        )
+        .map_err(FacadeError::from)?;
 
         enforce_safe_facade_policy_gate(
             plan.descriptor,
@@ -1336,5 +1354,49 @@ mod tests {
             nonzero_count > 0,
             "spinor evaluate must produce at least one nonzero Complex<f64> element"
         );
+    }
+
+    // Phase 22 FND-01 gap closure: the safe-API path must finiteness-validate the gauge
+    // origin, matching the raw-path guard in cintx-compat raw.rs. Before this fix the
+    // builder doc-contract ("NaN/inf rejected") held only on the raw path; a
+    // `.with_common_origin([NaN, ..])` caller silently threaded garbage into the plan.
+    #[test]
+    fn evaluate_rejects_non_finite_common_origin_on_safe_api_path() {
+        use crate::builder::SessionBuilder;
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let request = SessionBuilder::new(OperatorId::new(0), Representation::Cart, &basis, shells)
+            .with_common_origin([f64::NAN, 0.0, 0.0])
+            .build();
+
+        let query = request.query_workspace().expect("query should succeed");
+        let err = query.evaluate().unwrap_err();
+
+        assert_eq!(
+            err.kind(),
+            FacadeErrorKind::Validation,
+            "non-finite gauge origin must surface as a Validation error on the safe path"
+        );
+        assert!(
+            err.to_string().contains("PTR_COMMON_ORIG"),
+            "error must name the PTR_COMMON_ORIG param; got: {err}"
+        );
+    }
+
+    // Companion guard: a finite gauge origin on the safe-API path is accepted and
+    // round-trips into the plan (no false rejection from the new validate call).
+    #[test]
+    fn evaluate_accepts_finite_common_origin_on_safe_api_path() {
+        use crate::builder::SessionBuilder;
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let request = SessionBuilder::new(OperatorId::new(0), Representation::Cart, &basis, shells)
+            .with_common_origin([0.5, -0.3, 0.8])
+            .build();
+
+        let query = request.query_workspace().expect("query should succeed");
+        query
+            .evaluate()
+            .expect("finite gauge origin must be accepted on the safe path");
     }
 }

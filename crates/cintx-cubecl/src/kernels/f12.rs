@@ -22,6 +22,9 @@ use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::cart_to_spinor_sf_4d;
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats, validator::validate_f12_env_params};
+use cubecl::Runtime;
+use cubecl::client::ComputeClient;
+use cubecl::prelude::*;
 use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI`.
@@ -77,24 +80,33 @@ const F12_IPVIP1: F12Variant = F12Variant { i_inc: 1, j_inc: 1, k_inc: 0, l_inc:
 const F12_IP1IP2: F12Variant = F12Variant { i_inc: 1, j_inc: 0, k_inc: 1, l_inc: 0, ncomp: 9 };
 
 /// Stride/layout metadata for F12 (identical structure to two_electron's TwoEShape).
+///
+/// `pub(crate)` so the plain-Coulomb gradient launchers (`two_electron.rs::int2e_ip1`,
+/// `center_3c2e.rs::int3c2e_ip1`) can construct one from their own `build_2e_shape`
+/// result and feed it to [`gout_ip1`] / [`nabla1i_2e`]. The first-derivative math
+/// in those two functions is F12-free (it implements the standard libcint
+/// `∂/∂A χ_l = -2α·χ_{l+1} + l·χ_{l-1}` / `CINTnabla1i_2e`); only the G-tensor
+/// fill (`fill_g_tensor_f12` via `stg_roots_host`) is F12-specific. Sharing these
+/// symbols lets the plain-Coulomb gradients reuse the exact verbatim derivative
+/// math (Phase 21 D-04) instead of re-deriving it.
 #[derive(Clone, Copy, Debug)]
-struct F12Shape {
-    nroots: usize,
-    nmax: usize,
-    mmax: usize,
-    li: usize,
-    lj: usize,
-    lk: usize,
-    ll: usize,
-    ibase: bool,
-    kbase: bool,
-    di: usize,
-    dk: usize,
-    dl: usize,
-    dj: usize,
-    g2d_ijmax: usize,
-    g2d_klmax: usize,
-    g_size: usize,
+pub(crate) struct F12Shape {
+    pub(crate) nroots: usize,
+    pub(crate) nmax: usize,
+    pub(crate) mmax: usize,
+    pub(crate) li: usize,
+    pub(crate) lj: usize,
+    pub(crate) lk: usize,
+    pub(crate) ll: usize,
+    pub(crate) ibase: bool,
+    pub(crate) kbase: bool,
+    pub(crate) di: usize,
+    pub(crate) dk: usize,
+    pub(crate) dl: usize,
+    pub(crate) dj: usize,
+    pub(crate) g2d_ijmax: usize,
+    pub(crate) g2d_klmax: usize,
+    pub(crate) g_size: usize,
 }
 
 /// Build F12 shape using ceiling nroots formula from g2e_f12.c line 75:
@@ -587,7 +599,7 @@ fn fill_g_tensor_inner(
 /// Formula (per axis):
 ///   f[n @ i=0] = -2*ai * g[n+di]
 ///   f[n @ i>=1] = i * g[n-di] + (-2*ai) * g[n+di]
-fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ai: f64, shape: &F12Shape) {
+pub(crate) fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ai: f64, shape: &F12Shape) {
     let ai2 = -2.0 * ai;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -626,7 +638,11 @@ fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
 /// Formula (per axis):
 ///   f[n @ j=0] = -2*aj * g[n+dj]
 ///   f[n @ j>=1] = j * g[n-dj] + (-2*aj) * g[n+dj]
-fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, aj: f64, shape: &F12Shape) {
+///
+/// `pub(crate)` (Phase 23 plan 01): shared with sibling kernel launchers
+/// (`two_electron.rs`, `center_2c2e.rs`, `center_3c2e.rs`) for ket/remaining-center
+/// derivative families (int2e_ip2, int2c2e_ip1/ip2). The math is F12-free.
+pub(crate) fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, aj: f64, shape: &F12Shape) {
     let aj2 = -2.0 * aj;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -673,7 +689,11 @@ fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
 /// Formula (per axis):
 ///   f[n @ k=0] = -2*ak * g[n+dk]
 ///   f[n @ k>=1] = k * g[n-dk] + (-2*ak) * g[n+dk]
-fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ak: f64, shape: &F12Shape) {
+///
+/// `pub(crate)` (Phase 23 plan 01): shared with sibling kernel launchers
+/// (`two_electron.rs`, `center_2c2e.rs`, `center_3c2e.rs`) for remaining-center
+/// derivative families. The math is F12-free.
+pub(crate) fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ak: f64, shape: &F12Shape) {
     let ak2 = -2.0 * ak;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -709,6 +729,58 @@ fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
     }
 }
 
+/// Apply the `\nabla_l` operator to the G tensor.
+///
+/// Corresponds to `CINTnabla1l_2e` in libcint/g2e.c (the `G2E_D_L` macro).
+///
+/// `pub(crate)` (Phase 23 plan 01): added because cintx's 3c2e g-tensor builder maps
+/// the real auxiliary `k` center into the 2e `ll` slot (`build_2e_shape(li+1, lj, 0, lk)`,
+/// phantom 2e `lk`=0), so int3c2e_ip2's auxiliary derivative must nabla the `ll` slot —
+/// `nabla1k_2e` would touch the phantom slot (RESEARCH Pitfall 2). The G2E_D_L recurrence
+/// is the structural mirror of `nabla1k_2e`, operating on the `ll` loop bound and `dl`
+/// stride; `nabla1l_breit` (breit.rs:1206) is the in-tree reference (Don't Hand-Roll).
+///
+/// Formula (per axis):
+///   f[n @ l=0] = -2*al * g[n+dl]
+///   f[n @ l>=1] = l * g[n-dl] + (-2*al) * g[n+dl]
+pub(crate) fn nabla1l_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, al: f64, shape: &F12Shape) {
+    let al2 = -2.0 * al;
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        for j in 0..=lj {
+            // l=0: all k, i
+            for k in 0..=lk {
+                let base = dj * j + dk * k;
+                for i in 0..=li {
+                    let ptr = base + di * i;
+                    for n in ptr..ptr + nroots {
+                        f[off + n] = al2 * g[off + n + dl];
+                    }
+                }
+            }
+            // l>=1
+            for l in 1..=ll {
+                for k in 0..=lk {
+                    let base = dj * j + dl * l + dk * k;
+                    for i in 0..=li {
+                        let ptr = base + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = l as f64 * g[off + n - dl] + al2 * g[off + n + dl];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-variant gout contraction functions
 //
@@ -720,18 +792,61 @@ fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
 // These match the libcint autocode patterns in autocode/grad2.c and autocode/hess.c.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Compute gout for the ip1 variant (ncomp=3): `\nabla_i` on electron 1.
+/// Which center the single-side `\nabla` acts on inside [`gout_ipn`].
 ///
-/// Matches `CINTgout2e_int2e_ip1` in autocode/grad2.c.
-/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z).
-fn gout_ip1(
+/// Phase 23 plan 01: the s[0..2] mixing body of the single-side contraction is
+/// IDENTICAL for every center — only the nabla operator and its exponent change.
+/// `I` reproduces the original `gout_ip1` (int2e_ip1, bra-i); `J`/`K`/`L` cover the
+/// ket / remaining-center / auxiliary-center derivative families (int2e_ip2,
+/// int2c2e_ip1/ip2, int3c2e_ip2 — the last via the 2e `ll` slot, RESEARCH Pitfall 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Nabla1Center {
+    I,
+    J,
+    K,
+    L,
+}
+
+/// Apply the matching single-side `\nabla` operator at base angular momenta.
+#[inline]
+fn apply_nabla1_center(
+    center: Nabla1Center,
+    g1: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    exponent: f64,
+    shape: &F12Shape,
+) {
+    match center {
+        Nabla1Center::I => nabla1i_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::J => nabla1j_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::K => nabla1k_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::L => nabla1l_2e(g1, g, li, lj, lk, ll, exponent, shape),
+    }
+}
+
+/// Parameterized single-side gradient contraction (ncomp=3).
+///
+/// Phase 23 plan 01: generalizes the original `gout_ip1` s[0..2] mixing body over
+/// which center the `\nabla` acts on (`center`) and its exponent (`exponent`). The
+/// mixing math (`s[0]=g1x·g0y·g0z`, `s[1]=g0x·g1y·g0z`, `s[2]=g0x·g0y·g1z`) is the
+/// single source of truth; [`gout_ip1`] is now a thin `Nabla1Center::I` wrapper so
+/// the int2e_ip1 (bra-i) path stays byte-identical (Phase 21 D-04, no regression).
+///
+/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z), n walking the
+/// `[ll][lk][lj][li]` Cartesian product (outer→inner), matching `gout_ip1`.
+pub(crate) fn gout_ipn(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
     lj: usize,
     lk: usize,
     ll: usize,
-    ai: f64,
+    center: Nabla1Center,
+    exponent: f64,
 ) -> Vec<f64> {
     let nfi = ncart(li as u8);
     let nfj = ncart(lj as u8);
@@ -741,8 +856,8 @@ fn gout_ip1(
     let g_size = shape.g_size;
 
     let mut g1 = vec![0.0_f64; 3 * g_size];
-    // nabla1i at li+0 (base li); g was built with li_ceil = li+1
-    nabla1i_2e(&mut g1, g, li, lj, lk, ll, ai, shape);
+    // nabla at base angular momenta; g was built with the matching ceiling headroom.
+    apply_nabla1_center(center, &mut g1, g, li, lj, lk, ll, exponent, shape);
 
     let ci_comps = cart_comps(li as u8);
     let cj_comps = cart_comps(lj as u8);
@@ -782,6 +897,30 @@ fn gout_ip1(
         }
     }
     out
+}
+
+/// Compute gout for the ip1 variant (ncomp=3): `\nabla_i` on electron 1.
+///
+/// Matches `CINTgout2e_int2e_ip1` in autocode/grad2.c.
+/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z).
+///
+/// `pub(crate)` (Phase 21 D-04): shared verbatim with `two_electron.rs::int2e_ip1`
+/// and `center_3c2e.rs::int3c2e_ip1` — the plain-Coulomb gradients feed it the
+/// plain `fill_g_tensor_2e` G-tensor (rys roots) instead of the F12 stg-roots
+/// tensor; the contraction math here is identical for both.
+///
+/// Phase 23 plan 01: now a thin `Nabla1Center::I` wrapper over [`gout_ipn`]; the
+/// signature and numeric output are byte-identical to the pre-change implementation.
+pub(crate) fn gout_ip1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+) -> Vec<f64> {
+    gout_ipn(g, shape, li, lj, lk, ll, Nabla1Center::I, ai)
 }
 
 /// Compute gout for the ipip1 variant (ncomp=9): `\nabla_i \nabla_i` on electron 1.
@@ -1069,6 +1208,11 @@ fn gout_ip1ip2(
 }
 
 /// Contract [gx|gy|gz] into Cartesian 2e tensor for F12 (identical to two_electron version).
+///
+/// As of quick-260529-i2q the base / `ncomp == 1` path runs on-device via
+/// [`run_f12_cart_contraction_on_backend`]; this host reference is retained as the
+/// byte-identity oracle for the device-vs-host equivalence tests (cfg(test)).
+#[cfg_attr(not(test), allow(dead_code))]
 fn contract_f12_cart(g: &[f64], shape: F12Shape, li: u8, lj: u8, lk: u8, ll: u8) -> Vec<f64> {
     let nfi = ncart(li);
     let nfj = ncart(lj);
@@ -1119,6 +1263,266 @@ fn contract_f12_cart(g: &[f64], shape: F12Shape, li: u8, lj: u8, lk: u8, ll: u8)
     out
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// F12 base Cartesian-contraction splice — `#[cube(launch)]` device kernel,
+// generic over F (quick task 260529-i2q). Mirrors the ECP Type-1 angular-splice
+// port (ecp.rs `ecp_angular_kernel` / `run_ecp_angular_device` /
+// `run_ecp_angular_splice_on_backend`, quick-260529-gbf).
+//
+// CLAUDE.md mandates CubeCL as the primary compute backend with host CPU work
+// limited to planning/validation/marshaling. The F12 base variant's Cartesian
+// contraction (`contract_f12_cart`: the bounded `[gx|gy|gz] -> cart tensor`
+// triple-product accumulation, the base / `ncomp == 1` analog of the ECP angular
+// splice) is the part that ports cleanly to `#[cube]`: it consumes the
+// host-precomputed flat f64 `g` tensor and does bounded triple-product arithmetic
+// over `irys` with NO special functions, NO break/continue. The G-tensor fill
+// (`fill_g_tensor_f12` via `stg_roots_host`), the adaptive root machinery and the
+// sph/spinor transforms STAY host-side as marshaling.
+//
+// `cart_comps` enumeration stays host-side (marshaling); the kernel consumes flat
+// u32 power triples (`[mi*3 + axis]`, like ECP's `cart_comps_flat_u32`). The
+// kernel computes the FULL `nfi*nfj*nfk*nfl` Cartesian block in ONE launch (single
+// work item, `if UNIT_POS == 0`), preserving the host nested loop order
+// (l outer, then k, j, i, irys inner) so the f64 result is byte-identical.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Flatten `cart_comps(l)` into the `[mi*3 + axis]` u32 triple layout the device
+/// kernel consumes (marshaling — keeps `cart_comps` enumeration host-side).
+/// Mirrors `ecp.rs::cart_comps_flat_u32`.
+// Wired into `f12_kernel_core` in quick-260529-i2q Task 2; until then it is only
+// exercised by the device-vs-host equivalence tests.
+#[cfg_attr(not(test), allow(dead_code))]
+fn cart_comps_flat_u32(l: u8) -> Vec<u32> {
+    let mut out = Vec::with_capacity(ncart(l) * 3);
+    for (lx, ly, lz) in cart_comps(l) {
+        out.push(lx as u32);
+        out.push(ly as u32);
+        out.push(lz as u32);
+    }
+    out
+}
+
+/// F12 base Cartesian-contraction device kernel, generic over `F: Float`.
+///
+/// Computes the full `nfi*nfj*nfk*nfl` Cartesian block (the base / `ncomp == 1`
+/// variant of `contract_f12_cart`) in ONE launch (single work item,
+/// `UNIT_POS == 0`). All math uses `F` arithmetic, statement-form `if`, `u32`
+/// indices, and `while` loops bounded by runtime `u32` component counts — no
+/// for/break/continue, no special functions, no device-local `Array` scratch
+/// (inline-recompute, like ECP Type-2). The nested loop order (l outer, then k,
+/// j, i, with `irys` 0..nroots innermost) is IDENTICAL to the host driver
+/// `contract_f12_cart` so the f64 summation order — and hence byte-identity — is
+/// preserved.
+///
+/// Args mirror `contract_f12_cart`:
+/// - `g`: the flat `[gx|gy|gz]` buffer; `gx_off=0`, `gy_off=g_size`, `gz_off=2*g_size`.
+/// - `comps_i/j/k/l`: flat u32 cartesian-power triples (3 entries per component).
+/// - `out`: the `nfi*nfj*nfk*nfl` Cartesian block.
+/// - scalars (u32): `nfi, nfj, nfk, nfl, nroots, di, dk, dl, dj, g_size`.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn f12_cart_contraction_kernel<F: Float + CubeElement>(
+    g: &Array<F>,
+    comps_i: &Array<u32>,
+    comps_j: &Array<u32>,
+    comps_k: &Array<u32>,
+    comps_l: &Array<u32>,
+    out: &mut Array<F>,
+    nfi: u32,
+    nfj: u32,
+    nfk: u32,
+    nfl: u32,
+    nroots: u32,
+    di: u32,
+    dk: u32,
+    dl: u32,
+    dj: u32,
+    g_size: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let gx_off = 0u32;
+        let gy_off = g_size;
+        let gz_off = 2u32 * g_size;
+
+        // Zero the output block.
+        let out_len = nfi * nfj * nfk * nfl;
+        let mut oz = 0u32;
+        while oz < out_len {
+            out[oz as usize] = F::new(0.0);
+            oz += 1u32;
+        }
+
+        // 4-nested component loop (l outer, then k, j, i) × inner irys
+        // accumulation — IDENTICAL order to the host `contract_f12_cart`.
+        let mut l_idx = 0u32;
+        while l_idx < nfl {
+            let lx = comps_l[(l_idx * 3u32) as usize];
+            let ly = comps_l[(l_idx * 3u32 + 1u32) as usize];
+            let lz = comps_l[(l_idx * 3u32 + 2u32) as usize];
+            let mut k_idx = 0u32;
+            while k_idx < nfk {
+                let kx = comps_k[(k_idx * 3u32) as usize];
+                let ky = comps_k[(k_idx * 3u32 + 1u32) as usize];
+                let kz = comps_k[(k_idx * 3u32 + 2u32) as usize];
+                let mut j_idx = 0u32;
+                while j_idx < nfj {
+                    let jx = comps_j[(j_idx * 3u32) as usize];
+                    let jy = comps_j[(j_idx * 3u32 + 1u32) as usize];
+                    let jz = comps_j[(j_idx * 3u32 + 2u32) as usize];
+                    let mut i_idx = 0u32;
+                    while i_idx < nfi {
+                        let ix = comps_i[(i_idx * 3u32) as usize];
+                        let iy = comps_i[(i_idx * 3u32 + 1u32) as usize];
+                        let iz = comps_i[(i_idx * 3u32 + 2u32) as usize];
+
+                        let mut sum = F::new(0.0);
+                        let mut irys = 0u32;
+                        while irys < nroots {
+                            let x_idx = irys + ix * di + kx * dk + lx * dl + jx * dj;
+                            let y_idx = irys + iy * di + ky * dk + ly * dl + jy * dj;
+                            let z_idx = irys + iz * di + kz * dk + lz * dl + jz * dj;
+                            let gx = g[(gx_off + x_idx) as usize];
+                            let gy = g[(gy_off + y_idx) as usize];
+                            let gz = g[(gz_off + z_idx) as usize];
+                            sum += gx * gy * gz;
+                            irys += 1u32;
+                        }
+
+                        let out_idx =
+                            i_idx + j_idx * nfi + k_idx * nfi * nfj + l_idx * nfi * nfj * nfk;
+                        out[out_idx as usize] = sum;
+                        i_idx += 1u32;
+                    }
+                    j_idx += 1u32;
+                }
+                k_idx += 1u32;
+            }
+            l_idx += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`f12_cart_contraction_kernel`] at `f64` on a resolved backend's
+/// client, reading back the `nfi*nfj*nfk*nfl` Cartesian block.
+///
+/// Generic over `R: Runtime` so the same path serves CPU, ROCm, etc. Intermediate
+/// device compute is `f64` (F12 keeps f64 staging; the byte-identity gate is
+/// f64/CPU-vs-C). Mirrors `ecp.rs::run_ecp_angular_device`.
+// Wired into `f12_kernel_core` in quick-260529-i2q Task 2; until then it is only
+// exercised by the device-vs-host equivalence tests.
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn run_f12_cart_contraction_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    g: &[f64],
+    shape: F12Shape,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+) -> Vec<f64> {
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let out_len = nfi * nfj * nfk * nfl;
+
+    let comps_i = cart_comps_flat_u32(li);
+    let comps_j = cart_comps_flat_u32(lj);
+    let comps_k = cart_comps_flat_u32(lk);
+    let comps_l = cart_comps_flat_u32(ll);
+
+    // Sanity (T-i2q-01): buffer lengths must match what the kernel indexes, or
+    // the device kernel reads out of bounds.
+    debug_assert_eq!(g.len(), 3 * shape.g_size, "f12 cart: g len != 3*g_size");
+    debug_assert_eq!(comps_i.len(), nfi * 3, "f12 cart: comps_i len != nfi*3");
+    debug_assert_eq!(comps_j.len(), nfj * 3, "f12 cart: comps_j len != nfj*3");
+    debug_assert_eq!(comps_k.len(), nfk * 3, "f12 cart: comps_k len != nfk*3");
+    debug_assert_eq!(comps_l.len(), nfl * 3, "f12 cart: comps_l len != nfl*3");
+
+    let g_h = client.create_from_slice(f64::as_bytes(g));
+    let comps_i_h = client.create_from_slice(u32::as_bytes(&comps_i));
+    let comps_j_h = client.create_from_slice(u32::as_bytes(&comps_j));
+    let comps_k_h = client.create_from_slice(u32::as_bytes(&comps_k));
+    let comps_l_h = client.create_from_slice(u32::as_bytes(&comps_l));
+
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    f12_cart_contraction_kernel::launch::<f64, R>(
+        client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(g_h, g.len()) },
+        unsafe { ArrayArg::from_raw_parts(comps_i_h, comps_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(comps_j_h, comps_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(comps_k_h, comps_k.len()) },
+        unsafe { ArrayArg::from_raw_parts(comps_l_h, comps_l.len()) },
+        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+        nfi as u32,
+        nfj as u32,
+        nfk as u32,
+        nfl as u32,
+        shape.nroots as u32,
+        shape.di as u32,
+        shape.dk as u32,
+        shape.dl as u32,
+        shape.dj as u32,
+        shape.g_size as u32,
+    );
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// Backend-dispatch wrapper for the F12 base Cartesian contraction: routes the
+/// `#[cube(launch)]` [`f12_cart_contraction_kernel`] onto the resolved backend's
+/// device client (Cpu => CpuRuntime, Rocm => HipRuntime, Wgpu, Cuda, Metal — each
+/// `#[cfg]`-gated), mirroring `ecp.rs::run_ecp_angular_splice_on_backend`. Runs at
+/// f64 (F12 keeps f64 staging / byte-identity gate). Returns the
+/// `nfi*nfj*nfk*nfl` block.
+// Wired into `f12_kernel_core` in quick-260529-i2q Task 2.
+#[cfg_attr(not(test), allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
+fn run_f12_cart_contraction_on_backend(
+    backend: &ResolvedBackend,
+    g: &[f64],
+    shape: F12Shape,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_f12_cart_contraction_device::<cubecl::cpu::CpuRuntime>(
+            client, g, shape, li, lj, lk, ll,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => {
+            run_f12_cart_contraction_device::<cubecl_wgpu::WgpuRuntime>(
+                client, g, shape, li, lj, lk, ll,
+            )
+        }
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_f12_cart_contraction_device::<cubecl_cuda::CudaRuntime>(
+            client, g, shape, li, lj, lk, ll,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => {
+            run_f12_cart_contraction_device::<cubecl_hip::HipRuntime>(
+                client, g, shape, li, lj, lk, ll,
+            )
+        }
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            run_f12_cart_contraction_device::<cubecl_wgpu::WgpuRuntime>(
+                client, g, shape, li, lj, lk, ll,
+            )
+        }
+    }
+}
+
 /// Shared F12 kernel core called by all 10 entry points.
 ///
 /// Follows the same structure as `launch_two_electron` in `two_electron.rs` with the
@@ -1139,8 +1543,6 @@ fn f12_kernel_core(
     variant: &F12Variant,
     is_stg: bool,
 ) -> Result<ExecutionStats, cintxRsError> {
-    let _ = backend;
-
     let shells = plan.shells.as_slice();
     if shells.len() < 4 {
         return Err(cintxRsError::ChunkPlanFailed {
@@ -1247,7 +1649,14 @@ fn f12_kernel_core(
                             ai, aj, ak, al, &ri, &rj, &rk, &rl,
                             shape, quartet_fac, zeta, is_stg,
                         );
-                        let prim_cart = contract_f12_cart(&g, shape, li_u8, lj_u8, lk_u8, ll_u8);
+                        // Base Cartesian contraction now runs on-device as a
+                        // #[cube(launch)] kernel dispatched onto the resolved
+                        // backend's ComputeClient (quick-260529-i2q). Launches at
+                        // f64 with the SAME nested summation order as the host
+                        // `contract_f12_cart`, so byte-identity is preserved.
+                        let prim_cart = run_f12_cart_contraction_on_backend(
+                            backend, &g, shape, li_u8, lj_u8, lk_u8, ll_u8,
+                        );
 
                         for ci in 0..n_ctr_i {
                             let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
@@ -1933,5 +2342,349 @@ mod tests {
         assert_eq!(F12_IP1IP2.k_inc, 1);
         assert_eq!(F12_IP1IP2.l_inc, 0);
         assert_eq!(F12_IP1IP2.ncomp, 9);
+    }
+
+    // ── F12 base Cartesian-contraction splice: device-vs-host equivalence ──
+    // (quick task 260529-i2q). The device kernel must reproduce the host
+    // `contract_f12_cart` byte-for-byte (identical f64 summation order).
+    #[cfg(feature = "cpu")]
+    mod f12_cart_device_cross_check {
+        use super::super::*;
+
+        fn cpu_client() -> ComputeClient<cubecl::cpu::CpuRuntime> {
+            cubecl::cpu::CpuRuntime::client(&Default::default())
+        }
+
+        /// Tiny LCG so the synthetic `g` buffer is deterministic and reproducible.
+        struct Lcg(u64);
+        impl Lcg {
+            fn new(seed: u64) -> Self {
+                Lcg(seed)
+            }
+            fn next_f64(&mut self) -> f64 {
+                // Numerical-Recipes LCG; map to [-1, 1).
+                self.0 = self
+                    .0
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                let u = (self.0 >> 11) as f64 / (1u64 << 53) as f64;
+                2.0 * u - 1.0
+            }
+        }
+
+        /// f64 device-vs-host equivalence: max-abs-diff MUST be exactly 0.0
+        /// (identical f64 op order ⇒ byte-identity).
+        fn assert_f64_byte_identity(li: u8, lj: u8, lk: u8, ll: u8, seed: u64) {
+            let shape = build_f12_shape(li as usize, lj as usize, lk as usize, ll as usize);
+            // Synthetic flat [gx|gy|gz] buffer (3 * g_size entries).
+            let mut rng = Lcg::new(seed);
+            let g: Vec<f64> = (0..3 * shape.g_size).map(|_| rng.next_f64()).collect();
+
+            let host = contract_f12_cart(&g, shape, li, lj, lk, ll);
+            let dev = run_f12_cart_contraction_device::<cubecl::cpu::CpuRuntime>(
+                &cpu_client(),
+                &g,
+                shape,
+                li,
+                lj,
+                lk,
+                ll,
+            );
+            assert_eq!(
+                host.len(),
+                dev.len(),
+                "len mismatch li={li} lj={lj} lk={lk} ll={ll}"
+            );
+            let mut max_diff = 0.0_f64;
+            let mut any_nonzero = false;
+            for (&h, &d) in host.iter().zip(dev.iter()) {
+                if h.abs() > 1e-18 {
+                    any_nonzero = true;
+                }
+                max_diff = max_diff.max((h - d).abs());
+            }
+            assert_eq!(
+                max_diff, 0.0,
+                "f12 cart device/host f64 max-abs-diff must be 0.0 (li={li} lj={lj} lk={lk} ll={ll}), got {max_diff:e}"
+            );
+            assert!(
+                any_nonzero,
+                "host reference all zeros (li={li} lj={lj} lk={lk} ll={ll})"
+            );
+        }
+
+        #[test]
+        fn f12_cart_device_matches_host_f64() {
+            // All-s quartet plus quartets exercising p-shell cart_comps / strides.
+            let quartets: [(u8, u8, u8, u8); 5] = [
+                (0, 0, 0, 0),
+                (1, 0, 0, 0),
+                (0, 1, 0, 0),
+                (1, 1, 0, 0),
+                (1, 0, 1, 0),
+            ];
+            for (idx, &(li, lj, lk, ll)) in quartets.iter().enumerate() {
+                assert_f64_byte_identity(
+                    li,
+                    lj,
+                    lk,
+                    ll,
+                    0x9E3779B97F4A7C15 ^ (idx as u64).wrapping_mul(0x100000001B3),
+                );
+            }
+        }
+
+        /// Generic-F: launching the SAME kernel at F=f32 on CpuRuntime reproduces
+        /// the f32-rounded host result within f32 eps. Proves
+        /// `f12_cart_contraction_kernel` is genuinely generic over `F: Float`.
+        #[test]
+        fn f12_cart_device_generic_f32_within_eps() {
+            let (li, lj, lk, ll) = (1u8, 1u8, 0u8, 0u8);
+            let shape = build_f12_shape(li as usize, lj as usize, lk as usize, ll as usize);
+            let mut rng = Lcg::new(0xDEADBEEFCAFEF00D);
+            let g: Vec<f64> = (0..3 * shape.g_size).map(|_| rng.next_f64()).collect();
+            let host = contract_f12_cart(&g, shape, li, lj, lk, ll);
+
+            let nfi = ncart(li);
+            let nfj = ncart(lj);
+            let nfk = ncart(lk);
+            let nfl = ncart(ll);
+            let out_len = nfi * nfj * nfk * nfl;
+            let comps_i = cart_comps_flat_u32(li);
+            let comps_j = cart_comps_flat_u32(lj);
+            let comps_k = cart_comps_flat_u32(lk);
+            let comps_l = cart_comps_flat_u32(ll);
+
+            let client = cpu_client();
+            let g_f32: Vec<f32> = g.iter().map(|&v| v as f32).collect();
+            let g_h = client.create_from_slice(f32::as_bytes(&g_f32));
+            let comps_i_h = client.create_from_slice(u32::as_bytes(&comps_i));
+            let comps_j_h = client.create_from_slice(u32::as_bytes(&comps_j));
+            let comps_k_h = client.create_from_slice(u32::as_bytes(&comps_k));
+            let comps_l_h = client.create_from_slice(u32::as_bytes(&comps_l));
+            let out_zero = vec![0.0_f32; out_len];
+            let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+
+            f12_cart_contraction_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
+                &client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(g_h, g_f32.len()) },
+                unsafe { ArrayArg::from_raw_parts(comps_i_h, comps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(comps_j_h, comps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(comps_k_h, comps_k.len()) },
+                unsafe { ArrayArg::from_raw_parts(comps_l_h, comps_l.len()) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                nfi as u32,
+                nfj as u32,
+                nfk as u32,
+                nfl as u32,
+                shape.nroots as u32,
+                shape.di as u32,
+                shape.dk as u32,
+                shape.dl as u32,
+                shape.dj as u32,
+                shape.g_size as u32,
+            );
+            let raw = client.read_one_unchecked(out_h);
+            let dev_f32 = &f32::from_bytes(&raw)[0..out_len];
+
+            for (&h, &d) in host.iter().zip(dev_f32.iter()) {
+                let diff = (h as f32 - d).abs();
+                let thr = 1e-4_f32 + 1e-4_f32 * (h.abs() as f32);
+                assert!(
+                    diff <= thr,
+                    "f32 device result not within eps: host={h:e} dev={d:e} diff={diff:e}"
+                );
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 23 plan 01: nabla1l_2e (G2E_D_L) unit tests.
+    //
+    // nabla1l_2e is the mirror of nabla1k_2e operating on the `ll` loop bound and
+    // the `dl` stride. It must reproduce the analytic ∂χ_l recurrence on the l axis:
+    //   f[l=0]   = -2*al * g[l+1]
+    //   f[l>=1]  =  l * g[l-1] + (-2*al) * g[l+1]
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Fill a single-axis g block (g_size elements) with a distinct, easily-checkable
+    /// value per element so stride/offset errors surface immediately.
+    fn fill_distinct(g: &mut [f64]) {
+        for (idx, v) in g.iter_mut().enumerate() {
+            *v = (idx as f64) + 1.0; // 1.0, 2.0, 3.0, ...
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_ssp_first_order_term() {
+        // s-s-s-p base: nabla on a base ll=1. Mirror the real launchers, which build the
+        // G-tensor with CEILING angular momenta (ll_ceil = ll+1) so g[+dl] at the top base
+        // l-level stays in bounds. Here ll_base=1, so build the shape with ll_ceil=2.
+        let ll_base = 1usize;
+        let shape = build_f12_shape(0, 0, 0, ll_base + 1);
+        let al = 0.75_f64;
+        let three_g = 3 * shape.g_size;
+
+        let mut g = vec![0.0_f64; three_g];
+        fill_distinct(&mut g);
+        let mut f = vec![0.0_f64; three_g];
+        nabla1l_2e(&mut f, &g, 0, 0, 0, ll_base, al, &shape);
+
+        let dl = shape.dl;
+        let nroots = shape.nroots;
+        for axis in 0..3 {
+            let off = axis * shape.g_size;
+            // l=0 first-order term: f = -2*al * g[+dl]
+            for n in 0..nroots {
+                let expected = -2.0 * al * g[off + n + dl];
+                assert_eq!(
+                    f[off + n], expected,
+                    "axis {axis} l=0 n={n}: nabla1l first-order term mismatch"
+                );
+            }
+            // l=1: f = 1*g[-dl] + (-2*al)*g[+dl]
+            for n in 0..nroots {
+                let ptr = dl + n;
+                let expected = 1.0 * g[off + ptr - dl] + (-2.0 * al) * g[off + ptr + dl];
+                assert_eq!(f[off + ptr], expected, "axis {axis} l=1 n={n}");
+            }
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_matches_analytic_l_recurrence() {
+        // base ll=2 with one extra ceiling level (ll_ceil=3) so the full
+        // f[l>=1] = l*g[-dl] + (-2*al)*g[+dl] recurrence stays in bounds up to l=2.
+        // i/j/k slots held at 0 so only the l axis recurrence is exercised.
+        let ll_base = 2usize;
+        let shape = build_f12_shape(0, 0, 0, ll_base + 1);
+        let al = 1.3_f64;
+        let three_g = 3 * shape.g_size;
+
+        let mut g = vec![0.0_f64; three_g];
+        fill_distinct(&mut g);
+        let mut f = vec![0.0_f64; three_g];
+        nabla1l_2e(&mut f, &g, 0, 0, 0, ll_base, al, &shape);
+
+        let dl = shape.dl;
+        let nroots = shape.nroots;
+        for axis in 0..3 {
+            let off = axis * shape.g_size;
+            // l=0: f = -2*al*g[+dl]
+            for n in 0..nroots {
+                let expected = -2.0 * al * g[off + n + dl];
+                assert_eq!(f[off + n], expected, "axis {axis} l=0 n={n}");
+            }
+            // l=1..=2: f = l*g[-dl] + (-2*al)*g[+dl]
+            for l in 1..=ll_base {
+                for n in 0..nroots {
+                    let ptr = dl * l + n;
+                    let expected = l as f64 * g[off + ptr - dl] + (-2.0 * al) * g[off + ptr + dl];
+                    assert_eq!(f[off + ptr], expected, "axis {axis} l={l} n={n}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_structural_mirror_of_nabla1k_2e() {
+        // Structural cross-check: nabla1l on the l axis must mirror nabla1k on the k axis
+        // once the strides align. Build both shapes with one extra ceiling level on the
+        // active center (lk_ceil=ll_ceil=2 for a base AM of 1) so neither operator reads
+        // out of bounds, and the dk (k-shape) and dl (l-shape) strides coincide.
+        let base = 1usize;
+        let shape_k = build_f12_shape(0, 0, base + 1, 0);
+        let shape_l = build_f12_shape(0, 0, 0, base + 1);
+        let a = 0.9_f64;
+
+        // For these structurally-equivalent shapes the stride that the active center
+        // walks must be identical: dk in the k-shape == dl in the l-shape.
+        assert_eq!(shape_k.g_size, shape_l.g_size);
+        assert_eq!(shape_k.nroots, shape_l.nroots);
+        assert_eq!(shape_k.dk, shape_l.dl, "dk and dl strides must align for the mirror check");
+
+        let mut gk = vec![0.0_f64; 3 * shape_k.g_size];
+        let mut gl = vec![0.0_f64; 3 * shape_l.g_size];
+        fill_distinct(&mut gk);
+        fill_distinct(&mut gl);
+
+        let mut fk = vec![0.0_f64; 3 * shape_k.g_size];
+        let mut fl = vec![0.0_f64; 3 * shape_l.g_size];
+        nabla1k_2e(&mut fk, &gk, 0, 0, base, 0, a, &shape_k);
+        nabla1l_2e(&mut fl, &gl, 0, 0, 0, base, a, &shape_l);
+
+        for (idx, (&vk, &vl)) in fk.iter().zip(fl.iter()).enumerate() {
+            assert_eq!(vk, vl, "nabla1l must mirror nabla1k at element {idx}");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 23 plan 01: parameterized single-side contraction (gout_ipn).
+    //
+    // Regression guard: gout_ipn with center=I must reproduce gout_ip1 bit-for-bit
+    // (int2e_ip1, bra-i, Phase 21 D-04 must not regress). Also assert the J/K/L
+    // centers run and produce finite output on the same small tensor.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn gout_ipn_center_i_matches_gout_ip1() {
+        // s-p-s-s: base li=0, lj=1, lk=0, ll=0. The i center (nabla1i) needs li_ceil=li+1
+        // headroom, so build the G-tensor shape with li raised by one.
+        let (li, lj, lk, ll) = (0usize, 1usize, 0usize, 0usize);
+        let shape = build_f12_shape(li + 1, lj, lk, ll);
+        let ai = 0.65_f64;
+
+        let mut g = vec![0.0_f64; 3 * shape.g_size];
+        fill_distinct(&mut g);
+
+        let baseline = gout_ip1(&g, &shape, li, lj, lk, ll, ai);
+        let viaparam = gout_ipn(&g, &shape, li, lj, lk, ll, Nabla1Center::I, ai);
+
+        assert_eq!(baseline.len(), viaparam.len(), "gout length mismatch");
+        for (idx, (&b, &p)) in baseline.iter().zip(viaparam.iter()).enumerate() {
+            assert_eq!(
+                b.to_bits(),
+                p.to_bits(),
+                "gout_ipn(I) must be byte-identical to gout_ip1 at element {idx}: {b} vs {p}"
+            );
+        }
+    }
+
+    #[test]
+    fn gout_ipn_other_centers_run() {
+        // Exercise each non-I center with the matching ceiling headroom so the nabla
+        // stays in bounds, and assert the contraction produces finite output and is
+        // not a verbatim copy of the center-I result (different center ⇒ different mix).
+        let exponent = 0.8_f64;
+
+        // center J: ket-i derivative needs lj_ceil = lj+1.
+        let (li, lj, lk, ll) = (1usize, 0usize, 0usize, 0usize);
+        let shape_j = build_f12_shape(li, lj + 1, lk, ll);
+        let mut gj = vec![0.0_f64; 3 * shape_j.g_size];
+        fill_distinct(&mut gj);
+        let out_j = gout_ipn(&gj, &shape_j, li, lj, lk, ll, Nabla1Center::J, exponent);
+        assert!(out_j.iter().all(|v| v.is_finite()), "center J output must be finite");
+
+        // center K: needs lk_ceil = lk+1.
+        let (li, lj, lk, ll) = (0usize, 0usize, 1usize, 0usize);
+        let shape_k = build_f12_shape(li, lj, lk + 1, ll);
+        let mut gk = vec![0.0_f64; 3 * shape_k.g_size];
+        fill_distinct(&mut gk);
+        let out_k = gout_ipn(&gk, &shape_k, li, lj, lk, ll, Nabla1Center::K, exponent);
+        assert!(out_k.iter().all(|v| v.is_finite()), "center K output must be finite");
+
+        // center L: needs ll_ceil = ll+1.
+        let (li, lj, lk, ll) = (0usize, 0usize, 0usize, 1usize);
+        let shape_l = build_f12_shape(li, lj, lk, ll + 1);
+        let mut gl = vec![0.0_f64; 3 * shape_l.g_size];
+        fill_distinct(&mut gl);
+        let out_l = gout_ipn(&gl, &shape_l, li, lj, lk, ll, Nabla1Center::L, exponent);
+        assert!(out_l.iter().all(|v| v.is_finite()), "center L output must be finite");
+
+        // At least one component must be non-zero for each (the synthetic tensor is dense).
+        assert!(out_j.iter().any(|&v| v != 0.0), "center J output should be non-trivial");
+        assert!(out_k.iter().any(|&v| v != 0.0), "center K output should be non-trivial");
+        assert!(out_l.iter().any(|&v| v != 0.0), "center L output should be non-trivial");
     }
 }

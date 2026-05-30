@@ -40,6 +40,23 @@ pub const BAS_SLOTS: usize = 8;
 /// incorrect results for 2e+ integrals that read PTR_RANGE_OMEGA or PTR_EXPCUTOFF.
 pub const PTR_ENV_START: usize = 20;
 
+/// Index range in the libcint env array for the common (gauge) origin (x, y, z).
+///
+/// libcint defines `PTR_COMMON_ORIG = 1` (three consecutive slots 1, 2, 3).
+/// Raw callers set `env[1..4] = [x, y, z]` (in Bohr) as the gauge origin for
+/// moment / GIAO families. Unset (zero) reads as the default origin `[0,0,0]`;
+/// consumers use `common_orig.unwrap_or([0.0; 3])`. This constant is the start
+/// index; the origin occupies `PTR_COMMON_ORIG`, `+1`, `+2`.
+pub const PTR_COMMON_ORIG: usize = 1;
+
+/// Index range in the libcint env array for the rinv origin (x, y, z).
+///
+/// libcint defines `PTR_RINV_ORIG = 4` (three consecutive slots 4, 5, 6).
+/// Raw callers set `env[4..7] = [x, y, z]` (in Bohr) before calling any iprinv
+/// integral. This constant is the start index; the full origin occupies slots
+/// `PTR_RINV_ORIG`, `PTR_RINV_ORIG + 1`, `PTR_RINV_ORIG + 2`.
+pub const PTR_RINV_ORIG: usize = 4;
+
 /// Index of the F12/STG/YP zeta parameter in the libcint env array.
 ///
 /// libcint defines `PTR_F12_ZETA = 9` in `cint_bas.h`. Raw callers set `env[9] = zeta`
@@ -149,6 +166,81 @@ impl RawApiId {
     pub const INT1E_ECP_SPH: Self = Self::Symbol("int1e_ecp_sph");
     pub const INT1E_ECP_IPNUC_CART: Self = Self::Symbol("int1e_ecp_ipnuc_cart");
     pub const INT1E_ECP_IPNUC_SPH: Self = Self::Symbol("int1e_ecp_ipnuc_sph");
+
+    // Phase 21 gradient families.
+    pub const INT1E_IPOVLP_CART: Self = Self::Symbol("int1e_ipovlp_cart");
+    pub const INT1E_IPOVLP_SPH: Self = Self::Symbol("int1e_ipovlp_sph");
+    pub const INT1E_IPOVLP_SPINOR: Self = Self::Symbol("int1e_ipovlp_spinor");
+
+    pub const INT1E_IPKIN_CART: Self = Self::Symbol("int1e_ipkin_cart");
+    pub const INT1E_IPKIN_SPH: Self = Self::Symbol("int1e_ipkin_sph");
+    pub const INT1E_IPKIN_SPINOR: Self = Self::Symbol("int1e_ipkin_spinor");
+
+    pub const INT1E_IPNUC_CART: Self = Self::Symbol("int1e_ipnuc_cart");
+    pub const INT1E_IPNUC_SPH: Self = Self::Symbol("int1e_ipnuc_sph");
+    pub const INT1E_IPNUC_SPINOR: Self = Self::Symbol("int1e_ipnuc_spinor");
+
+    pub const INT1E_IPRINV_CART: Self = Self::Symbol("int1e_iprinv_cart");
+    pub const INT1E_IPRINV_SPH: Self = Self::Symbol("int1e_iprinv_sph");
+    pub const INT1E_IPRINV_SPINOR: Self = Self::Symbol("int1e_iprinv_spinor");
+
+    // Phase 23 both-side rank-9 1e families (spinor returns UnsupportedApi, D-06).
+    pub const INT1E_IPOVLPIP_CART: Self = Self::Symbol("int1e_ipovlpip_cart");
+    pub const INT1E_IPOVLPIP_SPH: Self = Self::Symbol("int1e_ipovlpip_sph");
+    pub const INT1E_IPOVLPIP_SPINOR: Self = Self::Symbol("int1e_ipovlpip_spinor");
+
+    pub const INT1E_IPKINIP_CART: Self = Self::Symbol("int1e_ipkinip_cart");
+    pub const INT1E_IPKINIP_SPH: Self = Self::Symbol("int1e_ipkinip_sph");
+    pub const INT1E_IPKINIP_SPINOR: Self = Self::Symbol("int1e_ipkinip_spinor");
+
+    pub const INT1E_IPNUCIP_CART: Self = Self::Symbol("int1e_ipnucip_cart");
+    pub const INT1E_IPNUCIP_SPH: Self = Self::Symbol("int1e_ipnucip_sph");
+    pub const INT1E_IPNUCIP_SPINOR: Self = Self::Symbol("int1e_ipnucip_spinor");
+
+    pub const INT2E_IP1_CART: Self = Self::Symbol("int2e_ip1_cart");
+    pub const INT2E_IP1_SPH: Self = Self::Symbol("int2e_ip1_sph");
+    pub const INT2E_IP1_SPINOR: Self = Self::Symbol("int2e_ip1_spinor");
+
+    // Phase 23 DRV1-01: int2e_ip2 (∇ on the ket bra-center k). Spinor registered
+    // for surface completeness; kernel returns UnsupportedApi (D-06).
+    pub const INT2E_IP2_CART: Self = Self::Symbol("int2e_ip2_cart");
+    pub const INT2E_IP2_SPH: Self = Self::Symbol("int2e_ip2_sph");
+    pub const INT2E_IP2_SPINOR: Self = Self::Symbol("int2e_ip2_spinor");
+
+    // Phase 23 DRV1-04: int2c2e_ip1 (∇ on bra center i) + int2c2e_ip2 (∇ on ket
+    // center k). Spinor registered for surface completeness (D-06).
+    pub const INT2C2E_IP1_CART: Self = Self::Symbol("int2c2e_ip1_cart");
+    pub const INT2C2E_IP1_SPH: Self = Self::Symbol("int2c2e_ip1_sph");
+    pub const INT2C2E_IP1_SPINOR: Self = Self::Symbol("int2c2e_ip1_spinor");
+
+    pub const INT2C2E_IP2_CART: Self = Self::Symbol("int2c2e_ip2_cart");
+    pub const INT2C2E_IP2_SPH: Self = Self::Symbol("int2c2e_ip2_sph");
+    pub const INT2C2E_IP2_SPINOR: Self = Self::Symbol("int2c2e_ip2_spinor");
+
+    // Phase 23 DRV1-05: int3c2e_ip2 (∇ on the auxiliary `k` center). cintx maps the
+    // real aux k into the 2e `ll` slot, so the derivative is applied via `nabla1l_2e`
+    // (RESEARCH Pitfall 2). Spinor registered for surface completeness; kernel
+    // returns UnsupportedApi (D-06).
+    pub const INT3C2E_IP2_CART: Self = Self::Symbol("int3c2e_ip2_cart");
+    pub const INT3C2E_IP2_SPH: Self = Self::Symbol("int3c2e_ip2_sph");
+    pub const INT3C2E_IP2_SPINOR: Self = Self::Symbol("int3c2e_ip2_spinor");
+
+    // Phase 23 DRV1-03: int3c1e_ip1 (∇ on bra i of the 3-center OVERLAP, no Rys)
+    // and int3c1e_iprinv (∇ on bra i of the 3-center rinv-COULOMB, Rys-driven via
+    // the existing PTR_RINV_ORIG env slot, D-08). Both arity-3, rank-3. Spinor
+    // registered for surface completeness; kernel returns UnsupportedApi (D-06).
+    pub const INT3C1E_IP1_CART: Self = Self::Symbol("int3c1e_ip1_cart");
+    pub const INT3C1E_IP1_SPH: Self = Self::Symbol("int3c1e_ip1_sph");
+    pub const INT3C1E_IP1_SPINOR: Self = Self::Symbol("int3c1e_ip1_spinor");
+
+    pub const INT3C1E_IPRINV_CART: Self = Self::Symbol("int3c1e_iprinv_cart");
+    pub const INT3C1E_IPRINV_SPH: Self = Self::Symbol("int3c1e_iprinv_sph");
+    pub const INT3C1E_IPRINV_SPINOR: Self = Self::Symbol("int3c1e_iprinv_spinor");
+
+    pub const INT1E_ECP_IPRINV_CART: Self = Self::Symbol("int1e_ecp_iprinv_cart");
+    pub const INT1E_ECP_IPRINV_SPH: Self = Self::Symbol("int1e_ecp_iprinv_sph");
+    /// Spinor form registered for surface completeness; kernel returns UnsupportedApi (D-03/R5).
+    pub const INT1E_ECP_IPRINV_SPINOR: Self = Self::Symbol("int1e_ecp_iprinv_spinor");
 
     fn symbol(self) -> &'static str {
         match self {
@@ -562,6 +654,36 @@ pub unsafe fn eval_raw(
         // Validate before dispatch so we return a typed error on bad input.
         cintx_runtime::validator::validate_f12_env_params("f12", &plan.operator_env_params)?;
     }
+    // Phase 21-01: Extract rinv_orig from env[PTR_RINV_ORIG..PTR_RINV_ORIG+3] for iprinv operators.
+    // Raw callers must set env[4..7] = [x, y, z] (in Bohr) before calling any iprinv integral.
+    // Guard with env.len() >= PTR_RINV_ORIG + 3 so a too-short env never indexes out of bounds
+    // (T-21-01-01); if the origin is still None after the read, validate_rinv_orig_env_params
+    // returns a typed InvalidEnvParam BEFORE kernel entry — no garbage-origin evaluation (T-21-01-02).
+    if is_iprinv_family_symbol(plan.descriptor.operator_symbol()) {
+        if env.len() >= PTR_RINV_ORIG + 3 {
+            let x = env[PTR_RINV_ORIG];
+            let y = env[PTR_RINV_ORIG + 1];
+            let z = env[PTR_RINV_ORIG + 2];
+            plan.operator_env_params.rinv_orig = Some([x, y, z]);
+        }
+        cintx_runtime::validator::validate_rinv_orig_env_params(
+            plan.descriptor.operator_name(),
+            &plan.operator_env_params,
+        )?;
+    }
+    // Phase 22 FND-01: extract common_orig (gauge origin) from env[PTR_COMMON_ORIG..PTR_COMMON_ORIG+3].
+    // D-02: operator-AGNOSTIC — read unconditionally; no operator-name guard exists yet (moments/GIAO
+    // add their own dispatch in Phases 24/26). Only the bounds guard (T-22-01) prevents OOB indexing.
+    if env.len() >= PTR_COMMON_ORIG + 3 {
+        let x = env[PTR_COMMON_ORIG];
+        let y = env[PTR_COMMON_ORIG + 1];
+        let z = env[PTR_COMMON_ORIG + 2];
+        plan.operator_env_params.common_orig = Some([x, y, z]);
+    }
+    cintx_runtime::validator::validate_common_orig_env_params(
+        plan.descriptor.operator_name(),
+        &plan.operator_env_params,
+    )?;
     // Phase 19 D-05: ECP dispatch guard — reject before kernel launch when
     // env[AS_NECPBAS] is missing/zero/non-finite. Mirrors the F12 zeta gate
     // above (same insertion point, same error variant). Plan 04 wires the
@@ -588,7 +710,26 @@ pub unsafe fn eval_raw(
     // Allocate the full staging accumulator that we own, so we can read values after execute().
     // RecordingExecutor is not needed: we construct ExecutionIo with our own staging slice and
     // read it directly after executor.execute() returns for each chunk.
-    let staging_elements = plan.output_layout.staging_elements;
+    //
+    // The grids family emits one AO block per grid point (an extra leading
+    // NGRIDS axis from env that the planner's shell-tuple sizing does not see),
+    // so scale the accumulator by NGRIDS to match the grids kernel's
+    // `ncomp * ngrids * ni * nj` output. `grids_params` was populated above; any
+    // other family keeps a factor of 1.
+    let grids_repeat = plan
+        .operator_env_params
+        .grids_params
+        .as_ref()
+        .map(|params| params.ngrids.max(1))
+        .unwrap_or(1);
+    let staging_elements = plan
+        .output_layout
+        .staging_elements
+        .checked_mul(grids_repeat)
+        .ok_or_else(|| cintxRsError::ChunkPlanFailed {
+            from: "compat_raw",
+            detail: "grids staging element count overflowed usize".to_owned(),
+        })?;
     let mut staging = Vec::new();
     staging.try_reserve_exact(staging_elements).map_err(|_| {
         cintxRsError::HostAllocationFailed {
@@ -705,6 +846,15 @@ fn is_ecp_family_symbol(symbol: &str) -> bool {
     symbol.starts_with("int1e_ecp_")
 }
 
+/// Phase 21-01: identifies iprinv-family operator symbols.
+///
+/// Returns `true` for any symbol whose name contains `"iprinv"` — covers
+/// `int1e_iprinv_{cart,sph,spinor}` and `int1e_ecp_iprinv_{cart,sph}`.
+/// Used to gate the PTR_RINV_ORIG env-read block in `eval_raw`.
+fn is_iprinv_family_symbol(symbol: &str) -> bool {
+    symbol.contains("iprinv")
+}
+
 fn parse_env_usize_param(
     env: &[f64],
     index: usize,
@@ -799,6 +949,30 @@ fn extract_grids_env_params(env: &[f64]) -> Result<GridsEnvParams, cintxRsError>
         ptr_grids,
         grid_coords,
     })
+}
+
+/// Output replication factor contributed by the grids `NGRIDS` axis.
+///
+/// The grids family (`int1e_grids*`) emits one AO block per grid point, so the
+/// caller-visible output carries an extra leading axis of size `NGRIDS` that
+/// lives in `env`, not in the shell tuple or the manifest component rank. The
+/// planner sizes the output from the shell tuple + component rank only, so the
+/// raw compat layer folds this factor into both the compat component count
+/// (output-length contract) and the staging accumulator size.
+///
+/// Returns `1` for every non-grids family. For the grids family the factor is
+/// `NGRIDS`, surfaced through `extract_grids_env_params` so a malformed
+/// `NGRIDS`/`PTR_GRIDS` is reported as a typed `InvalidEnvParam` before any
+/// allocation or kernel launch.
+fn grids_output_repeat(
+    descriptor: &OperatorDescriptor,
+    env: &[f64],
+) -> Result<usize, cintxRsError> {
+    if descriptor.entry.canonical_family == "grids" {
+        Ok(extract_grids_env_params(env)?.ngrids.max(1))
+    } else {
+        Ok(1)
+    }
 }
 
 fn f12_sph_envelope_error(symbol: &str) -> cintxRsError {
@@ -969,6 +1143,9 @@ fn prepare_raw_call(
     let resolved = resolve_raw_api(api)?;
     let atm = RawAtmView::new(atm)?;
     let bas = RawBasView::new(bas)?;
+    // Keep the raw env slice for grids NGRIDS extraction before wrapping it in the
+    // bounds-checked view (the view does not expose the flat slice).
+    let env_slice = env;
     let env = RawEnvView::new(env);
 
     atm.validate(&env)?;
@@ -1014,10 +1191,23 @@ fn prepare_raw_call(
         &layout_plan.output_layout.extents,
     )?;
 
+    // Fold the grids NGRIDS axis into the compat component count so the output
+    // length contract covers all ngrids*ncomp*ni*nj elements. libcint lays grids
+    // out comp-slowest, then grid, then AO block, and `CompatDims::write` is an
+    // order-preserving copy, so this straight fold is byte-exact. Non-grids
+    // families get a factor of 1 (component count unchanged).
+    let grids_repeat = grids_output_repeat(resolved.descriptor, env_slice)?;
+    let component_count = layout_plan
+        .component_count
+        .checked_mul(grids_repeat)
+        .ok_or_else(|| cintxRsError::ChunkPlanFailed {
+            from: "compat_raw",
+            detail: "grids component count overflowed usize".to_owned(),
+        })?;
     let compat_dims = CompatDims::from_override(
         &layout_plan.output_layout.extents,
         dims,
-        layout_plan.component_count,
+        component_count,
         layout_plan.output_layout.complex_interleaved,
     )?;
 
@@ -1222,7 +1412,20 @@ fn build_typed_basis_and_shell_tuple(
     })?;
 
     let expected_arity = descriptor.entry.arity as usize;
-    if shls.len() != expected_arity {
+    // The grids family follows libcint's `int1e_grids` calling convention, where
+    // the shell tuple carries the bra/ket shells plus a trailing
+    // `[grid_start, grid_end]` window: `[i, j, grid_start, grid_end]`. libcint
+    // reads only `shls[0..2]` and loops the full grid set from `env` (NGRIDS);
+    // the trailing window entries are ignored. Accept those two extra entries
+    // and build the shell tuple from the leading `expected_arity` shells only,
+    // matching libcint exactly (full env grid range, window entries ignored).
+    let is_grids = descriptor.entry.canonical_family == "grids";
+    let shell_count = if is_grids && shls.len() == expected_arity + 2 {
+        expected_arity
+    } else {
+        shls.len()
+    };
+    if shell_count != expected_arity {
         return Err(cintxRsError::InvalidShellTuple {
             expected: expected_arity,
             got: shls.len(),
@@ -1230,12 +1433,12 @@ fn build_typed_basis_and_shell_tuple(
     }
 
     let mut shell_indices = Vec::new();
-    shell_indices.try_reserve_exact(shls.len()).map_err(|_| {
+    shell_indices.try_reserve_exact(shell_count).map_err(|_| {
         cintxRsError::HostAllocationFailed {
-            bytes: shls.len().saturating_mul(size_of::<usize>()),
+            bytes: shell_count.saturating_mul(size_of::<usize>()),
         }
     })?;
-    for index in shls {
+    for index in &shls[..shell_count] {
         let parsed = usize::try_from(*index).map_err(|_| cintxRsError::ChunkPlanFailed {
             from: "raw_shell_tuple",
             detail: format!("shell index must be non-negative: {index}"),
@@ -2144,5 +2347,35 @@ mod tests {
             matches!(err, cintxRsError::InvalidEnvParam { param, .. } if param == "AS_NECPBAS"),
             "expected InvalidEnvParam(AS_NECPBAS) for zero necpbas, got: {err:?}"
         );
+    }
+
+    // --- PTR_RINV_ORIG (Plan 21-01) tests ---
+
+    /// Verify that PTR_RINV_ORIG is the correct libcint constant value (4).
+    #[test]
+    fn ptr_rinv_orig_is_4() {
+        assert_eq!(PTR_RINV_ORIG, 4, "PTR_RINV_ORIG must equal 4 (libcint constant)");
+    }
+
+    /// Verify that is_iprinv_family_symbol detects iprinv symbols correctly.
+    #[test]
+    fn is_iprinv_family_symbol_detects_iprinv() {
+        assert!(is_iprinv_family_symbol("int1e_iprinv_sph"));
+        assert!(is_iprinv_family_symbol("int1e_iprinv_cart"));
+        assert!(is_iprinv_family_symbol("int1e_ecp_iprinv_sph"));
+        assert!(is_iprinv_family_symbol("ECPscalar_iprinv_sph"));
+        // Sanity: non-iprinv symbols must not match
+        assert!(!is_iprinv_family_symbol("int1e_ovlp_sph"));
+        assert!(!is_iprinv_family_symbol("int1e_ipnuc_sph"));
+        assert!(!is_iprinv_family_symbol("int2e_sph"));
+    }
+
+    /// Verify that is_iprinv_family_symbol does NOT match non-iprinv ip* symbols.
+    #[test]
+    fn is_iprinv_family_symbol_does_not_match_ipovlp_ipkin_ipnuc() {
+        assert!(!is_iprinv_family_symbol("int1e_ipovlp_sph"));
+        assert!(!is_iprinv_family_symbol("int1e_ipkin_sph"));
+        assert!(!is_iprinv_family_symbol("int1e_ipnuc_sph"));
+        assert!(!is_iprinv_family_symbol("int2e_ip1_sph"));
     }
 }

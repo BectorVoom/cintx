@@ -188,23 +188,36 @@ fn write_offsets(
     nbas: i32,
     count_fn: fn(i32, &[i32]) -> Result<usize, cintxRsError>,
 ) -> Result<(), cintxRsError> {
-    let shell_count = shell_count(nbas, bas)?;
-    let needed = shell_count.saturating_add(1);
-    if ao_loc.len() < needed {
+    // libcint cint_bas.c shells_cgto_offset: i<nbas, writes ao_loc[0..nbas-1]; ao_loc[nbas] left untouched.
+    let count = shell_count(nbas, bas)?;
+    // Required length is exactly nbas (NOT nbas+1); the trailing ao_loc[nbas] slot is never written.
+    if ao_loc.len() < count {
         return Err(cintxRsError::BufferTooSmall {
-            required: needed,
+            required: count,
             provided: ao_loc.len(),
         });
     }
 
-    let mut offset = 0usize;
+    // nbas == 0: libcint's unconditional ao_loc[0]=0 is OOB; cintx guards the index-0 write
+    // behind count >= 1 and never panics. Required length 0 in that case.
+    if count == 0 {
+        return Ok(());
+    }
+
     ao_loc[0] = 0;
-    for shell in 0..shell_count {
-        offset = offset.saturating_add(count_fn(shell as i32, bas)?);
-        ao_loc[shell + 1] = i32::try_from(offset).map_err(|_| cintxRsError::ChunkPlanFailed {
-            from: "compat_helpers",
-            detail: "ao offset overflowed i32".to_owned(),
+    for i in 1..count {
+        let added = i32::try_from(count_fn((i - 1) as i32, bas)?).map_err(|_| {
+            cintxRsError::ChunkPlanFailed {
+                from: "compat_helpers",
+                detail: "ao offset overflowed i32".to_owned(),
+            }
         })?;
+        ao_loc[i] = ao_loc[i - 1]
+            .checked_add(added)
+            .ok_or(cintxRsError::ChunkPlanFailed {
+                from: "compat_helpers",
+                detail: "ao offset overflowed i32".to_owned(),
+            })?;
     }
     Ok(())
 }
@@ -213,19 +226,24 @@ pub fn CINTgto_norm(n: i32, a: f64) -> f64 {
     if !a.is_finite() || a <= 0.0 || n < 0 {
         return 0.0;
     }
-    // (2n-1)!! double factorial: 1 for n=0, 1 for n=1, 3 for n=2, 15 for n=3, ...
-    // Matches libcint misc.c CINTgto_norm formula:
-    // norm = sqrt( fac2(2n-1) * PI^0.5 / (2a)^(n+1.5) )
-    let fac = {
+    // libcint 6.1.3 misc.c::CINTgto_norm closed form (Schlegel & Frisch, IJQC 54(1995) 83-87):
+    //   norm = sqrt( 2^(2n+3) * (n+1)! * (2a)^(n+1.5) / ((2n+2)! * sqrt(pi)) )
+    // This replaces the prior INVERTED formula (which put (2a)^(n+1.5) in the
+    // denominator and used (2n-1)!!, making the norm shrink with a). The factorials
+    // are computed as exact f64 products (the oracle grid tests n in 0..5; f64 holds
+    // these integer factorials exactly up to ~n<=8).
+    let factorial = |m: i32| -> f64 {
         let mut f = 1.0_f64;
-        let mut k = 2 * n - 1;
-        while k > 0 {
+        let mut k = 2_i32;
+        while k <= m {
             f *= k as f64;
-            k -= 2;
+            k += 1;
         }
         f
     };
-    (fac * std::f64::consts::PI.sqrt() / (2.0 * a).powf(n as f64 + 1.5)).sqrt()
+    let num = 2.0_f64.powi(2 * n + 3) * factorial(n + 1) * (2.0 * a).powf(n as f64 + 1.5);
+    let den = factorial(2 * n + 2) * std::f64::consts::PI.sqrt();
+    (num / den).sqrt()
 }
 
 #[cfg(test)]
@@ -247,14 +265,37 @@ mod tests {
         assert_eq!(CINTcgtos_spheric(1, &bas).unwrap(), 6);
         assert_eq!(CINTtot_cgto_spheric(&bas, 2).unwrap(), 7);
         assert_eq!(CINTtot_pgto_spheric(&bas, 2).unwrap(), 5);
-        assert!(CINTgto_norm(1, 0.5) > 0.0);
+        // libcint 6.1.3 misc.c::CINTgto_norm closed form, verified value (atol 1e-12).
+        assert!(
+            (CINTgto_norm(0, 0.5) - 1.502251088929885).abs() < 1e-12,
+            "CINTgto_norm(0,0.5) = {} expected 1.502251088929885",
+            CINTgto_norm(0, 0.5)
+        );
+        // n=4,a=2.5 verified closed-form value.
+        assert!(
+            (CINTgto_norm(4, 2.5) - 16.34007804382598).abs() < 1e-9,
+            "CINTgto_norm(4,2.5) = {} expected 16.34007804382598",
+            CINTgto_norm(4, 2.5)
+        );
+        // Norm GROWS with exponent `a` (the prior inverted formula made it shrink).
+        assert!(
+            CINTgto_norm(2, 2.5) > CINTgto_norm(2, 0.5),
+            "CINTgto_norm must increase with a: norm(2,2.5)={} norm(2,0.5)={}",
+            CINTgto_norm(2, 2.5),
+            CINTgto_norm(2, 0.5)
+        );
+        // Defensive guard: invalid input returns 0.0, no panic/NaN/Inf.
+        assert_eq!(CINTgto_norm(-1, 0.5), 0.0);
+        assert_eq!(CINTgto_norm(1, 0.0), 0.0);
     }
 
     #[test]
-    fn helper_offsets_write_prefix_sums() {
+    fn helper_offsets_match_libcint_i_lt_nbas() {
         let bas = sample_bas();
         let mut offsets = vec![0; 3];
         CINTshells_cart_offset(&mut offsets, &bas, 2).unwrap();
-        assert_eq!(offsets, vec![0, 1, 7]);
+        // libcint cint_bas.c shells_cgto_offset uses i<nbas: writes ao_loc[0..nbas-1] only; ao_loc[nbas] (index 2) stays at its zero init. Total (7) lives in CINTtot_cgto_cart.
+        assert_eq!(offsets, vec![0, 1, 0]);
+        assert_eq!(CINTtot_cgto_cart(&bas, 2).unwrap(), 7);
     }
 }

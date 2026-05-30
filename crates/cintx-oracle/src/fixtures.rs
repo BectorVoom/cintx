@@ -1,8 +1,9 @@
 use anyhow::{Context, Result, anyhow, bail};
 use cintx_compat::helpers::{CINTcgto_cart, CINTcgto_spheric, CINTcgto_spinor};
 use cintx_compat::raw::{
-    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
-    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_F12_ZETA, PTR_ZETA,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NGRIDS, NPRIM_OF, NUC_MOD_OF,
+    POINT_NUC, PTR_COEFF, PTR_COMMON_ORIG, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_F12_ZETA,
+    PTR_GRIDS, PTR_ZETA,
 };
 use cintx_core::Representation;
 use cintx_ops::resolver::{HelperKind, ManifestEntry, Resolver};
@@ -142,6 +143,29 @@ pub fn build_h2o_sto3g_f12(zeta: f64) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let (atm, bas, mut env) = build_h2o_sto3g();
     // PTR_F12_ZETA = 9 — within the PTR_ENV_START global params block.
     env[PTR_F12_ZETA] = zeta;
+    (atm, bas, env)
+}
+
+/// Default NON-ZERO gauge origin for the Phase 22 fixture (Bohr).
+/// Non-trivial on all three axes so a populated `common_orig` is distinguishable
+/// from the `[0,0,0]` default (CONTEXT line 103: a zero origin proves nothing).
+pub const COMMON_ORIG_FIXTURE_ORIGIN: [f64; 3] = [0.5, -0.3, 0.8];
+
+/// H2O/STO-3G fixture with a NON-ZERO gauge origin set at env[PTR_COMMON_ORIG..+3].
+///
+/// Data infrastructure for moment (Phase 24) / GIAO (Phase 26) byte-identity parity.
+/// Phase 22 (FND-01) only builds + round-trips this fixture; no consuming kernel exists yet (D-03).
+pub fn build_h2o_sto3g_common_orig() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    build_h2o_sto3g_common_orig_at(COMMON_ORIG_FIXTURE_ORIGIN)
+}
+
+/// H2O/STO-3G fixture with an explicit gauge origin set at env[PTR_COMMON_ORIG..+3].
+pub fn build_h2o_sto3g_common_orig_at(origin: [f64; 3]) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    let (atm, bas, mut env) = build_h2o_sto3g();
+    // PTR_COMMON_ORIG = 1 — gauge origin in the PTR_ENV_START global params block.
+    env[PTR_COMMON_ORIG] = origin[0];
+    env[PTR_COMMON_ORIG + 1] = origin[1];
+    env[PTR_COMMON_ORIG + 2] = origin[2];
     (atm, bas, env)
 }
 
@@ -457,34 +481,114 @@ pub struct OracleRawInputs {
 }
 
 impl OracleRawInputs {
+    /// Single-atom (Z=1 at origin), 4 single-primitive shell fixture with a
+    /// libcint-conformant `env` layout.
+    ///
+    /// `env[0..PTR_ENV_START(=20)]` is reserved for libcint global parameters and
+    /// is left zero EXCEPT the two legitimate grid slots that live inside that
+    /// region: `env[NGRIDS(=11)] = 1.0` (one grid point) and
+    /// `env[PTR_GRIDS(=12)] = <grid-coord index>` (the env index, `>= 20`, where
+    /// the grid coordinate triple begins).
+    ///
+    /// Critically, no shell coefficient lands on `env[PTR_RANGE_OMEGA(=8)]` (the
+    /// range-separation ω). The previous packed layout stored shell-2's coeff
+    /// (0.6) there, causing vendored libcint to compute RANGE-SEPARATED (erf,
+    /// ω=0.6) 2e integrals while cintx computed full Coulomb — the cint2e
+    /// legacy-parity divergence. With ω=0.0 both sides compute full Coulomb.
+    ///
+    /// Physical basis (unchanged): single atom Z=1 at origin; shells
+    /// 0:(l=0, exp=1.0, coeff=1.0), 1:(l=1, exp=0.9, coeff=0.8),
+    /// 2:(l=0, exp=0.7, coeff=0.6), 3:(l=1, exp=0.5, coeff=0.4); one grid point
+    /// at the origin. shls2/3/4 and per-shell sizes are preserved exactly.
+    ///
+    /// Mirrors the conformant `build_h2o_sto3g()` pattern: reserve
+    /// `PTR_ENV_START` zero slots, then append user data with growing `env.len()`
+    /// pointers, using the named `PTR_*` / ATM-slot constants.
     pub fn sample() -> Self {
-        // env layout:
-        // 0..3 coordinates, then (exp, coeff) scalar pairs for 4 shells.
-        // 11 = NGRIDS, 12 = PTR_GRIDS, followed by one grid point (x,y,z).
-        let env = vec![
-            0.0, 0.0, 0.0, // coord
-            1.0, 1.0, // shell 0
-            0.9, 0.8, // shell 1
-            0.7, 0.6, // shell 2
-            0.5, 0.4,  // shell 3
-            1.0,  // NGRIDS (one point)
-            13.0, // PTR_GRIDS (index of first grid coordinate triple)
-            0.0, 0.0, 0.0, // grid point at origin
-        ];
-        let atm = vec![
-            1, // charge / atomic number
-            0, // PTR_COORD
-            1, // point charge model
-            0, // PTR_ZETA
-            0, // PTR_FRAC_CHARGE
-            0,
-        ];
-        let bas = vec![
-            0, 0, 1, 1, 0, 3, 4, 0, // shell 0 (s)
-            0, 1, 1, 1, 0, 5, 6, 0, // shell 1 (p)
-            0, 0, 1, 1, 0, 7, 8, 0, // shell 2 (s)
-            0, 1, 1, 1, 0, 9, 10, 0, // shell 3 (p)
-        ];
+        // 1. Reserve env[0..PTR_ENV_START] for libcint global params (zeros).
+        let mut env = vec![0.0_f64; PTR_ENV_START];
+
+        // 2. One grid point lives in the reserved region at env[NGRIDS]; the
+        //    grid-coord index env[PTR_GRIDS] is filled in step 5 once known.
+        env[NGRIDS] = 1.0;
+
+        // 2b. F12/STG/YP correlation-factor exponent on its designated libcint
+        //     reserved slot. Required so the shared-inputs.env profile parity can
+        //     evaluate the F12-family fixtures (int2e_stg_*/int2e_yp_*): the cintx
+        //     runtime validator fail-closes F12 plans when env[PTR_F12_ZETA] is
+        //     0.0. 1.2 is the documented typical zeta (mirrors build_h2o_sto3g_f12).
+        //     Non-F12 integrals ignore env[9], so base/with-4c1e and all Coulomb
+        //     results are unchanged; env[PTR_RANGE_OMEGA]=env[8] stays 0.0.
+        env[PTR_F12_ZETA] = 1.2;
+
+        // 3. Atom coordinate (0,0,0) at >= PTR_ENV_START.
+        let coord_ptr = env.len() as i32;
+        env.extend_from_slice(&[0.0, 0.0, 0.0]);
+
+        // 4. Per-shell (exp, coeff) pairs, capturing each pointer before push.
+        let shell0_exp_ptr = env.len() as i32;
+        env.push(1.0);
+        let shell0_coeff_ptr = env.len() as i32;
+        env.push(1.0);
+
+        let shell1_exp_ptr = env.len() as i32;
+        env.push(0.9);
+        let shell1_coeff_ptr = env.len() as i32;
+        env.push(0.8);
+
+        let shell2_exp_ptr = env.len() as i32;
+        env.push(0.7);
+        let shell2_coeff_ptr = env.len() as i32;
+        env.push(0.6);
+
+        let shell3_exp_ptr = env.len() as i32;
+        env.push(0.5);
+        let shell3_coeff_ptr = env.len() as i32;
+        env.push(0.4);
+
+        // 5. Grid coordinates (one point at origin); record its index in env[PTR_GRIDS].
+        let grid_ptr = env.len() as i32;
+        env.extend_from_slice(&[0.0, 0.0, 0.0]);
+        env[PTR_GRIDS] = grid_ptr as f64;
+
+        // atm: single point-charge atom Z=1 at origin. PTR_ZETA points at the
+        // reserved zero slot 0 (reads 0.0, fine for a point nucleus).
+        let mut atm = vec![0_i32; ATM_SLOTS];
+        atm[CHARGE_OF] = 1;
+        atm[PTR_COORD] = coord_ptr;
+        atm[NUC_MOD_OF] = POINT_NUC;
+        atm[PTR_ZETA] = 0;
+
+        // bas: per shell [atom=0, l, nprim=1, nctr=1, kappa=0, ptr_exp, ptr_coeff, 0].
+        let mut bas = vec![0_i32; 4 * BAS_SLOTS];
+
+        bas[0 * BAS_SLOTS + ATOM_OF] = 0;
+        bas[0 * BAS_SLOTS + ANG_OF] = 0;
+        bas[0 * BAS_SLOTS + NPRIM_OF] = 1;
+        bas[0 * BAS_SLOTS + NCTR_OF] = 1;
+        bas[0 * BAS_SLOTS + PTR_EXP] = shell0_exp_ptr;
+        bas[0 * BAS_SLOTS + PTR_COEFF] = shell0_coeff_ptr;
+
+        bas[1 * BAS_SLOTS + ATOM_OF] = 0;
+        bas[1 * BAS_SLOTS + ANG_OF] = 1;
+        bas[1 * BAS_SLOTS + NPRIM_OF] = 1;
+        bas[1 * BAS_SLOTS + NCTR_OF] = 1;
+        bas[1 * BAS_SLOTS + PTR_EXP] = shell1_exp_ptr;
+        bas[1 * BAS_SLOTS + PTR_COEFF] = shell1_coeff_ptr;
+
+        bas[2 * BAS_SLOTS + ATOM_OF] = 0;
+        bas[2 * BAS_SLOTS + ANG_OF] = 0;
+        bas[2 * BAS_SLOTS + NPRIM_OF] = 1;
+        bas[2 * BAS_SLOTS + NCTR_OF] = 1;
+        bas[2 * BAS_SLOTS + PTR_EXP] = shell2_exp_ptr;
+        bas[2 * BAS_SLOTS + PTR_COEFF] = shell2_coeff_ptr;
+
+        bas[3 * BAS_SLOTS + ATOM_OF] = 0;
+        bas[3 * BAS_SLOTS + ANG_OF] = 1;
+        bas[3 * BAS_SLOTS + NPRIM_OF] = 1;
+        bas[3 * BAS_SLOTS + NCTR_OF] = 1;
+        bas[3 * BAS_SLOTS + PTR_EXP] = shell3_exp_ptr;
+        bas[3 * BAS_SLOTS + PTR_COEFF] = shell3_coeff_ptr;
 
         Self {
             atm,
@@ -997,6 +1101,66 @@ pub fn write_representation_matrix_artifact(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// libcint range-separation ω slot inside the reserved env[0..PTR_ENV_START]
+    /// region. Not exported as a named constant by cintx-compat (it carries no
+    /// cintx semantics), so it is declared locally here to assert the specific
+    /// collision being fixed: a shell coeff must never land on this slot.
+    const PTR_RANGE_OMEGA: usize = 8;
+
+    #[test]
+    fn sample_env_reserves_libcint_global_slots() {
+        let inputs = OracleRawInputs::sample();
+
+        // The specific collision being fixed: env[8]=PTR_RANGE_OMEGA must be 0.0
+        // so vendored libcint computes FULL Coulomb (not range-separated) 2e ints.
+        assert_eq!(
+            inputs.env[PTR_RANGE_OMEGA], 0.0,
+            "env[PTR_RANGE_OMEGA] must be 0.0 (full-Coulomb), not a shell coeff"
+        );
+
+        // env[PTR_GRIDS] holds the grid-coord index, which must be >= PTR_ENV_START.
+        let grid_coord_index = inputs.env[PTR_GRIDS];
+        assert!(
+            grid_coord_index >= PTR_ENV_START as f64,
+            "env[PTR_GRIDS]={grid_coord_index} must point at user data (>= {PTR_ENV_START})"
+        );
+
+        // Every reserved slot env[0..PTR_ENV_START] is 0.0 EXCEPT the two
+        // legitimate grid slots — env[NGRIDS] (==1.0) and env[PTR_GRIDS] (the
+        // index) — and env[PTR_F12_ZETA] (==1.2, the F12/STG/YP correlation-factor
+        // exponent). env[PTR_RANGE_OMEGA]=env[8] must STILL be 0.0 (asserted above).
+        for slot in 0..PTR_ENV_START {
+            if slot == NGRIDS {
+                assert_eq!(inputs.env[slot], 1.0, "env[NGRIDS] must be 1.0 (one grid point)");
+            } else if slot == PTR_GRIDS {
+                assert_eq!(
+                    inputs.env[slot], grid_coord_index,
+                    "env[PTR_GRIDS] must hold the grid-coord index"
+                );
+            } else if slot == PTR_F12_ZETA {
+                assert_eq!(
+                    inputs.env[slot], 1.2,
+                    "env[PTR_F12_ZETA] must be 1.2 (F12 correlation-factor exponent)"
+                );
+            } else {
+                assert_eq!(
+                    inputs.env[slot], 0.0,
+                    "reserved env[{slot}] must be 0.0 (libcint global param)"
+                );
+            }
+        }
+
+        // shls2/3/4 unchanged.
+        assert_eq!(inputs.shells_for_arity(2), &[0, 1]);
+        assert_eq!(inputs.shells_for_arity(3), &[0, 1, 2]);
+        assert_eq!(inputs.shells_for_arity(4), &[0, 1, 2, 3]);
+
+        // Physical basis shape preserved: 4 shells, angular momenta [0,1,0,1].
+        assert_eq!(inputs.bas.len(), 4 * BAS_SLOTS, "must be 4 shells");
+        let ang: Vec<i32> = (0..4).map(|s| inputs.bas[s * BAS_SLOTS + ANG_OF]).collect();
+        assert_eq!(ang, vec![0, 1, 0, 1], "angular momenta must be s,p,s,p");
+    }
 
     #[test]
     fn representation_matrix_matches_manifest_fixtures() {

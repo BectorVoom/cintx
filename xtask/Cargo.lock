@@ -309,6 +309,7 @@ dependencies = [
 name = "cintx-core"
 version = "0.1.0"
 dependencies = [
+ "num-traits",
  "smallvec",
  "thiserror",
 ]
@@ -356,11 +357,13 @@ dependencies = [
 name = "cintx-rs"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cintx-compat",
  "cintx-core",
  "cintx-cubecl",
  "cintx-ops",
  "cintx-runtime",
+ "num-complex",
  "thiserror",
 ]
 

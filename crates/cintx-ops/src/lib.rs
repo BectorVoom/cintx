@@ -11,14 +11,18 @@ fn legacy_wrapper_manifest_matches_misc() {
 
     fn macro_kind(base_symbol: &str) -> Option<&'static str> {
         match base_symbol {
-            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e" | "int3c1e_p2" | "int3c2e_ip1" => {
-                Some("ALL_CINT")
+            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e" | "int3c1e_p2"
+            | "int3c2e_ip1" | "int2e_ip1" => Some("ALL_CINT"),
+            // ALL_CINT1E families (libcint 6.1.3 src/autocode/grad1.c + intor1.c) — cart/sph/base
+            // legacy wrappers only, no optimizer variants.
+            "int1e_kin" | "int1e_ipovlp" | "int1e_ipkin" | "int1e_ipnuc" | "int1e_iprinv" => {
+                Some("ALL_CINT1E")
             }
-            "int1e_kin" => Some("ALL_CINT1E"),
-            // int3c2e (plain) has no misc.h wrapper in libcint 6.1.3 upstream — distinct from int3c2e_ip1.
-            // Returning None here keeps this test green without requiring synthetic legacy entries
-            // (per Phase 18 PATTERNS.md §Step 3 Option A).
-            "int3c2e" => None,
+            // int3c2e (plain) has no misc.h wrapper in libcint 6.1.3 upstream — distinct from
+            // int3c2e_ip1. int1e_ecp_iprinv (ECP) likewise has no cint* legacy macro wrapper.
+            // Returning None keeps this test green without synthetic legacy entries (per Phase 18
+            // PATTERNS.md §Step 3 Option A).
+            "int3c2e" | "int1e_ecp_iprinv" => None,
             _ => None,
         }
     }

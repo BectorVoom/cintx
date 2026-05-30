@@ -1,0 +1,19 @@
+{
+  "//": "Prevent rust-analyzer / the editor from indexing the per-agent git worktrees that GSD creates under .claude/worktrees/. Those are ephemeral full-source copies; indexing them produced stale/duplicate diagnostics (e.g. a phantom E0425 from a mid-edit worktree state during quick task 260529-q4k).",
+  "rust-analyzer.files.excludeDirs": [
+    ".claude/worktrees",
+    ".claude/get-shit-done",
+    ".planning"
+  ],
+  "files.watcherExclude": {
+    "**/.claude/worktrees/**": true,
+    "**/target/**": true
+  },
+  "files.exclude": {
+    "**/.claude/worktrees": true
+  },
+  "search.exclude": {
+    "**/.claude/worktrees": true,
+    "**/target": true
+  }
+}

@@ -31,6 +31,10 @@ use cintx_compat::raw::{
     ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
     PTR_COEFF, PTR_COORD, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
+// Only the rocm random-3-shell builder uses PTR_ENV_START; gate it so the
+// cpu-only build stays warning-free.
+#[cfg(feature = "rocm")]
+use cintx_compat::raw::PTR_ENV_START;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // H2O STO-3G basis data
@@ -501,5 +505,237 @@ fn test_int3c1e_sph_h2o_sto3g_rocm_parity() {
     );
     println!(
         "  PASS: rocm int3c1e_sph mismatch_count=0 across {triple_count} triples at atol={atol:.0e}/rtol={rtol:.0e}"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROCm RANDOM idempotency oracle test (quick task 260529-e69)
+//
+// Exercises the CubeCL `center_3c1e_kernel` GPU device path under
+// `CINTX_BACKEND=rocm` over many RANDOMIZED 3-shell systems (random angular
+// momenta, primitive counts, exponents, contraction coefficients, and
+// geometry). For each system eval_raw(int3c1e_sph) is invoked twice on the
+// ROCm device and the two results must agree exactly (idempotency), with the
+// suite as a whole producing non-zero output (proves the device kernel ran).
+//
+// Gated `#[cfg(feature = "rocm")]` + `#[ignore]` + `CINTX_ROCM_ORACLE=1`, like
+// the H2O sibling above. Trigger via `xtask rocm-oracle`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Tiny deterministic LCG (Numerical Recipes constants) — keeps the random
+/// suite reproducible without pulling in an external rng crate.
+#[cfg(feature = "rocm")]
+struct Lcg(u64);
+
+#[cfg(feature = "rocm")]
+impl Lcg {
+    fn new(seed: u64) -> Self {
+        Lcg(seed)
+    }
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0
+    }
+    /// Uniform f64 in [lo, hi).
+    fn uniform(&mut self, lo: f64, hi: f64) -> f64 {
+        let frac = (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        lo + frac * (hi - lo)
+    }
+    /// Uniform integer in [lo, hi] inclusive.
+    fn range_i32(&mut self, lo: i32, hi: i32) -> i32 {
+        let span = (hi - lo + 1) as u64;
+        lo + (self.next_u64() % span) as i32
+    }
+}
+
+/// Build a random 3-shell int3c1e system. Returns `(atm, bas, env, li, lj, lk)`.
+///
+/// Angular momenta are drawn from {0,1,2}; primitive counts from {1,2,3}. The
+/// three shells sit on three distinct atoms at random, distinct coordinates.
+/// Uses the libcint env-pointer layout (user data starts at PTR_ENV_START).
+#[cfg(feature = "rocm")]
+fn build_random_3shell(rng: &mut Lcg) -> (Vec<i32>, Vec<i32>, Vec<f64>, i32, i32, i32) {
+    let li = rng.range_i32(0, 2);
+    let lj = rng.range_i32(0, 2);
+    let lk = rng.range_i32(0, 2);
+    let nprim_i = rng.range_i32(1, 3) as usize;
+    let nprim_j = rng.range_i32(1, 3) as usize;
+    let nprim_k = rng.range_i32(1, 3) as usize;
+
+    let coord_i = [rng.uniform(-1.5, 1.5), rng.uniform(-1.5, 1.5), rng.uniform(-1.5, 1.5)];
+    // Offset shells j and k so the three centers never coincide.
+    let coord_j = [
+        coord_i[0] + rng.uniform(0.8, 2.5),
+        coord_i[1] + rng.uniform(-1.5, 1.5),
+        coord_i[2] + rng.uniform(-1.5, 1.5),
+    ];
+    let coord_k = [
+        coord_i[0] + rng.uniform(-2.5, -0.8),
+        coord_i[1] + rng.uniform(-1.5, 1.5),
+        coord_i[2] + rng.uniform(0.8, 2.5),
+    ];
+
+    let exps_i: Vec<f64> = (0..nprim_i).map(|_| rng.uniform(0.25, 4.0)).collect();
+    let coeff_i: Vec<f64> = (0..nprim_i).map(|_| rng.uniform(0.15, 1.0)).collect();
+    let exps_j: Vec<f64> = (0..nprim_j).map(|_| rng.uniform(0.25, 4.0)).collect();
+    let coeff_j: Vec<f64> = (0..nprim_j).map(|_| rng.uniform(0.15, 1.0)).collect();
+    let exps_k: Vec<f64> = (0..nprim_k).map(|_| rng.uniform(0.25, 4.0)).collect();
+    let coeff_k: Vec<f64> = (0..nprim_k).map(|_| rng.uniform(0.15, 1.0)).collect();
+
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+
+    let coord_i_ptr = env.len() as i32;
+    env.extend_from_slice(&coord_i);
+    let coord_j_ptr = env.len() as i32;
+    env.extend_from_slice(&coord_j);
+    let coord_k_ptr = env.len() as i32;
+    env.extend_from_slice(&coord_k);
+    let zeta_ptr = env.len() as i32;
+    env.push(0.0);
+
+    let exp_i_ptr = env.len() as i32;
+    env.extend_from_slice(&exps_i);
+    let coeff_i_ptr = env.len() as i32;
+    env.extend_from_slice(&coeff_i);
+    let exp_j_ptr = env.len() as i32;
+    env.extend_from_slice(&exps_j);
+    let coeff_j_ptr = env.len() as i32;
+    env.extend_from_slice(&coeff_j);
+    let exp_k_ptr = env.len() as i32;
+    env.extend_from_slice(&exps_k);
+    let coeff_k_ptr = env.len() as i32;
+    env.extend_from_slice(&coeff_k);
+
+    let mut atm = vec![0_i32; 3 * ATM_SLOTS];
+    atm[CHARGE_OF] = 1;
+    atm[PTR_COORD] = coord_i_ptr;
+    atm[NUC_MOD_OF] = POINT_NUC;
+    atm[PTR_ZETA] = zeta_ptr;
+    atm[ATM_SLOTS + CHARGE_OF] = 1;
+    atm[ATM_SLOTS + PTR_COORD] = coord_j_ptr;
+    atm[ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+    atm[ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+    atm[2 * ATM_SLOTS + CHARGE_OF] = 1;
+    atm[2 * ATM_SLOTS + PTR_COORD] = coord_k_ptr;
+    atm[2 * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+    atm[2 * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+
+    let mut bas = vec![0_i32; 3 * BAS_SLOTS];
+    bas[ATOM_OF] = 0;
+    bas[ANG_OF] = li;
+    bas[NPRIM_OF] = nprim_i as i32;
+    bas[NCTR_OF] = 1;
+    bas[PTR_EXP] = exp_i_ptr;
+    bas[PTR_COEFF] = coeff_i_ptr;
+    bas[BAS_SLOTS + ATOM_OF] = 1;
+    bas[BAS_SLOTS + ANG_OF] = lj;
+    bas[BAS_SLOTS + NPRIM_OF] = nprim_j as i32;
+    bas[BAS_SLOTS + NCTR_OF] = 1;
+    bas[BAS_SLOTS + PTR_EXP] = exp_j_ptr;
+    bas[BAS_SLOTS + PTR_COEFF] = coeff_j_ptr;
+    bas[2 * BAS_SLOTS + ATOM_OF] = 2;
+    bas[2 * BAS_SLOTS + ANG_OF] = lk;
+    bas[2 * BAS_SLOTS + NPRIM_OF] = nprim_k as i32;
+    bas[2 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[2 * BAS_SLOTS + PTR_EXP] = exp_k_ptr;
+    bas[2 * BAS_SLOTS + PTR_COEFF] = coeff_k_ptr;
+
+    (atm, bas, env, li, lj, lk)
+}
+
+/// int3c1e_sph RANDOM idempotency on the ROCm backend (atol=1e-12 / rtol=1e-10).
+#[cfg(feature = "rocm")]
+#[test]
+#[ignore]
+fn test_int3c1e_sph_random_rocm_idempotency() {
+    assert_eq!(
+        std::env::var("CINTX_ROCM_ORACLE").as_deref(),
+        Ok("1"),
+        "ROCm oracle must be invoked via `xtask rocm-oracle` (sets CINTX_ROCM_ORACLE=1). \
+         Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
+    );
+
+    let atol = 1e-12_f64;
+    let rtol = 1e-10_f64;
+    let n_cases = 64usize;
+    let mut rng = Lcg::new(0x5ec0_3c1e_1234_5678);
+
+    let mut mismatch_count = 0usize;
+    let mut any_nonzero = false;
+
+    for case in 0..n_cases {
+        let (atm, bas, env, li, lj, lk) = build_random_3shell(&mut rng);
+        let ni = nsph_for_l(li);
+        let nj = nsph_for_l(lj);
+        let nk = nsph_for_l(lk);
+        let n_elem = ni * nj * nk;
+        let mut out1 = vec![0.0_f64; n_elem];
+        let mut out2 = vec![0.0_f64; n_elem];
+        let shls = [0_i32, 1, 2];
+
+        unsafe {
+            eval_raw(
+                RawApiId::INT3C1E_SPH,
+                Some(&mut out1),
+                None,
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                None,
+                None,
+            )
+            .unwrap_or_else(|e| panic!("rocm random eval_raw failed for case {case}: {e:?}"));
+            eval_raw(
+                RawApiId::INT3C1E_SPH,
+                Some(&mut out2),
+                None,
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                None,
+                None,
+            )
+            .unwrap_or_else(|e| {
+                panic!("rocm random eval_raw second call failed for case {case}: {e:?}")
+            });
+        }
+
+        assert_eq!(
+            out1.len(),
+            out2.len(),
+            "case {case}: output length mismatch (li={li}, lj={lj}, lk={lk})"
+        );
+        for (idx, (&r, &o)) in out1.iter().zip(out2.iter()).enumerate() {
+            let diff = (o - r).abs();
+            let threshold = atol + rtol * r.abs();
+            if diff > threshold {
+                mismatch_count += 1;
+                eprintln!(
+                    "  rocm RANDOM MISMATCH case {case} (li={li},lj={lj},lk={lk}) idx {idx}: \
+                     ref={r:.15e}, obs={o:.15e}, diff={diff:.3e}, threshold={threshold:.3e}"
+                );
+            }
+        }
+        if out1.iter().any(|&v| v.abs() > 1e-18) {
+            any_nonzero = true;
+        }
+    }
+
+    assert_eq!(
+        mismatch_count, 0,
+        "rocm random oracle idempotency failed: {mismatch_count} mismatches across {n_cases} cases"
+    );
+    assert!(
+        any_nonzero,
+        "rocm random int3c1e_sph output is all zeros across {n_cases} cases — device kernel not running"
+    );
+    println!(
+        "  PASS: rocm random int3c1e_sph idempotency mismatch_count=0 across {n_cases} cases \
+         at atol={atol:.0e}/rtol={rtol:.0e}"
     );
 }
