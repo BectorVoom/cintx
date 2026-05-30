@@ -945,33 +945,49 @@ pub unsafe fn eval_raw(
     }
 
     let schedule = schedule_chunks(&plan.workspace);
-    let total_units = plan.workspace.work_units.max(1);
 
     let mut total_not0: i32 = 0;
     let mut total_transfer_bytes: usize = 0;
 
     for chunk in schedule.chunks() {
-        // Compute staging slice range for this chunk (mirrors staging_elements_for_chunk logic).
-        let start = chunk.work_unit_start.min(total_units);
-        let end = chunk
-            .work_unit_start
-            .saturating_add(chunk.work_unit_count)
-            .min(total_units);
-        let prefix = staging_elements.saturating_mul(start) / total_units;
-        let suffix = staging_elements.saturating_mul(end) / total_units;
-        let chunk_len = suffix.saturating_sub(prefix).max(1);
-
-        // Allocate the chunk staging slice and workspace.
-        let chunk_staging_bytes = chunk_len
+        // FND-06 / 25-02 chunk-staging contract (chunk-aware proven-sized output).
+        //
+        // The family kernels (`launch_one_electron` and every sibling: 2e, 2c2e,
+        // 3c2e, f12, grids) are MONOLITHIC whole-block writers: each launch computes
+        // ALL components and ALL AO pairs of the shell tuple and scatters them at
+        // ABSOLUTE output indices `[0, staging_elements)` (e.g. one_electron.rs
+        // `dst = staging_comp_base + ii + jj * di_cart`). The executor passes the
+        // staging slice straight through and does NOT translate `chunk.work_unit_start`
+        // into a scatter offset — the kernel has no notion of "produce only this
+        // chunk's output sub-range".
+        //
+        // Memory-limit chunking therefore partitions the *workspace* (compute
+        // scratch, `chunk.bytes`) — NOT the output buffer. Slicing the output by
+        // `[prefix, suffix)` and handing the kernel a `chunk_len`-sized staging slice
+        // (the previous behavior) under-sized the buffer for every chunk whose span
+        // is smaller than the full block, so the kernel's absolute `dst` overflowed
+        // the slice. Before af25716 the now-removed `if dst < staging.len()` scatter
+        // guard masked this by silently DROPPING the overflowing writes — a silent
+        // partial write, exactly the anti-pattern FND-06 was written to eliminate.
+        //
+        // Fix (option b): give the kernel a staging buffer sized to the FULL output
+        // block it actually writes (`staging_elements`). FND-06's proven-sized
+        // invariant then holds per chunk by construction — every unconditional
+        // `staging[dst] = v` is in-bounds. The OOM no-partial-write contract is
+        // preserved upstream: `query_workspace_raw` already returns
+        // `MemoryLimitExceeded` (no staging touched) when even one workspace chunk
+        // cannot fit the limit, so an impossibly small limit fails closed here before
+        // this loop runs.
+        let chunk_staging_bytes = staging_elements
             .checked_mul(size_of::<f64>())
             .ok_or(cintxRsError::HostAllocationFailed { bytes: usize::MAX })?;
         let mut chunk_staging = Vec::new();
-        chunk_staging.try_reserve_exact(chunk_len).map_err(|_| {
-            cintxRsError::HostAllocationFailed {
+        chunk_staging
+            .try_reserve_exact(staging_elements)
+            .map_err(|_| cintxRsError::HostAllocationFailed {
                 bytes: chunk_staging_bytes,
-            }
-        })?;
-        chunk_staging.resize(chunk_len, 0.0);
+            })?;
+        chunk_staging.resize(staging_elements, 0.0);
 
         let mut workspace = allocator.try_alloc(chunk.bytes, plan.workspace.alignment)?;
 
@@ -980,16 +996,20 @@ pub unsafe fn eval_raw(
                 ExecutionIo::new(chunk, &mut chunk_staging, &mut workspace, plan.dispatch)?;
             io.ensure_output_contract()?;
             let chunk_stats = executor.execute(&plan, &mut io)?;
-            total_not0 = total_not0.saturating_add(chunk_stats.not0.max(0));
+            // Each chunk recomputes the same full block, so `not0` is the SAME
+            // full-block nonzero count every chunk — take the representative value
+            // (max), not a sum, to avoid N× over-counting under multi-chunk.
+            total_not0 = total_not0.max(chunk_stats.not0.max(0));
             total_transfer_bytes = total_transfer_bytes.saturating_add(io.transfer_bytes());
         }
         allocator.release(workspace);
 
-        // Copy chunk staging into the appropriate range of the accumulator.
-        let dest_end = prefix.saturating_add(chunk_len).min(staging_elements);
-        if prefix < dest_end {
-            staging[prefix..dest_end].copy_from_slice(&chunk_staging[..dest_end - prefix]);
-        }
+        // The kernel wrote the entire monolithic block into `chunk_staging`. Copy the
+        // full block into the accumulator. Each chunk recomputes the same full block
+        // (the kernel ignores chunk boundaries for output), so the final accumulator
+        // holds the complete, correct output regardless of chunk_count.
+        let copy_len = chunk_staging.len().min(staging_elements);
+        staging[..copy_len].copy_from_slice(&chunk_staging[..copy_len]);
     }
 
     let out = out.expect("checked out.is_some()");
