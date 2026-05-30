@@ -132,14 +132,25 @@ impl CubeClExecutor {
         {
             return Err(validated_4c1e_error("component rank must be scalar"));
         }
-        // Validated4C1E requires max(l)<=4.
+        // Validated 4c1e angular-momentum ceiling (Phase 25 FND-02 / D-02).
+        //
+        // Before FND-02 the host Rys engine panicked for nroots>5, so the gate
+        // capped at max(l)<=4 (g). With the host Wheeler nroots 6..12 engine
+        // landed (rys_wheeler.rs) and validated on the dedicated nroots sweep, the
+        // gate is raised to the max angular momentum those roots support — D-02's
+        // forward-looking foundation (validated on the nroots sweep, NOT a g/h family
+        // parity test, per D-03). For a 4c1e quartet of homogeneous angular momentum
+        // l, the Rys order is nroots = (4l)/2 + 1 = 2l+1; the validated ceiling
+        // nroots<=12 admits up to l=5 (h: 2*5+1=11). l=6 (i) would need nroots=13,
+        // which routes to the quadmath path the vendor build does not compile — so
+        // the gate stays BOUNDED at the validated ceiling (NOT unbounded above it).
         if plan
             .shells
             .as_slice()
             .iter()
-            .any(|shell| shell.ang_momentum > 4)
+            .any(|shell| shell.ang_momentum > VALIDATED_4C1E_MAX_L)
         {
-            return Err(validated_4c1e_error("max(l)>4"));
+            return Err(validated_4c1e_error("max(l)>5"));
         }
 
         Ok(())
@@ -169,6 +180,14 @@ impl CubeClExecutor {
         Ok(())
     }
 }
+
+/// Max angular momentum admitted by the Validated4C1E gate (Phase 25 FND-02 / D-02).
+///
+/// l=5 (h): a homogeneous 4c1e quartet needs Rys order nroots = 2l+1 = 11 <= 12, the
+/// vendor-validated ceiling (quadmath disabled => 12). l=6 (i) would need nroots=13
+/// (uncompiled quadmath path), so the gate is bounded here, not unbounded.
+#[cfg(feature = "with-4c1e")]
+const VALIDATED_4C1E_MAX_L: u8 = 5;
 
 #[cfg(feature = "with-4c1e")]
 fn validated_4c1e_error(reason: &str) -> cintxRsError {

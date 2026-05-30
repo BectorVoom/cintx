@@ -70,6 +70,11 @@ const PIE4: f64 = 0.78539816339744827900_f64;
 /// `nroots = (li + lk) / 2 + 1`, so this covers `li + lk <= 8`.
 const MAX_DEVICE_NROOTS: usize = 5;
 
+/// Maximum `nroots` the HOST Rys engine (`rys_roots_host` → `rys_wheeler`) evaluates
+/// (Phase 25 FND-02). The 2c2e gradient path host-routes through `fill_g_tensor_2e`;
+/// nroots 6..12 are supported, nroots>12 stays fail-closed (T-25-03).
+const HOST_RYS_NROOTS_CEILING: usize = 12;
+
 /// Spherical harmonic normalization prefactor for s and p shells.
 ///
 /// Mirrors libcint `CINTcommon_fac_sp(l)` from `g2e.c` / `g1e.c`:
@@ -643,8 +648,10 @@ fn launch_center_2c2e_grad<F: CintFloat>(
     };
     let grad_shape = build_2e_shape(li_ceil, 0, lk_ceil, 0);
 
-    // Fail-closed when the elevated headroom pushes nroots past the Rys ceiling.
-    if grad_shape.nroots > MAX_DEVICE_NROOTS {
+    // Phase 25 FND-02: HOST gradient path (fill_g_tensor_2e → rys_roots_host); the host
+    // Wheeler engine supports nroots 6..12. Route elevated-headroom 2c2e gradients here
+    // instead of UnsupportedApi; nroots>12 stays fail-closed (T-25-03).
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
         });

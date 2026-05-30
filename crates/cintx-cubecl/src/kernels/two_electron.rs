@@ -30,6 +30,12 @@ const PIE4: f64 = 0.78539816339744827900_f64;
 /// Scalar 2e `nroots = (li+lj+lk+ll)/2 + 1`, so this covers `l-sum <= 8`.
 const MAX_DEVICE_NROOTS: usize = 5;
 
+/// Maximum `nroots` the HOST Rys engine (`rys_roots_host` → `rys_wheeler`) evaluates
+/// (Phase 25 FND-02). The host gradient/Hessian path uses the Wheeler nroots 6..12
+/// engine; the vendor build caps at 12 (quadmath disabled), so nroots>12 stays
+/// fail-closed (T-25-03). Device kernels keep their own `MAX_DEVICE_NROOTS=5` cap.
+const HOST_RYS_NROOTS_CEILING: usize = 12;
+
 /// Spherical harmonic normalization prefactor for s and p shells.
 fn common_fac_sp(l: u8) -> f64 {
     match l {
@@ -1426,9 +1432,10 @@ fn run_2e_scalar_device<R: Runtime>(
 /// `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs` (Risk R3).
 ///
 /// Guards (fail-closed):
-///   - `grad_shape.nroots > 5` → `UnsupportedApi` (R2 / T-21-05-01): the li→li+1
-///     raise can push high-l f/g quartets past the rys_root1..5 ceiling; we reject
-///     BEFORE any rys dispatch so we never index a nonexistent rys_root.
+///   - `grad_shape.nroots > 12` → `UnsupportedApi` (Phase 25 FND-02 / T-25-03): the
+///     host Rys engine (`rys_roots_host` → `rys_wheeler`) supports nroots 6..12, so the
+///     li→li+1 raise routes Hessian-elevated quartets to the host `fill_g_tensor_2e`
+///     path; only nroots>12 (vendor quadmath ceiling) is rejected.
 ///   - `Representation::Spinor` → `UnsupportedApi` (R5 / T-21-05-04).
 #[allow(clippy::too_many_arguments)]
 fn launch_two_electron_ip1<F: CintFloat>(
@@ -1454,9 +1461,13 @@ fn launch_two_electron_ip1<F: CintFloat>(
     // li → li+1 headroom shape (D-06). gout_ip1's nabla1i_2e reads up to index li+1.
     let grad_shape = build_2e_shape(li as usize + 1, lj as usize, lk as usize, ll as usize);
 
-    // R2 / T-21-05-01: the elevated li can push nroots past the rys_root1..5 ceiling.
-    // Reject fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
-    if grad_shape.nroots > 5 {
+    // Phase 25 FND-02: this is the HOST gradient path (the loop below calls
+    // `fill_g_tensor_2e` → `rys_roots_host`, NOT the device comptime kernel). The host
+    // Rys engine now supports nroots 6..12 (rys_wheeler.rs), so the elevated-li Hessian
+    // d-quartets that push nroots to 6 route here instead of returning UnsupportedApi.
+    // The ceiling is the vendor-validated 12 (quadmath disabled); nroots>12 stays
+    // fail-closed (T-25-03: typed error, never a panic).
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
         });
@@ -1706,9 +1717,10 @@ fn launch_two_electron_ip2<F: CintFloat>(
     // lk → lk+1 headroom shape (D-06). gout_ipn's nabla1k_2e reads up to index lk+1.
     let grad_shape = build_2e_shape(li as usize, lj as usize, lk as usize + 1, ll as usize);
 
-    // R2 / D-13: the elevated lk can push nroots past the rys_root1..5 ceiling.
-    // Reject fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
-    if grad_shape.nroots > 5 {
+    // Phase 25 FND-02: HOST gradient path (fill_g_tensor_2e → rys_roots_host). The host
+    // Rys engine supports nroots 6..12 (rys_wheeler.rs); route Hessian-elevated quartets
+    // here instead of UnsupportedApi. Ceiling = vendor-validated 12; nroots>12 fail-closed.
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
         });
@@ -2708,20 +2720,32 @@ mod ip1_tests {
         Ok((staging, stats))
     }
 
-    // nroots guard (R2 / T-21-05-01): an all-f quartet has gradient
-    // nroots = (3+1 + 3 + 3 + 3)/2 + 1 = 13/2 + 1 = 7 > 5 → UnsupportedApi.
-    // An s/p/d quartet (max d,d,d,d → gradient nroots = (2+1+2+2+2)/2+1 = 5) is OK.
+    // nroots ceiling (Phase 25 FND-02): the HOST gradient path now supports nroots 6..12
+    // via the Wheeler engine. An all-f quartet has gradient nroots = (3+1+3+3+3)/2+1 = 7,
+    // which previously returned UnsupportedApi but now routes to the host fill_g_tensor_2e
+    // path. The fail-closed ceiling moves to nroots>12 (HOST_RYS_NROOTS_CEILING), e.g. an
+    // all-i (l=6) quartet → gradient nroots = (6+1+6+6+6)/2+1 = 13 > 12 → UnsupportedApi.
     #[test]
     fn test_int2e_ip1_nroots_guard() {
+        // (f,f,f,f) gradient nroots = 7 ∈ 6..=12 → now ALLOWED via the host Wheeler path.
         let (basis, shells, op) = build_ip1_plan_lll(3, 3, 3, 3);
+        let ok = run_ip1(&basis, shells, op, Representation::Spheric);
+        assert!(
+            ok.is_ok(),
+            "all-f int2e_ip1 quartet (nroots=7) must route to the host path (FND-02), got: {:?}",
+            ok.err()
+        );
+
+        // (i,i,i,i) gradient nroots = (6+1+6+6+6)/2 + 1 = 13 > 12 → fail-closed (T-25-03).
+        let (basis, shells, op) = build_ip1_plan_lll(6, 6, 6, 6);
         let result = run_ip1(&basis, shells, op, Representation::Spheric);
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "all-f int2e_ip1 quartet (nroots=7) must return UnsupportedApi, got: {:?}",
+            "all-i int2e_ip1 quartet (nroots=13 > 12) must return UnsupportedApi, got: {:?}",
             result.map(|(s, _)| s.len())
         );
 
-        // (d,d,d,d) gradient nroots = (2+1+2+2+2)/2 + 1 = 4 + 1 = 5 ≤ 5 → allowed.
+        // (d,d,d,d) gradient nroots = (2+1+2+2+2)/2 + 1 = 5 → allowed.
         let (basis, shells, op) = build_ip1_plan_lll(2, 2, 2, 2);
         let ok = run_ip1(&basis, shells, op, Representation::Spheric);
         assert!(
@@ -2878,15 +2902,27 @@ mod ip2_tests {
         Ok((staging, stats))
     }
 
-    // nroots guard (D-13): an all-f quartet (gradient nroots = (3+3+(3+1)+3)/2+1=7)
-    // > 5 → UnsupportedApi. A (d,d,d,d) quartet ((2+2+(2+1)+2)/2+1=5) ≤ 5 → allowed.
+    // nroots ceiling (Phase 25 FND-02): the HOST ip2 gradient path now supports nroots
+    // 6..12 via the Wheeler engine. An all-f quartet (gradient nroots = (3+3+(3+1)+3)/2+1
+    // = 7) routes to the host path; an all-i quartet ((6+6+(6+1)+6)/2+1 = 13 > 12) stays
+    // fail-closed (T-25-03).
     #[test]
     fn test_int2e_ip2_nroots_guard() {
+        // (f,f,f,f) gradient nroots = 7 ∈ 6..=12 → now ALLOWED via the host Wheeler path.
         let (basis, shells, op) = build_ip2_plan_lll(3, 3, 3, 3);
+        let ok = run_ip2(&basis, shells, op, Representation::Spheric);
+        assert!(
+            ok.is_ok(),
+            "all-f int2e_ip2 quartet (nroots=7) must route to the host path (FND-02), got: {:?}",
+            ok.err()
+        );
+
+        // (i,i,i,i) gradient nroots = (6+6+(6+1)+6)/2 + 1 = 13 > 12 → fail-closed.
+        let (basis, shells, op) = build_ip2_plan_lll(6, 6, 6, 6);
         let result = run_ip2(&basis, shells, op, Representation::Spheric);
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "all-f int2e_ip2 quartet (nroots=7) must return UnsupportedApi, got: {:?}",
+            "all-i int2e_ip2 quartet (nroots=13 > 12) must return UnsupportedApi, got: {:?}",
             result.map(|(s, _)| s.len())
         );
 
