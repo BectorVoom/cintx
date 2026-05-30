@@ -289,6 +289,25 @@ impl RawApiId {
     pub const INT1E_IPNUCIP_SPH: Self = Self::Symbol("int1e_ipnucip_sph");
     pub const INT1E_IPNUCIP_SPINOR: Self = Self::Symbol("int1e_ipnucip_spinor");
 
+    // Phase 25 HESS-01 bra-only rank-9 1e Hessian families (∇²bra, component_rank=9;
+    // spinor returns UnsupportedApi, D-11). ovlp/kin ride the no-Rys overlap-deriv
+    // engine; nuc/rinv ride the nuclear/Rys 1e path.
+    pub const INT1E_IPIPOVLP_CART: Self = Self::Symbol("int1e_ipipovlp_cart");
+    pub const INT1E_IPIPOVLP_SPH: Self = Self::Symbol("int1e_ipipovlp_sph");
+    pub const INT1E_IPIPOVLP_SPINOR: Self = Self::Symbol("int1e_ipipovlp_spinor");
+
+    pub const INT1E_IPIPNUC_CART: Self = Self::Symbol("int1e_ipipnuc_cart");
+    pub const INT1E_IPIPNUC_SPH: Self = Self::Symbol("int1e_ipipnuc_sph");
+    pub const INT1E_IPIPNUC_SPINOR: Self = Self::Symbol("int1e_ipipnuc_spinor");
+
+    pub const INT1E_IPIPKIN_CART: Self = Self::Symbol("int1e_ipipkin_cart");
+    pub const INT1E_IPIPKIN_SPH: Self = Self::Symbol("int1e_ipipkin_sph");
+    pub const INT1E_IPIPKIN_SPINOR: Self = Self::Symbol("int1e_ipipkin_spinor");
+
+    pub const INT1E_IPIPRINV_CART: Self = Self::Symbol("int1e_ipiprinv_cart");
+    pub const INT1E_IPIPRINV_SPH: Self = Self::Symbol("int1e_ipiprinv_sph");
+    pub const INT1E_IPIPRINV_SPINOR: Self = Self::Symbol("int1e_ipiprinv_spinor");
+
     pub const INT2E_IP1_CART: Self = Self::Symbol("int2e_ip1_cart");
     pub const INT2E_IP1_SPH: Self = Self::Symbol("int2e_ip1_sph");
     pub const INT2E_IP1_SPINOR: Self = Self::Symbol("int2e_ip1_spinor");
