@@ -46,6 +46,7 @@
 //! ```
 
 use crate::backend::ResolvedBackend;
+use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_3c1e, ncart, nsph};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
@@ -77,8 +78,8 @@ fn common_fac_sp(l: u8) -> f64 {
 /// for lx = l..=0, for ly = l-lx..=0, nz = l - lx - ly.
 ///
 /// Host reference (the device kernel reproduces this ordering inline). Kept for
-/// the host-vs-device cross-check and the G-tensor unit tests.
-#[cfg(test)]
+/// the host-vs-device cross-check and the G-tensor unit tests, and reused by the
+/// Phase 23 host-side ip1/iprinv gradient contraction.
 fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
     let mut comps = Vec::new();
     let l = l as i32;
@@ -551,7 +552,9 @@ fn run_3c1e_device<R: Runtime>(
 /// `libcint-master/src/g3c1e.c`.
 ///
 /// Returned as flat `3 * g_alloc` array: `[gx | gy | gz]`.
-#[cfg(test)]
+///
+/// Phase 23: promoted out of `#[cfg(test)]` — the host-side int3c1e_ip1
+/// (overlap) gradient path builds this base at `li+1` headroom.
 fn fill_g_tensor_3c1e(
     fac: f64,
     ai: f64,
@@ -648,6 +651,222 @@ fn fill_g_tensor_3c1e(
     g
 }
 
+/// Fill the G-tensor for a 3c1e **nuclear** (rinv-Coulomb) primitive triple at a
+/// single Rys root — the genuinely-new base kernel for `int3c1e_iprinv`.
+///
+/// This is `fill_g_tensor_3c1e` (the overlap base) EXTENDED with the Rys `t2`
+/// parameter, ported from libcint `CINTg3c1e_nuc` (`g3c1e.c:192-235`):
+///   - base: `gx[0]=gy[0]=1`, `gz[0] = 2/SQRTPI * fac` (fac = per-root weight).
+///   - `aijk1 = 0.5 * (1 - t2) / aijk`  (the overlap base used `0.5/aijk`, t2=0).
+///   - `rjr0[d] = rj[d] - (rijk[d] + t2 * (cr[d] - rijk[d]))`,  cr = rinv origin.
+///   - VRR: `gx[dj] = -rjr0[0]*gx[0]`, then
+///          `gx[(j+1)*dj] = aijk1*j*gx[(j-1)*dj] - rjr0[0]*gx[j*dj]`.
+/// followed by the SAME i-HRR (`rirj`) and k-separation HRR (`rjrk`) as the
+/// overlap base. At t2=0 / fac scaled this reduces exactly to the overlap fill.
+///
+/// `rijk = (ai*ri + aj*rj + ak*rk)/aijk` is passed precomputed (the Rys driver
+/// also uses it for `x`). `cr` is the rinv origin (`env[PTR_RINV_ORIG..+3]`).
+/// Returned as a flat `3 * g_alloc` array `[gx | gy | gz]`.
+#[allow(clippy::too_many_arguments)]
+fn fill_g_tensor_3c1e_nuc(
+    fac: f64,
+    t2: f64,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rijk: [f64; 3],
+    cr: [f64; 3],
+    li: u32,
+    lj: u32,
+    lk: u32,
+) -> Vec<f64> {
+    let dli = (li + 1) as usize;
+    let dlj = (lj + lk + 1) as usize; // combined j+k dimension
+    let dlk = (lk + 1) as usize;
+
+    let nmax = (li + lj + lk) as usize; // total VRR length in combined dimension
+    let mmax = (lj + lk) as usize; // k-separation HRR bound
+
+    let vrr_nmax = li as usize + dlj; // = li + lj + lk + 1
+    let g_alloc = (dli * dlj * dlk).max(dli * vrr_nmax);
+
+    let mut g = vec![0.0_f64; 3 * g_alloc];
+
+    let aijk = ai + aj + ak;
+    let aijk1 = 0.5_f64 * (1.0 - t2) / aijk;
+
+    let gx_off = 0usize;
+    let gy_off = g_alloc;
+    let gz_off = 2 * g_alloc;
+
+    g[gx_off] = 1.0;
+    g[gy_off] = 1.0;
+    // 2/SQRTPI folds the nuclear Rys normalization into gz (g3c1e.c:201).
+    g[gz_off] = (2.0 / SQRTPI) * fac;
+
+    if nmax == 0 {
+        return g;
+    }
+
+    let dj_local = dli; // = li + 1
+
+    // rjr0[d] = rj[d] - (rijk[d] + t2*(cr[d] - rijk[d])).
+    let rjr0 = [
+        rj[0] - (rijk[0] + t2 * (cr[0] - rijk[0])),
+        rj[1] - (rijk[1] + t2 * (cr[1] - rijk[1])),
+        rj[2] - (rijk[2] + t2 * (cr[2] - rijk[2])),
+    ];
+
+    for d in 0..3 {
+        let off = d * g_alloc;
+        // gx[dj] = -rjr0[d] * gx[0]
+        g[off + dj_local] = -rjr0[d] * g[off];
+        let mut j = 1usize;
+        while j < nmax {
+            g[off + (j + 1) * dj_local] = aijk1 * j as f64 * g[off + (j - 1) * dj_local]
+                - rjr0[d] * g[off + j * dj_local];
+            j += 1;
+        }
+    }
+
+    // i-HRR (shift combined-j → i), identical to the overlap base.
+    let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+    for d in 0..3 {
+        let off = d * g_alloc;
+        let rirj_d = rirj[d];
+        for i in 1..=(li as usize) {
+            let j_max = nmax - i;
+            for j in 0..=j_max {
+                let idx_out = i + j * dj_local;
+                let idx_hi = (i - 1) + (j + 1) * dj_local;
+                let idx_lo = (i - 1) + j * dj_local;
+                g[off + idx_out] = g[off + idx_hi] - rirj_d * g[off + idx_lo];
+            }
+        }
+    }
+
+    // k-separation HRR, identical to the overlap base.
+    let dk = dli * dlj;
+    let rjrk = [rj[0] - rk[0], rj[1] - rk[1], rj[2] - rk[2]];
+    for d in 0..3 {
+        let off = d * g_alloc;
+        let rjrk_d = rjrk[d];
+        for k in 1..=(lk as usize) {
+            for j in 0..=(mmax - k) {
+                let base = k * dk + j * dj_local;
+                for i in 0..=li as usize {
+                    let idx = base + i;
+                    let idx_hi = idx + dj_local - dk;
+                    let idx_lo = idx - dk;
+                    g[off + idx] = g[off + idx_hi] + rjrk_d * g[off + idx_lo];
+                }
+            }
+        }
+    }
+
+    g
+}
+
+/// Apply the bra-i 1e nabla to a 3c1e G-tensor (`CINTnabla1i_3c1e`, g3c1e.c:262).
+///
+/// The G-tensor `g` is built with `li+1` headroom (so the dli stride is `li+2`).
+/// Produces `g1` of the same flat `3*g_alloc` layout with `∂χ_i` applied per axis:
+///   ix == 0:  g1[ptr] = -2*ai * g[ptr+1]
+///   ix >= 1:  g1[ptr+i] = i*g[ptr+i-1] - 2*ai*g[ptr+i+1]
+/// over every (j,k) slice, where `ptr = dj_h*j + dk_h*k` and `dj_h = li_ceil+1`,
+/// `dk_h = dj_h*(lj+lk+1)` are the HEADROOM strides (li_ceil = li+1).
+fn nabla1i_3c1e(g: &[f64], li: u32, lj: u32, lk: u32, ai: f64) -> Vec<f64> {
+    let li_ceil = (li + 1) as usize;
+    let dli_h = li_ceil + 1; // dj stride of the headroom g-tensor
+    let dlj_h = (lj + lk + 1) as usize;
+    let dlk_h = (lk + 1) as usize;
+    let vrr_nmax = li_ceil + dlj_h;
+    let g_alloc = (dli_h * dlj_h * dlk_h).max(dli_h * vrr_nmax);
+
+    let dj_h = dli_h; // g_stride_j
+    let dk_h = dli_h * dlj_h; // g_stride_k
+    let ai2 = -2.0 * ai;
+
+    let mut g1 = vec![0.0_f64; 3 * g_alloc];
+    for d in 0..3usize {
+        let off = d * g_alloc;
+        for k in 0..=(lk as usize) {
+            for j in 0..=(lj as usize) {
+                let ptr = dj_h * j + dk_h * k;
+                g1[off + ptr] = ai2 * g[off + ptr + 1];
+                for i in 1..=(li as usize) {
+                    g1[off + ptr + i] = i as f64 * g[off + ptr + i - 1] + ai2 * g[off + ptr + i + 1];
+                }
+            }
+        }
+    }
+    g1
+}
+
+/// 3-component bra-i gradient contraction for 3c1e (ip1 / iprinv share this).
+///
+/// `g` (g0) and `g1` (= `nabla1i_3c1e(g0)`) are the headroom G-tensors (built at
+/// `li+1`). Produces the component-leading Cartesian output
+/// `out[comp * nci*ncj*nck + (k_idx*ncj + j_idx)*nci + i_idx]` for comp in 0..3:
+///   comp 0 (∂/∂Ax): g1x·g0y·g0z
+///   comp 1 (∂/∂Ay): g0x·g1y·g0z
+///   comp 2 (∂/∂Az): g0x·g0y·g1z
+/// (libcint `CINTgout1e_int3c1e_ip1`/`_iprinv`, int3c1e.c:78/133 — same gout).
+fn contract_3c1e_grad(g: &[f64], g1: &[f64], li: u8, lj: u8, lk: u8) -> Vec<f64> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+
+    // Headroom strides (li raised by 1 when g was built).
+    let dli_h = (li as usize) + 2; // (li+1)+1
+    let dlj_h = (lj as usize) + (lk as usize) + 1;
+    let dlk_h = (lk as usize) + 1;
+    let li_ceil = (li as usize) + 1;
+    let vrr_nmax = li_ceil + dlj_h;
+    let g_alloc = (dli_h * dlj_h * dlk_h).max(dli_h * vrr_nmax);
+
+    let dj = dli_h; // g_stride_j
+    let dk = dli_h * dlj_h; // g_stride_k
+
+    let ci_comps = cart_comps(li);
+    let cj_comps = cart_comps(lj);
+    let ck_comps = cart_comps(lk);
+
+    let gx = 0usize;
+    let gy = g_alloc;
+    let gz = 2 * g_alloc;
+
+    let block_len = nci * ncj * nck;
+    let mut out = vec![0.0_f64; 3 * block_len];
+
+    for (k_idx, &(kx, ky, kz)) in ck_comps.iter().enumerate() {
+        for (j_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
+            for (i_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
+                let nx = ix as usize + jx as usize * dj + kx as usize * dk;
+                let ny = iy as usize + jy as usize * dj + ky as usize * dk;
+                let nz = iz as usize + jz as usize * dj + kz as usize * dk;
+
+                let g0x = g[gx + nx];
+                let g0y = g[gy + ny];
+                let g0z = g[gz + nz];
+                let g1x = g1[gx + nx];
+                let g1y = g1[gy + ny];
+                let g1z = g1[gz + nz];
+
+                let n = (k_idx * ncj + j_idx) * nci + i_idx;
+                out[n] += g1x * g0y * g0z;
+                out[block_len + n] += g0x * g1y * g0z;
+                out[2 * block_len + n] += g0x * g0y * g1z;
+            }
+        }
+    }
+
+    out
+}
+
 /// Contract G-tensor for 3c1e overlap operator (host f64 reference).
 ///
 /// Output layout: i fastest (innermost), k slowest (outermost):
@@ -685,6 +904,299 @@ fn contract_3c1e_ovlp(g: &[f64], li: u8, lj: u8, lk: u8, g_size: usize) -> Vec<f
     }
 
     out
+}
+
+/// Write a component-leading 3-component Cartesian gradient buffer into `staging`,
+/// applying the cart→sph transform per component when the representation is
+/// spheric. `cart_grad` is `[3 * nci*ncj*nck]` (each component i-fastest, k-slowest,
+/// the `contract_3c1e_grad` layout). Spinor is rejected by the caller (D-06).
+fn write_3c1e_grad_staging<F: CintFloat>(
+    cart_grad: &[f64],
+    li: u8,
+    lj: u8,
+    lk: u8,
+    representation: Representation,
+    staging: &mut [F],
+) {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let cart_block = nci * ncj * nck;
+
+    match representation {
+        Representation::Spheric => {
+            let nsi = nsph(li);
+            let nsj = nsph(lj);
+            let nsk = nsph(lk);
+            let sph_block = nsi * nsj * nsk;
+            for comp in 0..3usize {
+                let src = &cart_grad[comp * cart_block..(comp + 1) * cart_block];
+                let sph = cart_to_sph_3c1e(src, li, lj, lk);
+                let base = comp * sph_block;
+                let copy_len = sph.len().min(staging.len().saturating_sub(base));
+                for n in 0..copy_len {
+                    staging[base + n] = F::from_f64_lossy(sph[n]);
+                }
+            }
+        }
+        _ => {
+            // Cart (spinor never reaches here).
+            let copy_len = cart_grad.len().min(staging.len());
+            for n in 0..copy_len {
+                staging[n] = F::from_f64_lossy(cart_grad[n]);
+            }
+        }
+    }
+}
+
+/// Build `ExecutionStats` for a completed 3c1e gradient launch.
+fn grad_stats<F: CintFloat>(plan: &ExecutionPlan<'_>, staging: &[F]) -> ExecutionStats {
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    }
+}
+
+/// `int3c1e_ip1` — ∇ on bra i of the 3-center OVERLAP (DRV1-03, half 1).
+///
+/// Pure Phase-21-style reuse of the existing overlap base `fill_g_tensor_3c1e`:
+/// build at `li+1` headroom (libcint ng `{1,0,0,...}`), apply the 1e nabla on i
+/// (`nabla1i_3c1e`), contract 3 components (`contract_3c1e_grad`). NO Rys, so NO
+/// nroots guard (RESEARCH Pitfall 4 — skip the guard for ip1 ONLY). Max-l = f.
+/// Spinor → UnsupportedApi (D-06). Host-side (matching the plan-03 2c2e gradient
+/// precedent); the per-primitive loop folds the contraction coefficients.
+fn launch_center_3c1e_ip1<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor int3c1e_ip1 gradient".to_owned(),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_j = &shells[1];
+    let shell_k = &shells[2];
+
+    let li = shell_i.ang_momentum;
+    let lj = shell_j.ang_momentum;
+    let lk = shell_k.ang_momentum;
+
+    let atoms = plan.basis.atoms();
+    let ri = atoms[shell_i.atom_index as usize].coord_bohr;
+    let rj = atoms[shell_j.atom_index as usize].coord_bohr;
+    let rk = atoms[shell_k.atom_index as usize].coord_bohr;
+
+    // common_factor = SQRTPI * PI * fac_sp(li) * fac_sp(lj) * fac_sp(lk).
+    let common_factor = SQRTPI
+        * std::f64::consts::PI
+        * common_fac_sp(li)
+        * common_fac_sp(lj)
+        * common_fac_sp(lk);
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let block_len = nci * ncj * nck;
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+
+    let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+    let rirk = [ri[0] - rk[0], ri[1] - rk[1], ri[2] - rk[2]];
+    let rjrk = [rj[0] - rk[0], rj[1] - rk[1], rj[2] - rk[2]];
+    let rr_ij = rirj[0] * rirj[0] + rirj[1] * rirj[1] + rirj[2] * rirj[2];
+    let rr_ik = rirk[0] * rirk[0] + rirk[1] * rirk[1] + rirk[2] * rirk[2];
+    let rr_jk = rjrk[0] * rjrk[0] + rjrk[1] * rjrk[1] + rjrk[2] * rjrk[2];
+
+    // For nctr==1 the common case is a single (ci,cj,ck)=(0,0,0) triple. Loop over
+    // contraction columns (folding the coefficient product) into one cart buffer.
+    let mut cart_grad = vec![0.0_f64; 3 * block_len];
+
+    for kp in 0..n_prim_k {
+        let ak = shell_k.exponents[kp];
+        for jp in 0..n_prim_j {
+            let aj = shell_j.exponents[jp];
+            for ip in 0..n_prim_i {
+                let ai = shell_i.exponents[ip];
+                let aijk = ai + aj + ak;
+                let eijk =
+                    (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
+                if eijk > 60.0 {
+                    continue;
+                }
+                let dijk = f64::exp(-eijk) / (aijk * aijk.sqrt());
+
+                // Coefficient product for nctr==1; the common dispatched case.
+                let weight = shell_i.coefficients[ip * n_ctr_i]
+                    * shell_j.coefficients[jp * n_ctr_j]
+                    * shell_k.coefficients[kp * n_ctr_k];
+                let fac = common_factor * dijk * weight;
+
+                // Build the OVERLAP base at li+1 headroom (ng {1,0,0,...}).
+                let g = fill_g_tensor_3c1e(
+                    fac, ai, aj, ak, ri, rj, rk, rirj, li as u32 + 1, lj as u32, lk as u32,
+                );
+                let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
+                let gout = contract_3c1e_grad(&g, &g1, li, lj, lk);
+                for (dst, &src) in cart_grad.iter_mut().zip(gout.iter()) {
+                    *dst += src;
+                }
+            }
+        }
+    }
+
+    write_3c1e_grad_staging::<F>(&cart_grad, li, lj, lk, plan.representation, staging);
+    Ok(grad_stats::<F>(plan, staging))
+}
+
+/// `int3c1e_iprinv` — ∇ on bra i of the 3-center rinv-COULOMB (DRV1-03, half 2).
+///
+/// The ONLY genuinely-new base kernel in clusters A & B (RESEARCH Pitfall 1): the
+/// gout is byte-identical to ip1's, but the BASE is the Rys-driven nuclear g-tensor
+/// `fill_g_tensor_3c1e_nuc` (`CINTg3c1e_nuc`), not the overlap base. Reuses
+/// `rys_roots_host` and the already-plumbed PTR_RINV_ORIG origin (D-08). Fail-closed
+/// at nroots>5 BEFORE any rys call (D-13; fff → nroots 6 → reject). Spinor → UnsupportedApi.
+fn launch_center_3c1e_iprinv<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor int3c1e_iprinv gradient".to_owned(),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_j = &shells[1];
+    let shell_k = &shells[2];
+
+    let li = shell_i.ang_momentum;
+    let lj = shell_j.ang_momentum;
+    let lk = shell_k.ang_momentum;
+
+    // nrys_roots = (li_ceil + lj + lk)/2 + 1 with the ip headroom li_ceil = li+1
+    // (g3c1e.c:41). Fail-closed > 5 BEFORE any rys_roots_host call (D-13; fff → 6).
+    let nroots = ((li as usize + 1) + lj as usize + lk as usize) / 2 + 1;
+    if nroots > 5 {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{nroots}"),
+        });
+    }
+
+    // rinv origin (already plumbed, D-08). The validator rejected None earlier;
+    // fail typed here too (never read a garbage origin) — defensive.
+    let cr = plan
+        .operator_env_params
+        .rinv_orig
+        .ok_or(cintxRsError::InvalidEnvParam {
+            param: "PTR_RINV_ORIG",
+            reason: "int3c1e_iprinv kernel reached with no rinv origin".to_owned(),
+        })?;
+
+    let atoms = plan.basis.atoms();
+    let ri = atoms[shell_i.atom_index as usize].coord_bohr;
+    let rj = atoms[shell_j.atom_index as usize].coord_bohr;
+    let rk = atoms[shell_k.atom_index as usize].coord_bohr;
+
+    let common_factor = SQRTPI
+        * std::f64::consts::PI
+        * common_fac_sp(li)
+        * common_fac_sp(lj)
+        * common_fac_sp(lk);
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let block_len = nci * ncj * nck;
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+
+    let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+    let rirk = [ri[0] - rk[0], ri[1] - rk[1], ri[2] - rk[2]];
+    let rjrk = [rj[0] - rk[0], rj[1] - rk[1], rj[2] - rk[2]];
+    let rr_ij = rirj[0] * rirj[0] + rirj[1] * rirj[1] + rirj[2] * rirj[2];
+    let rr_ik = rirk[0] * rirk[0] + rirk[1] * rirk[1] + rirk[2] * rirk[2];
+    let rr_jk = rjrk[0] * rjrk[0] + rjrk[1] * rjrk[1] + rjrk[2] * rjrk[2];
+
+    let mut cart_grad = vec![0.0_f64; 3 * block_len];
+
+    for kp in 0..n_prim_k {
+        let ak = shell_k.exponents[kp];
+        for jp in 0..n_prim_j {
+            let aj = shell_j.exponents[jp];
+            for ip in 0..n_prim_i {
+                let ai = shell_i.exponents[ip];
+                let aijk = ai + aj + ak;
+                let eijk =
+                    (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
+                if eijk > 60.0 {
+                    continue;
+                }
+
+                let weight = shell_i.coefficients[ip * n_ctr_i]
+                    * shell_j.coefficients[jp * n_ctr_j]
+                    * shell_k.coefficients[kp * n_ctr_k];
+                // dijk = common_factor * ci*cj*ck * exp(-eijk) / aijk  (cint3c1e.c:317).
+                let dijk = common_factor * weight * f64::exp(-eijk) / aijk;
+
+                // rijk = (ai*ri + aj*rj + ak*rk)/aijk.
+                let rijk = [
+                    (ai * ri[0] + aj * rj[0] + ak * rk[0]) / aijk,
+                    (ai * ri[1] + aj * rj[1] + ak * rk[1]) / aijk,
+                    (ai * ri[2] + aj * rj[2] + ak * rk[2]) / aijk,
+                ];
+
+                // x = aijk * dist^2(rijk, cr) * tau^2, tau = 1 (point rinv, no
+                // RINV_ZETA — CINTnuc_mod returns 1). (cint3c1e.c:325-327)
+                let d0 = rijk[0] - cr[0];
+                let d1 = rijk[1] - cr[1];
+                let d2 = rijk[2] - cr[2];
+                let x = aijk * (d0 * d0 + d1 * d1 + d2 * d2);
+                let (u, w) = rys_roots_host::<f64>(nroots, x);
+
+                // Sum over Rys roots: t2 = u/(1+u) (tau=1), fac = dijk * w[root].
+                for root in 0..nroots {
+                    let t2 = u[root] / (1.0 + u[root]);
+                    let fac = dijk * w[root];
+                    let g = fill_g_tensor_3c1e_nuc(
+                        fac, t2, ai, aj, ak, ri, rj, rk, rijk, cr, li as u32 + 1,
+                        lj as u32, lk as u32,
+                    );
+                    let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
+                    let gout = contract_3c1e_grad(&g, &g1, li, lj, lk);
+                    for (dst, &src) in cart_grad.iter_mut().zip(gout.iter()) {
+                        *dst += src;
+                    }
+                }
+            }
+        }
+    }
+
+    write_3c1e_grad_staging::<F>(&cart_grad, li, lj, lk, plan.representation, staging);
+    Ok(grad_stats::<F>(plan, staging))
 }
 
 /// Generic inner for the 3c1e launcher.
@@ -733,6 +1245,17 @@ fn launch_center_3c1e_typed<F: CintFloat>(
     let li = shell_i.ang_momentum;
     let lj = shell_j.ang_momentum;
     let lk = shell_k.ang_momentum;
+
+    // Phase 23 DRV1-03: operator dispatch. 3c1e has NO operator dispatch in the
+    // scalar path; ADD it here, BEFORE the scalar fall-through.
+    //   ip1    = ∇ on bra i of the 3-center OVERLAP (no Rys, existing base).
+    //   iprinv = ∇ on bra i of the 3-center rinv-COULOMB (Rys-driven NEW base,
+    //            reusing the plumbed PTR_RINV_ORIG env slot, D-08).
+    match plan.descriptor.operator_name() {
+        "ip1" => return launch_center_3c1e_ip1::<F>(plan, staging),
+        "iprinv" => return launch_center_3c1e_iprinv::<F>(plan, staging),
+        _ => {} // fall through to the existing scalar overlap path
+    }
 
     // Atom coordinates
     let atoms = plan.basis.atoms();
@@ -1231,5 +1754,78 @@ mod tests {
         let out = contract_3c1e_ovlp(&g, 0, 0, 0, 1);
         assert_eq!(out.len(), 1);
         assert!((out[0] - fac).abs() < 1e-14, "s-s-s overlap should equal gz[0] = {}", fac);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 23 DRV1-03: int3c1e_ip1 host gradient correctness via finite
+    // difference of the 3c1e OVERLAP w.r.t. moving center i, on a NON-SQUARE
+    // (p × s × s) block. A square block could hide an axis/layout bug; p×s×s
+    // is deliberately rectangular in i vs j/k.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Single-primitive overlap cart block (i fastest, k slowest) at center i = ri.
+    fn ovlp_block(li: u8, lj: u8, lk: u8, ai: f64, aj: f64, ak: f64, ri: [f64; 3], rj: [f64; 3], rk: [f64; 3]) -> Vec<f64> {
+        let common_factor = SQRTPI * std::f64::consts::PI
+            * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+        host_cart_3c1e(ai, aj, ak, ri, rj, rk, li, lj, lk, common_factor)
+    }
+
+    /// Single-primitive int3c1e_ip1 cart gradient (component-leading).
+    fn ip1_block(li: u8, lj: u8, lk: u8, ai: f64, aj: f64, ak: f64, ri: [f64; 3], rj: [f64; 3], rk: [f64; 3]) -> Vec<f64> {
+        let common_factor = SQRTPI * std::f64::consts::PI
+            * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+        let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+        let rirk = [ri[0] - rk[0], ri[1] - rk[1], ri[2] - rk[2]];
+        let rjrk = [rj[0] - rk[0], rj[1] - rk[1], rj[2] - rk[2]];
+        let rr_ij = rirj[0] * rirj[0] + rirj[1] * rirj[1] + rirj[2] * rirj[2];
+        let rr_ik = rirk[0] * rirk[0] + rirk[1] * rirk[1] + rirk[2] * rirk[2];
+        let rr_jk = rjrk[0] * rjrk[0] + rjrk[1] * rjrk[1] + rjrk[2] * rjrk[2];
+        let aijk = ai + aj + ak;
+        let eijk = (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
+        let dijk = f64::exp(-eijk) / (aijk * aijk.sqrt());
+        let fac = common_factor * dijk;
+        let g = fill_g_tensor_3c1e(fac, ai, aj, ak, ri, rj, rk, rirj, li as u32 + 1, lj as u32, lk as u32);
+        let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
+        contract_3c1e_grad(&g, &g1, li, lj, lk)
+    }
+
+    #[test]
+    fn test_int3c1e_ip1_matches_finite_difference_pss() {
+        // NON-SQUARE: p (li=1) × s (lj=0) × s (lk=0). ni=3, nj=1, nk=1.
+        let (li, lj, lk) = (1u8, 0u8, 0u8);
+        let (ai, aj, ak) = (0.9_f64, 1.1, 0.7);
+        let ri = [0.10_f64, -0.20, 0.30];
+        let rj = [0.40_f64, 1.20, -0.30];
+        let rk = [-0.50_f64, 0.40, 0.90];
+
+        let analytic = ip1_block(li, lj, lk, ai, aj, ak, ri, rj, rk);
+        let nci = ncart(li);
+        let block = nci * ncart(lj) * ncart(lk);
+        assert_eq!(analytic.len(), 3 * block, "ip1 output must be 3*ni*nj*nk");
+
+        // Finite difference of the overlap w.r.t. moving center i along each axis.
+        // libcint's gout `g1 = nabla1i = ∂χ/∂r` (the raising/lowering form), so the
+        // integral derivative w.r.t. the CENTER is `∂I/∂A_i = -∫(∂χ/∂r)… = -g1·…`.
+        // Hence the analytic ip1 block equals `-(central difference)` — the same
+        // sign convention vendor parity checks against libcint.
+        let h = 1e-6;
+        for axis in 0..3usize {
+            let mut rip = ri;
+            let mut rim = ri;
+            rip[axis] += h;
+            rim[axis] -= h;
+            let op = ovlp_block(li, lj, lk, ai, aj, ak, rip, rj, rk);
+            let om = ovlp_block(li, lj, lk, ai, aj, ak, rim, rj, rk);
+            for n in 0..block {
+                let fd = -(op[n] - om[n]) / (2.0 * h);
+                let an = analytic[axis * block + n];
+                let diff = (fd - an).abs();
+                let thr = 1e-6 + 1e-5 * an.abs();
+                assert!(
+                    diff <= thr,
+                    "int3c1e_ip1 axis={axis} n={n}: analytic={an:.12e} fd={fd:.12e} diff={diff:.3e}"
+                );
+            }
+        }
     }
 }
