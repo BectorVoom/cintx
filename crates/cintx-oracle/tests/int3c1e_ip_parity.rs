@@ -148,8 +148,6 @@ fn nsph(l: i32) -> usize {
 /// are s-shells. `(2,0,3)` is p×s×s, `(0,2,3)` is s×p×s — both non-square.
 const TRIPLES: [(usize, usize, usize); 2] = [(2, 0, 3), (0, 2, 3)];
 
-const N_SHELLS: usize = 5;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-triple rank-3 collectors (cintx via eval_raw / vendor via FFI).
 // Layout: out[comp * ni*nj*nk + (k*nj + j)*ni + i].
