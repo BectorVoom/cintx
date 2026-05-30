@@ -1,7 +1,22 @@
 # Phase 23: Group 1 — Remaining 1st-Derivative Families (cart/sph) - Context
 
 **Gathered:** 2026-05-29
-**Status:** Ready for planning
+**Updated:** 2026-05-30 (cluster C implemented + vendor-verified; discretion items resolved)
+**Status:** In progress — cluster C (rank-9 both-side) DONE; clusters A & B remain
+
+<implementation_status>
+## Implementation Status (2026-05-30)
+
+- **Cluster C — rank-9 both-side 1e (`int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip`): COMPLETE.**
+  Generic-float `#[cube]` device kernels + manifest + RawApiId + vendor FFI + oracle
+  tests, all landed in commit `319d055`. Vendor byte-identity vs libcint 6.1.3 = 0
+  mismatches at atol=1e-12 (cart + sph, H2O/STO-3G); 36/36 cubecl device tests +
+  6/6 new oracle tests green; `manifest-audit` (no `--check-lock`) green.
+- **Clusters A & B — rank-3 ket/remaining-center (`int2e_ip2`, `int3c2e_ip2`,
+  `int2c2e_ip1/ip2`, `int3c1e_ip1/iprinv`): NOT STARTED.** They reuse the Phase-21
+  engine and the registration recipe now proven on cluster C (see D-11).
+</implementation_status>
+
 
 <domain>
 ## Phase Boundary
@@ -63,6 +78,22 @@ on the existing H2O/STO-3G (+ Cu/LANL2DZ) corpus. Each family registered with it
   index is fastest-varying), and **gate it with a deliberately NON-SQUARE bra/ket block
   (e.g. p×d)** so a transposed layout cannot pass. (Same discipline that caught the
   spinor-orientation bug; a square block is transpose-symmetric and hides the error.)
+  - **RESOLVED (impl):** ordering is **bra-major DIRECT** — `comp = bra_axis*3 + ket_axis`,
+    `s[0..8]` map straight to `gout[0..8]` with NO permutation. (Contrast the sibling
+    `ipipovlp`, which DOES permute s→gout — do not copy that.) Tensors:
+    `g0`, `g1=D_j(g0)` at `i_l+1`, `g2=D_i(g0)`, `g3=D_i(g1)`; headroom `nmax=li+lj+2`,
+    `lj_ext=lj+1`. Validated with non-square p×d/d×p host-ref + vendor byte-identity.
+
+- **D-12 (impl-discovered):** **`int1e_ipkinip` reduces to 8 distinct tensors.** libcint
+  `hess.c` materializes g0..g15, but they collapse to `dj0..dj3` (ket `D_j` orders 0–3)
+  and `di0..di3` (their bra `D_i`); port the 27 used s-terms verbatim. Headroom
+  `nmax=li+lj+4, lj_ext=lj+3` (third ket derivative). The kinetic **½ is folded into
+  libcint `common_factor` (gout coeff −1)** → apply **`-0.5`** in-contraction (cintx convention).
+
+- **D-13 (impl-discovered):** **`int1e_ipnucip` = the nuclear analog of ipovlpip** — same
+  4-tensor both-side composition on the nuclear Rys `g0`, summed over Rys roots and nuclei
+  (`-Z` folded into `g0`). `nroots = (li+lj+2)/2 + 1` (one extra root vs single-side ipnuc
+  for the added ket headroom); **fail closed when `nroots > 5`** (device Rys ceiling).
 
 ### Spinor representation policy
 - **D-06:** Spinor reps for all 8 families are **registered in the manifest but return
@@ -83,13 +114,41 @@ on the existing H2O/STO-3G (+ Cu/LANL2DZ) corpus. Each family registered with it
   6.1.3, cart + sph, every component, in `vendor_*` parity tests double-gated on
   `--features cpu` + `CINTX_ORACLE_BUILD_VENDOR=1` (without both, parity silently skips).
 
-### Claude's Discretion
+### Registration recipe (proven on cluster C — reuse for A & B)
+- **D-11 (impl-discovered):** The 5-step registration that lands a new family:
+  1. **Manifest:** add lock entries (cart/sph/spinor) to `compiled_manifest.lock.json`
+     cloning the closest existing family, with `component_rank` = true output multiplier;
+     `cargo build -p cintx-ops` regenerates `api_manifest.{rs,csv}`.
+  2. **RawApiId** consts in `cintx-compat/src/raw.rs`.
+  3. **Launcher** dispatch on `descriptor.operator_name()` (no operator allowlist exists).
+  4. **Vendor FFI:** add the cart/sph symbols to the bindgen `allowlist_function` regex in
+     `cintx-oracle/build.rs` + safe wrappers in `vendor_ffi.rs` (confirm the autocode `.c`
+     is already in that build.rs source list — `hess.c`/`grad1.c` are).
+  5. **Oracle** `vendor_*` parity test (per D-10).
+  - **KEY FINDING:** the `manifest-audit` "generated" and "lock" sides BOTH derive from the
+    lock (`build.rs → api_manifest.rs → Resolver::manifest()` ← fixtures
+    `phase4_operator_entries`), so **lock edits auto-sync the audit — there is NO separate
+    fixtures family list to edit.** `component_rank` flows through
+    `parse_component_multiplier` / `oracle_component_count` automatically. (Supersedes the
+    discuss-phase worry that the fixtures generator needed manual extension.)
+  - **AUDIT NOTE:** `manifest-audit` (no flags) is the gate and is GREEN. `--check-lock` is
+    red ONLY from pre-existing uncovered-stable spinor debt (`int1e_ipovlp_spinor` etc.);
+    new spinor entries match that exact pattern and add no new failure class.
+
+### Component-rank landmine (the discuss-phase area, now a hard rule)
+- **D-14:** A manifest `component_rank` set too LOW silently TRUNCATES trailing output
+  components (root cause of the 260530-9ay unstable-derivative failures — it looked like a
+  math bug, it wasn't). For these families register **rank 3 (clusters A/B) / 9 (cluster C)**
+  and assert it: the oracle test pins the element count (`9*n_ao*n_ao` for rank-9) AND
+  asserts `any_nonzero` so a stub/short buffer can't pass parity.
+
+### Claude's Discretion (remaining)
 - Exact oracle fixtures / shell-tuple coverage beyond the s/p/d(/f) minimum per family.
-- Center-index selection detail for the ket-side / remaining-center derivatives (which
-  center receives the `+1` headroom) — a research/implementation correctness item; the
-  transpose hazard here is real, so apply the same non-square-block validation discipline
-  as D-05 where the block is rectangular.
-- Whether `int3c2e_ip2` needs anything beyond the Phase-21 `int3c2e_ip1` repair as a base.
+- ~~Center-index selection detail for the ket-side / remaining-center derivatives~~ —
+  partially resolved by D-05/D-13 (the `+1` headroom goes on the derivative center; apply
+  the non-square-block discipline). Still open for the cluster A/B rank-3 families at impl.
+- Whether `int3c2e_ip2` needs anything beyond the Phase-21 `int3c2e_ip1` repair as a base
+  (cluster A — not yet implemented).
 
 </decisions>
 
@@ -128,8 +187,13 @@ on the existing H2O/STO-3G (+ Cu/LANL2DZ) corpus. Each family registered with it
 - `crates/cintx-oracle/src/vendor_ffi.rs` — FFI wrappers around vendored libcint 6.1.3 (add inbound FFI for the 8 families).
 - `crates/cintx-oracle/tests/*_parity.rs` — `#[cfg(has_vendor_libcint)]` byte-identity tests (the `vendor_*` pattern).
 
-### libcint upstream (vendored) — the layout source of truth for D-05
-- The vendored libcint 6.1.3 `CINTgout1e_int1e_ipovlpip` definition (autocode/`grad1.c` / `g1e.c`) — read to pin the rank-9 component nesting.
+### libcint upstream (vendored) — the layout source of truth for D-05/D-12/D-13
+- `libcint-master/src/autocode/hess.c` — `CINTgout1e_int1e_ipovlpip` (:94), `CINTgout1e_int1e_ipkinip` (:345), `CINTgout1e_int1e_ipnucip` (:600). Pinned the rank-9 nesting + the kinetic `common_factor *= 0.5` convention (see also `intor1.c` `int1e_kin`).
+
+### Implemented cluster-C source (the template for clusters A & B)
+- `crates/cintx-cubecl/src/kernels/one_electron.rs` — kernels `one_electron_grad_both_kernel` (ipovlpip), `one_electron_grad_kin_both_kernel` (ipkinip), `one_electron_nuc_grad_both_kernel` (ipnucip); shared `#[cube]` helpers `d_j_1e_into`/`d_i_1e_into`; the `is_rank9_both` launcher branch; host-ref device tests `test_device_ip{ovlpip,kinip,nucip}_matches_host_reference`.
+- `crates/cintx-oracle/tests/one_electron_grad_both_parity.rs` — 9-component determinism + vendor byte-identity tests.
+- Commit `319d055` — the full cluster-C diff (kernels + registration + tests).
 
 </canonical_refs>
 
