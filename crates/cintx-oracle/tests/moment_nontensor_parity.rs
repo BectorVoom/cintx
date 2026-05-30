@@ -49,7 +49,40 @@ macro_rules! moment_common_orig_test {
     };
 }
 
-moment_common_orig_test!(
+// `p4` = ∇⁴ is an EVEN (4-derivative) operator and reads NO origin. On a
+// SAME-center s×p block (the default O-1s × O-2p) the integral ⟨s|∇⁴|p⟩ is
+// identically zero by parity (vendor included), which trips the non-zero guard.
+// Use a CROSS-center non-square pair (H1-1s × O-2p) so the parity is broken and
+// the comparison is substantive — still non-square, so the D-07 transpose gate
+// holds. (Mirrors the `_origj` even-moment cross-center requirement.)
+macro_rules! moment_common_orig_test_cross {
+    ($name:ident, $rank:expr, $sph:ident, $cart:ident, $vsph:ident, $vcart:ident, $label:literal) => {
+        #[cfg(has_vendor_libcint)]
+        #[cfg(feature = "cpu")]
+        #[test]
+        fn $name() {
+            use cintx_compat::raw::RawApiId;
+            use cintx_oracle::fixtures::build_h2o_sto3g_common_orig;
+            use cintx_oracle::vendor_ffi;
+
+            let (atm, bas, env) = build_h2o_sto3g_common_orig();
+            moment_common::vendor_parity_at(
+                $rank,
+                moment_common::cross_center_non_square_shell_pair(),
+                RawApiId::$sph,
+                RawApiId::$cart,
+                vendor_ffi::$vsph,
+                vendor_ffi::$vcart,
+                &atm,
+                &bas,
+                &env,
+                $label,
+            );
+        }
+    };
+}
+
+moment_common_orig_test_cross!(
     test_int1e_p4_parity, 1,
     INT1E_P4_SPH, INT1E_P4_CART,
     vendor_int1e_p4_sph, vendor_int1e_p4_cart, "int1e_p4"
