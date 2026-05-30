@@ -42,18 +42,33 @@ All dispatched on all 5 backend arms (Rocm→`cubecl_hip::HipRuntime`); host c2s
 FROZEN launch_* signatures. grids vendor oracle stays blocked by the pre-existing
 `InvalidShellTuple{2 vs 4}` (same as grids scalar) → device-vs-host is the validation.
 
-## Residual: origk-ip1 r6 vendor divergence (NOT fixed)
+## Residual: origk-ip1 r6 — ROOT CAUSE FOUND: it is a LIBCINT bug, cintx is correct
 
-`int3c1e_ip1_r6_origk_sph` diverges ~6% from libcint on the y-component at the highest k-power
-(1 element, shls [3,4,0]). Extensively investigated:
-- cintx's r6 ip1 gout matches libcint's `CINTgout1e_int3c1e_ip1_r6_origk` term-for-term.
-- cintx is **self-consistent**: a finite-difference check confirmed `ip1_r6 == -∂/∂rᵢ(scalar_r6)`
-  to ~1e-9, and the contracted value reproduces the oracle exactly.
-- cintx **scalar r6 matches vendor** at symmetric AND asymmetric geometries ([3,4,0],[0,1,2],[3,0,4]).
-- Yet cintx ip1_r6 ≠ vendor ip1_r6 — implying libcint's ip1_r6 is not exactly the gradient of its
-  scalar r6, OR a subtle `g(i=1, k=6)` G-tensor build difference at the very top k-power that only
-  the r6 ∇-bra path reads (scalar reads i=0; r2/r4 ip1 read lower k and pass). Root cause not
-  isolated within budget; tracked as a narrow residual. Device-vs-host parity for r6 holds.
+`int3c1e_ip1_r6_origk_sph` diverges ~6% from the vendor reference on the y-component (shls [3,4,0]).
+A finite-difference investigation (perturbing the bra atom's coordinate in the env, central
+difference, eps swept 1e-3/1e-4/1e-5) is conclusive:
+
+| quantity | r4 | r6 |
+|----------|----|----|
+| cintx scalar == vendor scalar (incl. perturbed geom) | yes (~4e-19) | yes (~4e-19) |
+| FD(−∂/∂Rᵢ of vendor scalar) [the true gradient] | 2.2369152237e-5 | **1.16045358e-5** (stable across eps) |
+| vendor ip1 | 2.2369152253e-5 | **1.0944788e-5** |
+| cintx ip1 | 2.2369152253e-5 | **1.16045358e-5** |
+| vendor ip1 == FD(vendor scalar)? | **yes** (~1e-14) | **NO** (gap 6.6e-7, constant in eps) |
+
+So for **r4**, libcint's ip1 equals the gradient of its own scalar and cintx matches. For **r6**,
+**libcint's ip1 does NOT equal the gradient of its own scalar** — an internal inconsistency in the
+vendored libcint. cintx's ip1_r6 equals the true gradient (FD of the scalar, which cintx reproduces
+to 4e-19) and its gout matches libcint's `CINTgout1e_int3c1e_ip1_r6_origk` term-for-term. **cintx is
+mathematically correct; the vendored libcint `int3c1e_ip1_r6_origk` autocode is buggy** (a rarely-used
+high-order origin-derivative integral with 128+ g-buffers — classic autocode-error territory). The
+constant-across-eps gap rules out finite-difference truncation.
+
+Implication for the `unstable_source_parity` r6 vendor assertion: the vendor reference is provably
+wrong for this one operator, so the assertion fails despite cintx being correct. Resolution is a
+project-policy choice — re-base that single assertion on FD self-consistency (validate cintx against
+the true gradient), accept the documented known-libcint-defect, or deliberately match-the-bug for
+strict byte-compatibility. Device-vs-host parity for r6 holds in all cases.
 
 ## Verification (merged tree, AMD gfx1152)
 
