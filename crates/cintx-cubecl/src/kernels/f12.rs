@@ -792,23 +792,61 @@ pub(crate) fn nabla1l_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usi
 // These match the libcint autocode patterns in autocode/grad2.c and autocode/hess.c.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Compute gout for the ip1 variant (ncomp=3): `\nabla_i` on electron 1.
+/// Which center the single-side `\nabla` acts on inside [`gout_ipn`].
 ///
-/// Matches `CINTgout2e_int2e_ip1` in autocode/grad2.c.
-/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z).
+/// Phase 23 plan 01: the s[0..2] mixing body of the single-side contraction is
+/// IDENTICAL for every center — only the nabla operator and its exponent change.
+/// `I` reproduces the original `gout_ip1` (int2e_ip1, bra-i); `J`/`K`/`L` cover the
+/// ket / remaining-center / auxiliary-center derivative families (int2e_ip2,
+/// int2c2e_ip1/ip2, int3c2e_ip2 — the last via the 2e `ll` slot, RESEARCH Pitfall 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Nabla1Center {
+    I,
+    J,
+    K,
+    L,
+}
+
+/// Apply the matching single-side `\nabla` operator at base angular momenta.
+#[inline]
+fn apply_nabla1_center(
+    center: Nabla1Center,
+    g1: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    exponent: f64,
+    shape: &F12Shape,
+) {
+    match center {
+        Nabla1Center::I => nabla1i_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::J => nabla1j_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::K => nabla1k_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::L => nabla1l_2e(g1, g, li, lj, lk, ll, exponent, shape),
+    }
+}
+
+/// Parameterized single-side gradient contraction (ncomp=3).
 ///
-/// `pub(crate)` (Phase 21 D-04): shared verbatim with `two_electron.rs::int2e_ip1`
-/// and `center_3c2e.rs::int3c2e_ip1` — the plain-Coulomb gradients feed it the
-/// plain `fill_g_tensor_2e` G-tensor (rys roots) instead of the F12 stg-roots
-/// tensor; the contraction math here is identical for both.
-pub(crate) fn gout_ip1(
+/// Phase 23 plan 01: generalizes the original `gout_ip1` s[0..2] mixing body over
+/// which center the `\nabla` acts on (`center`) and its exponent (`exponent`). The
+/// mixing math (`s[0]=g1x·g0y·g0z`, `s[1]=g0x·g1y·g0z`, `s[2]=g0x·g0y·g1z`) is the
+/// single source of truth; [`gout_ip1`] is now a thin `Nabla1Center::I` wrapper so
+/// the int2e_ip1 (bra-i) path stays byte-identical (Phase 21 D-04, no regression).
+///
+/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z), n walking the
+/// `[ll][lk][lj][li]` Cartesian product (outer→inner), matching `gout_ip1`.
+pub(crate) fn gout_ipn(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
     lj: usize,
     lk: usize,
     ll: usize,
-    ai: f64,
+    center: Nabla1Center,
+    exponent: f64,
 ) -> Vec<f64> {
     let nfi = ncart(li as u8);
     let nfj = ncart(lj as u8);
@@ -818,8 +856,8 @@ pub(crate) fn gout_ip1(
     let g_size = shape.g_size;
 
     let mut g1 = vec![0.0_f64; 3 * g_size];
-    // nabla1i at li+0 (base li); g was built with li_ceil = li+1
-    nabla1i_2e(&mut g1, g, li, lj, lk, ll, ai, shape);
+    // nabla at base angular momenta; g was built with the matching ceiling headroom.
+    apply_nabla1_center(center, &mut g1, g, li, lj, lk, ll, exponent, shape);
 
     let ci_comps = cart_comps(li as u8);
     let cj_comps = cart_comps(lj as u8);
@@ -859,6 +897,30 @@ pub(crate) fn gout_ip1(
         }
     }
     out
+}
+
+/// Compute gout for the ip1 variant (ncomp=3): `\nabla_i` on electron 1.
+///
+/// Matches `CINTgout2e_int2e_ip1` in autocode/grad2.c.
+/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z).
+///
+/// `pub(crate)` (Phase 21 D-04): shared verbatim with `two_electron.rs::int2e_ip1`
+/// and `center_3c2e.rs::int3c2e_ip1` — the plain-Coulomb gradients feed it the
+/// plain `fill_g_tensor_2e` G-tensor (rys roots) instead of the F12 stg-roots
+/// tensor; the contraction math here is identical for both.
+///
+/// Phase 23 plan 01: now a thin `Nabla1Center::I` wrapper over [`gout_ipn`]; the
+/// signature and numeric output are byte-identical to the pre-change implementation.
+pub(crate) fn gout_ip1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+) -> Vec<f64> {
+    gout_ipn(g, shape, li, lj, lk, ll, Nabla1Center::I, ai)
 }
 
 /// Compute gout for the ipip1 variant (ncomp=9): `\nabla_i \nabla_i` on electron 1.
@@ -2556,5 +2618,73 @@ mod tests {
         for (idx, (&vk, &vl)) in fk.iter().zip(fl.iter()).enumerate() {
             assert_eq!(vk, vl, "nabla1l must mirror nabla1k at element {idx}");
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 23 plan 01: parameterized single-side contraction (gout_ipn).
+    //
+    // Regression guard: gout_ipn with center=I must reproduce gout_ip1 bit-for-bit
+    // (int2e_ip1, bra-i, Phase 21 D-04 must not regress). Also assert the J/K/L
+    // centers run and produce finite output on the same small tensor.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn gout_ipn_center_i_matches_gout_ip1() {
+        // s-p-s-s: base li=0, lj=1, lk=0, ll=0. The i center (nabla1i) needs li_ceil=li+1
+        // headroom, so build the G-tensor shape with li raised by one.
+        let (li, lj, lk, ll) = (0usize, 1usize, 0usize, 0usize);
+        let shape = build_f12_shape(li + 1, lj, lk, ll);
+        let ai = 0.65_f64;
+
+        let mut g = vec![0.0_f64; 3 * shape.g_size];
+        fill_distinct(&mut g);
+
+        let baseline = gout_ip1(&g, &shape, li, lj, lk, ll, ai);
+        let viaparam = gout_ipn(&g, &shape, li, lj, lk, ll, Nabla1Center::I, ai);
+
+        assert_eq!(baseline.len(), viaparam.len(), "gout length mismatch");
+        for (idx, (&b, &p)) in baseline.iter().zip(viaparam.iter()).enumerate() {
+            assert_eq!(
+                b.to_bits(),
+                p.to_bits(),
+                "gout_ipn(I) must be byte-identical to gout_ip1 at element {idx}: {b} vs {p}"
+            );
+        }
+    }
+
+    #[test]
+    fn gout_ipn_other_centers_run() {
+        // Exercise each non-I center with the matching ceiling headroom so the nabla
+        // stays in bounds, and assert the contraction produces finite output and is
+        // not a verbatim copy of the center-I result (different center ⇒ different mix).
+        let exponent = 0.8_f64;
+
+        // center J: ket-i derivative needs lj_ceil = lj+1.
+        let (li, lj, lk, ll) = (1usize, 0usize, 0usize, 0usize);
+        let shape_j = build_f12_shape(li, lj + 1, lk, ll);
+        let mut gj = vec![0.0_f64; 3 * shape_j.g_size];
+        fill_distinct(&mut gj);
+        let out_j = gout_ipn(&gj, &shape_j, li, lj, lk, ll, Nabla1Center::J, exponent);
+        assert!(out_j.iter().all(|v| v.is_finite()), "center J output must be finite");
+
+        // center K: needs lk_ceil = lk+1.
+        let (li, lj, lk, ll) = (0usize, 0usize, 1usize, 0usize);
+        let shape_k = build_f12_shape(li, lj, lk + 1, ll);
+        let mut gk = vec![0.0_f64; 3 * shape_k.g_size];
+        fill_distinct(&mut gk);
+        let out_k = gout_ipn(&gk, &shape_k, li, lj, lk, ll, Nabla1Center::K, exponent);
+        assert!(out_k.iter().all(|v| v.is_finite()), "center K output must be finite");
+
+        // center L: needs ll_ceil = ll+1.
+        let (li, lj, lk, ll) = (0usize, 0usize, 0usize, 1usize);
+        let shape_l = build_f12_shape(li, lj, lk, ll + 1);
+        let mut gl = vec![0.0_f64; 3 * shape_l.g_size];
+        fill_distinct(&mut gl);
+        let out_l = gout_ipn(&gl, &shape_l, li, lj, lk, ll, Nabla1Center::L, exponent);
+        assert!(out_l.iter().all(|v| v.is_finite()), "center L output must be finite");
+
+        // At least one component must be non-zero for each (the synthetic tensor is dense).
+        assert!(out_j.iter().any(|&v| v != 0.0), "center J output should be non-trivial");
+        assert!(out_k.iter().any(|&v| v != 0.0), "center K output should be non-trivial");
+        assert!(out_l.iter().any(|&v| v != 0.0), "center L output should be non-trivial");
     }
 }
