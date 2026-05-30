@@ -4901,6 +4901,30 @@ fn moment_pick<F: Float>(power: u32, m0: F, m1: F, m2: F, m3: F, m4: F) -> F {
     out
 }
 
+/// Single source of truth for the Cluster-A moment `(op_mode → moment_order, rank)`
+/// mapping (WR-01). The dispatcher (`moment_dispatch`), the device runner's buffer
+/// sizing (`out_len`/`nmax`), and the device comptime `match` MUST all agree; this
+/// `const fn` is the one table they derive from so they can never silently drift.
+///
+/// Returns `(moment_order, rank)` for a valid `op_mode` in `0..=7`. `op_mode` is set
+/// only by `moment_dispatch`, so an out-of-range value is a wiring bug — fail loudly.
+///
+/// Mode map: 0=r 1=rr 2=rrr 3=rrrr 4=r2 5=r4 6=z 7=zz (`_origj` variants reuse the
+/// same `op_mode`; only the origin source differs, handled host-side via `drj`).
+const fn moment_params(op_mode: u32) -> (u32, u32) {
+    match op_mode {
+        0 => (1, 3),  // r
+        1 => (2, 9),  // rr
+        2 => (3, 27), // rrr
+        3 => (4, 81), // rrrr
+        4 => (2, 1),  // r2
+        5 => (4, 1),  // r4
+        6 => (1, 1),  // z
+        7 => (2, 1),  // zz
+        _ => panic!("invalid moment op_mode (must be 0..=7)"),
+    }
+}
+
 /// Dispatch [`one_electron_moment_kernel`] at `f64` on a backend client. Returns
 /// the component-leading cart buffer of length `rank * nci * ncj * nctr_i*nctr_j`.
 #[allow(clippy::too_many_arguments)]
@@ -4923,6 +4947,14 @@ fn run_1e_moment_device<R: Runtime>(
     coeff_i: &[f64],
     coeff_j: &[f64],
 ) -> Vec<f64> {
+    // WR-01: the passed (moment_order, rank) MUST match the comptime triple selected
+    // from `op_mode` below. Both derive from `moment_params` (the single source of
+    // truth), so this only ever fires if the dispatcher and this runner drift apart.
+    debug_assert_eq!(
+        (moment_order, rank),
+        moment_params(op_mode),
+        "moment (order, rank) ({moment_order}, {rank}) disagree with moment_params(op_mode={op_mode})"
+    );
     let li_u = li as usize;
     let lj_u = lj as usize;
     let mo = moment_order as usize;
@@ -4982,16 +5014,18 @@ fn run_1e_moment_device<R: Runtime>(
 
     // Comptime (op_mode, moment_order, rank) selected via a host match. The valid
     // Cluster-A combinations are enumerated explicitly (CubeCL cannot pass comptime
-    // args dynamically).
+    // args dynamically). WR-01: the (order, rank) literals are derived from the
+    // `moment_params` const fn — const-evaluated to compile-time literals here — so
+    // this match can never drift from the dispatcher's sizing.
     match op_mode {
-        0u32 => launch_with!(0u32, 1u32, 3u32),  // r
-        1u32 => launch_with!(1u32, 2u32, 9u32),  // rr
-        2u32 => launch_with!(2u32, 3u32, 27u32), // rrr
-        3u32 => launch_with!(3u32, 4u32, 81u32), // rrrr
-        4u32 => launch_with!(4u32, 2u32, 1u32),  // r2
-        5u32 => launch_with!(5u32, 4u32, 1u32),  // r4
-        6u32 => launch_with!(6u32, 1u32, 1u32),  // z
-        _ => launch_with!(7u32, 2u32, 1u32),     // zz
+        0u32 => launch_with!(0u32, moment_params(0).0, moment_params(0).1), // r
+        1u32 => launch_with!(1u32, moment_params(1).0, moment_params(1).1), // rr
+        2u32 => launch_with!(2u32, moment_params(2).0, moment_params(2).1), // rrr
+        3u32 => launch_with!(3u32, moment_params(3).0, moment_params(3).1), // rrrr
+        4u32 => launch_with!(4u32, moment_params(4).0, moment_params(4).1), // r2
+        5u32 => launch_with!(5u32, moment_params(5).0, moment_params(5).1), // r4
+        6u32 => launch_with!(6u32, moment_params(6).0, moment_params(6).1), // z
+        _ => launch_with!(7u32, moment_params(7).0, moment_params(7).1),    // zz
     }
 
     let raw = client.read_one_unchecked(out_h);
@@ -5841,17 +5875,24 @@ fn launch_one_electron_typed<F: CintFloat>(
     // a (op_mode, moment_order, rank) tuple for the parameterized moment kernel.
     // `_origj` reuses the SAME op_mode/order/rank — only the origin source differs
     // (handled below via drj = rj - origin; for _origj origin = rj so drj = 0).
-    let moment_dispatch: Option<(u32, u32, u32)> = match op_name {
-        "r" | "r_origj" => Some((0, 1, 3)),
-        "rr" | "rr_origj" => Some((1, 2, 9)),
-        "rrr" => Some((2, 3, 27)),
-        "rrrr" => Some((3, 4, 81)),
-        "r2" | "r2_origj" => Some((4, 2, 1)),
-        "r4" | "r4_origj" => Some((5, 4, 1)),
-        "z" | "z_origj" => Some((6, 1, 1)),
-        "zz" | "zz_origj" => Some((7, 2, 1)),
+    // WR-01: map op_name → op_mode only; derive (moment_order, rank) from the shared
+    // `moment_params` const fn so the dispatcher, the device sizing, and the device
+    // comptime match all share ONE source of truth and cannot drift.
+    let moment_op_mode: Option<u32> = match op_name {
+        "r" | "r_origj" => Some(0),
+        "rr" | "rr_origj" => Some(1),
+        "rrr" => Some(2),
+        "rrrr" => Some(3),
+        "r2" | "r2_origj" => Some(4),
+        "r4" | "r4_origj" => Some(5),
+        "z" | "z_origj" => Some(6),
+        "zz" | "zz_origj" => Some(7),
         _ => None,
     };
+    let moment_dispatch: Option<(u32, u32, u32)> = moment_op_mode.map(|op_mode| {
+        let (order, rank) = moment_params(op_mode);
+        (op_mode, order, rank)
+    });
     let is_moment = moment_dispatch.is_some();
     // `_origj` variants read the ket basis center rj; base families read the gauge
     // origin env[PTR_COMMON_ORIG]. D-02: origin source is a kernel-side coordinate
