@@ -48,8 +48,12 @@ fn test_int1e_r_origj_h2o_sto3g_common_orig_parity() {
     use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_h2o_sto3g_common_orig();
-    moment_common::vendor_parity(
+    // `_origj` reads the ket basis center → use the CROSS-center non-square block
+    // (H1-1s × O-2p) so the result is non-trivially nonzero (same-center even-moment
+    // _origj integrals are identically zero; see moment_common docs).
+    moment_common::vendor_parity_at(
         3,
+        moment_common::cross_center_non_square_shell_pair(),
         RawApiId::INT1E_R_ORIGJ_SPH,
         RawApiId::INT1E_R_ORIGJ_CART,
         vendor_ffi::vendor_int1e_r_origj_sph,

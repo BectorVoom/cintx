@@ -40,6 +40,38 @@ macro_rules! moment_parity_test {
     };
 }
 
+/// `_origj` families: same as `moment_parity_test!` but on the CROSS-center
+/// non-square block (H1-1s × O-2p). `_origj` measures position relative to the ket
+/// center, so a same-center block gives identically-zero even-moment integrals
+/// (vendor included) — the cross-center ket makes the comparison substantive while
+/// keeping the block non-square (D-07 transpose gate preserved).
+macro_rules! moment_origj_parity_test {
+    ($name:ident, $rank:expr, $sph:ident, $cart:ident, $vsph:ident, $vcart:ident, $label:literal) => {
+        #[cfg(has_vendor_libcint)]
+        #[cfg(feature = "cpu")]
+        #[test]
+        fn $name() {
+            use cintx_compat::raw::RawApiId;
+            use cintx_oracle::fixtures::build_h2o_sto3g_common_orig;
+            use cintx_oracle::vendor_ffi;
+
+            let (atm, bas, env) = build_h2o_sto3g_common_orig();
+            moment_common::vendor_parity_at(
+                $rank,
+                moment_common::cross_center_non_square_shell_pair(),
+                RawApiId::$sph,
+                RawApiId::$cart,
+                vendor_ffi::$vsph,
+                vendor_ffi::$vcart,
+                &atm,
+                &bas,
+                &env,
+                $label,
+            );
+        }
+    };
+}
+
 moment_parity_test!(
     test_int1e_rr_parity, 9,
     INT1E_RR_SPH, INT1E_RR_CART,
@@ -61,22 +93,22 @@ moment_parity_test!(
     vendor_int1e_zz_sph, vendor_int1e_zz_cart, "int1e_zz"
 );
 
-moment_parity_test!(
+moment_origj_parity_test!(
     test_int1e_rr_origj_parity, 9,
     INT1E_RR_ORIGJ_SPH, INT1E_RR_ORIGJ_CART,
     vendor_int1e_rr_origj_sph, vendor_int1e_rr_origj_cart, "int1e_rr_origj"
 );
-moment_parity_test!(
+moment_origj_parity_test!(
     test_int1e_r2_origj_parity, 1,
     INT1E_R2_ORIGJ_SPH, INT1E_R2_ORIGJ_CART,
     vendor_int1e_r2_origj_sph, vendor_int1e_r2_origj_cart, "int1e_r2_origj"
 );
-moment_parity_test!(
+moment_origj_parity_test!(
     test_int1e_z_origj_parity, 1,
     INT1E_Z_ORIGJ_SPH, INT1E_Z_ORIGJ_CART,
     vendor_int1e_z_origj_sph, vendor_int1e_z_origj_cart, "int1e_z_origj"
 );
-moment_parity_test!(
+moment_origj_parity_test!(
     test_int1e_zz_origj_parity, 1,
     INT1E_ZZ_ORIGJ_SPH, INT1E_ZZ_ORIGJ_CART,
     vendor_int1e_zz_origj_sph, vendor_int1e_zz_origj_cart, "int1e_zz_origj"

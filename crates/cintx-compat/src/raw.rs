@@ -214,6 +214,40 @@ impl RawApiId {
     pub const INT1E_ZZ_ORIGJ_SPH: Self = Self::Symbol("int1e_zz_origj_sph");
     pub const INT1E_ZZ_ORIGJ_SPINOR: Self = Self::Symbol("int1e_zz_origj_spinor");
 
+    // Phase 24 Cluster A high-rank tensors + trace contractions (MOM-02/03).
+    // rrr/rrrr have NO `_origj` symbol in libcint 6.1.3 (OQ-3) — not registered.
+    pub const INT1E_RR_CART: Self = Self::Symbol("int1e_rr_cart");
+    pub const INT1E_RR_SPH: Self = Self::Symbol("int1e_rr_sph");
+    pub const INT1E_RR_SPINOR: Self = Self::Symbol("int1e_rr_spinor");
+
+    pub const INT1E_RRR_CART: Self = Self::Symbol("int1e_rrr_cart");
+    pub const INT1E_RRR_SPH: Self = Self::Symbol("int1e_rrr_sph");
+    pub const INT1E_RRR_SPINOR: Self = Self::Symbol("int1e_rrr_spinor");
+
+    pub const INT1E_RRRR_CART: Self = Self::Symbol("int1e_rrrr_cart");
+    pub const INT1E_RRRR_SPH: Self = Self::Symbol("int1e_rrrr_sph");
+    pub const INT1E_RRRR_SPINOR: Self = Self::Symbol("int1e_rrrr_spinor");
+
+    pub const INT1E_R2_CART: Self = Self::Symbol("int1e_r2_cart");
+    pub const INT1E_R2_SPH: Self = Self::Symbol("int1e_r2_sph");
+    pub const INT1E_R2_SPINOR: Self = Self::Symbol("int1e_r2_spinor");
+
+    pub const INT1E_R4_CART: Self = Self::Symbol("int1e_r4_cart");
+    pub const INT1E_R4_SPH: Self = Self::Symbol("int1e_r4_sph");
+    pub const INT1E_R4_SPINOR: Self = Self::Symbol("int1e_r4_spinor");
+
+    pub const INT1E_RR_ORIGJ_CART: Self = Self::Symbol("int1e_rr_origj_cart");
+    pub const INT1E_RR_ORIGJ_SPH: Self = Self::Symbol("int1e_rr_origj_sph");
+    pub const INT1E_RR_ORIGJ_SPINOR: Self = Self::Symbol("int1e_rr_origj_spinor");
+
+    pub const INT1E_R2_ORIGJ_CART: Self = Self::Symbol("int1e_r2_origj_cart");
+    pub const INT1E_R2_ORIGJ_SPH: Self = Self::Symbol("int1e_r2_origj_sph");
+    pub const INT1E_R2_ORIGJ_SPINOR: Self = Self::Symbol("int1e_r2_origj_spinor");
+
+    pub const INT1E_R4_ORIGJ_CART: Self = Self::Symbol("int1e_r4_origj_cart");
+    pub const INT1E_R4_ORIGJ_SPH: Self = Self::Symbol("int1e_r4_origj_sph");
+    pub const INT1E_R4_ORIGJ_SPINOR: Self = Self::Symbol("int1e_r4_origj_spinor");
+
     // Phase 23 both-side rank-9 1e families (spinor returns UnsupportedApi, D-06).
     pub const INT1E_IPOVLPIP_CART: Self = Self::Symbol("int1e_ipovlpip_cart");
     pub const INT1E_IPOVLPIP_SPH: Self = Self::Symbol("int1e_ipovlpip_sph");

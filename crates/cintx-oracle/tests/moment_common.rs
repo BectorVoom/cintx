@@ -78,6 +78,21 @@ pub fn non_square_shell_pair() -> (usize, usize) {
     (0, 2)
 }
 
+/// A NON-SQUARE bra×ket shell pair on DIFFERENT atomic centers.
+///
+/// Returns `(3, 2)` = (H1-1s, O-2p): bra l=0 on H1, ket l=1 on O — non-square AND
+/// cross-center. REQUIRED for the `_origj` moment families: `_origj` measures the
+/// position relative to the KET basis center (rj), so on a SAME-center block (e.g.
+/// the default `(0,2)` O-1s × O-2p) every even-moment `_origj` integral is zero by
+/// parity (verified against vendored libcint — vendor also returns all-zero there),
+/// which trips `assert_any_nonzero`. A cross-center ket makes the relative position
+/// genuinely nonzero so the parity comparison is substantive. Still non-square, so
+/// the D-07 transpose gate is preserved.
+pub fn cross_center_non_square_shell_pair() -> (usize, usize) {
+    // bra = H1-1s (shell 3, l=0), ket = O-2p (shell 2, l=1) — non-square, cross-center.
+    (3, 2)
+}
+
 /// Collect cintx `eval_raw` output for ONE non-square shell pair into a
 /// `rank * ni * nj` component-leading buffer.
 fn collect_cintx_block(
@@ -86,9 +101,10 @@ fn collect_cintx_block(
     atm: &[i32],
     bas: &[i32],
     env: &[f64],
+    shls_pair: (usize, usize),
     nf: impl Fn(i32) -> usize,
 ) -> Vec<f64> {
-    let (si, sj) = non_square_shell_pair();
+    let (si, sj) = shls_pair;
     let li = bas[si * BAS_SLOTS + ANG_OF];
     let lj = bas[sj * BAS_SLOTS + ANG_OF];
     let ni = nf(li);
@@ -113,12 +129,13 @@ fn collect_vendor_block<F>(
     atm: &[i32],
     bas: &[i32],
     env: &[f64],
+    shls_pair: (usize, usize),
     nf: impl Fn(i32) -> usize,
 ) -> Vec<f64>
 where
     F: Fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32,
 {
-    let (si, sj) = non_square_shell_pair();
+    let (si, sj) = shls_pair;
     let li = bas[si * BAS_SLOTS + ANG_OF];
     let lj = bas[sj * BAS_SLOTS + ANG_OF];
     let ni = nf(li);
@@ -181,17 +198,56 @@ pub fn vendor_parity<FS, FC>(
     FS: Fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32,
     FC: Fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32,
 {
+    // Default to the same-center non-square block (O-1s × O-2p). Suitable for base
+    // families (common gauge origin); `_origj` families MUST use `vendor_parity_at`
+    // with the cross-center pair (see `cross_center_non_square_shell_pair`).
+    vendor_parity_at(
+        rank,
+        non_square_shell_pair(),
+        api_sph,
+        api_cart,
+        vendor_sph,
+        vendor_cart,
+        atm,
+        bas,
+        env,
+        label,
+    );
+}
+
+/// `vendor_parity` with an explicit NON-SQUARE bra×ket shell pair. Used by the
+/// `_origj` families, which need a CROSS-center ket so the position-relative-to-
+/// ket-center integral is non-trivially nonzero (the default same-center block
+/// gives identically-zero `_origj` even-moment integrals — vendor included).
+#[cfg(has_vendor_libcint)]
+#[cfg(feature = "cpu")]
+#[allow(clippy::too_many_arguments)]
+pub fn vendor_parity_at<FS, FC>(
+    rank: usize,
+    shls_pair: (usize, usize),
+    api_sph: RawApiId,
+    api_cart: RawApiId,
+    vendor_sph: FS,
+    vendor_cart: FC,
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+    label: &str,
+) where
+    FS: Fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32,
+    FC: Fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32,
+{
     // ── sph ──────────────────────────────────────────────────────────────────
-    let vendor_s = collect_vendor_block(rank, &vendor_sph, atm, bas, env, nsph);
-    let cintx_s = collect_cintx_block(rank, api_sph, atm, bas, env, nsph);
+    let vendor_s = collect_vendor_block(rank, &vendor_sph, atm, bas, env, shls_pair, nsph);
+    let cintx_s = collect_cintx_block(rank, api_sph, atm, bas, env, shls_pair, nsph);
     assert_any_nonzero(&cintx_s, &format!("{label}_sph cintx"));
     assert_any_nonzero(&vendor_s, &format!("{label}_sph vendor"));
     let mm = count_mismatches(&vendor_s, &cintx_s, ATOL, RTOL);
     assert_eq!(mm, 0, "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}");
 
     // ── cart ─────────────────────────────────────────────────────────────────
-    let vendor_c = collect_vendor_block(rank, &vendor_cart, atm, bas, env, ncart);
-    let cintx_c = collect_cintx_block(rank, api_cart, atm, bas, env, ncart);
+    let vendor_c = collect_vendor_block(rank, &vendor_cart, atm, bas, env, shls_pair, ncart);
+    let cintx_c = collect_cintx_block(rank, api_cart, atm, bas, env, shls_pair, ncart);
     assert_any_nonzero(&cintx_c, &format!("{label}_cart cintx"));
     assert_any_nonzero(&vendor_c, &format!("{label}_cart vendor"));
     let mm = count_mismatches(&vendor_c, &cintx_c, ATOL, RTOL);

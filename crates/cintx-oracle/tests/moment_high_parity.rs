@@ -45,6 +45,34 @@ macro_rules! moment_parity_test {
     };
 }
 
+/// `_origj` families on the CROSS-center non-square block (see moment_common docs).
+macro_rules! moment_origj_parity_test {
+    ($name:ident, $rank:expr, $sph:ident, $cart:ident, $vsph:ident, $vcart:ident, $label:literal) => {
+        #[cfg(has_vendor_libcint)]
+        #[cfg(feature = "cpu")]
+        #[test]
+        fn $name() {
+            use cintx_compat::raw::RawApiId;
+            use cintx_oracle::fixtures::build_h2o_sto3g_common_orig;
+            use cintx_oracle::vendor_ffi;
+
+            let (atm, bas, env) = build_h2o_sto3g_common_orig();
+            moment_common::vendor_parity_at(
+                $rank,
+                moment_common::cross_center_non_square_shell_pair(),
+                RawApiId::$sph,
+                RawApiId::$cart,
+                vendor_ffi::$vsph,
+                vendor_ffi::$vcart,
+                &atm,
+                &bas,
+                &env,
+                $label,
+            );
+        }
+    };
+}
+
 moment_parity_test!(
     test_int1e_rrr_parity, 27,
     INT1E_RRR_SPH, INT1E_RRR_CART,
@@ -60,7 +88,7 @@ moment_parity_test!(
     INT1E_R4_SPH, INT1E_R4_CART,
     vendor_int1e_r4_sph, vendor_int1e_r4_cart, "int1e_r4"
 );
-moment_parity_test!(
+moment_origj_parity_test!(
     test_int1e_r4_origj_parity, 1,
     INT1E_R4_ORIGJ_SPH, INT1E_R4_ORIGJ_CART,
     vendor_int1e_r4_origj_sph, vendor_int1e_r4_origj_cart, "int1e_r4_origj"
