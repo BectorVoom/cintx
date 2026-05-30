@@ -4,14 +4,14 @@ milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
 stopped_at: Phase 23 context gathered
-last_updated: "2026-05-29T12:52:35.513Z"
-last_activity: "2026-05-29 - Completed quick task 260529-q4k: ported two_electron.rs scalar int2e to a generic-float CubeCL #[cube(launch)] device kernel on all 5 backends (incl. ROCm/HIP); rocm random vendor parity mismatch_count=0 across 96 quartets, f64 byte-identity preserved (13/13 lib tests green)"
+last_updated: "2026-05-30T02:30:01.160Z"
+last_activity: 2026-05-30 -- Phase 23 execution started
 progress:
   total_phases: 21
   completed_phases: 12
-  total_plans: 61
+  total_plans: 66
   completed_plans: 61
-  percent: 100
+  percent: 92
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 22 — gauge-origin-env-slot-gap-a-ptr-common-orig
+**Current focus:** Phase 23 — group-1-remaining-1st-derivative-families-cart-sph
 
 ## Current Position
 
-Phase: 23
-Plan: Not started
-Status: Executing Phase 22
+Phase: 23 (group-1-remaining-1st-derivative-families-cart-sph) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 23
 Resume file: .planning/phases/23-group-1-remaining-1st-derivative-families-cart-sph/23-CONTEXT.md
-Last activity: 2026-05-30 - Completed quick task 260530-9ay: fixed + GPU-ported the deferred unstable derivative sub-paths. Root cause of the failures was a manifest component_rank=1 bug (output truncation), not math — corrected ranks restored vendor parity for origi-ip2 r2/r4 + origk-ip1 r2/r4, then ported origi-ip2 / origk-ip1 / grids-derivs to #[cube] device kernels (ROCm: origi-ip2 96/0, origk-ip1 r2/r4 0, grids-derivs device-vs-host 0). origk-ip1 r6 has a documented ~6% vendor residual (cintx self-consistent). 26/26 in-crate device tests green. PRIOR — quick task 260529-twi: ported ALL 5 unstable.rs families (origi/grids/breit/origk/ssc) to generic-float CubeCL #[cube(launch)] device kernels on all 5 backends (incl. ROCm/HIP), after splitting the 3511-line file into a per-family module dir. ROCm vendor parity mismatch_count=0 (origi 96, origk 144, ssc 48, breit 48 spinor); grids validated by in-crate device-vs-host on ROCm (64 cases, 0 mismatch) — its vendor oracle is blocked by a pre-existing eval_raw InvalidShellTuple, documented + locked. 16/16 in-crate device tests green; unstable_source_parity baseline unchanged (no regression)
+Last activity: 2026-05-30 -- Phase 23 execution started
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
