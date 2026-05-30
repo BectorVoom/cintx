@@ -638,7 +638,11 @@ pub(crate) fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usi
 /// Formula (per axis):
 ///   f[n @ j=0] = -2*aj * g[n+dj]
 ///   f[n @ j>=1] = j * g[n-dj] + (-2*aj) * g[n+dj]
-fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, aj: f64, shape: &F12Shape) {
+///
+/// `pub(crate)` (Phase 23 plan 01): shared with sibling kernel launchers
+/// (`two_electron.rs`, `center_2c2e.rs`, `center_3c2e.rs`) for ket/remaining-center
+/// derivative families (int2e_ip2, int2c2e_ip1/ip2). The math is F12-free.
+pub(crate) fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, aj: f64, shape: &F12Shape) {
     let aj2 = -2.0 * aj;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -685,7 +689,11 @@ fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
 /// Formula (per axis):
 ///   f[n @ k=0] = -2*ak * g[n+dk]
 ///   f[n @ k>=1] = k * g[n-dk] + (-2*ak) * g[n+dk]
-fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ak: f64, shape: &F12Shape) {
+///
+/// `pub(crate)` (Phase 23 plan 01): shared with sibling kernel launchers
+/// (`two_electron.rs`, `center_2c2e.rs`, `center_3c2e.rs`) for remaining-center
+/// derivative families. The math is F12-free.
+pub(crate) fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ak: f64, shape: &F12Shape) {
     let ak2 = -2.0 * ak;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -713,6 +721,58 @@ fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
                         let ptr = base + di * i;
                         for n in ptr..ptr + nroots {
                             f[off + n] = k as f64 * g[off + n - dk] + ak2 * g[off + n + dk];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Apply the `\nabla_l` operator to the G tensor.
+///
+/// Corresponds to `CINTnabla1l_2e` in libcint/g2e.c (the `G2E_D_L` macro).
+///
+/// `pub(crate)` (Phase 23 plan 01): added because cintx's 3c2e g-tensor builder maps
+/// the real auxiliary `k` center into the 2e `ll` slot (`build_2e_shape(li+1, lj, 0, lk)`,
+/// phantom 2e `lk`=0), so int3c2e_ip2's auxiliary derivative must nabla the `ll` slot —
+/// `nabla1k_2e` would touch the phantom slot (RESEARCH Pitfall 2). The G2E_D_L recurrence
+/// is the structural mirror of `nabla1k_2e`, operating on the `ll` loop bound and `dl`
+/// stride; `nabla1l_breit` (breit.rs:1206) is the in-tree reference (Don't Hand-Roll).
+///
+/// Formula (per axis):
+///   f[n @ l=0] = -2*al * g[n+dl]
+///   f[n @ l>=1] = l * g[n-dl] + (-2*al) * g[n+dl]
+pub(crate) fn nabla1l_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, al: f64, shape: &F12Shape) {
+    let al2 = -2.0 * al;
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        for j in 0..=lj {
+            // l=0: all k, i
+            for k in 0..=lk {
+                let base = dj * j + dk * k;
+                for i in 0..=li {
+                    let ptr = base + di * i;
+                    for n in ptr..ptr + nroots {
+                        f[off + n] = al2 * g[off + n + dl];
+                    }
+                }
+            }
+            // l>=1
+            for l in 1..=ll {
+                for k in 0..=lk {
+                    let base = dj * j + dl * l + dk * k;
+                    for i in 0..=li {
+                        let ptr = base + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = l as f64 * g[off + n - dl] + al2 * g[off + n + dl];
                         }
                     }
                 }
@@ -2375,6 +2435,126 @@ mod tests {
                     "f32 device result not within eps: host={h:e} dev={d:e} diff={diff:e}"
                 );
             }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 23 plan 01: nabla1l_2e (G2E_D_L) unit tests.
+    //
+    // nabla1l_2e is the mirror of nabla1k_2e operating on the `ll` loop bound and
+    // the `dl` stride. It must reproduce the analytic ∂χ_l recurrence on the l axis:
+    //   f[l=0]   = -2*al * g[l+1]
+    //   f[l>=1]  =  l * g[l-1] + (-2*al) * g[l+1]
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Fill a single-axis g block (g_size elements) with a distinct, easily-checkable
+    /// value per element so stride/offset errors surface immediately.
+    fn fill_distinct(g: &mut [f64]) {
+        for (idx, v) in g.iter_mut().enumerate() {
+            *v = (idx as f64) + 1.0; // 1.0, 2.0, 3.0, ...
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_ssp_first_order_term() {
+        // s-s-s-p base: nabla on a base ll=1. Mirror the real launchers, which build the
+        // G-tensor with CEILING angular momenta (ll_ceil = ll+1) so g[+dl] at the top base
+        // l-level stays in bounds. Here ll_base=1, so build the shape with ll_ceil=2.
+        let ll_base = 1usize;
+        let shape = build_f12_shape(0, 0, 0, ll_base + 1);
+        let al = 0.75_f64;
+        let three_g = 3 * shape.g_size;
+
+        let mut g = vec![0.0_f64; three_g];
+        fill_distinct(&mut g);
+        let mut f = vec![0.0_f64; three_g];
+        nabla1l_2e(&mut f, &g, 0, 0, 0, ll_base, al, &shape);
+
+        let dl = shape.dl;
+        let nroots = shape.nroots;
+        for axis in 0..3 {
+            let off = axis * shape.g_size;
+            // l=0 first-order term: f = -2*al * g[+dl]
+            for n in 0..nroots {
+                let expected = -2.0 * al * g[off + n + dl];
+                assert_eq!(
+                    f[off + n], expected,
+                    "axis {axis} l=0 n={n}: nabla1l first-order term mismatch"
+                );
+            }
+            // l=1: f = 1*g[-dl] + (-2*al)*g[+dl]
+            for n in 0..nroots {
+                let ptr = dl + n;
+                let expected = 1.0 * g[off + ptr - dl] + (-2.0 * al) * g[off + ptr + dl];
+                assert_eq!(f[off + ptr], expected, "axis {axis} l=1 n={n}");
+            }
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_matches_analytic_l_recurrence() {
+        // base ll=2 with one extra ceiling level (ll_ceil=3) so the full
+        // f[l>=1] = l*g[-dl] + (-2*al)*g[+dl] recurrence stays in bounds up to l=2.
+        // i/j/k slots held at 0 so only the l axis recurrence is exercised.
+        let ll_base = 2usize;
+        let shape = build_f12_shape(0, 0, 0, ll_base + 1);
+        let al = 1.3_f64;
+        let three_g = 3 * shape.g_size;
+
+        let mut g = vec![0.0_f64; three_g];
+        fill_distinct(&mut g);
+        let mut f = vec![0.0_f64; three_g];
+        nabla1l_2e(&mut f, &g, 0, 0, 0, ll_base, al, &shape);
+
+        let dl = shape.dl;
+        let nroots = shape.nroots;
+        for axis in 0..3 {
+            let off = axis * shape.g_size;
+            // l=0: f = -2*al*g[+dl]
+            for n in 0..nroots {
+                let expected = -2.0 * al * g[off + n + dl];
+                assert_eq!(f[off + n], expected, "axis {axis} l=0 n={n}");
+            }
+            // l=1..=2: f = l*g[-dl] + (-2*al)*g[+dl]
+            for l in 1..=ll_base {
+                for n in 0..nroots {
+                    let ptr = dl * l + n;
+                    let expected = l as f64 * g[off + ptr - dl] + (-2.0 * al) * g[off + ptr + dl];
+                    assert_eq!(f[off + ptr], expected, "axis {axis} l={l} n={n}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_structural_mirror_of_nabla1k_2e() {
+        // Structural cross-check: nabla1l on the l axis must mirror nabla1k on the k axis
+        // once the strides align. Build both shapes with one extra ceiling level on the
+        // active center (lk_ceil=ll_ceil=2 for a base AM of 1) so neither operator reads
+        // out of bounds, and the dk (k-shape) and dl (l-shape) strides coincide.
+        let base = 1usize;
+        let shape_k = build_f12_shape(0, 0, base + 1, 0);
+        let shape_l = build_f12_shape(0, 0, 0, base + 1);
+        let a = 0.9_f64;
+
+        // For these structurally-equivalent shapes the stride that the active center
+        // walks must be identical: dk in the k-shape == dl in the l-shape.
+        assert_eq!(shape_k.g_size, shape_l.g_size);
+        assert_eq!(shape_k.nroots, shape_l.nroots);
+        assert_eq!(shape_k.dk, shape_l.dl, "dk and dl strides must align for the mirror check");
+
+        let mut gk = vec![0.0_f64; 3 * shape_k.g_size];
+        let mut gl = vec![0.0_f64; 3 * shape_l.g_size];
+        fill_distinct(&mut gk);
+        fill_distinct(&mut gl);
+
+        let mut fk = vec![0.0_f64; 3 * shape_k.g_size];
+        let mut fl = vec![0.0_f64; 3 * shape_l.g_size];
+        nabla1k_2e(&mut fk, &gk, 0, 0, base, 0, a, &shape_k);
+        nabla1l_2e(&mut fl, &gl, 0, 0, 0, base, a, &shape_l);
+
+        for (idx, (&vk, &vl)) in fk.iter().zip(fl.iter()).enumerate() {
+            assert_eq!(vk, vl, "nabla1l must mirror nabla1k at element {idx}");
         }
     }
 }
