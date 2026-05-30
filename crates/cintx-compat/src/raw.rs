@@ -199,12 +199,11 @@ impl RawApiId {
     pub const INT1E_DRINV_SPINOR: Self = Self::Symbol("int1e_drinv_spinor");
 
     // Phase 24 Cluster C/D (MOM-04) symbol declarations. The p4 (∇⁴, rank 1) and
-    // irp (i·r×∇, rank 9) FAMILIES — manifest entries + kernels — land in plans
-    // 24-04 / 24-05. These RawApiId consts are declared here so the SHARED
-    // moment_nontensor_parity.rs test file (which references all four MOM-04
-    // families) compiles, letting the Cluster B (rinv/drinv) parity tests run.
-    // Until 24-04/24-05 register the manifest rows, a p4/irp dispatch fails closed
-    // at resolver (MissingSymbol) — no partial/incorrect result.
+    // irp (i·r×∇, rank 9) FAMILIES are now FULLY registered: manifest rows,
+    // on-device `#[cube]` kernels, vendor FFI wrappers, and vendor parity tests
+    // are all in place. A p4/irp dispatch resolves to a real kernel and is
+    // byte-checked against libcint. Spinor forms are registered for surface
+    // completeness; the kernel returns UnsupportedApi (D-09).
     pub const INT1E_P4_CART: Self = Self::Symbol("int1e_p4_cart");
     pub const INT1E_P4_SPH: Self = Self::Symbol("int1e_p4_sph");
     pub const INT1E_P4_SPINOR: Self = Self::Symbol("int1e_p4_spinor");
