@@ -4,7 +4,7 @@ milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: verifying
 stopped_at: Completed 24-05-PLAN.md
-last_updated: "2026-05-30T07:37:35.783Z"
+last_updated: "2026-05-30T07:52:08.171Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 21
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 24 (group-3-position-multipole-moment-integrals) — EXECUTING
-Plan: 5 of 5
+Phase: 25
+Plan: Not started
 Status: Phase complete — ready for verification
 Resume file: None
 Last activity: 2026-05-30
@@ -45,7 +45,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 **Velocity:**
 
-- Total plans completed: 31
+- Total plans completed: 36
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -59,6 +59,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | 21 | 8 | - | - |
 | 22 | 2 | - | - |
 | 23 | 5 | - | - |
+| 24 | 5 | - | - |
 
 **Recent Trend:**
 
