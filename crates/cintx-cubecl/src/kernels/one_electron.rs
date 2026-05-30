@@ -5796,6 +5796,127 @@ fn contract_nuclear_grad(
     out
 }
 
+/// Shared component-leading staging writer for the Phase-24 1e families
+/// (`moment`, `rinv`/`drinv`, `p4`, `irp`). IN-03: this collapses five
+/// near-verbatim copy blocks (cart/sph contraction-blocked copy + fail-closed
+/// `BufferTooSmall` check + `not0` non-zero count) into one host-side helper so a
+/// future hardening of one path (e.g. the WR-02 fail-closed check) cannot be
+/// forgotten in the others. Behavior is byte-identical to the inlined blocks.
+///
+/// `cart_comp` is the `f64` device output in component-leading,
+/// contraction-blocked layout: element `(ci,cj,comp)` block starts at
+/// `(ci*n_ctr_j + cj)*total_len + comp*block_len`, where `block_len == nci*ncj`.
+/// `staging` receives the component-leading, contraction-blocked representation
+/// output (spheric or cart per `rep`). Returns the `not0` non-zero element count.
+///
+/// This runs entirely host-side (it uses `Vec`, `cart_to_sph_1e`, and the typed
+/// `staging` slice), so it is NOT `#[cube]` device code and is free to be a plain
+/// generic fn over `F: CintFloat`.
+#[allow(clippy::too_many_arguments)]
+fn write_component_leading_staging<F: CintFloat>(
+    rep: Representation,
+    rank: usize,
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    nci: usize,
+    ncj: usize,
+    nsi: usize,
+    nsj: usize,
+    li: u8,
+    lj: u8,
+    total_len: usize,
+    block_len: usize,
+    cart_comp: &[f64],
+    staging: &mut [F],
+) -> Result<i32, cintxRsError> {
+    match rep {
+        Representation::Spheric => {
+            let ni_sph = n_ctr_i * nsi;
+            let nj_sph = n_ctr_j * nsj;
+            let sph_block = ni_sph * nj_sph;
+            // WR-02: fail closed if staging cannot hold the full component rank —
+            // never silently drop trailing components (OOM-safe no-partial-writes
+            // contract). `needed` is the full contraction-blocked component span.
+            let needed = rank * sph_block;
+            if staging.len() < needed {
+                return Err(cintxRsError::BufferTooSmall {
+                    required: needed,
+                    provided: staging.len(),
+                });
+            }
+            for comp in 0..rank {
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                        let mut sph_tmp = vec![0.0_f64; nsi * nsj];
+                        cart_to_sph_1e(
+                            &cart_comp[cart_base..cart_base + block_len],
+                            &mut sph_tmp,
+                            li,
+                            lj,
+                        );
+                        let staging_comp_base = comp * sph_block;
+                        for mj in 0..nsj {
+                            let jj = cj * nsj + mj;
+                            for mi in 0..nsi {
+                                let ii = ci * nsi + mi;
+                                let dst = staging_comp_base + ii + jj * ni_sph;
+                                staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let ni_cart = n_ctr_i * nci;
+            let nj_cart = n_ctr_j * ncj;
+            let cart_block = ni_cart * nj_cart;
+            // WR-02: fail closed if staging cannot hold the full component rank.
+            let needed = rank * cart_block;
+            if staging.len() < needed {
+                return Err(cintxRsError::BufferTooSmall {
+                    required: needed,
+                    provided: staging.len(),
+                });
+            }
+            for comp in 0..rank {
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                        let block = &cart_comp[src_base..src_base + block_len];
+                        let staging_comp_base = comp * cart_block;
+                        for jc in 0..ncj {
+                            let jj = cj * ncj + jc;
+                            for ic in 0..nci {
+                                let ii = ci * nci + ic;
+                                let dst = staging_comp_base + ii + jj * ni_cart;
+                                staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => {
+            // Callers reject Spinor before reaching here (each family fails typed
+            // with UnsupportedApi). Keep this as an internal invariant guard.
+            unreachable!("spinor representation rejected before staging copy");
+        }
+    }
+
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
+    Ok(not0)
+}
+
 /// Generic inner for the 1e launcher.
 ///
 /// Contains the full algorithm of `launch_one_electron` parameterized over the
@@ -6010,88 +6131,24 @@ fn launch_one_electron_typed<F: CintFloat>(
             }
         }
 
-        let rank_us = rank as usize;
-        match plan.representation {
-            Representation::Spheric => {
-                let ni_sph = n_ctr_i * nsi;
-                let nj_sph = n_ctr_j * nsj;
-                let sph_block = ni_sph * nj_sph;
-                // WR-02: fail closed if staging cannot hold the full component rank —
-                // never silently drop trailing components (OOM-safe no-partial-writes
-                // contract). `needed` is the full contraction-blocked component span.
-                let needed = rank_us * sph_block;
-                if staging.len() < needed {
-                    return Err(cintxRsError::BufferTooSmall {
-                        required: needed,
-                        provided: staging.len(),
-                    });
-                }
-                for comp in 0..rank_us {
-                    for ci in 0..n_ctr_i {
-                        for cj in 0..n_ctr_j {
-                            let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
-                            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
-                            cart_to_sph_1e(
-                                &cart_comp[cart_base..cart_base + block_len],
-                                &mut sph_tmp,
-                                li,
-                                lj,
-                            );
-                            let staging_comp_base = comp * sph_block;
-                            for mj in 0..nsj {
-                                let jj = cj * nsj + mj;
-                                for mi in 0..nsi {
-                                    let ii = ci * nsi + mi;
-                                    let dst = staging_comp_base + ii + jj * ni_sph;
-                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Representation::Cart => {
-                let ni_cart = n_ctr_i * nci;
-                let nj_cart = n_ctr_j * ncj;
-                let cart_block = ni_cart * nj_cart;
-                // WR-02: fail closed if staging cannot hold the full component rank.
-                let needed = rank_us * cart_block;
-                if staging.len() < needed {
-                    return Err(cintxRsError::BufferTooSmall {
-                        required: needed,
-                        provided: staging.len(),
-                    });
-                }
-                for comp in 0..rank_us {
-                    for ci in 0..n_ctr_i {
-                        for cj in 0..n_ctr_j {
-                            let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
-                            let block = &cart_comp[src_base..src_base + block_len];
-                            let staging_comp_base = comp * cart_block;
-                            for jc in 0..ncj {
-                                let jj = cj * ncj + jc;
-                                for ic in 0..nci {
-                                    let ii = ci * nci + ic;
-                                    let dst = staging_comp_base + ii + jj * ni_cart;
-                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Representation::Spinor => unreachable!("spinor moment rejected above"),
-        }
-
-        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
-            1e-12
-        } else {
-            1e-18
-        });
-        let not0 = staging
-            .iter()
-            .filter(|&&v| v.abs() > nonzero_threshold)
-            .count() as i32;
+        // IN-03: shared component-leading staging writer (cart/sph copy +
+        // fail-closed BufferTooSmall + not0 count).
+        let not0 = write_component_leading_staging::<F>(
+            plan.representation,
+            rank as usize,
+            n_ctr_i,
+            n_ctr_j,
+            nci,
+            ncj,
+            nsi,
+            nsj,
+            li,
+            lj,
+            total_len,
+            block_len,
+            &cart_comp,
+            staging,
+        )?;
 
         let staging_bytes = staging.len() * std::mem::size_of::<F>();
         return Ok(ExecutionStats {
@@ -6186,86 +6243,23 @@ fn launch_one_electron_typed<F: CintFloat>(
             }
         }
 
-        // Write to staging: component-leading layout staging[comp * ni*nj + n].
-        match plan.representation {
-            Representation::Spheric => {
-                let ni_sph = n_ctr_i * nsi;
-                let nj_sph = n_ctr_j * nsj;
-                let sph_block = ni_sph * nj_sph;
-                // WR-02: fail closed if staging cannot hold the full component rank.
-                let needed = rank * sph_block;
-                if staging.len() < needed {
-                    return Err(cintxRsError::BufferTooSmall {
-                        required: needed,
-                        provided: staging.len(),
-                    });
-                }
-                for comp in 0..rank {
-                    for ci in 0..n_ctr_i {
-                        for cj in 0..n_ctr_j {
-                            let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
-                            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
-                            cart_to_sph_1e(
-                                &cart_comp[cart_base..cart_base + block_len],
-                                &mut sph_tmp,
-                                li,
-                                lj,
-                            );
-                            let staging_comp_base = comp * sph_block;
-                            for mj in 0..nsj {
-                                let jj = cj * nsj + mj;
-                                for mi in 0..nsi {
-                                    let ii = ci * nsi + mi;
-                                    let dst = staging_comp_base + ii + jj * ni_sph;
-                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Representation::Cart => {
-                let ni_cart = n_ctr_i * nci;
-                let nj_cart = n_ctr_j * ncj;
-                let cart_block = ni_cart * nj_cart;
-                // WR-02: fail closed if staging cannot hold the full component rank.
-                let needed = rank * cart_block;
-                if staging.len() < needed {
-                    return Err(cintxRsError::BufferTooSmall {
-                        required: needed,
-                        provided: staging.len(),
-                    });
-                }
-                for comp in 0..rank {
-                    for ci in 0..n_ctr_i {
-                        for cj in 0..n_ctr_j {
-                            let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
-                            let block = &cart_comp[src_base..src_base + block_len];
-                            let staging_comp_base = comp * cart_block;
-                            for jc in 0..ncj {
-                                let jj = cj * ncj + jc;
-                                for ic in 0..nci {
-                                    let ii = ci * nci + ic;
-                                    let dst = staging_comp_base + ii + jj * ni_cart;
-                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Representation::Spinor => unreachable!("spinor rinv/drinv rejected above"),
-        }
-
-        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
-            1e-12
-        } else {
-            1e-18
-        });
-        let not0 = staging
-            .iter()
-            .filter(|&&v| v.abs() > nonzero_threshold)
-            .count() as i32;
+        // IN-03: shared component-leading staging writer.
+        let not0 = write_component_leading_staging::<F>(
+            plan.representation,
+            rank,
+            n_ctr_i,
+            n_ctr_j,
+            nci,
+            ncj,
+            nsi,
+            nsj,
+            li,
+            lj,
+            total_len,
+            block_len,
+            &cart_comp,
+            staging,
+        )?;
 
         let staging_bytes = staging.len() * std::mem::size_of::<F>();
         return Ok(ExecutionStats {
@@ -6333,86 +6327,23 @@ fn launch_one_electron_typed<F: CintFloat>(
             }
         }
 
-        // Write to staging: component-leading layout staging[comp * ni*nj + n].
-        match plan.representation {
-            Representation::Spheric => {
-                let ni_sph = n_ctr_i * nsi;
-                let nj_sph = n_ctr_j * nsj;
-                let sph_block = ni_sph * nj_sph;
-                // WR-02: fail closed if staging cannot hold the full component rank
-                // (p4 rank = 1).
-                if staging.len() < sph_block {
-                    return Err(cintxRsError::BufferTooSmall {
-                        required: sph_block,
-                        provided: staging.len(),
-                    });
-                }
-                for comp in 0..1usize {
-                    for ci in 0..n_ctr_i {
-                        for cj in 0..n_ctr_j {
-                            let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
-                            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
-                            cart_to_sph_1e(
-                                &cart_comp[cart_base..cart_base + block_len],
-                                &mut sph_tmp,
-                                li,
-                                lj,
-                            );
-                            let staging_comp_base = comp * sph_block;
-                            for mj in 0..nsj {
-                                let jj = cj * nsj + mj;
-                                for mi in 0..nsi {
-                                    let ii = ci * nsi + mi;
-                                    let dst = staging_comp_base + ii + jj * ni_sph;
-                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Representation::Cart => {
-                let ni_cart = n_ctr_i * nci;
-                let nj_cart = n_ctr_j * ncj;
-                let cart_block = ni_cart * nj_cart;
-                // WR-02: fail closed if staging cannot hold the full component rank
-                // (p4 rank = 1).
-                if staging.len() < cart_block {
-                    return Err(cintxRsError::BufferTooSmall {
-                        required: cart_block,
-                        provided: staging.len(),
-                    });
-                }
-                for comp in 0..1usize {
-                    for ci in 0..n_ctr_i {
-                        for cj in 0..n_ctr_j {
-                            let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
-                            let block = &cart_comp[src_base..src_base + block_len];
-                            let staging_comp_base = comp * cart_block;
-                            for jc in 0..ncj {
-                                let jj = cj * ncj + jc;
-                                for ic in 0..nci {
-                                    let ii = ci * nci + ic;
-                                    let dst = staging_comp_base + ii + jj * ni_cart;
-                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Representation::Spinor => unreachable!("spinor p4 rejected above"),
-        }
-
-        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
-            1e-12
-        } else {
-            1e-18
-        });
-        let not0 = staging
-            .iter()
-            .filter(|&&v| v.abs() > nonzero_threshold)
-            .count() as i32;
+        // IN-03: shared component-leading staging writer (p4 rank = 1).
+        let not0 = write_component_leading_staging::<F>(
+            plan.representation,
+            1,
+            n_ctr_i,
+            n_ctr_j,
+            nci,
+            ncj,
+            nsi,
+            nsj,
+            li,
+            lj,
+            total_len,
+            block_len,
+            &cart_comp,
+            staging,
+        )?;
 
         let staging_bytes = staging.len() * std::mem::size_of::<F>();
         return Ok(ExecutionStats {
@@ -6486,88 +6417,23 @@ fn launch_one_electron_typed<F: CintFloat>(
             }
         }
 
-        // Write to staging: component-leading layout staging[comp * ni*nj + n].
-        match plan.representation {
-            Representation::Spheric => {
-                let ni_sph = n_ctr_i * nsi;
-                let nj_sph = n_ctr_j * nsj;
-                let sph_block = ni_sph * nj_sph;
-                // WR-02: fail closed if staging cannot hold the full component rank
-                // (irp rank = 9).
-                let needed = 9 * sph_block;
-                if staging.len() < needed {
-                    return Err(cintxRsError::BufferTooSmall {
-                        required: needed,
-                        provided: staging.len(),
-                    });
-                }
-                for comp in 0..9usize {
-                    for ci in 0..n_ctr_i {
-                        for cj in 0..n_ctr_j {
-                            let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
-                            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
-                            cart_to_sph_1e(
-                                &cart_9comp[cart_base..cart_base + block_len],
-                                &mut sph_tmp,
-                                li,
-                                lj,
-                            );
-                            let staging_comp_base = comp * sph_block;
-                            for mj in 0..nsj {
-                                let jj = cj * nsj + mj;
-                                for mi in 0..nsi {
-                                    let ii = ci * nsi + mi;
-                                    let dst = staging_comp_base + ii + jj * ni_sph;
-                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Representation::Cart => {
-                let ni_cart = n_ctr_i * nci;
-                let nj_cart = n_ctr_j * ncj;
-                let cart_block = ni_cart * nj_cart;
-                // WR-02: fail closed if staging cannot hold the full component rank
-                // (irp rank = 9).
-                let needed = 9 * cart_block;
-                if staging.len() < needed {
-                    return Err(cintxRsError::BufferTooSmall {
-                        required: needed,
-                        provided: staging.len(),
-                    });
-                }
-                for comp in 0..9usize {
-                    for ci in 0..n_ctr_i {
-                        for cj in 0..n_ctr_j {
-                            let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
-                            let block = &cart_9comp[src_base..src_base + block_len];
-                            let staging_comp_base = comp * cart_block;
-                            for jc in 0..ncj {
-                                let jj = cj * ncj + jc;
-                                for ic in 0..nci {
-                                    let ii = ci * nci + ic;
-                                    let dst = staging_comp_base + ii + jj * ni_cart;
-                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Representation::Spinor => unreachable!("spinor irp rejected above"),
-        }
-
-        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
-            1e-12
-        } else {
-            1e-18
-        });
-        let not0 = staging
-            .iter()
-            .filter(|&&v| v.abs() > nonzero_threshold)
-            .count() as i32;
+        // IN-03: shared component-leading staging writer (irp rank = 9).
+        let not0 = write_component_leading_staging::<F>(
+            plan.representation,
+            9,
+            n_ctr_i,
+            n_ctr_j,
+            nci,
+            ncj,
+            nsi,
+            nsj,
+            li,
+            lj,
+            total_len,
+            block_len,
+            &cart_9comp,
+            staging,
+        )?;
 
         let staging_bytes = staging.len() * std::mem::size_of::<F>();
         return Ok(ExecutionStats {
