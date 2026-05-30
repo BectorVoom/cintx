@@ -172,6 +172,57 @@ pub fn assert_any_nonzero(block: &[f64], label: &str) {
     assert!(any_nonzero, "{label}: block is all-zero (zero-fill regression)");
 }
 
+/// Per-component stuck-at-zero gate (WR-04): for EVERY component the vendor populates,
+/// assert the observed (cintx) block populates the SAME component too.
+///
+/// Both buffers are `rank * ni * nj` component-leading; each is split into `rank` equal
+/// `ni*nj` component slices. A bare `assert_any_nonzero` passes if a single element
+/// anywhere is non-zero — so a high-rank family (`rrrr` rank 81, `irp` rank 9) that
+/// correctly fills ONE component but zeroes the rest would slip through whenever the
+/// vendor also reads zero in the dropped slots (compounding the WR-02 silent-drop
+/// hazard). This gate closes that gap WITHOUT false positives: a component that is
+/// legitimately zero in the VENDOR reference (e.g. odd-parity moments on a same-center
+/// block) is skipped, but any component the vendor populates and cintx leaves all-zero
+/// fails loudly. `count_mismatches` separately checks the populated values match.
+pub fn assert_components_match_vendor_support(
+    vendor: &[f64],
+    observed: &[f64],
+    rank: usize,
+    label: &str,
+) {
+    assert!(rank > 0, "{label}: rank must be > 0");
+    assert_eq!(vendor.len(), observed.len(), "{label}: length mismatch");
+    assert_eq!(
+        vendor.len() % rank,
+        0,
+        "{label}: block len {} not divisible by rank {rank}",
+        vendor.len()
+    );
+    let comp_len = vendor.len() / rank;
+    let mut any_vendor_component_nonzero = false;
+    for comp in 0..rank {
+        let lo = comp * comp_len;
+        let hi = lo + comp_len;
+        let vendor_nonzero = vendor[lo..hi].iter().any(|v| v.abs() > 1e-14);
+        if !vendor_nonzero {
+            continue;
+        }
+        any_vendor_component_nonzero = true;
+        let observed_nonzero = observed[lo..hi].iter().any(|v| v.abs() > 1e-14);
+        assert!(
+            observed_nonzero,
+            "{label}: component {comp}/{rank} is all-zero in cintx but non-zero in vendor \
+             (stuck-at-zero / dropped-component regression)"
+        );
+    }
+    // Defence-in-depth: at least one vendor component must be non-zero overall, else
+    // the chosen shell pair is degenerate and the parity comparison is vacuous.
+    assert!(
+        any_vendor_component_nonzero,
+        "{label}: vendor block is all-zero across every component (degenerate fixture)"
+    );
+}
+
 /// RANK-PARAMETERIZED vendor parity gate (Phase 24 generalization of the hardcoded
 /// NCOMP=9 helper in `one_electron_grad_both_parity.rs:307`).
 ///
@@ -242,6 +293,9 @@ pub fn vendor_parity_at<FS, FC>(
     let cintx_s = collect_cintx_block(rank, api_sph, atm, bas, env, shls_pair, nsph);
     assert_any_nonzero(&cintx_s, &format!("{label}_sph cintx"));
     assert_any_nonzero(&vendor_s, &format!("{label}_sph vendor"));
+    // WR-04: per-component stuck-at-zero gate — every vendor-populated component must
+    // be populated by cintx too, so a dropped trailing component cannot slip through.
+    assert_components_match_vendor_support(&vendor_s, &cintx_s, rank, &format!("{label}_sph"));
     let mm = count_mismatches(&vendor_s, &cintx_s, ATOL, RTOL);
     assert_eq!(mm, 0, "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}");
 
@@ -250,6 +304,8 @@ pub fn vendor_parity_at<FS, FC>(
     let cintx_c = collect_cintx_block(rank, api_cart, atm, bas, env, shls_pair, ncart);
     assert_any_nonzero(&cintx_c, &format!("{label}_cart cintx"));
     assert_any_nonzero(&vendor_c, &format!("{label}_cart vendor"));
+    // WR-04: per-component stuck-at-zero gate (cart side).
+    assert_components_match_vendor_support(&vendor_c, &cintx_c, rank, &format!("{label}_cart"));
     let mm = count_mismatches(&vendor_c, &cintx_c, ATOL, RTOL);
     assert_eq!(mm, 0, "{label}_cart: {mm} mismatches vs vendored libcint at atol={ATOL}");
 }
