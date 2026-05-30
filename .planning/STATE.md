@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: verifying
-stopped_at: Completed 24-05-PLAN.md
-last_updated: "2026-05-30T07:52:08.171Z"
+stopped_at: Phase 25 context gathered
+last_updated: "2026-05-30T08:59:08.653Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 21
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 25
 Plan: Not started
 Status: Phase complete — ready for verification
-Resume file: None
+Resume file: .planning/phases/25-group-2-hessian-higher-order-derivatives/25-CONTEXT.md
 Last activity: 2026-05-30
 
 **v1.4 phase sequence (dependency-ordered):**
@@ -353,6 +353,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-30T07:37:35.779Z
-Stopped at: Completed 24-05-PLAN.md
+Last session: 2026-05-30T08:59:08.648Z
+Stopped at: Phase 25 context gathered
 Resume file: None
