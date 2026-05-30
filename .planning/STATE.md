@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Completed 25-03-PLAN.md
-last_updated: "2026-05-30T15:20:00.000Z"
+stopped_at: Completed 25-04-PLAN.md
+last_updated: "2026-05-30T15:03:05.197Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 21
   completed_phases: 14
   total_plans: 77
-  completed_plans: 74
-  percent: 96
+  completed_plans: 75
+  percent: 97
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 25 (group-2-hessian-higher-order-derivatives) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Resume file: None
 Last activity: 2026-05-30
@@ -137,6 +137,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 24 P24-05 | 22 | 1 tasks | 4 files |
 | Phase 25 P02 | 24 | 3 tasks | 7 files |
 | Phase 25 P03 | 70 | 3 tasks | 6 files |
+| Phase 25 P04 | 55 | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -318,6 +319,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 25-03]: ipipkin's -½ kinetic factor must be folded into cintx's gout (observed=2× vendor without it): libcint emits -(s) and scales by ½ in CINT1e_drv, but cintx contracts s directly into staging. ng={2,2,...} (nmax=li+lj+4, lj_ext=lj+2) vs ng={2,0,...} for ovlp/nuc/rinv
 - [Phase 25-03]: ipiprinv parity REQUIRES a PTR_ENV_START-aligned fixture (env[0..20] reserved) so the rinv origin at env[4..6] is not clobbered by atom coords; inject a nonzero rinv origin via env_with_rinv_origin (zero origin is trivially-passing)
 - [Phase 25-03]: xtask is a standalone cargo project (own Cargo.lock), NOT a workspace member — run `cd xtask && cargo run -- manifest-audit`, not `cargo run -p xtask` from the workspace root
+- [Phase ?]: [Phase 25-04]: 2e Hessian gout permutation is identical between F12 and plain Coulomb — reuse the Phase-13 gout_ipip1/ipvip1/ip1ip2 helpers verbatim (pub(crate)); only the rank-81 gout_ipip1ipip2 was new
+- [Phase ?]: [Phase 25-04]: D-07 re-home preserves the two source-only-gate raw.rs tests by repointing to int2e_breit_r1p2_spinor (still source-only) instead of deleting coverage
 
 ### Roadmap Evolution
 
@@ -362,6 +365,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-30T14:01:52.912Z
-Stopped at: Completed 25-02-PLAN.md
+Last session: 2026-05-30T15:03:05.193Z
+Stopped at: Completed 25-04-PLAN.md
 Resume file: None

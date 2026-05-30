@@ -93,7 +93,7 @@
 ### Group 2 — Hessian & Higher-Order Derivatives
 
 - [x] **HESS-01**: `int1e_ipipovlp`, `int1e_ipipnuc`, `int1e_ipipkin`, `int1e_ipiprinv` (component_rank=9) match at atol=1e-12 (cart+sph).
-- [ ] **HESS-02**: The 2e Hessian set (`int2e_ipip1`, `int2e_ipvip1`, `int2e_ip1ip2`, `int2e_ipip1ipip2`) — promoted from `unstable` where present — match at atol=1e-12 (cart+sph).
+- [x] **HESS-02**: The 2e Hessian set (`int2e_ipip1`, `int2e_ipvip1`, `int2e_ip1ip2`, `int2e_ipip1ipip2`) — promoted from `unstable` where present — match at atol=1e-12 (cart+sph).
 - [ ] **HESS-03**: `int2c2e_ipip1`, `int3c2e_ipip1`, `int3c2e_ipip2` match at atol=1e-12 (cart+sph).
 - [ ] **HESS-04**: 3rd/4th-order families (`int1e_ipipipnuc`, `int1e_ipipipiprinv`, and siblings) match at atol=1e-12 (cart+sph), with `ng[]`-driven bra+ket headroom.
 
@@ -202,7 +202,7 @@
 | MOM-03 | Phase 24 | Complete |
 | MOM-04 | Phase 24 | Complete |
 | HESS-01 | Phase 25 | Complete |
-| HESS-02 | Phase 25 | Pending |
+| HESS-02 | Phase 25 | Complete |
 | HESS-03 | Phase 25 | Pending |
 | HESS-04 | Phase 25 | Pending |
 | FND-02 | Phase 25 | Complete |
