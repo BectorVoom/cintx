@@ -189,3 +189,6 @@ family_name,operator_name,symbol_name,category,arity,forms,component_rank,featur
 "2e","cint2e_ip1_cart_optimizer","cint2e_ip1_cart_optimizer","legacy",4,"legacy-wrapper|optimizer","3","none","stable","src/misc.h","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"legacy","2e"
 "2e","cint2e_ip1_sph_optimizer","cint2e_ip1_sph_optimizer","legacy",4,"legacy-wrapper|optimizer","3","none","stable","src/misc.h","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"legacy","2e"
 "2e","cint2e_ip1_optimizer","cint2e_ip1_optimizer","legacy",4,"legacy-wrapper|optimizer","3","none","stable","src/misc.h","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"legacy","2e"
+"3c2e","ip2","int3c2e_ip2_cart","3c2e",3,"cart","3","none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","3c2e"
+"3c2e","ip2","int3c2e_ip2_sph","3c2e",3,"sph","3","none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","3c2e"
+"3c2e","ip2","int3c2e_ip2_spinor","3c2e",3,"spinor","3","none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","3c2e"

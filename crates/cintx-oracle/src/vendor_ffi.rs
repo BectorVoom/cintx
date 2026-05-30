@@ -1261,6 +1261,73 @@ pub fn vendor_int3c2e_ip1_sph(
     }
 }
 
+/// Evaluate int3c2e_ip2_cart for a single shell triple using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj * nk elements (3 gradient components).
+/// Layout: component-leading — out[comp * ni*nj*nk + n] for comp in 0..3.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, ip2
+/// variant: ∇ on the auxiliary `k` center — `G2E_D_K` on the real aux k per
+/// int3c2e.c:99, in cintx's layout the 2e `ll` slot).
+pub fn vendor_int3c2e_ip2_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ip2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c2e_ip2_sph for a single shell triple using vendored libcint.
+///
+/// `out` must be pre-allocated with 3 * ni * nj * nk elements (3 gradient components)
+/// where nX = CINTcgto_spheric(shls[X], bas).
+/// Layout: component-leading — out[comp * ni*nj*nk + n] for comp in 0..3.
+///
+/// `shls` is `[i, j, k]` — three shell indices (3-center 2-electron integral, ip2
+/// variant, spherical). This is the `∇` auxiliary-`k`-center DERIVATIVE reference
+/// for the int3c2e_ip2 oracle gate (DRV1-05).
+pub fn vendor_int3c2e_ip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 // ---- Helper symbol vendor FFI wrappers ----
 // Integer-returning helpers (exact equality comparison per D-02).
 
