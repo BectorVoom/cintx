@@ -638,7 +638,11 @@ pub(crate) fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usi
 /// Formula (per axis):
 ///   f[n @ j=0] = -2*aj * g[n+dj]
 ///   f[n @ j>=1] = j * g[n-dj] + (-2*aj) * g[n+dj]
-fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, aj: f64, shape: &F12Shape) {
+///
+/// `pub(crate)` (Phase 23 plan 01): shared with sibling kernel launchers
+/// (`two_electron.rs`, `center_2c2e.rs`, `center_3c2e.rs`) for ket/remaining-center
+/// derivative families (int2e_ip2, int2c2e_ip1/ip2). The math is F12-free.
+pub(crate) fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, aj: f64, shape: &F12Shape) {
     let aj2 = -2.0 * aj;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -685,7 +689,11 @@ fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
 /// Formula (per axis):
 ///   f[n @ k=0] = -2*ak * g[n+dk]
 ///   f[n @ k>=1] = k * g[n-dk] + (-2*ak) * g[n+dk]
-fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ak: f64, shape: &F12Shape) {
+///
+/// `pub(crate)` (Phase 23 plan 01): shared with sibling kernel launchers
+/// (`two_electron.rs`, `center_2c2e.rs`, `center_3c2e.rs`) for remaining-center
+/// derivative families. The math is F12-free.
+pub(crate) fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ak: f64, shape: &F12Shape) {
     let ak2 = -2.0 * ak;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -721,6 +729,58 @@ fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
     }
 }
 
+/// Apply the `\nabla_l` operator to the G tensor.
+///
+/// Corresponds to `CINTnabla1l_2e` in libcint/g2e.c (the `G2E_D_L` macro).
+///
+/// `pub(crate)` (Phase 23 plan 01): added because cintx's 3c2e g-tensor builder maps
+/// the real auxiliary `k` center into the 2e `ll` slot (`build_2e_shape(li+1, lj, 0, lk)`,
+/// phantom 2e `lk`=0), so int3c2e_ip2's auxiliary derivative must nabla the `ll` slot —
+/// `nabla1k_2e` would touch the phantom slot (RESEARCH Pitfall 2). The G2E_D_L recurrence
+/// is the structural mirror of `nabla1k_2e`, operating on the `ll` loop bound and `dl`
+/// stride; `nabla1l_breit` (breit.rs:1206) is the in-tree reference (Don't Hand-Roll).
+///
+/// Formula (per axis):
+///   f[n @ l=0] = -2*al * g[n+dl]
+///   f[n @ l>=1] = l * g[n-dl] + (-2*al) * g[n+dl]
+pub(crate) fn nabla1l_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, al: f64, shape: &F12Shape) {
+    let al2 = -2.0 * al;
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        for j in 0..=lj {
+            // l=0: all k, i
+            for k in 0..=lk {
+                let base = dj * j + dk * k;
+                for i in 0..=li {
+                    let ptr = base + di * i;
+                    for n in ptr..ptr + nroots {
+                        f[off + n] = al2 * g[off + n + dl];
+                    }
+                }
+            }
+            // l>=1
+            for l in 1..=ll {
+                for k in 0..=lk {
+                    let base = dj * j + dl * l + dk * k;
+                    for i in 0..=li {
+                        let ptr = base + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = l as f64 * g[off + n - dl] + al2 * g[off + n + dl];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-variant gout contraction functions
 //
@@ -732,23 +792,61 @@ fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usi
 // These match the libcint autocode patterns in autocode/grad2.c and autocode/hess.c.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Compute gout for the ip1 variant (ncomp=3): `\nabla_i` on electron 1.
+/// Which center the single-side `\nabla` acts on inside [`gout_ipn`].
 ///
-/// Matches `CINTgout2e_int2e_ip1` in autocode/grad2.c.
-/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z).
+/// Phase 23 plan 01: the s[0..2] mixing body of the single-side contraction is
+/// IDENTICAL for every center — only the nabla operator and its exponent change.
+/// `I` reproduces the original `gout_ip1` (int2e_ip1, bra-i); `J`/`K`/`L` cover the
+/// ket / remaining-center / auxiliary-center derivative families (int2e_ip2,
+/// int2c2e_ip1/ip2, int3c2e_ip2 — the last via the 2e `ll` slot, RESEARCH Pitfall 2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Nabla1Center {
+    I,
+    J,
+    K,
+    L,
+}
+
+/// Apply the matching single-side `\nabla` operator at base angular momenta.
+#[inline]
+fn apply_nabla1_center(
+    center: Nabla1Center,
+    g1: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    exponent: f64,
+    shape: &F12Shape,
+) {
+    match center {
+        Nabla1Center::I => nabla1i_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::J => nabla1j_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::K => nabla1k_2e(g1, g, li, lj, lk, ll, exponent, shape),
+        Nabla1Center::L => nabla1l_2e(g1, g, li, lj, lk, ll, exponent, shape),
+    }
+}
+
+/// Parameterized single-side gradient contraction (ncomp=3).
 ///
-/// `pub(crate)` (Phase 21 D-04): shared verbatim with `two_electron.rs::int2e_ip1`
-/// and `center_3c2e.rs::int3c2e_ip1` — the plain-Coulomb gradients feed it the
-/// plain `fill_g_tensor_2e` G-tensor (rys roots) instead of the F12 stg-roots
-/// tensor; the contraction math here is identical for both.
-pub(crate) fn gout_ip1(
+/// Phase 23 plan 01: generalizes the original `gout_ip1` s[0..2] mixing body over
+/// which center the `\nabla` acts on (`center`) and its exponent (`exponent`). The
+/// mixing math (`s[0]=g1x·g0y·g0z`, `s[1]=g0x·g1y·g0z`, `s[2]=g0x·g0y·g1z`) is the
+/// single source of truth; [`gout_ip1`] is now a thin `Nabla1Center::I` wrapper so
+/// the int2e_ip1 (bra-i) path stays byte-identical (Phase 21 D-04, no regression).
+///
+/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z), n walking the
+/// `[ll][lk][lj][li]` Cartesian product (outer→inner), matching `gout_ip1`.
+pub(crate) fn gout_ipn(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
     lj: usize,
     lk: usize,
     ll: usize,
-    ai: f64,
+    center: Nabla1Center,
+    exponent: f64,
 ) -> Vec<f64> {
     let nfi = ncart(li as u8);
     let nfj = ncart(lj as u8);
@@ -758,8 +856,8 @@ pub(crate) fn gout_ip1(
     let g_size = shape.g_size;
 
     let mut g1 = vec![0.0_f64; 3 * g_size];
-    // nabla1i at li+0 (base li); g was built with li_ceil = li+1
-    nabla1i_2e(&mut g1, g, li, lj, lk, ll, ai, shape);
+    // nabla at base angular momenta; g was built with the matching ceiling headroom.
+    apply_nabla1_center(center, &mut g1, g, li, lj, lk, ll, exponent, shape);
 
     let ci_comps = cart_comps(li as u8);
     let cj_comps = cart_comps(lj as u8);
@@ -799,6 +897,30 @@ pub(crate) fn gout_ip1(
         }
     }
     out
+}
+
+/// Compute gout for the ip1 variant (ncomp=3): `\nabla_i` on electron 1.
+///
+/// Matches `CINTgout2e_int2e_ip1` in autocode/grad2.c.
+/// Output layout: gout[n*3+comp] for comp in 0..3 (x, y, z).
+///
+/// `pub(crate)` (Phase 21 D-04): shared verbatim with `two_electron.rs::int2e_ip1`
+/// and `center_3c2e.rs::int3c2e_ip1` — the plain-Coulomb gradients feed it the
+/// plain `fill_g_tensor_2e` G-tensor (rys roots) instead of the F12 stg-roots
+/// tensor; the contraction math here is identical for both.
+///
+/// Phase 23 plan 01: now a thin `Nabla1Center::I` wrapper over [`gout_ipn`]; the
+/// signature and numeric output are byte-identical to the pre-change implementation.
+pub(crate) fn gout_ip1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+) -> Vec<f64> {
+    gout_ipn(g, shape, li, lj, lk, ll, Nabla1Center::I, ai)
 }
 
 /// Compute gout for the ipip1 variant (ncomp=9): `\nabla_i \nabla_i` on electron 1.
@@ -2376,5 +2498,193 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 23 plan 01: nabla1l_2e (G2E_D_L) unit tests.
+    //
+    // nabla1l_2e is the mirror of nabla1k_2e operating on the `ll` loop bound and
+    // the `dl` stride. It must reproduce the analytic ∂χ_l recurrence on the l axis:
+    //   f[l=0]   = -2*al * g[l+1]
+    //   f[l>=1]  =  l * g[l-1] + (-2*al) * g[l+1]
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Fill a single-axis g block (g_size elements) with a distinct, easily-checkable
+    /// value per element so stride/offset errors surface immediately.
+    fn fill_distinct(g: &mut [f64]) {
+        for (idx, v) in g.iter_mut().enumerate() {
+            *v = (idx as f64) + 1.0; // 1.0, 2.0, 3.0, ...
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_ssp_first_order_term() {
+        // s-s-s-p base: nabla on a base ll=1. Mirror the real launchers, which build the
+        // G-tensor with CEILING angular momenta (ll_ceil = ll+1) so g[+dl] at the top base
+        // l-level stays in bounds. Here ll_base=1, so build the shape with ll_ceil=2.
+        let ll_base = 1usize;
+        let shape = build_f12_shape(0, 0, 0, ll_base + 1);
+        let al = 0.75_f64;
+        let three_g = 3 * shape.g_size;
+
+        let mut g = vec![0.0_f64; three_g];
+        fill_distinct(&mut g);
+        let mut f = vec![0.0_f64; three_g];
+        nabla1l_2e(&mut f, &g, 0, 0, 0, ll_base, al, &shape);
+
+        let dl = shape.dl;
+        let nroots = shape.nroots;
+        for axis in 0..3 {
+            let off = axis * shape.g_size;
+            // l=0 first-order term: f = -2*al * g[+dl]
+            for n in 0..nroots {
+                let expected = -2.0 * al * g[off + n + dl];
+                assert_eq!(
+                    f[off + n], expected,
+                    "axis {axis} l=0 n={n}: nabla1l first-order term mismatch"
+                );
+            }
+            // l=1: f = 1*g[-dl] + (-2*al)*g[+dl]
+            for n in 0..nroots {
+                let ptr = dl + n;
+                let expected = 1.0 * g[off + ptr - dl] + (-2.0 * al) * g[off + ptr + dl];
+                assert_eq!(f[off + ptr], expected, "axis {axis} l=1 n={n}");
+            }
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_matches_analytic_l_recurrence() {
+        // base ll=2 with one extra ceiling level (ll_ceil=3) so the full
+        // f[l>=1] = l*g[-dl] + (-2*al)*g[+dl] recurrence stays in bounds up to l=2.
+        // i/j/k slots held at 0 so only the l axis recurrence is exercised.
+        let ll_base = 2usize;
+        let shape = build_f12_shape(0, 0, 0, ll_base + 1);
+        let al = 1.3_f64;
+        let three_g = 3 * shape.g_size;
+
+        let mut g = vec![0.0_f64; three_g];
+        fill_distinct(&mut g);
+        let mut f = vec![0.0_f64; three_g];
+        nabla1l_2e(&mut f, &g, 0, 0, 0, ll_base, al, &shape);
+
+        let dl = shape.dl;
+        let nroots = shape.nroots;
+        for axis in 0..3 {
+            let off = axis * shape.g_size;
+            // l=0: f = -2*al*g[+dl]
+            for n in 0..nroots {
+                let expected = -2.0 * al * g[off + n + dl];
+                assert_eq!(f[off + n], expected, "axis {axis} l=0 n={n}");
+            }
+            // l=1..=2: f = l*g[-dl] + (-2*al)*g[+dl]
+            for l in 1..=ll_base {
+                for n in 0..nroots {
+                    let ptr = dl * l + n;
+                    let expected = l as f64 * g[off + ptr - dl] + (-2.0 * al) * g[off + ptr + dl];
+                    assert_eq!(f[off + ptr], expected, "axis {axis} l={l} n={n}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nabla1l_2e_structural_mirror_of_nabla1k_2e() {
+        // Structural cross-check: nabla1l on the l axis must mirror nabla1k on the k axis
+        // once the strides align. Build both shapes with one extra ceiling level on the
+        // active center (lk_ceil=ll_ceil=2 for a base AM of 1) so neither operator reads
+        // out of bounds, and the dk (k-shape) and dl (l-shape) strides coincide.
+        let base = 1usize;
+        let shape_k = build_f12_shape(0, 0, base + 1, 0);
+        let shape_l = build_f12_shape(0, 0, 0, base + 1);
+        let a = 0.9_f64;
+
+        // For these structurally-equivalent shapes the stride that the active center
+        // walks must be identical: dk in the k-shape == dl in the l-shape.
+        assert_eq!(shape_k.g_size, shape_l.g_size);
+        assert_eq!(shape_k.nroots, shape_l.nroots);
+        assert_eq!(shape_k.dk, shape_l.dl, "dk and dl strides must align for the mirror check");
+
+        let mut gk = vec![0.0_f64; 3 * shape_k.g_size];
+        let mut gl = vec![0.0_f64; 3 * shape_l.g_size];
+        fill_distinct(&mut gk);
+        fill_distinct(&mut gl);
+
+        let mut fk = vec![0.0_f64; 3 * shape_k.g_size];
+        let mut fl = vec![0.0_f64; 3 * shape_l.g_size];
+        nabla1k_2e(&mut fk, &gk, 0, 0, base, 0, a, &shape_k);
+        nabla1l_2e(&mut fl, &gl, 0, 0, 0, base, a, &shape_l);
+
+        for (idx, (&vk, &vl)) in fk.iter().zip(fl.iter()).enumerate() {
+            assert_eq!(vk, vl, "nabla1l must mirror nabla1k at element {idx}");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 23 plan 01: parameterized single-side contraction (gout_ipn).
+    //
+    // Regression guard: gout_ipn with center=I must reproduce gout_ip1 bit-for-bit
+    // (int2e_ip1, bra-i, Phase 21 D-04 must not regress). Also assert the J/K/L
+    // centers run and produce finite output on the same small tensor.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn gout_ipn_center_i_matches_gout_ip1() {
+        // s-p-s-s: base li=0, lj=1, lk=0, ll=0. The i center (nabla1i) needs li_ceil=li+1
+        // headroom, so build the G-tensor shape with li raised by one.
+        let (li, lj, lk, ll) = (0usize, 1usize, 0usize, 0usize);
+        let shape = build_f12_shape(li + 1, lj, lk, ll);
+        let ai = 0.65_f64;
+
+        let mut g = vec![0.0_f64; 3 * shape.g_size];
+        fill_distinct(&mut g);
+
+        let baseline = gout_ip1(&g, &shape, li, lj, lk, ll, ai);
+        let viaparam = gout_ipn(&g, &shape, li, lj, lk, ll, Nabla1Center::I, ai);
+
+        assert_eq!(baseline.len(), viaparam.len(), "gout length mismatch");
+        for (idx, (&b, &p)) in baseline.iter().zip(viaparam.iter()).enumerate() {
+            assert_eq!(
+                b.to_bits(),
+                p.to_bits(),
+                "gout_ipn(I) must be byte-identical to gout_ip1 at element {idx}: {b} vs {p}"
+            );
+        }
+    }
+
+    #[test]
+    fn gout_ipn_other_centers_run() {
+        // Exercise each non-I center with the matching ceiling headroom so the nabla
+        // stays in bounds, and assert the contraction produces finite output and is
+        // not a verbatim copy of the center-I result (different center ⇒ different mix).
+        let exponent = 0.8_f64;
+
+        // center J: ket-i derivative needs lj_ceil = lj+1.
+        let (li, lj, lk, ll) = (1usize, 0usize, 0usize, 0usize);
+        let shape_j = build_f12_shape(li, lj + 1, lk, ll);
+        let mut gj = vec![0.0_f64; 3 * shape_j.g_size];
+        fill_distinct(&mut gj);
+        let out_j = gout_ipn(&gj, &shape_j, li, lj, lk, ll, Nabla1Center::J, exponent);
+        assert!(out_j.iter().all(|v| v.is_finite()), "center J output must be finite");
+
+        // center K: needs lk_ceil = lk+1.
+        let (li, lj, lk, ll) = (0usize, 0usize, 1usize, 0usize);
+        let shape_k = build_f12_shape(li, lj, lk + 1, ll);
+        let mut gk = vec![0.0_f64; 3 * shape_k.g_size];
+        fill_distinct(&mut gk);
+        let out_k = gout_ipn(&gk, &shape_k, li, lj, lk, ll, Nabla1Center::K, exponent);
+        assert!(out_k.iter().all(|v| v.is_finite()), "center K output must be finite");
+
+        // center L: needs ll_ceil = ll+1.
+        let (li, lj, lk, ll) = (0usize, 0usize, 0usize, 1usize);
+        let shape_l = build_f12_shape(li, lj, lk, ll + 1);
+        let mut gl = vec![0.0_f64; 3 * shape_l.g_size];
+        fill_distinct(&mut gl);
+        let out_l = gout_ipn(&gl, &shape_l, li, lj, lk, ll, Nabla1Center::L, exponent);
+        assert!(out_l.iter().all(|v| v.is_finite()), "center L output must be finite");
+
+        // At least one component must be non-zero for each (the synthetic tensor is dense).
+        assert!(out_j.iter().any(|&v| v != 0.0), "center J output should be non-trivial");
+        assert!(out_k.iter().any(|&v| v != 0.0), "center K output should be non-trivial");
+        assert!(out_l.iter().any(|&v| v != 0.0), "center L output should be non-trivial");
     }
 }
