@@ -3,6 +3,11 @@ pub mod center_3c1e;
 pub mod center_3c2e;
 #[cfg(feature = "with-4c1e")]
 pub mod center_4c1e;
+// Phase 25 HESS-04: host f64 evaluators for the 3rd/4th-order 1e derivative
+// families (deriv3.c rank 27, deriv4.c rank 81). Routed host-side because the
+// bra/ket +2/+3 headroom can elevate the nuclear Rys nroots beyond the device
+// MAX_DEVICE_NROOTS=5 cap (FND-02).
+pub mod deriv34;
 pub mod ecp;
 // The `f12` module is always compiled: its derivative math (`gout_ip1`,
 // `nabla1i_2e`, `F12Shape`) is F12-free and is reused verbatim by the

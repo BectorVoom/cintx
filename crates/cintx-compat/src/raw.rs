@@ -308,6 +308,39 @@ impl RawApiId {
     pub const INT1E_IPIPRINV_SPH: Self = Self::Symbol("int1e_ipiprinv_sph");
     pub const INT1E_IPIPRINV_SPINOR: Self = Self::Symbol("int1e_ipiprinv_spinor");
 
+    // Phase 25 HESS-04 3rd-order (deriv3.c, rank 27): ∇∇∇ on bra/ket per family.
+    // ipipipnuc/ipipiprinv = bra ∇∇∇; ipipnucip/ipiprinvip = bra ∇∇ + ket ∇.
+    pub const INT1E_IPIPIPNUC_CART: Self = Self::Symbol("int1e_ipipipnuc_cart");
+    pub const INT1E_IPIPIPNUC_SPH: Self = Self::Symbol("int1e_ipipipnuc_sph");
+    pub const INT1E_IPIPIPNUC_SPINOR: Self = Self::Symbol("int1e_ipipipnuc_spinor");
+
+    pub const INT1E_IPIPIPRINV_CART: Self = Self::Symbol("int1e_ipipiprinv_cart");
+    pub const INT1E_IPIPIPRINV_SPH: Self = Self::Symbol("int1e_ipipiprinv_sph");
+    pub const INT1E_IPIPIPRINV_SPINOR: Self = Self::Symbol("int1e_ipipiprinv_spinor");
+
+    pub const INT1E_IPIPNUCIP_CART: Self = Self::Symbol("int1e_ipipnucip_cart");
+    pub const INT1E_IPIPNUCIP_SPH: Self = Self::Symbol("int1e_ipipnucip_sph");
+    pub const INT1E_IPIPNUCIP_SPINOR: Self = Self::Symbol("int1e_ipipnucip_spinor");
+
+    pub const INT1E_IPIPRINVIP_CART: Self = Self::Symbol("int1e_ipiprinvip_cart");
+    pub const INT1E_IPIPRINVIP_SPH: Self = Self::Symbol("int1e_ipiprinvip_sph");
+    pub const INT1E_IPIPRINVIP_SPINOR: Self = Self::Symbol("int1e_ipiprinvip_spinor");
+
+    // Phase 25 HESS-04 4th-order (deriv4.c, rank 81): bra+2 AND ket+2 dual
+    // headroom. ipipipiprinv = bra ∇∇∇∇; ipiprinvipip = ket ∇∇ + bra ∇∇;
+    // ipipiprinvip = bra ∇∇∇ + ket ∇.
+    pub const INT1E_IPIPIPIPRINV_CART: Self = Self::Symbol("int1e_ipipipiprinv_cart");
+    pub const INT1E_IPIPIPIPRINV_SPH: Self = Self::Symbol("int1e_ipipipiprinv_sph");
+    pub const INT1E_IPIPIPIPRINV_SPINOR: Self = Self::Symbol("int1e_ipipipiprinv_spinor");
+
+    pub const INT1E_IPIPRINVIPIP_CART: Self = Self::Symbol("int1e_ipiprinvipip_cart");
+    pub const INT1E_IPIPRINVIPIP_SPH: Self = Self::Symbol("int1e_ipiprinvipip_sph");
+    pub const INT1E_IPIPRINVIPIP_SPINOR: Self = Self::Symbol("int1e_ipiprinvipip_spinor");
+
+    pub const INT1E_IPIPIPRINVIP_CART: Self = Self::Symbol("int1e_ipipiprinvip_cart");
+    pub const INT1E_IPIPIPRINVIP_SPH: Self = Self::Symbol("int1e_ipipiprinvip_sph");
+    pub const INT1E_IPIPIPRINVIP_SPINOR: Self = Self::Symbol("int1e_ipipiprinvip_spinor");
+
     pub const INT2E_IP1_CART: Self = Self::Symbol("int2e_ip1_cart");
     pub const INT2E_IP1_SPH: Self = Self::Symbol("int2e_ip1_sph");
     pub const INT2E_IP1_SPINOR: Self = Self::Symbol("int2e_ip1_spinor");

@@ -41,6 +41,12 @@ const PIE4: f64 = 0.78539816339744827900_f64;
 /// `li + lj <= 8`. Same `MAX_DEVICE_NROOTS` guard the 2c2e device kernel uses.
 const MAX_DEVICE_NROOTS: usize = 5;
 
+/// Host Rys nroots ceiling for the 1e nuclear/rinv path (FND-02). The host
+/// Wheeler/Jacobi `rys_roots_host` serves nroots 6..12; above 12 the vendor
+/// reference itself caps (quadmath disabled), so the HESS-04 deriv34 families
+/// fail closed (typed `UnsupportedApi`, no partial write) beyond it.
+const HOST_RYS_NROOTS_CEILING_1E: usize = 12;
+
 /// Spherical harmonic normalization prefactor for s and p shells.
 ///
 /// In libcint's `cart2sph.c` and `g1e.c`, the `CINTcommon_fac_sp(l)` function
@@ -7182,6 +7188,13 @@ fn launch_one_electron_typed<F: CintFloat>(
     // ket headroom +2 (ng={0,2,...}).
     let is_irp = op_name == "irp";
 
+    // Phase 25 HESS-04 (Cluster D): 3rd/4th-order 1e derivative families
+    // (deriv3.c rank 27: ipipipnuc/ipipiprinv/ipipnucip/ipiprinvip;
+    //  deriv4.c rank 81: ipipipiprinv/ipiprinvipip/ipipiprinvip). Host-routed
+    // (FND-02): the bra/ket +2/+3 headroom can elevate the nuclear Rys nroots
+    // beyond the device MAX_DEVICE_NROOTS=5 cap.
+    let is_deriv34 = crate::kernels::deriv34::is_deriv34(op_name);
+
     // Phase 24 Cluster A (MOM-01/02/03): overlap-derived position-tensor moment
     // families r/rr/rrr/rrrr/r2/r4/z/zz and their `_origj` variants. Each maps to
     // a (op_mode, moment_order, rank) tuple for the parameterized moment kernel.
@@ -7238,6 +7251,7 @@ fn launch_one_electron_typed<F: CintFloat>(
         && !is_drinv
         && !is_p4
         && !is_irp
+        && !is_deriv34
     {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("1e operator '{}' is not supported", op_name),
@@ -7769,6 +7783,150 @@ fn launch_one_electron_typed<F: CintFloat>(
             .filter(|&&v| v.abs() > nonzero_threshold)
             .count() as i32;
 
+        let staging_bytes = staging.len() * std::mem::size_of::<F>();
+        return Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: staging_bytes,
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes: staging_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 25 HESS-04 3rd/4th-order path (deriv3.c rank 27, deriv4.c rank 81):
+    // ipipipnuc/ipipiprinv/ipipnucip/ipiprinvip (27),
+    // ipipipiprinv/ipiprinvipip/ipipiprinvip (81). HOST-routed (FND-02): the
+    // bra/ket +2/+3 headroom can elevate the nuclear Rys nroots beyond the device
+    // MAX_DEVICE_NROOTS=5 cap; the host `rys_roots_host` Wheeler path serves 6..12.
+    // ─────────────────────────────────────────────────────────────────────────
+    if is_deriv34 {
+        use crate::kernels::deriv34::{contract_deriv34_block, deriv34_rank, nuclear_origins};
+
+        // Spinor reps are registered but not implemented (D-11): fail typed.
+        if plan.representation == Representation::Spinor {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!("spinor int1e_{op_name} (3rd/4th-order)"),
+            });
+        }
+
+        let rank = deriv34_rank(op_name);
+
+        // Build the (origin, charge_factor) Coulomb-center list: nuclear families
+        // sum over all nuclei (-Z_C); rinv families use the single rinv origin.
+        let is_nuc_family = op_name == "ipipipnuc" || op_name == "ipipnucip";
+        let origins: Vec<([f64; 3], f64)> = if is_nuc_family {
+            nuclear_origins(atoms)
+        } else {
+            let origin =
+                plan.operator_env_params
+                    .rinv_orig
+                    .ok_or(cintxRsError::InvalidEnvParam {
+                        param: "PTR_RINV_ORIG",
+                        reason: format!("{op_name} kernel reached with no rinv origin"),
+                    })?;
+            vec![(origin, 1.0)]
+        };
+
+        let n_prim_i = shell_i.nprim as usize;
+        let n_prim_j = shell_j.nprim as usize;
+        let n_ctr_i = shell_i.nctr as usize;
+        let n_ctr_j = shell_j.nctr as usize;
+
+        let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+        let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+        let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+        let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+
+        // Fail closed BEFORE any Rys call (FND-02): the host ceiling is nroots<=12.
+        // nmax = (li+i_inc) + (lj+j_inc); the deriv3/deriv4 i_inc/j_inc are <=3/<=2.
+        let nuc_nroots = (li as u32 + lj as u32 + 5) / 2 + 1;
+        if nuc_nroots as usize > HOST_RYS_NROOTS_CEILING_1E {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "host int1e_{op_name} supports nroots<={HOST_RYS_NROOTS_CEILING_1E}; \
+                     got nroots={nuc_nroots} for l_i={li}, l_j={lj}"
+                ),
+            });
+        }
+
+        let mut cart = contract_deriv34_block(
+            op_name, li, lj, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j, n_ctr_i, n_ctr_j,
+            &origins,
+        )
+        .ok_or_else(|| cintxRsError::UnsupportedApi {
+            requested: format!("1e operator '{op_name}' is not a deriv34 family"),
+        })?;
+
+        // sp normalization scale on all components.
+        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+        if (sp_scale - 1.0).abs() > 1e-15 {
+            for v in cart.iter_mut() {
+                *v *= sp_scale;
+            }
+        }
+
+        let block_len = nci * ncj;
+        let total_len = rank * block_len;
+
+        match plan.representation {
+            Representation::Spheric => {
+                let ni_sph = n_ctr_i * nsi;
+                let nj_sph = n_ctr_j * nsj;
+                let sph_block = ni_sph * nj_sph;
+                for comp in 0..rank {
+                    for ci in 0..n_ctr_i {
+                        for cj in 0..n_ctr_j {
+                            let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
+                            cart_to_sph_1e(&cart[cart_base..cart_base + block_len], &mut sph_tmp, li, lj);
+                            let staging_comp_base = comp * sph_block;
+                            for mj in 0..nsj {
+                                let jj = cj * nsj + mj;
+                                for mi in 0..nsi {
+                                    let ii = ci * nsi + mi;
+                                    let dst = staging_comp_base + ii + jj * ni_sph;
+                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Representation::Cart => {
+                let ni_cart = n_ctr_i * nci;
+                let nj_cart = n_ctr_j * ncj;
+                let cart_block = ni_cart * nj_cart;
+                for comp in 0..rank {
+                    for ci in 0..n_ctr_i {
+                        for cj in 0..n_ctr_j {
+                            let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                            let block = &cart[src_base..src_base + block_len];
+                            let staging_comp_base = comp * cart_block;
+                            for jc in 0..ncj {
+                                let jj = cj * ncj + jc;
+                                for ic in 0..nci {
+                                    let ii = ci * nci + ic;
+                                    let dst = staging_comp_base + ii + jj * ni_cart;
+                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Representation::Spinor => unreachable!("spinor rejected above"),
+        }
+
+        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+            1e-12
+        } else {
+            1e-18
+        });
+        let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
         let staging_bytes = staging.len() * std::mem::size_of::<F>();
         return Ok(ExecutionStats {
             workspace_bytes: plan.workspace.bytes,
