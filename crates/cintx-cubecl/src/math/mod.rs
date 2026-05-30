@@ -2,6 +2,8 @@ pub mod boys;
 pub mod obara_saika;
 pub mod pdata;
 pub mod rys;
+// Phase 25 FND-02 — host Wheeler/Jacobi nroots>=6 root engine (eigh MRRR added in Task 1a).
+pub mod rys_wheeler;
 pub mod roots_xw_data;
 pub mod stg;
 // Phase 19 Plan 01 Wave 0 scaffolding — algorithm bodies land in Plan 02.

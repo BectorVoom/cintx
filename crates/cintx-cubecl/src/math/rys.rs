@@ -7,7 +7,7 @@
 //!
 //! Source: `libcint-master/src/rys_roots.c` (CINTrys_roots, rys_root1..5)
 //! Algorithm: Piecewise Horner polynomial evaluation per domain segment.
-//! Higher nroots (6+) via Wheeler fallback deferred to Phase 10.
+//! Phase 25 FND-02: nroots 6..12 via Wheeler/Jacobi fallback (rys_wheeler module).
 
 #![allow(unused_assignments)]
 
@@ -3241,10 +3241,13 @@ pub fn rys_roots_host<F: CintFloat>(nroots: usize, x: F) -> (Vec<F>, Vec<F>) {
     (r, w)
 }
 
-/// Unified host-side Rys quadrature dispatcher for nroots=1..5.
+/// Unified host-side Rys quadrature dispatcher.
 ///
 /// Returns `(roots, weights)` as `Vec<f64>` for the given number of quadrature points.
-/// Panics if nroots > 5 (Wheeler fallback deferred to Phase 10).
+/// nroots 1..=5: polynomial fits (already ported).
+/// nroots 6..=12: Wheeler/Jacobi/MRRR fallback (Phase 25 FND-02, rys_wheeler module).
+/// nroots >= 13: quadmath path, not compiled in the vendor build — panics with a
+///   clear error; T-25-01 (UnsupportedApi contract, not a silent wrong result).
 fn rys_roots_host_f64(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
     match nroots {
         1 => { let (u, w) = rys_root1_host(x); (vec![u], vec![w]) }
@@ -3252,7 +3255,12 @@ fn rys_roots_host_f64(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
         3 => { let (u, w) = rys_root3_host(x); (u.to_vec(), w.to_vec()) }
         4 => { let (u, w) = rys_root4_host(x); (u.to_vec(), w.to_vec()) }
         5 => { let (u, w) = rys_root5_host(x); (u.to_vec(), w.to_vec()) }
-        _ => panic!("rys_roots_host: nroots={nroots} > 5 not supported"),
+        6..=12 => super::rys_wheeler::rys_roots_host_wheeler(nroots, x),
+        _ => panic!(
+            "rys_roots_host: nroots={nroots} > 12 not supported — the vendor build \
+             has quadmath (HAVE_QUADMATH_H) disabled, so nroots>=13 is not a validated \
+             ceiling (T-25-01: no silent wrong result)"
+        ),
     }
 }
 
@@ -3451,6 +3459,28 @@ mod tests_rys_host {
         }
     }
 
+    /// Phase 25 FND-02 — Task 0 RED test: rys_roots_host(6, x) must return a
+    /// 6-element roots+weights Vec and NOT panic (the panic arm has been replaced
+    /// with a call to rys_wheeler::rys_roots_host_wheeler in Task 0).
+    ///
+    /// At Task 0 the Wheeler engine is still an `unimplemented!()` stub, so this
+    /// test IS expected to fail (RED) until Task 1b lands the real engine. The
+    /// acceptance criterion is: the test EXISTS and demonstrates the panic arm is gone.
+    #[test]
+    fn rys_host_nroots_ge6() {
+        // At Task 0 this will panic from the `unimplemented!()` in rys_wheeler.
+        // At Task 1b the real engine is wired and this must pass (GREEN).
+        let (r, w) = rys_roots_host::<f64>(6, 1.0_f64);
+        assert_eq!(r.len(), 6, "rys_roots_host(6): roots length must be 6");
+        assert_eq!(w.len(), 6, "rys_roots_host(6): weights length must be 6");
+        for i in 0..6 {
+            assert!(r[i].is_finite(), "rys_roots_host(6): root[{i}] not finite");
+            assert!(w[i].is_finite(), "rys_roots_host(6): weight[{i}] not finite");
+            assert!(r[i] >= 0.0, "rys_roots_host(6): root[{i}]={} is negative", r[i]);
+            assert!(w[i] >= 0.0, "rys_roots_host(6): weight[{i}]={} is negative", w[i]);
+        }
+    }
+
 }
 
 /// Tests for the generic rys host wrappers (Phase 20 Plan 03 — Wave 1 math leaves).
@@ -3511,13 +3541,15 @@ mod tests_rys_generic {
 
 /// Compute Rys quadrature roots and weights.
 ///
-/// `nroots`: number of quadrature points (1..=5; higher nroots deferred to Phase 10)
+/// `nroots`: number of quadrature points (1..=5 via device polynomial kernels; 6..12
+///   via host Wheeler/Jacobi path — Phase 25 FND-02)
 /// `x`: quadrature argument (related to exponent ratio)
 /// `u`: output slice of length >= nroots — receives roots
 /// `w`: output slice of length >= nroots — receives weights
 ///
 /// Source: `rys_roots.c` `CINTrys_roots()` dispatch lines 57-123.
-/// nroots > 5 (Wheeler/Jacobi fallback, D-11) deferred to Phase 10.
+/// nroots >= 6 on the device path (this #[cube] fn) is not supported — device kernels
+/// are capped at MAX_DEVICE_NROOTS=5; Hessian families route through the host path.
 #[cube]
 pub fn rys_roots<F: Float>(nroots: u32, x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
     if nroots == 1u32 {
@@ -3531,5 +3563,5 @@ pub fn rys_roots<F: Float>(nroots: u32, x: F, u: &mut Array<F>, w: &mut Array<F>
     } else if nroots == 5u32 {
         rys_root5::<F>(x, u, w, pie4);
     }
-    // nroots > 5: Wheeler fallback deferred to Phase 10 (D-11)
+    // nroots > 5: device kernel capped at MAX_DEVICE_NROOTS=5; host path handles 6..12 (FND-02)
 }
