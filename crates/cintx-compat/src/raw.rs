@@ -661,7 +661,26 @@ pub unsafe fn eval_raw(
     // Allocate the full staging accumulator that we own, so we can read values after execute().
     // RecordingExecutor is not needed: we construct ExecutionIo with our own staging slice and
     // read it directly after executor.execute() returns for each chunk.
-    let staging_elements = plan.output_layout.staging_elements;
+    //
+    // The grids family emits one AO block per grid point (an extra leading
+    // NGRIDS axis from env that the planner's shell-tuple sizing does not see),
+    // so scale the accumulator by NGRIDS to match the grids kernel's
+    // `ncomp * ngrids * ni * nj` output. `grids_params` was populated above; any
+    // other family keeps a factor of 1.
+    let grids_repeat = plan
+        .operator_env_params
+        .grids_params
+        .as_ref()
+        .map(|params| params.ngrids.max(1))
+        .unwrap_or(1);
+    let staging_elements = plan
+        .output_layout
+        .staging_elements
+        .checked_mul(grids_repeat)
+        .ok_or_else(|| cintxRsError::ChunkPlanFailed {
+            from: "compat_raw",
+            detail: "grids staging element count overflowed usize".to_owned(),
+        })?;
     let mut staging = Vec::new();
     staging.try_reserve_exact(staging_elements).map_err(|_| {
         cintxRsError::HostAllocationFailed {
@@ -883,6 +902,30 @@ fn extract_grids_env_params(env: &[f64]) -> Result<GridsEnvParams, cintxRsError>
     })
 }
 
+/// Output replication factor contributed by the grids `NGRIDS` axis.
+///
+/// The grids family (`int1e_grids*`) emits one AO block per grid point, so the
+/// caller-visible output carries an extra leading axis of size `NGRIDS` that
+/// lives in `env`, not in the shell tuple or the manifest component rank. The
+/// planner sizes the output from the shell tuple + component rank only, so the
+/// raw compat layer folds this factor into both the compat component count
+/// (output-length contract) and the staging accumulator size.
+///
+/// Returns `1` for every non-grids family. For the grids family the factor is
+/// `NGRIDS`, surfaced through `extract_grids_env_params` so a malformed
+/// `NGRIDS`/`PTR_GRIDS` is reported as a typed `InvalidEnvParam` before any
+/// allocation or kernel launch.
+fn grids_output_repeat(
+    descriptor: &OperatorDescriptor,
+    env: &[f64],
+) -> Result<usize, cintxRsError> {
+    if descriptor.entry.canonical_family == "grids" {
+        Ok(extract_grids_env_params(env)?.ngrids.max(1))
+    } else {
+        Ok(1)
+    }
+}
+
 fn f12_sph_envelope_error(symbol: &str) -> cintxRsError {
     cintxRsError::UnsupportedApi {
         requested: format!("{symbol} is outside with-f12 sph envelope"),
@@ -1051,6 +1094,9 @@ fn prepare_raw_call(
     let resolved = resolve_raw_api(api)?;
     let atm = RawAtmView::new(atm)?;
     let bas = RawBasView::new(bas)?;
+    // Keep the raw env slice for grids NGRIDS extraction before wrapping it in the
+    // bounds-checked view (the view does not expose the flat slice).
+    let env_slice = env;
     let env = RawEnvView::new(env);
 
     atm.validate(&env)?;
@@ -1096,10 +1142,23 @@ fn prepare_raw_call(
         &layout_plan.output_layout.extents,
     )?;
 
+    // Fold the grids NGRIDS axis into the compat component count so the output
+    // length contract covers all ngrids*ncomp*ni*nj elements. libcint lays grids
+    // out comp-slowest, then grid, then AO block, and `CompatDims::write` is an
+    // order-preserving copy, so this straight fold is byte-exact. Non-grids
+    // families get a factor of 1 (component count unchanged).
+    let grids_repeat = grids_output_repeat(resolved.descriptor, env_slice)?;
+    let component_count = layout_plan
+        .component_count
+        .checked_mul(grids_repeat)
+        .ok_or_else(|| cintxRsError::ChunkPlanFailed {
+            from: "compat_raw",
+            detail: "grids component count overflowed usize".to_owned(),
+        })?;
     let compat_dims = CompatDims::from_override(
         &layout_plan.output_layout.extents,
         dims,
-        layout_plan.component_count,
+        component_count,
         layout_plan.output_layout.complex_interleaved,
     )?;
 
@@ -1304,7 +1363,20 @@ fn build_typed_basis_and_shell_tuple(
     })?;
 
     let expected_arity = descriptor.entry.arity as usize;
-    if shls.len() != expected_arity {
+    // The grids family follows libcint's `int1e_grids` calling convention, where
+    // the shell tuple carries the bra/ket shells plus a trailing
+    // `[grid_start, grid_end]` window: `[i, j, grid_start, grid_end]`. libcint
+    // reads only `shls[0..2]` and loops the full grid set from `env` (NGRIDS);
+    // the trailing window entries are ignored. Accept those two extra entries
+    // and build the shell tuple from the leading `expected_arity` shells only,
+    // matching libcint exactly (full env grid range, window entries ignored).
+    let is_grids = descriptor.entry.canonical_family == "grids";
+    let shell_count = if is_grids && shls.len() == expected_arity + 2 {
+        expected_arity
+    } else {
+        shls.len()
+    };
+    if shell_count != expected_arity {
         return Err(cintxRsError::InvalidShellTuple {
             expected: expected_arity,
             got: shls.len(),
@@ -1312,12 +1384,12 @@ fn build_typed_basis_and_shell_tuple(
     }
 
     let mut shell_indices = Vec::new();
-    shell_indices.try_reserve_exact(shls.len()).map_err(|_| {
+    shell_indices.try_reserve_exact(shell_count).map_err(|_| {
         cintxRsError::HostAllocationFailed {
-            bytes: shls.len().saturating_mul(size_of::<usize>()),
+            bytes: shell_count.saturating_mul(size_of::<usize>()),
         }
     })?;
-    for index in shls {
+    for index in &shls[..shell_count] {
         let parsed = usize::try_from(*index).map_err(|_| cintxRsError::ChunkPlanFailed {
             from: "raw_shell_tuple",
             detail: format!("shell index must be non-negative: {index}"),

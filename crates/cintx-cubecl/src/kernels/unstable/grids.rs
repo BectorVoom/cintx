@@ -28,14 +28,24 @@
 //! the accumulate + `cart_to_sph_1e` + grids-layout scatter UNCHANGED. Pairs that
 //! need `nroots>2` fall back to the host reference (device wires `rys_root{1,2}`).
 //!
-//! ⚠ PRE-EXISTING UPSTREAM BLOCKER (NOT caused by this port): `eval_raw` rejects
-//! the grids 4-element shell tuple with `InvalidShellTuple { expected: 2, got: 4 }`,
-//! so the public `eval_raw(RawApiId::Symbol("int1e_grids_sph"))` path — and the
-//! `unstable_source_parity.rs` grids CPU-vs-vendor tests — FAIL at baseline,
-//! independently of the GPU port. Consequently the grids ROCm oracle is a DIRECT
-//! device-vs-host parity (`run_grids_nuclear_device::<HipRuntime>` vs the host
-//! `grids_contract_nuclear_like`), NOT a vendor-via-eval_raw comparison. See
-//! `tests/grids_random_rocm_parity.rs`.
+//! EVAL_RAW WIRING (fixed in fix/general-contraction-nctr-1e): the public
+//! `eval_raw(RawApiId::Symbol("int1e_grids_sph"))` path now accepts the grids
+//! 4-element shell tuple `[i, j, grid_start, grid_end]` (libcint reads only
+//! shls[0..2] and loops the full env grid set; the window entries are ignored)
+//! and folds NGRIDS into the output sizing, so the grids family is driven
+//! end-to-end through `eval_raw` like every other family. The CPU vendor-parity
+//! gate is `unstable_source_parity.rs::grids_parity`; the ROCm vendor-parity
+//! oracle is `tests/grids_random_rocm_parity.rs`. An in-crate device-vs-host
+//! parity (`run_grids_nuclear_device::<HipRuntime>` vs the host
+//! `grids_contract_nuclear_like`) remains as a backend-only cross-check.
+//!
+//! RYS-ROOT ORDERING (fixed alongside the wiring): the derivative kernels
+//! (`grids_deriv_kernel` + the host `grids_contract_ip/_ipip/_ipvip/_spvsp`)
+//! apply the nabla ladders and form the gx·gy·gz products PER Rys root and
+//! accumulate the PRODUCT across roots — matching the scalar path and libcint.
+//! The earlier formulation summed the per-axis G-tensor over roots first, which
+//! computes (ΣGx)·(ΣGy)·(ΣGz) ≠ Σ(Gx·Gy·Gz) for nroots>1 (every s/p case with
+//! a second Rys root, e.g. the derivative operators on p shells).
 
 use super::shared::{apply_nabla_i_3axis, apply_nabla_j_3axis, cart_comps, common_fac_sp};
 use crate::backend::ResolvedBackend;
@@ -497,12 +507,12 @@ fn run_grids_nuclear_on_backend(
 //  kernel runs once per (grid, prim-pair) and the host accumulates contractions,
 //  mirroring `launch_grids_kernel`.
 //
-//  ⚠ VENDOR ORACLE BLOCKED (same pre-existing upstream blocker as the scalar
-//  path): `eval_raw` rejects the grids 4-element shell tuple with
-//  `InvalidShellTuple { expected: 2, got: 4 }`, so the derivative vendor oracle
-//  is impossible. Validation is DIRECT device-vs-host parity (the
-//  `run_grids_<op>_device::<R>` dispatchers vs the host `grids_contract_<op>`),
-//  on CpuRuntime in-crate and on `cubecl_hip::HipRuntime` for the ROCm oracle.
+//  VENDOR ORACLE: now driven through `eval_raw` (the grids 4-element shell-tuple
+//  wiring is fixed) — see `unstable_source_parity.rs::grids_parity` (CPU) and
+//  `tests/grids_random_rocm_parity.rs` (ROCm). A DIRECT device-vs-host parity
+//  (the `run_grids_<op>_device::<R>` dispatchers vs the host
+//  `grids_contract_<op>`) is also kept in-crate (CpuRuntime) and on
+//  `cubecl_hip::HipRuntime` as a backend-only cross-check.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// op_kind discriminants for `grids_deriv_kernel`.
@@ -668,14 +678,18 @@ fn grids_deriv_kernel<F: Float + CubeElement>(
         let fac1 = two_pi * fac / zeta_ab;
         let nrys = nroots;
 
-        // Build the Rys-accumulated 3-axis G-tensor in g0 (mirrors the host
-        // `g0_acc` loop in grids_contract_ip/_ipip/_ipvip).
+        // Rys quadrature of the derivative: the nabla ladders (g1/g2/g3) and the
+        // gx·gy·gz products must be formed PER ROOT and the product accumulated
+        // across roots. Summing the per-axis G-tensor over roots first and then
+        // forming the product computes (ΣGx)·(ΣGy)·(ΣGz) ≠ Σ(Gx·Gy·Gz) for
+        // nroots>1 (the scalar kernel already accumulates per-root products).
+        let nij = nci * ncj;
         let mut nr: u32 = 0u32;
         while nr < nrys {
-            // Per-root scratch lives in g1 (reused below for nabla); zero it.
+            // Build THIS root's 3-axis G-tensor into g0.
             let mut gi = 0u32;
             while gi < total_g {
-                g1[gi as usize] = F::new(0.0);
+                g0[gi as usize] = F::new(0.0);
                 gi += 1u32;
             }
 
@@ -688,72 +702,62 @@ fn grids_deriv_kernel<F: Float + CubeElement>(
             let c00y = (rpy - riy) + tau * crijy;
             let c00z = (rpz - riz) + tau * crijz;
 
-            g1[gx_off as usize] = F::new(1.0);
-            g1[gy_off as usize] = F::new(1.0);
-            g1[gz_off as usize] = fac1 * w_n;
+            g0[gx_off as usize] = F::new(1.0);
+            g0[gy_off as usize] = F::new(1.0);
+            g0[gz_off as usize] = fac1 * w_n;
 
             if nmax >= 1u32 {
-                grids_vrr_axis::<F>(g1, gx_off, c00x, rt, nmax);
-                grids_vrr_axis::<F>(g1, gy_off, c00y, rt, nmax);
-                grids_vrr_axis::<F>(g1, gz_off, c00z, rt, nmax);
+                grids_vrr_axis::<F>(g0, gx_off, c00x, rt, nmax);
+                grids_vrr_axis::<F>(g0, gy_off, c00y, rt, nmax);
+                grids_vrr_axis::<F>(g0, gz_off, c00z, rt, nmax);
             }
 
             if lj_hrr >= 1u32 {
-                grids_hrr_axis::<F>(g1, gx_off, rix - rjx, dj, nmax, lj_hrr);
-                grids_hrr_axis::<F>(g1, gy_off, riy - rjy, dj, nmax, lj_hrr);
-                grids_hrr_axis::<F>(g1, gz_off, riz - rjz, dj, nmax, lj_hrr);
+                grids_hrr_axis::<F>(g0, gx_off, rix - rjx, dj, nmax, lj_hrr);
+                grids_hrr_axis::<F>(g0, gy_off, riy - rjy, dj, nmax, lj_hrr);
+                grids_hrr_axis::<F>(g0, gz_off, riz - rjz, dj, nmax, lj_hrr);
             }
 
-            let mut ki = 0u32;
-            while ki < total_g {
-                g0[ki as usize] += g1[ki as usize];
-                ki += 1u32;
+            // ── Apply the per-op nabla / σ ladders into g1/g2/g3 (this root) ──
+            // Zero scratch axes before reuse.
+            let mut z1 = 0u32;
+            while z1 < total_g {
+                g1[z1 as usize] = F::new(0.0);
+                g2[z1 as usize] = F::new(0.0);
+                g3[z1 as usize] = F::new(0.0);
+                z1 += 1u32;
             }
-            nr += 1u32;
-        }
 
-        // ── Apply the per-op nabla / σ ladders into g1/g2/g3 ──────────────
-        // Zero scratch axes before reuse.
-        let mut z1 = 0u32;
-        while z1 < total_g {
-            g1[z1 as usize] = F::new(0.0);
-            g2[z1 as usize] = F::new(0.0);
-            g3[z1 as usize] = F::new(0.0);
-            z1 += 1u32;
-        }
-
-        if comptime!(op_kind == GRIDS_OP_IP) {
-            // g1 = D_i(g0), bra li, ket lj.
-            grids_nabla_i_axis::<F>(g1, g0, gx_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g1, g0, gy_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g1, g0, gz_off, ai, li, lj, dj);
-        } else if comptime!(op_kind == GRIDS_OP_IPIP) {
-            // g1 = D_i(g0) [bra li+1], g2 = D_i(g0) [bra li], g3 = D_i(g1) [bra li].
-            grids_nabla_i_axis::<F>(g1, g0, gx_off, ai, li + 1u32, lj, dj);
-            grids_nabla_i_axis::<F>(g1, g0, gy_off, ai, li + 1u32, lj, dj);
-            grids_nabla_i_axis::<F>(g1, g0, gz_off, ai, li + 1u32, lj, dj);
-            grids_nabla_i_axis::<F>(g2, g0, gx_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g2, g0, gy_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g2, g0, gz_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g3, g1, gx_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g3, g1, gy_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g3, g1, gz_off, ai, li, lj, dj);
-        } else {
-            // ipvip + spvsp share the G-tensor.
-            // g1 = D_j(g0) [bra li+1, ket lj], g2 = D_i(g0) [bra li, ket lj+1],
-            // g3 = D_i(g1) [bra li, ket lj].
-            grids_nabla_j_axis::<F>(g1, g0, gx_off, aj, li + 1u32, lj, dj);
-            grids_nabla_j_axis::<F>(g1, g0, gy_off, aj, li + 1u32, lj, dj);
-            grids_nabla_j_axis::<F>(g1, g0, gz_off, aj, li + 1u32, lj, dj);
-            grids_nabla_i_axis::<F>(g2, g0, gx_off, ai, li, lj + 1u32, dj);
-            grids_nabla_i_axis::<F>(g2, g0, gy_off, ai, li, lj + 1u32, dj);
-            grids_nabla_i_axis::<F>(g2, g0, gz_off, ai, li, lj + 1u32, dj);
-            grids_nabla_i_axis::<F>(g3, g1, gx_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g3, g1, gy_off, ai, li, lj, dj);
-            grids_nabla_i_axis::<F>(g3, g1, gz_off, ai, li, lj, dj);
-        }
-
-        let nij = nci * ncj;
+            if comptime!(op_kind == GRIDS_OP_IP) {
+                // g1 = D_i(g0), bra li, ket lj.
+                grids_nabla_i_axis::<F>(g1, g0, gx_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g1, g0, gy_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g1, g0, gz_off, ai, li, lj, dj);
+            } else if comptime!(op_kind == GRIDS_OP_IPIP) {
+                // g1 = D_i(g0) [bra li+1], g2 = D_i(g0) [bra li], g3 = D_i(g1) [bra li].
+                grids_nabla_i_axis::<F>(g1, g0, gx_off, ai, li + 1u32, lj, dj);
+                grids_nabla_i_axis::<F>(g1, g0, gy_off, ai, li + 1u32, lj, dj);
+                grids_nabla_i_axis::<F>(g1, g0, gz_off, ai, li + 1u32, lj, dj);
+                grids_nabla_i_axis::<F>(g2, g0, gx_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g2, g0, gy_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g2, g0, gz_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g3, g1, gx_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g3, g1, gy_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g3, g1, gz_off, ai, li, lj, dj);
+            } else {
+                // ipvip + spvsp share the G-tensor.
+                // g1 = D_j(g0) [bra li+1, ket lj], g2 = D_i(g0) [bra li, ket lj+1],
+                // g3 = D_i(g1) [bra li, ket lj].
+                grids_nabla_j_axis::<F>(g1, g0, gx_off, aj, li + 1u32, lj, dj);
+                grids_nabla_j_axis::<F>(g1, g0, gy_off, aj, li + 1u32, lj, dj);
+                grids_nabla_j_axis::<F>(g1, g0, gz_off, aj, li + 1u32, lj, dj);
+                grids_nabla_i_axis::<F>(g2, g0, gx_off, ai, li, lj + 1u32, dj);
+                grids_nabla_i_axis::<F>(g2, g0, gy_off, ai, li, lj + 1u32, dj);
+                grids_nabla_i_axis::<F>(g2, g0, gz_off, ai, li, lj + 1u32, dj);
+                grids_nabla_i_axis::<F>(g3, g1, gx_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g3, g1, gy_off, ai, li, lj, dj);
+                grids_nabla_i_axis::<F>(g3, g1, gz_off, ai, li, lj, dj);
+            }
 
         // ── Cartesian contraction (ci outer, cj inner; lx descending) ─────
         let mut ci_idx = 0u32;
@@ -829,10 +833,10 @@ fn grids_deriv_kernel<F: Float + CubeElement>(
                                 cart_out[(7u32 * nij + base) as usize] += s7;
                                 cart_out[(8u32 * nij + base) as usize] += s8;
                             } else {
-                                // spvsp: gout = [s5-s7, s6-s2, s1-s3, s0+s4+s8]
-                                // (host accumulates ipvip s0..s8 over roots first,
-                                //  then combines; here roots are already summed
-                                //  into g0/g1/g2/g3, so per-(ci,cj) combine is exact).
+                                // spvsp: gout = [s5-s7, s6-s2, s1-s3, s0+s4+s8].
+                                // The combine is linear in the per-root products
+                                // s0..s8, so accumulating (s5-s7) etc. per root is
+                                // identical to combining the root-summed products.
                                 cart_out[(0u32 * nij + base) as usize] += s5 - s7;
                                 cart_out[(1u32 * nij + base) as usize] += s6 - s2;
                                 cart_out[(2u32 * nij + base) as usize] += s1 - s3;
@@ -849,6 +853,9 @@ fn grids_deriv_kernel<F: Float + CubeElement>(
                 ib += 1u32;
             }
             ia += 1u32;
+        }
+
+            nr += 1u32;
         }
     }
 }
@@ -1046,8 +1053,12 @@ fn grids_contract_ip(
     let fac1 = 2.0 * std::f64::consts::PI * pd.fac / pd.zeta_ab;
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
 
-    // Accumulate over Rys roots
-    let mut g0_acc = vec![0.0_f64; 3 * g_per_axis];
+    // Rys quadrature of the gradient: I = Σ_root [ ∂x(Gx)·Gy·Gz + Gx·∂y(Gy)·Gz +
+    // Gx·Gy·∂z(Gz) ]. The nabla ladder and the gx·gy·gz product MUST be applied
+    // per root and the PRODUCT accumulated across roots. Summing the per-axis
+    // G-tensor over roots first and then forming the product computes
+    // (ΣGx)·(ΣGy)·(ΣGz), which differs from Σ(Gx·Gy·Gz) whenever nrys_roots > 1.
+    let mut out = vec![0.0_f64; 3 * nci * ncj];
 
     for n in 0..nrys_roots as usize {
         let u_n = u_arr[n];
@@ -1061,48 +1072,41 @@ fn grids_contract_ip(
         ];
         let gz0_root = fac1 * w_n;
 
-        let mut g_root = vec![0.0_f64; 3 * g_per_axis];
-        g_root[0] = 1.0;
-        g_root[g_per_axis] = 1.0;
-        g_root[2 * g_per_axis] = gz0_root;
+        let mut g0 = vec![0.0_f64; 3 * g_per_axis];
+        g0[0] = 1.0;
+        g0[g_per_axis] = 1.0;
+        g0[2 * g_per_axis] = gz0_root;
 
         if nmax >= 1 {
-            vrr_2e_step_host(&mut g_root[0..g_per_axis], c00[0], rt, nmax, 1);
-            vrr_2e_step_host(&mut g_root[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
-            vrr_2e_step_host(&mut g_root[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[0..g_per_axis], c00[0], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
         }
 
         if lj >= 1 {
-            hrr_step_host(&mut g_root[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj as u32);
-            hrr_step_host(&mut g_root[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj as u32);
-            hrr_step_host(&mut g_root[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj as u32);
+            hrr_step_host(&mut g0[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj as u32);
+            hrr_step_host(&mut g0[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj as u32);
+            hrr_step_host(&mut g0[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj as u32);
         }
 
-        for k in 0..3 * g_per_axis {
-            g0_acc[k] += g_root[k];
-        }
-    }
+        // Apply nabla_i to THIS root's G-tensor.
+        let g1 = apply_nabla_i_3axis(&g0, ai, li as u32, lj as u32, nmax, g_per_axis);
 
-    // Apply nabla_i to the accumulated G-tensor
-    let g1 = apply_nabla_i_3axis(&g0_acc, ai, li as u32, lj as u32, nmax, g_per_axis);
+        // Contract: 3 components (x, y, z), accumulating the product per root.
+        for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
+            for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
+                let g0x = g0[jx as usize * dj + ix as usize];
+                let g0y = g0[g_per_axis + jy as usize * dj + iy as usize];
+                let g0z = g0[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g1x = g1[jx as usize * dj + ix as usize];
+                let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
+                let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
 
-    // Contract: 3 components (x, y, z)
-    let mut out = vec![0.0_f64; 3 * nci * ncj];
-
-    for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
-        for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
-            // Component x: D_ix * g0y * g0z
-            let g0x = g0_acc[jx as usize * dj + ix as usize];
-            let g0y = g0_acc[g_per_axis + jy as usize * dj + iy as usize];
-            let g0z = g0_acc[2*g_per_axis + jz as usize * dj + iz as usize];
-            let g1x = g1[jx as usize * dj + ix as usize];
-            let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
-            let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
-
-            let base_idx = ci_idx * ncj + cj_idx;
-            out[0 * nci * ncj + base_idx] += g1x * g0y * g0z;  // comp x
-            out[1 * nci * ncj + base_idx] += g0x * g1y * g0z;  // comp y
-            out[2 * nci * ncj + base_idx] += g0x * g0y * g1z;  // comp z
+                let base_idx = ci_idx * ncj + cj_idx;
+                out[0 * nci * ncj + base_idx] += g1x * g0y * g0z;  // comp x
+                out[1 * nci * ncj + base_idx] += g0x * g1y * g0z;  // comp y
+                out[2 * nci * ncj + base_idx] += g0x * g0y * g1z;  // comp z
+            }
         }
     }
 
@@ -1148,7 +1152,10 @@ fn grids_contract_ipip(
     let fac1 = 2.0 * std::f64::consts::PI * pd.fac / pd.zeta_ab;
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
 
-    let mut g0_acc = vec![0.0_f64; 3 * g_per_axis];
+    // Per-root Rys quadrature: the nabla ladders (g1/g2/g3) and the 9-component
+    // products must be formed per root and the PRODUCT accumulated across roots,
+    // never the per-axis G-tensor summed first (see grids_contract_ip).
+    let mut s = vec![0.0_f64; 9 * nci * ncj];
 
     for n in 0..nrys_roots as usize {
         let u_n = u_arr[n];
@@ -1162,79 +1169,73 @@ fn grids_contract_ipip(
         ];
         let gz0_root = fac1 * w_n;
 
-        let mut g_root = vec![0.0_f64; 3 * g_per_axis];
-        g_root[0] = 1.0;
-        g_root[g_per_axis] = 1.0;
-        g_root[2*g_per_axis] = gz0_root;
+        let mut g0 = vec![0.0_f64; 3 * g_per_axis];
+        g0[0] = 1.0;
+        g0[g_per_axis] = 1.0;
+        g0[2*g_per_axis] = gz0_root;
 
         if nmax >= 1 {
-            vrr_2e_step_host(&mut g_root[0..g_per_axis], c00[0], rt, nmax, 1);
-            vrr_2e_step_host(&mut g_root[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
-            vrr_2e_step_host(&mut g_root[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[0..g_per_axis], c00[0], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
         }
 
         if lj >= 1 {
-            hrr_step_host(&mut g_root[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj as u32);
-            hrr_step_host(&mut g_root[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj as u32);
-            hrr_step_host(&mut g_root[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj as u32);
+            hrr_step_host(&mut g0[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj as u32);
+            hrr_step_host(&mut g0[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj as u32);
+            hrr_step_host(&mut g0[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj as u32);
         }
 
-        for k in 0..3 * g_per_axis {
-            g0_acc[k] += g_root[k];
-        }
-    }
+        // g1 = D_i(g0) applied with li+1 bra levels
+        let g1 = apply_nabla_i_3axis(&g0, ai, li as u32 + 1, lj as u32, nmax, g_per_axis);
+        // g2 = D_i(g0) applied with li bra levels (same as g1 but li not li+1)
+        let g2 = apply_nabla_i_3axis(&g0, ai, li as u32, lj as u32, nmax, g_per_axis);
+        // g3 = D_i(g1) applied to g1 with li levels
+        let g3 = apply_nabla_i_3axis(&g1, ai, li as u32, lj as u32, nmax, g_per_axis);
 
-    // g1 = D_i(g0) applied with li+1 bra levels
-    let g1 = apply_nabla_i_3axis(&g0_acc, ai, li as u32 + 1, lj as u32, nmax, g_per_axis);
-    // g2 = D_i(g0) applied with li bra levels (same as g1 but li not li+1)
-    let g2 = apply_nabla_i_3axis(&g0_acc, ai, li as u32, lj as u32, nmax, g_per_axis);
-    // g3 = D_i(g1) applied to g1 with li levels
-    let g3 = apply_nabla_i_3axis(&g1, ai, li as u32, lj as u32, nmax, g_per_axis);
+        // Contract: 9 components
+        // libcint ipip layout (from autocode): s[0..8] -> gout with transposition
+        // gout[n*9+0] = s0, gout[n*9+1] = s3, gout[n*9+2] = s6, ... (column-transposed)
+        for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
+            for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
+                let base = ci_idx * ncj + cj_idx;
+                let g0x = g0[jx as usize * dj + ix as usize];
+                let g0y = g0[g_per_axis + jy as usize * dj + iy as usize];
+                let g0z = g0[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g1x = g1[jx as usize * dj + ix as usize];
+                let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
+                let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g2x = g2[jx as usize * dj + ix as usize];
+                let g2y = g2[g_per_axis + jy as usize * dj + iy as usize];
+                let g2z = g2[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g3x = g3[jx as usize * dj + ix as usize];
+                let g3y = g3[g_per_axis + jy as usize * dj + iy as usize];
+                let g3z = g3[2*g_per_axis + jz as usize * dj + iz as usize];
 
-    // Contract: 9 components
-    // libcint ipip layout (from autocode): s[0..8] -> gout with transposition
-    // gout[n*9+0] = s0, gout[n*9+1] = s3, gout[n*9+2] = s6, ... (column-transposed)
-    let mut s = vec![0.0_f64; 9 * nci * ncj];
+                // s[0..8] = [g3x*g0y*g0z, g2x*g1y*g0z, g2x*g0y*g1z,
+                //            g1x*g2y*g0z, g0x*g3y*g0z, g0x*g2y*g1z,
+                //            g1x*g0y*g2z, g0x*g1y*g2z, g0x*g0y*g3z]
+                let s0 = g3x * g0y * g0z;
+                let s1 = g2x * g1y * g0z;
+                let s2 = g2x * g0y * g1z;
+                let s3 = g1x * g2y * g0z;
+                let s4 = g0x * g3y * g0z;
+                let s5 = g0x * g2y * g1z;
+                let s6 = g1x * g0y * g2z;
+                let s7 = g0x * g1y * g2z;
+                let s8 = g0x * g0y * g3z;
 
-    for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
-        for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
-            let base = ci_idx * ncj + cj_idx;
-            let g0x = g0_acc[jx as usize * dj + ix as usize];
-            let g0y = g0_acc[g_per_axis + jy as usize * dj + iy as usize];
-            let g0z = g0_acc[2*g_per_axis + jz as usize * dj + iz as usize];
-            let g1x = g1[jx as usize * dj + ix as usize];
-            let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
-            let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
-            let g2x = g2[jx as usize * dj + ix as usize];
-            let g2y = g2[g_per_axis + jy as usize * dj + iy as usize];
-            let g2z = g2[2*g_per_axis + jz as usize * dj + iz as usize];
-            let g3x = g3[jx as usize * dj + ix as usize];
-            let g3y = g3[g_per_axis + jy as usize * dj + iy as usize];
-            let g3z = g3[2*g_per_axis + jz as usize * dj + iz as usize];
-
-            // s[0..8] = [g3x*g0y*g0z, g2x*g1y*g0z, g2x*g0y*g1z,
-            //            g1x*g2y*g0z, g0x*g3y*g0z, g0x*g2y*g1z,
-            //            g1x*g0y*g2z, g0x*g1y*g2z, g0x*g0y*g3z]
-            let s0 = g3x * g0y * g0z;
-            let s1 = g2x * g1y * g0z;
-            let s2 = g2x * g0y * g1z;
-            let s3 = g1x * g2y * g0z;
-            let s4 = g0x * g3y * g0z;
-            let s5 = g0x * g2y * g1z;
-            let s6 = g1x * g0y * g2z;
-            let s7 = g0x * g1y * g2z;
-            let s8 = g0x * g0y * g3z;
-
-            // libcint ipip gout[n*9+k]: s0 s3 s6 s1 s4 s7 s2 s5 s8 (column-transposed)
-            s[0 * nci * ncj + base] += s0;
-            s[1 * nci * ncj + base] += s3;
-            s[2 * nci * ncj + base] += s6;
-            s[3 * nci * ncj + base] += s1;
-            s[4 * nci * ncj + base] += s4;
-            s[5 * nci * ncj + base] += s7;
-            s[6 * nci * ncj + base] += s2;
-            s[7 * nci * ncj + base] += s5;
-            s[8 * nci * ncj + base] += s8;
+                // libcint ipip gout[n*9+k]: s0 s3 s6 s1 s4 s7 s2 s5 s8 (column-transposed)
+                s[0 * nci * ncj + base] += s0;
+                s[1 * nci * ncj + base] += s3;
+                s[2 * nci * ncj + base] += s6;
+                s[3 * nci * ncj + base] += s1;
+                s[4 * nci * ncj + base] += s4;
+                s[5 * nci * ncj + base] += s7;
+                s[6 * nci * ncj + base] += s2;
+                s[7 * nci * ncj + base] += s5;
+                s[8 * nci * ncj + base] += s8;
+            }
         }
     }
 
@@ -1281,7 +1282,11 @@ fn grids_contract_ipvip(
     let fac1 = 2.0 * std::f64::consts::PI * pd.fac / pd.zeta_ab;
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
 
-    let mut g0_acc = vec![0.0_f64; 3 * g_per_axis];
+    // Per-root Rys quadrature: the bra/ket nabla ladders (g1/g2/g3) and the
+    // 9-component products must be formed per root and the PRODUCT accumulated
+    // across roots, never the per-axis G-tensor summed first (see
+    // grids_contract_ip).
+    let mut s = vec![0.0_f64; 9 * nci * ncj];
 
     for n in 0..nrys_roots as usize {
         let u_n = u_arr[n];
@@ -1295,72 +1300,66 @@ fn grids_contract_ipvip(
         ];
         let gz0_root = fac1 * w_n;
 
-        let mut g_root = vec![0.0_f64; 3 * g_per_axis];
-        g_root[0] = 1.0;
-        g_root[g_per_axis] = 1.0;
-        g_root[2*g_per_axis] = gz0_root;
+        let mut g0 = vec![0.0_f64; 3 * g_per_axis];
+        g0[0] = 1.0;
+        g0[g_per_axis] = 1.0;
+        g0[2*g_per_axis] = gz0_root;
 
         if nmax >= 1 {
-            vrr_2e_step_host(&mut g_root[0..g_per_axis], c00[0], rt, nmax, 1);
-            vrr_2e_step_host(&mut g_root[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
-            vrr_2e_step_host(&mut g_root[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[0..g_per_axis], c00[0], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
         }
 
         // HRR to lj+1 for derivative on ket
         let lj_hrr = lj as u32 + 1;
-        hrr_step_host(&mut g_root[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj_hrr);
-        hrr_step_host(&mut g_root[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj_hrr);
-        hrr_step_host(&mut g_root[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj_hrr);
+        hrr_step_host(&mut g0[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj_hrr);
+        hrr_step_host(&mut g0[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj_hrr);
+        hrr_step_host(&mut g0[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj_hrr);
 
-        for k in 0..3 * g_per_axis {
-            g0_acc[k] += g_root[k];
-        }
-    }
+        // g1 = D_j(g0)
+        let g1 = apply_nabla_j_3axis(&g0, aj, li as u32 + 1, lj as u32, nmax, g_per_axis);
+        // g2 = D_i(g0)
+        let g2 = apply_nabla_i_3axis(&g0, ai, li as u32, lj as u32 + 1, nmax, g_per_axis);
+        // g3 = D_i(g1)
+        let g3 = apply_nabla_i_3axis(&g1, ai, li as u32, lj as u32, nmax, g_per_axis);
 
-    // g1 = D_j(g0)
-    let g1 = apply_nabla_j_3axis(&g0_acc, aj, li as u32 + 1, lj as u32, nmax, g_per_axis);
-    // g2 = D_i(g0)
-    let g2 = apply_nabla_i_3axis(&g0_acc, ai, li as u32, lj as u32 + 1, nmax, g_per_axis);
-    // g3 = D_i(g1)
-    let g3 = apply_nabla_i_3axis(&g1, ai, li as u32, lj as u32, nmax, g_per_axis);
+        for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
+            for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
+                let base = ci_idx * ncj + cj_idx;
+                let g0x = g0[jx as usize * dj + ix as usize];
+                let g0y = g0[g_per_axis + jy as usize * dj + iy as usize];
+                let g0z = g0[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g1x = g1[jx as usize * dj + ix as usize];
+                let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
+                let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g2x = g2[jx as usize * dj + ix as usize];
+                let g2y = g2[g_per_axis + jy as usize * dj + iy as usize];
+                let g2z = g2[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g3x = g3[jx as usize * dj + ix as usize];
+                let g3y = g3[g_per_axis + jy as usize * dj + iy as usize];
+                let g3z = g3[2*g_per_axis + jz as usize * dj + iz as usize];
 
-    let mut s = vec![0.0_f64; 9 * nci * ncj];
+                let s0 = g3x * g0y * g0z;
+                let s1 = g2x * g1y * g0z;
+                let s2 = g2x * g0y * g1z;
+                let s3 = g1x * g2y * g0z;
+                let s4 = g0x * g3y * g0z;
+                let s5 = g0x * g2y * g1z;
+                let s6 = g1x * g0y * g2z;
+                let s7 = g0x * g1y * g2z;
+                let s8 = g0x * g0y * g3z;
 
-    for (cj_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
-        for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
-            let base = ci_idx * ncj + cj_idx;
-            let g0x = g0_acc[jx as usize * dj + ix as usize];
-            let g0y = g0_acc[g_per_axis + jy as usize * dj + iy as usize];
-            let g0z = g0_acc[2*g_per_axis + jz as usize * dj + iz as usize];
-            let g1x = g1[jx as usize * dj + ix as usize];
-            let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
-            let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
-            let g2x = g2[jx as usize * dj + ix as usize];
-            let g2y = g2[g_per_axis + jy as usize * dj + iy as usize];
-            let g2z = g2[2*g_per_axis + jz as usize * dj + iz as usize];
-            let g3x = g3[jx as usize * dj + ix as usize];
-            let g3y = g3[g_per_axis + jy as usize * dj + iy as usize];
-            let g3z = g3[2*g_per_axis + jz as usize * dj + iz as usize];
-
-            let s0 = g3x * g0y * g0z;
-            let s1 = g2x * g1y * g0z;
-            let s2 = g2x * g0y * g1z;
-            let s3 = g1x * g2y * g0z;
-            let s4 = g0x * g3y * g0z;
-            let s5 = g0x * g2y * g1z;
-            let s6 = g1x * g0y * g2z;
-            let s7 = g0x * g1y * g2z;
-            let s8 = g0x * g0y * g3z;
-
-            s[0 * nci * ncj + base] += s0;
-            s[1 * nci * ncj + base] += s1;
-            s[2 * nci * ncj + base] += s2;
-            s[3 * nci * ncj + base] += s3;
-            s[4 * nci * ncj + base] += s4;
-            s[5 * nci * ncj + base] += s5;
-            s[6 * nci * ncj + base] += s6;
-            s[7 * nci * ncj + base] += s7;
-            s[8 * nci * ncj + base] += s8;
+                s[0 * nci * ncj + base] += s0;
+                s[1 * nci * ncj + base] += s1;
+                s[2 * nci * ncj + base] += s2;
+                s[3 * nci * ncj + base] += s3;
+                s[4 * nci * ncj + base] += s4;
+                s[5 * nci * ncj + base] += s5;
+                s[6 * nci * ncj + base] += s6;
+                s[7 * nci * ncj + base] += s7;
+                s[8 * nci * ncj + base] += s8;
+            }
         }
     }
 
@@ -1875,12 +1874,12 @@ mod tests {
 
     /// ROCm device-vs-host parity oracle for the grids scalar nuclear-like path.
     ///
-    /// Because the public `eval_raw` path is blocked upstream for grids
-    /// (`InvalidShellTuple { expected: 2, got: 4 }`, a PRE-EXISTING baseline
-    /// failure unrelated to this GPU port), the grids ROCm validation is a DIRECT
-    /// device-vs-host comparison on the real AMD GPU: `grids_scalar_kernel` on the
-    /// HIP runtime vs the host `grids_contract_nuclear_like`, over many randomized
-    /// shell pairs / grid points. `#[ignore]` + `CINTX_ROCM_ORACLE=1` gated.
+    /// A backend-only cross-check on the real AMD GPU: `grids_scalar_kernel` on
+    /// the HIP runtime vs the host `grids_contract_nuclear_like`, over many
+    /// randomized shell pairs / grid points. The end-to-end vendor parity now
+    /// runs through `eval_raw` in `tests/grids_random_rocm_parity.rs`; this test
+    /// remains as a direct kernel-vs-host check. `#[ignore]` +
+    /// `CINTX_ROCM_ORACLE=1` gated.
     #[cfg(feature = "rocm")]
     #[test]
     #[ignore]
@@ -1942,9 +1941,9 @@ mod tests {
 
     // ─────────────────────────────────────────────────────────────────────
     //  DERIVATIVE device-vs-host (ip / ipip / ipvip / spvsp).
-    //  Vendor oracle is BLOCKED for grids (pre-existing eval_raw
-    //  InvalidShellTuple{2,4}), identical to the scalar path, so the
-    //  derivative validation is also DIRECT device-vs-host parity.
+    //  End-to-end vendor parity runs through `eval_raw`
+    //  (unstable_source_parity.rs::grids_parity and grids_random_rocm_parity.rs);
+    //  these remain as direct device-vs-host kernel cross-checks.
     // ─────────────────────────────────────────────────────────────────────
 
     /// Per-op device dispatch params, mirroring the `launch_grids` derivative
@@ -2134,11 +2133,11 @@ mod tests {
     }
 
     /// ROCm device-vs-host parity oracle for the grids DERIVATIVE paths
-    /// (ip / ipip / ipvip / spvsp). Same blocked-vendor rationale as the scalar
-    /// `test_grids_device_vs_host_rocm`: `eval_raw` rejects the grids shell tuple
-    /// (`InvalidShellTuple{2,4}`), so validation is DIRECT device-vs-host on the
+    /// (ip / ipip / ipvip / spvsp). A direct device-vs-host cross-check on the
     /// real AMD GPU (`run_grids_deriv_device::<HipRuntime>` vs host
-    /// `grids_contract_<op>`). `#[ignore]` + `CINTX_ROCM_ORACLE=1` gated.
+    /// `grids_contract_<op>`); end-to-end vendor parity now runs through
+    /// `eval_raw` in `tests/grids_random_rocm_parity.rs`. `#[ignore]` +
+    /// `CINTX_ROCM_ORACLE=1` gated.
     #[cfg(feature = "rocm")]
     #[test]
     #[ignore]
