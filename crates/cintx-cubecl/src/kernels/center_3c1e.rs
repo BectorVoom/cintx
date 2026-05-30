@@ -906,44 +906,68 @@ fn contract_3c1e_ovlp(g: &[f64], li: u8, lj: u8, lk: u8, g_size: usize) -> Vec<f
     out
 }
 
-/// Write a component-leading 3-component Cartesian gradient buffer into `staging`,
-/// applying the cart→sph transform per component when the representation is
-/// spheric. `cart_grad` is `[3 * nci*ncj*nck]` (each component i-fastest, k-slowest,
-/// the `contract_3c1e_grad` layout). Spinor is rejected by the caller (D-06).
-fn write_3c1e_grad_staging<F: CintFloat>(
-    cart_grad: &[f64],
+/// Scatter one (ci,cj,ck) contraction block's component-leading Cartesian
+/// gradient (`cart_grad_block` = `[3 * nci*ncj*nck]`, each component i-fastest /
+/// k-slowest) into the global COMPONENT-LEADING output `out` for general
+/// contraction (WR-03).
+///
+/// The 3 components are the OUTERMOST dimension. WITHIN each component the layout
+/// is the same single dense interleaved block as the scalar path: contraction is
+/// the MAJOR (outer) index per axis (`i_global = ci*nblk_i + i_idx`), matching
+/// libcint's `c2s_{cart,sph}_3c2e1` for the derivative tensor. Applies the
+/// cart→sph transform per (component, block) when spheric. For nctr==1 this writes
+/// the lone block at the natural offsets — byte-identical to the old single-block
+/// path.
+#[allow(clippy::too_many_arguments)]
+fn scatter_3c1e_grad_block<F: CintFloat>(
+    cart_grad_block: &[f64],
     li: u8,
     lj: u8,
     lk: u8,
     representation: Representation,
-    staging: &mut [F],
+    ci: usize,
+    cj: usize,
+    ck: usize,
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    n_ctr_k: usize,
+    out: &mut [f64],
 ) {
     let nci = ncart(li);
     let ncj = ncart(lj);
     let nck = ncart(lk);
     let cart_block = nci * ncj * nck;
 
-    match representation {
-        Representation::Spheric => {
-            let nsi = nsph(li);
-            let nsj = nsph(lj);
-            let nsk = nsph(lk);
-            let sph_block = nsi * nsj * nsk;
-            for comp in 0..3usize {
-                let src = &cart_grad[comp * cart_block..(comp + 1) * cart_block];
-                let sph = cart_to_sph_3c1e(src, li, lj, lk);
-                let base = comp * sph_block;
-                let copy_len = sph.len().min(staging.len().saturating_sub(base));
-                for n in 0..copy_len {
-                    staging[base + n] = F::from_f64_lossy(sph[n]);
+    let is_spheric = matches!(representation, Representation::Spheric);
+    let (nblk_i, nblk_j, nblk_k) = if is_spheric {
+        (nsph(li), nsph(lj), nsph(lk))
+    } else {
+        (nci, ncj, nck)
+    };
+    let ni_full = n_ctr_i * nblk_i;
+    let nj_full = n_ctr_j * nblk_j;
+    let nk_full = n_ctr_k * nblk_k;
+    let comp_stride = ni_full * nj_full * nk_full;
+
+    for comp in 0..3usize {
+        let src_cart = &cart_grad_block[comp * cart_block..(comp + 1) * cart_block];
+        // Per-component block in the output representation.
+        let block: Vec<f64> = if is_spheric {
+            cart_to_sph_3c1e(src_cart, li, lj, lk)
+        } else {
+            src_cart.to_vec()
+        };
+        let comp_base = comp * comp_stride;
+        for k_idx in 0..nblk_k {
+            let k_global = ck * nblk_k + k_idx;
+            for j_idx in 0..nblk_j {
+                let j_global = cj * nblk_j + j_idx;
+                let row_base = comp_base + (k_global * nj_full + j_global) * ni_full;
+                let src_base = (k_idx * nblk_j + j_idx) * nblk_i;
+                for i_idx in 0..nblk_i {
+                    let i_global = ci * nblk_i + i_idx;
+                    out[row_base + i_global] = block[src_base + i_idx];
                 }
-            }
-        }
-        _ => {
-            // Cart (spinor never reaches here).
-            let copy_len = cart_grad.len().min(staging.len());
-            for n in 0..copy_len {
-                staging[n] = F::from_f64_lossy(cart_grad[n]);
             }
         }
     }
@@ -1025,44 +1049,70 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
     let rr_ik = rirk[0] * rirk[0] + rirk[1] * rirk[1] + rirk[2] * rirk[2];
     let rr_jk = rjrk[0] * rjrk[0] + rjrk[1] * rjrk[1] + rjrk[2] * rjrk[2];
 
-    // For nctr==1 the common case is a single (ci,cj,ck)=(0,0,0) triple. Loop over
-    // contraction columns (folding the coefficient product) into one cart buffer.
-    let mut cart_grad = vec![0.0_f64; 3 * block_len];
+    // WR-03: general-contraction (nctr>1) gradient output is a single dense
+    // COMPONENT-LEADING interleaved tensor (per libcint c2s_{cart,sph}_3c2e1 on
+    // the derivative). Per (ck,cj,ci) contraction column triple, contract that
+    // column's primitives into a per-block component-leading cart gradient, then
+    // scatter it into the global buffer at the contraction-MAJOR offset. For
+    // nctr==1 this is a single (0,0,0) block — byte-identical to the old path.
+    let is_spheric = matches!(plan.representation, Representation::Spheric);
+    let (nblk_i, nblk_j, nblk_k) = if is_spheric {
+        (nsph(li), nsph(lj), nsph(lk))
+    } else {
+        (nci, ncj, nck)
+    };
+    let out_total = 3 * (n_ctr_i * nblk_i) * (n_ctr_j * nblk_j) * (n_ctr_k * nblk_k);
+    let mut out_buf = vec![0.0_f64; out_total];
 
-    for kp in 0..n_prim_k {
-        let ak = shell_k.exponents[kp];
-        for jp in 0..n_prim_j {
-            let aj = shell_j.exponents[jp];
-            for ip in 0..n_prim_i {
-                let ai = shell_i.exponents[ip];
-                let aijk = ai + aj + ak;
-                let eijk =
-                    (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
-                if eijk > 60.0 {
-                    continue;
+    for ck in 0..n_ctr_k {
+        for cj in 0..n_ctr_j {
+            for ci in 0..n_ctr_i {
+                let mut cart_grad = vec![0.0_f64; 3 * block_len];
+                for kp in 0..n_prim_k {
+                    let ak = shell_k.exponents[kp];
+                    for jp in 0..n_prim_j {
+                        let aj = shell_j.exponents[jp];
+                        for ip in 0..n_prim_i {
+                            let ai = shell_i.exponents[ip];
+                            let aijk = ai + aj + ak;
+                            let eijk =
+                                (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
+                            if eijk > 60.0 {
+                                continue;
+                            }
+                            let dijk = f64::exp(-eijk) / (aijk * aijk.sqrt());
+
+                            // This column triple's coefficient product.
+                            let weight = shell_i.coefficients[ip * n_ctr_i + ci]
+                                * shell_j.coefficients[jp * n_ctr_j + cj]
+                                * shell_k.coefficients[kp * n_ctr_k + ck];
+                            let fac = common_factor * dijk * weight;
+
+                            // Build the OVERLAP base at li+1 headroom (ng {1,0,0,...}).
+                            let g = fill_g_tensor_3c1e(
+                                fac, ai, aj, ak, ri, rj, rk, rirj, li as u32 + 1, lj as u32,
+                                lk as u32,
+                            );
+                            let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
+                            let gout = contract_3c1e_grad(&g, &g1, li, lj, lk);
+                            for (dst, &src) in cart_grad.iter_mut().zip(gout.iter()) {
+                                *dst += src;
+                            }
+                        }
+                    }
                 }
-                let dijk = f64::exp(-eijk) / (aijk * aijk.sqrt());
-
-                // Coefficient product for nctr==1; the common dispatched case.
-                let weight = shell_i.coefficients[ip * n_ctr_i]
-                    * shell_j.coefficients[jp * n_ctr_j]
-                    * shell_k.coefficients[kp * n_ctr_k];
-                let fac = common_factor * dijk * weight;
-
-                // Build the OVERLAP base at li+1 headroom (ng {1,0,0,...}).
-                let g = fill_g_tensor_3c1e(
-                    fac, ai, aj, ak, ri, rj, rk, rirj, li as u32 + 1, lj as u32, lk as u32,
+                scatter_3c1e_grad_block::<F>(
+                    &cart_grad, li, lj, lk, plan.representation, ci, cj, ck, n_ctr_i, n_ctr_j,
+                    n_ctr_k, &mut out_buf,
                 );
-                let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
-                let gout = contract_3c1e_grad(&g, &g1, li, lj, lk);
-                for (dst, &src) in cart_grad.iter_mut().zip(gout.iter()) {
-                    *dst += src;
-                }
             }
         }
     }
 
-    write_3c1e_grad_staging::<F>(&cart_grad, li, lj, lk, plan.representation, staging);
+    let copy_len = staging.len().min(out_buf.len());
+    for (dst, &src) in staging[..copy_len].iter_mut().zip(out_buf[..copy_len].iter()) {
+        *dst = F::from_f64_lossy(src);
+    }
     Ok(grad_stats::<F>(plan, staging))
 }
 
@@ -1141,61 +1191,86 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
     let rr_ik = rirk[0] * rirk[0] + rirk[1] * rirk[1] + rirk[2] * rirk[2];
     let rr_jk = rjrk[0] * rjrk[0] + rjrk[1] * rjrk[1] + rjrk[2] * rjrk[2];
 
-    let mut cart_grad = vec![0.0_f64; 3 * block_len];
+    // WR-03: same general-contraction structure as ip1 — per (ck,cj,ci) column
+    // triple build a component-leading cart gradient (Rys-driven nuclear base),
+    // then scatter into the global component-leading interleaved buffer at the
+    // contraction-MAJOR offset. nctr==1 reduces to the single (0,0,0) block.
+    let is_spheric = matches!(plan.representation, Representation::Spheric);
+    let (nblk_i, nblk_j, nblk_k) = if is_spheric {
+        (nsph(li), nsph(lj), nsph(lk))
+    } else {
+        (nci, ncj, nck)
+    };
+    let out_total = 3 * (n_ctr_i * nblk_i) * (n_ctr_j * nblk_j) * (n_ctr_k * nblk_k);
+    let mut out_buf = vec![0.0_f64; out_total];
 
-    for kp in 0..n_prim_k {
-        let ak = shell_k.exponents[kp];
-        for jp in 0..n_prim_j {
-            let aj = shell_j.exponents[jp];
-            for ip in 0..n_prim_i {
-                let ai = shell_i.exponents[ip];
-                let aijk = ai + aj + ak;
-                let eijk =
-                    (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
-                if eijk > 60.0 {
-                    continue;
-                }
+    for ck in 0..n_ctr_k {
+        for cj in 0..n_ctr_j {
+            for ci in 0..n_ctr_i {
+                let mut cart_grad = vec![0.0_f64; 3 * block_len];
+                for kp in 0..n_prim_k {
+                    let ak = shell_k.exponents[kp];
+                    for jp in 0..n_prim_j {
+                        let aj = shell_j.exponents[jp];
+                        for ip in 0..n_prim_i {
+                            let ai = shell_i.exponents[ip];
+                            let aijk = ai + aj + ak;
+                            let eijk =
+                                (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
+                            if eijk > 60.0 {
+                                continue;
+                            }
 
-                let weight = shell_i.coefficients[ip * n_ctr_i]
-                    * shell_j.coefficients[jp * n_ctr_j]
-                    * shell_k.coefficients[kp * n_ctr_k];
-                // dijk = common_factor * ci*cj*ck * exp(-eijk) / aijk  (cint3c1e.c:317).
-                let dijk = common_factor * weight * f64::exp(-eijk) / aijk;
+                            let weight = shell_i.coefficients[ip * n_ctr_i + ci]
+                                * shell_j.coefficients[jp * n_ctr_j + cj]
+                                * shell_k.coefficients[kp * n_ctr_k + ck];
+                            // dijk = common_factor * ci*cj*ck * exp(-eijk)/aijk (cint3c1e.c:317).
+                            let dijk = common_factor * weight * f64::exp(-eijk) / aijk;
 
-                // rijk = (ai*ri + aj*rj + ak*rk)/aijk.
-                let rijk = [
-                    (ai * ri[0] + aj * rj[0] + ak * rk[0]) / aijk,
-                    (ai * ri[1] + aj * rj[1] + ak * rk[1]) / aijk,
-                    (ai * ri[2] + aj * rj[2] + ak * rk[2]) / aijk,
-                ];
+                            // rijk = (ai*ri + aj*rj + ak*rk)/aijk.
+                            let rijk = [
+                                (ai * ri[0] + aj * rj[0] + ak * rk[0]) / aijk,
+                                (ai * ri[1] + aj * rj[1] + ak * rk[1]) / aijk,
+                                (ai * ri[2] + aj * rj[2] + ak * rk[2]) / aijk,
+                            ];
 
-                // x = aijk * dist^2(rijk, cr) * tau^2, tau = 1 (point rinv, no
-                // RINV_ZETA — CINTnuc_mod returns 1). (cint3c1e.c:325-327)
-                let d0 = rijk[0] - cr[0];
-                let d1 = rijk[1] - cr[1];
-                let d2 = rijk[2] - cr[2];
-                let x = aijk * (d0 * d0 + d1 * d1 + d2 * d2);
-                let (u, w) = rys_roots_host::<f64>(nroots, x);
+                            // x = aijk * dist^2(rijk, cr) * tau^2, tau = 1 (point rinv,
+                            // no RINV_ZETA — CINTnuc_mod returns 1). (cint3c1e.c:325-327)
+                            let d0 = rijk[0] - cr[0];
+                            let d1 = rijk[1] - cr[1];
+                            let d2 = rijk[2] - cr[2];
+                            let x = aijk * (d0 * d0 + d1 * d1 + d2 * d2);
+                            let (u, w) = rys_roots_host::<f64>(nroots, x);
 
-                // Sum over Rys roots: t2 = u/(1+u) (tau=1), fac = dijk * w[root].
-                for root in 0..nroots {
-                    let t2 = u[root] / (1.0 + u[root]);
-                    let fac = dijk * w[root];
-                    let g = fill_g_tensor_3c1e_nuc(
-                        fac, t2, ai, aj, ak, ri, rj, rk, rijk, cr, li as u32 + 1,
-                        lj as u32, lk as u32,
-                    );
-                    let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
-                    let gout = contract_3c1e_grad(&g, &g1, li, lj, lk);
-                    for (dst, &src) in cart_grad.iter_mut().zip(gout.iter()) {
-                        *dst += src;
+                            // Sum over Rys roots: t2 = u/(1+u) (tau=1), fac = dijk*w[root].
+                            for root in 0..nroots {
+                                let t2 = u[root] / (1.0 + u[root]);
+                                let fac = dijk * w[root];
+                                let g = fill_g_tensor_3c1e_nuc(
+                                    fac, t2, ai, aj, ak, ri, rj, rk, rijk, cr, li as u32 + 1,
+                                    lj as u32, lk as u32,
+                                );
+                                let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
+                                let gout = contract_3c1e_grad(&g, &g1, li, lj, lk);
+                                for (dst, &src) in cart_grad.iter_mut().zip(gout.iter()) {
+                                    *dst += src;
+                                }
+                            }
+                        }
                     }
                 }
+                scatter_3c1e_grad_block::<F>(
+                    &cart_grad, li, lj, lk, plan.representation, ci, cj, ck, n_ctr_i, n_ctr_j,
+                    n_ctr_k, &mut out_buf,
+                );
             }
         }
     }
 
-    write_3c1e_grad_staging::<F>(&cart_grad, li, lj, lk, plan.representation, staging);
+    let copy_len = staging.len().min(out_buf.len());
+    for (dst, &src) in staging[..copy_len].iter_mut().zip(out_buf[..copy_len].iter()) {
+        *dst = F::from_f64_lossy(src);
+    }
     Ok(grad_stats::<F>(plan, staging))
 }
 
