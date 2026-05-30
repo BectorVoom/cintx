@@ -675,9 +675,6 @@ mod tests {
     // int2e_ipip1_sph is at position 116).
     #[cfg(feature = "with-f12")]
     const INT2E_STG_SPH_OPERATOR_ID: u32 = 106;
-    #[cfg(not(feature = "unstable-source-api"))]
-    const INT2E_IPIP1_SPH_OPERATOR_ID: u32 = 116;
-
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_vec().into_boxed_slice())
     }
@@ -881,9 +878,17 @@ mod tests {
     #[cfg(not(feature = "unstable-source-api"))]
     #[test] // source unsupported
     fn evaluate_rejects_source_only_symbols_via_compat_policy_gate() {
-        let (basis, shells) = sample_basis_with_shells(Representation::Spheric, &[1, 1, 1, 1]);
+        // int2e_ipip1_sph was promoted to stable in Phase 25 HESS-02 (25-04, D-07),
+        // so it no longer exercises the source-only gate. Resolve a still-source-only
+        // symbol BY NAME so this test survives the OperatorId reordering that adding
+        // manifest rows causes — do NOT hardcode a numeric id (the old `= 116` constant
+        // silently came to point at int1e_r2_origi_sph after the Phase-25 rows landed).
+        let operator = cintx_ops::resolver::Resolver::descriptor_by_symbol("int1e_r2_origi_sph")
+            .expect("source-only symbol must exist in manifest")
+            .id;
+        let (basis, shells) = sample_basis_with_shells(Representation::Spheric, &[1, 1]);
         let request = SessionRequest::new(
-            OperatorId::new(INT2E_IPIP1_SPH_OPERATOR_ID),
+            operator,
             Representation::Spheric,
             &basis,
             shells,
