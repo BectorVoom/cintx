@@ -7237,7 +7237,7 @@
         "representation": "cart",
         "symbol": "int2c2e_ipip1_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -7269,7 +7269,7 @@
         "representation": "sph",
         "symbol": "int2c2e_ipip1_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -7301,7 +7301,7 @@
         "representation": "cart",
         "symbol": "int3c2e_ipip1_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -7333,7 +7333,7 @@
         "representation": "sph",
         "symbol": "int3c2e_ipip1_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -7365,7 +7365,7 @@
         "representation": "cart",
         "symbol": "int3c2e_ipip2_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -7397,7 +7397,7 @@
         "representation": "sph",
         "symbol": "int3c2e_ipip2_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",

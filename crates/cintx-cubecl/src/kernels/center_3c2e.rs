@@ -16,7 +16,6 @@ use crate::kernels::two_electron::{build_2e_shape, two_e_shape_as_f12};
 use crate::kernels::two_electron::fill_g_tensor_2e;
 // Phase 25 HESS-03: verbatim Hessian gout helpers (bra-i ∇² + ket-k ∇²).
 use crate::kernels::f12::{gout_ipip1, gout_ipip2_l};
-#[cfg(test)]
 use crate::math::pdata::compute_pdata_host;
 #[cfg(test)]
 use crate::math::pdata::PairData;
@@ -2927,11 +2926,23 @@ fn launch_center_3c2e_hess<F: CintFloat>(
             for pk in 0..n_prim_k {
                 let ak = shell_k.exponents[pk];
 
+                // Per-primitive Gaussian-overlap prefactors (the `pdata.fac`
+                // exp(-mu*r²) terms) — same as the device ip1/ip2 host bridge
+                // (host_ip1_cart_blocks): bra pair (i,j) and ket pair (phantom-k, aux-l).
+                let pdata_ij = compute_pdata_host(
+                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+                );
+                let pdata_kl = compute_pdata_host(
+                    0.0, ak, rk_phantom[0], rk_phantom[1], rk_phantom[2], rl[0], rl[1], rl[2],
+                    1.0, 1.0,
+                );
+                let fac_env = common_factor * pdata_ij.fac * pdata_kl.fac;
+
                 // 2e G-tensor with the real aux k in the `ll` slot (al = ak) and a
                 // phantom s in the `lk` slot (ak_2e = 0). Mirrors the 3c2e ip1/ip2
-                // host bridge (build_ip1_plan in the test module).
+                // host bridge (host_ip1_cart_blocks in the test module).
                 let g = fill_g_tensor_2e(
-                    ai, aj, 0.0, ak, &ri, &rj, &rk_phantom, &rl, hess_shape, common_factor,
+                    ai, aj, 0.0, ak, &ri, &rj, &rk_phantom, &rl, hess_shape, fac_env,
                 );
 
                 // Verbatim Hessian gout: ipip1 nabla²_i (bra), ipip2 nabla²_l (ket aux).

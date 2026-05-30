@@ -2960,6 +2960,169 @@ pub fn vendor_int3c2e_ip2_sph(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 25 HESS-03 — multi-center rank-9 Hessian vendor references.
+// int2c2e_ipip1 (2-shell, ∇² on bra center 1), int3c2e_ipip1 (3-shell, ∇² on bra
+// center 1), int3c2e_ipip2 (3-shell, ∇² on the auxiliary k center — KET headroom).
+// `out` is component-leading: out[comp*nf + n] for comp in 0..9.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// int2c2e_ipip1_cart — 2-shell, ∇² on bra center 1 (rank 9).
+pub fn vendor_int2c2e_ipip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ipip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int2c2e_ipip1_sph — 2-shell, ∇² on bra center 1 (rank 9).
+pub fn vendor_int2c2e_ipip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ipip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int3c2e_ipip1_cart — 3-shell, ∇² on bra center 1 (rank 9).
+pub fn vendor_int3c2e_ipip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ipip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int3c2e_ipip1_sph — 3-shell, ∇² on bra center 1 (rank 9).
+pub fn vendor_int3c2e_ipip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ipip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int3c2e_ipip2_cart — 3-shell, ∇² on the auxiliary k center (KET headroom, rank 9).
+pub fn vendor_int3c2e_ipip2_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ipip2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int3c2e_ipip2_sph — 3-shell, ∇² on the auxiliary k center (KET headroom, rank 9).
+pub fn vendor_int3c2e_ipip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ipip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 // ---- Helper symbol vendor FFI wrappers ----
 // Integer-returning helpers (exact equality comparison per D-02).
 
