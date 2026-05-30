@@ -5264,16 +5264,22 @@ fn one_electron_gradgrad_bra_kin_kernel<F: Float + CubeElement>(
                                         let s76 = g0x * g3y * g12z;
                                         let s80 = g0x * g0y * g15z;
 
-                                        // gout = -(triple) per libcint ipipkin.
-                                        let go0 = -s0 - s4 - s8;
-                                        let go1 = -s27 - s31 - s35;
-                                        let go2 = -s54 - s58 - s62;
-                                        let go3 = -s9 - s13 - s17;
-                                        let go4 = -s36 - s40 - s44;
-                                        let go5 = -s63 - s67 - s71;
-                                        let go6 = -s18 - s22 - s26;
-                                        let go7 = -s45 - s49 - s53;
-                                        let go8 = -s72 - s76 - s80;
+                                        // gout = -½·(triple): libcint's ipipkin gout
+                                        // emits -(s) where s carries the full ∇²_j
+                                        // (4aj²·g[j+2] - 2aj(2j+1)·g[j] + j(j-1)·g[j-2]);
+                                        // the kinetic operator is T = -½∇²_j, so the
+                                        // ½ is folded here (cintx contracts s directly,
+                                        // unlike libcint which scales in CINT1e_drv).
+                                        let half = F::new(-0.5);
+                                        let go0 = half * (s0 + s4 + s8);
+                                        let go1 = half * (s27 + s31 + s35);
+                                        let go2 = half * (s54 + s58 + s62);
+                                        let go3 = half * (s9 + s13 + s17);
+                                        let go4 = half * (s36 + s40 + s44);
+                                        let go5 = half * (s63 + s67 + s71);
+                                        let go6 = half * (s18 + s22 + s26);
+                                        let go7 = half * (s45 + s49 + s53);
+                                        let go8 = half * (s72 + s76 + s80);
 
                                         let elem = cj_idx * nci + ci_idx;
                                         cart_out[(base + elem) as usize] += weight * go0;
