@@ -74,9 +74,15 @@ with its `component_rank`, dispatched through `eval_raw`, with a dedicated
 
 ### Non-tensor operators (rinv / drinv / p4 / irp)
 - **D-04:** **Reuse existing kernels; fail-closed above the device Rys ceiling.**
-  - Plain `int1e_rinv` = the `int1e_nuc` Rys kernel evaluated at the **common origin**
-    (`env[PTR_COMMON_ORIG]`) with **charge = 1 and NO atom-sum** (libcint `int1e_rinv` is a
-    single-center 1/r potential, not the nuclear sum).
+  - **[CORRECTION 2026-05-30, Phase-24 research OQ-1 — user-confirmed]** Plain `int1e_rinv` =
+    the `int1e_nuc` Rys kernel evaluated at the **`PTR_RINV_ORIG` slot (`env[4..6]`)**, NOT
+    `PTR_COMMON_ORIG`. libcint 6.1.3 source (`g1e.c:226-228`, `int1e_type=1`) reads
+    `PTR_RINV_ORIG` for `int1e_rinv`/`int1e_drinv` with **charge = 1 and NO atom-sum** (it is a
+    single-center 1/r potential, not the nuclear sum). The Phase-21 `rinv_orig` plumbing already
+    exists. **The rinv/drinv `vendor_*` parity tests MUST set a NON-ZERO `rinv_orig`** — the
+    common-orig fixture alone leaves `rinv_orig` at `[0,0,0]`, which is trivially-passing and
+    disallowed by the same anti-trivial-origin rule as the `r`-operators.
+    (Original D-04 text named `env[PTR_COMMON_ORIG]`; superseded by this correction.)
   - `int1e_drinv` = its derivative (+1 Rys root vs `rinv`).
   - `int1e_p4` (∇⁴) and `int1e_irp` (i·r×∇) reuse the **overlap-derivative engine** (no Rys).
   - Cover up to the **nroots≤5 ceiling** (≤ f) on the existing corpus; **fail closed when
