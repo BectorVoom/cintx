@@ -64,11 +64,14 @@ mathematically correct; the vendored libcint `int3c1e_ip1_r6_origk` autocode is 
 high-order origin-derivative integral with 128+ g-buffers — classic autocode-error territory). The
 constant-across-eps gap rules out finite-difference truncation.
 
-Implication for the `unstable_source_parity` r6 vendor assertion: the vendor reference is provably
-wrong for this one operator, so the assertion fails despite cintx being correct. Resolution is a
-project-policy choice — re-base that single assertion on FD self-consistency (validate cintx against
-the true gradient), accept the documented known-libcint-defect, or deliberately match-the-bug for
-strict byte-compatibility. Device-vs-host parity for r6 holds in all cases.
+**Resolution (commit d20762b):** the `int3c1e_ip1_r6_origk_sph` oracle assertion was re-based from
+vendor parity onto **FD gradient self-consistency** — cintx ip1_r6 is validated against `-∂/∂Rᵢ` of
+the (vendor-matching) scalar r6, over shell triples whose bra atom is distinct ([3,4,0],[3,0,4]) so
+the coordinate perturbation isolates the bra center ([0,1,2] excluded — all three shells share atom O).
+cintx passes this at tol 1e-7 (FD truncation ~1e-9; the libcint defect would be 6.6e-7). origk is now
+fully green; `unstable_source_parity` 13/23 (was 8/23) — the remaining 10 failures are ALL grids
+(the pre-existing eval_raw InvalidShellTuple blocker, unrelated to this task). Device-vs-host parity
+for r6 also holds. The libcint defect is documented in the test for any future upstream report.
 
 ## Verification (merged tree, AMD gfx1152)
 
