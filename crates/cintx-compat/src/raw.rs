@@ -184,6 +184,35 @@ impl RawApiId {
     pub const INT1E_IPRINV_SPH: Self = Self::Symbol("int1e_iprinv_sph");
     pub const INT1E_IPRINV_SPINOR: Self = Self::Symbol("int1e_iprinv_spinor");
 
+    // Phase 24 Cluster B (MOM-04): plain single-center 1/r Coulomb potential.
+    // `int1e_rinv` (rank 1) is the int1e_nuc Rys kernel evaluated at the
+    // PTR_RINV_ORIG slot (env[4..6], D-04/OQ-1 correction — NOT PTR_COMMON_ORIG),
+    // with charge=+1 and NO atom-sum. `int1e_drinv` (rank 3) is its gradient wrt
+    // the rinv center C (= D_I + D_J of the rinv G-tensor). Spinor forms registered
+    // for surface completeness; the kernel returns UnsupportedApi (D-09).
+    pub const INT1E_RINV_CART: Self = Self::Symbol("int1e_rinv_cart");
+    pub const INT1E_RINV_SPH: Self = Self::Symbol("int1e_rinv_sph");
+    pub const INT1E_RINV_SPINOR: Self = Self::Symbol("int1e_rinv_spinor");
+
+    pub const INT1E_DRINV_CART: Self = Self::Symbol("int1e_drinv_cart");
+    pub const INT1E_DRINV_SPH: Self = Self::Symbol("int1e_drinv_sph");
+    pub const INT1E_DRINV_SPINOR: Self = Self::Symbol("int1e_drinv_spinor");
+
+    // Phase 24 Cluster C/D (MOM-04) symbol declarations. The p4 (∇⁴, rank 1) and
+    // irp (i·r×∇, rank 9) FAMILIES — manifest entries + kernels — land in plans
+    // 24-04 / 24-05. These RawApiId consts are declared here so the SHARED
+    // moment_nontensor_parity.rs test file (which references all four MOM-04
+    // families) compiles, letting the Cluster B (rinv/drinv) parity tests run.
+    // Until 24-04/24-05 register the manifest rows, a p4/irp dispatch fails closed
+    // at resolver (MissingSymbol) — no partial/incorrect result.
+    pub const INT1E_P4_CART: Self = Self::Symbol("int1e_p4_cart");
+    pub const INT1E_P4_SPH: Self = Self::Symbol("int1e_p4_sph");
+    pub const INT1E_P4_SPINOR: Self = Self::Symbol("int1e_p4_spinor");
+
+    pub const INT1E_IRP_CART: Self = Self::Symbol("int1e_irp_cart");
+    pub const INT1E_IRP_SPH: Self = Self::Symbol("int1e_irp_sph");
+    pub const INT1E_IRP_SPINOR: Self = Self::Symbol("int1e_irp_spinor");
+
     // Phase 24 Cluster A (MOM-01/02/03): overlap-derived position-tensor moment
     // families. Each `_origj` variant is its OWN operator/symbol (D-02): the shared
     // moment kernel branches on origin-source (env[PTR_COMMON_ORIG] for the base
@@ -723,7 +752,14 @@ pub unsafe fn eval_raw(
     // Guard with env.len() >= PTR_RINV_ORIG + 3 so a too-short env never indexes out of bounds
     // (T-21-01-01); if the origin is still None after the read, validate_rinv_orig_env_params
     // returns a typed InvalidEnvParam BEFORE kernel entry — no garbage-origin evaluation (T-21-01-02).
-    if is_iprinv_family_symbol(plan.descriptor.operator_symbol()) {
+    // Phase 24 D-04 / OQ-1: plain int1e_rinv / int1e_drinv are single-center 1/r
+    // potentials. They read the SAME rinv-origin slot (env[PTR_RINV_ORIG], i.e.
+    // env[4..6]) as iprinv — NOT the gauge/common origin slot (env[1..3]) used by
+    // the moment families. The rinv center is read here so the kernel evaluates at
+    // a caller-supplied non-zero origin; a zero origin is trivially-passing and the
+    // parity tests inject a non-zero center via env_with_rinv_origin.
+    let sym = plan.descriptor.operator_symbol();
+    if is_iprinv_family_symbol(sym) || is_rinv_family_symbol(sym) {
         if env.len() >= PTR_RINV_ORIG + 3 {
             let x = env[PTR_RINV_ORIG];
             let y = env[PTR_RINV_ORIG + 1];
@@ -917,6 +953,17 @@ fn is_ecp_family_symbol(symbol: &str) -> bool {
 /// Used to gate the PTR_RINV_ORIG env-read block in `eval_raw`.
 fn is_iprinv_family_symbol(symbol: &str) -> bool {
     symbol.contains("iprinv")
+}
+
+/// Phase 24 D-04 / OQ-1: identifies plain rinv-family operator symbols
+/// (`int1e_rinv_*`, `int1e_drinv_*`) that read PTR_RINV_ORIG (env[4..6]).
+///
+/// Distinct from [`is_iprinv_family_symbol`]: matches only the plain single-center
+/// `int1e_rinv` / `int1e_drinv` families, NOT the gradient `iprinv` family (which
+/// has its own gate). `int1e_drinv` contains the substring `rinv` but is matched
+/// explicitly by prefix so the two gates never overlap.
+fn is_rinv_family_symbol(symbol: &str) -> bool {
+    symbol.starts_with("int1e_rinv_") || symbol.starts_with("int1e_drinv_")
 }
 
 fn parse_env_usize_param(

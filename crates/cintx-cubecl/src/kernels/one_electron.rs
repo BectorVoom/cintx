@@ -2326,6 +2326,736 @@ fn run_1e_nuc_grad_on_backend(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Device kernel — `#[cube(launch)]` — plain `int1e_rinv` (rank 1, Cluster B)
+//
+//  Single-center 1/r Coulomb potential evaluated at the rinv center (env[4..6],
+//  PTR_RINV_ORIG — D-04/OQ-1), charge=+1, NO atom-sum. Verbatim port of the scalar
+//  nuclear Rys arm (one_electron_scalar_kernel op_kind=2) with the atom-loop
+//  dropped to a SINGLE origin and the charge factor passed as +1 (no -Z_C). libcint
+//  g1e.c:226-228 (nuc_id<0): fac1 = 2*PI * fac * tau / aij; cr = env+PTR_RINV_ORIG.
+//  For a point center tau=1, so x_boys = aij * SQUARE(crij) — identical to the
+//  existing scalar nuclear arm. nmax = li+lj (ng={0,0,0,0,0,1,0,1}, no headroom).
+//  gout (intor1.c:3627-3638): s += g0[ix+i]*g0[iy+i]*g0[iz+i] over nrys roots.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// On-device single-center 1/r Coulomb potential (`int1e_rinv`, rank 1).
+///
+/// Single work item. Scratch: `g` (per-root rinv G-tensor), `urys`/`wrys` (Rys
+/// roots). `cart_out` is the rank-1 contraction-major accumulator
+/// (`(ci*nctr_j+cj)*block_len + cj_idx*nci+ci_idx`). `charge` is the +1 factor.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn one_electron_rinv_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    g: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    rcx: F,
+    rcy: F,
+    rcz: F,
+    charge: F,
+    pie4: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let nrys = nroots;
+        // nmax = li+lj (no headroom; rinv ng = {0,0,0,0,0,1,0,1}).
+        let nmax = li + lj;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let out_total = nctr_i * nctr_j * block_len;
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                // Single center C = rinv origin. crij = C - P.
+                let crijx = rcx - px;
+                let crijy = rcy - py;
+                let crijz = rcz - pz;
+                let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
+
+                if comptime!(nroots == 1u32) {
+                    rys_root1::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 2u32) {
+                    rys_root2::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 3u32) {
+                    rys_root3::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 4u32) {
+                    rys_root4::<F>(x_boys, urys, wrys, pie4);
+                } else {
+                    rys_root5::<F>(x_boys, urys, wrys, pie4);
+                }
+
+                // fac1 = 2*PI * charge * fac / zeta  (charge=+1, NO -Z_C).
+                let fac1 = F::new(2.0) * pi_const * charge * fac / zeta;
+
+                let mut irys: u32 = 0u32;
+                while irys < nrys {
+                    let u_n = urys[irys as usize];
+                    let w_n = wrys[irys as usize];
+                    let tau = u_n / (F::new(1.0) + u_n);
+                    let rt = aij2 * (F::new(1.0) - tau);
+
+                    let c00x = (px - rix) + tau * crijx;
+                    let c00y = (py - riy) + tau * crijy;
+                    let c00z = (pz - riz) + tau * crijz;
+
+                    let mut gi = 0u32;
+                    while gi < total_g {
+                        g[gi as usize] = F::new(0.0);
+                        gi += 1u32;
+                    }
+                    g[gx as usize] = F::new(1.0);
+                    g[gy as usize] = F::new(1.0);
+                    g[gz as usize] = fac1 * w_n;
+
+                    one_electron_vrr2e_axis::<F>(g, gx, c00x, rt, nmax);
+                    one_electron_vrr2e_axis::<F>(g, gy, c00y, rt, nmax);
+                    one_electron_vrr2e_axis::<F>(g, gz, c00z, rt, nmax);
+                    if lj >= 1u32 {
+                        one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj);
+                        one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
+                        one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
+                    }
+
+                    let mut ci = 0u32;
+                    while ci < nctr_i {
+                        let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                        let mut cj = 0u32;
+                        while cj < nctr_j {
+                            let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                            let weight = coeff_i_val * coeff_j_val;
+                            let base = (ci * nctr_j + cj) * block_len;
+
+                            let mut cj_idx = 0u32;
+                            let mut ja = 0u32;
+                            while ja <= lj {
+                                let jx = lj - ja;
+                                let lj_minus_jx = lj - jx;
+                                let mut jb = 0u32;
+                                while jb <= lj_minus_jx {
+                                    let jy = lj_minus_jx - jb;
+                                    let jz = lj - jx - jy;
+
+                                    let mut ci_idx = 0u32;
+                                    let mut ia = 0u32;
+                                    while ia <= li {
+                                        let ix = li - ia;
+                                        let li_minus_ix = li - ix;
+                                        let mut ib = 0u32;
+                                        while ib <= li_minus_ix {
+                                            let iy = li_minus_ix - ib;
+                                            let iz = li - ix - iy;
+
+                                            let nx = jx * dj + ix;
+                                            let ny = jy * dj + iy;
+                                            let nz = jz * dj + iz;
+
+                                            let g0x = g[(gx + nx) as usize];
+                                            let g0y = g[(gy + ny) as usize];
+                                            let g0z = g[(gz + nz) as usize];
+
+                                            let elem = cj_idx * nci + ci_idx;
+                                            cart_out[(base + elem) as usize] +=
+                                                weight * g0x * g0y * g0z;
+
+                                            ci_idx += 1u32;
+                                            ib += 1u32;
+                                        }
+                                        ia += 1u32;
+                                    }
+                                    cj_idx += 1u32;
+                                    jb += 1u32;
+                                }
+                                ja += 1u32;
+                            }
+                            cj += 1u32;
+                        }
+                        ci += 1u32;
+                    }
+
+                    irys += 1u32;
+                }
+
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`one_electron_rinv_kernel`] at `f64` on a backend client. Returns the
+/// rank-1 contraction-major accumulator of length `nci*ncj*nctr_i*nctr_j`.
+#[allow(clippy::too_many_arguments)]
+fn run_1e_rinv_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    charge: f64,
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + lj_u;
+    let g_per_axis = (nmax_u + 1) * (lj_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * nci * ncj;
+    let nroots_u = nroots as usize;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+
+    let g_zero = vec![0.0_f64; total_g];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let rys_zero = vec![0.0_f64; nroots_u];
+    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    macro_rules! launch_with {
+        ($nr:expr) => {
+            one_electron_rinv_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                rc[0],
+                rc[1],
+                rc[2],
+                charge,
+                PIE4,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                $nr,
+            )
+        };
+    }
+
+    match nroots {
+        1 => launch_with!(1u32),
+        2 => launch_with!(2u32),
+        3 => launch_with!(3u32),
+        4 => launch_with!(4u32),
+        _ => launch_with!(5u32),
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_1e_rinv_device`] (Cpu/Wgpu/Cuda/Rocm/Metal).
+#[allow(clippy::too_many_arguments)]
+fn run_1e_rinv_on_backend(
+    backend: &ResolvedBackend,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    charge: f64,
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_1e_rinv_device::<cubecl::cpu::CpuRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_1e_rinv_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_1e_rinv_device::<cubecl_cuda::CudaRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_1e_rinv_device::<cubecl_hip::HipRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_1e_rinv_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Device kernel — `#[cube(launch)]` — `int1e_drinv` (rank 3, Cluster B)
+//
+//  Gradient of the single-center 1/r potential wrt the rinv center C. libcint
+//  intor1.c:3671-3700 (CINTgout1e_int1e_drinv): builds the rinv G-tensor g0
+//  (ng = {1,1,0,0,1,1,0,3} → bra i_l+1 AND ket j_l+1 headroom), then
+//    g1 = G2E_D_J(g0); g2 = G2E_D_I(g0); g1 += g2
+//  and emits the rank-3 per-axis tensor
+//    s[0] += g1[ix]*g0[iy]*g0[iz];  s[1] += g0[ix]*g1[iy]*g0[iz];
+//    s[2] += g0[ix]*g0[iy]*g1[iz]   (summed over nrys roots).
+//  g1 = (D_I + D_J)(g0) is the translational-invariance derivative −(∂_i+∂_j) wrt
+//  C — distinct from iprinv's ∂/∂A_bra. nmax = li+lj+2, lj_ext = lj+1. Single
+//  center, charge=+1, no atom-sum.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// On-device gradient of the single-center 1/r potential (`int1e_drinv`, rank 3).
+///
+/// Single work item. Scratch: `g` (rinv G-tensor with bra+1 / ket+1 headroom),
+/// `g1` (D_J), `g2` (D_I), `urys`/`wrys`. `cart_out` is the rank-3 component-leading
+/// accumulator (`(ci*nctr_j+cj)*total_len + comp*block_len + cj_idx*nci+ci_idx`).
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn one_electron_drinv_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    g: &mut Array<F>,
+    g1: &mut Array<F>,
+    g2: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    rcx: F,
+    rcy: F,
+    rcz: F,
+    charge: F,
+    pie4: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let nrys = nroots;
+        // Headroom: g0 spans i..=li+1, j..=lj+1 (ng = {1,1,...}).
+        let nmax = li + lj + 2u32;
+        let lj_ext = lj + 1u32;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let total_len = 3u32 * block_len;
+        let out_total = nctr_i * nctr_j * total_len;
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                let ai2 = F::new(-2.0) * ai;
+                let aj2 = F::new(-2.0) * aj;
+
+                let crijx = rcx - px;
+                let crijy = rcy - py;
+                let crijz = rcz - pz;
+                let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
+
+                if comptime!(nroots == 1u32) {
+                    rys_root1::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 2u32) {
+                    rys_root2::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 3u32) {
+                    rys_root3::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 4u32) {
+                    rys_root4::<F>(x_boys, urys, wrys, pie4);
+                } else {
+                    rys_root5::<F>(x_boys, urys, wrys, pie4);
+                }
+
+                let fac1 = F::new(2.0) * pi_const * charge * fac / zeta;
+
+                let mut irys: u32 = 0u32;
+                while irys < nrys {
+                    let u_n = urys[irys as usize];
+                    let w_n = wrys[irys as usize];
+                    let tau = u_n / (F::new(1.0) + u_n);
+                    let rt = aij2 * (F::new(1.0) - tau);
+
+                    let c00x = (px - rix) + tau * crijx;
+                    let c00y = (py - riy) + tau * crijy;
+                    let c00z = (pz - riz) + tau * crijz;
+
+                    // Per-root rinv G-tensor in `g` (bra+1 / ket+1 headroom).
+                    let mut gi = 0u32;
+                    while gi < total_g {
+                        g[gi as usize] = F::new(0.0);
+                        gi += 1u32;
+                    }
+                    g[gx as usize] = F::new(1.0);
+                    g[gy as usize] = F::new(1.0);
+                    g[gz as usize] = fac1 * w_n;
+
+                    one_electron_vrr2e_axis::<F>(g, gx, c00x, rt, nmax);
+                    one_electron_vrr2e_axis::<F>(g, gy, c00y, rt, nmax);
+                    one_electron_vrr2e_axis::<F>(g, gz, c00z, rt, nmax);
+                    one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                    one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                    one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+
+                    // g1 = D_J(g0), g2 = D_I(g0), then g1 += g2 over the FINAL
+                    // i∈0..=li, j∈0..=lj range. D_J reads j+1 (lj_ext headroom),
+                    // D_I reads i+1 (li+1 headroom). libcint intor1.c:3678-3680.
+                    let mut zi = 0u32;
+                    while zi < total_g {
+                        g1[zi as usize] = F::new(0.0);
+                        g2[zi as usize] = F::new(0.0);
+                        zi += 1u32;
+                    }
+                    d_j_1e_into::<F>(g1, g, g_per_axis, dj, lj, li, aj2);
+                    d_i_1e_into::<F>(g2, g, g_per_axis, dj, lj, li, ai2);
+                    let mut si = 0u32;
+                    while si < total_g {
+                        g1[si as usize] = g1[si as usize] + g2[si as usize];
+                        si += 1u32;
+                    }
+
+                    let mut ci = 0u32;
+                    while ci < nctr_i {
+                        let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                        let mut cj = 0u32;
+                        while cj < nctr_j {
+                            let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                            let weight = coeff_i_val * coeff_j_val;
+                            let base = (ci * nctr_j + cj) * total_len;
+
+                            let mut cj_idx = 0u32;
+                            let mut ja = 0u32;
+                            while ja <= lj {
+                                let jx = lj - ja;
+                                let lj_minus_jx = lj - jx;
+                                let mut jb = 0u32;
+                                while jb <= lj_minus_jx {
+                                    let jy = lj_minus_jx - jb;
+                                    let jz = lj - jx - jy;
+
+                                    let mut ci_idx = 0u32;
+                                    let mut ia = 0u32;
+                                    while ia <= li {
+                                        let ix = li - ia;
+                                        let li_minus_ix = li - ix;
+                                        let mut ib = 0u32;
+                                        while ib <= li_minus_ix {
+                                            let iy = li_minus_ix - ib;
+                                            let iz = li - ix - iy;
+
+                                            let nx = jx * dj + ix;
+                                            let ny = jy * dj + iy;
+                                            let nz = jz * dj + iz;
+
+                                            let g0x = g[(gx + nx) as usize];
+                                            let g0y = g[(gy + ny) as usize];
+                                            let g0z = g[(gz + nz) as usize];
+                                            let g1x = g1[(gx + nx) as usize];
+                                            let g1y = g1[(gy + ny) as usize];
+                                            let g1z = g1[(gz + nz) as usize];
+
+                                            let elem = cj_idx * nci + ci_idx;
+                                            cart_out[(base + elem) as usize] +=
+                                                weight * g1x * g0y * g0z;
+                                            cart_out[(base + block_len + elem) as usize] +=
+                                                weight * g0x * g1y * g0z;
+                                            cart_out
+                                                [(base + 2u32 * block_len + elem) as usize] +=
+                                                weight * g0x * g0y * g1z;
+
+                                            ci_idx += 1u32;
+                                            ib += 1u32;
+                                        }
+                                        ia += 1u32;
+                                    }
+                                    cj_idx += 1u32;
+                                    jb += 1u32;
+                                }
+                                ja += 1u32;
+                            }
+                            cj += 1u32;
+                        }
+                        ci += 1u32;
+                    }
+
+                    irys += 1u32;
+                }
+
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`one_electron_drinv_kernel`] at `f64` on a backend client. Returns the
+/// rank-3 component-leading accumulator of length `3*nci*ncj*nctr_i*nctr_j`.
+#[allow(clippy::too_many_arguments)]
+fn run_1e_drinv_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    charge: f64,
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + lj_u + 2;
+    let lj_ext_u = lj_u + 1;
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * 3 * nci * ncj;
+    let nroots_u = nroots as usize;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+
+    let g_zero = vec![0.0_f64; total_g];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let g2_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let rys_zero = vec![0.0_f64; nroots_u];
+    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    macro_rules! launch_with {
+        ($nr:expr) => {
+            one_electron_drinv_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(g1_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(g2_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                rc[0],
+                rc[1],
+                rc[2],
+                charge,
+                PIE4,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                $nr,
+            )
+        };
+    }
+
+    match nroots {
+        1 => launch_with!(1u32),
+        2 => launch_with!(2u32),
+        3 => launch_with!(3u32),
+        4 => launch_with!(4u32),
+        _ => launch_with!(5u32),
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_1e_drinv_device`] (Cpu/Wgpu/Cuda/Rocm/Metal).
+#[allow(clippy::too_many_arguments)]
+fn run_1e_drinv_on_backend(
+    backend: &ResolvedBackend,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rc: [f64; 3],
+    charge: f64,
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_1e_drinv_device::<cubecl::cpu::CpuRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_1e_drinv_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_1e_drinv_device::<cubecl_cuda::CudaRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_1e_drinv_device::<cubecl_hip::HipRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_1e_drinv_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rc, charge, exps_i,
+            exps_j, coeff_i, coeff_j,
+        ),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Device kernel — `#[cube(launch)]` — both-side rank-9 NUCLEAR gradient
 //
 //  Implements `int1e_ipnucip` = <NABLA i | NUC | NABLA j> (libcint
@@ -4299,6 +5029,12 @@ fn launch_one_electron_typed<F: CintFloat>(
     let is_ipkin = op_name == "ipkin";
     let is_ipnuc = op_name == "ipnuc";
     let is_iprinv = op_name == "iprinv";
+    // Phase 24 Cluster B (MOM-04): plain single-center 1/r Coulomb potential.
+    // `rinv` (rank 1) is the int1e_nuc Rys kernel at the rinv center (env[4..6]),
+    // charge=+1, NO atom-sum. `drinv` (rank 3) is the gradient wrt the rinv center C
+    // (= D_I + D_J applied to the rinv G-tensor). Both single-center.
+    let is_rinv = op_name == "rinv";
+    let is_drinv = op_name == "drinv";
     // Both-side rank-9 family (Phase 23): <NABLA i | OP | NABLA j>.
     let is_ipovlpip = op_name == "ipovlpip";
     let is_ipkinip = op_name == "ipkinip";
@@ -4336,6 +5072,8 @@ fn launch_one_electron_typed<F: CintFloat>(
         && !is_iprinv
         && !is_rank9_both
         && !is_moment
+        && !is_rinv
+        && !is_drinv
     {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("1e operator '{}' is not supported", op_name),
@@ -4469,6 +5207,168 @@ fn launch_one_electron_typed<F: CintFloat>(
                 }
             }
             Representation::Spinor => unreachable!("spinor moment rejected above"),
+        }
+
+        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+            1e-12
+        } else {
+            1e-18
+        });
+        let not0 = staging
+            .iter()
+            .filter(|&&v| v.abs() > nonzero_threshold)
+            .count() as i32;
+
+        let staging_bytes = staging.len() * std::mem::size_of::<F>();
+        return Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: staging_bytes,
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes: staging_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 24 Cluster B: plain single-center 1/r potential (`rinv` / `drinv`)
+    // — rank 1 (rinv) / rank 3 (drinv) output. Reads the rinv center (env[4..6],
+    //   PTR_RINV_ORIG), charge=+1, NO atom-sum (D-04/OQ-1).
+    // ─────────────────────────────────────────────────────────────────────────
+    if is_rinv || is_drinv {
+        // Spinor rinv/drinv reps are registered for surface completeness but not
+        // implemented: fail typed, never partial (D-09).
+        if plan.representation == Representation::Spinor {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!("spinor int1e_{op_name}"),
+            });
+        }
+
+        // Resolve the single rinv origin up front (env[PTR_RINV_ORIG], read in
+        // eval_raw). The validator rejects a None origin before kernel entry; we
+        // fail typed here too (never read a garbage origin) — defensive gate.
+        let rc = plan
+            .operator_env_params
+            .rinv_orig
+            .ok_or(cintxRsError::InvalidEnvParam {
+                param: "PTR_RINV_ORIG",
+                reason: format!("int1e_{op_name} kernel reached with no rinv origin"),
+            })?;
+
+        let n_prim_i = shell_i.nprim as usize;
+        let n_prim_j = shell_j.nprim as usize;
+        let n_ctr_i = shell_i.nctr as usize;
+        let n_ctr_j = shell_j.nctr as usize;
+
+        let rank: usize = if is_rinv { 1 } else { 3 };
+        let block_len = nci * ncj;
+        let total_len = rank * block_len;
+
+        // Rys nroots fail-closed guard BEFORE any device/Rys call (D-04).
+        //   rinv:  nmax = li+lj   → nroots = (li+lj)/2 + 1
+        //   drinv: nmax = li+lj+2 → nroots = (li+lj+2)/2 + 1 (the +1 derivative level
+        //          raises the VRR ceiling vs the scalar rinv path).
+        let nuc_nroots = if is_rinv {
+            (li as u32 + lj as u32) / 2 + 1
+        } else {
+            (li as u32 + lj as u32 + 2) / 2 + 1
+        };
+        if nuc_nroots as usize > MAX_DEVICE_NROOTS {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "device int1e_{op_name} kernel supports nroots<={MAX_DEVICE_NROOTS} \
+                     (l_i+l_j<=8); got nroots={nuc_nroots} for l_i={li}, l_j={lj}"
+                ),
+            });
+        }
+
+        let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+        let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+        let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+        let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+
+        // charge = +1 (single-center 1/r, no -Z_C, no atom-sum — g1e.c:226-228).
+        let mut cart_comp = if is_rinv {
+            run_1e_rinv_on_backend(
+                backend, nuc_nroots, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
+                n_ctr_i as u32, n_ctr_j as u32, ri, rj, rc, 1.0, &exps_i, &exps_j, &coeff_i,
+                &coeff_j,
+            )
+        } else {
+            run_1e_drinv_on_backend(
+                backend, nuc_nroots, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
+                n_ctr_i as u32, n_ctr_j as u32, ri, rj, rc, 1.0, &exps_i, &exps_j, &coeff_i,
+                &coeff_j,
+            )
+        };
+
+        // Apply the libcint CINTcommon_fac_sp normalization to all components.
+        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+        if (sp_scale - 1.0).abs() > 1e-15 {
+            for v in cart_comp.iter_mut() {
+                *v *= sp_scale;
+            }
+        }
+
+        // Write to staging: component-leading layout staging[comp * ni*nj + n].
+        match plan.representation {
+            Representation::Spheric => {
+                let ni_sph = n_ctr_i * nsi;
+                let nj_sph = n_ctr_j * nsj;
+                let sph_block = ni_sph * nj_sph;
+                for comp in 0..rank {
+                    for ci in 0..n_ctr_i {
+                        for cj in 0..n_ctr_j {
+                            let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
+                            cart_to_sph_1e(
+                                &cart_comp[cart_base..cart_base + block_len],
+                                &mut sph_tmp,
+                                li,
+                                lj,
+                            );
+                            let staging_comp_base = comp * sph_block;
+                            for mj in 0..nsj {
+                                let jj = cj * nsj + mj;
+                                for mi in 0..nsi {
+                                    let ii = ci * nsi + mi;
+                                    let dst = staging_comp_base + ii + jj * ni_sph;
+                                    if dst < staging.len() {
+                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Representation::Cart => {
+                let ni_cart = n_ctr_i * nci;
+                let nj_cart = n_ctr_j * ncj;
+                let cart_block = ni_cart * nj_cart;
+                for comp in 0..rank {
+                    for ci in 0..n_ctr_i {
+                        for cj in 0..n_ctr_j {
+                            let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                            let block = &cart_comp[src_base..src_base + block_len];
+                            let staging_comp_base = comp * cart_block;
+                            for jc in 0..ncj {
+                                let jj = cj * ncj + jc;
+                                for ic in 0..nci {
+                                    let ii = ci * nci + ic;
+                                    let dst = staging_comp_base + ii + jj * ni_cart;
+                                    if dst < staging.len() {
+                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Representation::Spinor => unreachable!("spinor rinv/drinv rejected above"),
         }
 
         let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
