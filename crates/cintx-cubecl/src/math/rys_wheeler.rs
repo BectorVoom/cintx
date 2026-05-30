@@ -33,6 +33,7 @@
 
 use super::eigh;
 use super::roots_jacobi_data as data;
+use cubecl::prelude::*;
 
 /// libcint `MXRYSROOTS` (cint.h: 32).
 const MXRYSROOTS: usize = 32;
@@ -1235,9 +1236,106 @@ fn erfc_cody(ax: f64) -> f64 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Task 3a — FMA fidelity probe (quick task 260531-aw1, RESEARCH Open-Q1 BLOCKER).
+//
+// The double-double `two_prod(a,b)` error term `e = a.mul_add(b,-p)` is correct ONLY if
+// the CubeCL CPU backend lowers `mul_add`/`fma` to a TRUE fused multiply-add (single
+// rounding, no intermediate rounding of `a*b`). This probe computes that error term on
+// the CPU CubeCL backend for pairs whose product is NOT exactly representable, and the
+// test asserts it matches the host-f64 `f64::mul_add` reference BIT-FOR-BIT. If the
+// device value instead equals `a*b - p` (== 0.0 when the product is pre-rounded), FMA is
+// NOT fused and the double-double port must use a Dekker-split software product.
+// ---------------------------------------------------------------------------
+
+/// Device probe: out[i] = fma(a[i], b[i], -(a[i]*b[i])) — the TwoProd error term.
+#[cube(launch)]
+fn fma_probe_kernel<F: Float + CubeElement>(a: &Array<F>, b: &Array<F>, out: &mut Array<F>) {
+    let i = ABSOLUTE_POS;
+    if i < a.len() {
+        let ai = a[i];
+        let bi = b[i];
+        let p = ai * bi;
+        // fma(ai, bi, -p) == ai*bi - p with a SINGLE rounding: the TwoProd error term.
+        // If the backend fuses, this is exact; if it pre-rounds the product, it is 0.
+        out[i] = fma(ai, bi, -p);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Task 3a FMA probe: assert the CPU CubeCL backend fuses `mul_add` (bit-for-bit vs host).
+    #[test]
+    fn fma_probe() {
+        use cubecl::prelude::*;
+        // Pairs whose product is not exactly representable in f64 (so the TwoProd error
+        // term is nonzero under a true FMA, and zero under a pre-rounded product).
+        let a = [
+            1.0 + 2f64.powi(-30),
+            std::f64::consts::PI,
+            1.3000000000000001e0,
+            7.123456789012345e0,
+            0.1,
+            9.999999999999998e-1,
+        ];
+        let b = [
+            1.0 + 2f64.powi(-30),
+            std::f64::consts::E,
+            2.6999999999999997e0,
+            3.987654321098765e0,
+            0.3,
+            1.0000000000000002e0,
+        ];
+        // Host reference error terms via true f64 FMA.
+        let host_err: Vec<f64> = a
+            .iter()
+            .zip(b.iter())
+            .map(|(&ai, &bi)| {
+                let p = ai * bi;
+                ai.mul_add(bi, -p)
+            })
+            .collect();
+
+        let client = cubecl::cpu::CpuRuntime::client(&Default::default());
+        let a_h = client.create_from_slice(f64::as_bytes(&a));
+        let b_h = client.create_from_slice(f64::as_bytes(&b));
+        let out_zero = vec![0.0f64; a.len()];
+        let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+        fma_probe_kernel::launch::<f64, cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(a.len() as u32),
+            unsafe { ArrayArg::from_raw_parts(a_h, a.len()) },
+            unsafe { ArrayArg::from_raw_parts(b_h, a.len()) },
+            unsafe { ArrayArg::from_raw_parts(out_h.clone(), a.len()) },
+        );
+        let raw = client.read_one_unchecked(out_h);
+        let dev_err = f64::from_bytes(&raw);
+
+        // At least one host error term must be nonzero (else the probe is vacuous).
+        let any_nonzero = host_err.iter().any(|&e| e != 0.0);
+        assert!(any_nonzero, "probe vacuous: all host TwoProd error terms are zero");
+
+        // Bit-for-bit fusion check.
+        let mut fused = true;
+        for i in 0..a.len() {
+            if dev_err[i].to_bits() != host_err[i].to_bits() {
+                fused = false;
+                eprintln!(
+                    "FMA NOT FUSED at i={i}: a={} b={} device_err={:e} host_err={:e}",
+                    a[i], b[i], dev_err[i], host_err[i]
+                );
+            }
+        }
+        assert!(
+            fused,
+            "CPU CubeCL backend does NOT fuse mul_add bit-for-bit vs host f64 FMA \
+             (double-double port must use a Dekker-split software product)"
+        );
+    }
 
     #[test]
     fn erf_matches_reference() {
