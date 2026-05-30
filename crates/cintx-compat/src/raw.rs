@@ -989,11 +989,17 @@ fn validated_4c1e_error(reason: &str) -> cintxRsError {
 
 fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(), cintxRsError> {
     let symbol = descriptor.operator_symbol();
+    let profile = active_manifest_profile();
 
-    // Source-only symbols use the "unstable-source" profile and are gated by the
-    // unstable-source-api feature. When the feature is enabled, skip the profile
-    // check (the source gate below handles authorization). When the feature is
-    // disabled, reject with a clear message regardless of the base profile.
+    // Source-only symbols are gated by the `unstable-source-api` feature. Once that
+    // gate passes the symbol must still be compiled into a profile available in THIS
+    // build — either the active base/with-* profile (a few source-only `2e` symbols
+    // ship there) OR the dedicated `unstable-source` profile (origi/grids/breit/origk/
+    // ssc). A source-only symbol compiled into NEITHER is rejected, not silently
+    // accepted. CR-01: this membership check was previously unreachable dead code
+    // behind an early `return Ok(())`. `active_manifest_profile()` never returns
+    // "unstable-source", so checking only that profile (the old dead block's logic)
+    // would wrongly reject the base-profile source `2e` symbols — hence the OR.
     if descriptor.is_source_only() {
         if !unstable_source_api_enabled() {
             return Err(cintxRsError::UnsupportedApi {
@@ -1002,32 +1008,19 @@ fn validate_profile_and_source_gate(descriptor: &OperatorDescriptor) -> Result<(
                 ),
             });
         }
-        // Feature is enabled: source gate passed, skip profile check.
+        if !descriptor.is_compiled_in_profile(profile)
+            && !descriptor.is_compiled_in_profile("unstable-source")
+        {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "raw api {symbol} is not compiled in active profile {profile} or the unstable-source profile"
+                ),
+            });
+        }
         return Ok(());
     }
 
     // Non-source-only symbols: check the active compiled profile.
-    let profile = active_manifest_profile();
-
-    // Source-only symbols require the unstable-source-api feature gate and are
-    // compiled in the "unstable-source" manifest profile, not the base/with-* profiles.
-    if descriptor.is_source_only() {
-        if !unstable_source_api_enabled() {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!(
-                    "source-only symbol {symbol} requires feature `unstable-source-api`"
-                ),
-            });
-        }
-        // Source-only entries use "unstable-source" profile — check that instead of active profile
-        if !descriptor.is_compiled_in_profile("unstable-source") {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!("raw api {symbol} is not compiled in unstable-source profile"),
-            });
-        }
-        return Ok(());
-    }
-
     if !descriptor.is_compiled_in_profile(profile) {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("raw api {symbol} is not compiled in active profile {profile}"),
