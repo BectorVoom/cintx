@@ -1671,6 +1671,251 @@ fn launch_two_electron_ip1<F: CintFloat>(
     })
 }
 
+/// int2e_ip2 gradient launcher (Phase 23 DRV1-01).
+///
+/// Sibling of [`launch_two_electron_ip1`] for the **ket** bra-center `k`
+/// (`G2E_D_K`, libcint `CINTgout2e_int2e_ip2`, grad2.c:101). The only differences
+/// vs ip1 are:
+///   - headroom raised on `lk` (`build_2e_shape(li, lj, lk+1, ll)`) so
+///     `nabla1k_2e` can read up to index `lk+1`;
+///   - the single-side contraction uses [`crate::kernels::f12::gout_ipn`] with
+///     `Nabla1Center::K` and the per-primitive **k-shell** exponent `ak`.
+/// The s[0..2] mixing, the component-leading transpose, and the cart/sph output
+/// path are identical to ip1.
+#[allow(clippy::too_many_arguments)]
+fn launch_two_electron_ip2<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
+    common_factor: f64,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    // Spinor gradient: not supported (R5 / D-06). Reject before any compute.
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor int2e_ip2 gradient".to_owned(),
+        });
+    }
+
+    // lk → lk+1 headroom shape (D-06). gout_ipn's nabla1k_2e reads up to index lk+1.
+    let grad_shape = build_2e_shape(li as usize, lj as usize, lk as usize + 1, ll as usize);
+
+    // R2 / D-13: the elevated lk can push nroots past the rys_root1..5 ceiling.
+    // Reject fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
+    if grad_shape.nroots > 5 {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_j = &shells[1];
+    let shell_k = &shells[2];
+    let shell_l = &shells[3];
+
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let block_len = nfi * nfj * nfk * nfl;
+    let total_len = 3 * block_len; // 3 components × Cartesian AO product
+
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+    let nsl = nsph(ll);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_prim_l = shell_l.nprim as usize;
+
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+    let n_ctr_l = shell_l.nctr as usize;
+
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * total_len];
+
+    let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
+
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pj in 0..n_prim_j {
+            let aj = shell_j.exponents[pj];
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            for pk in 0..n_prim_k {
+                let ak = shell_k.exponents[pk];
+                for pl in 0..n_prim_l {
+                    let al = shell_l.exponents[pl];
+                    let pdata_kl = compute_pdata_host(
+                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                    );
+                    let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+
+                    // Plain Coulomb G-tensor at the elevated lk (lk+1 headroom).
+                    let g = fill_g_tensor_2e(
+                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                    );
+
+                    // ∇ on the ket bra-center k (Nabla1Center::K, exponent ak).
+                    // gout_ipn is called at BASE lk (the G-tensor carries lk+1 headroom).
+                    let gout = crate::kernels::f12::gout_ipn(
+                        &g,
+                        &grad_f12_shape,
+                        li as usize,
+                        lj as usize,
+                        lk as usize,
+                        ll as usize,
+                        crate::kernels::f12::Nabla1Center::K,
+                        ak,
+                    );
+
+                    for ci in 0..n_ctr_i {
+                        let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                        for cj in 0..n_ctr_j {
+                            let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                            for ck in 0..n_ctr_k {
+                                let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                                for cl in 0..n_ctr_l {
+                                    let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
+                                    let weight = coeff_i * coeff_j * coeff_k * coeff_l;
+                                    let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l
+                                        + cl)
+                                        * total_len;
+                                    for n in 0..block_len {
+                                        for comp in 0..3usize {
+                                            cart_blocks[base + comp * block_len + n] +=
+                                                weight * gout[n * 3 + comp];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Component-leading `[3, nl, nk, nj, ni]` F-order write (identical to ip1).
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dj = n_ctr_j * nsj;
+            let dk = n_ctr_k * nsk;
+            let dl = n_ctr_l * nsl;
+            let sph_block = di * dj * dk * dl;
+            for comp in 0..3usize {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let sph = cart_to_sph_2e(
+                                    &cart_blocks[base..base + block_len],
+                                    li,
+                                    lj,
+                                    lk,
+                                    ll,
+                                );
+                                for ml in 0..nsl {
+                                    let lidx = cl * nsl + ml;
+                                    for mk in 0..nsk {
+                                        let kidx = ck * nsk + mk;
+                                        for mj in 0..nsj {
+                                            let jidx = cj * nsj + mj;
+                                            for mi in 0..nsi {
+                                                let iidx = ci * nsi + mi;
+                                                let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                if dst < staging.len() {
+                                                    staging[dst] = F::from_f64_lossy(sph[src]);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nfi;
+            let dj = n_ctr_j * nfj;
+            let dk = n_ctr_k * nfk;
+            let dl = n_ctr_l * nfl;
+            let cart_block = di * dj * dk * dl;
+            for comp in 0..3usize {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let block = &cart_blocks[base..base + block_len];
+                                for lc in 0..nfl {
+                                    let lidx = cl * nfl + lc;
+                                    for kc in 0..nfk {
+                                        let kidx = ck * nfk + kc;
+                                        for jc in 0..nfj {
+                                            let jidx = cj * nfj + jc;
+                                            for ic in 0..nfi {
+                                                let iidx = ci * nfi + ic;
+                                                let src = ic + nfi * (jc + nfj * (kc + nfk * lc));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                if dst < staging.len() {
+                                                    staging[dst] = F::from_f64_lossy(block[src]);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor int2e_ip2 rejected above"),
+    }
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
 /// Generic inner for the 2e launcher. See `launch_two_electron` for the dispatch rationale.
 ///
 /// Intermediate computations (G-tensor, cart_buf) remain `f64`; output staging
@@ -1769,6 +2014,23 @@ fn launch_two_electron_typed<F: CintFloat>(
     // oracle test).
     if plan.descriptor.operator_name() == "ip1" {
         return launch_two_electron_ip1::<F>(
+            plan,
+            li,
+            lj,
+            lk,
+            ll,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            staging,
+        );
+    }
+
+    // int2e_ip2 gradient path (Phase 23 DRV1-01): ∇ on the ket bra-center k.
+    if plan.descriptor.operator_name() == "ip2" {
+        return launch_two_electron_ip2::<F>(
             plan,
             li,
             lj,
@@ -2527,6 +2789,222 @@ mod ip1_tests {
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
             "spinor int2e_ip1 should return UnsupportedApi, got: {:?}",
+            result
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// int2e_ip2 gradient tests (Phase 23 DRV1-01)
+//
+// ip2 is the ket-side (∇ on k) sibling of ip1. Same behavior contract:
+//   - nroots guard: an all-f quartet (gradient nroots (li+lj+(lk+1)+ll)/2+1=7>5)
+//     returns UnsupportedApi; an s/p/d quartet does not.
+//   - component count: an (s,s,s,s) quartet → 3 outputs; (s,s,p,s) → 9.
+//   - determinism: repeated evaluation is bit-identical.
+//   - spinor: int2e_ip2 with Representation::Spinor returns UnsupportedApi.
+//   - non-square sanity: an explicitly NON-SQUARE quartet (p on i, p on k in
+//     different slots) is evaluated without panic and is nonzero (D-05 discipline).
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(all(test, feature = "cpu"))]
+mod ip2_tests {
+    use super::*;
+    use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+    use crate::specialization::SpecializationKey;
+    use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell, ShellTuple};
+    use cintx_ops::resolver::Resolver;
+    use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+    use std::sync::Arc;
+
+    fn build_ip2_plan_lll(
+        li: u8,
+        lj: u8,
+        lk: u8,
+        ll: u8,
+    ) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
+        let atom0 = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom1 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom0, atom1].into_boxed_slice());
+
+        let mk = |atom_index: u32, l: u8| {
+            Arc::new(
+                Shell::try_new(
+                    atom_index,
+                    l,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.8_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
+        let s0 = mk(0, li);
+        let s1 = mk(1, lj);
+        let s2 = mk(0, lk);
+        let s3 = mk(1, ll);
+
+        let all_shells: Arc<[Arc<Shell>]> =
+            Arc::from(vec![s0.clone(), s1.clone(), s2.clone(), s3.clone()].into_boxed_slice());
+        let basis = BasisSet::try_new(atoms, all_shells).unwrap();
+        let shells = ShellTuple::try_from_iter([s0, s1, s2, s3]).unwrap();
+
+        let op = Resolver::descriptor_by_symbol("int2e_ip2_sph")
+            .expect("int2e_ip2_sph must be in manifest")
+            .id;
+        (basis, shells, op)
+    }
+
+    fn run_ip2(
+        basis: &BasisSet,
+        shells: ShellTuple,
+        op: cintx_core::OperatorId,
+        rep: Representation,
+    ) -> Result<(Vec<f64>, ExecutionStats), cintxRsError> {
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op, rep, basis, shells.clone(), &opts)?;
+        let mut plan = ExecutionPlan::new(op, rep, basis, shells, &q)?;
+        plan.precision = cintx_core::PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+
+        let out_elems = plan.output_layout.staging_elements;
+        let mut staging = vec![0.0_f64; out_elems];
+        let stats = launch_two_electron_typed::<f64>(&backend, &plan, &spec, &mut staging)?;
+        Ok((staging, stats))
+    }
+
+    // nroots guard (D-13): an all-f quartet (gradient nroots = (3+3+(3+1)+3)/2+1=7)
+    // > 5 → UnsupportedApi. A (d,d,d,d) quartet ((2+2+(2+1)+2)/2+1=5) ≤ 5 → allowed.
+    #[test]
+    fn test_int2e_ip2_nroots_guard() {
+        let (basis, shells, op) = build_ip2_plan_lll(3, 3, 3, 3);
+        let result = run_ip2(&basis, shells, op, Representation::Spheric);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "all-f int2e_ip2 quartet (nroots=7) must return UnsupportedApi, got: {:?}",
+            result.map(|(s, _)| s.len())
+        );
+
+        let (basis, shells, op) = build_ip2_plan_lll(2, 2, 2, 2);
+        let ok = run_ip2(&basis, shells, op, Representation::Spheric);
+        assert!(
+            ok.is_ok(),
+            "(d,d,d,d) int2e_ip2 quartet (nroots=5) must be allowed, got: {:?}",
+            ok.err()
+        );
+    }
+
+    // Component count: (s,s,s,s) → 3; (s,s,p,s) → 3 * 1*1*3*1 = 9 (sph p on k).
+    #[test]
+    fn test_int2e_ip2_component_count() {
+        let (basis, shells, op) = build_ip2_plan_lll(0, 0, 0, 0);
+        let (staging, _stats) = run_ip2(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(staging.len(), 3, "(s,s,s,s) int2e_ip2 should produce 3 components");
+
+        let (basis, shells, op) = build_ip2_plan_lll(0, 0, 1, 0);
+        let (staging, _stats) = run_ip2(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(staging.len(), 9, "(s,s,p,s) int2e_ip2 should produce 9 outputs");
+    }
+
+    // Determinism: repeated evaluation is bit-identical on a NON-SQUARE quartet.
+    #[test]
+    fn test_int2e_ip2_determinism_nonsquare() {
+        // p on i, p on k in different slots → non-square (ni=3, nk=3 but distinct
+        // axes) and nonzero off-center.
+        let (basis, shells, op) = build_ip2_plan_lll(1, 0, 1, 0);
+        let (out1, _) = run_ip2(&basis, shells.clone(), op, Representation::Spheric).unwrap();
+        let (out2, _) = run_ip2(&basis, shells, op, Representation::Spheric).unwrap();
+        assert_eq!(out1.len(), out2.len());
+        let any_nonzero = out1.iter().any(|v| v.abs() > 1e-14);
+        assert!(any_nonzero, "int2e_ip2 (p,s,p,s) output is all-zero (regression)");
+        for (a, b) in out1.iter().zip(out2.iter()) {
+            assert_eq!(a.to_bits(), b.to_bits(), "int2e_ip2 output not bit-identical");
+        }
+    }
+
+    // Electron-exchange symmetry: int2e_ip2(i,j,k,l) must equal int2e_ip1(k,l,i,j)
+    // (value multiset; the element ORDER differs because the AO indices permute).
+    // This is the kernel-level guard that ip2's ∇_k reproduces ip1's proven ∇_i.
+    #[test]
+    fn test_int2e_ip2_matches_ip1_electron_swap() {
+        // (p,s | s,p) on two atoms — distinct l's so a layout bug would show.
+        let (li, lj, lk, ll) = (1u8, 0u8, 0u8, 1u8);
+        let (basis, shells, op) = build_ip2_plan_lll(li, lj, lk, ll);
+        let (ip2, _) = run_ip2(&basis, shells, op, Representation::Spheric).unwrap();
+
+        // int2e_ip1 of the swapped quartet (k,l,i,j).
+        let atom0 = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom1 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms: Arc<[Atom]> = Arc::from(vec![atom0, atom1].into_boxed_slice());
+        let mk = |ai: u32, l: u8| {
+            Arc::new(
+                Shell::try_new(
+                    ai,
+                    l,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![0.8_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
+        // swapped: i<-k(atom0), j<-l(atom1), k<-i(atom0), l<-j(atom1)
+        let s0 = mk(0, lk);
+        let s1 = mk(1, ll);
+        let s2 = mk(0, li);
+        let s3 = mk(1, lj);
+        let all: Arc<[Arc<Shell>]> =
+            Arc::from(vec![s0.clone(), s1.clone(), s2.clone(), s3.clone()].into_boxed_slice());
+        let b2 = BasisSet::try_new(atoms, all).unwrap();
+        let s2t = ShellTuple::try_from_iter([s0, s1, s2, s3]).unwrap();
+        let op1 = Resolver::descriptor_by_symbol("int2e_ip1_sph").unwrap().id;
+
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op1, Representation::Spheric, &b2, s2t.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op1, Representation::Spheric, &b2, s2t, &q).unwrap();
+        plan.precision = cintx_core::PrecisionKind::F64;
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut ip1 = vec![0.0_f64; plan.output_layout.staging_elements];
+        launch_two_electron_typed::<f64>(&backend, &plan, &spec, &mut ip1).unwrap();
+
+        assert_eq!(ip2.len(), ip1.len());
+        assert!(ip2.iter().any(|v| v.abs() > 1e-14), "ip2 swap-check is all-zero");
+        let round = |v: &f64| (v * 1e10).round() / 1e10;
+        let mut a: Vec<f64> = ip2.iter().map(round).collect();
+        let mut b: Vec<f64> = ip1.iter().map(round).collect();
+        a.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        b.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        assert_eq!(a, b, "int2e_ip2 vs electron-swapped int2e_ip1 value multiset differs");
+    }
+
+    // Spinor: int2e_ip2 with Representation::Spinor returns UnsupportedApi.
+    #[test]
+    fn test_int2e_ip2_spinor_unsupported() {
+        let (basis, shells, op) = build_ip2_plan_lll(0, 0, 0, 0);
+        let opts = ExecutionOptions::default();
+        let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &q).unwrap();
+        plan.representation = Representation::Spinor;
+        plan.precision = cintx_core::PrecisionKind::F64;
+
+        let spec = SpecializationKey::from_plan(&plan);
+        let cpu_client = resolve_cpu_client().unwrap();
+        let backend = ResolvedBackend::Cpu(cpu_client);
+        let mut staging = vec![0.0_f64; 6];
+        let result = launch_two_electron_typed::<f64>(&backend, &plan, &spec, &mut staging);
+        assert!(
+            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
+            "spinor int2e_ip2 should return UnsupportedApi, got: {:?}",
             result
         );
     }
