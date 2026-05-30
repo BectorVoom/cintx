@@ -5994,6 +5994,16 @@ fn launch_one_electron_typed<F: CintFloat>(
                 let ni_sph = n_ctr_i * nsi;
                 let nj_sph = n_ctr_j * nsj;
                 let sph_block = ni_sph * nj_sph;
+                // WR-02: fail closed if staging cannot hold the full component rank —
+                // never silently drop trailing components (OOM-safe no-partial-writes
+                // contract). `needed` is the full contraction-blocked component span.
+                let needed = rank_us * sph_block;
+                if staging.len() < needed {
+                    return Err(cintxRsError::BufferTooSmall {
+                        required: needed,
+                        provided: staging.len(),
+                    });
+                }
                 for comp in 0..rank_us {
                     for ci in 0..n_ctr_i {
                         for cj in 0..n_ctr_j {
@@ -6011,9 +6021,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for mi in 0..nsi {
                                     let ii = ci * nsi + mi;
                                     let dst = staging_comp_base + ii + jj * ni_sph;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
                                 }
                             }
                         }
@@ -6024,6 +6032,14 @@ fn launch_one_electron_typed<F: CintFloat>(
                 let ni_cart = n_ctr_i * nci;
                 let nj_cart = n_ctr_j * ncj;
                 let cart_block = ni_cart * nj_cart;
+                // WR-02: fail closed if staging cannot hold the full component rank.
+                let needed = rank_us * cart_block;
+                if staging.len() < needed {
+                    return Err(cintxRsError::BufferTooSmall {
+                        required: needed,
+                        provided: staging.len(),
+                    });
+                }
                 for comp in 0..rank_us {
                     for ci in 0..n_ctr_i {
                         for cj in 0..n_ctr_j {
@@ -6035,9 +6051,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for ic in 0..nci {
                                     let ii = ci * nci + ic;
                                     let dst = staging_comp_base + ii + jj * ni_cart;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
                                 }
                             }
                         }
@@ -6156,6 +6170,14 @@ fn launch_one_electron_typed<F: CintFloat>(
                 let ni_sph = n_ctr_i * nsi;
                 let nj_sph = n_ctr_j * nsj;
                 let sph_block = ni_sph * nj_sph;
+                // WR-02: fail closed if staging cannot hold the full component rank.
+                let needed = rank * sph_block;
+                if staging.len() < needed {
+                    return Err(cintxRsError::BufferTooSmall {
+                        required: needed,
+                        provided: staging.len(),
+                    });
+                }
                 for comp in 0..rank {
                     for ci in 0..n_ctr_i {
                         for cj in 0..n_ctr_j {
@@ -6173,9 +6195,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for mi in 0..nsi {
                                     let ii = ci * nsi + mi;
                                     let dst = staging_comp_base + ii + jj * ni_sph;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
                                 }
                             }
                         }
@@ -6186,6 +6206,14 @@ fn launch_one_electron_typed<F: CintFloat>(
                 let ni_cart = n_ctr_i * nci;
                 let nj_cart = n_ctr_j * ncj;
                 let cart_block = ni_cart * nj_cart;
+                // WR-02: fail closed if staging cannot hold the full component rank.
+                let needed = rank * cart_block;
+                if staging.len() < needed {
+                    return Err(cintxRsError::BufferTooSmall {
+                        required: needed,
+                        provided: staging.len(),
+                    });
+                }
                 for comp in 0..rank {
                     for ci in 0..n_ctr_i {
                         for cj in 0..n_ctr_j {
@@ -6197,9 +6225,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for ic in 0..nci {
                                     let ii = ci * nci + ic;
                                     let dst = staging_comp_base + ii + jj * ni_cart;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
                                 }
                             }
                         }
@@ -6291,6 +6317,14 @@ fn launch_one_electron_typed<F: CintFloat>(
                 let ni_sph = n_ctr_i * nsi;
                 let nj_sph = n_ctr_j * nsj;
                 let sph_block = ni_sph * nj_sph;
+                // WR-02: fail closed if staging cannot hold the full component rank
+                // (p4 rank = 1).
+                if staging.len() < sph_block {
+                    return Err(cintxRsError::BufferTooSmall {
+                        required: sph_block,
+                        provided: staging.len(),
+                    });
+                }
                 for comp in 0..1usize {
                     for ci in 0..n_ctr_i {
                         for cj in 0..n_ctr_j {
@@ -6308,9 +6342,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for mi in 0..nsi {
                                     let ii = ci * nsi + mi;
                                     let dst = staging_comp_base + ii + jj * ni_sph;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
                                 }
                             }
                         }
@@ -6321,6 +6353,14 @@ fn launch_one_electron_typed<F: CintFloat>(
                 let ni_cart = n_ctr_i * nci;
                 let nj_cart = n_ctr_j * ncj;
                 let cart_block = ni_cart * nj_cart;
+                // WR-02: fail closed if staging cannot hold the full component rank
+                // (p4 rank = 1).
+                if staging.len() < cart_block {
+                    return Err(cintxRsError::BufferTooSmall {
+                        required: cart_block,
+                        provided: staging.len(),
+                    });
+                }
                 for comp in 0..1usize {
                     for ci in 0..n_ctr_i {
                         for cj in 0..n_ctr_j {
@@ -6332,9 +6372,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for ic in 0..nci {
                                     let ii = ci * nci + ic;
                                     let dst = staging_comp_base + ii + jj * ni_cart;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
                                 }
                             }
                         }
@@ -6432,6 +6470,15 @@ fn launch_one_electron_typed<F: CintFloat>(
                 let ni_sph = n_ctr_i * nsi;
                 let nj_sph = n_ctr_j * nsj;
                 let sph_block = ni_sph * nj_sph;
+                // WR-02: fail closed if staging cannot hold the full component rank
+                // (irp rank = 9).
+                let needed = 9 * sph_block;
+                if staging.len() < needed {
+                    return Err(cintxRsError::BufferTooSmall {
+                        required: needed,
+                        provided: staging.len(),
+                    });
+                }
                 for comp in 0..9usize {
                     for ci in 0..n_ctr_i {
                         for cj in 0..n_ctr_j {
@@ -6449,9 +6496,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for mi in 0..nsi {
                                     let ii = ci * nsi + mi;
                                     let dst = staging_comp_base + ii + jj * ni_sph;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
                                 }
                             }
                         }
@@ -6462,6 +6507,15 @@ fn launch_one_electron_typed<F: CintFloat>(
                 let ni_cart = n_ctr_i * nci;
                 let nj_cart = n_ctr_j * ncj;
                 let cart_block = ni_cart * nj_cart;
+                // WR-02: fail closed if staging cannot hold the full component rank
+                // (irp rank = 9).
+                let needed = 9 * cart_block;
+                if staging.len() < needed {
+                    return Err(cintxRsError::BufferTooSmall {
+                        required: needed,
+                        provided: staging.len(),
+                    });
+                }
                 for comp in 0..9usize {
                     for ci in 0..n_ctr_i {
                         for cj in 0..n_ctr_j {
@@ -6473,9 +6527,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for ic in 0..nci {
                                     let ii = ci * nci + ic;
                                     let dst = staging_comp_base + ii + jj * ni_cart;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
                                 }
                             }
                         }
