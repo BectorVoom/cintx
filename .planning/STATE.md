@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Phase 24 context gathered
-last_updated: "2026-05-30T06:24:55.228Z"
-last_activity: 2026-05-30 -- Phase 24 planning complete
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-05-30T06:38:13.409Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 21
   completed_phases: 13
   total_plans: 71
-  completed_plans: 66
-  percent: 93
+  completed_plans: 67
+  percent: 94
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 23 — group-1-remaining-1st-derivative-families-cart-sph
+**Current focus:** Phase 24 — group-3-position-multipole-moment-integrals
 
 ## Current Position
 
-Phase: 24
-Plan: Not started
+Phase: 24 (group-3-position-multipole-moment-integrals) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Resume file: .planning/phases/24-group-3-position-multipole-moment-integrals/24-CONTEXT.md
-Last activity: 2026-05-30 -- Phase 24 planning complete
+Resume file: None
+Last activity: 2026-05-30
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -129,6 +129,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 20-precision-generic-f64-f32-switch P11 | 15 | 2 tasks | 3 files |
 | Phase 21 P02 | 15 | 2 tasks | 5 files |
 | Phase 21 P03 | 25 min | 2 tasks | 4 files |
+| Phase 24 P24-01 | 18 | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -294,6 +295,10 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: nmax headroom for ipovlp: nmax = li+lj+1 (one extra bra level so nabla ix+1 access is valid)
 - [Phase ?]: nmax headroom for ipkin: nmax = li+lj+3 (kinetic +2 for D_j^2 jx+2 access + nabla +1 for ix+1 access)
 - [Phase ?]: Spinor gradient returns UnsupportedApi (R5/D-03): guard placed before gradient compute path
+- [Phase ?]: [Phase 24-01]: Only the 12 source-confirmed _origj symbols (r/rr/r2/r4/z/zz) registered — no rrr_origj/rrrr_origj exist in libcint 6.1.3 intor1.c (OQ-3)
+- [Phase ?]: [Phase 24-01]: rinv/drinv parity tests inject a NON-ZERO rinv center via env_with_rinv_origin (PTR_RINV_ORIG, not PTR_COMMON_ORIG) per D-04/OQ-1; zero origin trivially-passing and disallowed
+- [Phase ?]: [Phase 24-01]: OQ-2 cart_offset lib-unit failure reproduced at pre-phase-20 commit 8997703 → standalone harness bug; Phase 24 integration gate de-blocked
+- [Phase ?]: [Phase 24-01]: rank-parameterized vendor_parity sizes every buffer rank*ni*nj (D-08); parity #[test] bodies gated on has_vendor_libcint as the Nyquist RED target for plans 02-05
 
 ### Roadmap Evolution
 
@@ -338,6 +343,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-30T05:52:21.435Z
-Stopped at: Phase 24 context gathered
+Last session: 2026-05-30T06:38:13.406Z
+Stopped at: Completed 24-01-PLAN.md
 Resume file: None
