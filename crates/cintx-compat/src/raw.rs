@@ -184,6 +184,19 @@ impl RawApiId {
     pub const INT1E_IPRINV_SPH: Self = Self::Symbol("int1e_iprinv_sph");
     pub const INT1E_IPRINV_SPINOR: Self = Self::Symbol("int1e_iprinv_spinor");
 
+    // Phase 23 both-side rank-9 1e families (spinor returns UnsupportedApi, D-06).
+    pub const INT1E_IPOVLPIP_CART: Self = Self::Symbol("int1e_ipovlpip_cart");
+    pub const INT1E_IPOVLPIP_SPH: Self = Self::Symbol("int1e_ipovlpip_sph");
+    pub const INT1E_IPOVLPIP_SPINOR: Self = Self::Symbol("int1e_ipovlpip_spinor");
+
+    pub const INT1E_IPKINIP_CART: Self = Self::Symbol("int1e_ipkinip_cart");
+    pub const INT1E_IPKINIP_SPH: Self = Self::Symbol("int1e_ipkinip_sph");
+    pub const INT1E_IPKINIP_SPINOR: Self = Self::Symbol("int1e_ipkinip_spinor");
+
+    pub const INT1E_IPNUCIP_CART: Self = Self::Symbol("int1e_ipnucip_cart");
+    pub const INT1E_IPNUCIP_SPH: Self = Self::Symbol("int1e_ipnucip_sph");
+    pub const INT1E_IPNUCIP_SPINOR: Self = Self::Symbol("int1e_ipnucip_spinor");
+
     pub const INT2E_IP1_CART: Self = Self::Symbol("int2e_ip1_cart");
     pub const INT2E_IP1_SPH: Self = Self::Symbol("int2e_ip1_sph");
     pub const INT2E_IP1_SPINOR: Self = Self::Symbol("int2e_ip1_spinor");

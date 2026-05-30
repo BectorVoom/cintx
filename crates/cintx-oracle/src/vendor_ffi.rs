@@ -581,6 +581,165 @@ pub fn vendor_int1e_ipnuc_cart(
     }
 }
 
+// ── Phase 23 both-side rank-9 1e families (9 = 3×3 components, component-leading
+//    out[comp * ni * nj + n] for comp in 0..9). ────────────────────────────────
+
+/// Evaluate int1e_ipovlpip_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipovlpip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlpip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipovlpip_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipovlpip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlpip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkinip_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipkinip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkinip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipkinip_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipkinip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipkinip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnucip_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipnucip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnucip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipnucip_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipnucip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipnucip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int1e_iprinv_sph for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).

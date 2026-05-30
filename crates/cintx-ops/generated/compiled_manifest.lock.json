@@ -4058,6 +4058,294 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipovlpip",
+        "representation": "cart",
+        "symbol": "int1e_ipovlpip_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipovlpip",
+        "representation": "sph",
+        "symbol": "int1e_ipovlpip_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipovlpip",
+        "representation": "spinor",
+        "symbol": "int1e_ipovlpip_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipkinip",
+        "representation": "cart",
+        "symbol": "int1e_ipkinip_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipkinip",
+        "representation": "sph",
+        "symbol": "int1e_ipkinip_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipkinip",
+        "representation": "spinor",
+        "symbol": "int1e_ipkinip_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipnucip",
+        "representation": "cart",
+        "symbol": "int1e_ipnucip_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipnucip",
+        "representation": "sph",
+        "symbol": "int1e_ipnucip_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipnucip",
+        "representation": "spinor",
+        "symbol": "int1e_ipnucip_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
