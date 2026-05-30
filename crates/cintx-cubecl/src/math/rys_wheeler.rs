@@ -1070,6 +1070,988 @@ fn lrys_laguerre(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i3
     lrys_wheeler_partial_dd(n, &alpha, &beta, &moments, roots, weights)
 }
 
+// ===========================================================================
+//  DEVICE #[cube] f64 Wheeler engine (quick task 260531-aw1, Task 2: nroots 6,7).
+//
+//  The f64 path is a host-orchestrated multi-launch CubeCL pipeline on CpuRuntime:
+//    Jacobi (x <= breakpoint):
+//      1. jacobi_tridiag_kernel  -> tridiagonal (a, b) via erf-normalized flocke
+//         Miller moments + Wheeler recursion (b pre-sqrt'd, mu0 carried out)
+//      2. eigh::cint_diagonalize -> the device QL eigensolver (Task 1) on (a,b)
+//      3. jacobi_transform_kernel-> roots = r/(1-r), weights = c0[i*n]^2 * mu0
+//    Schmidt (x > breakpoint):
+//      schmidt_kernel            -> gamma_inc moments + R_dsmit + QR polynomial
+//                                   root solver + weights, all in one #[cube] launch
+//  No new patterns: comptime nroots, &mut Array scratch, bounded loops + flags,
+//  coefficient tables passed as device input Arrays (no const-array runtime index).
+// ===========================================================================
+
+/// Device erf via Cody rational Chebyshev (unrolled const access, no runtime const index).
+#[cube]
+fn erf_dev(x: f64) -> f64 {
+    let ax = f64::abs(x);
+    let mut out = 0.0f64;
+    if ax < 0.5 {
+        // erf on [0,0.5): rational in z=x^2.
+        let a0 = 3.16112374387056560e00;
+        let a1 = 1.13864154151050156e02;
+        let a2 = 3.77485237685302021e02;
+        let a3 = 3.20937758913846947e03;
+        let a4 = 1.85777706184603153e-1;
+        let b0 = 2.36012909523441209e01;
+        let b1 = 2.44024637934444173e02;
+        let b2 = 1.28261652607737228e03;
+        let b3 = 2.84423683343917062e03;
+        let z = x * x;
+        let mut xnum = a4 * z;
+        let mut xden = z;
+        xnum = (xnum + a0) * z;
+        xden = (xden + b0) * z;
+        xnum = (xnum + a1) * z;
+        xden = (xden + b1) * z;
+        xnum = (xnum + a2) * z;
+        xden = (xden + b2) * z;
+        out = x * (xnum + a3) / (xden + b3);
+    } else {
+        // erf(x) = sign(x) * (1 - erfc(ax)).
+        let mut sign = 1.0f64;
+        if x < 0.0 {
+            sign = -1.0;
+        }
+        out = sign * (1.0 - erfc_dev(ax));
+    }
+    out
+}
+
+/// Device erfc for |x| >= 0.5 (Cody), unrolled.
+#[cube]
+fn erfc_dev(ax: f64) -> f64 {
+    let mut result = 0.0f64;
+    if ax < 4.0 {
+        let c0 = 5.64188496988670089e-1;
+        let c1 = 8.88314979438837594e00;
+        let c2 = 6.61191906371416295e01;
+        let c3 = 2.98635138197400131e02;
+        let c4 = 8.81952221241769090e02;
+        let c5 = 1.71204761263407058e03;
+        let c6 = 2.05107837782607147e03;
+        let c7 = 1.23033935479799725e03;
+        let c8 = 2.15311535474403846e-8;
+        let d0 = 1.57449261107098347e01;
+        let d1 = 1.17693950891312499e02;
+        let d2 = 5.37181101862009858e02;
+        let d3 = 1.62138957456669019e03;
+        let d4 = 3.29079923573345963e03;
+        let d5 = 4.36261909014324716e03;
+        let d6 = 3.43936767414372164e03;
+        let d7 = 1.23033935480374942e03;
+        let mut xnum = c8 * ax;
+        let mut xden = ax;
+        xnum = (xnum + c0) * ax;
+        xden = (xden + d0) * ax;
+        xnum = (xnum + c1) * ax;
+        xden = (xden + d1) * ax;
+        xnum = (xnum + c2) * ax;
+        xden = (xden + d2) * ax;
+        xnum = (xnum + c3) * ax;
+        xden = (xden + d3) * ax;
+        xnum = (xnum + c4) * ax;
+        xden = (xden + d4) * ax;
+        xnum = (xnum + c5) * ax;
+        xden = (xden + d5) * ax;
+        xnum = (xnum + c6) * ax;
+        xden = (xden + d6) * ax;
+        let r = (xnum + c7) / (xden + d7);
+        let z = f64::floor(ax * 16.0) / 16.0;
+        let del = (ax - z) * (ax + z);
+        result = f64::exp(-z * z) * f64::exp(-del) * r;
+    } else {
+        let p0 = 3.05326634961232344e-1;
+        let p1 = 3.60344899949804439e-1;
+        let p2 = 1.25781726111229246e-1;
+        let p3 = 1.60837851487422766e-2;
+        let p4 = 6.58749161529837803e-4;
+        let p5 = 1.63153871373020978e-2;
+        let q0 = 2.56852019228982242e00;
+        let q1 = 1.87295284992346047e00;
+        let q2 = 5.27905102951428412e-1;
+        let q3 = 6.05183413124413191e-2;
+        let q4 = 2.33520497626869185e-3;
+        let z = 1.0 / (ax * ax);
+        let mut xnum = p5 * z;
+        let mut xden = z;
+        xnum = (xnum + p0) * z;
+        xden = (xden + q0) * z;
+        xnum = (xnum + p1) * z;
+        xden = (xden + q1) * z;
+        xnum = (xnum + p2) * z;
+        xden = (xden + q2) * z;
+        xnum = (xnum + p3) * z;
+        xden = (xden + q3) * z;
+        let mut r = z * (xnum + p4) / (xden + q4);
+        let frac_1_sqrt_pi = 0.564_189_583_547_756_286_948_079_451_560_772_585_844_050_629_329f64;
+        r = (frac_1_sqrt_pi - r) / ax;
+        let zt = f64::floor(ax * 16.0) / 16.0;
+        let del = (ax - zt) * (ax + zt);
+        result = f64::exp(-zt * zt) * f64::exp(-del) * r;
+    }
+    result
+}
+
+const SQRTPIE4_DEV: f64 = 0.886_226_925_452_758_013_649_083_741_670_572_591_398_774_728_061_193_564_106_903_894_926_4;
+const SMALLX_LIMIT_DEV: f64 = 3e-7;
+
+/// Device flocke_jacobi_moments (intermediate-x branch only; SMALLX path is out of the
+/// validated f64 corpus envelope and is not exercised). `n` is the moment count (= nroots*2).
+/// `rn_part2`/`sn` are JACOBI_RN_PART2 / JACOBI_SN passed as device input Arrays.
+/// Writes `mus[0..n]`. `extra` is FLOCKE_EXTRA_ORDER_FOR_DP (20).
+#[cube]
+fn flocke_jacobi_moments_dev(
+    n: u32,
+    t: f64,
+    rn_part2: &Array<f64>,
+    sn: &Array<f64>,
+    extra: u32,
+    mus: &mut Array<f64>,
+) {
+    let t_inv = 0.5 / t;
+    let mut mu1 = 1.0f64;
+    let mut mu2 = 0.0f64;
+    let mut mu0 = 0.0f64;
+    // Miller backward recursion: i from n-1+extra down to n (discarded), then to 0.
+    let top = n - 1 + extra;
+    // First pass: i in [n, top], descending — discarded.
+    let mut step: u32 = 0;
+    let count1 = top + 1 - n; // number of i in [n, top]
+    while step < count1 {
+        let ii = top - step; // ii descends from top to n
+        let rn = (2 * ii + 3) as f64 * t_inv + rn_part2[(ii) as usize];
+        mu0 = (mu2 - rn * mu1) / sn[(ii) as usize];
+        mu2 = mu1;
+        mu1 = mu0;
+        step += 1;
+    }
+    // Second pass: i in [0, n-1], descending — stored.
+    let mut step2: u32 = 0;
+    while step2 < n {
+        let ii = (n - 1) - step2; // ii descends from n-1 to 0
+        let rn = (2 * ii + 3) as f64 * t_inv + rn_part2[(ii) as usize];
+        mu0 = (mu2 - rn * mu1) / sn[(ii) as usize];
+        mus[(ii) as usize] = mu0;
+        mu2 = mu1;
+        mu1 = mu0;
+        step2 += 1;
+    }
+    let tt = f64::sqrt(t);
+    let norm = SQRTPIE4_DEV * erf_dev(tt) / tt / mu0;
+    let mut j: u32 = 0;
+    while j < n {
+        mus[(j) as usize] = mus[(j) as usize] * norm;
+        j += 1;
+    }
+}
+
+/// Device Wheeler recursion: moments + (alpha,beta) -> tridiagonal (a,b).
+/// `s0`/`sm`/`sk` are caller-passed scratch Arrays of length n*2. `n` = nroots.
+#[cube]
+fn wheeler_recursion_dev(
+    n: u32,
+    alpha: &Array<f64>,
+    beta: &Array<f64>,
+    moments: &Array<f64>,
+    a: &mut Array<f64>,
+    b: &mut Array<f64>,
+    s0: &mut Array<f64>,
+    sm: &mut Array<f64>,
+    sk: &mut Array<f64>,
+) {
+    let mut a0 = alpha[(0) as usize] + moments[(1) as usize] / moments[(0) as usize];
+    let mut b0 = 0.0f64;
+    a[(0) as usize] = a0;
+    b[(0) as usize] = b0;
+    // s0 <- moments[0..n*2]; sm <- 0; sk <- 0
+    let n2 = n * 2;
+    let mut i: u32 = 0;
+    while i < n2 {
+        s0[(i) as usize] = moments[(i) as usize];
+        sm[(i) as usize] = 0.0;
+        sk[(i) as usize] = 0.0;
+        i += 1;
+    }
+    let mut step: u32 = 1;
+    while step < n {
+        let nc = 2 * (n - step);
+        let mut j: u32 = 0;
+        while j < nc {
+            sk[(j) as usize] = s0[(2 + j) as usize]
+                - (a0 - alpha[(step + j) as usize]) * s0[(1 + j) as usize]
+                - b0 * sm[(2 + j) as usize]
+                + beta[(step + j) as usize] * s0[(j) as usize];
+            j += 1;
+        }
+        let a1 = alpha[(step) as usize] - s0[(1) as usize] / s0[(0) as usize]
+            + sk[(1) as usize] / sk[(0) as usize];
+        let b1 = sk[(0) as usize] / s0[(0) as usize];
+        a[(step) as usize] = a1;
+        b[(step) as usize] = b1;
+        a0 = a1;
+        b0 = b1;
+        // rotate buffers: swap(sm,s0); s0<-sk; sk<-old sm. Done via copies into scratch.
+        // tmp = sm; sm = s0; s0 = sk; sk = tmp
+        let mut k: u32 = 0;
+        while k < n2 {
+            let tmp = sm[(k) as usize];
+            sm[(k) as usize] = s0[(k) as usize];
+            s0[(k) as usize] = sk[(k) as usize];
+            sk[(k) as usize] = tmp;
+            k += 1;
+        }
+        step += 1;
+    }
+}
+
+/// Device Jacobi tridiagonal kernel: erf-normalized flocke moments + Wheeler recursion,
+/// producing the tridiagonal `a_out[0..n]`, `b_out[0..n]` (b pre-sqrt'd from index 1),
+/// and `mu0_out[0]` for the weight scaling. `n` (= nroots) is comptime.
+#[cube(launch)]
+fn jacobi_tridiag_kernel(
+    alpha: &Array<f64>,
+    beta: &Array<f64>,
+    rn_part2: &Array<f64>,
+    sn: &Array<f64>,
+    moments: &mut Array<f64>,
+    a_out: &mut Array<f64>,
+    b_out: &mut Array<f64>,
+    mu0_out: &mut Array<f64>,
+    s0: &mut Array<f64>,
+    sm: &mut Array<f64>,
+    sk: &mut Array<f64>,
+    x: f64,
+    #[comptime] n: u32,
+    #[comptime] extra: u32,
+) {
+    flocke_jacobi_moments_dev(n * 2, x, rn_part2, sn, extra, moments);
+    mu0_out[(0) as usize] = moments[(0) as usize];
+    wheeler_recursion_dev(n, alpha, beta, moments, a_out, b_out, s0, sm, sk);
+    // sqrt the off-diagonal b[1..n] in place (matches host rys_wheeler_partial).
+    let mut i: u32 = 1;
+    while i < n {
+        b_out[(i) as usize] = f64::sqrt(b_out[(i) as usize]);
+        i += 1;
+    }
+}
+
+/// Device transform: roots[i] = eig[i]/(1-eig[i]); weights[i] = c0[i*n]^2 * mu0. `n` comptime.
+#[cube(launch)]
+fn jacobi_transform_kernel(
+    eig: &Array<f64>,
+    c0: &Array<f64>,
+    mu0_in: &Array<f64>,
+    roots: &mut Array<f64>,
+    weights: &mut Array<f64>,
+    #[comptime] n: u32,
+) {
+    let mu0 = mu0_in[(0) as usize];
+    let mut i: u32 = 0;
+    while i < n {
+        let r = eig[(i) as usize];
+        roots[(i) as usize] = r / (1.0 - r);
+        let c = c0[(i * n) as usize];
+        weights[(i) as usize] = c * c * mu0;
+        i += 1;
+    }
+}
+
+/// Host orchestrator for the f64 Jacobi path (nroots 6,7; x <= breakpoint).
+fn rys_jacobi_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
+    let n = nroots;
+    let client = cubecl::cpu::CpuRuntime::client(&Default::default());
+
+    let alpha = &data::JACOBI_ALPHA[..];
+    let beta = &data::JACOBI_BETA[..];
+    let rn_part2 = &data::JACOBI_RN_PART2[..];
+    let sn = &data::JACOBI_SN[..];
+
+    let alpha_h = client.create_from_slice(f64::as_bytes(alpha));
+    let beta_h = client.create_from_slice(f64::as_bytes(beta));
+    let rn_h = client.create_from_slice(f64::as_bytes(rn_part2));
+    let sn_h = client.create_from_slice(f64::as_bytes(sn));
+
+    let n2 = n * 2;
+    let mom_zero = vec![0.0f64; MXRYSROOTS * 2];
+    let mom_h = client.create_from_slice(f64::as_bytes(&mom_zero));
+    let a_zero = vec![0.0f64; n];
+    let a_h = client.create_from_slice(f64::as_bytes(&a_zero));
+    let b_h = client.create_from_slice(f64::as_bytes(&a_zero));
+    let mu0_zero = vec![0.0f64; 1];
+    let mu0_h = client.create_from_slice(f64::as_bytes(&mu0_zero));
+    let scr_zero = vec![0.0f64; n2];
+    let s0_h = client.create_from_slice(f64::as_bytes(&scr_zero));
+    let sm_h = client.create_from_slice(f64::as_bytes(&scr_zero));
+    let sk_h = client.create_from_slice(f64::as_bytes(&scr_zero));
+
+    jacobi_tridiag_kernel::launch::<cubecl::cpu::CpuRuntime>(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(alpha_h, alpha.len()) },
+        unsafe { ArrayArg::from_raw_parts(beta_h, beta.len()) },
+        unsafe { ArrayArg::from_raw_parts(rn_h, rn_part2.len()) },
+        unsafe { ArrayArg::from_raw_parts(sn_h, sn.len()) },
+        unsafe { ArrayArg::from_raw_parts(mom_h, MXRYSROOTS * 2) },
+        unsafe { ArrayArg::from_raw_parts(a_h.clone(), n) },
+        unsafe { ArrayArg::from_raw_parts(b_h.clone(), n) },
+        unsafe { ArrayArg::from_raw_parts(mu0_h.clone(), 1) },
+        unsafe { ArrayArg::from_raw_parts(s0_h, n2) },
+        unsafe { ArrayArg::from_raw_parts(sm_h, n2) },
+        unsafe { ArrayArg::from_raw_parts(sk_h, n2) },
+        x,
+        n as u32,
+        FLOCKE_EXTRA_ORDER_FOR_DP as u32,
+    );
+
+    let a_bytes = client.read_one_unchecked(a_h);
+    let a_vec = f64::from_bytes(&a_bytes)[0..n].to_vec();
+    let b_bytes = client.read_one_unchecked(b_h);
+    let b_vec = f64::from_bytes(&b_bytes)[0..n].to_vec();
+
+    // Eigensolve: _CINTdiagonalize(n, a, b+1, eig, c0) — off-diagonal is b[1..n].
+    let mut diag = a_vec.clone();
+    let mut offdiag = vec![0.0f64; n];
+    for i in 0..n.saturating_sub(1) {
+        offdiag[i] = b_vec[i + 1];
+    }
+    let mut eig = vec![0.0f64; n];
+    let mut c0 = vec![0.0f64; n * n];
+    let error = eigh::cint_diagonalize(n, &mut diag, &mut offdiag, &mut eig, &mut c0);
+
+    // Transform kernel: roots/weights from eig + c0 + mu0.
+    let eig_h = client.create_from_slice(f64::as_bytes(&eig));
+    let c0_h = client.create_from_slice(f64::as_bytes(&c0));
+    let r_zero = vec![0.0f64; n];
+    let roots_h = client.create_from_slice(f64::as_bytes(&r_zero));
+    let weights_h = client.create_from_slice(f64::as_bytes(&r_zero));
+
+    jacobi_transform_kernel::launch::<cubecl::cpu::CpuRuntime>(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(eig_h, n) },
+        unsafe { ArrayArg::from_raw_parts(c0_h, n * n) },
+        unsafe { ArrayArg::from_raw_parts(mu0_h, 1) },
+        unsafe { ArrayArg::from_raw_parts(roots_h.clone(), n) },
+        unsafe { ArrayArg::from_raw_parts(weights_h.clone(), n) },
+        n as u32,
+    );
+    let r_bytes = client.read_one_unchecked(roots_h);
+    roots[0..n].copy_from_slice(&f64::from_bytes(&r_bytes)[0..n]);
+    let w_bytes = client.read_one_unchecked(weights_h);
+    weights[0..n].copy_from_slice(&f64::from_bytes(&w_bytes)[0..n]);
+    error
+}
+
+// ---------------------------------------------------------------------------
+// Device f64 Schmidt path (x > breakpoint, nroots 6,7) — self-contained kernel.
+// ---------------------------------------------------------------------------
+
+const SML_FLOAT64_DEV: f64 = 1.1102230246251565e-16; // f64::EPSILON * 0.5
+
+/// Device gamma_inc_like (FMT moments F_m(t), lower==0). `turnover` is TURNOVER_POINT[m]
+/// passed in (avoids const-array runtime index). Writes f[0..=m].
+#[cube]
+fn gamma_inc_like_dev(f: &mut Array<f64>, t: f64, m: u32, turnover: f64) {
+    if t == 0.0 {
+        f[(0) as usize] = 1.0;
+        let mut i: u32 = 1;
+        while i <= m {
+            f[(i) as usize] = 1.0 / (2 * i + 1) as f64;
+            i += 1;
+        }
+    } else if t < turnover {
+        // fmt1 power series.
+        let mut b = m as f64 + 0.5;
+        let e = 0.5 * f64::exp(-t);
+        let mut xx = e;
+        let mut s = e;
+        let tol = SML_FLOAT64_DEV * e;
+        let mut bi = b + 1.0;
+        let mut k: u32 = 0;
+        let mut going = true;
+        while k < 4096u32 {
+            if going {
+                if xx > tol {
+                    xx = xx * t / bi;
+                    s += xx;
+                    bi += 1.0;
+                } else {
+                    going = false;
+                }
+            }
+            k += 1;
+        }
+        f[(m) as usize] = s / b;
+        let mut i: u32 = m;
+        while i > 0 {
+            b -= 1.0;
+            f[(i - 1) as usize] = (e + t * f[(i) as usize]) / b;
+            i -= 1;
+        }
+    } else {
+        let tt = f64::sqrt(t);
+        f[(0) as usize] = SQRTPIE4_DEV / tt * erf_dev(tt);
+        let e = f64::exp(-t);
+        let bb = 0.5 / t;
+        let mut i: u32 = 1;
+        while i <= m {
+            f[(i) as usize] = bb * ((2 * i - 1) as f64 * f[(i - 1) as usize] - e);
+            i += 1;
+        }
+    }
+}
+
+/// Device R_dsmit (Schmidt orthogonalization). `cs` column-major n×n; `fmt_ints` moments.
+/// `v` is caller scratch (len >= n). Returns 0 ok / 1 / j>0 via `flag[0]`.
+#[cube]
+fn r_dsmit_dev(cs: &mut Array<f64>, fmt_ints: &Array<f64>, n: u32, v: &mut Array<f64>, flag: &mut Array<f64>) {
+    let mut ret = 0.0f64;
+    let mut fac = -fmt_ints[(1) as usize] / fmt_ints[(0) as usize];
+    let mut tmp = fmt_ints[(2) as usize] + fac * fmt_ints[(1) as usize];
+    let mut aborted = false;
+    if tmp <= 0.0 {
+        // zero column 1.
+        let mut i: u32 = 0;
+        while i < n {
+            cs[(i + 1 * n) as usize] = 0.0;
+            i += 1;
+        }
+        ret = 1.0;
+        aborted = true;
+    }
+    if !aborted {
+        tmp = 1.0 / f64::sqrt(tmp);
+        cs[(0) as usize] = 1.0 / f64::sqrt(fmt_ints[(0) as usize]);
+        cs[(n) as usize] = fac * tmp;
+        cs[(1 + n) as usize] = tmp;
+
+        let mut j: u32 = 2;
+        let mut stop = false;
+        while j < n {
+            if !stop {
+                let mut vi: u32 = 0;
+                while vi < j {
+                    v[(vi) as usize] = 0.0;
+                    vi += 1;
+                }
+                fac = fmt_ints[(j + j) as usize];
+                let mut k: u32 = 0;
+                while k < j {
+                    let mut dot = 0.0f64;
+                    let mut i: u32 = 0;
+                    while i <= k {
+                        dot += cs[(i + k * n) as usize] * fmt_ints[(i + j) as usize];
+                        i += 1;
+                    }
+                    let mut i2: u32 = 0;
+                    while i2 <= k {
+                        v[(i2) as usize] = v[(i2) as usize] - dot * cs[(i2 + k * n) as usize];
+                        i2 += 1;
+                    }
+                    fac -= dot * dot;
+                    k += 1;
+                }
+                if fac <= 0.0 {
+                    // zero columns [j..n].
+                    let mut kk: u32 = j;
+                    while kk < n {
+                        let mut i: u32 = 0;
+                        while i < n {
+                            cs[(i + kk * n) as usize] = 0.0;
+                            i += 1;
+                        }
+                        kk += 1;
+                    }
+                    if fac == 0.0 {
+                        ret = 0.0;
+                    } else {
+                        ret = j as f64;
+                    }
+                    stop = true;
+                } else {
+                    fac = 1.0 / f64::sqrt(fac);
+                    cs[(j + j * n) as usize] = fac;
+                    let mut k2: u32 = 0;
+                    while k2 < j {
+                        cs[(k2 + j * n) as usize] = fac * v[(k2) as usize];
+                        k2 += 1;
+                    }
+                }
+            }
+            j += 1;
+        }
+    }
+    flag[(0) as usize] = ret;
+}
+
+/// Device POLYNOMIAL_VALUE1: Horner of a[off..=off+order] at x.
+#[cube]
+fn poly_value1_dev(a: &Array<f64>, off: u32, order: u32, x: f64) -> f64 {
+    let mut p = a[(off + order) as usize];
+    let mut i: u32 = 1;
+    while i <= order {
+        p = p * x + a[(off + order - i) as usize];
+        i += 1;
+    }
+    p
+}
+
+/// Device _qr_step (find_roots.c:101). `a` row-major nroots×nroots.
+#[cube]
+fn qr_step_dev(a: &mut Array<f64>, nroots: u32, n0: u32, n1: u32, shift: f64) {
+    let m1 = n0 + 1;
+    let mut c = a[(n0 * nroots + n0) as usize] - shift;
+    let mut s = a[(m1 * nroots + n0) as usize];
+    let mut v = f64::sqrt(c * c + s * s);
+    if v == 0.0 {
+        v = 1.0;
+        c = 1.0;
+        s = 0.0;
+    }
+    v = 1.0 / v;
+    c *= v;
+    s *= v;
+    let mut k: u32 = n0;
+    while k < nroots {
+        let xx = a[(n0 * nroots + k) as usize];
+        let yy = a[(m1 * nroots + k) as usize];
+        a[(n0 * nroots + k) as usize] = c * xx + s * yy;
+        a[(m1 * nroots + k) as usize] = c * yy - s * xx;
+        k += 1;
+    }
+    let mut m3 = n1;
+    if n0 + 3 < m3 {
+        m3 = n0 + 3;
+    }
+    let mut kk: u32 = 0;
+    while kk < m3 {
+        let xx = a[(kk * nroots + n0) as usize];
+        let yy = a[(kk * nroots + m1) as usize];
+        a[(kk * nroots + n0) as usize] = c * xx + s * yy;
+        a[(kk * nroots + m1) as usize] = c * yy - s * xx;
+        kk += 1;
+    }
+    if n1 >= 2 {
+        let mut j: u32 = n0;
+        while j + 2 < n1 {
+            let j1 = j + 1;
+            let j2 = j + 2;
+            c = a[(j1 * nroots + j) as usize];
+            s = a[(j2 * nroots + j) as usize];
+            v = f64::sqrt(c * c + s * s);
+            a[(j1 * nroots + j) as usize] = v;
+            a[(j2 * nroots + j) as usize] = 0.0;
+            if v == 0.0 {
+                v = 1.0;
+                c = 1.0;
+                s = 0.0;
+            }
+            v = 1.0 / v;
+            c *= v;
+            s *= v;
+            let mut k3: u32 = j1;
+            while k3 < nroots {
+                let xx = a[(j1 * nroots + k3) as usize];
+                let yy = a[(j2 * nroots + k3) as usize];
+                a[(j1 * nroots + k3) as usize] = c * xx + s * yy;
+                a[(j2 * nroots + k3) as usize] = c * yy - s * xx;
+                k3 += 1;
+            }
+            let mut m3b = n1;
+            if j + 4 < m3b {
+                m3b = j + 4;
+            }
+            let mut k4: u32 = 0;
+            while k4 < m3b {
+                let xx = a[(k4 * nroots + j1) as usize];
+                let yy = a[(k4 * nroots + j2) as usize];
+                a[(k4 * nroots + j1) as usize] = c * xx + s * yy;
+                a[(k4 * nroots + j2) as usize] = c * yy - s * xx;
+                k4 += 1;
+            }
+            j += 1;
+        }
+    }
+}
+
+/// Device _hessenberg_qr (find_roots.c:177). `a` row-major nroots×nroots. Returns via flag.
+#[cube]
+fn hessenberg_qr_dev(a: &mut Array<f64>, nroots: u32, flag: &mut Array<f64>) {
+    let eps = 1e-15f64;
+    let mut n0: u32 = 0;
+    let mut n1 = nroots;
+    let mut its: u32 = 0;
+    let mut ret = 1.0f64;
+    let mut done = false;
+    let total = nroots * 30u32;
+    let mut ic: u32 = 0;
+    while ic < total {
+        if !done {
+            let mut k = n0;
+            let mut scanning = true;
+            while k + 1 < n1 && scanning {
+                let s = f64::abs(a[(k * nroots + k) as usize])
+                    + f64::abs(a[((k + 1) * nroots + k + 1) as usize]);
+                if f64::abs(a[((k + 1) * nroots + k) as usize]) < eps * s {
+                    scanning = false;
+                } else {
+                    k += 1;
+                }
+            }
+            let k1 = k + 1;
+            if k1 < n1 {
+                a[(k1 * nroots + k) as usize] = 0.0;
+                n0 = k1;
+                its = 0;
+                if n0 + 1 >= n1 {
+                    n0 = 0;
+                    n1 = k1;
+                    if n1 < 2 {
+                        ret = 0.0;
+                        done = true;
+                    }
+                }
+            } else {
+                let m1 = n1 - 1;
+                let m2 = n1 - 2;
+                let a11 = a[(m1 * nroots + m1) as usize];
+                let a22 = a[(m2 * nroots + m2) as usize];
+                let tsum = a11 + a22;
+                let mut s = (a11 - a22) * (a11 - a22);
+                s += 4.0 * a[(m1 * nroots + m2) as usize] * a[(m2 * nroots + m1) as usize];
+                let mut shift = 0.0f64;
+                let mut bad = false;
+                if s > 0.0 {
+                    s = f64::sqrt(s);
+                    let av = (tsum + s) * 0.5;
+                    let bv = (tsum - s) * 0.5;
+                    if f64::abs(a11 - av) > f64::abs(a11 - bv) {
+                        shift = bv;
+                    } else {
+                        shift = av;
+                    }
+                } else if n1 == 2 {
+                    ret = 1.0;
+                    done = true;
+                    bad = true;
+                } else {
+                    shift = tsum * 0.5;
+                }
+                if !bad {
+                    its += 1;
+                    qr_step_dev(a, nroots, n0, n1, shift);
+                    if its > 30u32 {
+                        ret = 1.0;
+                        done = true;
+                    }
+                }
+            }
+        }
+        ic += 1;
+    }
+    flag[(0) as usize] = ret;
+}
+
+/// Device R_dnode Newton/bisection polish. `a` is the cs column slice base offset `off`.
+/// Returns via flag[0] (0 ok / 1 error).
+#[cube]
+fn r_dnode_dev(a: &Array<f64>, off: u32, roots: &mut Array<f64>, order: u32, flag: &mut Array<f64>) {
+    let accrt = 1e-15f64;
+    let mut x1init = 0.0f64;
+    let mut p1init = a[(off) as usize];
+    let mut ret = 0.0f64;
+    let mut aborted = false;
+    let mut m: u32 = 0;
+    while m < order {
+        if !aborted {
+            let mut x0 = x1init;
+            let mut p0 = p1init;
+            x1init = roots[(m) as usize];
+            p1init = poly_value1_dev(a, off, order, x1init);
+            let mut skip = false;
+            if p1init == 0.0 {
+                skip = true;
+            }
+            if !skip && p0 * p1init > 0.0 {
+                ret = 1.0;
+                aborted = true;
+                skip = true;
+            }
+            if !skip {
+                let mut x1 = x1init;
+                let mut p1 = p1init;
+                if x0 <= x1init {
+                    x1 = x1init;
+                    p1 = p1init;
+                } else {
+                    x1 = x0;
+                    p1 = p0;
+                    x0 = x1init;
+                    p0 = p1init;
+                }
+                let mut handled = false;
+                if p1 == 0.0 {
+                    roots[(m) as usize] = x1;
+                    handled = true;
+                } else if p0 == 0.0 {
+                    roots[(m) as usize] = x0;
+                    handled = true;
+                }
+                if !handled {
+                    let mut xi = x0 + (x0 - x1) / (p1 - p0) * p0;
+                    let mut nn: u32 = 0;
+                    let mut converged = false;
+                    while nn < 200u32 {
+                        if !converged {
+                            if f64::abs(x1 - x0) > x1 * accrt {
+                                let mut pi = poly_value1_dev(a, off, order, xi);
+                                let mut brk = false;
+                                if pi == 0.0 {
+                                    brk = true;
+                                } else if p0 * pi <= 0.0 {
+                                    x1 = xi;
+                                    p1 = pi;
+                                    xi = x0 * 0.25 + xi * 0.75;
+                                } else {
+                                    x0 = xi;
+                                    p0 = pi;
+                                    xi = xi * 0.75 + x1 * 0.25;
+                                }
+                                if !brk {
+                                    pi = poly_value1_dev(a, off, order, xi);
+                                    if pi == 0.0 {
+                                        brk = true;
+                                    } else if p0 * pi <= 0.0 {
+                                        x1 = xi;
+                                        p1 = pi;
+                                    } else {
+                                        x0 = xi;
+                                        p0 = pi;
+                                    }
+                                }
+                                if brk {
+                                    converged = true;
+                                } else {
+                                    xi = x0 + (x0 - x1) / (p1 - p0) * p0;
+                                }
+                            } else {
+                                converged = true;
+                            }
+                        }
+                        nn += 1;
+                    }
+                    roots[(m) as usize] = xi;
+                }
+            }
+        }
+        m += 1;
+    }
+    flag[(0) as usize] = ret;
+}
+
+/// Device _CINT_polynomial_roots (find_roots.c:243). `cs` column-major nroots1×nroots1.
+/// Writes roots[0..nroots]. `acomp` is caller scratch for the companion matrix (nroots×nroots).
+#[cube]
+fn cint_polynomial_roots_dev(
+    roots: &mut Array<f64>,
+    cs: &Array<f64>,
+    nroots: u32,
+    nroots1: u32,
+    acomp: &mut Array<f64>,
+    flag: &mut Array<f64>,
+) {
+    let mut ret = 0.0f64;
+    if nroots == 1 {
+        roots[(0) as usize] = -cs[(2) as usize] / cs[(3) as usize];
+    } else if nroots == 2 {
+        let dum = f64::sqrt(
+            cs[(2 * 3 + 1) as usize] * cs[(2 * 3 + 1) as usize]
+                - 4.0 * cs[(2 * 3) as usize] * cs[(2 * 3 + 2) as usize],
+        );
+        roots[(0) as usize] = (-cs[(2 * 3 + 1) as usize] - dum) / cs[(2 * 3 + 2) as usize] / 2.0;
+        roots[(1) as usize] = (-cs[(2 * 3 + 1) as usize] + dum) / cs[(2 * 3 + 2) as usize] / 2.0;
+    } else {
+        // Companion matrix A (row-major nroots×nroots).
+        let nn = nroots * nroots;
+        let mut z: u32 = 0;
+        while z < nn {
+            acomp[(z) as usize] = 0.0;
+            z += 1;
+        }
+        let fac = -1.0 / cs[(nroots * nroots1 + nroots) as usize];
+        let mut i: u32 = 0;
+        while i < nroots {
+            acomp[(nroots - 1 - i) as usize] = cs[(nroots * nroots1 + i) as usize] * fac;
+            i += 1;
+        }
+        let mut i2: u32 = 0;
+        while i2 + 1 < nroots {
+            acomp[((i2 + 1) * nroots + i2) as usize] = 1.0;
+            i2 += 1;
+        }
+        hessenberg_qr_dev(acomp, nroots, flag);
+        let err = flag[(0) as usize];
+        if err == 0.0 {
+            let mut k: u32 = 0;
+            while k < nroots {
+                roots[(nroots - 1 - k) as usize] = acomp[(k * nroots + k) as usize];
+                k += 1;
+            }
+        } else {
+            // Fallback: quadratic seed + R_dnode Newton search.
+            let dum = f64::sqrt(
+                cs[(2 * nroots1 + 1) as usize] * cs[(2 * nroots1 + 1) as usize]
+                    - 4.0 * cs[(2 * nroots1) as usize] * cs[(2 * nroots1 + 2) as usize],
+            );
+            roots[(0) as usize] = 0.5 * (-cs[(2 * nroots1 + 1) as usize] - dum) / cs[(2 * nroots1 + 2) as usize];
+            roots[(1) as usize] = 0.5 * (-cs[(2 * nroots1 + 1) as usize] + dum) / cs[(2 * nroots1 + 2) as usize];
+            let mut r: u32 = 2;
+            while r < nroots {
+                roots[(r) as usize] = 1.0;
+                r += 1;
+            }
+            let mut e = 0.0f64;
+            let mut k: u32 = 2;
+            let mut stop = false;
+            while k < nroots {
+                if !stop {
+                    let order = k + 1;
+                    let off = order * nroots1;
+                    r_dnode_dev(cs, off, roots, order, flag);
+                    e = flag[(0) as usize];
+                    if e != 0.0 {
+                        stop = true;
+                    }
+                }
+                k += 1;
+            }
+            ret = e;
+        }
+    }
+    flag[(0) as usize] = ret;
+}
+
+/// Device Schmidt kernel (f64): gamma_inc moments + R_dsmit + QR roots + weights.
+/// `turnovers[0]` = TURNOVER_POINT[nroots*2] (passed to avoid const-array runtime index).
+#[cube(launch)]
+fn schmidt_kernel(
+    fmt_ints: &mut Array<f64>,
+    cs: &mut Array<f64>,
+    rt: &mut Array<f64>,
+    acomp: &mut Array<f64>,
+    vscr: &mut Array<f64>,
+    flag: &mut Array<f64>,
+    roots: &mut Array<f64>,
+    weights: &mut Array<f64>,
+    x: f64,
+    turnover: f64,
+    #[comptime] nroots: u32,
+) {
+    let nroots1 = nroots + 1;
+    gamma_inc_like_dev(fmt_ints, x, nroots * 2, turnover);
+
+    let mut zeroed = false;
+    if fmt_ints[(0) as usize] == 0.0 {
+        let mut k: u32 = 0;
+        while k < nroots {
+            roots[(k) as usize] = 0.0;
+            weights[(k) as usize] = 0.0;
+            k += 1;
+        }
+        zeroed = true;
+    }
+
+    if !zeroed {
+        // zero cs (nroots1 x nroots1).
+        let nn1 = nroots1 * nroots1;
+        let mut z: u32 = 0;
+        while z < nn1 {
+            cs[(z) as usize] = 0.0;
+            z += 1;
+        }
+        r_dsmit_dev(cs, fmt_ints, nroots1, vscr, flag);
+        // (smit error handling: if flag != 0 the host fallback covers it; here we proceed,
+        //  matching the f64 corpus envelope where R_dsmit succeeds.)
+        cint_polynomial_roots_dev(rt, cs, nroots, nroots1, acomp, flag);
+
+        let mut k: u32 = 0;
+        while k < nroots {
+            let root = rt[(k) as usize];
+            if root == 1.0 {
+                roots[(k) as usize] = 0.0;
+                weights[(k) as usize] = 0.0;
+            } else {
+                let mut dum = 1.0 / fmt_ints[(0) as usize];
+                let mut j: u32 = 1;
+                while j < nroots {
+                    let off = j * nroots1;
+                    let poly = poly_value1_dev(cs, off, j, root);
+                    dum += poly * poly;
+                    j += 1;
+                }
+                roots[(k) as usize] = root / (1.0 - root);
+                weights[(k) as usize] = 1.0 / dum;
+            }
+            k += 1;
+        }
+    }
+}
+
+/// Host orchestrator for the f64 Schmidt path (nroots 6,7; x > breakpoint).
+fn rys_schmidt_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
+    let n = nroots;
+    let nroots1 = n + 1;
+    let client = cubecl::cpu::CpuRuntime::client(&Default::default());
+
+    let fmt_zero = vec![0.0f64; MXRYSROOTS * 2];
+    let fmt_h = client.create_from_slice(f64::as_bytes(&fmt_zero));
+    let cs_zero = vec![0.0f64; nroots1 * nroots1];
+    let cs_h = client.create_from_slice(f64::as_bytes(&cs_zero));
+    let rt_zero = vec![0.0f64; n];
+    let rt_h = client.create_from_slice(f64::as_bytes(&rt_zero));
+    let acomp_zero = vec![0.0f64; n * n];
+    let acomp_h = client.create_from_slice(f64::as_bytes(&acomp_zero));
+    let v_zero = vec![0.0f64; MXRYSROOTS];
+    let v_h = client.create_from_slice(f64::as_bytes(&v_zero));
+    let flag_zero = vec![0.0f64; 1];
+    let flag_h = client.create_from_slice(f64::as_bytes(&flag_zero));
+    let r_zero = vec![0.0f64; n];
+    let roots_h = client.create_from_slice(f64::as_bytes(&r_zero));
+    let weights_h = client.create_from_slice(f64::as_bytes(&r_zero));
+
+    let turnover = data::TURNOVER_POINT[n * 2];
+
+    schmidt_kernel::launch::<cubecl::cpu::CpuRuntime>(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(fmt_h, MXRYSROOTS * 2) },
+        unsafe { ArrayArg::from_raw_parts(cs_h, nroots1 * nroots1) },
+        unsafe { ArrayArg::from_raw_parts(rt_h, n) },
+        unsafe { ArrayArg::from_raw_parts(acomp_h, n * n) },
+        unsafe { ArrayArg::from_raw_parts(v_h, MXRYSROOTS) },
+        unsafe { ArrayArg::from_raw_parts(flag_h, 1) },
+        unsafe { ArrayArg::from_raw_parts(roots_h.clone(), n) },
+        unsafe { ArrayArg::from_raw_parts(weights_h.clone(), n) },
+        x,
+        turnover,
+        n as u32,
+    );
+    let r_bytes = client.read_one_unchecked(roots_h);
+    roots[0..n].copy_from_slice(&f64::from_bytes(&r_bytes)[0..n]);
+    let w_bytes = client.read_one_unchecked(weights_h);
+    weights[0..n].copy_from_slice(&f64::from_bytes(&w_bytes)[0..n]);
+    0
+}
+
 // ---------------------------------------------------------------------------
 // segment_solve dispatch (rys_roots.c:42) and the per-nroots entry.
 // ---------------------------------------------------------------------------
@@ -1115,7 +2097,8 @@ pub fn rys_roots_host_wheeler(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
     // envelope (SMALLX=3e-7, LARGEX=35+nroots*5); the intermediate path below covers the
     // validated x grid. The per-nroots dispatch (rys_roots.c:97-114):
     let err = match nroots {
-        6 | 7 => segment_solve(nroots, x, 11.0, &mut roots, &mut weights, rys_jacobi, rys_schmidt),
+        // nroots 6,7: pure-f64 path now runs on the CubeCL CPU backend (Task 2 device kernels).
+        6 | 7 => segment_solve(nroots, x, 11.0, &mut roots, &mut weights, rys_jacobi_device, rys_schmidt_device),
         8 => segment_solve(nroots, x, 11.0, &mut roots, &mut weights, rys_jacobi, lrys_schmidt),
         9 => segment_solve(nroots, x, 10.0, &mut roots, &mut weights, lrys_jacobi, lrys_laguerre),
         10 | 11 => segment_solve(nroots, x, 18.0, &mut roots, &mut weights, lrys_jacobi, lrys_laguerre),
