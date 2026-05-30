@@ -1920,6 +1920,301 @@ fn launch_two_electron_ip2<F: CintFloat>(
     })
 }
 
+/// Which 2e Hessian family a [`launch_two_electron_hess2e`] call evaluates.
+///
+/// Each variant carries its own G-tensor headroom (`i_inc`/`j_inc`/`k_inc`) and
+/// selects the matching verbatim-from-hess.c gout permutation. The host path
+/// (`fill_g_tensor_2e` → `rys_roots_host`) is shared with the gradient families
+/// so nroots≥6 Hessian-elevated d-quartets reach the FND-02 host Rys engine.
+#[derive(Clone, Copy)]
+enum Hess2eKind {
+    /// int2e_ipip1 (∇²bra-i), rank 9, headroom i+2.
+    Ipip1,
+    /// int2e_ipvip1 (∇_i∇_j), rank 9, headroom i+1, j+1.
+    Ipvip1,
+    /// int2e_ip1ip2 (∇_i∇_k), rank 9, headroom i+1, k+1.
+    Ip1ip2,
+    /// int2e_ipip1ipip2 (∇²_i∇²_k), rank 81, headroom i+2, k+2.
+    Ipip1ipip2,
+}
+
+impl Hess2eKind {
+    fn ncomp(self) -> usize {
+        match self {
+            Hess2eKind::Ipip1 | Hess2eKind::Ipvip1 | Hess2eKind::Ip1ip2 => 9,
+            Hess2eKind::Ipip1ipip2 => 81,
+        }
+    }
+    /// (i_inc, j_inc, k_inc) headroom raised on the plain G-tensor (ll never raised).
+    fn headroom(self) -> (usize, usize, usize) {
+        match self {
+            Hess2eKind::Ipip1 => (2, 0, 0),
+            Hess2eKind::Ipvip1 => (1, 1, 0),
+            Hess2eKind::Ip1ip2 => (1, 0, 1),
+            Hess2eKind::Ipip1ipip2 => (2, 0, 2),
+        }
+    }
+}
+
+/// Host-routed 2e Hessian launcher (Phase 25 HESS-02 / D-07).
+///
+/// Mirrors [`launch_two_electron_ip1`]/[`launch_two_electron_ip2`] but emits
+/// `ncomp` (9 or 81) components via the verbatim-from-hess.c gout helpers in
+/// `f12.rs` (`gout_ipip1`/`gout_ipvip1`/`gout_ip1ip2`/`gout_ipip1ipip2`). The plain
+/// Coulomb G-tensor is built with the per-family headroom and the launcher routes
+/// through the HOST `fill_g_tensor_2e` (→ `rys_roots_host`) so nroots 6..12
+/// Hessian-elevated d-quartets hit the FND-02 host Rys engine, not the device
+/// comptime kernel (capped at MAX_DEVICE_NROOTS=5). Spinor → UnsupportedApi (D-11).
+#[allow(clippy::too_many_arguments)]
+fn launch_two_electron_hess2e<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    kind: Hess2eKind,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
+    common_factor: f64,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    // Spinor Hessian: not supported (D-11). Reject before any compute.
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor 2e Hessian".to_owned(),
+        });
+    }
+
+    let ncomp = kind.ncomp();
+    let (i_inc, j_inc, k_inc) = kind.headroom();
+
+    // Per-family headroom shape (D-09): raise the G-tensor angular momenta so the
+    // gout's nabla compositions can read up to the elevated indices.
+    let grad_shape = build_2e_shape(
+        li as usize + i_inc,
+        lj as usize + j_inc,
+        lk as usize + k_inc,
+        ll as usize,
+    );
+
+    // FND-02 host Rys ceiling: nroots 6..12 route here; >12 stays fail-closed.
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_j = &shells[1];
+    let shell_k = &shells[2];
+    let shell_l = &shells[3];
+
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let block_len = nfi * nfj * nfk * nfl;
+    let total_len = ncomp * block_len;
+
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+    let nsl = nsph(ll);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_prim_l = shell_l.nprim as usize;
+
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+    let n_ctr_l = shell_l.nctr as usize;
+
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * total_len];
+
+    let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
+
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pj in 0..n_prim_j {
+            let aj = shell_j.exponents[pj];
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            for pk in 0..n_prim_k {
+                let ak = shell_k.exponents[pk];
+                for pl in 0..n_prim_l {
+                    let al = shell_l.exponents[pl];
+                    let pdata_kl = compute_pdata_host(
+                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                    );
+                    let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+
+                    // Plain Coulomb G-tensor at the elevated headroom.
+                    let g = fill_g_tensor_2e(
+                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                    );
+
+                    // Reuse the verbatim hess.c gout permutation. gout is called at
+                    // BASE (li,lj,lk,ll); the G-tensor carries the headroom. Returns
+                    // interleaved out[n*ncomp+comp]; n walks [cl,ck,cj,ci].
+                    let li_b = li as usize;
+                    let lj_b = lj as usize;
+                    let lk_b = lk as usize;
+                    let ll_b = ll as usize;
+                    let gout = match kind {
+                        Hess2eKind::Ipip1 => crate::kernels::f12::gout_ipip1(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai,
+                        ),
+                        Hess2eKind::Ipvip1 => crate::kernels::f12::gout_ipvip1(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, aj,
+                        ),
+                        Hess2eKind::Ip1ip2 => crate::kernels::f12::gout_ip1ip2(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, ak,
+                        ),
+                        Hess2eKind::Ipip1ipip2 => crate::kernels::f12::gout_ipip1ipip2(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, ak,
+                        ),
+                    };
+
+                    for ci in 0..n_ctr_i {
+                        let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                        for cj in 0..n_ctr_j {
+                            let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                            for ck in 0..n_ctr_k {
+                                let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                                for cl in 0..n_ctr_l {
+                                    let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
+                                    let weight = coeff_i * coeff_j * coeff_k * coeff_l;
+                                    let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l
+                                        + cl)
+                                        * total_len;
+                                    // TRANSPOSE interleaved gout[n*ncomp+comp] into
+                                    // the component-leading block: cart[comp*block + n].
+                                    for n in 0..block_len {
+                                        for comp in 0..ncomp {
+                                            cart_blocks[base + comp * block_len + n] +=
+                                                weight * gout[n * ncomp + comp];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Component-leading `[ncomp, nl, nk, nj, ni]` F-order write.
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dj = n_ctr_j * nsj;
+            let dk = n_ctr_k * nsk;
+            let dl = n_ctr_l * nsl;
+            let sph_block = di * dj * dk * dl;
+            for comp in 0..ncomp {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let sph = cart_to_sph_2e(
+                                    &cart_blocks[base..base + block_len],
+                                    li,
+                                    lj,
+                                    lk,
+                                    ll,
+                                );
+                                for ml in 0..nsl {
+                                    let lidx = cl * nsl + ml;
+                                    for mk in 0..nsk {
+                                        let kidx = ck * nsk + mk;
+                                        for mj in 0..nsj {
+                                            let jidx = cj * nsj + mj;
+                                            for mi in 0..nsi {
+                                                let iidx = ci * nsi + mi;
+                                                let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                staging[dst] = F::from_f64_lossy(sph[src]);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nfi;
+            let dj = n_ctr_j * nfj;
+            let dk = n_ctr_k * nfk;
+            let dl = n_ctr_l * nfl;
+            let cart_block = di * dj * dk * dl;
+            for comp in 0..ncomp {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let block = &cart_blocks[base..base + block_len];
+                                for lc in 0..nfl {
+                                    let lidx = cl * nfl + lc;
+                                    for kc in 0..nfk {
+                                        let kidx = ck * nfk + kc;
+                                        for jc in 0..nfj {
+                                            let jidx = cj * nfj + jc;
+                                            for ic in 0..nfi {
+                                                let iidx = ci * nfi + ic;
+                                                let src = ic + nfi * (jc + nfj * (kc + nfk * lc));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                staging[dst] = F::from_f64_lossy(block[src]);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor 2e Hessian rejected above"),
+    }
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
 /// Generic inner for the 2e launcher. See `launch_two_electron` for the dispatch rationale.
 ///
 /// Intermediate computations (G-tensor, cart_buf) remain `f64`; output staging
@@ -2036,6 +2331,32 @@ fn launch_two_electron_typed<F: CintFloat>(
     if plan.descriptor.operator_name() == "ip2" {
         return launch_two_electron_ip2::<F>(
             plan,
+            li,
+            lj,
+            lk,
+            ll,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            staging,
+        );
+    }
+
+    // Phase 25 HESS-02 (D-07): host-routed 2e Hessian families (rank 9 / 81).
+    // int2e_ipip1/ipvip1/ip1ip2 (rank 9) + int2e_ipip1ipip2 (rank 81). All route
+    // through fill_g_tensor_2e (FND-02 host Rys) so nroots≥6 d-quartets are served.
+    if let Some(kind) = match plan.descriptor.operator_name() {
+        "ipip1" => Some(Hess2eKind::Ipip1),
+        "ipvip1" => Some(Hess2eKind::Ipvip1),
+        "ip1ip2" => Some(Hess2eKind::Ip1ip2),
+        "ipip1ipip2" => Some(Hess2eKind::Ipip1ipip2),
+        _ => None,
+    } {
+        return launch_two_electron_hess2e::<F>(
+            plan,
+            kind,
             li,
             lj,
             lk,

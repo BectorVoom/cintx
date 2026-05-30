@@ -318,6 +318,28 @@ impl RawApiId {
     pub const INT2E_IP2_SPH: Self = Self::Symbol("int2e_ip2_sph");
     pub const INT2E_IP2_SPINOR: Self = Self::Symbol("int2e_ip2_spinor");
 
+    // Phase 25 HESS-02: 2e Hessian set, promoted to STABLE (D-07). int2e_ipip1
+    // (∇²bra-i) and int2e_ipvip1 (∇_i∇_j) were sph-only `unstable::source::2e`
+    // stubs — re-homed here as one canonical stable entry per symbol (no alias,
+    // no unstable gate). int2e_ip1ip2 (∇_i∇_k, rank 9) and int2e_ipip1ipip2
+    // (∇²_i∇²_k, rank 81, 4th-order 2e) are registered fresh. All host-routed
+    // through fill_g_tensor_2e (FND-02). Spinor → UnsupportedApi (D-11).
+    pub const INT2E_IPIP1_CART: Self = Self::Symbol("int2e_ipip1_cart");
+    pub const INT2E_IPIP1_SPH: Self = Self::Symbol("int2e_ipip1_sph");
+    pub const INT2E_IPIP1_SPINOR: Self = Self::Symbol("int2e_ipip1_spinor");
+
+    pub const INT2E_IPVIP1_CART: Self = Self::Symbol("int2e_ipvip1_cart");
+    pub const INT2E_IPVIP1_SPH: Self = Self::Symbol("int2e_ipvip1_sph");
+    pub const INT2E_IPVIP1_SPINOR: Self = Self::Symbol("int2e_ipvip1_spinor");
+
+    pub const INT2E_IP1IP2_CART: Self = Self::Symbol("int2e_ip1ip2_cart");
+    pub const INT2E_IP1IP2_SPH: Self = Self::Symbol("int2e_ip1ip2_sph");
+    pub const INT2E_IP1IP2_SPINOR: Self = Self::Symbol("int2e_ip1ip2_spinor");
+
+    pub const INT2E_IPIP1IPIP2_CART: Self = Self::Symbol("int2e_ipip1ipip2_cart");
+    pub const INT2E_IPIP1IPIP2_SPH: Self = Self::Symbol("int2e_ipip1ipip2_sph");
+    pub const INT2E_IPIP1IPIP2_SPINOR: Self = Self::Symbol("int2e_ipip1ipip2_spinor");
+
     // Phase 23 DRV1-04: int2c2e_ip1 (∇ on bra center i) + int2c2e_ip2 (∇ on ket
     // center k). Spinor registered for surface completeness (D-06).
     pub const INT2C2E_IP1_CART: Self = Self::Symbol("int2c2e_ip1_cart");
@@ -2152,7 +2174,9 @@ mod tests {
     #[cfg(not(feature = "unstable-source-api"))]
     #[test] // safe-facade policy gate
     fn safe_facade_gate_rejects_source_only_symbol_without_unstable_feature() {
-        let descriptor = Resolver::descriptor_by_symbol("int2e_ipip1_sph")
+        // int2e_ipip1_sph was promoted to stable in Phase 25 HESS-02 (D-07); use a
+        // still-source-only symbol to exercise the unstable-feature gate.
+        let descriptor = Resolver::descriptor_by_symbol("int2e_breit_r1p2_spinor")
             .expect("source-only symbol must exist in manifest");
         let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
         let atm = RawAtmView::new(&atm).expect("atm layout");
@@ -2188,7 +2212,9 @@ mod tests {
         let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
         let err = unsafe {
             query_workspace_raw(
-                RawApiId::Symbol("int2e_ipip1_sph"),
+                // int2e_ipip1_sph promoted to stable (Phase 25 HESS-02 D-07); use a
+                // still-source-only symbol to exercise the unstable-feature gate.
+                RawApiId::Symbol("int2e_breit_r1p2_spinor"),
                 None,
                 &shls_4,
                 &atm,
