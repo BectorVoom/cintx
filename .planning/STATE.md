@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Completed 25-02-PLAN.md
-last_updated: "2026-05-30T14:02:04.512Z"
+stopped_at: Completed 25-03-PLAN.md
+last_updated: "2026-05-30T15:20:00.000Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 21
   completed_phases: 14
   total_plans: 77
-  completed_plans: 73
-  percent: 95
+  completed_plans: 74
+  percent: 96
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 25 (group-2-hessian-higher-order-derivatives) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Resume file: None
 Last activity: 2026-05-30
@@ -136,6 +136,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 24 P24-04 | 38 | 1 tasks | 5 files |
 | Phase 24 P24-05 | 22 | 1 tasks | 4 files |
 | Phase 25 P02 | 24 | 3 tasks | 7 files |
+| Phase 25 P03 | 70 | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -313,6 +314,10 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 25]: FND-06: single upfront assert_staging_size() BufferTooSmall contract point in planner.rs evaluate() replaces all per-element scatter guards (D-04); 20 guards stripped across 6 kernel files
 - [Phase 25]: FND-06: rank-81 OOM no-partial-write proven via int1e_rrrr_cart driver + sentinel-survives-typed-stop test (D-05)
 - [Phase 25]: oracle-cart-offset-vendor-zero CONFIRMED pre-existing at pre-phase-20 commit 00771ab (CINTshells_cart_offset[4] cintx=8 vendor=0); not a Phase-25 regression; does not block family gate (integration --test passes)
+- [Phase 25-03]: HESS-01 — int1e_ipip{ovlp,nuc,kin,rinv} are bra-only ∇² = the Phase-23 first-order D_I engine applied twice (g1=D_I(g0,i+1), g2=D_I(g0,i), g3=D_I(g1,i)); ovlp uses the no-Rys overlap base, nuc/rinv the nuclear Rys base, all sharing ONE gout-permutation helper (gradgrad_bra_contract) with the verbatim hess.c order [s0,s3,s6,s1,s4,s7,s2,s5,s8]
+- [Phase 25-03]: ipipkin's -½ kinetic factor must be folded into cintx's gout (observed=2× vendor without it): libcint emits -(s) and scales by ½ in CINT1e_drv, but cintx contracts s directly into staging. ng={2,2,...} (nmax=li+lj+4, lj_ext=lj+2) vs ng={2,0,...} for ovlp/nuc/rinv
+- [Phase 25-03]: ipiprinv parity REQUIRES a PTR_ENV_START-aligned fixture (env[0..20] reserved) so the rinv origin at env[4..6] is not clobbered by atom coords; inject a nonzero rinv origin via env_with_rinv_origin (zero origin is trivially-passing)
+- [Phase 25-03]: xtask is a standalone cargo project (own Cargo.lock), NOT a workspace member — run `cd xtask && cargo run -- manifest-audit`, not `cargo run -p xtask` from the workspace root
 
 ### Roadmap Evolution
 
