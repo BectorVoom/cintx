@@ -2052,6 +2052,830 @@ fn rys_schmidt_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f
     0
 }
 
+// ===========================================================================
+//  DEVICE double-double layer + dd Wheeler paths (Task 3: nroots 8..12).
+//
+//  The FMA probe (fma_probe) proved the CubeCL 0.10.0 CPU backend FUSES `fma`
+//  bit-for-bit vs host f64::mul_add, so the dd two_prod error term is exact and
+//  no Dekker-split software product is needed. Each `Dd { hi, lo }` is a CubeType
+//  struct threaded through #[cube] dd ops (two_sum/two_prod/dd_add/sub/mul/div/sqrt),
+//  mirroring the host `Dd` algorithms 1:1. The dd tridiagonal (a,b) is rounded to
+//  f64 (Dd::hi) before the shared device eigh — exactly as the host/vendor round
+//  long-double (a,b) to double before _CINTdiagonalize.
+// ===========================================================================
+
+#[derive(CubeType, Clone, Copy)]
+struct DdDev {
+    hi: f64,
+    lo: f64,
+}
+
+#[cube]
+fn dd_from(x: f64) -> DdDev {
+    DdDev { hi: x, lo: 0.0 }
+}
+
+#[cube]
+fn two_sum_dev(a: f64, b: f64) -> DdDev {
+    let s = a + b;
+    let bb = s - a;
+    let err = (a - (s - bb)) + (b - bb);
+    DdDev { hi: s, lo: err }
+}
+
+#[cube]
+fn two_prod_dev(a: f64, b: f64) -> DdDev {
+    let p = a * b;
+    let e = fma(a, b, -p);
+    DdDev { hi: p, lo: e }
+}
+
+#[cube]
+fn dd_add_dev(a: DdDev, b: DdDev) -> DdDev {
+    let s = two_sum_dev(a.hi, b.hi);
+    let e = s.lo + (a.lo + b.lo);
+    let r = two_sum_dev(s.hi, e);
+    DdDev { hi: r.hi, lo: r.lo }
+}
+
+#[cube]
+fn dd_sub_dev(a: DdDev, b: DdDev) -> DdDev {
+    let nb = DdDev { hi: -b.hi, lo: -b.lo };
+    dd_add_dev(a, nb)
+}
+
+#[cube]
+fn dd_mul_dev(a: DdDev, b: DdDev) -> DdDev {
+    let p = two_prod_dev(a.hi, b.hi);
+    let e = p.lo + (a.hi * b.lo + a.lo * b.hi);
+    let r = two_sum_dev(p.hi, e);
+    DdDev { hi: r.hi, lo: r.lo }
+}
+
+#[cube]
+fn dd_div_dev(a: DdDev, b: DdDev) -> DdDev {
+    let q1 = a.hi / b.hi;
+    let r1 = dd_sub_dev(a, dd_mul_dev(dd_from(q1), b));
+    let q2 = r1.hi / b.hi;
+    let r2 = dd_sub_dev(r1, dd_mul_dev(dd_from(q2), b));
+    let q3 = r2.hi / b.hi;
+    let s = two_sum_dev(q1, q2);
+    dd_add_dev(DdDev { hi: s.hi, lo: s.lo }, dd_from(q3))
+}
+
+#[cube]
+fn dd_mul_f64_dev(a: DdDev, b: f64) -> DdDev {
+    dd_mul_dev(a, dd_from(b))
+}
+
+#[cube]
+fn dd_sqrt_dev(a: DdDev) -> DdDev {
+    let mut outh = 0.0f64;
+    let mut outl = 0.0f64;
+    if a.hi > 0.0 {
+        let x = 1.0 / f64::sqrt(a.hi);
+        let ax = a.hi * x;
+        let p = two_prod_dev(ax, ax);
+        let diff = dd_sub_dev(a, DdDev { hi: p.hi, lo: p.lo });
+        let corr = diff.hi * (x * 0.5);
+        let s = two_sum_dev(ax, corr);
+        outh = s.hi;
+        outl = s.lo;
+    }
+    DdDev { hi: outh, lo: outl }
+}
+
+const SQRTPIE4_DD: f64 = 0.886_226_925_452_758_013_649_083_741_670_572_591_398_774_728_061_193_564_106_903_894_926_4;
+const FLOCKE_EXTRA_LP_DEV: u32 = 24;
+
+/// Device lflocke_jacobi_moments in dd (intermediate-x branch; SMALLX path out of envelope).
+/// rn_part2/sn are LJACOBI_RN_PART2 / LJACOBI_SN. mus_hi/mus_lo hold the dd moment pairs.
+#[cube]
+fn lflocke_jacobi_moments_dev(
+    n: u32,
+    t: f64,
+    rn_part2: &Array<f64>,
+    sn: &Array<f64>,
+    mus_hi: &mut Array<f64>,
+    mus_lo: &mut Array<f64>,
+) {
+    let t_inv = dd_div_dev(dd_from(0.5), dd_from(t));
+    // dd accumulators threaded as scalar hi/lo pairs (CubeType structs are not reassignable).
+    let mut mu1h = 1.0f64; let mut mu1l = 0.0f64;
+    let mut mu2h = 0.0f64; let mut mu2l = 0.0f64;
+    let mut mu0h = 0.0f64; let mut mu0l = 0.0f64;
+    let top = n - 1 + FLOCKE_EXTRA_LP_DEV;
+    let count1 = top + 1 - n;
+    let mut step: u32 = 0;
+    while step < count1 {
+        let ii = top - step;
+        let rn = dd_add_dev(dd_mul_f64_dev(t_inv, (2 * ii + 3) as f64), dd_from(rn_part2[(ii) as usize]));
+        let mu1 = DdDev { hi: mu1h, lo: mu1l };
+        let mu2 = DdDev { hi: mu2h, lo: mu2l };
+        let mu0 = dd_div_dev(dd_sub_dev(mu2, dd_mul_dev(rn, mu1)), dd_from(sn[(ii) as usize]));
+        mu0h = mu0.hi; mu0l = mu0.lo;
+        mu2h = mu1h; mu2l = mu1l;
+        mu1h = mu0h; mu1l = mu0l;
+        step += 1;
+    }
+    let mut step2: u32 = 0;
+    while step2 < n {
+        let ii = (n - 1) - step2;
+        let rn = dd_add_dev(dd_mul_f64_dev(t_inv, (2 * ii + 3) as f64), dd_from(rn_part2[(ii) as usize]));
+        let mu1 = DdDev { hi: mu1h, lo: mu1l };
+        let mu2 = DdDev { hi: mu2h, lo: mu2l };
+        let mu0 = dd_div_dev(dd_sub_dev(mu2, dd_mul_dev(rn, mu1)), dd_from(sn[(ii) as usize]));
+        mu0h = mu0.hi; mu0l = mu0.lo;
+        mus_hi[(ii) as usize] = mu0h;
+        mus_lo[(ii) as usize] = mu0l;
+        mu2h = mu1h; mu2l = mu1l;
+        mu1h = mu0h; mu1l = mu0l;
+        step2 += 1;
+    }
+    let tt = f64::sqrt(t);
+    let num = dd_from(SQRTPIE4_DD * erf_dev(tt) / tt);
+    let norm = dd_div_dev(num, DdDev { hi: mu0h, lo: mu0l });
+    let mut j: u32 = 0;
+    while j < n {
+        let v = DdDev { hi: mus_hi[(j) as usize], lo: mus_lo[(j) as usize] };
+        let vn = dd_mul_dev(v, norm);
+        mus_hi[(j) as usize] = vn.hi;
+        mus_lo[(j) as usize] = vn.lo;
+        j += 1;
+    }
+}
+
+/// Device llaguerre_moments in dd (lower==0). Outputs alpha/beta (dd) + moments (dd).
+#[cube]
+fn llaguerre_moments_dev(
+    n: u32,
+    t: f64,
+    alpha_hi: &mut Array<f64>,
+    alpha_lo: &mut Array<f64>,
+    beta_hi: &mut Array<f64>,
+    beta_lo: &mut Array<f64>,
+    mom_hi: &mut Array<f64>,
+    mom_lo: &mut Array<f64>,
+) {
+    let tt = f64::sqrt(t);
+    let t_inv = dd_div_dev(dd_from(0.5), dd_from(t));
+    let t2_inv = dd_div_dev(dd_from(0.5), dd_mul_dev(dd_from(t), dd_from(t)));
+    let e0 = dd_mul_dev(dd_from(f64::exp(-t)), t_inv);
+    let mut l00h = 0.0f64; let mut l00l = 0.0f64;
+    let mut l01h = 1.0f64; let mut l01l = 0.0f64;
+
+    alpha_hi[(0) as usize] = t_inv.hi;
+    alpha_lo[(0) as usize] = t_inv.lo;
+    beta_hi[(0) as usize] = 0.0;
+    beta_lo[(0) as usize] = 0.0;
+    let m0 = dd_from(SQRTPIE4_DD / tt * erf_dev(tt));
+    mom_hi[(0) as usize] = m0.hi;
+    mom_lo[(0) as usize] = m0.lo;
+    let m1 = dd_mul_dev(DdDev { hi: -l01h, lo: -l01l }, e0);
+    mom_hi[(1) as usize] = m1.hi;
+    mom_lo[(1) as usize] = m1.lo;
+
+    let mut i: u32 = 1;
+    while i + 1 < n {
+        let ai = dd_mul_f64_dev(t_inv, (i * 4 + 1) as f64);
+        alpha_hi[(i) as usize] = ai.hi;
+        alpha_lo[(i) as usize] = ai.lo;
+        let bi = dd_mul_f64_dev(t2_inv, (i * (i * 2 - 1)) as f64);
+        beta_hi[(i) as usize] = bi.hi;
+        beta_lo[(i) as usize] = bi.lo;
+        let fac0 = dd_mul_f64_dev(t_inv, (i * 4 - 1) as f64);
+        let fac1 = dd_mul_f64_dev(t2_inv, ((i - 1) * (i * 2 - 1)) as f64);
+        let l00 = DdDev { hi: l00h, lo: l00l };
+        let l01 = DdDev { hi: l01h, lo: l01l };
+        // l02 = (1 - fac0)*l01 - fac1*l00
+        let l02 = dd_sub_dev(dd_mul_dev(dd_sub_dev(dd_from(1.0), fac0), l01), dd_mul_dev(fac1, l00));
+        l00h = l01h; l00l = l01l;
+        l01h = l02.hi; l01l = l02.lo;
+        let mip1 = dd_mul_dev(DdDev { hi: -l01h, lo: -l01l }, e0);
+        mom_hi[(i + 1) as usize] = mip1.hi;
+        mom_lo[(i + 1) as usize] = mip1.lo;
+        i += 1;
+    }
+}
+
+/// Device dd Wheeler recursion: dd moments + dd (alpha,beta) -> tridiagonal (a,b) dd.
+/// Scratch s0/sm/sk are dd pairs in parallel hi/lo Arrays of length n*2.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn lwheeler_recursion_dev(
+    n: u32,
+    alpha_hi: &Array<f64>, alpha_lo: &Array<f64>,
+    beta_hi: &Array<f64>, beta_lo: &Array<f64>,
+    mom_hi: &Array<f64>, mom_lo: &Array<f64>,
+    a_hi: &mut Array<f64>, a_lo: &mut Array<f64>,
+    b_hi: &mut Array<f64>, b_lo: &mut Array<f64>,
+    s0h: &mut Array<f64>, s0l: &mut Array<f64>,
+    smh: &mut Array<f64>, sml: &mut Array<f64>,
+    skh: &mut Array<f64>, skl: &mut Array<f64>,
+) {
+    let al0 = DdDev { hi: alpha_hi[(0) as usize], lo: alpha_lo[(0) as usize] };
+    let m0 = DdDev { hi: mom_hi[(0) as usize], lo: mom_lo[(0) as usize] };
+    let m1 = DdDev { hi: mom_hi[(1) as usize], lo: mom_lo[(1) as usize] };
+    let a0init = dd_add_dev(al0, dd_div_dev(m1, m0));
+    let mut a0h = a0init.hi; let mut a0l = a0init.lo;
+    let mut b0h = 0.0f64; let mut b0l = 0.0f64;
+    a_hi[(0) as usize] = a0h; a_lo[(0) as usize] = a0l;
+    b_hi[(0) as usize] = b0h; b_lo[(0) as usize] = b0l;
+
+    let n2 = n * 2;
+    let mut i: u32 = 0;
+    while i < n2 {
+        s0h[(i) as usize] = mom_hi[(i) as usize];
+        s0l[(i) as usize] = mom_lo[(i) as usize];
+        smh[(i) as usize] = 0.0; sml[(i) as usize] = 0.0;
+        skh[(i) as usize] = 0.0; skl[(i) as usize] = 0.0;
+        i += 1;
+    }
+    let mut step: u32 = 1;
+    while step < n {
+        let nc = 2 * (n - step);
+        let mut j: u32 = 0;
+        while j < nc {
+            let s0_2 = DdDev { hi: s0h[(2 + j) as usize], lo: s0l[(2 + j) as usize] };
+            let s0_1 = DdDev { hi: s0h[(1 + j) as usize], lo: s0l[(1 + j) as usize] };
+            let s0_0 = DdDev { hi: s0h[(j) as usize], lo: s0l[(j) as usize] };
+            let sm_2 = DdDev { hi: smh[(2 + j) as usize], lo: sml[(2 + j) as usize] };
+            let alij = DdDev { hi: alpha_hi[(step + j) as usize], lo: alpha_lo[(step + j) as usize] };
+            let beij = DdDev { hi: beta_hi[(step + j) as usize], lo: beta_lo[(step + j) as usize] };
+            let a0 = DdDev { hi: a0h, lo: a0l };
+            let b0 = DdDev { hi: b0h, lo: b0l };
+            let term2 = dd_mul_dev(dd_sub_dev(a0, alij), s0_1);
+            let term3 = dd_mul_dev(b0, sm_2);
+            let term4 = dd_mul_dev(s0_0, beij);
+            let v = dd_add_dev(dd_sub_dev(dd_sub_dev(s0_2, term2), term3), term4);
+            skh[(j) as usize] = v.hi; skl[(j) as usize] = v.lo;
+            j += 1;
+        }
+        let al_s = DdDev { hi: alpha_hi[(step) as usize], lo: alpha_lo[(step) as usize] };
+        let s0_1 = DdDev { hi: s0h[(1) as usize], lo: s0l[(1) as usize] };
+        let s0_0 = DdDev { hi: s0h[(0) as usize], lo: s0l[(0) as usize] };
+        let sk_1 = DdDev { hi: skh[(1) as usize], lo: skl[(1) as usize] };
+        let sk_0 = DdDev { hi: skh[(0) as usize], lo: skl[(0) as usize] };
+        let a1 = dd_add_dev(dd_sub_dev(al_s, dd_div_dev(s0_1, s0_0)), dd_div_dev(sk_1, sk_0));
+        let b1 = dd_div_dev(sk_0, s0_0);
+        a_hi[(step) as usize] = a1.hi; a_lo[(step) as usize] = a1.lo;
+        b_hi[(step) as usize] = b1.hi; b_lo[(step) as usize] = b1.lo;
+        a0h = a1.hi; a0l = a1.lo;
+        b0h = b1.hi; b0l = b1.lo;
+        // rotate: tmp=sm; sm=s0; s0=sk; sk=tmp
+        let mut k: u32 = 0;
+        while k < n2 {
+            let th = smh[(k) as usize]; let tl = sml[(k) as usize];
+            smh[(k) as usize] = s0h[(k) as usize]; sml[(k) as usize] = s0l[(k) as usize];
+            s0h[(k) as usize] = skh[(k) as usize]; s0l[(k) as usize] = skl[(k) as usize];
+            skh[(k) as usize] = th; skl[(k) as usize] = tl;
+            k += 1;
+        }
+        step += 1;
+    }
+}
+
+/// c99_sqrtl device (one Babylonian refinement over f64 sqrt) — for the dd->f64 off-diag.
+#[cube]
+fn c99_sqrtl_dev(x: f64) -> f64 {
+    let z = f64::sqrt(x);
+    (z * z + x) / (z * 2.0)
+}
+
+/// Device dd Jacobi tridiagonal kernel (lrys_jacobi): dd moments + dd Wheeler -> (a,b) f64.
+/// Outputs f64 da[0..n] and db[0..n] (db = c99_sqrtl(b.hi) from index 1), plus mu0_out[0].
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn ljacobi_tridiag_kernel(
+    alpha_in: &Array<f64>,
+    beta_in: &Array<f64>,
+    rn_part2: &Array<f64>,
+    sn: &Array<f64>,
+    momh: &mut Array<f64>, moml: &mut Array<f64>,
+    alh: &mut Array<f64>, all_: &mut Array<f64>,
+    beh: &mut Array<f64>, bel: &mut Array<f64>,
+    ah: &mut Array<f64>, al: &mut Array<f64>,
+    bh: &mut Array<f64>, bl: &mut Array<f64>,
+    s0h: &mut Array<f64>, s0l: &mut Array<f64>,
+    smh: &mut Array<f64>, sml: &mut Array<f64>,
+    skh: &mut Array<f64>, skl: &mut Array<f64>,
+    da_out: &mut Array<f64>,
+    db_out: &mut Array<f64>,
+    mu0_out: &mut Array<f64>,
+    x: f64,
+    #[comptime] n: u32,
+) {
+    lflocke_jacobi_moments_dev(n * 2, x, rn_part2, sn, momh, moml);
+    mu0_out[(0) as usize] = momh[(0) as usize];
+    // alpha/beta dd from f64 LJACOBI tables.
+    let mut i: u32 = 0;
+    while i < n * 2 {
+        alh[(i) as usize] = alpha_in[(i) as usize]; all_[(i) as usize] = 0.0;
+        beh[(i) as usize] = beta_in[(i) as usize]; bel[(i) as usize] = 0.0;
+        i += 1;
+    }
+    lwheeler_recursion_dev(
+        n, alh, all_, beh, bel, momh, moml,
+        ah, al, bh, bl, s0h, s0l, smh, sml, skh, skl,
+    );
+    da_out[(0) as usize] = ah[(0) as usize];
+    let mut k: u32 = 1;
+    while k < n {
+        da_out[(k) as usize] = ah[(k) as usize];
+        db_out[(k) as usize] = c99_sqrtl_dev(bh[(k) as usize]);
+        k += 1;
+    }
+}
+
+/// Device dd Laguerre tridiagonal kernel (lrys_laguerre): dd Laguerre moments + dd Wheeler.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn llaguerre_tridiag_kernel(
+    momh: &mut Array<f64>, moml: &mut Array<f64>,
+    alh: &mut Array<f64>, all_: &mut Array<f64>,
+    beh: &mut Array<f64>, bel: &mut Array<f64>,
+    ah: &mut Array<f64>, al: &mut Array<f64>,
+    bh: &mut Array<f64>, bl: &mut Array<f64>,
+    s0h: &mut Array<f64>, s0l: &mut Array<f64>,
+    smh: &mut Array<f64>, sml: &mut Array<f64>,
+    skh: &mut Array<f64>, skl: &mut Array<f64>,
+    da_out: &mut Array<f64>,
+    db_out: &mut Array<f64>,
+    mu0_out: &mut Array<f64>,
+    x: f64,
+    #[comptime] n: u32,
+) {
+    llaguerre_moments_dev(n * 2, x, alh, all_, beh, bel, momh, moml);
+    mu0_out[(0) as usize] = momh[(0) as usize];
+    lwheeler_recursion_dev(
+        n, alh, all_, beh, bel, momh, moml,
+        ah, al, bh, bl, s0h, s0l, smh, sml, skh, skl,
+    );
+    da_out[(0) as usize] = ah[(0) as usize];
+    let mut k: u32 = 1;
+    while k < n {
+        da_out[(k) as usize] = ah[(k) as usize];
+        db_out[(k) as usize] = c99_sqrtl_dev(bh[(k) as usize]);
+        k += 1;
+    }
+}
+
+/// Shared host orchestrator for the dd Jacobi/Laguerre paths: launch a dd tridiagonal
+/// kernel (selected by `is_laguerre`), eigh, then the f64 transform kernel. `n` = nroots.
+fn lrys_wheeler_device(
+    nroots: usize,
+    x: f64,
+    roots: &mut [f64],
+    weights: &mut [f64],
+    is_laguerre: bool,
+) -> i32 {
+    let n = nroots;
+    let client = cubecl::cpu::CpuRuntime::client(&Default::default());
+    let n2 = n * 2;
+
+    // dd scratch buffers (parallel hi/lo).
+    let momz = vec![0.0f64; MXRYSROOTS * 2];
+    let momh = client.create_from_slice(f64::as_bytes(&momz));
+    let moml = client.create_from_slice(f64::as_bytes(&momz));
+    let abz = vec![0.0f64; n2.max(MXRYSROOTS * 2)];
+    let alh = client.create_from_slice(f64::as_bytes(&abz));
+    let all_ = client.create_from_slice(f64::as_bytes(&abz));
+    let beh = client.create_from_slice(f64::as_bytes(&abz));
+    let bel = client.create_from_slice(f64::as_bytes(&abz));
+    let nz = vec![0.0f64; n];
+    let ah = client.create_from_slice(f64::as_bytes(&nz));
+    let al = client.create_from_slice(f64::as_bytes(&nz));
+    let bh = client.create_from_slice(f64::as_bytes(&nz));
+    let bl = client.create_from_slice(f64::as_bytes(&nz));
+    let scrz = vec![0.0f64; n2];
+    let s0h = client.create_from_slice(f64::as_bytes(&scrz));
+    let s0l = client.create_from_slice(f64::as_bytes(&scrz));
+    let smh = client.create_from_slice(f64::as_bytes(&scrz));
+    let sml = client.create_from_slice(f64::as_bytes(&scrz));
+    let skh = client.create_from_slice(f64::as_bytes(&scrz));
+    let skl = client.create_from_slice(f64::as_bytes(&scrz));
+    let da_h = client.create_from_slice(f64::as_bytes(&nz));
+    let db_h = client.create_from_slice(f64::as_bytes(&nz));
+    let mu0z = vec![0.0f64; 1];
+    let mu0_h = client.create_from_slice(f64::as_bytes(&mu0z));
+
+    if is_laguerre {
+        llaguerre_tridiag_kernel::launch::<cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            unsafe { ArrayArg::from_raw_parts(momh, MXRYSROOTS * 2) },
+            unsafe { ArrayArg::from_raw_parts(moml, MXRYSROOTS * 2) },
+            unsafe { ArrayArg::from_raw_parts(alh, abz.len()) },
+            unsafe { ArrayArg::from_raw_parts(all_, abz.len()) },
+            unsafe { ArrayArg::from_raw_parts(beh, abz.len()) },
+            unsafe { ArrayArg::from_raw_parts(bel, abz.len()) },
+            unsafe { ArrayArg::from_raw_parts(ah, n) },
+            unsafe { ArrayArg::from_raw_parts(al, n) },
+            unsafe { ArrayArg::from_raw_parts(bh, n) },
+            unsafe { ArrayArg::from_raw_parts(bl, n) },
+            unsafe { ArrayArg::from_raw_parts(s0h, n2) },
+            unsafe { ArrayArg::from_raw_parts(s0l, n2) },
+            unsafe { ArrayArg::from_raw_parts(smh, n2) },
+            unsafe { ArrayArg::from_raw_parts(sml, n2) },
+            unsafe { ArrayArg::from_raw_parts(skh, n2) },
+            unsafe { ArrayArg::from_raw_parts(skl, n2) },
+            unsafe { ArrayArg::from_raw_parts(da_h.clone(), n) },
+            unsafe { ArrayArg::from_raw_parts(db_h.clone(), n) },
+            unsafe { ArrayArg::from_raw_parts(mu0_h.clone(), 1) },
+            x,
+            n as u32,
+        );
+    } else {
+        let alpha = &data::LJACOBI_ALPHA[..];
+        let beta = &data::LJACOBI_BETA[..];
+        let rn = &data::LJACOBI_RN_PART2[..];
+        let snv = &data::LJACOBI_SN[..];
+        let alpha_h = client.create_from_slice(f64::as_bytes(alpha));
+        let beta_h = client.create_from_slice(f64::as_bytes(beta));
+        let rn_h = client.create_from_slice(f64::as_bytes(rn));
+        let sn_h = client.create_from_slice(f64::as_bytes(snv));
+        ljacobi_tridiag_kernel::launch::<cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            unsafe { ArrayArg::from_raw_parts(alpha_h, alpha.len()) },
+            unsafe { ArrayArg::from_raw_parts(beta_h, beta.len()) },
+            unsafe { ArrayArg::from_raw_parts(rn_h, rn.len()) },
+            unsafe { ArrayArg::from_raw_parts(sn_h, snv.len()) },
+            unsafe { ArrayArg::from_raw_parts(momh, MXRYSROOTS * 2) },
+            unsafe { ArrayArg::from_raw_parts(moml, MXRYSROOTS * 2) },
+            unsafe { ArrayArg::from_raw_parts(alh, abz.len()) },
+            unsafe { ArrayArg::from_raw_parts(all_, abz.len()) },
+            unsafe { ArrayArg::from_raw_parts(beh, abz.len()) },
+            unsafe { ArrayArg::from_raw_parts(bel, abz.len()) },
+            unsafe { ArrayArg::from_raw_parts(ah, n) },
+            unsafe { ArrayArg::from_raw_parts(al, n) },
+            unsafe { ArrayArg::from_raw_parts(bh, n) },
+            unsafe { ArrayArg::from_raw_parts(bl, n) },
+            unsafe { ArrayArg::from_raw_parts(s0h, n2) },
+            unsafe { ArrayArg::from_raw_parts(s0l, n2) },
+            unsafe { ArrayArg::from_raw_parts(smh, n2) },
+            unsafe { ArrayArg::from_raw_parts(sml, n2) },
+            unsafe { ArrayArg::from_raw_parts(skh, n2) },
+            unsafe { ArrayArg::from_raw_parts(skl, n2) },
+            unsafe { ArrayArg::from_raw_parts(da_h.clone(), n) },
+            unsafe { ArrayArg::from_raw_parts(db_h.clone(), n) },
+            unsafe { ArrayArg::from_raw_parts(mu0_h.clone(), 1) },
+            x,
+            n as u32,
+        );
+    }
+
+    let da_bytes = client.read_one_unchecked(da_h);
+    let da = f64::from_bytes(&da_bytes)[0..n].to_vec();
+    let db_bytes = client.read_one_unchecked(db_h);
+    let db = f64::from_bytes(&db_bytes)[0..n].to_vec();
+
+    let mut diag = da.clone();
+    let mut offdiag = vec![0.0f64; n];
+    for i in 0..n.saturating_sub(1) {
+        offdiag[i] = db[i + 1];
+    }
+    let mut eig = vec![0.0f64; n];
+    let mut c0 = vec![0.0f64; n * n];
+    let error = eigh::cint_diagonalize(n, &mut diag, &mut offdiag, &mut eig, &mut c0);
+
+    // transform (reuse the f64 jacobi_transform_kernel).
+    let eig_h = client.create_from_slice(f64::as_bytes(&eig));
+    let c0_h = client.create_from_slice(f64::as_bytes(&c0));
+    let rz = vec![0.0f64; n];
+    let roots_h = client.create_from_slice(f64::as_bytes(&rz));
+    let weights_h = client.create_from_slice(f64::as_bytes(&rz));
+    jacobi_transform_kernel::launch::<cubecl::cpu::CpuRuntime>(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(eig_h, n) },
+        unsafe { ArrayArg::from_raw_parts(c0_h, n * n) },
+        unsafe { ArrayArg::from_raw_parts(mu0_h, 1) },
+        unsafe { ArrayArg::from_raw_parts(roots_h.clone(), n) },
+        unsafe { ArrayArg::from_raw_parts(weights_h.clone(), n) },
+        n as u32,
+    );
+    let r_bytes = client.read_one_unchecked(roots_h);
+    roots[0..n].copy_from_slice(&f64::from_bytes(&r_bytes)[0..n]);
+    let w_bytes = client.read_one_unchecked(weights_h);
+    weights[0..n].copy_from_slice(&f64::from_bytes(&w_bytes)[0..n]);
+    error
+}
+
+fn lrys_jacobi_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
+    lrys_wheeler_device(nroots, x, roots, weights, false)
+}
+fn lrys_laguerre_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
+    lrys_wheeler_device(nroots, x, roots, weights, true)
+}
+
+// ---------------------------------------------------------------------------
+// Device dd Schmidt path (lrys_schmidt) — nroots 8 large-x tail (x > 11).
+// ---------------------------------------------------------------------------
+
+const SML_FLOAT80_DEV: f64 = 2.0e-20;
+
+/// Device lgamma_inc_like in dd. `f` is dd (fh/fl). `turnover` = TURNOVER_POINT[m].
+#[cube]
+fn lgamma_inc_like_dev(fh: &mut Array<f64>, fl: &mut Array<f64>, t: f64, m: u32, turnover: f64) {
+    if t == 0.0 {
+        fh[(0) as usize] = 1.0; fl[(0) as usize] = 0.0;
+        let mut i: u32 = 1;
+        while i <= m {
+            let v = dd_div_dev(dd_from(1.0), dd_from((2 * i + 1) as f64));
+            fh[(i) as usize] = v.hi; fl[(i) as usize] = v.lo;
+            i += 1;
+        }
+    } else if t < turnover {
+        // power series in dd.
+        let mut bh = m as f64 + 0.5; let mut bl = 0.0f64;
+        let e = dd_mul_f64_dev(dd_from(f64::exp(-t)), 0.5);
+        let mut xh = e.hi; let mut xl = e.lo;
+        let mut sh = e.hi; let mut sl = e.lo;
+        let tol = SML_FLOAT80_DEV * f64::abs(e.hi);
+        let bi0 = dd_add_dev(DdDev { hi: bh, lo: bl }, dd_from(1.0));
+        let mut bih = bi0.hi; let mut bil = bi0.lo;
+        let mut k: u32 = 0;
+        let mut going = true;
+        while k < 4096u32 {
+            if going {
+                if xh > tol {
+                    let x = DdDev { hi: xh, lo: xl };
+                    let xn = dd_mul_dev(x, dd_div_dev(dd_from(t), DdDev { hi: bih, lo: bil }));
+                    xh = xn.hi; xl = xn.lo;
+                    let s = dd_add_dev(DdDev { hi: sh, lo: sl }, xn);
+                    sh = s.hi; sl = s.lo;
+                    let bin = dd_add_dev(DdDev { hi: bih, lo: bil }, dd_from(1.0));
+                    bih = bin.hi; bil = bin.lo;
+                } else {
+                    going = false;
+                }
+            }
+            k += 1;
+        }
+        let fm = dd_div_dev(DdDev { hi: sh, lo: sl }, DdDev { hi: bh, lo: bl });
+        fh[(m) as usize] = fm.hi; fl[(m) as usize] = fm.lo;
+        let mut i: u32 = m;
+        while i > 0 {
+            let bn = dd_sub_dev(DdDev { hi: bh, lo: bl }, dd_from(1.0));
+            bh = bn.hi; bl = bn.lo;
+            let fi = DdDev { hi: fh[(i) as usize], lo: fl[(i) as usize] };
+            let num = dd_add_dev(e, dd_mul_f64_dev(fi, t));
+            let v = dd_div_dev(num, DdDev { hi: bh, lo: bl });
+            fh[(i - 1) as usize] = v.hi; fl[(i - 1) as usize] = v.lo;
+            i -= 1;
+        }
+    } else {
+        let tt = f64::sqrt(t);
+        let f0 = dd_from(SQRTPIE4_DD / tt * erf_dev(tt));
+        fh[(0) as usize] = f0.hi; fl[(0) as usize] = f0.lo;
+        let e = dd_from(f64::exp(-t));
+        let bb = dd_div_dev(dd_from(0.5), dd_from(t));
+        let mut i: u32 = 1;
+        while i <= m {
+            let fim1 = DdDev { hi: fh[(i - 1) as usize], lo: fl[(i - 1) as usize] };
+            let inner = dd_sub_dev(dd_mul_f64_dev(fim1, (2 * i - 1) as f64), e);
+            let v = dd_mul_dev(bb, inner);
+            fh[(i) as usize] = v.hi; fl[(i) as usize] = v.lo;
+            i += 1;
+        }
+    }
+}
+
+/// Device R_lsmit in dd. `cs` dd (csh/csl), column-major n×n. `v` dd scratch (len>=n).
+/// Returns via flag[0] (0 ok / 1 / j>0).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn r_lsmit_dev(
+    csh: &mut Array<f64>, csl: &mut Array<f64>,
+    fmh: &Array<f64>, fml: &Array<f64>,
+    n: u32,
+    vh: &mut Array<f64>, vl: &mut Array<f64>,
+    flag: &mut Array<f64>,
+) {
+    let mut ret = 0.0f64;
+    let f0 = DdDev { hi: fmh[(0) as usize], lo: fml[(0) as usize] };
+    let f1 = DdDev { hi: fmh[(1) as usize], lo: fml[(1) as usize] };
+    let f2 = DdDev { hi: fmh[(2) as usize], lo: fml[(2) as usize] };
+    let fac = dd_div_dev(DdDev { hi: -f1.hi, lo: -f1.lo }, f0);
+    let tmp0 = dd_add_dev(f2, dd_mul_dev(fac, f1));
+    let mut aborted = false;
+    if tmp0.hi <= 0.0 {
+        let mut i: u32 = 0;
+        while i < n {
+            csh[(i + 1 * n) as usize] = 0.0; csl[(i + 1 * n) as usize] = 0.0;
+            i += 1;
+        }
+        ret = 1.0;
+        aborted = true;
+    }
+    if !aborted {
+        let tmp = dd_div_dev(dd_from(1.0), dd_sqrt_dev(tmp0));
+        let c00 = dd_div_dev(dd_from(1.0), dd_sqrt_dev(f0));
+        csh[(0) as usize] = c00.hi; csl[(0) as usize] = c00.lo;
+        let cn = dd_mul_dev(fac, tmp);
+        csh[(n) as usize] = cn.hi; csl[(n) as usize] = cn.lo;
+        csh[(1 + n) as usize] = tmp.hi; csl[(1 + n) as usize] = tmp.lo;
+
+        let mut j: u32 = 2;
+        let mut stop = false;
+        while j < n {
+            if !stop {
+                let mut vi: u32 = 0;
+                while vi < j {
+                    vh[(vi) as usize] = 0.0; vl[(vi) as usize] = 0.0;
+                    vi += 1;
+                }
+                let fjj = DdDev { hi: fmh[(j + j) as usize], lo: fml[(j + j) as usize] };
+                let mut fach = fjj.hi; let mut facl = fjj.lo;
+                let mut k: u32 = 0;
+                while k < j {
+                    let mut doth = 0.0f64; let mut dotl = 0.0f64;
+                    let mut i: u32 = 0;
+                    while i <= k {
+                        let cik = DdDev { hi: csh[(i + k * n) as usize], lo: csl[(i + k * n) as usize] };
+                        let fij = DdDev { hi: fmh[(i + j) as usize], lo: fml[(i + j) as usize] };
+                        let d = dd_add_dev(DdDev { hi: doth, lo: dotl }, dd_mul_dev(cik, fij));
+                        doth = d.hi; dotl = d.lo;
+                        i += 1;
+                    }
+                    let dot = DdDev { hi: doth, lo: dotl };
+                    let mut i2: u32 = 0;
+                    while i2 <= k {
+                        let cik = DdDev { hi: csh[(i2 + k * n) as usize], lo: csl[(i2 + k * n) as usize] };
+                        let vv = dd_sub_dev(DdDev { hi: vh[(i2) as usize], lo: vl[(i2) as usize] }, dd_mul_dev(dot, cik));
+                        vh[(i2) as usize] = vv.hi; vl[(i2) as usize] = vv.lo;
+                        i2 += 1;
+                    }
+                    let facn = dd_sub_dev(DdDev { hi: fach, lo: facl }, dd_mul_dev(dot, dot));
+                    fach = facn.hi; facl = facn.lo;
+                    k += 1;
+                }
+                if fach <= 0.0 {
+                    let mut kk: u32 = j;
+                    while kk < n {
+                        let mut i: u32 = 0;
+                        while i < n {
+                            csh[(i + kk * n) as usize] = 0.0; csl[(i + kk * n) as usize] = 0.0;
+                            i += 1;
+                        }
+                        kk += 1;
+                    }
+                    if fach == 0.0 {
+                        ret = 0.0;
+                    } else {
+                        ret = j as f64;
+                    }
+                    stop = true;
+                } else {
+                    let facd = dd_div_dev(dd_from(1.0), dd_sqrt_dev(DdDev { hi: fach, lo: facl }));
+                    csh[(j + j * n) as usize] = facd.hi; csl[(j + j * n) as usize] = facd.lo;
+                    let mut k2: u32 = 0;
+                    while k2 < j {
+                        let vv = DdDev { hi: vh[(k2) as usize], lo: vl[(k2) as usize] };
+                        let c = dd_mul_dev(facd, vv);
+                        csh[(k2 + j * n) as usize] = c.hi; csl[(k2 + j * n) as usize] = c.lo;
+                        k2 += 1;
+                    }
+                }
+            }
+            j += 1;
+        }
+    }
+    flag[(0) as usize] = ret;
+}
+
+/// Device lrys_schmidt kernel (dd): dd FMT moments + R_lsmit (dd) -> f64 cs -> QR roots
+/// (f64 cint_polynomial_roots) -> weights. `nroots` comptime.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn lschmidt_kernel(
+    fmh: &mut Array<f64>, fml: &mut Array<f64>,
+    csh: &mut Array<f64>, csl: &mut Array<f64>,
+    csf: &mut Array<f64>,
+    rt: &mut Array<f64>,
+    acomp: &mut Array<f64>,
+    vh: &mut Array<f64>, vl: &mut Array<f64>,
+    flag: &mut Array<f64>,
+    roots: &mut Array<f64>,
+    weights: &mut Array<f64>,
+    x: f64,
+    turnover: f64,
+    #[comptime] nroots: u32,
+) {
+    let nroots1 = nroots + 1;
+    lgamma_inc_like_dev(fmh, fml, x, nroots * 2, turnover);
+
+    let mut zeroed = false;
+    if fmh[(0) as usize] == 0.0 {
+        let mut k: u32 = 0;
+        while k < nroots {
+            roots[(k) as usize] = 0.0;
+            weights[(k) as usize] = 0.0;
+            k += 1;
+        }
+        zeroed = true;
+    }
+
+    if !zeroed {
+        // zero qcs (dd) and r_lsmit.
+        let nn1 = nroots1 * nroots1;
+        let mut z: u32 = 0;
+        while z < nn1 {
+            csh[(z) as usize] = 0.0; csl[(z) as usize] = 0.0;
+            z += 1;
+        }
+        r_lsmit_dev(csh, csl, fmh, fml, nroots1, vh, vl, flag);
+        // f64 copy of cs for the polynomial root finder + weights.
+        let mut i: u32 = 0;
+        while i < nn1 {
+            csf[(i) as usize] = csh[(i) as usize];
+            i += 1;
+        }
+        cint_polynomial_roots_dev(rt, csf, nroots, nroots1, acomp, flag);
+
+        let dum0 = 1.0 / fmh[(0) as usize];
+        let mut k: u32 = 0;
+        while k < nroots {
+            let root = rt[(k) as usize];
+            if root == 1.0 {
+                roots[(k) as usize] = 0.0;
+                weights[(k) as usize] = 0.0;
+            } else {
+                let mut dum = dum0;
+                let mut j: u32 = 1;
+                while j < nroots {
+                    let off = j * nroots1;
+                    let poly = poly_value1_dev(csf, off, j, root);
+                    dum += poly * poly;
+                    j += 1;
+                }
+                roots[(k) as usize] = root / (1.0 - root);
+                weights[(k) as usize] = 1.0 / dum;
+            }
+            k += 1;
+        }
+    }
+}
+
+/// Host orchestrator for the dd Schmidt path (nroots 8; x > 11).
+fn lrys_schmidt_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
+    let n = nroots;
+    let nroots1 = n + 1;
+    let client = cubecl::cpu::CpuRuntime::client(&Default::default());
+
+    let fmz = vec![0.0f64; MXRYSROOTS * 2];
+    let fmh = client.create_from_slice(f64::as_bytes(&fmz));
+    let fml = client.create_from_slice(f64::as_bytes(&fmz));
+    let csz = vec![0.0f64; nroots1 * nroots1];
+    let csh = client.create_from_slice(f64::as_bytes(&csz));
+    let csl = client.create_from_slice(f64::as_bytes(&csz));
+    let csf = client.create_from_slice(f64::as_bytes(&csz));
+    let rtz = vec![0.0f64; n];
+    let rt_h = client.create_from_slice(f64::as_bytes(&rtz));
+    let acz = vec![0.0f64; n * n];
+    let acomp = client.create_from_slice(f64::as_bytes(&acz));
+    let vz = vec![0.0f64; MXRYSROOTS];
+    let vh = client.create_from_slice(f64::as_bytes(&vz));
+    let vl = client.create_from_slice(f64::as_bytes(&vz));
+    let flz = vec![0.0f64; 1];
+    let flag = client.create_from_slice(f64::as_bytes(&flz));
+    let rz = vec![0.0f64; n];
+    let roots_h = client.create_from_slice(f64::as_bytes(&rz));
+    let weights_h = client.create_from_slice(f64::as_bytes(&rz));
+
+    let turnover = data::TURNOVER_POINT[n * 2];
+
+    lschmidt_kernel::launch::<cubecl::cpu::CpuRuntime>(
+        &client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(fmh, MXRYSROOTS * 2) },
+        unsafe { ArrayArg::from_raw_parts(fml, MXRYSROOTS * 2) },
+        unsafe { ArrayArg::from_raw_parts(csh, nroots1 * nroots1) },
+        unsafe { ArrayArg::from_raw_parts(csl, nroots1 * nroots1) },
+        unsafe { ArrayArg::from_raw_parts(csf, nroots1 * nroots1) },
+        unsafe { ArrayArg::from_raw_parts(rt_h, n) },
+        unsafe { ArrayArg::from_raw_parts(acomp, n * n) },
+        unsafe { ArrayArg::from_raw_parts(vh, MXRYSROOTS) },
+        unsafe { ArrayArg::from_raw_parts(vl, MXRYSROOTS) },
+        unsafe { ArrayArg::from_raw_parts(flag, 1) },
+        unsafe { ArrayArg::from_raw_parts(roots_h.clone(), n) },
+        unsafe { ArrayArg::from_raw_parts(weights_h.clone(), n) },
+        x,
+        turnover,
+        n as u32,
+    );
+    let r_bytes = client.read_one_unchecked(roots_h);
+    roots[0..n].copy_from_slice(&f64::from_bytes(&r_bytes)[0..n]);
+    let w_bytes = client.read_one_unchecked(weights_h);
+    weights[0..n].copy_from_slice(&f64::from_bytes(&w_bytes)[0..n]);
+    0
+}
+
 // ---------------------------------------------------------------------------
 // segment_solve dispatch (rys_roots.c:42) and the per-nroots entry.
 // ---------------------------------------------------------------------------
@@ -2099,10 +2923,12 @@ pub fn rys_roots_host_wheeler(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
     let err = match nroots {
         // nroots 6,7: pure-f64 path now runs on the CubeCL CPU backend (Task 2 device kernels).
         6 | 7 => segment_solve(nroots, x, 11.0, &mut roots, &mut weights, rys_jacobi_device, rys_schmidt_device),
-        8 => segment_solve(nroots, x, 11.0, &mut roots, &mut weights, rys_jacobi, lrys_schmidt),
-        9 => segment_solve(nroots, x, 10.0, &mut roots, &mut weights, lrys_jacobi, lrys_laguerre),
-        10 | 11 => segment_solve(nroots, x, 18.0, &mut roots, &mut weights, lrys_jacobi, lrys_laguerre),
-        12 => segment_solve(nroots, x, 22.0, &mut roots, &mut weights, lrys_jacobi, lrys_laguerre),
+        // nroots 8: f64 Jacobi (x<=11) on-device; dd Schmidt (x>11) on-device (Task 3).
+        8 => segment_solve(nroots, x, 11.0, &mut roots, &mut weights, rys_jacobi_device, lrys_schmidt_device),
+        // nroots 9..12: dd Jacobi (x<=bp) + dd Laguerre (x>bp), both on the CubeCL CPU backend.
+        9 => segment_solve(nroots, x, 10.0, &mut roots, &mut weights, lrys_jacobi_device, lrys_laguerre_device),
+        10 | 11 => segment_solve(nroots, x, 18.0, &mut roots, &mut weights, lrys_jacobi_device, lrys_laguerre_device),
+        12 => segment_solve(nroots, x, 22.0, &mut roots, &mut weights, lrys_jacobi_device, lrys_laguerre_device),
         _ => unreachable!(),
     };
     debug_assert_eq!(err, 0, "rys_roots_host_wheeler: solver error {err} for nroots={nroots} x={x}");
