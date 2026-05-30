@@ -1140,6 +1140,128 @@ pub fn vendor_int3c1e_cart(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 23 DRV1-03: int3c1e_ip1 (∇ on bra i of the 3-center OVERLAP) and
+// int3c1e_iprinv (∇ on bra i of the 3-center rinv-COULOMB, Rys-driven). Both are
+// arity-3, rank-3 derivative families. iprinv reads env[PTR_RINV_ORIG..+3]; the
+// caller MUST set a non-zero rinv origin in env[4..6] before invoking.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Evaluate int3c1e_ip1_sph for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]` — three shell indices. Output is rank-3
+/// (3 components × ni*nj*nk), component-leading.
+pub fn vendor_int3c1e_ip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_ip1_cart for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]` — three shell indices. Output is rank-3.
+pub fn vendor_int3c1e_ip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_iprinv_sph for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]`. The caller MUST set env[PTR_RINV_ORIG..+3] (env[4..6])
+/// to the desired rinv origin before calling. Output is rank-3.
+pub fn vendor_int3c1e_iprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_iprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_iprinv_cart for a single shell triple using vendored libcint.
+///
+/// `shls` is `[i, j, k]`. The caller MUST set env[PTR_RINV_ORIG..+3] (env[4..6])
+/// to the desired rinv origin before calling. Output is rank-3.
+pub fn vendor_int3c1e_iprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_iprinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int3c1e_p2_cart for a single shell triple using vendored libcint.
 ///
 /// `shls` is `[i, j, k]` — three shell indices (3-center 1-electron integral, p2 variant).

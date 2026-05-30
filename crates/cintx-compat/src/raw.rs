@@ -225,6 +225,18 @@ impl RawApiId {
     pub const INT3C2E_IP2_SPH: Self = Self::Symbol("int3c2e_ip2_sph");
     pub const INT3C2E_IP2_SPINOR: Self = Self::Symbol("int3c2e_ip2_spinor");
 
+    // Phase 23 DRV1-03: int3c1e_ip1 (∇ on bra i of the 3-center OVERLAP, no Rys)
+    // and int3c1e_iprinv (∇ on bra i of the 3-center rinv-COULOMB, Rys-driven via
+    // the existing PTR_RINV_ORIG env slot, D-08). Both arity-3, rank-3. Spinor
+    // registered for surface completeness; kernel returns UnsupportedApi (D-06).
+    pub const INT3C1E_IP1_CART: Self = Self::Symbol("int3c1e_ip1_cart");
+    pub const INT3C1E_IP1_SPH: Self = Self::Symbol("int3c1e_ip1_sph");
+    pub const INT3C1E_IP1_SPINOR: Self = Self::Symbol("int3c1e_ip1_spinor");
+
+    pub const INT3C1E_IPRINV_CART: Self = Self::Symbol("int3c1e_iprinv_cart");
+    pub const INT3C1E_IPRINV_SPH: Self = Self::Symbol("int3c1e_iprinv_sph");
+    pub const INT3C1E_IPRINV_SPINOR: Self = Self::Symbol("int3c1e_iprinv_spinor");
+
     pub const INT1E_ECP_IPRINV_CART: Self = Self::Symbol("int1e_ecp_iprinv_cart");
     pub const INT1E_ECP_IPRINV_SPH: Self = Self::Symbol("int1e_ecp_iprinv_sph");
     /// Spinor form registered for surface completeness; kernel returns UnsupportedApi (D-03/R5).
