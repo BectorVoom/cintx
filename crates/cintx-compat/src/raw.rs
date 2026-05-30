@@ -375,6 +375,20 @@ impl RawApiId {
     /// Spinor form registered for surface completeness; kernel returns UnsupportedApi (D-03/R5).
     pub const INT1E_ECP_IPRINV_SPINOR: Self = Self::Symbol("int1e_ecp_iprinv_spinor");
 
+    // Phase 25 HESS-03: multi-center rank-9 Hessian families (component_rank=9).
+    // int2c2e_ipip1 / int3c2e_ipip1 raise the bra center-1 headroom (i_inc=2);
+    // int3c2e_ipip2 raises the KET (auxiliary k → 2e `ll` slot) headroom
+    // (k_inc=2, third ng[] element — D-09 ket-side). Spinor reps registered for
+    // surface completeness; kernel returns UnsupportedApi (D-11).
+    pub const INT2C2E_IPIP1_CART: Self = Self::Symbol("int2c2e_ipip1_cart");
+    pub const INT2C2E_IPIP1_SPH: Self = Self::Symbol("int2c2e_ipip1_sph");
+
+    pub const INT3C2E_IPIP1_CART: Self = Self::Symbol("int3c2e_ipip1_cart");
+    pub const INT3C2E_IPIP1_SPH: Self = Self::Symbol("int3c2e_ipip1_sph");
+
+    pub const INT3C2E_IPIP2_CART: Self = Self::Symbol("int3c2e_ipip2_cart");
+    pub const INT3C2E_IPIP2_SPH: Self = Self::Symbol("int3c2e_ipip2_sph");
+
     fn symbol(self) -> &'static str {
         match self {
             Self::Symbol(symbol) => symbol,

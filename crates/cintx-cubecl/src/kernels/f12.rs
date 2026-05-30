@@ -1023,6 +1023,106 @@ pub(crate) fn gout_ipip1(
     out
 }
 
+/// Compute gout for the ket-side `ipip2` variant (ncomp=9): `\nabla_k \nabla_k`
+/// on electron 2 (the real auxiliary center), applied to the 2e `ll` slot.
+///
+/// Matches `CINTgout2e_int3c2e_ipip2` in autocode/int3c2e.c — IDENTICAL `s[]`
+/// triple product and column-major 3×3 reorder as `gout_ipip1`, but the second
+/// derivative is taken on the KET (`G2E_D_K` in the C source). In cintx's 3c2e
+/// layout the real aux k is mapped to the 2e `ll` slot (`int3c2e_ip2` Pitfall 2),
+/// so the ket double-nabla is applied via `nabla1l_2e` with `ll+1`/`ll+0`
+/// headroom (the G-tensor is built with `build_2e_shape(li, lj, 0, lk+2)`).
+///
+/// `pub(crate)` for the multi-center 3c2e Hessian launcher (Phase 25 HESS-03).
+pub(crate) fn gout_ipip2_l(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    al: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // G2E_D_K(g1, g0, ..., ll+1); G2E_D_K(g2, g0, ..., ll+0); G2E_D_K(g3, g1, ..., ll+0).
+    // The real aux k lives in the 2e `ll` slot, so nabla1l_2e is the ket derivative.
+    nabla1l_2e(&mut g1, g, li, lj, lk, ll + 1, al, shape);
+    nabla1l_2e(&mut g2, g, li, lj, lk, ll, al, shape);
+    nabla1l_2e(&mut g3, &g1, li, lj, lk, ll, al, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for irys in 0..shape.nroots {
+                        let r = irys;
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        // Matches libcint CINTgout2e_int3c2e_ipip2 exactly.
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // Column-major reorder (same as ipip1): {s0,s3,s6,s1,s4,s7,s2,s5,s8}.
+                    out[n * 9 + 0] = s[0];
+                    out[n * 9 + 1] = s[3];
+                    out[n * 9 + 2] = s[6];
+                    out[n * 9 + 3] = s[1];
+                    out[n * 9 + 4] = s[4];
+                    out[n * 9 + 5] = s[7];
+                    out[n * 9 + 6] = s[2];
+                    out[n * 9 + 7] = s[5];
+                    out[n * 9 + 8] = s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Compute gout for the ipvip1 variant (ncomp=9): `\nabla_i \nabla_j` on electron 1.
 ///
 /// Matches `CINTgout2e_int2e_ipvip1` in autocode/hess.c.

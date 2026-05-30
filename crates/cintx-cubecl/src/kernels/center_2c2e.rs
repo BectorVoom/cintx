@@ -46,7 +46,7 @@ use crate::backend::ResolvedBackend;
 #[cfg(test)]
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
-use crate::kernels::f12::{Nabla1Center, gout_ipn};
+use crate::kernels::f12::{Nabla1Center, gout_ipip1, gout_ipn};
 use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, cart_to_sph_2c2e, ncart, nsph};
@@ -790,6 +790,163 @@ fn launch_center_2c2e_grad<F: CintFloat>(
     })
 }
 
+/// `int2c2e_ipip1` Hessian launch — `∇²` on the bra center 1 (rank 9, HESS-03).
+///
+/// Mirrors [`launch_center_2c2e_grad`] but applies the SECOND bra derivative via
+/// the verbatim `gout_ipip1` helper (`CINTgout2e_int2c2e_ipip1`, int3c2e.c). The
+/// G-tensor needs `li+2` headroom (`gout_ipip1` reads `nabla1i_2e` up to `li+1`).
+/// Phantom j,l centers collapse to s (aj=al=0). HOST-routed through
+/// `fill_g_tensor_2e` so the elevated `li+2` raise can reach nroots 6..12 (FND-02).
+fn launch_center_2c2e_hess1<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    const NCOMP: usize = 9;
+    // Spinor Hessian: not supported (D-11). Reject before any compute.
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor int2c2e_ipip1 Hessian".to_owned(),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_k = &shells[1];
+
+    let li = shell_i.ang_momentum;
+    let lk = shell_k.ang_momentum;
+
+    // bra-i raised +2 (∇²); k is a spectator. Phantom 2e j,l = s.
+    let hess_shape = build_2e_shape(li as usize + 2, 0, lk as usize, 0);
+
+    // FND-02: route to the HOST path; the +2 raise can push nroots to 6..12.
+    if hess_shape.nroots > HOST_RYS_NROOTS_CEILING {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", hess_shape.nroots),
+        });
+    }
+
+    let atoms = plan.basis.atoms();
+    let ri = atoms[shell_i.atom_index as usize].coord_bohr;
+    let rk = atoms[shell_k.atom_index as usize].coord_bohr;
+    let rj = ri; // phantom j coincides with i (aj=0)
+    let rl = rk; // phantom l coincides with k (al=0)
+
+    let nfi = ncart(li);
+    let nfk = ncart(lk);
+    let block_len = nfi * nfk;
+    let total_len = NCOMP * block_len;
+
+    let nsi = nsph(li);
+    let nsk = nsph(lk);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+
+    let common_factor = (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lk);
+
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_k * total_len];
+
+    let hess_f12_shape = two_e_shape_as_f12(&hess_shape);
+
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pk in 0..n_prim_k {
+            let ak = shell_k.exponents[pk];
+
+            let g = fill_g_tensor_2e(
+                ai, 0.0, ak, 0.0, &ri, &rj, &rk, &rl, hess_shape, common_factor,
+            );
+
+            // gout_ipip1 at BASE li/lk (the G-tensor carries the +2 headroom).
+            let gout = gout_ipip1(&g, &hess_f12_shape, li as usize, 0, lk as usize, 0, ai);
+
+            for ci in 0..n_ctr_i {
+                let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                for ck in 0..n_ctr_k {
+                    let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                    let weight = coeff_i * coeff_k;
+                    let base = (ci * n_ctr_k + ck) * total_len;
+                    for n in 0..block_len {
+                        for comp in 0..NCOMP {
+                            cart_blocks[base + comp * block_len + n] += weight * gout[n * NCOMP + comp];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Component-leading `[9, nk, ni]` F-order write (j,l phantom s collapse out).
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dk = n_ctr_k * nsk;
+            let sph_block = di * dk;
+            for comp in 0..NCOMP {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for ck in 0..n_ctr_k {
+                        let base = (ci * n_ctr_k + ck) * total_len + comp * block_len;
+                        let sph = cart_to_sph_2e(&cart_blocks[base..base + block_len], li, 0, lk, 0);
+                        for mk in 0..nsk {
+                            let kidx = ck * nsk + mk;
+                            for mi in 0..nsi {
+                                let iidx = ci * nsi + mi;
+                                let src = mi + nsi * mk;
+                                let dst = staging_comp_base + iidx + di * kidx;
+                                staging[dst] = F::from_f64_lossy(sph[src]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nfi;
+            let dk = n_ctr_k * nfk;
+            let cart_block = di * dk;
+            for comp in 0..NCOMP {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for ck in 0..n_ctr_k {
+                        let base = (ci * n_ctr_k + ck) * total_len + comp * block_len;
+                        let block = &cart_blocks[base..base + block_len];
+                        for kc in 0..nfk {
+                            let kidx = ck * nfk + kc;
+                            for ic in 0..nfi {
+                                let iidx = ci * nfi + ic;
+                                let src = ic + nfi * kc;
+                                let dst = staging_comp_base + iidx + di * kidx;
+                                staging[dst] = F::from_f64_lossy(block[src]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor int2c2e_ipip1 rejected above"),
+    }
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
 /// Generic inner for the 2c2e launcher.
 ///
 /// Dispatches the [`center_2c2e_kernel`] device kernel (at f64) on `plan`'s
@@ -841,6 +998,8 @@ fn launch_center_2c2e_typed<F: CintFloat>(
     match plan.descriptor.operator_name() {
         "ip1" => return launch_center_2c2e_grad::<F>(plan, Nabla1Center::I, staging),
         "ip2" => return launch_center_2c2e_grad::<F>(plan, Nabla1Center::K, staging),
+        // Phase 25 HESS-03: int2c2e_ipip1 — ∇² on bra center 1 (rank 9, host-routed).
+        "ipip1" => return launch_center_2c2e_hess1::<F>(plan, staging),
         _ => {} // fall through to the existing scalar path
     }
 
