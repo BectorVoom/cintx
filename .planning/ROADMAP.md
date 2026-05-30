@@ -25,7 +25,7 @@
 - [x] **Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`)** - Implement the 6 plain-Coulomb first-derivative integral families every HF/DFT/MP2/CCSD analytical gradient needs (`int2e_ip1`, `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc`, `int1e_iprinv`, `ECPscalar_iprinv`), byte-identical to libcint 6.1.3 under the oracle gate, and repair the registered-but-stubbed `int3c2e_ip1`. Adds the missing `PTR_RINV_ORIG` env slot. Un-gates pyscf_rs Phase 7's analytical-gradient numeric arms with zero pyscf_rs rework. (completed 2026-05-26)
 - [x] **Phase 22: Gauge-Origin Env Slot (Gap A — `PTR_COMMON_ORIG`)** - Plumb the `PTR_COMMON_ORIG` gauge-origin env slot (env[1..3]) end-to-end on the `PTR_RINV_ORIG` precedent and add the non-zero gauge-origin oracle fixture that gates all moment + GIAO parity. (v1.4) (completed 2026-05-29)
 - [x] **Phase 23: Group 1 — Remaining 1st-Derivative Families (cart/sph)** - The 8 remaining first-derivative families (`int2e_ip2`, `int1e_ip*ip`, `int3c1e_ip1/iprinv`, `int2c2e_ip1/ip2`, `int3c2e_ip2`) at byte-identity, reusing the Phase-21 nabla/`gout_ip1` engine. (v1.4) (completed 2026-05-30)
-- [ ] **Phase 24: Group 3 — Position / Multipole-Moment Integrals** - Dipole through hexadecapole moments (`int1e_r/rr/rrr/rrrr`, `r2/r4`, `z/zz`, `p4`, `rinv/drinv`, `irp`) plus `_origj` variants, gated on the non-zero gauge-origin fixture. (v1.4)
+- [x] **Phase 24: Group 3 — Position / Multipole-Moment Integrals** - Dipole through hexadecapole moments (`int1e_r/rr/rrr/rrrr`, `r2/r4`, `z/zz`, `p4`, `rinv/drinv`, `irp`) plus `_origj` variants, gated on the non-zero gauge-origin fixture. (v1.4) (completed 2026-05-30)
 - [ ] **Phase 25: Group 2 — Hessian & Higher-Order Derivatives** - 2nd/3rd/4th-order derivative families (`int1e_ipip*`, `int2c2e_ipip1`, `int3c2e_ipip1/ipip2`, the promoted 2e Hessian set, 4th-order families) at component_rank 9/27/81, with the Rys `nroots>=6` Wheeler fallback and fail-closed high-rank staging landing first. (v1.4)
 - [ ] **Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)** - Spin-free 1e+2e GIAO/CG families (purely imaginary, even in cart/sph) at byte-identity, introducing the complex-interleaved output capability. (v1.4)
 - [ ] **Phase 27: Spinor-Derivative Transform (Gap B1)** - `cart_to_spinor_sf_derivative_*` so `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity, closing the Phase-21 R5/D-03 deferral. (v1.4)
@@ -61,7 +61,7 @@
 | Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`) | v1.3 | 0/8 | Planned | - |
 | Phase 22: Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG) | v1.4 | 0/2 | Planned | - |
 | Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 5/5 | Complete | 2026-05-30 |
-| Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 0/0 | Not started | - |
+| Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 5/5 | Complete | 2026-05-30 |
 | Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 0/0 | Not started | - |
 | Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/0 | Not started | - |
 | Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 0/0 | Not started | - |
@@ -565,7 +565,7 @@ Plans:
 - [x] 24-04-PLAN.md — Wave 2 (Cluster C): p4 (∇⁴) overlap-derivative, both-side headroom ng={2,2,...}
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 24-05-PLAN.md — Wave 2 (Cluster D): irp (i·r×∇) rank-9 3×3 r⊗∇ tensor, reads PTR_COMMON_ORIG
+- [x] 24-05-PLAN.md — Wave 2 (Cluster D): irp (i·r×∇) rank-9 3×3 r⊗∇ tensor, reads PTR_COMMON_ORIG
 
 ### Phase 25: Group 2 — Hessian & Higher-Order Derivatives
 
