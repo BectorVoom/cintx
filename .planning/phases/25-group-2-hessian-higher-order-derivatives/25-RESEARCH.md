@@ -409,22 +409,24 @@ if dst < staging.len() {                    // <-- strip after upfront assertion
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three are resolved into Plan-01 / Plan-06 tasks; none is an open unknown blocking planning. Each disposition below is reflected in the authored plans.
 
 1. **Exact vendor nroots ceiling (12 vs 13+)**
    - What we know: `HAVE_QUADMATH_H` disabled (`build.rs:171`) → `CINTqrys_*` not compiled; `default:` branch (nroots≥13) calls them.
    - What's unclear: whether a nroots=13 vendor call link-errors at build time (symbol absent) or aborts at runtime.
-   - Recommendation: At Plan 1 start, attempt a `vendor_CINTrys_roots(13, …)` call; cap the D-02 sweep at the highest nroots that returns. Default the sweep to 6..12.
+   - **RESOLVED:** Plan-01 Task-1 opens with a `vendor_CINTrys_roots(13, …)` probe; the D-02 sweep is capped at the highest nroots that returns, defaulting to 6..12. The executor l-gate upper bound is fixed only after the probe confirms the ceiling.
 
 2. **Does the `eigh.c` `#else` MRRR port need full `dstemr` fidelity, or does a simpler symmetric-tridiagonal QL/QR suffice at atol=1e-12?**
    - What we know: the vendor reference uses the `#else` MRRR path; byte-identity is last-ULP sensitive.
    - What's unclear: whether QL-with-implicit-shifts (simpler) lands within 1e-12 of MRRR for the small (n≤12) tridiagonal matrices here, or whether the MRRR-specific bisection/RQI ordering matters.
-   - Recommendation: Plan 1 should spike both — try a faithful MRRR port first (D-01 default to faithful), but measure whether a simpler symmetric tridiagonal eigensolver passes the nroots-sweep at 1e-12. If it does, it's a large simplification; if not, full MRRR port. **Flag this as the Plan-1 design spike.** Default to the faithful MRRR port per D-01 if the spike is inconclusive.
+   - **RESOLVED:** Plan-01 Task-1 is a design spike — faithful MRRR port is the default per D-01; a simpler symmetric-tridiagonal eigensolver is permitted ONLY if it passes the nroots-sweep at 1e-12, otherwise full MRRR. Default to faithful MRRR if the spike is inconclusive. (~1400-line port magnitude noted; the MRRR-eigensolver and Wheeler/Jacobi-moment portions are sub-divided in Plan-01.)
 
 3. **Cluster D ng `nf_max` element semantics**
    - What we know: deriv3 `ng[4]=3`, deriv4 `ng[4]=4` (polynomial-order headroom).
    - What's unclear: whether the cintx planner/G-tensor sizing reads this element or derives it.
-   - Recommendation: trace how the existing rank-9 families (Phase 23 `ipovlpip`) populate the analogous field; mirror it.
+   - **RESOLVED:** Plan-06 mirrors how the existing rank-9 families (Phase 23 `ipovlpip`) populate the analogous field — traced and replicated per-family rather than assumed.
 
 ---
 
