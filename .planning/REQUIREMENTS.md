@@ -80,7 +80,7 @@
 - [ ] **FND-03**: Complex/imaginary output capability — `complex_interleaved` is set per-family from driver routing (not the representation string), `assert_flat_buffer_contract` fires on the flag, and staging is sized `2×ncomp×…`; a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API without silent zeroing.
 - [ ] **FND-04**: Spinor-derivative transform (Gap B1) — `cart_to_spinor_sf_derivative_*` in `c2spinor.rs`; `int1e_ipovlp_spinor` and sibling `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity at atol=1e-12 (closes the Phase-21 R5/D-03 deferral).
 - [ ] **FND-05**: Spin-included `c2s_si` 4-block (`gc_x/gc_y/gc_z/gc_1`) spinor transform + σ·p G-tensor assembler module — validated against a kappa-bearing relativistic oracle fixture at atol=1e-12; the σ-coupling matches libcint `c2s_si_1e`.
-- [ ] **FND-06**: High-rank (component_rank 9/27/81) staging is fail-closed — an upfront size assertion replaces the `if dst < staging.len()` scatter guards (no silent partial writes), and the chunk planner's OOM-safe-stop is re-validated at rank 81.
+- [x] **FND-06**: High-rank (component_rank 9/27/81) staging is fail-closed — an upfront size assertion replaces the `if dst < staging.len()` scatter guards (no silent partial writes), and the chunk planner's OOM-safe-stop is re-validated at rank 81.
 
 ### Group 1 — Remaining 1st-Derivatives
 
@@ -206,7 +206,7 @@
 | HESS-03 | Phase 25 | Pending |
 | HESS-04 | Phase 25 | Pending |
 | FND-02 | Phase 25 | Complete |
-| FND-06 | Phase 25 | Pending |
+| FND-06 | Phase 25 | Complete |
 | GIAO-01 | Phase 26 | Pending |
 | GIAO-02 | Phase 26 | Pending |
 | FND-03 | Phase 26 | Pending |

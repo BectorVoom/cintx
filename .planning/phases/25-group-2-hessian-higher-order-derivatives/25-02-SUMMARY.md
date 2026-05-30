@@ -146,6 +146,10 @@ None - no external service configuration required.
 - This plan MUST merge before any family cluster starts (D-06).
 - Carry-forward: the `oracle-cart-offset-vendor-zero` pre-existing lib-unit failure will re-surface under the Phase-25 vendor gate; it is confirmed pre-existing and must not be mistaken for a family-gate regression.
 
+## Self-Check: PASSED
+
+All 7 modified files and the SUMMARY exist on disk; all 4 commits (`8a9d0de`, `af25716`, `ad74f3d`, `71bb507`) are present in git history.
+
 ---
 *Phase: 25-group-2-hessian-higher-order-derivatives*
 *Completed: 2026-05-30*
