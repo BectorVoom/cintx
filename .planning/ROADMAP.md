@@ -533,7 +533,7 @@ Plans:
 - [x] 23-02-PLAN.md — `int2e_ip2` (nabla1k on ket bra-center k) + `int2c2e_ip1/ip2` (nabla1i/k, lj=ll=0); manifest rank-3 ×3 reps, RawApiId, dispatch (center_2c2e dispatch ADDED), vendor FFI + 2 parity tests at atol=1e-12. [DRV1-01, DRV1-04]
 
 **Wave 3** *(blocked on 23-01, 23-02 — shares registration files with 23-02)* — cluster A part 2 (Pitfall 2)
-- [ ] 23-03-PLAN.md — `int3c2e_ip2` (∇ on auxiliary k → cintx `ll` slot → `nabla1l_2e`, NOT nabla1k); manifest rank-3 ×3 reps, RawApiId, dispatch, vendor FFI + parity test; assert ip2≠ip1; atol=1e-12. [DRV1-05]
+- [x] 23-03-PLAN.md — `int3c2e_ip2` (∇ on auxiliary k → cintx `ll` slot → `nabla1l_2e`, NOT nabla1k); manifest rank-3 ×3 reps, RawApiId, dispatch, vendor FFI + parity test; assert ip2≠ip1; atol=1e-12. [DRV1-05]
 
 **Wave 4** *(blocked on 23-03 — shares registration files)* — cluster B (the 3c1e pair; the only new base kernel)
 - [ ] 23-04-PLAN.md — `int3c1e_ip1` (overlap deriv, no Rys) + `int3c1e_iprinv` (NEW Rys-driven `fill_g_tensor_3c1e_nuc` base reusing `rys_roots_host` + the plumbed `PTR_RINV_ORIG`; fail-closed at nroots>5/fff); manifest rank-3 ×3 reps ×2, RawApiId, dispatch (center_3c1e dispatch ADDED), vendor FFI + parity test; atol=1e-12; capi/legacy untouched. [DRV1-03]
