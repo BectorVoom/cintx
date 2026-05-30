@@ -62,7 +62,7 @@
 | Phase 22: Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG) | v1.4 | 0/2 | Planned | - |
 | Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 5/5 | Complete | 2026-05-30 |
 | Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 5/5 | Complete | 2026-05-30 |
-| Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 3/6 | In Progress | - |
+| Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 5/6 | In Progress | - |
 | Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/0 | Not started | - |
 | Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 0/0 | Not started | - |
 | Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 0/0 | Not started | - |

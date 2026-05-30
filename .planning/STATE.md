@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Completed 25-04-PLAN.md
-last_updated: "2026-05-30T15:03:05.197Z"
-last_activity: 2026-05-30
+stopped_at: Completed 25-05-PLAN.md
+last_updated: "2026-05-31T00:00:00.000Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 21
   completed_phases: 14
   total_plans: 77
-  completed_plans: 75
-  percent: 97
+  completed_plans: 76
+  percent: 99
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 25 (group-2-hessian-higher-order-derivatives) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Resume file: None
-Last activity: 2026-05-30
+Last activity: 2026-05-31
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -138,6 +138,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 25 P02 | 24 | 3 tasks | 7 files |
 | Phase 25 P03 | 70 | 3 tasks | 6 files |
 | Phase 25 P04 | 55 | 3 tasks | 7 files |
+| Phase 25 P05 | 10 | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -321,6 +322,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 25-03]: xtask is a standalone cargo project (own Cargo.lock), NOT a workspace member — run `cd xtask && cargo run -- manifest-audit`, not `cargo run -p xtask` from the workspace root
 - [Phase ?]: [Phase 25-04]: 2e Hessian gout permutation is identical between F12 and plain Coulomb — reuse the Phase-13 gout_ipip1/ipvip1/ip1ip2 helpers verbatim (pub(crate)); only the rank-81 gout_ipip1ipip2 was new
 - [Phase ?]: [Phase 25-04]: D-07 re-home preserves the two source-only-gate raw.rs tests by repointing to int2e_breit_r1p2_spinor (still source-only) instead of deleting coverage
+- [Phase 25-05]: HESS-03 — int3c2e_ipip1 == gout_ipip1 verbatim (identical s[] + column-major reorder); ipip2 = same with G2E_D_K, so one new gout_ipip2_l (nabla1l_2e on the 2e `ll` slot, ll+2) covers the ket case. ipip2 KET headroom (lk+2) distinct from ipip1's bra li+2
+- [Phase 25-05]: 3c2e host Hessian launchers MUST include the per-primitive Gaussian-overlap prefactors (fac_env = common_factor * pdata_ij.fac * pdata_kl.fac), exactly like the device ip1/ip2 host bridge host_ip1_cart_blocks; bare common_factor scales 3c2e output wrong. 2c2e is immune (phantom j,l coincide with i,k → overlap fac=1)
+- [Phase 25-05]: manifest lock stores component_rank only, NOT the ng[] tuple — ket k_inc=2 is a code contract (build_2e_shape(li,lj,0,lk+2)) verified by byte-identity parity vs vendor G2E_D_K, not a lock grep
 
 ### Roadmap Evolution
 
@@ -365,6 +369,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-30T15:03:05.193Z
-Stopped at: Completed 25-04-PLAN.md
+Last session: 2026-05-31T00:00:00.000Z
+Stopped at: Completed 25-05-PLAN.md
 Resume file: None
