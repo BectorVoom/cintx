@@ -217,6 +217,14 @@ impl RawApiId {
     pub const INT2C2E_IP2_SPH: Self = Self::Symbol("int2c2e_ip2_sph");
     pub const INT2C2E_IP2_SPINOR: Self = Self::Symbol("int2c2e_ip2_spinor");
 
+    // Phase 23 DRV1-05: int3c2e_ip2 (∇ on the auxiliary `k` center). cintx maps the
+    // real aux k into the 2e `ll` slot, so the derivative is applied via `nabla1l_2e`
+    // (RESEARCH Pitfall 2). Spinor registered for surface completeness; kernel
+    // returns UnsupportedApi (D-06).
+    pub const INT3C2E_IP2_CART: Self = Self::Symbol("int3c2e_ip2_cart");
+    pub const INT3C2E_IP2_SPH: Self = Self::Symbol("int3c2e_ip2_sph");
+    pub const INT3C2E_IP2_SPINOR: Self = Self::Symbol("int3c2e_ip2_spinor");
+
     pub const INT1E_ECP_IPRINV_CART: Self = Self::Symbol("int1e_ecp_iprinv_cart");
     pub const INT1E_ECP_IPRINV_SPH: Self = Self::Symbol("int1e_ecp_iprinv_sph");
     /// Spinor form registered for surface completeness; kernel returns UnsupportedApi (D-03/R5).
