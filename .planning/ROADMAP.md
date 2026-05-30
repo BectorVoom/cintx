@@ -559,7 +559,7 @@ Plans:
 - [x] 24-02-PLAN.md — Wave 1 (Cluster A): r/rr/rrr/rrrr/r2/r4/z/zz + 6 _origj via one parameterized moment kernel (origin-source branch, verbatim gout, ket headroom)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 24-03-PLAN.md — Wave 2 (Cluster B): rinv/drinv single-center Rys, PTR_RINV_ORIG, charge=+1, no atom-sum
+- [x] 24-03-PLAN.md — Wave 2 (Cluster B): rinv/drinv single-center Rys, PTR_RINV_ORIG, charge=+1, no atom-sum
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 24-04-PLAN.md — Wave 2 (Cluster C): p4 (∇⁴) overlap-derivative, both-side headroom ng={2,2,...}

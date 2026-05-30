@@ -102,7 +102,7 @@
 - [x] **MOM-01**: Dipole `int1e_r` (and `int1e_r_origj`) match at atol=1e-12 against a non-zero gauge-origin fixture (cart+sph).
 - [x] **MOM-02**: `int1e_rr`, `int1e_r2`, `int1e_z`, `int1e_zz` (and `_origj` variants) match at atol=1e-12 (cart+sph).
 - [x] **MOM-03**: `int1e_rrr`, `int1e_rrrr`, `int1e_r4` (octupole/hexadecapole) match at atol=1e-12 (cart+sph), ket-side headroom from `ng[1]`.
-- [ ] **MOM-04**: `int1e_p4`, `int1e_drinv`, plain `int1e_rinv`, `int1e_irp` match at atol=1e-12 (cart+sph).
+- [x] **MOM-04**: `int1e_p4`, `int1e_drinv`, plain `int1e_rinv`, `int1e_irp` match at atol=1e-12 (cart+sph).
 
 ### Group 4 — Relativistic Spin-Operator (spinor)
 
@@ -200,7 +200,7 @@
 | MOM-01 | Phase 24 | Complete |
 | MOM-02 | Phase 24 | Complete |
 | MOM-03 | Phase 24 | Complete |
-| MOM-04 | Phase 24 | Pending |
+| MOM-04 | Phase 24 | Complete |
 | HESS-01 | Phase 25 | Pending |
 | HESS-02 | Phase 25 | Pending |
 | HESS-03 | Phase 25 | Pending |

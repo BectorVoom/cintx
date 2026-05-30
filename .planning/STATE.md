@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Completed 24-02-PLAN.md
-last_updated: "2026-05-30T06:59:15.422Z"
+stopped_at: Completed 24-03-PLAN.md
+last_updated: "2026-05-30T07:12:51.439Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 21
   completed_phases: 13
   total_plans: 71
-  completed_plans: 68
-  percent: 96
+  completed_plans: 69
+  percent: 97
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 24 (group-3-position-multipole-moment-integrals) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Resume file: None
 Last activity: 2026-05-30
@@ -131,6 +131,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 21 P03 | 25 min | 2 tasks | 4 files |
 | Phase 24 P24-01 | 18 | 3 tasks | 8 files |
 | Phase 24 P24-02 | 70min | 2 tasks | 9 files |
+| Phase 24 P24-03 | 28 | 1 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -303,6 +304,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 24]: Cluster A moment kernel: ONE parameterized #[cube] kernel for r/rr/rrr/rrrr/r2/r4/z/zz + _origj; per-axis moment ladder m_p = Sum_t C(p,t) drj^(p-t) overlap[jx+t] (closed-form of libcint CINTx1j_1e) reproduces verbatim gout order, proven by atol=1e-12 vendor parity
 - [Phase 24]: origin-source branch (D-02) is host-side: drj = rj - origin (common_orig for base, rj for _origj so drj=0 = libcint G1E_R_J pointer shift); no new env code
 - [Phase 24]: _origj parity tests use a CROSS-center non-square block (H1-1s x O-2p); same-center even-moment _origj integrals are identically zero (vendor included)
+- [Phase ?]: [Phase 24-03]: rinv/drinv read env[PTR_RINV_ORIG] (env[4..6]) NOT PTR_COMMON_ORIG (D-04/OQ-1); separate is_rinv_family_symbol gate. int1e_rinv = scalar nuclear Rys arm with atom-loop dropped to single rinv-center origin, charge=+1 no -Z_C; int1e_drinv = D_I+D_J of the rinv G-tensor (transl-invariance grad), rank 3, bra+1/ket+1 headroom; both fail-closed nroots>5. Vendor parity 0 at atol=1e-12 cart+sph
 
 ### Roadmap Evolution
 
@@ -347,6 +349,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-30T06:58:47.841Z
-Stopped at: Completed 24-02-PLAN.md
+Last session: 2026-05-30T07:12:45.146Z
+Stopped at: Completed 24-03-PLAN.md
 Resume file: None
