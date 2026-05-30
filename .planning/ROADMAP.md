@@ -60,7 +60,7 @@
 | Phase 20: Generic Float Precision (f64/f32 Switch) | v1.3 | 11/11 | Complete | 2026-05-21 |
 | Phase 21: Plain-Coulomb Gradient Integral Families (`ip1`/`iprinv`) | v1.3 | 0/8 | Planned | - |
 | Phase 22: Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG) | v1.4 | 0/2 | Planned | - |
-| Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 0/5 | Planned | - |
+| Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 5/5 | Complete | 2026-05-30 |
 | Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 0/0 | Not started | - |
 | Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 0/0 | Not started | - |
 | Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/0 | Not started | - |
