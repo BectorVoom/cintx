@@ -2522,9 +2522,7 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                                         let dst = staging_comp_base
                                             + iidx
                                             + di * (jidx + dj * kidx);
-                                        if dst < staging.len() {
-                                            staging[dst] = F::from_f64_lossy(sph[src]);
-                                        }
+                                        staging[dst] = F::from_f64_lossy(sph[src]);
                                     }
                                 }
                             }
@@ -2556,9 +2554,7 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                                         let dst = staging_comp_base
                                             + iidx
                                             + di * (jidx + dj * kidx);
-                                        if dst < staging.len() {
-                                            staging[dst] = F::from_f64_lossy(block[src]);
-                                        }
+                                        staging[dst] = F::from_f64_lossy(block[src]);
                                     }
                                 }
                             }
@@ -2764,9 +2760,7 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                                         let dst = staging_comp_base
                                             + iidx
                                             + di * (jidx + dj * kidx);
-                                        if dst < staging.len() {
-                                            staging[dst] = F::from_f64_lossy(sph[src]);
-                                        }
+                                        staging[dst] = F::from_f64_lossy(sph[src]);
                                     }
                                 }
                             }
@@ -2798,9 +2792,7 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                                         let dst = staging_comp_base
                                             + iidx
                                             + di * (jidx + dj * kidx);
-                                        if dst < staging.len() {
-                                            staging[dst] = F::from_f64_lossy(block[src]);
-                                        }
+                                        staging[dst] = F::from_f64_lossy(block[src]);
                                     }
                                 }
                             }

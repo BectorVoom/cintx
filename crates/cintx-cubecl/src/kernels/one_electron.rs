@@ -6542,9 +6542,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for mi in 0..nsi {
                                     let ii = ci * nsi + mi;
                                     let dst = staging_comp_base + ii + jj * ni_sph;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
                                 }
                             }
                         }
@@ -6566,9 +6564,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for ic in 0..nci {
                                     let ii = ci * nci + ic;
                                     let dst = staging_comp_base + ii + jj * ni_cart;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
                                 }
                             }
                         }
@@ -6733,9 +6729,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for mi in 0..nsi {
                                     let ii = ci * nsi + mi;
                                     let dst = staging_comp_base + ii + jj * ni_sph;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
                                 }
                             }
                         }
@@ -6757,9 +6751,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                                 for ic in 0..nci {
                                     let ii = ci * nci + ic;
                                     let dst = staging_comp_base + ii + jj * ni_cart;
-                                    if dst < staging.len() {
-                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                                    }
+                                    staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
                                 }
                             }
                         }
@@ -6970,9 +6962,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                         for mi in 0..nsi {
                             let ii = ci * nsi + mi;
                             let dst = ii + jj * di_sph;
-                            if dst < staging.len() {
-                                staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
-                            }
+                            staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
                         }
                     }
                 }
@@ -7025,9 +7015,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                         for ic in 0..nci {
                             let ii = ci * nci + ic;
                             let dst = ii + jj * di_cart;
-                            if dst < staging.len() {
-                                staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
-                            }
+                            staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
                         }
                     }
                 }

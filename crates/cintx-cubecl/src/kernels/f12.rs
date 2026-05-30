@@ -1780,10 +1780,11 @@ fn f12_kernel_core(
                     let cart_slice = &gout_contracted[comp * nf_base..(comp + 1) * nf_base];
                     let sph = cart_to_sph_2e(cart_slice, li_base_u8, lj_base_u8, lk_base_u8, ll_base_u8);
                     let stage_off = comp * sph_size;
-                    let copy_len = (staging.len() - stage_off).min(sph.len()).min(sph_size);
-                    if stage_off < staging.len() {
-                        staging[stage_off..stage_off + copy_len].copy_from_slice(&sph[..copy_len]);
-                    }
+                    // FND-06 (D-04): the upfront planner assertion proves staging is
+                    // large enough for all `ncomp` components; copy unconditionally
+                    // (no staging.len() clamp, no silent truncation of trailing comps).
+                    let copy_len = sph.len().min(sph_size);
+                    staging[stage_off..stage_off + copy_len].copy_from_slice(&sph[..copy_len]);
                 }
             }
             Representation::Cart => {

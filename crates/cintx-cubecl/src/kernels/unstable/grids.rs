@@ -1518,9 +1518,7 @@ fn launch_grids_kernel(
                 for i_sph in 0..nsi {
                     // libcint layout: out[g + i * ngrids + j * ngrids * ni]
                     let idx = comp_offset + j_sph * ngrids * nsi + i_sph * ngrids + g;
-                    if idx < staging.len() {
-                        staging[idx] = sph_buf[i_sph * nsj + j_sph];
-                    }
+                    staging[idx] = sph_buf[i_sph * nsj + j_sph];
                 }
             }
         }

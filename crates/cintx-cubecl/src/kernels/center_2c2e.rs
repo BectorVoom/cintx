@@ -740,9 +740,7 @@ fn launch_center_2c2e_grad<F: CintFloat>(
                                 let iidx = ci * nsi + mi;
                                 let src = mi + nsi * mk;
                                 let dst = staging_comp_base + iidx + di * kidx;
-                                if dst < staging.len() {
-                                    staging[dst] = F::from_f64_lossy(sph[src]);
-                                }
+                                staging[dst] = F::from_f64_lossy(sph[src]);
                             }
                         }
                     }
@@ -765,9 +763,7 @@ fn launch_center_2c2e_grad<F: CintFloat>(
                                 let iidx = ci * nfi + ic;
                                 let src = ic + nfi * kc;
                                 let dst = staging_comp_base + iidx + di * kidx;
-                                if dst < staging.len() {
-                                    staging[dst] = F::from_f64_lossy(block[src]);
-                                }
+                                staging[dst] = F::from_f64_lossy(block[src]);
                             }
                         }
                     }

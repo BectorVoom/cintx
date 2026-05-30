@@ -1608,9 +1608,7 @@ fn launch_two_electron_ip1<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                if dst < staging.len() {
-                                                    staging[dst] = F::from_f64_lossy(sph[src]);
-                                                }
+                                                staging[dst] = F::from_f64_lossy(sph[src]);
                                             }
                                         }
                                     }
@@ -1649,9 +1647,7 @@ fn launch_two_electron_ip1<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                if dst < staging.len() {
-                                                    staging[dst] = F::from_f64_lossy(block[src]);
-                                                }
+                                                staging[dst] = F::from_f64_lossy(block[src]);
                                             }
                                         }
                                     }
@@ -1854,9 +1850,7 @@ fn launch_two_electron_ip2<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                if dst < staging.len() {
-                                                    staging[dst] = F::from_f64_lossy(sph[src]);
-                                                }
+                                                staging[dst] = F::from_f64_lossy(sph[src]);
                                             }
                                         }
                                     }
@@ -1895,9 +1889,7 @@ fn launch_two_electron_ip2<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                if dst < staging.len() {
-                                                    staging[dst] = F::from_f64_lossy(block[src]);
-                                                }
+                                                staging[dst] = F::from_f64_lossy(block[src]);
                                             }
                                         }
                                     }
@@ -2182,9 +2174,7 @@ fn launch_two_electron_typed<F: CintFloat>(
                                             let iidx = ci * nsi + mi;
                                             let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
                                             let dst = iidx + di * (jidx + dj * (kidx + dk * lidx));
-                                            if dst < staging.len() {
-                                                staging[dst] = F::from_f64_lossy(sph[src]);
-                                            }
+                                            staging[dst] = F::from_f64_lossy(sph[src]);
                                         }
                                     }
                                 }
@@ -2240,9 +2230,7 @@ fn launch_two_electron_typed<F: CintFloat>(
                                             let iidx = ci * nfi + ic;
                                             let src = ic + nfi * (jc + nfj * (kc + nfk * lc));
                                             let dst = iidx + di * (jidx + dj * (kidx + dk * lidx));
-                                            if dst < staging.len() {
-                                                staging[dst] = F::from_f64_lossy(block[src]);
-                                            }
+                                            staging[dst] = F::from_f64_lossy(block[src]);
                                         }
                                     }
                                 }
