@@ -556,7 +556,7 @@ Plans:
 Plans:
 **Wave 1**
 - [x] 24-01-PLAN.md — Wave 0: vendor-FFI wrappers + bindgen allowlist (38 symbols) + 4 moment parity scaffolds + non-zero rinv_orig helper + OQ-2 triage
-- [ ] 24-02-PLAN.md — Wave 1 (Cluster A): r/rr/rrr/rrrr/r2/r4/z/zz + 6 _origj via one parameterized moment kernel (origin-source branch, verbatim gout, ket headroom)
+- [x] 24-02-PLAN.md — Wave 1 (Cluster A): r/rr/rrr/rrrr/r2/r4/z/zz + 6 _origj via one parameterized moment kernel (origin-source branch, verbatim gout, ket headroom)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 24-03-PLAN.md — Wave 2 (Cluster B): rinv/drinv single-center Rys, PTR_RINV_ORIG, charge=+1, no atom-sum

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Completed 24-01-PLAN.md
-last_updated: "2026-05-30T06:38:13.409Z"
+stopped_at: Completed 24-02-PLAN.md
+last_updated: "2026-05-30T06:59:15.422Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 21
   completed_phases: 13
   total_plans: 71
-  completed_plans: 67
-  percent: 94
+  completed_plans: 68
+  percent: 96
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 24 (group-3-position-multipole-moment-integrals) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Resume file: None
 Last activity: 2026-05-30
@@ -130,6 +130,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 21 P02 | 15 | 2 tasks | 5 files |
 | Phase 21 P03 | 25 min | 2 tasks | 4 files |
 | Phase 24 P24-01 | 18 | 3 tasks | 8 files |
+| Phase 24 P24-02 | 70min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -299,6 +300,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: [Phase 24-01]: rinv/drinv parity tests inject a NON-ZERO rinv center via env_with_rinv_origin (PTR_RINV_ORIG, not PTR_COMMON_ORIG) per D-04/OQ-1; zero origin trivially-passing and disallowed
 - [Phase ?]: [Phase 24-01]: OQ-2 cart_offset lib-unit failure reproduced at pre-phase-20 commit 8997703 → standalone harness bug; Phase 24 integration gate de-blocked
 - [Phase ?]: [Phase 24-01]: rank-parameterized vendor_parity sizes every buffer rank*ni*nj (D-08); parity #[test] bodies gated on has_vendor_libcint as the Nyquist RED target for plans 02-05
+- [Phase 24]: Cluster A moment kernel: ONE parameterized #[cube] kernel for r/rr/rrr/rrrr/r2/r4/z/zz + _origj; per-axis moment ladder m_p = Sum_t C(p,t) drj^(p-t) overlap[jx+t] (closed-form of libcint CINTx1j_1e) reproduces verbatim gout order, proven by atol=1e-12 vendor parity
+- [Phase 24]: origin-source branch (D-02) is host-side: drj = rj - origin (common_orig for base, rj for _origj so drj=0 = libcint G1E_R_J pointer shift); no new env code
+- [Phase 24]: _origj parity tests use a CROSS-center non-square block (H1-1s x O-2p); same-center even-moment _origj integrals are identically zero (vendor included)
 
 ### Roadmap Evolution
 
@@ -343,6 +347,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-30T06:38:13.406Z
-Stopped at: Completed 24-01-PLAN.md
+Last session: 2026-05-30T06:58:47.841Z
+Stopped at: Completed 24-02-PLAN.md
 Resume file: None
