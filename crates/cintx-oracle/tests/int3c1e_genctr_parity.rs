@@ -60,9 +60,11 @@ fn build_genctr_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
 
     // p-shell (bra i) — 3 primitives, two general-contraction columns.
     let p_exp = [3.4252509_f64, 0.6239137, 0.1688554];
-    // coefficients[ip * nctr_i + ci]: row-major (libcint/cintx canonical).
+    // The libcint env coefficient block is COLUMN-MAJOR: env[ci*nprim + ip] (see
+    // CINTprim_to_ctr_0 in g1e.c). cintx transposes it to row-major internally.
     //   column 0 = (0.70, 0.30, 0.15) , column 1 = (0.20, 0.55, 0.80)
-    let p_coeff = [0.70_f64, 0.20, 0.30, 0.55, 0.15, 0.80];
+    // → env layout [c0_p0, c0_p1, c0_p2, c1_p0, c1_p1, c1_p2].
+    let p_coeff = [0.70_f64, 0.30, 0.15, 0.20, 0.55, 0.80];
 
     // d-shell (ket j) — 3 primitives, single contraction.
     let d_exp = [5.0331513_f64, 1.1695961, 0.3803890];

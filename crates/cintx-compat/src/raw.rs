@@ -1379,11 +1379,25 @@ fn build_typed_basis_and_shell_tuple(
                 from: "raw_shells",
                 detail: "nprim*nctr overflowed usize".to_owned(),
             })?;
-        let coefficients = Arc::<[f64]>::from(
-            env.slice("PTR_COEFF", record.coeff_offset(), coefficient_len)?
-                .to_vec()
-                .into_boxed_slice(),
-        );
+        // WR-03: the libcint env coefficient block is COLUMN-MAJOR — the value for
+        // primitive `p` of contraction column `c` is stored at `env[c*nprim + p]`
+        // (see CINTprim_to_ctr_0 in g1e.c: `c0 = coeff[nprim*i]`). cintx's internal
+        // `Shell.coefficients` convention is ROW-MAJOR (`coeff[p*nctr + c]`, the
+        // layout every launcher reads, e.g. `coefficients[ip*nctr_i + ci]`).
+        // Transpose column-major → row-major here so the raw/ABI path agrees with
+        // the safe-API path for general-contraction (nctr>1) shells. For nctr==1
+        // (and nprim==1) the two layouts coincide, so this is byte-identical for the
+        // single-contraction common case.
+        let coeff_raw = env.slice("PTR_COEFF", record.coeff_offset(), coefficient_len)?;
+        let nprim_usize = usize::from(nprim);
+        let nctr_usize = usize::from(nctr);
+        let mut coeff_rowmajor = vec![0.0_f64; coefficient_len];
+        for c in 0..nctr_usize {
+            for p in 0..nprim_usize {
+                coeff_rowmajor[p * nctr_usize + c] = coeff_raw[c * nprim_usize + p];
+            }
+        }
+        let coefficients = Arc::<[f64]>::from(coeff_rowmajor.into_boxed_slice());
 
         let shell = Shell::try_new(
             atom_index,
