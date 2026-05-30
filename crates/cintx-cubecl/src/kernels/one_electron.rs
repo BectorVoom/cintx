@@ -5025,7 +5025,14 @@ fn run_1e_moment_device<R: Runtime>(
         4u32 => launch_with!(4u32, moment_params(4).0, moment_params(4).1), // r2
         5u32 => launch_with!(5u32, moment_params(5).0, moment_params(5).1), // r4
         6u32 => launch_with!(6u32, moment_params(6).0, moment_params(6).1), // z
-        _ => launch_with!(7u32, moment_params(7).0, moment_params(7).1),    // zz
+        7u32 => launch_with!(7u32, moment_params(7).0, moment_params(7).1), // zz
+        // `op_mode` is set only by `moment_dispatch` (validated against
+        // `moment_params`, which is 0..=7). An out-of-range value here is an
+        // upstream wiring bug, not a runtime condition — surface it loudly
+        // instead of silently computing `zz`. This is a host-side match (the
+        // dispatch to `launch_with!`), so `unreachable!` is permitted; the
+        // `#[cube]` kernel itself is selected by the comptime literals above.
+        _ => unreachable!("invalid moment op_mode {op_mode} (must be 0..=7)"),
     }
 
     let raw = client.read_one_unchecked(out_h);
