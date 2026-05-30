@@ -6770,180 +6770,384 @@
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["cart"],
+      "forms": [
+        "cart"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipip1", "representation": "cart", "symbol": "int2e_ipip1_cart" },
-      "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "id": {
+        "family": "2e",
+        "operator": "ipip1",
+        "representation": "cart",
+        "symbol": "int2e_ipip1_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["sph"],
+      "forms": [
+        "sph"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipip1", "representation": "sph", "symbol": "int2e_ipip1_sph" },
-      "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "id": {
+        "family": "2e",
+        "operator": "ipip1",
+        "representation": "sph",
+        "symbol": "int2e_ipip1_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["spinor"],
+      "forms": [
+        "spinor"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipip1", "representation": "spinor", "symbol": "int2e_ipip1_spinor" },
+      "id": {
+        "family": "2e",
+        "operator": "ipip1",
+        "representation": "spinor",
+        "symbol": "int2e_ipip1_spinor"
+      },
       "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["cart"],
+      "forms": [
+        "cart"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipvip1", "representation": "cart", "symbol": "int2e_ipvip1_cart" },
-      "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "id": {
+        "family": "2e",
+        "operator": "ipvip1",
+        "representation": "cart",
+        "symbol": "int2e_ipvip1_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["sph"],
+      "forms": [
+        "sph"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipvip1", "representation": "sph", "symbol": "int2e_ipvip1_sph" },
-      "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "id": {
+        "family": "2e",
+        "operator": "ipvip1",
+        "representation": "sph",
+        "symbol": "int2e_ipvip1_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["spinor"],
+      "forms": [
+        "spinor"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipvip1", "representation": "spinor", "symbol": "int2e_ipvip1_spinor" },
+      "id": {
+        "family": "2e",
+        "operator": "ipvip1",
+        "representation": "spinor",
+        "symbol": "int2e_ipvip1_spinor"
+      },
       "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["cart"],
+      "forms": [
+        "cart"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ip1ip2", "representation": "cart", "symbol": "int2e_ip1ip2_cart" },
-      "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "id": {
+        "family": "2e",
+        "operator": "ip1ip2",
+        "representation": "cart",
+        "symbol": "int2e_ip1ip2_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["sph"],
+      "forms": [
+        "sph"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ip1ip2", "representation": "sph", "symbol": "int2e_ip1ip2_sph" },
-      "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "id": {
+        "family": "2e",
+        "operator": "ip1ip2",
+        "representation": "sph",
+        "symbol": "int2e_ip1ip2_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["spinor"],
+      "forms": [
+        "spinor"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ip1ip2", "representation": "spinor", "symbol": "int2e_ip1ip2_spinor" },
+      "id": {
+        "family": "2e",
+        "operator": "ip1ip2",
+        "representation": "spinor",
+        "symbol": "int2e_ip1ip2_spinor"
+      },
       "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "81",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["cart"],
+      "forms": [
+        "cart"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipip1ipip2", "representation": "cart", "symbol": "int2e_ipip1ipip2_cart" },
-      "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "id": {
+        "family": "2e",
+        "operator": "ipip1ipip2",
+        "representation": "cart",
+        "symbol": "int2e_ipip1ipip2_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "81",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["sph"],
+      "forms": [
+        "sph"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipip1ipip2", "representation": "sph", "symbol": "int2e_ipip1ipip2_sph" },
-      "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "id": {
+        "family": "2e",
+        "operator": "ipip1ipip2",
+        "representation": "sph",
+        "symbol": "int2e_ipip1ipip2_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "81",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["spinor"],
+      "forms": [
+        "spinor"
+      ],
       "helper_kind": "operator",
-      "id": { "family": "2e", "operator": "ipip1ipip2", "representation": "spinor", "symbol": "int2e_ipip1ipip2_spinor" },
+      "id": {
+        "family": "2e",
+        "operator": "ipip1ipip2",
+        "representation": "spinor",
+        "symbol": "int2e_ipip1ipip2_spinor"
+      },
       "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
