@@ -551,7 +551,14 @@ Plans:
   4. `int1e_p4`, `int1e_drinv`, plain `int1e_rinv`, `int1e_irp` match at atol=1e-12 (cart + sph) (MOM-04).
   5. Each family is registered with its `component_rank`, dispatches through `eval_raw`, has a dedicated `vendor_*` parity test executing under both flags, and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 24-01-PLAN.md — Wave 0: vendor-FFI wrappers + bindgen allowlist (38 symbols) + 4 moment parity scaffolds + non-zero rinv_orig helper + OQ-2 triage
+- [ ] 24-02-PLAN.md — Wave 1 (Cluster A): r/rr/rrr/rrrr/r2/r4/z/zz + 6 _origj via one parameterized moment kernel (origin-source branch, verbatim gout, ket headroom)
+- [ ] 24-03-PLAN.md — Wave 2 (Cluster B): rinv/drinv single-center Rys, PTR_RINV_ORIG, charge=+1, no atom-sum
+- [ ] 24-04-PLAN.md — Wave 2 (Cluster C): p4 (∇⁴) overlap-derivative, both-side headroom ng={2,2,...}
+- [ ] 24-05-PLAN.md — Wave 2 (Cluster D): irp (i·r×∇) rank-9 3×3 r⊗∇ tensor, reads PTR_COMMON_ORIG
 
 ### Phase 25: Group 2 — Hessian & Higher-Order Derivatives
 
