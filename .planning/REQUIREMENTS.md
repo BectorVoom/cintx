@@ -84,11 +84,11 @@
 
 ### Group 1 — Remaining 1st-Derivatives
 
-- [ ] **DRV1-01**: `int2e_ip2` (arity-4, ∇ on the ket bra-center) matches vendored libcint 6.1.3 at atol=1e-12 (cart+sph).
-- [ ] **DRV1-02**: `int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip` (∇ on both bra and ket) match at atol=1e-12 (cart+sph).
-- [ ] **DRV1-03**: `int3c1e_ip1` and `int3c1e_iprinv` match at atol=1e-12 (cart+sph).
-- [ ] **DRV1-04**: `int2c2e_ip1` and `int2c2e_ip2` match at atol=1e-12 (cart+sph).
-- [ ] **DRV1-05**: `int3c2e_ip2` matches at atol=1e-12 (cart+sph).
+- [x] **DRV1-01**: `int2e_ip2` (arity-4, ∇ on the ket bra-center) matches vendored libcint 6.1.3 at atol=1e-12 (cart+sph).
+- [x] **DRV1-02**: `int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip` (∇ on both bra and ket) match at atol=1e-12 (cart+sph).
+- [x] **DRV1-03**: `int3c1e_ip1` and `int3c1e_iprinv` match at atol=1e-12 (cart+sph).
+- [x] **DRV1-04**: `int2c2e_ip1` and `int2c2e_ip2` match at atol=1e-12 (cart+sph).
+- [x] **DRV1-05**: `int3c2e_ip2` matches at atol=1e-12 (cart+sph).
 
 ### Group 2 — Hessian & Higher-Order Derivatives
 
@@ -192,11 +192,11 @@
 | GRAD-09 | Phase 21 | Complete |
 | GRAD-10 | Phase 21 | Complete |
 | FND-01 | Phase 22 | Complete |
-| DRV1-01 | Phase 23 | Pending |
-| DRV1-02 | Phase 23 | Pending |
-| DRV1-03 | Phase 23 | Pending |
-| DRV1-04 | Phase 23 | Pending |
-| DRV1-05 | Phase 23 | Pending |
+| DRV1-01 | Phase 23 | Complete |
+| DRV1-02 | Phase 23 | Complete |
+| DRV1-03 | Phase 23 | Complete |
+| DRV1-04 | Phase 23 | Complete |
+| DRV1-05 | Phase 23 | Complete |
 | MOM-01 | Phase 24 | Pending |
 | MOM-02 | Phase 24 | Pending |
 | MOM-03 | Phase 24 | Pending |
