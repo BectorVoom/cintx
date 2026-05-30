@@ -562,7 +562,7 @@ Plans:
 - [x] 24-03-PLAN.md — Wave 2 (Cluster B): rinv/drinv single-center Rys, PTR_RINV_ORIG, charge=+1, no atom-sum
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 24-04-PLAN.md — Wave 2 (Cluster C): p4 (∇⁴) overlap-derivative, both-side headroom ng={2,2,...}
+- [x] 24-04-PLAN.md — Wave 2 (Cluster C): p4 (∇⁴) overlap-derivative, both-side headroom ng={2,2,...}
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 24-05-PLAN.md — Wave 2 (Cluster D): irp (i·r×∇) rank-9 3×3 r⊗∇ tensor, reads PTR_COMMON_ORIG

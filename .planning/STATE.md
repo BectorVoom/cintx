@@ -4,14 +4,14 @@ milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
 stopped_at: Completed 24-03-PLAN.md
-last_updated: "2026-05-30T07:12:51.439Z"
+last_updated: "2026-05-30T07:28:42.713Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 21
   completed_phases: 13
   total_plans: 71
-  completed_plans: 69
-  percent: 97
+  completed_plans: 70
+  percent: 99
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 24 (group-3-position-multipole-moment-integrals) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Resume file: None
 Last activity: 2026-05-30
@@ -132,6 +132,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 24 P24-01 | 18 | 3 tasks | 8 files |
 | Phase 24 P24-02 | 70min | 2 tasks | 9 files |
 | Phase 24 P24-03 | 28 | 1 tasks | 5 files |
+| Phase 24 P24-04 | 38 | 1 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -305,6 +306,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 24]: origin-source branch (D-02) is host-side: drj = rj - origin (common_orig for base, rj for _origj so drj=0 = libcint G1E_R_J pointer shift); no new env code
 - [Phase 24]: _origj parity tests use a CROSS-center non-square block (H1-1s x O-2p); same-center even-moment _origj integrals are identically zero (vendor included)
 - [Phase ?]: [Phase 24-03]: rinv/drinv read env[PTR_RINV_ORIG] (env[4..6]) NOT PTR_COMMON_ORIG (D-04/OQ-1); separate is_rinv_family_symbol gate. int1e_rinv = scalar nuclear Rys arm with atom-loop dropped to single rinv-center origin, charge=+1 no -Z_C; int1e_drinv = D_I+D_J of the rinv G-tensor (transl-invariance grad), rank 3, bra+1/ket+1 headroom; both fail-closed nroots>5. Vendor parity 0 at atol=1e-12 cart+sph
+- [Phase 24]: int1e_p4 (∇⁴, rank 1) = Laplacian-of-Laplacian on the overlap G-tensor (no Rys), BOTH-side +2 headroom (ng={2,2,...}, nmax=li+lj+4); built from d_i_1e_into/d_j_1e_into as four tensors (g0, D_J², D_I², D_I²·D_J²); rank-1 contraction s0+2s4+2s8+s40+2s44+s80 verbatim from intor1.c:2534; even+origin-free → CROSS-center non-square parity block (H1-1s × O-2p); fail-closed li+lj+4>8; vendor parity 0 at atol=1e-12 cart+sph.
 
 ### Roadmap Evolution
 
@@ -349,6 +351,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-30T07:12:45.146Z
+Last session: 2026-05-30T07:28:29.863Z
 Stopped at: Completed 24-03-PLAN.md
 Resume file: None
