@@ -162,7 +162,9 @@ All facts below are `[VERIFIED: libcint-master/src/autocode/intor1.c]` at the ci
 | `int1e_r_origj`  | **3** | `{0,1,0,0,1,1,1,3}` | 0 | `G1E_R_J`, origin=ket `rj` (no drj) | own symbol `[intor1.c:2067-2092]` |
 | `int1e_z_origj`  | **1** | `{0,1,0,0,1,1,1,1}` | 0 | `G1E_R_J` | own symbol `[intor1.c:1957-2005]` |
 | `int1e_zz_origj` | **1** | `{0,2,0,0,2,1,1,1}` | 0 | `G1E_R_J` | own symbol `[intor1.c:2007-2065]` |
-| `int1e_rr_origj` / `rrr_origj` / `rrrr_origj` / `r2_origj` / `r4_origj` | same as base | same ng as base | 0 | `G1E_R_J` | own symbol each (mirror base, origin=ket center) |
+| `int1e_rr_origj` / `r2_origj` / `r4_origj` | same as base | same ng as base | 0 | `G1E_R_J` | own symbol each (mirror base, origin=ket center) |
+
+> **CORRECTION (plan-checker W2, source-confirmed):** the complete `_origj` symbol set in libcint 6.1.3 `intor1.c` is exactly **`{r, rr, r2, r4, z, zz}_origj`** — 6 symbols. **`rrr_origj` and `rrrr_origj` do NOT exist** (no vendor symbol → no parity target). Do NOT register them. (An earlier draft of this row incorrectly listed `rrr_origj`/`rrrr_origj`; the plans correctly exclude them.)
 
 > **`component_rank` is a string** parsed by `parse_component_multiplier`, which **multiplies all numeric segments**. So set it to the literal multiplier: `"3"`, `"9"`, `"27"`, `"81"`, `"1"` `[VERIFIED: planner.rs:403-450]`. (Do NOT write e.g. `"3x3"` expecting 9 unless you intend the product — `"9"` is unambiguous.)
 
@@ -316,7 +318,12 @@ let iprinv_origin: Option<[f64;3]> = if is_iprinv {
 | A2 | The H2O/STO-3G corpus contains a NON-SQUARE shell pair usable for the D-07 gate (e.g. s×p between O-s and O-p, or H-s × O-p). | Validation Architecture | If only square pairs are reachable, the transpose gate is weakened; planner must construct a synthetic non-square pair or add a basis with a d shell. |
 | A3 | `_origj` families beyond r/z/zz (i.e. rr/rrr/rrrr/r2/r4 `_origj`) exist as distinct vendor symbols in the same pattern as `int1e_r_origj`. Confirmed for r/z/zz by source; the rest assumed by the autocode's uniform `_origj` emission pattern. | Standard Stack table | If some `_origj` variant is absent in libcint, that family's `_origj` registration/test must be dropped (parity target doesn't exist). Planner should grep `intor1.c` for the exact `_origj` symbol set before registering. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three resolved during plan-phase and consumed by the plans:
+> - **OQ-1 — RESOLVED:** user confirmed "Follow source: `PTR_RINV_ORIG`" (D-04 [CORRECTION] in CONTEXT.md); adopted in plan 24-03; rinv/drinv tests set a non-zero `rinv_orig`.
+> - **OQ-2 — RESOLVED:** triaged as a task in plan 24-01 (confirm against pre-phase-20 commit; convert to tracked standalone harness bug if reproduced — must not block the parity gate).
+> - **OQ-3 — RESOLVED:** grep of `intor1.c` yields exactly 6 `_origj` symbols `{r,rr,r2,r4,z,zz}_origj`; `rrr_origj`/`rrrr_origj` do NOT exist and are excluded in plans 24-01/24-02.
 
 1. **OQ-1 (HIGH PRIORITY — origin slot for rinv/drinv).**
    - What we know: libcint 6.1.3 source unambiguously reads `env + PTR_RINV_ORIG` (env[4..6]) for `int1e_rinv`/`int1e_drinv` via `CINTg1e_nuc(g,envs,-1)` `[VERIFIED: g1e.c:226-228]`, with charge=+1 and no atom-sum. CONTEXT D-04 states "common origin (`env[PTR_COMMON_ORIG]`)." These disagree.
