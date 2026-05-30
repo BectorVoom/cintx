@@ -455,7 +455,7 @@ jobs:
 
             - name: Run unstable-source oracle parity
               run: |
-                  cargo test -p cintx-oracle --features cpu,unstable-source-api -- unstable_source_parity --test-threads=1
+                  cargo test -p cintx-oracle --features cpu,unstable-source-api --test unstable_source_parity -- --test-threads=1
 
             - name: Run xtask unstable-source oracle-compare
               run: |
