@@ -74,6 +74,13 @@ fn main() {
         "src/autocode/hess.c",
         // Phase 21 1e gradient autocode: int1e_ipovlp, int1e_ipkin, etc.
         "src/autocode/grad1.c",
+        // Phase 25 HESS-04 3rd/4th-order autocode (NOT previously in the build):
+        // deriv3.c => int1e_ipipipnuc/ipipiprinv/ipipnucip/ipiprinvip (rank 27);
+        // deriv4.c => int1e_ipipipiprinv/ipiprinvipip/ipipiprinvip (rank 81).
+        // All cart/sph symbols are already declared in cint_funcs.h (the suppl
+        // header #include); only the .file() additions + allowlist are needed.
+        "src/autocode/deriv3.c",
+        "src/autocode/deriv4.c",
         // Phase 14 unstable-source family source files.
         "src/cint1e_grids.c",
         "src/g1e_grids.c",
@@ -238,6 +245,12 @@ fn main() {
         // Phase 21 gradient 1e integrals: int1e_ipovlp/ipkin/ipnuc/iprinv and all
         // derivatives in grad1.c (CINTgout1e_int1e_ipovlp, CINTgout1e_int1e_ipkin, etc).
         .file(libcint_root.join("src/autocode/grad1.c"))
+        // Phase 25 HESS-04 3rd/4th-order autocode (NEW to the build): deriv3.c
+        // (rank 27: int1e_ipipipnuc/ipipiprinv/ipipnucip/ipiprinvip), deriv4.c
+        // (rank 81: int1e_ipipipiprinv/ipiprinvipip/ipipiprinvip). cart+sph
+        // symbols already in cint_funcs.h; no suppl-header extern decls needed.
+        .file(libcint_root.join("src/autocode/deriv3.c"))
+        .file(libcint_root.join("src/autocode/deriv4.c"))
         // Phase 14 unstable-source family source files.
         // cint1e_grids.c + g1e_grids.c: int1e_grids* (NGRIDS/PTR_GRIDS env handling).
         // autocode/int1e_grids1.c: int1e_grids_ip/ipvip/spvsp/ipip derivative wrappers.
