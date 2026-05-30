@@ -526,8 +526,8 @@ Plans:
 Plans:
 
 **Wave 1** — engine plumbing + DRV1-02 regression guard (parallel; disjoint files)
-- [ ] 23-01-PLAN.md — Promote `nabla1j_2e`/`nabla1k_2e` to `pub(crate)`, add `nabla1l_2e` (mirror `nabla1l_breit` for the 3c2e `ll`-slot), and a nabla-parameterized single-side contraction in `f12.rs` (unblocks clusters A). []
-- [ ] 23-05-PLAN.md — DRV1-02 regression guard: re-run the existing cluster-C `one_electron_grad_both_parity` vendor test under the double gate (no source change). [DRV1-02]
+- [x] 23-01-PLAN.md — Promote `nabla1j_2e`/`nabla1k_2e` to `pub(crate)`, add `nabla1l_2e` (mirror `nabla1l_breit` for the 3c2e `ll`-slot), and a nabla-parameterized single-side contraction in `f12.rs` (unblocks clusters A). []
+- [x] 23-05-PLAN.md — DRV1-02 regression guard: re-run the existing cluster-C `one_electron_grad_both_parity` vendor test under the double gate (no source change). [DRV1-02]
 
 **Wave 2** *(blocked on 23-01)* — cluster A part 1 (pure Phase-21 reuse)
 - [ ] 23-02-PLAN.md — `int2e_ip2` (nabla1k on ket bra-center k) + `int2c2e_ip1/ip2` (nabla1i/k, lj=ll=0); manifest rank-3 ×3 reps, RawApiId, dispatch (center_2c2e dispatch ADDED), vendor FFI + 2 parity tests at atol=1e-12. [DRV1-01, DRV1-04]
