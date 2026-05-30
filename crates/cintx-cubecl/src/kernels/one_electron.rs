@@ -3002,6 +3002,536 @@ fn run_1e_scalar_on_backend(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 24 Cluster A — parameterized overlap-derived moment kernel.
+//
+// One #[cube] kernel evaluates ALL of r / rr / rrr / rrrr / r2 / r4 / z / zz and
+// their _origj variants. It builds the overlap G-tensor to `lj_ext = lj +
+// moment_order` ket levels (ket headroom raised on ng[1], NOT the bra — D-07),
+// then forms per-axis moment-power values via the closed-form binomial expansion
+// of libcint's repeated `CINTx1j_1e` (g1e.c:453):
+//
+//   m_p[jx] = Σ_{t=0..p} C(p,t) · drj^(p-t) · overlap[jx+t]
+//
+// where `drj = rj - origin`. The origin-source branch (D-02) is realized purely
+// host-side: the launcher passes `drjx/drjy/drjz = rj - origin`, with
+//   origin = common_orig (base family, G1E_RCJ)  |  rj (_origj, G1E_R_J → drj=0).
+//
+// Components are emitted in the VERBATIM libcint gout order (intor1.c). Because
+// each `s[k]` in libcint factorizes as (moment-power on x)·(power on y)·(power on
+// z) and the value at the final ket position depends only on the per-axis power
+// (the higher `j_l+n` build levels in libcint coincide at the emit index), the
+// per-axis-power product reproduces libcint's gout byte-for-byte. The component
+// ORDER per op_mode is the canonical nesting libcint emits:
+//   r    (mode 0, rank 3):  x, y, z
+//   rr   (mode 1, rank 9):  3×3 row-major (k = a*3 + b)
+//   rrr  (mode 2, rank 27): 3×3×3 (k = a*9 + b*3 + c)
+//   rrrr (mode 3, rank 81): 3×3×3×3 (k = a*27 + b*9 + c*3 + d)
+//   r2   (mode 4, rank 1):  trace m2x + m2y + m2z (= s0+s4+s8 of rr)
+//   r4   (mode 5, rank 1):  m4x+2 m2x m2y+2 m2x m2z+m4y+2 m2y m2z+m4z
+//                           (= s0+2s4+2s8+s40+2s44+s80 of rrrr)
+//   z    (mode 6, rank 1):  m1z              (= s[2] of r)
+//   zz   (mode 7, rank 1):  m2z              (= s[8] of rr)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// On-device parameterized Cluster-A moment kernel (overlap × position-power).
+///
+/// `op_mode` selects the family/component layout; `moment_order` (1..=4) is the
+/// ket headroom and the depth of the per-axis moment ladder; `rank` is the
+/// output component count (3/9/27/81/1). `cart_out` is component-leading:
+/// `cart_out[(ci*nctr_j+cj)*rank*block_len + comp*block_len + cj_idx*nci+ci_idx]`.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn one_electron_moment_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    g: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    drjx: F,
+    drjy: F,
+    drjz: F,
+    sqrtpi: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    #[comptime] op_mode: u32,
+    #[comptime] moment_order: u32,
+    #[comptime] rank: u32,
+) {
+    if UNIT_POS == 0u32 {
+        // Ket headroom: overlap G-tensor must span j..=lj+moment_order so the
+        // per-axis moment ladder can read overlap[jx + t] for t up to moment_order.
+        let nmax = li + lj + moment_order;
+        let lj_ext = lj + moment_order;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let total_len = rank * block_len;
+        let out_total = nctr_i * nctr_j * total_len;
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                // Build the OVERLAP base G-tensor (fixed-center VRR + HRR to lj_ext).
+                let mut gi = 0u32;
+                while gi < total_g {
+                    g[gi as usize] = F::new(0.0);
+                    gi += 1u32;
+                }
+                g[gx as usize] = F::new(1.0);
+                g[gy as usize] = F::new(1.0);
+                g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+
+                one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+
+                if lj_ext >= 1u32 {
+                    one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                    one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                    one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                }
+
+                let mut ci = 0u32;
+                while ci < nctr_i {
+                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                    let mut cj = 0u32;
+                    while cj < nctr_j {
+                        let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                        let weight = coeff_i_val * coeff_j_val;
+                        let base = (ci * nctr_j + cj) * total_len;
+
+                        let mut cj_idx = 0u32;
+                        let mut ja = 0u32;
+                        while ja <= lj {
+                            let jx = lj - ja;
+                            let lj_minus_jx = lj - jx;
+                            let mut jb = 0u32;
+                            while jb <= lj_minus_jx {
+                                let jy = lj_minus_jx - jb;
+                                let jz = lj - jx - jy;
+
+                                let mut ci_idx = 0u32;
+                                let mut ia = 0u32;
+                                while ia <= li {
+                                    let ix = li - ia;
+                                    let li_minus_ix = li - ix;
+                                    let mut ib = 0u32;
+                                    while ib <= li_minus_ix {
+                                        let iy = li_minus_ix - ib;
+                                        let iz = li - ix - iy;
+
+                                        // Per-axis moment-power ladders m0..m4
+                                        // (only m0..m{moment_order} are meaningful;
+                                        // higher entries stay zero and are unused).
+                                        let mx0 = F::new(0.0);
+                                        let mx1 = F::new(0.0);
+                                        let mx2 = F::new(0.0);
+                                        let mx3 = F::new(0.0);
+                                        let mx4 = F::new(0.0);
+                                        let my0 = F::new(0.0);
+                                        let my1 = F::new(0.0);
+                                        let my2 = F::new(0.0);
+                                        let my3 = F::new(0.0);
+                                        let my4 = F::new(0.0);
+                                        let mz0 = F::new(0.0);
+                                        let mz1 = F::new(0.0);
+                                        let mz2 = F::new(0.0);
+                                        let mz3 = F::new(0.0);
+                                        let mz4 = F::new(0.0);
+                                        let mut mx0 = mx0;
+                                        let mut mx1 = mx1;
+                                        let mut mx2 = mx2;
+                                        let mut mx3 = mx3;
+                                        let mut mx4 = mx4;
+                                        let mut my0 = my0;
+                                        let mut my1 = my1;
+                                        let mut my2 = my2;
+                                        let mut my3 = my3;
+                                        let mut my4 = my4;
+                                        let mut mz0 = mz0;
+                                        let mut mz1 = mz1;
+                                        let mut mz2 = mz2;
+                                        let mut mz3 = mz3;
+                                        let mut mz4 = mz4;
+
+                                        // x axis
+                                        moment_axis_ladder::<F>(
+                                            g, gx, jx, dj, ix, drjx, moment_order, &mut mx0,
+                                            &mut mx1, &mut mx2, &mut mx3, &mut mx4,
+                                        );
+                                        moment_axis_ladder::<F>(
+                                            g, gy, jy, dj, iy, drjy, moment_order, &mut my0,
+                                            &mut my1, &mut my2, &mut my3, &mut my4,
+                                        );
+                                        moment_axis_ladder::<F>(
+                                            g, gz, jz, dj, iz, drjz, moment_order, &mut mz0,
+                                            &mut mz1, &mut mz2, &mut mz3, &mut mz4,
+                                        );
+
+                                        let elem = cj_idx * nci + ci_idx;
+
+                                        if comptime!(op_mode == 6u32) {
+                                            // z: s[2] of r = m0x·m0y·m1z
+                                            cart_out[(base + elem) as usize] +=
+                                                weight * (mx0 * my0 * mz1);
+                                        } else if comptime!(op_mode == 7u32) {
+                                            // zz: s[8] of rr = m0x·m0y·m2z
+                                            cart_out[(base + elem) as usize] +=
+                                                weight * (mx0 * my0 * mz2);
+                                        } else if comptime!(op_mode == 4u32) {
+                                            // r2 trace: m2x + m2y + m2z (s0+s4+s8 of rr)
+                                            let t = mx2 * my0 * mz0
+                                                + mx0 * my2 * mz0
+                                                + mx0 * my0 * mz2;
+                                            cart_out[(base + elem) as usize] += weight * t;
+                                        } else if comptime!(op_mode == 5u32) {
+                                            // r4: s0+2s4+2s8+s40+2s44+s80 of rrrr
+                                            let t = mx4 * my0 * mz0
+                                                + F::new(2.0) * (mx2 * my2 * mz0)
+                                                + F::new(2.0) * (mx2 * my0 * mz2)
+                                                + mx0 * my4 * mz0
+                                                + F::new(2.0) * (mx0 * my2 * mz2)
+                                                + mx0 * my0 * mz4;
+                                            cart_out[(base + elem) as usize] += weight * t;
+                                        } else {
+                                            // Full tensor families r/rr/rrr/rrrr:
+                                            // emit rank components in canonical nesting
+                                            // order via per-axis power digits.
+                                            let mut comp = 0u32;
+                                            while comp < rank {
+                                                // decompose comp into moment_order
+                                                // base-3 digits → per-axis powers.
+                                                let rem = comp;
+                                                let mut px_pow = 0u32;
+                                                let mut py_pow = 0u32;
+                                                let mut pz_pow = 0u32;
+                                                let mut d = 0u32;
+                                                while d < moment_order {
+                                                    // most-significant digit first:
+                                                    // weight = 3^(moment_order-1-d)
+                                                    let mut w = 1u32;
+                                                    let mut e = 0u32;
+                                                    let exp = moment_order - 1u32 - d;
+                                                    while e < exp {
+                                                        w *= 3u32;
+                                                        e += 1u32;
+                                                    }
+                                                    let digit = (rem / w) % 3u32;
+                                                    if digit == 0u32 {
+                                                        px_pow += 1u32;
+                                                    } else if digit == 1u32 {
+                                                        py_pow += 1u32;
+                                                    } else {
+                                                        pz_pow += 1u32;
+                                                    }
+                                                    d += 1u32;
+                                                }
+
+                                                let vx = moment_pick::<F>(
+                                                    px_pow, mx0, mx1, mx2, mx3, mx4,
+                                                );
+                                                let vy = moment_pick::<F>(
+                                                    py_pow, my0, my1, my2, my3, my4,
+                                                );
+                                                let vz = moment_pick::<F>(
+                                                    pz_pow, mz0, mz1, mz2, mz3, mz4,
+                                                );
+
+                                                cart_out
+                                                    [(base + comp * block_len + elem) as usize] +=
+                                                    weight * (vx * vy * vz);
+                                                comp += 1u32;
+                                            }
+                                        }
+
+                                        ci_idx += 1u32;
+                                        ib += 1u32;
+                                    }
+                                    ia += 1u32;
+                                }
+
+                                cj_idx += 1u32;
+                                jb += 1u32;
+                            }
+                            ja += 1u32;
+                        }
+
+                        cj += 1u32;
+                    }
+                    ci += 1u32;
+                }
+
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Per-axis moment-power ladder for the moment kernel.
+///
+/// Computes `m_p = Σ_{t=0..p} C(p,t) · drj^(p-t) · overlap[jx+t]` for p = 0..=4
+/// (only p ≤ `moment_order` are filled; higher remain at their input value),
+/// where `overlap[jx+t] = g[off + (jx+t)*dj + i]`. This is the closed-form of
+/// libcint's repeated `CINTx1j_1e` (g1e.c:453). For `_origj`, `drj = 0` so the
+/// ladder collapses to a pure ket-level shift (libcint's `G1E_R_J`).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn moment_axis_ladder<F: Float>(
+    g: &Array<F>,
+    off: u32,
+    jx: u32,
+    dj: u32,
+    i: u32,
+    drj: F,
+    #[comptime] moment_order: u32,
+    m0: &mut F,
+    m1: &mut F,
+    m2: &mut F,
+    m3: &mut F,
+    m4: &mut F,
+) {
+    let ov0 = g[(off + jx * dj + i) as usize];
+    *m0 = ov0;
+    if comptime!(moment_order >= 1u32) {
+        let ov1 = g[(off + (jx + 1u32) * dj + i) as usize];
+        *m1 = ov1 + drj * ov0;
+    }
+    if comptime!(moment_order >= 2u32) {
+        let ov1 = g[(off + (jx + 1u32) * dj + i) as usize];
+        let ov2 = g[(off + (jx + 2u32) * dj + i) as usize];
+        *m2 = ov2 + F::new(2.0) * drj * ov1 + drj * drj * ov0;
+    }
+    if comptime!(moment_order >= 3u32) {
+        let ov1 = g[(off + (jx + 1u32) * dj + i) as usize];
+        let ov2 = g[(off + (jx + 2u32) * dj + i) as usize];
+        let ov3 = g[(off + (jx + 3u32) * dj + i) as usize];
+        let d2 = drj * drj;
+        *m3 = ov3
+            + F::new(3.0) * drj * ov2
+            + F::new(3.0) * d2 * ov1
+            + d2 * drj * ov0;
+    }
+    if comptime!(moment_order >= 4u32) {
+        let ov1 = g[(off + (jx + 1u32) * dj + i) as usize];
+        let ov2 = g[(off + (jx + 2u32) * dj + i) as usize];
+        let ov3 = g[(off + (jx + 3u32) * dj + i) as usize];
+        let ov4 = g[(off + (jx + 4u32) * dj + i) as usize];
+        let d2 = drj * drj;
+        let d3 = d2 * drj;
+        let d4 = d2 * d2;
+        *m4 = ov4
+            + F::new(4.0) * drj * ov3
+            + F::new(6.0) * d2 * ov2
+            + F::new(4.0) * d3 * ov1
+            + d4 * ov0;
+    }
+}
+
+/// Select the moment-power value `m{power}` from the per-axis ladder (power 0..4).
+#[cube]
+fn moment_pick<F: Float>(power: u32, m0: F, m1: F, m2: F, m3: F, m4: F) -> F {
+    let mut out = m0;
+    if power == 1u32 {
+        out = m1;
+    } else if power == 2u32 {
+        out = m2;
+    } else if power == 3u32 {
+        out = m3;
+    } else if power == 4u32 {
+        out = m4;
+    }
+    out
+}
+
+/// Dispatch [`one_electron_moment_kernel`] at `f64` on a backend client. Returns
+/// the component-leading cart buffer of length `rank * nci * ncj * nctr_i*nctr_j`.
+#[allow(clippy::too_many_arguments)]
+fn run_1e_moment_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    op_mode: u32,
+    moment_order: u32,
+    rank: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    drj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let mo = moment_order as usize;
+    let nmax_u = li_u + lj_u + mo;
+    let lj_ext_u = lj_u + mo;
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * (rank as usize) * nci * ncj;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+
+    let g_zero = vec![0.0_f64; total_g];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    macro_rules! launch_with {
+        ($mode:expr, $order:expr, $rank:expr) => {
+            one_electron_moment_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                drj[0],
+                drj[1],
+                drj[2],
+                SQRTPI,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                $mode,
+                $order,
+                $rank,
+            )
+        };
+    }
+
+    // Comptime (op_mode, moment_order, rank) selected via a host match. The valid
+    // Cluster-A combinations are enumerated explicitly (CubeCL cannot pass comptime
+    // args dynamically).
+    match op_mode {
+        0u32 => launch_with!(0u32, 1u32, 3u32),  // r
+        1u32 => launch_with!(1u32, 2u32, 9u32),  // rr
+        2u32 => launch_with!(2u32, 3u32, 27u32), // rrr
+        3u32 => launch_with!(3u32, 4u32, 81u32), // rrrr
+        4u32 => launch_with!(4u32, 2u32, 1u32),  // r2
+        5u32 => launch_with!(5u32, 4u32, 1u32),  // r4
+        6u32 => launch_with!(6u32, 1u32, 1u32),  // z
+        _ => launch_with!(7u32, 2u32, 1u32),     // zz
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_1e_moment_device`] (Cpu/Wgpu/Cuda/Rocm/Metal).
+#[allow(clippy::too_many_arguments)]
+fn run_1e_moment_on_backend(
+    backend: &ResolvedBackend,
+    op_mode: u32,
+    moment_order: u32,
+    rank: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    drj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_1e_moment_device::<cubecl::cpu::CpuRuntime>(
+            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_1e_moment_device::<cubecl_wgpu::WgpuRuntime>(
+            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_1e_moment_device::<cubecl_cuda::CudaRuntime>(
+            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_1e_moment_device::<cubecl_hip::HipRuntime>(
+            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_1e_moment_device::<cubecl_wgpu::WgpuRuntime>(
+            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+    }
+}
+
 /// Contract G-tensor elements for the overlap operator.
 ///
 /// Loops over all (ix+jx, iy+jy, iz+jz) Cartesian products and returns the
@@ -3775,6 +4305,28 @@ fn launch_one_electron_typed<F: CintFloat>(
     let is_ipnucip = op_name == "ipnucip";
     let is_rank9_both = is_ipovlpip || is_ipkinip || is_ipnucip;
 
+    // Phase 24 Cluster A (MOM-01/02/03): overlap-derived position-tensor moment
+    // families r/rr/rrr/rrrr/r2/r4/z/zz and their `_origj` variants. Each maps to
+    // a (op_mode, moment_order, rank) tuple for the parameterized moment kernel.
+    // `_origj` reuses the SAME op_mode/order/rank — only the origin source differs
+    // (handled below via drj = rj - origin; for _origj origin = rj so drj = 0).
+    let moment_dispatch: Option<(u32, u32, u32)> = match op_name {
+        "r" | "r_origj" => Some((0, 1, 3)),
+        "rr" | "rr_origj" => Some((1, 2, 9)),
+        "rrr" => Some((2, 3, 27)),
+        "rrrr" => Some((3, 4, 81)),
+        "r2" | "r2_origj" => Some((4, 2, 1)),
+        "r4" | "r4_origj" => Some((5, 4, 1)),
+        "z" | "z_origj" => Some((6, 1, 1)),
+        "zz" | "zz_origj" => Some((7, 2, 1)),
+        _ => None,
+    };
+    let is_moment = moment_dispatch.is_some();
+    // `_origj` variants read the ket basis center rj; base families read the gauge
+    // origin env[PTR_COMMON_ORIG]. D-02: origin source is a kernel-side coordinate
+    // choice, realized host-side as drj = rj - origin.
+    let is_origj = op_name.ends_with("_origj");
+
     if !is_overlap
         && !is_kinetic
         && !is_nuclear
@@ -3783,6 +4335,7 @@ fn launch_one_electron_typed<F: CintFloat>(
         && !is_ipnuc
         && !is_iprinv
         && !is_rank9_both
+        && !is_moment
     {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("1e operator '{}' is not supported", op_name),
@@ -3794,6 +4347,152 @@ fn launch_one_electron_typed<F: CintFloat>(
     let ncj = ncart(lj);
     let nsi = nsph(li);
     let nsj = nsph(lj);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 24 Cluster A moment path (r/rr/rrr/rrrr/r2/r4/z/zz + _origj)
+    // — rank ∈ {1,3,9,27,81} component-leading output
+    // ─────────────────────────────────────────────────────────────────────────
+    if let Some((op_mode, moment_order, rank)) = moment_dispatch {
+        // Spinor moment reps are registered for surface completeness but not
+        // implemented: fail typed, never partial (D-09).
+        if plan.representation == Representation::Spinor {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!("spinor int1e_{op_name} moment"),
+            });
+        }
+
+        // Origin-source branch (D-02). Base families read the gauge origin from
+        // env[PTR_COMMON_ORIG] (defaulting to [0,0,0] when unset); `_origj`
+        // variants use the ket basis center rj directly (drj = 0). This realizes
+        // libcint's G1E_RCJ (drj = rj - common_orig) vs G1E_R_J (origin = rj).
+        let origin: [f64; 3] = if is_origj {
+            rj
+        } else {
+            plan.operator_env_params.common_orig.unwrap_or([0.0; 3])
+        };
+        let drj = [rj[0] - origin[0], rj[1] - origin[1], rj[2] - origin[2]];
+
+        let n_prim_i = shell_i.nprim as usize;
+        let n_prim_j = shell_j.nprim as usize;
+        let n_ctr_i = shell_i.nctr as usize;
+        let n_ctr_j = shell_j.nctr as usize;
+
+        let block_len = nci * ncj;
+        let total_len = (rank as usize) * block_len;
+
+        // Internal G-tensor ceiling: nmax = li + lj + moment_order. Stays within
+        // the engine's li+lj<=8 envelope on the gate corpus (STO-3G li,lj<=1 →
+        // nmax <= 6 for rrrr/r4). Fail closed if a corpus shell would exceed it,
+        // rather than silently truncating (RESEARCH A1).
+        if li as u32 + lj as u32 + moment_order > 8 {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "device 1e moment kernel supports l_i+l_j+order<=8; got \
+                     l_i={li}, l_j={lj}, order={moment_order} for int1e_{op_name}"
+                ),
+            });
+        }
+
+        let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+        let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+        let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+        let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+
+        let mut cart_comp = run_1e_moment_on_backend(
+            backend, op_mode, moment_order, rank, li as u32, lj as u32, n_prim_i as u32,
+            n_prim_j as u32, n_ctr_i as u32, n_ctr_j as u32, ri, rj, drj, &exps_i, &exps_j,
+            &coeff_i, &coeff_j,
+        );
+
+        // Apply the libcint CINTcommon_fac_sp normalization to all components.
+        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+        if (sp_scale - 1.0).abs() > 1e-15 {
+            for v in cart_comp.iter_mut() {
+                *v *= sp_scale;
+            }
+        }
+
+        let rank_us = rank as usize;
+        match plan.representation {
+            Representation::Spheric => {
+                let ni_sph = n_ctr_i * nsi;
+                let nj_sph = n_ctr_j * nsj;
+                let sph_block = ni_sph * nj_sph;
+                for comp in 0..rank_us {
+                    for ci in 0..n_ctr_i {
+                        for cj in 0..n_ctr_j {
+                            let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                            let mut sph_tmp = vec![0.0_f64; nsi * nsj];
+                            cart_to_sph_1e(
+                                &cart_comp[cart_base..cart_base + block_len],
+                                &mut sph_tmp,
+                                li,
+                                lj,
+                            );
+                            let staging_comp_base = comp * sph_block;
+                            for mj in 0..nsj {
+                                let jj = cj * nsj + mj;
+                                for mi in 0..nsi {
+                                    let ii = ci * nsi + mi;
+                                    let dst = staging_comp_base + ii + jj * ni_sph;
+                                    if dst < staging.len() {
+                                        staging[dst] = F::from_f64_lossy(sph_tmp[mj * nsi + mi]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Representation::Cart => {
+                let ni_cart = n_ctr_i * nci;
+                let nj_cart = n_ctr_j * ncj;
+                let cart_block = ni_cart * nj_cart;
+                for comp in 0..rank_us {
+                    for ci in 0..n_ctr_i {
+                        for cj in 0..n_ctr_j {
+                            let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                            let block = &cart_comp[src_base..src_base + block_len];
+                            let staging_comp_base = comp * cart_block;
+                            for jc in 0..ncj {
+                                let jj = cj * ncj + jc;
+                                for ic in 0..nci {
+                                    let ii = ci * nci + ic;
+                                    let dst = staging_comp_base + ii + jj * ni_cart;
+                                    if dst < staging.len() {
+                                        staging[dst] = F::from_f64_lossy(block[jc * nci + ic]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Representation::Spinor => unreachable!("spinor moment rejected above"),
+        }
+
+        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+            1e-12
+        } else {
+            1e-18
+        });
+        let not0 = staging
+            .iter()
+            .filter(|&&v| v.abs() > nonzero_threshold)
+            .count() as i32;
+
+        let staging_bytes = staging.len() * std::mem::size_of::<F>();
+        return Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: staging_bytes,
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes: staging_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        });
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Both-side rank-9 gradient path (`ipovlpip` / `ipkinip` / `ipnucip`)

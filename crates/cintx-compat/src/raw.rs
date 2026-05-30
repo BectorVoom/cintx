@@ -184,6 +184,36 @@ impl RawApiId {
     pub const INT1E_IPRINV_SPH: Self = Self::Symbol("int1e_iprinv_sph");
     pub const INT1E_IPRINV_SPINOR: Self = Self::Symbol("int1e_iprinv_spinor");
 
+    // Phase 24 Cluster A (MOM-01/02/03): overlap-derived position-tensor moment
+    // families. Each `_origj` variant is its OWN operator/symbol (D-02): the shared
+    // moment kernel branches on origin-source (env[PTR_COMMON_ORIG] for the base
+    // family, ket basis center rj for `_origj`). Spinor forms registered for surface
+    // completeness; the kernel returns UnsupportedApi (D-09). Symbol strings MUST
+    // exactly match the manifest lock entries.
+    pub const INT1E_R_CART: Self = Self::Symbol("int1e_r_cart");
+    pub const INT1E_R_SPH: Self = Self::Symbol("int1e_r_sph");
+    pub const INT1E_R_SPINOR: Self = Self::Symbol("int1e_r_spinor");
+
+    pub const INT1E_Z_CART: Self = Self::Symbol("int1e_z_cart");
+    pub const INT1E_Z_SPH: Self = Self::Symbol("int1e_z_sph");
+    pub const INT1E_Z_SPINOR: Self = Self::Symbol("int1e_z_spinor");
+
+    pub const INT1E_ZZ_CART: Self = Self::Symbol("int1e_zz_cart");
+    pub const INT1E_ZZ_SPH: Self = Self::Symbol("int1e_zz_sph");
+    pub const INT1E_ZZ_SPINOR: Self = Self::Symbol("int1e_zz_spinor");
+
+    pub const INT1E_R_ORIGJ_CART: Self = Self::Symbol("int1e_r_origj_cart");
+    pub const INT1E_R_ORIGJ_SPH: Self = Self::Symbol("int1e_r_origj_sph");
+    pub const INT1E_R_ORIGJ_SPINOR: Self = Self::Symbol("int1e_r_origj_spinor");
+
+    pub const INT1E_Z_ORIGJ_CART: Self = Self::Symbol("int1e_z_origj_cart");
+    pub const INT1E_Z_ORIGJ_SPH: Self = Self::Symbol("int1e_z_origj_sph");
+    pub const INT1E_Z_ORIGJ_SPINOR: Self = Self::Symbol("int1e_z_origj_spinor");
+
+    pub const INT1E_ZZ_ORIGJ_CART: Self = Self::Symbol("int1e_zz_origj_cart");
+    pub const INT1E_ZZ_ORIGJ_SPH: Self = Self::Symbol("int1e_zz_origj_sph");
+    pub const INT1E_ZZ_ORIGJ_SPINOR: Self = Self::Symbol("int1e_zz_origj_spinor");
+
     // Phase 23 both-side rank-9 1e families (spinor returns UnsupportedApi, D-06).
     pub const INT1E_IPOVLPIP_CART: Self = Self::Symbol("int1e_ipovlpip_cart");
     pub const INT1E_IPOVLPIP_SPH: Self = Self::Symbol("int1e_ipovlpip_sph");
