@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: executing
-stopped_at: Phase 25 complete + verified (PASS 7/7)
-last_updated: "2026-05-31T00:00:00.000Z"
-last_activity: 2026-05-31 -- Phase 25 executed, verified, 29/29 vendor parity green
+status: completed
+stopped_at: Phase 26 context gathered
+last_updated: "2026-05-30T21:34:33.915Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 21
   completed_phases: 15
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 25 (group-2-hessian-higher-order-derivatives) — COMPLETE ✓ (verified PASS 7/7)
 Plan: 6 of 6 complete
 Status: Phase 25 complete — next phase 26 (Group 5 spin-free GIAO)
-Resume file: None
+Resume file: .planning/phases/26-group-5-spin-free-giao-nmr-integrals-complex/26-CONTEXT.md
 Last activity: 2026-05-31
 
 **v1.4 phase sequence (dependency-ordered):**
@@ -369,6 +369,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T00:00:00.000Z
-Stopped at: Completed 25-05-PLAN.md
+Last session: 2026-05-30T21:34:33.910Z
+Stopped at: Phase 26 context gathered
 Resume file: None
