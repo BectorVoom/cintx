@@ -5885,26 +5885,39 @@ fn launch_one_electron_typed<F: CintFloat>(
     // WR-01: map op_name → op_mode only; derive (moment_order, rank) from the shared
     // `moment_params` const fn so the dispatcher, the device sizing, and the device
     // comptime match all share ONE source of truth and cannot drift.
-    let moment_op_mode: Option<u32> = match op_name {
-        "r" | "r_origj" => Some(0),
-        "rr" | "rr_origj" => Some(1),
-        "rrr" => Some(2),
-        "rrrr" => Some(3),
-        "r2" | "r2_origj" => Some(4),
-        "r4" | "r4_origj" => Some(5),
-        "z" | "z_origj" => Some(6),
-        "zz" | "zz_origj" => Some(7),
+    //
+    // IN-01: this exact-name table is also the single source of truth for the
+    // origin source. Each arm carries `(op_mode, is_origj)` so the origin-source
+    // choice (ket center `rj` vs gauge origin `common_orig`) is data-driven here
+    // rather than re-derived downstream from an `op_name.ends_with("_origj")`
+    // string suffix — a coincidental future `_origj` spelling cannot silently
+    // flip the origin branch.
+    let moment_dispatch_name: Option<(u32, bool)> = match op_name {
+        "r" => Some((0, false)),
+        "r_origj" => Some((0, true)),
+        "rr" => Some((1, false)),
+        "rr_origj" => Some((1, true)),
+        "rrr" => Some((2, false)),
+        "rrrr" => Some((3, false)),
+        "r2" => Some((4, false)),
+        "r2_origj" => Some((4, true)),
+        "r4" => Some((5, false)),
+        "r4_origj" => Some((5, true)),
+        "z" => Some((6, false)),
+        "z_origj" => Some((6, true)),
+        "zz" => Some((7, false)),
+        "zz_origj" => Some((7, true)),
         _ => None,
     };
-    let moment_dispatch: Option<(u32, u32, u32)> = moment_op_mode.map(|op_mode| {
-        let (order, rank) = moment_params(op_mode);
-        (op_mode, order, rank)
-    });
+    // Carries (op_mode, moment_order, rank, is_origj). The origin-source flag rides
+    // the dispatch tuple so the numerical origin branch is selected by the same
+    // enumerated name table as op_mode, not by string-suffix re-derivation (IN-01).
+    let moment_dispatch: Option<(u32, u32, u32, bool)> =
+        moment_dispatch_name.map(|(op_mode, is_origj)| {
+            let (order, rank) = moment_params(op_mode);
+            (op_mode, order, rank, is_origj)
+        });
     let is_moment = moment_dispatch.is_some();
-    // `_origj` variants read the ket basis center rj; base families read the gauge
-    // origin env[PTR_COMMON_ORIG]. D-02: origin source is a kernel-side coordinate
-    // choice, realized host-side as drj = rj - origin.
-    let is_origj = op_name.ends_with("_origj");
 
     if !is_overlap
         && !is_kinetic
@@ -5935,7 +5948,7 @@ fn launch_one_electron_typed<F: CintFloat>(
     // Phase 24 Cluster A moment path (r/rr/rrr/rrrr/r2/r4/z/zz + _origj)
     // — rank ∈ {1,3,9,27,81} component-leading output
     // ─────────────────────────────────────────────────────────────────────────
-    if let Some((op_mode, moment_order, rank)) = moment_dispatch {
+    if let Some((op_mode, moment_order, rank, is_origj)) = moment_dispatch {
         // Spinor moment reps are registered for surface completeness but not
         // implemented: fail typed, never partial (D-09).
         if plan.representation == Representation::Spinor {
@@ -5948,6 +5961,8 @@ fn launch_one_electron_typed<F: CintFloat>(
         // env[PTR_COMMON_ORIG] (defaulting to [0,0,0] when unset); `_origj`
         // variants use the ket basis center rj directly (drj = 0). This realizes
         // libcint's G1E_RCJ (drj = rj - common_orig) vs G1E_R_J (origin = rj).
+        // IN-01: `is_origj` comes from the enumerated dispatch tuple, not a
+        // string-suffix check.
         let origin: [f64; 3] = if is_origj {
             rj
         } else {
