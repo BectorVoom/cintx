@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.4
-milestone_name: milestone
+milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: verifying
-stopped_at: Completed 28-04-PLAN.md
-last_updated: "2026-05-31T12:29:36.756Z"
+stopped_at: Phase 29 context gathered
+last_updated: "2026-05-31T12:59:49.082Z"
 last_activity: 2026-05-31
 progress:
-  total_phases: 28
-  completed_phases: 28
-  total_plans: 142
-  completed_plans: 143
+  total_phases: 21
+  completed_phases: 18
+  total_plans: 95
+  completed_plans: 95
   percent: 100
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 28
 Plan: Not started
 Status: Phase complete — ready for verification
-Resume file: None
+Resume file: .planning/phases/29-group-4-relativistic-spin-operator-integrals-spinor/29-CONTEXT.md
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 
@@ -409,6 +409,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T12:09:19.126Z
-Stopped at: Completed 28-04-PLAN.md
+Last session: 2026-05-31T12:59:49.077Z
+Stopped at: Phase 29 context gathered
 Resume file: None
