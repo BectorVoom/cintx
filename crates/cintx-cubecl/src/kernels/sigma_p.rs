@@ -43,7 +43,7 @@
 //! mix, so the host transform / si_2d path is shared across the whole σ-group.
 
 use crate::backend::ResolvedBackend;
-use crate::transform::c2spinor::{cart_to_spinor_si_2d, spinor_len};
+use crate::transform::c2spinor::{cart_to_spinor_si_2d, cart_to_spinor_si_2di, spinor_len};
 use crate::transform::c2s::ncart;
 use cintx_core::CintFloat;
 use cintx_core::cintxRsError;
@@ -521,6 +521,539 @@ pub(crate) fn run_sigma_p_on_backend(
         ),
     };
     Ok(out)
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Phase 30 (GIAO-03 / D-03 Wave 0): gauge-origin `x1i`-with-origin σ·p variant.
+//
+//  THE genuinely-new device math of Phase 30. Folds the gauge-origin GIAO factor
+//  into the σ·p G-tensor for `int1e_cg_sa10sp` (the smallest COMMON_ORIG-reading
+//  family — the Wave-0 micro-test vehicle).
+//
+//  The gauge factor is NOT a post-multiply cross-product (RESEARCH Pitfall 1). It
+//  is the position recurrence `CINTx1i_1e` (g1e.c:446-448), folded through the
+//  G-tensor build macro G1E_RCI:
+//      x1i(g, origin)[i] = g[i+1] + origin * g[i]            // bra raise + shift
+//  with origin = dri = ri − env[PTR_COMMON_ORIG] supplied per-axis from the host.
+//
+//  cg_sa10sp G-tensor build (intor3.c:1141-1160, common_factor *= 0.5):
+//      g1 = G1E_D_J(g0)            ket nabla  ∇_j  (f[i] = j*g[i−dj] − 2aj*g[i+dj])
+//      g2 = G1E_RCI(g0, dri)       x1i-with-origin
+//      g3 = G1E_RCI(g1, dri)       x1i-with-origin of the ket-nabla
+//  then the 9-element s[] product mix → 12-component gout (3 groups × gc 4-block).
+//
+//  Setting origin = [0,0,0] makes x1i(g,0)[i] = g[i+1] = G1E_R_I — i.e. the
+//  `int1e_giao_sa10sp` natural-center build. Because the Wave-0 fixture places the
+//  bra (i) shell at the coordinate origin, common_orig = [0,0,0] ⇒ dri = ri − 0 =
+//  [0,0,0], so the cg result MUST collapse to giao — the live-gauge witness.
+//
+//  Headroom matches sigma_1e.rs::sigma_ov_kernel: nmax = li+lj+2 (x1i reads i+1,
+//  composed needs +2 bra slack), lj_ext = lj+1 (∇_j reads j+1).
+//  int1e_sp (tensor_rank==1) and its kernel above are NOT touched.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// `CINTnabla1j_1e` (g1e.c) ket nabla at index `idx0` (cart j-exponent `jexp`):
+/// `f[i] = jexp*g[idx0−dj] − 2aj*g[idx0+dj]` (the `jexp==0` branch drops the
+/// lowering term). Mirrors `sigma_1e.rs::nabla_j`.
+#[cube]
+fn sigma_p_nabla_j<F: Float>(g: &Array<F>, idx0: u32, dj: u32, aj2: F, jexp: u32) -> F {
+    if jexp == 0u32 {
+        aj2 * g[(idx0 + dj) as usize]
+    } else {
+        F::cast_from(jexp) * g[(idx0 - dj) as usize] + aj2 * g[(idx0 + dj) as usize]
+    }
+}
+
+/// `CINTx1i_1e` (g1e.c:446-448) gauge `x1i`-with-origin at index `idx0`:
+/// `g[idx0+1] + origin * g[idx0]` (bra raise by one + per-axis origin shift). This
+/// is the gauge fold; NOT a cross-product.
+#[cube]
+fn sigma_p_x1i<F: Float>(g: &Array<F>, idx0: u32, origin: F) -> F {
+    g[(idx0 + 1u32) as usize] + origin * g[idx0 as usize]
+}
+
+/// `x1i` of the ket-nabla `g1` (= `G1E_RCI(g3, g1)`): apply `∇_j` first at the two
+/// bra-stencil points `idx0` and `idx0+1`, then the bra raise + origin shift.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn sigma_p_x1i_of_j<F: Float>(
+    g: &Array<F>,
+    idx0: u32,
+    dj: u32,
+    aj2: F,
+    jexp: u32,
+    origin: F,
+) -> F {
+    let g1_i = sigma_p_nabla_j::<F>(g, idx0, dj, aj2, jexp);
+    let g1_ip = sigma_p_nabla_j::<F>(g, idx0 + 1u32, dj, aj2, jexp);
+    g1_ip + origin * g1_i
+}
+
+/// Device kernel — `int1e_cg_sa10sp` gauge-origin σ·p assembler (rank 3, 12 gout
+/// components → 3 groups × gc 4-block, component-leading KET-major).
+///
+/// `origin_x/y/z` carry the per-axis gauge origin `dri = ri − common_orig`. Single
+/// `UNIT_POS==0` work item, mirroring `sigma_p_kernel`. `#[comptime] variant` is
+/// reserved (`0 = cg_sa10sp`) so Wave 1 can switch the gout mix without forking.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn sigma_p_cg_sa10sp_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    g: &mut Array<F>,
+    gc_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    origin_x: F,
+    origin_y: F,
+    origin_z: F,
+    sqrtpi: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    #[comptime] _variant: u32,
+) {
+    if UNIT_POS == 0u32 {
+        // Headroom: +2 in bra (x1i reads i+1; composed x1i-of-∇_j needs +2 slack),
+        // +1 in ket (∇_j reads j+1). Matches sigma_1e.rs::sigma_ov_kernel.
+        let nmax = li + lj + 2u32;
+        let lj_ext = lj + 1u32;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        // rank 3 → 12 gc blocks per (ci,cj).
+        let rank = 3u32;
+        let total_len = rank * N_GC * block_len;
+        let out_total = nctr_i * nctr_j * total_len;
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            gc_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                // ── OVERLAP base G-tensor g0 (fixed-center VRR + HRR). ──
+                let mut gi = 0u32;
+                while gi < total_g {
+                    g[gi as usize] = F::new(0.0);
+                    gi += 1u32;
+                }
+                g[gx as usize] = F::new(1.0);
+                g[gy as usize] = F::new(1.0);
+                g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+
+                sigma_p_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                sigma_p_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                sigma_p_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+
+                if lj_ext >= 1u32 {
+                    sigma_p_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                    sigma_p_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                    sigma_p_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                }
+
+                let aj2 = F::new(-2.0) * aj;
+
+                let mut ci = 0u32;
+                while ci < nctr_i {
+                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                    let mut cj = 0u32;
+                    while cj < nctr_j {
+                        let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                        let weight = coeff_i_val * coeff_j_val;
+                        let base = (ci * nctr_j + cj) * total_len;
+
+                        let mut cj_idx = 0u32;
+                        let mut ja = 0u32;
+                        while ja <= lj {
+                            let jx = lj - ja;
+                            let lj_minus_jx = lj - jx;
+                            let mut jb = 0u32;
+                            while jb <= lj_minus_jx {
+                                let jy = lj_minus_jx - jb;
+                                let jz = lj - jx - jy;
+
+                                let mut ci_idx = 0u32;
+                                let mut ia = 0u32;
+                                while ia <= li {
+                                    let ix = li - ia;
+                                    let li_minus_ix = li - ix;
+                                    let mut ib = 0u32;
+                                    while ib <= li_minus_ix {
+                                        let iy = li_minus_ix - ib;
+                                        let iz = li - ix - iy;
+
+                                        let bx = gx + jx * dj + ix;
+                                        let by = gy + jy * dj + iy;
+                                        let bz = gz + jz * dj + iz;
+
+                                        // g0 = overlap base.
+                                        let g0x = g[bx as usize];
+                                        let g0y = g[by as usize];
+                                        let g0z = g[bz as usize];
+                                        // g1 = ∇_j(g0) (ket nabla, G1E_D_J).
+                                        let g1x = sigma_p_nabla_j::<F>(g, bx, dj, aj2, jx);
+                                        let g1y = sigma_p_nabla_j::<F>(g, by, dj, aj2, jy);
+                                        let g1z = sigma_p_nabla_j::<F>(g, bz, dj, aj2, jz);
+                                        // g2 = x1i(g0, dri) (gauge fold, G1E_RCI).
+                                        let g2x = sigma_p_x1i::<F>(g, bx, origin_x);
+                                        let g2y = sigma_p_x1i::<F>(g, by, origin_y);
+                                        let g2z = sigma_p_x1i::<F>(g, bz, origin_z);
+                                        // g3 = x1i(g1, dri) (gauge fold of ∇_j).
+                                        let g3x =
+                                            sigma_p_x1i_of_j::<F>(g, bx, dj, aj2, jx, origin_x);
+                                        let g3y =
+                                            sigma_p_x1i_of_j::<F>(g, by, dj, aj2, jy, origin_y);
+                                        let g3z =
+                                            sigma_p_x1i_of_j::<F>(g, bz, dj, aj2, jz, origin_z);
+
+                                        // 9-element s[] product mix (intor3.c:1141).
+                                        let s0 = g3x * g0y * g0z;
+                                        let s1 = g2x * g1y * g0z;
+                                        let s2 = g2x * g0y * g1z;
+                                        let s3 = g1x * g2y * g0z;
+                                        let s4 = g0x * g3y * g0z;
+                                        let s5 = g0x * g2y * g1z;
+                                        let s6 = g1x * g0y * g2z;
+                                        let s7 = g0x * g1y * g2z;
+                                        let s8 = g0x * g0y * g3z;
+
+                                        let elem = cj_idx * nci + ci_idx;
+
+                                        // 12-component gout → 3 groups × gc 4-block.
+                                        // group 0 (gc_x..gc_1) = gout[0..4]:
+                                        //   s8+s4, -s3, -s6, s7-s5
+                                        let gp0 = base;
+                                        gc_out[(gp0 + elem) as usize] += weight * (s8 + s4);
+                                        gc_out[(gp0 + block_len + elem) as usize] +=
+                                            weight * (-s3);
+                                        gc_out[(gp0 + 2u32 * block_len + elem) as usize] +=
+                                            weight * (-s6);
+                                        gc_out[(gp0 + 3u32 * block_len + elem) as usize] +=
+                                            weight * (s7 - s5);
+                                        // group 1 = gout[4..8]:
+                                        //   -s1, s0+s8, -s7, -s6+s2
+                                        let gp1 = base + N_GC * block_len;
+                                        gc_out[(gp1 + elem) as usize] += weight * (-s1);
+                                        gc_out[(gp1 + block_len + elem) as usize] +=
+                                            weight * (s0 + s8);
+                                        gc_out[(gp1 + 2u32 * block_len + elem) as usize] +=
+                                            weight * (-s7);
+                                        gc_out[(gp1 + 3u32 * block_len + elem) as usize] +=
+                                            weight * (-s6 + s2);
+                                        // group 2 = gout[8..12]:
+                                        //   -s2, -s5, s4+s0, s3-s1
+                                        let gp2 = base + 2u32 * N_GC * block_len;
+                                        gc_out[(gp2 + elem) as usize] += weight * (-s2);
+                                        gc_out[(gp2 + block_len + elem) as usize] +=
+                                            weight * (-s5);
+                                        gc_out[(gp2 + 2u32 * block_len + elem) as usize] +=
+                                            weight * (s4 + s0);
+                                        gc_out[(gp2 + 3u32 * block_len + elem) as usize] +=
+                                            weight * (s3 - s1);
+
+                                        ci_idx += 1u32;
+                                        ib += 1u32;
+                                    }
+                                    ia += 1u32;
+                                }
+                                cj_idx += 1u32;
+                                jb += 1u32;
+                            }
+                            ja += 1u32;
+                        }
+                        cj += 1u32;
+                    }
+                    ci += 1u32;
+                }
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`sigma_p_cg_sa10sp_kernel`] at `f64` on a backend client. Returns the
+/// `3 * N_GC`-block component-leading gc accumulator
+/// (`nctr_i*nctr_j*3*N_GC*nci*ncj`). `origin` is the per-axis gauge shift
+/// `dri = ri − common_orig`.
+#[allow(clippy::too_many_arguments)]
+fn run_sigma_p_cg_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    origin: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + lj_u + 2;
+    let lj_ext_u = lj_u + 1;
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let n_blocks = 3 * (N_GC as usize);
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * n_blocks * nci * ncj;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+
+    let g_zero = vec![0.0_f64; total_g];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    sigma_p_cg_sa10sp_kernel::launch::<f64, R>(
+        client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
+        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+        ri[0],
+        ri[1],
+        ri[2],
+        rj[0],
+        rj[1],
+        rj[2],
+        origin[0],
+        origin[1],
+        origin[2],
+        SQRTPI,
+        std::f64::consts::PI,
+        li,
+        lj,
+        nprim_i,
+        nprim_j,
+        nctr_i,
+        nctr_j,
+        0u32,
+    );
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_sigma_p_cg_device`].
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_sigma_p_cg_on_backend(
+    backend: &ResolvedBackend,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    origin: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Result<Vec<f64>, cintxRsError> {
+    let out = match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_sigma_p_cg_device::<cubecl::cpu::CpuRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, origin, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_sigma_p_cg_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, origin, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_sigma_p_cg_device::<cubecl_cuda::CudaRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, origin, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_sigma_p_cg_device::<cubecl_hip::HipRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, origin, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_sigma_p_cg_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, origin, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+    };
+    Ok(out)
+}
+
+/// Live `int1e_cg_sa10sp` Spinor launcher — the Phase-30 Wave-0 gauge path.
+///
+/// Composes the gauge-origin σ·p assembler ([`run_sigma_p_cg_on_backend`], rank 3,
+/// `common_factor *= 0.5`) with the imaginary-ket spin-included transform
+/// [`cart_to_spinor_si_2di`] (`c2s_si_1ei`), producing the flat interleaved-complex
+/// rank-3 spinor block for one shell pair `(i, j)`.
+///
+/// `origin` is the per-axis gauge shift `dri = ri − common_orig`; the host reads
+/// `common_orig` from `plan.operator_env_params.common_orig.unwrap_or([0;3])`. With
+/// `origin = [0,0,0]` the gauge fold collapses to the `int1e_giao_sa10sp`
+/// natural-center build (the live-gauge witness — see kernel docs).
+///
+/// Output layout: 3 stacked spinor matrices, column-major (ket outer, bra inner),
+/// interleaved complex, contraction-major:
+/// `out[grp*(ni_sp*nj_sp*2) + (j_global*ni_sp + i_global)*2 + {0:re,1:im}]`.
+///
+/// Applies its OWN fail-closed staging guard BEFORE any write (Phase-28 CR-01).
+#[allow(clippy::too_many_arguments)]
+pub fn launch_int1e_cg_sa10sp_spinor_pair<F: CintFloat>(
+    backend: &ResolvedBackend,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    origin: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    const RANK: usize = 3;
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let block_len = nci * ncj;
+    let total_len = RANK * (N_GC as usize) * block_len;
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_sp = nctr_i * di;
+    let nj_sp = nctr_j * dj;
+
+    // Fail-closed staging guard BEFORE any write (full-block, ×2 complex, ×rank).
+    let staging_required = ni_sp * nj_sp * 2 * RANK;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Device gauge σ·p assembler: 3*N_GC component-leading gc blocks per (ci,cj). ──
+    let mut gc = run_sigma_p_cg_on_backend(
+        backend,
+        li as u32,
+        lj as u32,
+        nprim_i as u32,
+        nprim_j as u32,
+        nctr_i as u32,
+        nctr_j as u32,
+        ri,
+        rj,
+        origin,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+    )?;
+
+    // s/p normalization scale × the cg_sa10sp common_factor (0.5, intor3.c:1163).
+    let sp_scale = common_fac_sp(li) * common_fac_sp(lj) * 0.5;
+    for v in gc.iter_mut() {
+        *v *= sp_scale;
+    }
+
+    let group_out = ni_sp * nj_sp * 2; // one spinor matrix's flat length
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+    for ci in 0..nctr_i {
+        for cj in 0..nctr_j {
+            let base = (ci * nctr_j + cj) * total_len;
+            for grp in 0..RANK {
+                let gbase = base + grp * (N_GC as usize) * block_len;
+                let gc_x = &gc[gbase..gbase + block_len];
+                let gc_y = &gc[gbase + block_len..gbase + 2 * block_len];
+                let gc_z = &gc[gbase + 2 * block_len..gbase + 3 * block_len];
+                let gc_1 = &gc[gbase + 3 * block_len..gbase + 4 * block_len];
+
+                // c2s_si_1ei owns the KET→BRA transpose (imaginary-ket arm).
+                cart_to_spinor_si_2di::<F>(
+                    &mut scratch,
+                    gc_x,
+                    gc_y,
+                    gc_z,
+                    gc_1,
+                    li,
+                    kappa_i,
+                    lj,
+                    kappa_j,
+                )?;
+
+                let grp_off = grp * group_out;
+                for j in 0..dj {
+                    let j_global = cj * dj + j;
+                    for i in 0..di {
+                        let i_global = ci * di + i;
+                        let src = (j * di + i) * 2;
+                        let dst = grp_off + (j_global * ni_sp + i_global) * 2;
+                        staging[dst] = scratch[src];
+                        staging[dst + 1] = scratch[src + 1];
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// libcint `CINTcommon_fac_sp` s/p normalization factor (matches

@@ -4388,6 +4388,63 @@ pub fn vendor_int1e_sigma_spinor(
     }
 }
 
+/// Evaluate `int1e_cg_sa10sp_spinor` (GIAO-03, `c2s_si_1ei` imaginary-ket gauge
+/// path, rank 3) — `out` sized `3*ni_sp*nj_sp*2` (interleaved re/im, 3 stacked
+/// spinor matrices). The driver reads `env[PTR_COMMON_ORIG]` for the gauge origin.
+pub fn vendor_int1e_cg_sa10sp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_sa10sp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int1e_giao_sa10sp_spinor` (GIAO-03, `c2s_si_1ei` imaginary-ket
+/// natural-center path, rank 3) — `out` sized `3*ni_sp*nj_sp*2`. Same gout as
+/// `cg_sa10sp` but with the gauge `x1i` step at the natural bra center (no origin
+/// shift); used as the cg→giao collapse witness at `common_orig = bra center`.
+pub fn vendor_int1e_giao_sa10sp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_sa10sp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int1e_kin_spinor for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with `ni_sp * nj_sp * 2` f64 elements.
