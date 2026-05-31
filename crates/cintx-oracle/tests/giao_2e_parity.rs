@@ -131,6 +131,25 @@ mod parity {
         let (atm, bas, env) = build_h2o_sto3g_common_orig();
         let quartet = cross_center_non_square_quartet();
 
+        // IN-01: self-documenting / refactor-safe quartet selection. The `[3, 2, 3, 2]`
+        // index literal is meaningless without the fixture's shell ordering; if
+        // `build_h2o_sto3g_common_orig` ever reorders its shells, those indices would
+        // silently select DIFFERENT angular momenta and the non-square cross-center
+        // property (D-12) would quietly break. Assert the SELECTED angular momenta read
+        // back from the fixture equal the expected [H1-1s l=0, O-2p l=1, H1-1s l=0,
+        // O-2p l=1] so a shell-ordering drift fails loudly here instead.
+        let quartet_l: [i32; 4] = [
+            bas[quartet[0] * BAS_SLOTS + ANG_OF],
+            bas[quartet[1] * BAS_SLOTS + ANG_OF],
+            bas[quartet[2] * BAS_SLOTS + ANG_OF],
+            bas[quartet[3] * BAS_SLOTS + ANG_OF],
+        ];
+        assert_eq!(
+            quartet_l, [0, 1, 0, 1],
+            "{label}: quartet AM drifted — expected [H1-1s, O-2p, H1-1s, O-2p] = [0,1,0,1], \
+             got {quartet_l:?}; fixture shell ordering changed (re-source the indices)"
+        );
+
         // ── sph ──
         let vendor_s = collect_vendor_real(rank, &vendor_sph, &atm, &bas, &env, quartet, nsph);
         let (re_s, im_s) = collect_cintx_complex(rank, api_sph, &atm, &bas, &env, quartet, nsph);
