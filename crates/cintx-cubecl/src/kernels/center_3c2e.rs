@@ -4138,7 +4138,9 @@ mod ip2_device_tests {
 //   - NOT-equal-to-plain: the (p,s,s) ip1 output is NOT element-wise equal to the
 //     plain int3c2e output broadcast across components (regression-proof for R1).
 //   - determinism (D-10): repeated evaluation is bit-identical.
-//   - spinor (R5): int3c2e_ip1 with Representation::Spinor returns UnsupportedApi.
+//   - spinor (27-04, D-06): int3c2e_ip1 with Representation::Spinor is SUPPORTED via
+//     the cart_to_spinor_sf_derivative_3c2e wrapper (byte-identity vs libcint proven
+//     in cintx-oracle/tests/spinor_deriv_parity.rs).
 // ─────────────────────────────────────────────────────────────────────────────
 #[cfg(all(test, feature = "cpu"))]
 mod ip1_tests {
@@ -4365,9 +4367,15 @@ mod ip1_tests {
         }
     }
 
-    // Spinor (R5): int3c2e_ip1 with Representation::Spinor returns UnsupportedApi.
+    // Spinor (27-04, D-06): int3c2e_ip1 with Representation::Spinor is now SUPPORTED
+    // via the cart_to_spinor_sf_derivative_3c2e wrapper (the pre-27 UnsupportedApi
+    // rejection was lifted in plan 27-04). Byte-identity vs vendored libcint is proven
+    // in cintx-oracle/tests/spinor_deriv_parity.rs; this is a launcher-level smoke test
+    // that the arm computes (no longer UnsupportedApi) and writes a correctly-sized,
+    // nonzero spinor block. The plan is built Spheric then flipped to Spinor — the cart
+    // blocks are representation-independent; only the final fold differs.
     #[test]
-    fn test_int3c2e_ip1_spinor_unsupported() {
+    fn test_int3c2e_ip1_spinor_supported() {
         let (basis, shells, op) = build_ip1_plan(0, 0, 0);
         let opts = ExecutionOptions::default();
         let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
@@ -4378,11 +4386,17 @@ mod ip1_tests {
         let spec = SpecializationKey::from_plan(&plan);
         let cpu_client = resolve_cpu_client().unwrap();
         let backend = ResolvedBackend::Cpu(cpu_client);
-        let mut staging = vec![0.0_f64; 6];
+        // (s,s,s) spinor int3c2e_ip1 output: di=dj=spinor_len(0,0)=2, aux-k SPHERICAL
+        // nsk=nsph(0)=1, ncomp=3, complex interleaved → 3*(2*2*1*2) = 24 f64.
+        let mut staging = vec![0.0_f64; 24];
         let result = launch_center_3c2e_typed::<f64>(&backend, &plan, &spec, &mut staging);
         assert!(
-            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor int3c2e_ip1 should return UnsupportedApi, got: {result:?}"
+            result.is_ok(),
+            "spinor int3c2e_ip1 is SUPPORTED since plan 27-04 (derivative wrapper), got: {result:?}"
+        );
+        assert!(
+            staging.iter().any(|v| v.abs() > 1e-18),
+            "spinor int3c2e_ip1 produced all-zero output: {staging:?}"
         );
     }
 }
