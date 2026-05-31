@@ -66,7 +66,7 @@
 | Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 8/8 | Complete | 2026-05-31 |
 | Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 6/6 | Complete | 2026-05-31 |
 | Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 4/4 | Complete | 2026-05-31 |
-| Phase 29: Group 4 — Relativistic Spin-Operator Integrals | v1.4 | 4/6 | In progress | - |
+| Phase 29: Group 4 — Relativistic Spin-Operator Integrals | v1.4 | 6/6 | Complete | 2026-06-01 |
 | Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals | v1.4 | 0/0 | Not started | - |
 | Phase 31: Group 6 — Gauge/Breit–Gaunt 2e + Full-Parity Verification | v1.4 | 0/0 | Not started | - |
 
