@@ -20,10 +20,18 @@ findings:
   warning: 3
   info: 2
   total: 6
+  critical_resolved: 1
 status: issues_found
+resolution_note: "CR-01 (fail-closed staging guard) resolved in commit 8d049cc. WR-01/WR-02/WR-03/IN-01/IN-02 remain open as non-blocking follow-ups."
 ---
 
 # Phase 28: Code Review Report
+
+> **Orchestrator note (2026-05-31):** CR-01 (critical) was fixed in commit `8d049cc` —
+> a `BufferTooSmall` fail-closed guard was added to the `int1e_sp` Spinor arm in
+> `one_electron.rs` before any scatter write, mirroring `launch_int1e_sp_spinor_pair`.
+> Build + FND-05 parity (6/6 byte-identical) re-verified green. WR-01, WR-02, WR-03,
+> IN-01, IN-02 remain open as non-blocking follow-ups for a future plan.
 
 **Reviewed:** 2026-05-31T00:00:00Z
 **Depth:** standard
