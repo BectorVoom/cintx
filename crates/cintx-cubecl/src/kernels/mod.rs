@@ -19,6 +19,11 @@ pub mod ecp;
 // already ungated, so the module compiles cleanly without `with-f12`.
 pub mod f12;
 pub mod one_electron;
+// Phase 28 FND-05 (Gap B2): generic σ·p G-tensor assembler (device #[cube]).
+// Emits the four gc_x/gc_y/gc_z/gc_1 component-leading blocks the host
+// spin-included transform `cart_to_spinor_si_2d` reads in order; rank-
+// parameterized so int1e_sigma (rank 3) and the Phase-29 σ-group reuse it.
+pub mod sigma_p;
 pub mod two_electron;
 #[cfg(feature = "unstable-source-api")]
 pub mod unstable;
