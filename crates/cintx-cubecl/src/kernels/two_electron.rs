@@ -13,7 +13,8 @@ use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::{
-    cart_to_spinor_sf_2e2, cart_to_spinor_sf_4d, cart_to_spinor_si_2e1, spinor_len,
+    cart_to_spinor_sf_2e2, cart_to_spinor_sf_4d, cart_to_spinor_si_2e1, cart_to_spinor_si_2e1i,
+    cart_to_spinor_si_2e2, cart_to_spinor_si_2e2i, spinor_len,
 };
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
@@ -2817,6 +2818,376 @@ pub fn launch_int2e_spsp1_spinor_quartet<F: CintFloat>(
     Ok(())
 }
 
+/// Map a 2e Group-4 σ family operator name to its (gout, e1×e2 transform) pairing
+/// (29-RESEARCH §Per-Family Map 2e, AUTHORITATIVE). Returns `None` for non-Group-4
+/// operators (which fall through to the scalar/other dispatch). `spsp1` is handled
+/// by its dedicated arm (the D-03 vehicle) and is intentionally NOT here.
+pub fn rel2e_family_dispatch(name: &str) -> Option<(Rel2eGout, E1Transform, E2Transform)> {
+    use E1Transform::*;
+    use E2Transform as E2;
+    match name {
+        // REL-03 (intor4.c): 1-sided σ → si_2e1 + sf_2e2.
+        "srsr1" => Some((Rel2eGout::Srsr1, Si, E2::Sf)),
+        // REL-03 (intor4.c): 2-sided σ → si_2e1 + si_2e2.
+        "spsp1spsp2" => Some((Rel2eGout::Spsp1spsp2, Si, E2::Si)),
+        "srsr1srsr2" => Some((Rel2eGout::Srsr1srsr2, Si, E2::Si)),
+        _ => None,
+    }
+}
+
+/// Plan-based wrapper for the generic REL-03/04 2e σ Spinor launcher: extracts the
+/// four shells from `plan` and drives [`launch_rel2e_sigma_spinor_quartet`].
+#[allow(clippy::too_many_arguments)]
+fn launch_rel2e_sigma_spinor<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    gout_kind: Rel2eGout,
+    e1: E1Transform,
+    e2: E2Transform,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
+    common_factor: f64,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_j = &shells[1];
+    let shell_k = &shells[2];
+    let shell_l = &shells[3];
+
+    let exps_i: Vec<f64> = shell_i.exponents[..shell_i.nprim as usize].to_vec();
+    let exps_j: Vec<f64> = shell_j.exponents[..shell_j.nprim as usize].to_vec();
+    let exps_k: Vec<f64> = shell_k.exponents[..shell_k.nprim as usize].to_vec();
+    let exps_l: Vec<f64> = shell_l.exponents[..shell_l.nprim as usize].to_vec();
+    let coeff_i: Vec<f64> =
+        shell_i.coefficients[..shell_i.nprim as usize * shell_i.nctr as usize].to_vec();
+    let coeff_j: Vec<f64> =
+        shell_j.coefficients[..shell_j.nprim as usize * shell_j.nctr as usize].to_vec();
+    let coeff_k: Vec<f64> =
+        shell_k.coefficients[..shell_k.nprim as usize * shell_k.nctr as usize].to_vec();
+    let coeff_l: Vec<f64> =
+        shell_l.coefficients[..shell_l.nprim as usize * shell_l.nctr as usize].to_vec();
+
+    launch_rel2e_sigma_spinor_quartet::<F>(
+        gout_kind, e1, e2,
+        li, shell_i.kappa, lj, shell_j.kappa, lk, shell_k.kappa, ll, shell_l.kappa,
+        shell_i.nprim as usize, shell_j.nprim as usize, shell_k.nprim as usize,
+        shell_l.nprim as usize, shell_i.nctr as usize, shell_j.nctr as usize,
+        shell_k.nctr as usize, shell_l.nctr as usize, ri, rj, rk, rl, common_factor,
+        &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j, &coeff_k, &coeff_l,
+        staging,
+    )?;
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
+/// Per-electron spinor transform selection for a 2e σ family (29-RESEARCH §2e map).
+#[derive(Clone, Copy, PartialEq)]
+pub enum E1Transform {
+    /// `c2s_si_2e1` — real bra σ-mix + ordinary ket.
+    Si,
+    /// `c2s_si_2e1i` — bra σ-mix + imaginary (×i) ket.
+    SiI,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum E2Transform {
+    /// `c2s_sf_2e2` — spin-free (single scalar e2 block).
+    Sf,
+    /// `c2s_si_2e2` — σ-mix on e2 (four e2 blocks ox/oy/oz/o1).
+    Si,
+    /// `c2s_si_2e2i` — σ-mix on e2, imaginary ket.
+    SiI,
+}
+
+/// The σ·p / σ·r G-tensor "gout" a 2e Group-4 family emits, and the headroom its
+/// derivative/shift composition needs. Each variant transcribes one libcint
+/// `CINTgout2e_int2e_*` (intor4.c / gaunt1.c / dkb.c).
+#[derive(Clone, Copy, PartialEq)]
+pub enum Rel2eGout {
+    /// σ·p₁ (1-sided e1), 4 blocks. Headroom (i+1, j+1, k, l).
+    Spsp1,
+    /// σ·r₁ (1-sided e1), 4 blocks. Headroom (i+1, j+1, k, l).
+    Srsr1,
+    /// (σ·p₁)(σ·p₂), 16 blocks. Headroom (i+1, j+1, k+1, l).
+    Spsp1spsp2,
+    /// (σ·r₁)(σ·r₂), 16 blocks. Headroom (i+1, j+1, k+1, l).
+    Srsr1srsr2,
+}
+
+impl Rel2eGout {
+    /// Component count (4 for 1-sided, 16 for 2-sided).
+    fn ncomp(self) -> usize {
+        match self {
+            Rel2eGout::Spsp1 | Rel2eGout::Srsr1 => 4,
+            Rel2eGout::Spsp1spsp2 | Rel2eGout::Srsr1srsr2 => 16,
+        }
+    }
+    /// Headroom (i_inc, j_inc, k_inc, l_inc) for the G-tensor build — the libcint
+    /// `ng[0..3]` increments. spsp1/srsr1 = {1,1,0,0}; the 2-sided σ⊗σ families raise
+    /// ALL FOUR indices ({1,1,1,1}, intor4.c ng = {1,1,1,1,4,4,4,1}) because the σ·p₂
+    /// (σ·r₂) operator nablas/shifts both k and l.
+    fn headroom(self) -> (usize, usize, usize, usize) {
+        match self {
+            Rel2eGout::Spsp1 | Rel2eGout::Srsr1 => (1, 1, 0, 0),
+            Rel2eGout::Spsp1spsp2 | Rel2eGout::Srsr1srsr2 => (1, 1, 1, 1),
+        }
+    }
+}
+
+/// Generic 2e Group-4 σ Spinor launcher. Builds the family's cart σ-tensor blocks
+/// per contraction quad via the family gout, then applies the per-electron transform
+/// pair (`e1` × `e2`) and scatters the interleaved-complex spinor sub-blocks
+/// contraction-major. Mirrors [`launch_int2e_spsp1_spinor_quartet`] but parameterized
+/// over the family gout + transform pair (29-06 REL-03/04).
+///
+/// Fail-closed: a staging guard `required = ni_sp*nj_sp*nk_sp*nl_sp*2` rejects BEFORE
+/// any write (Phase-28 CR-01 / T-29-11). `coeff_*` are ROW-major `[ip*nctr+ic]`.
+#[allow(clippy::too_many_arguments)]
+pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
+    gout_kind: Rel2eGout,
+    e1: E1Transform,
+    e2: E2Transform,
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, kappa_k: i16,
+    ll: u8, kappa_l: i16,
+    nprim_i: usize, nprim_j: usize, nprim_k: usize, nprim_l: usize,
+    nctr_i: usize, nctr_j: usize, nctr_k: usize, nctr_l: usize,
+    ri: [f64; 3], rj: [f64; 3], rk: [f64; 3], rl: [f64; 3],
+    common_factor: f64,
+    exps_i: &[f64], exps_j: &[f64], exps_k: &[f64], exps_l: &[f64],
+    coeff_i: &[f64], coeff_j: &[f64], coeff_k: &[f64], coeff_l: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let block_len = nfi * nfj * nfk * nfl; // a single component's cart block
+    let ngc = gout_kind.ncomp();
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let dk = spinor_len(lk, kappa_k as i32);
+    let dl = spinor_len(ll, kappa_l as i32);
+    let ni_sp = nctr_i * di;
+    let nj_sp = nctr_j * dj;
+    let nk_sp = nctr_k * dk;
+    let nl_sp = nctr_l * dl;
+
+    // ── Fail-closed staging guard (T-29-11) BEFORE any write. ──
+    let staging_required = ni_sp * nj_sp * nk_sp * nl_sp * 2;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── G-tensor headroom per family. ──
+    let (ii, ji, ki, li_inc) = gout_kind.headroom();
+    let grad_shape = build_2e_shape(
+        li as usize + ii, lj as usize + ji, lk as usize + ki, ll as usize + li_inc,
+    );
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
+        });
+    }
+    let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
+
+    let total_len = ngc * block_len; // per-quad component-leading extent
+    let mut cart_blocks = vec![0.0_f64; nctr_i * nctr_j * nctr_k * nctr_l * total_len];
+
+    for pi in 0..nprim_i {
+        let ai = exps_i[pi];
+        for pj in 0..nprim_j {
+            let aj = exps_j[pj];
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            for pk in 0..nprim_k {
+                let ak = exps_k[pk];
+                for pl in 0..nprim_l {
+                    let al = exps_l[pl];
+                    let pdata_kl =
+                        compute_pdata_host(ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0);
+                    let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+
+                    let g = fill_g_tensor_2e(
+                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                    );
+
+                    let gout = match gout_kind {
+                        Rel2eGout::Spsp1 => crate::kernels::f12::gout_spsp1(
+                            &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
+                            ai, aj,
+                        ),
+                        Rel2eGout::Srsr1 => crate::kernels::f12::gout_srsr1(
+                            &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
+                        ),
+                        Rel2eGout::Spsp1spsp2 => crate::kernels::f12::gout_spsp1spsp2(
+                            &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
+                            ai, aj, ak, al,
+                        ),
+                        Rel2eGout::Srsr1srsr2 => crate::kernels::f12::gout_srsr1srsr2(
+                            &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
+                        ),
+                    };
+
+                    for ci in 0..nctr_i {
+                        let ci_coeff = coeff_i[pi * nctr_i + ci];
+                        for cj in 0..nctr_j {
+                            let cj_coeff = coeff_j[pj * nctr_j + cj];
+                            for ck in 0..nctr_k {
+                                let ck_coeff = coeff_k[pk * nctr_k + ck];
+                                for cl in 0..nctr_l {
+                                    let cl_coeff = coeff_l[pl * nctr_l + cl];
+                                    let weight = ci_coeff * cj_coeff * ck_coeff * cl_coeff;
+                                    let base = (((ci * nctr_j + cj) * nctr_k + ck) * nctr_l + cl)
+                                        * total_len;
+                                    for n in 0..block_len {
+                                        for comp in 0..ngc {
+                                            cart_blocks[base + comp * block_len + n] +=
+                                                weight * gout[n * ngc + comp];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Per contraction quad: electron-1 transform → opij(s), then electron-2
+    //    transform → the (di×dj×dk×dl) spinor sub-block, scattered contraction-major. ──
+    let ij_stride = di * dj;
+    let opij_len = nfk * nfl * ij_stride * 2;
+    // For 2-sided e2, we need 4 opij arrays (ox/oy/oz/o1); for sf/1-sided, 1.
+    let n_e2_blocks = if e2 == E2Transform::Sf { 1 } else { 4 };
+    let mut opij_buf = vec![0.0_f64; n_e2_blocks * opij_len];
+    let mut sub = vec![F::from_f64_lossy(0.0); di * dj * dk * dl * 2];
+
+    // Run the electron-1 transform for one e2-group of 4 contiguous cart blocks
+    // (e1-fast gout: comp = e2*4 + e1, see libcint CINT2e_spinor_drv gctr advance).
+    let run_e1 = |opij_slot: &mut [f64],
+                  cart_blocks: &[f64],
+                  base: usize,
+                  comp0: usize|
+     -> Result<(), cintxRsError> {
+        for v in opij_slot.iter_mut() {
+            *v = 0.0;
+        }
+        let cb = |c: usize| &cart_blocks[base + c * block_len..base + (c + 1) * block_len];
+        let gx = cb(comp0);
+        let gy = cb(comp0 + 1);
+        let gz = cb(comp0 + 2);
+        let g1 = cb(comp0 + 3);
+        match e1 {
+            E1Transform::Si => cart_to_spinor_si_2e1(
+                opij_slot, gx, gy, gz, g1, li, kappa_i, lj, kappa_j, lk, ll,
+            ),
+            E1Transform::SiI => cart_to_spinor_si_2e1i(
+                opij_slot, gx, gy, gz, g1, li, kappa_i, lj, kappa_j, lk, ll,
+            ),
+        }
+    };
+
+    for ci in 0..nctr_i {
+        for cj in 0..nctr_j {
+            for ck in 0..nctr_k {
+                for cl in 0..nctr_l {
+                    let base = (((ci * nctr_j + cj) * nctr_k + ck) * nctr_l + cl) * total_len;
+
+                    match e2 {
+                        E2Transform::Sf => {
+                            // 1-sided: 4 e1 blocks (x,y,z,1) → one opij → sf_2e2.
+                            let (slot, _) = opij_buf.split_at_mut(opij_len);
+                            run_e1(slot, &cart_blocks, base, 0)?;
+                            for v in sub.iter_mut() {
+                                *v = F::from_f64_lossy(0.0);
+                            }
+                            cart_to_spinor_sf_2e2::<F>(
+                                &mut sub, &opij_buf[..opij_len],
+                                li, kappa_i, lj, kappa_j, lk, kappa_k, ll, kappa_l,
+                            )?;
+                        }
+                        E2Transform::Si | E2Transform::SiI => {
+                            // 2-sided: for each of the 4 e2 σ-components, run e1 on its
+                            // 4 e1 blocks → opij[e2]; then feed ox/oy/oz/o1 to si_2e2(i).
+                            for e2c in 0..4 {
+                                let mut scratch = vec![0.0_f64; opij_len];
+                                run_e1(&mut scratch, &cart_blocks, base, e2c * 4)?;
+                                opij_buf[e2c * opij_len..(e2c + 1) * opij_len]
+                                    .copy_from_slice(&scratch);
+                            }
+                            for v in sub.iter_mut() {
+                                *v = F::from_f64_lossy(0.0);
+                            }
+                            let (ox, rest) = opij_buf.split_at(opij_len);
+                            let (oy, rest) = rest.split_at(opij_len);
+                            let (oz, o1) = rest.split_at(opij_len);
+                            let o1 = &o1[..opij_len];
+                            if e2 == E2Transform::Si {
+                                cart_to_spinor_si_2e2::<F>(
+                                    &mut sub, ox, oy, oz, o1,
+                                    li, kappa_i, lj, kappa_j, lk, kappa_k, ll, kappa_l,
+                                )?;
+                            } else {
+                                cart_to_spinor_si_2e2i::<F>(
+                                    &mut sub, ox, oy, oz, o1,
+                                    li, kappa_i, lj, kappa_j, lk, kappa_k, ll, kappa_l,
+                                )?;
+                            }
+                        }
+                    }
+
+                    // Scatter the (di×dj×dk×dl) sub-block into the contraction-major
+                    // spinor AO grid: sub[(((l*dk+k)*dj+j)*di+i)*2 + {re,im}].
+                    for l in 0..dl {
+                        let l_g = cl * dl + l;
+                        for k in 0..dk {
+                            let k_g = ck * dk + k;
+                            for j in 0..dj {
+                                let j_g = cj * dj + j;
+                                for i in 0..di {
+                                    let i_g = ci * di + i;
+                                    let src = (((l * dk + k) * dj + j) * di + i) * 2;
+                                    let dst = (((l_g * nk_sp + k_g) * nj_sp + j_g) * ni_sp + i_g) * 2;
+                                    staging[dst] = sub[src];
+                                    staging[dst + 1] = sub[src + 1];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Generic inner for the 2e launcher. See `launch_two_electron` for the dispatch rationale.
 ///
 /// Intermediate computations (G-tensor, cart_buf) remain `f64`; output staging
@@ -3023,6 +3394,28 @@ fn launch_two_electron_typed<F: CintFloat>(
         }
         return launch_int2e_spsp1_spinor::<F>(
             plan, li, lj, lk, ll, ri, rj, rk, rl, common_factor, staging,
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 29 Wave-3 (REL-03/04): the remaining 2e Group-4 σ Spinor families.
+    // Each is Spinor-only; the per-family (gout, e1×e2 transform) pairing comes
+    // from 29-RESEARCH §Per-Family Map 2e. The generic quartet launcher
+    // (launch_rel2e_sigma_spinor_quartet) wires the family gout onto the proven
+    // 2e si/sf transform suite with a per-arm fail-closed staging guard.
+    // ─────────────────────────────────────────────────────────────────────────
+    if let Some((gout_kind, e1, e2)) = rel2e_family_dispatch(plan.descriptor.operator_name()) {
+        if plan.representation != Representation::Spinor {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "int2e_{} is Spinor-only (Group-4 relativistic σ); cart/spheric \
+                     not registered",
+                    plan.descriptor.operator_name()
+                ),
+            });
+        }
+        return launch_rel2e_sigma_spinor::<F>(
+            plan, gout_kind, e1, e2, li, lj, lk, ll, ri, rj, rk, rl, common_factor, staging,
         );
     }
 

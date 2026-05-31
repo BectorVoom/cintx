@@ -32,7 +32,10 @@
 
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
-use cintx_compat::raw::{ANG_OF, BAS_SLOTS, KAPPA_OF, NCTR_OF};
+use cintx_compat::raw::{
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, KAPPA_OF, NCTR_OF, NPRIM_OF, PTR_COEFF, PTR_COORD,
+    PTR_EXP,
+};
 
 #[allow(dead_code)]
 const ATOL: f64 = 1e-12;
@@ -184,13 +187,92 @@ fn collect_vendor_family(symbol: &str, atm: &[i32], bas: &[i32], env: &[f64]) ->
 // ─────────────────────────────────────────────────────────────────────────────
 #[cfg(feature = "cpu")]
 #[allow(dead_code)]
-fn collect_cintx_family(symbol: &str, _atm: &[i32], _bas: &[i32], _env: &[f64]) -> Vec<f64> {
-    // RED: the launcher arms are wired in 29-06. Calling this before then is a
-    // programming error in the test wiring, not a parity failure — make it loud.
-    panic!(
-        "RED scaffold (29-05): cintx launcher for {symbol} is wired in 29-06; \
-         the byte-identity gate is #[ignore]'d until then"
-    );
+struct ShellData {
+    l: u8,
+    kappa: i16,
+    nprim: usize,
+    nctr: usize,
+    coord: [f64; 3],
+    exps: Vec<f64>,
+    /// ROW-major coefficients `[ip*nctr + ic]` (the cintx `Shell` convention). The env
+    /// block is COLUMN-major `[ic*nprim + ip]`; transposed here on extraction
+    /// (project_raw_nctr_coeff_transpose).
+    coeff_row_major: Vec<f64>,
+}
+
+#[cfg(feature = "cpu")]
+#[allow(dead_code)]
+fn extract_shell(s: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> ShellData {
+    let l = bas[s * BAS_SLOTS + ANG_OF] as u8;
+    let kappa = bas[s * BAS_SLOTS + KAPPA_OF] as i16;
+    let nprim = bas[s * BAS_SLOTS + NPRIM_OF] as usize;
+    let nctr = bas[s * BAS_SLOTS + NCTR_OF] as usize;
+    let atom = bas[s * BAS_SLOTS + ATOM_OF] as usize;
+    let exp_ptr = bas[s * BAS_SLOTS + PTR_EXP] as usize;
+    let coeff_ptr = bas[s * BAS_SLOTS + PTR_COEFF] as usize;
+    let coord_ptr = atm[atom * ATM_SLOTS + PTR_COORD] as usize;
+
+    let coord = [env[coord_ptr], env[coord_ptr + 1], env[coord_ptr + 2]];
+    let exps = env[exp_ptr..exp_ptr + nprim].to_vec();
+
+    let col_major = &env[coeff_ptr..coeff_ptr + nprim * nctr];
+    let mut coeff_row_major = vec![0.0_f64; nprim * nctr];
+    for ic in 0..nctr {
+        for ip in 0..nprim {
+            coeff_row_major[ip * nctr + ic] = col_major[ic * nprim + ip];
+        }
+    }
+    ShellData { l, kappa, nprim, nctr, coord, exps, coeff_row_major }
+}
+
+/// Drive a REL-03/04 2e σ family on the quartet (0,1,2,3) through the cintx launcher.
+/// The operator name (`int2e_<op>_spinor` → `<op>`) selects the (gout, e1×e2) pairing
+/// via `rel2e_family_dispatch`. Returns the flat interleaved-complex spinor block.
+#[cfg(feature = "cpu")]
+#[allow(dead_code)]
+fn collect_cintx_family(symbol: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+    use cintx_cubecl::kernels::two_electron::{
+        int2e_common_factor, launch_rel2e_sigma_spinor_quartet, rel2e_family_dispatch,
+    };
+
+    // "int2e_srsr1_spinor" → "srsr1".
+    let op = symbol
+        .strip_prefix("int2e_")
+        .and_then(|s| s.strip_suffix("_spinor"))
+        .unwrap_or_else(|| panic!("unexpected REL-2e symbol shape: {symbol}"));
+    let (gout_kind, e1, e2) = rel2e_family_dispatch(op)
+        .unwrap_or_else(|| panic!("no rel2e dispatch for {op} (29-06 wiring missing?)"));
+
+    let si = extract_shell(0, atm, bas, env);
+    let sj = extract_shell(1, atm, bas, env);
+    let sk = extract_shell(2, atm, bas, env);
+    let sl = extract_shell(3, atm, bas, env);
+
+    let di = spinor_len(si.l as i32, si.kappa as i32);
+    let dj = spinor_len(sj.l as i32, sj.kappa as i32);
+    let dk = spinor_len(sk.l as i32, sk.kappa as i32);
+    let dl = spinor_len(sl.l as i32, sl.kappa as i32);
+    let ni_sp = si.nctr * di;
+    let nj_sp = sj.nctr * dj;
+    let nk_sp = sk.nctr * dk;
+    let nl_sp = sl.nctr * dl;
+
+    let common_factor = int2e_common_factor(si.l, sj.l, sk.l, sl.l);
+
+    let mut staging = vec![0.0_f64; ni_sp * nj_sp * nk_sp * nl_sp * 2];
+    launch_rel2e_sigma_spinor_quartet::<f64>(
+        gout_kind, e1, e2,
+        si.l, si.kappa, sj.l, sj.kappa, sk.l, sk.kappa, sl.l, sl.kappa,
+        si.nprim, sj.nprim, sk.nprim, sl.nprim,
+        si.nctr, sj.nctr, sk.nctr, sl.nctr,
+        si.coord, sj.coord, sk.coord, sl.coord,
+        common_factor,
+        &si.exps, &sj.exps, &sk.exps, &sl.exps,
+        &si.coeff_row_major, &sj.coeff_row_major, &sk.coeff_row_major, &sl.coeff_row_major,
+        &mut staging,
+    )
+    .unwrap_or_else(|e| panic!("{symbol} cintx launch failed: {e:?}"));
+    staging
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,10 +413,34 @@ macro_rules! rel_2e_byte_identity_gate {
     };
 }
 
-// REL-03 (intor4.c)
-rel_2e_byte_identity_gate!(test_srsr1_byte_identity, "int2e_srsr1_spinor");
-rel_2e_byte_identity_gate!(test_spsp1spsp2_byte_identity, "int2e_spsp1spsp2_spinor");
-rel_2e_byte_identity_gate!(test_srsr1srsr2_byte_identity, "int2e_srsr1srsr2_spinor");
+/// LIVE byte-identity gate (29-06): cintx launcher wired, runs under the double gate.
+macro_rules! rel_2e_byte_identity_gate_live {
+    ($test_name:ident, $symbol:literal) => {
+        #[cfg(has_vendor_libcint)]
+        #[cfg(feature = "cpu")]
+        #[test]
+        fn $test_name() {
+            let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_2e_fixture();
+            let vendor = collect_vendor_family($symbol, &atm, &bas, &env);
+            let cintx = collect_cintx_family($symbol, &atm, &bas, &env);
+            assert_eq!(vendor.len(), cintx.len(), "{}: length mismatch", $symbol);
+            assert_any_nonzero(&vendor, concat!($symbol, " vendor"));
+            assert_any_nonzero(&cintx, concat!($symbol, " cintx"));
+            let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
+            assert_eq!(
+                mismatches, 0,
+                "{}: {} mismatches vs vendored libcint at atol={} (29-06 byte-identity gate)",
+                $symbol, mismatches, ATOL
+            );
+        }
+    };
+}
+
+// REL-03 (intor4.c) — LIVE (29-06 Task 1).
+rel_2e_byte_identity_gate_live!(test_srsr1_byte_identity, "int2e_srsr1_spinor");
+rel_2e_byte_identity_gate_live!(test_spsp1spsp2_byte_identity, "int2e_spsp1spsp2_spinor");
+
+rel_2e_byte_identity_gate_live!(test_srsr1srsr2_byte_identity, "int2e_srsr1srsr2_spinor");
 // REL-04 (gaunt1.c)
 rel_2e_byte_identity_gate!(test_ssp1ssp2_byte_identity, "int2e_ssp1ssp2_spinor");
 rel_2e_byte_identity_gate!(test_ssp1sps2_byte_identity, "int2e_ssp1sps2_spinor");
@@ -362,3 +468,5 @@ fn test_2e_fixture_builds_without_vendor() {
     assert!(!atm.is_empty() && !env.is_empty(), "kappa 2e fixture populated");
     assert_eq!(bas.len() / BAS_SLOTS, 4, "exactly 4 shells (a 2-electron quartet)");
 }
+
+
