@@ -15,6 +15,40 @@ CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu \
 
 ---
 
+## ⚠ CORRECTION NOTICE (2026-05-31, re-spike reconciliation) — D2/D3 aux-k DISPROVEN
+
+The original D2/D3 claim that the **auxiliary-k axis of arity-3 spinor derivative families is
+SPINOR-sized (`CINTcgto_spinor = 4l+2`, total 720 for p×d×s kappa=0)** is **DISPROVEN against
+libcint 6.1.3 source**. The probe's `720` was an artifact of a compat-dims **over-sizing bug** in
+`fixtures.rs::ao_count_for_rep` (it applied `CINTcgto_spinor` to the aux-k shell too), NOT a real
+vendor requirement.
+
+**Ground truth (source-verified):** `CINT3c2e_spinor_drv` (cint3c2e.c:631-636) sizes the output
+axes as:
+```c
+counts[0] = CINTcgto_spinor(shls[0]);          // bra i: SPINOR (4l+2)
+counts[1] = CINTcgto_spinor(shls[1]);          // ket j: SPINOR (4l+2)
+if (is_ssc) { counts[2] = nfk * x_ctr[2]; }    // ssc: cartesian
+else        { counts[2] = (k_l*2+1) * x_ctr[2]; }   // aux k: SPHERICAL (2lk+1) * nctr_k
+```
+`int3c2e_ip1_spinor` / `int3c2e_ip2_spinor` (autocode/int3c2e.c:94/175) both call this with
+`is_ssc=0` → **aux-k = `(2lk+1)*nctr_k` SPHERICAL**, never spinor. For p×d×s kappa=0 nctr_k=1 the
+correct total is `3·6·10·1·2 = 360`, not 720. (Also confirmed: cart2sph.c:6014.)
+
+**Critical consequence:** the existing inner transform `cart_to_spinor_sf_3c2e` already uses
+`nsk = nsph(lk)` for the k-axis (c2spinor.rs L1293/L1308) and was **ALREADY CORRECT**. The
+original D2 instruction to "reconcile `nsph(lk)` up to `CINTcgto_spinor(k)`" was the error and is
+**WITHDRAWN**. The `cart_to_spinor_sf_derivative_3c2e` wrapper simply loops the already-correct
+inner transform `ncomp` times with `comp_stride = nsph(lk)*di*dj*2`.
+
+The D2/D3 text below is preserved for the disproof trail but is **superseded** wherever it asserts
+spinor-sized aux-k. The committed Plan-01 scaffolding that encoded the wrong contract
+(`fixtures.rs ao_count_for_rep`, `vendor_ffi.rs` 3c2e/3c1e aux-k buffers, `spinor_deriv_parity.rs`
+`SK`/`shell_nsp_full` on the aux-k) is corrected in the re-plan (see STATE.md reconciliation
+checklist).
+
+---
+
 ## D1. sf_2d device derivative cart block layout — `[comp][ket][bra]` CONFIRMED
 
 **Family probed:** `int1e_ipovlp_spinor` (rank 3 gradient), p × d (NON-SQUARE), `ni_sp=6`,
@@ -56,6 +90,8 @@ p×d×s  ni_sp=6 nj_sp=10  nsk_sph=1 nk_sp(spinor)=2  rank=3  total=720
 int3c2e_ip1_spinor eval_raw -> UnsupportedApi { requested: "spinor int3c2e_ip1 gradient" }
 VENDOR ip1 vs ip2: mm(ip1,ip2)=348  (v1_nnz=348 v2_nnz=348)
 ```
+> **CORRECTED:** `total=720` above used the over-sized aux-k (`nk_sp(spinor)=2`). The real vendor
+> output uses `nsk_sph=1` → **`total = 3·6·10·1·2 = 360`**. See CORRECTION NOTICE.
 
 ### Transpose granularity — per-(comp,k) `[ket][bra]`
 The 3c2e derivative buffer is **`[comp][k][ket][bra]`**: component slowest, then the k-axis,
@@ -73,18 +109,19 @@ differentiated (`mm(ip1,ip2)=348`). **Same wrapper shape for ip1 and ip2** — o
 `cart_to_spinor_sf_derivative_3c2e` serves both; the launcher picks the gradient gout
 (nabla1i vs nabla1l) exactly as the cart/sph paths already do.
 
-### Auxiliary-k axis is SPINOR-sized (CINTcgto_spinor), NOT nsph — IMPORTANT
-libcint's `int3c2e_spinor` family sizes the aux k as a **spinor shell**:
-`nk_sp = CINTcgto_spinor(k) = 4l+2 = 2` at kappa=0 (confirmed: cintx compat dims required
-`720 = 3*6*10*2*2`; an `nsph(k)=1`-sized 360-buffer triggered `BufferTooSmall{required:720}`;
-the existing scalar `vendor_ffi_3c2e_spinor_nonzero` test also sizes k with
-`vendor_CINTcgto_spinor`). **The inner transform `cart_to_spinor_sf_3c2e` currently uses
-`nsk = nsph(lk)` for the k-axis (c2spinor.rs L1293/L1308)** — this DIVERGES from libcint's
-spinor-k output sizing. **Plan 02/03 reconciliation required:** the 3c2e spinor derivative
-fold must produce a k-axis of length `CINTcgto_spinor(k)` (apply the cart→spinor fold on k too,
-or extend the existing transform), so the output extents match libcint and the compat dims.
-Do NOT ship a wrapper whose k-axis is `nsph(lk)` — it will under-size the buffer by the
-spinor/sph k-ratio and fail vendor parity.
+### Auxiliary-k axis is SPHERICAL (2lk+1)*nctr_k, NOT spinor — CORRECTED
+> **SUPERSEDED — see CORRECTION NOTICE at top.** The original claim here ("aux-k is
+> SPINOR-sized `CINTcgto_spinor = 4l+2 = 2`, total 720") is **DISPROVEN**. libcint's
+> `CINT3c2e_spinor_drv` (cint3c2e.c:631-636) sizes the aux-k as **SPHERICAL `(2lk+1)*nctr_k`**
+> (the `is_ssc=0` branch `counts[2] = (k_l*2+1)*x_ctr[2]`), while only bra i and ket j use
+> `CINTcgto_spinor` (4l+2). For p×d×s kappa=0 nctr_k=1 the correct total is **360**, not 720;
+> the `720`/`BufferTooSmall{required:720}` was caused by the `fixtures.rs ao_count_for_rep`
+> over-sizing bug (it applied `CINTcgto_spinor` to the aux-k), not a real requirement.
+>
+> The inner transform `cart_to_spinor_sf_3c2e` already uses `nsk = nsph(lk)` (c2spinor.rs
+> L1293/L1308) and was **ALREADY CORRECT** — no reconciliation up to spinor-k is needed or
+> wanted. The derivative wrapper loops it `ncomp` times with `comp_stride = nsph(lk)*di*dj*2`.
+> SHIP the wrapper with k-axis `= nsph(lk)`.
 
 ### Current support envelope
 `INT3C2E_IP1_SPINOR` currently returns `UnsupportedApi { "spinor int3c2e_ip1 gradient" }`
@@ -114,8 +151,9 @@ Rationale (host-side launcher, distinct buffer producer):
   takes the int3c1e host `out_buf` and applies the per-(comp,k) `[ket][bra]` fold (reusing the
   inner `cart_to_spinor_sf_2d`/`_3c2e` machinery) keeps the 3c2e wrapper's preconditions
   (device cart-out, `cart_to_spinor_sf_3c2e` k-fold) decoupled from the 3c1e host scatter.
-- int3c1e is **arity-3** (i,j + aux k), same aux-k spinor-vs-sph sizing caveat as D2 applies:
-  the k-axis of the spinor output must be `CINTcgto_spinor(k)`.
+- int3c1e is **arity-3** (i,j + aux k), same aux-k sizing rule as D2 applies (CORRECTED):
+  the k-axis of the spinor output is **SPHERICAL `nsph(lk) = (2lk+1)*nctr_k`**, NOT
+  `CINTcgto_spinor(k)`. (int3c1e_spinor sizes aux-k spherically exactly as int3c2e_spinor does.)
 
 **Both int3c1e_ip1 and int3c1e_iprinv use the same sibling fold**; iprinv differs only in the
 gout (Rys-driven, reads `env[PTR_RINV_ORIG]`) and MUST be tested with a NON-ZERO rinv origin
@@ -155,16 +193,19 @@ nctr>1 spinor eval_raw -> UnsupportedApi { requested: "spinor 1e gradient with g
    `comp_stride = di*dj*2`, KET→BRA `nci*ncj` transpose per component. nctr>1 via
    `i_global = ci*di+ic` with COLUMN→ROW coeff transpose.
 2. **`cart_to_spinor_sf_derivative_3c2e`** (3c2e ip1 AND ip2, same shape): loop the
-   `cart_to_spinor_sf_3c2e` k-fold `ncomp` times, `comp_stride = (k-extent)*di*dj*2`. **The
-   k-axis output length MUST be `CINTcgto_spinor(k)` (spinor), NOT `nsph(lk)`** — reconcile the
-   existing `nsk = nsph(lk)` intermediate so the final spinor output matches libcint + compat
-   dims (720, not 360, for p×d×s kappa=0).
+   `cart_to_spinor_sf_3c2e` k-fold `ncomp` times, `comp_stride = nsph(lk)*di*dj*2`. **The
+   k-axis output length is `nsph(lk) = (2lk+1)*nctr_k` (SPHERICAL), NOT `CINTcgto_spinor(k)`**
+   (CORRECTED — see CORRECTION NOTICE). The existing `nsk = nsph(lk)` intermediate is ALREADY
+   correct; do not change it. Correct total for p×d×s kappa=0 is **360**, not 720.
 3. **int3c1e_ip1/iprinv: THIN SIBLING** (not shared `_3c2e`), applied to the host-side
    `out_buf` in **`crates/cintx-cubecl/src/kernels/center_3c1e.rs`** (reject sites L1006-1010
    and L1130-1134; Plan 04 owns this file). Same per-(comp,k) `[ket][bra]` fold; iprinv reads
    `env[PTR_RINV_ORIG]` and needs a non-zero origin in tests.
-4. **Aux-k spinor sizing caveat** applies to every arity-3 spinor derivative family
-   (int3c2e_ip1/ip2, int3c1e_ip1/iprinv): output k-axis = `CINTcgto_spinor(k)`.
+4. **Aux-k SPHERICAL sizing rule** (CORRECTED) applies to every arity-3 spinor derivative family
+   (int3c2e_ip1/ip2, int3c1e_ip1/iprinv): output k-axis = `nsph(lk) = (2lk+1)*nctr_k`, NOT
+   `CINTcgto_spinor(k)`. Only bra i and ket j are spinor-sized (4l+2). This is the
+   re-plan-blocking correction: the committed Plan-01 scaffolding sized aux-k as spinor and must
+   be fixed (`fixtures.rs ao_count_for_rep`, `vendor_ffi.rs`, `spinor_deriv_parity.rs`).
 
 ---
 
