@@ -694,9 +694,12 @@ Gap-Wave 3 (after 26-05):
   1. The GIAO×σ family set (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) matches vendored libcint at atol=1e-12 (spinor) via the Gap B2 σ path and the complex-interleaved output (GIAO-03).
   2. Every family is gated on BOTH the non-zero gauge-origin fixture AND the kappa-bearing relativistic fixture, has a dedicated `vendor_*` test executing under both flags (non-skipped), and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
-**Plans**: 3 plans
+**Plans**: 6 plans
 - [x] 30-00-PLAN.md — Wave 0: combined gauge∧kappa 1e fixture + gauge x1i-with-origin device fold in sigma_p.rs + gauge-gout byte-identity micro-test (D-03 de-risk)
-- [ ] 30-01-PLAN.md — Wave 1: all 9 1e GIAO×σ families (spgsp/spgnucsp/spgsa01 + cg/giao_sa10{sp,nucsp,sa01}) registered + vendor byte-identical spinor, oracle_covered spinor-only
+- [ ] 30-01a-PLAN.md — Wave 1: NEW 8-G-tensor London overlap engine — int1e_spgsp (G1E_R0I origin=ri + rirj=ri-rj, 27→12 gout, rank 3, c2s_si_1ei) byte-identical spinor; also dispatches + gates the 30-00-proven cg_sa10sp/giao_sa10sp
+- [ ] 30-01b-PLAN.md — Wave 1: NEW Rys+gauge nuclear engine — int1e_cg_sa10nucsp/giao_sa10nucsp (x1i-with-origin inside the Rys loop, 12-comp gout, rank 3, c2s_si_1ei) byte-identical spinor
+- [ ] 30-01c-PLAN.md — Wave 1: NEW Rys+gauge rank-9 rinv engine — int1e_cg_sa10sa01/giao_sa10sa01 (g1=∇_j(g0)+∇_i(g0)+x1i, 36-comp gout, rank 9, REAL c2s_si_1e) byte-identical spinor
+- [ ] 30-01d-PLAN.md — Wave 1: NEW spg-Rys/London engine — int1e_spgnucsp (12-comp rank 3, c2s_si_1ei) + int1e_spgsa01 (36-comp rank 9, REAL c2s_si_1e) byte-identical spinor; closes the full 9-family 1e Wave-1 gate
 - [ ] 30-02-PLAN.md — Wave 2: all 6 2e GIAO×σ families (spgsp1(spsp2) + cg/giao_sa10sp1(spsp2)) on 4-shell fixture + full 15-family suite + manifest-audit gate
 
 ### Phase 31: Group 6 — Gauge / Breit–Gaunt 2e + Full-Parity Verification (apex)
