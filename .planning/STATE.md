@@ -4,14 +4,14 @@ milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
 stopped_at: Phase 26 context re-reviewed (D-01–D-14 unchanged)
-last_updated: "2026-05-31T02:16:01.000Z"
+last_updated: "2026-05-31T02:50:35.746Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 21
   completed_phases: 15
   total_plans: 80
-  completed_plans: 78
-  percent: 98
+  completed_plans: 79
+  percent: 99
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 26 (group-5-spin-free-giao-nmr-integrals-complex) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Resume file: None
 Last activity: 2026-05-31
@@ -140,6 +140,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 25 P04 | 55 | 3 tasks | 7 files |
 | Phase 25 P05 | 10 | 3 tasks | 7 files |
 | Phase 26 P01 | 12 | 3 tasks | 9 files |
+| Phase 26 P02 | 95min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -327,6 +328,9 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 25-05]: 3c2e host Hessian launchers MUST include the per-primitive Gaussian-overlap prefactors (fac_env = common_factor * pdata_ij.fac * pdata_kl.fac), exactly like the device ip1/ip2 host bridge host_ip1_cart_blocks; bare common_factor scales 3c2e output wrong. 2c2e is immune (phantom j,l coincide with i,k → overlap fac=1)
 - [Phase 25-05]: manifest lock stores component_rank only, NOT the ng[] tuple — ket k_inc=2 is a code contract (build_2e_shape(li,lj,0,lk+2)) verified by byte-identity parity vs vendor G2E_D_K, not a lock grep
 - [Phase 26-01]: complex_output is a per-family lock.json bool defaulting false; only spinor operator rows backfilled true. Planner build_output_layout + assert_flat_buffer_contract re-key off this flag (complex_interleaved) instead of Representation::Spinor, so GIAO cart/sph families size 2x from manifest data.
+- [Phase ?]: [Phase 26-02]: Append new manifest families at the END to preserve all positional OperatorIds (zero-shift registration).
+- [Phase ?]: [Phase 26-02]: GIAO families per-family nuclear model: gnuc/ignuc atom-sum -Z (int1e_type=2); ia01p/a01gp/cg_a11part/giao_a11part single rinv center +1 (int1e_type=1).
+- [Phase ?]: [Phase 26-02]: complex_output families emit REAL device output materialized host-side as [re=0, im=value]; vendor parity extracts imaginary half, asserts real==0 (D-07/D-15).
 
 ### Roadmap Evolution
 
@@ -340,6 +344,7 @@ None yet.
 ### Blockers/Concerns
 
 - ~~[Phase 19, 2026-05-20] **ECP byte-identity blocked on missing K-Taylor port.**~~ **RESOLVED 2026-05-20.** The K-Taylor replan (19-05..08) shipped and is verified: 19-05 ported PySCF's exact table-interpolation radial machinery (`ecpsph_ine_opt_host`, `ecprad_part_host`, `type1_rad_part_host`, `type2_facs_rad_host`) with the two K-Taylor tables embedded as byte-locked `.bin` blobs + an xtask drift-gate; 19-06 rewired the scalar `compute_type1/2_pair` onto it (byte-identity atol=1e-12 confirmed); 19-07 ported `nr_ecp_deriv.c::_deriv1_cart` for the gradient (byte-identity atol=1e-12 confirmed); 19-08 added the optional non-blocking libecpint cross-check. All four ECP rows are `oracle_covered=true`. The dropped-into-generic-parity-matrix regression and the CLAUDE.md fail-closed hardening gaps surfaced during the execute-phase gates were both fixed (commits f589c3d/52b5086/cbe95bb).
+- int1e_a01gp (rank-9 GIAO) deferred: 2x ket-element parity discrepancy; 10/11 GIAO-01 families byte-identical.
 
 ### Quick Tasks Completed
 
@@ -372,6 +377,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T02:15:43.907Z
+Last session: 2026-05-31T02:50:09.654Z
 Stopped at: Phase 26 context re-reviewed (D-01–D-14 unchanged)
 Resume file: None

@@ -607,7 +607,7 @@ Plans:
 
 **Wave 2 (worktree-parallel after 26-01 merges)**
 
-- [ ] 26-02-PLAN.md — Cluster A (GIAO-01): register + kernel + vendor-parity the 11 spin-free 1e GIAO/CG families (rank 3/9) at atol=1e-12.
+- [x] 26-02-PLAN.md — Cluster A (GIAO-01): register + kernel + vendor-parity the 11 spin-free 1e GIAO/CG families (rank 3/9) at atol=1e-12.
 - [ ] 26-03-PLAN.md — Cluster B (GIAO-02): register + kernel + vendor-parity the 4 spin-free 2e GIAO families (g1, ig1, gg1, g1g2 per D-16) at atol=1e-12.
 
 ### Phase 27: Spinor-Derivative Transform (Gap B1)
