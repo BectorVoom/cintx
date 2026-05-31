@@ -300,6 +300,182 @@ pub fn build_adversarial_spinor_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 28 (FND-05 / D-05): kappa≠0 adversarial spinor fixture.
+//
+// PRIMARY GATE. Clones build_adversarial_spinor_fixture's geometry — NON-SQUARE
+// (p × d) bra/ket with a general-contracted (nctr=2) bra, distinct centers — but
+// sets GENUINE kappa≠0 so the si transform is proven on the non-(4l+2) spinor
+// sizing path that the kappa=0 fixture structurally cannot exercise:
+//   p shell  kappa = +1  → LT-only j=l−1/2, di = spinor_len(1, +1) = 2*1     = 2
+//   d shell  kappa = −1  → GT-only j=l+1/2, dj = spinor_len(2, −1) = 2*2 + 2 = 6
+// The block is 2×6 (non-square) and the staging buffer is di*dj*2 = 24 f64. This
+// is the FIRST cintx fixture exercising the GT/LT-only sizing (Spike Target D).
+// Two shells only (no aux-k) — the σ·p int1e_sp vehicle is arity-2.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the D-05 PRIMARY kappa≠0 adversarial spinor fixture (atm, bas, env).
+///
+/// Non-square (p × d) + nctr>1 (p has nctr=2) + GENUINE kappa≠0 (p kappa=+1 LT,
+/// d kappa=−1 GT) so the si_2d transform runs on the non-`(4l+2)` spinor sizing
+/// path (`di = 2l`, `dj = 2l+2`). Mirrors `build_adversarial_spinor_fixture`'s
+/// geometry/coeffs; only KAPPA_OF changes (and the aux-k shell is dropped — the
+/// int1e_sp σ·p vehicle is arity-2).
+pub fn build_kappa_spinor_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    use cintx_compat::raw::{KAPPA_OF, PTR_RINV_ORIG};
+
+    let i_coord = [0.0_f64, 0.0, 0.0];
+    let j_coord = [0.0_f64, 1.3, 0.7];
+
+    // p-shell (bra i) — 3 primitives, two general-contraction columns. ROW-major
+    // here; libcint env is COLUMN-major env[ci*nprim + ip] (cintx transposes
+    // internally — project_raw_nctr_coeff_transpose). column 0 / column 1:
+    let p_exp = [3.4252509_f64, 0.6239137, 0.1688554];
+    let p_coeff = [0.70_f64, 0.30, 0.15, 0.20, 0.55, 0.80];
+
+    // d-shell (ket j) — 3 primitives, single contraction.
+    let d_exp = [5.0331513_f64, 1.1695961, 0.3803890];
+    let d_coeff = [0.15591627_f64, 0.60768372, 0.39195739];
+
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+    // NON-ZERO rinv origin retained (harmless for int1e_sp; keeps the geometry
+    // identical to the adversarial template).
+    env[PTR_RINV_ORIG] = 0.30;
+    env[PTR_RINV_ORIG + 1] = -0.45;
+    env[PTR_RINV_ORIG + 2] = 0.60;
+
+    let i_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&i_coord);
+    let j_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&j_coord);
+    let zeta_ptr = env.len() as i32;
+    env.push(0.0);
+
+    let p_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&p_exp);
+    let p_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&p_coeff);
+
+    let d_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&d_exp);
+    let d_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&d_coeff);
+
+    let mut atm = vec![0_i32; 2 * ATM_SLOTS];
+    for (n, &ptr) in [i_coord_ptr, j_coord_ptr].iter().enumerate() {
+        atm[n * ATM_SLOTS + CHARGE_OF] = 1;
+        atm[n * ATM_SLOTS + PTR_COORD] = ptr;
+        atm[n * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+        atm[n * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+    }
+
+    let mut bas = vec![0_i32; 2 * BAS_SLOTS];
+    // shell 0: p, nctr=2 (general contraction), kappa=+1 → LT-only (di = 2*1 = 2).
+    bas[ATOM_OF] = 0;
+    bas[ANG_OF] = 1;
+    bas[NPRIM_OF] = 3;
+    bas[NCTR_OF] = 2;
+    bas[KAPPA_OF] = 1; // p kappa = +1 (LT)
+    bas[PTR_EXP] = p_exp_ptr;
+    bas[PTR_COEFF] = p_coeff_ptr;
+    // shell 1: d, nctr=1, kappa=−1 → GT-only (dj = 2*2 + 2 = 6).
+    bas[BAS_SLOTS + ATOM_OF] = 1;
+    bas[BAS_SLOTS + ANG_OF] = 2;
+    bas[BAS_SLOTS + NPRIM_OF] = 3;
+    bas[BAS_SLOTS + NCTR_OF] = 1;
+    bas[BAS_SLOTS + KAPPA_OF] = -1; // d kappa = −1 (GT)
+    bas[BAS_SLOTS + PTR_EXP] = d_exp_ptr;
+    bas[BAS_SLOTS + PTR_COEFF] = d_coeff_ptr;
+
+    (atm, bas, env)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 28 (FND-05 / D-05): heavy-atom realism cross-check fixture.
+//
+// SECONDARY (non-primary) gate. A small heavy-element relativistic 2c spinor basis
+// (a Dirac/dyall-flavored p×d pair) guards against synthetic-fixture blind spots in
+// the adversarial kappa fixture. Genuine kappa≠0 (p kappa=+1 LT, d kappa=−1 GT) so
+// the realism check also rides the non-(4l+2) sizing path. Element/exponents are
+// Claude's discretion (D-05 / A3).
+//
+// The two shells sit on DISTINCT centers (a heavy-atom HYDRIDE-style environment:
+// Hg + a displaced ligand center). A same-center σ·p p×d block vanishes by selection
+// rules (an int1e_sp ⟨p|σ·p|d⟩ on one spherically-symmetric center is ~0); a real
+// molecular environment is the physically meaningful realism check and yields a
+// genuinely non-zero cross block — exactly the synthetic-blind-spot guard D-05 wants.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the D-05 SECONDARY heavy-atom realism cross-check fixture (atm, bas, env).
+///
+/// Hg (Z=80) p (kappa=+1, LT) shell + a displaced ligand-center d (kappa=−1, GT)
+/// shell, nctr=1 — a heavy-atom hydride-style 2-center environment. Realism
+/// cross-check for the synthetic kappa fixture — NOT the primary byte-identity gate.
+/// Distinct centers so the σ·p p×d cross block is genuinely non-zero (a same-center
+/// block vanishes by selection rules).
+pub fn build_heavy_atom_spinor_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    use cintx_compat::raw::KAPPA_OF;
+
+    // Heavy center (Hg, Z=80) at the origin; a displaced ligand center for the d shell.
+    let hg_center = [0.0_f64, 0.0, 0.0];
+    let lig_center = [0.0_f64, 0.0, 1.62]; // ~Hg–H bond length scale (Bohr)
+
+    // Heavy-atom-flavored exponents (tight + diffuse), single contraction each.
+    let p_exp = [12.5_f64, 2.85, 0.74];
+    let p_coeff = [0.21_f64, 0.55, 0.34];
+    let d_exp = [9.30_f64, 2.10, 0.52];
+    let d_coeff = [0.18_f64, 0.58, 0.37];
+
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+
+    let hg_ptr = env.len() as i32;
+    env.extend_from_slice(&hg_center);
+    let lig_ptr = env.len() as i32;
+    env.extend_from_slice(&lig_center);
+    let zeta_ptr = env.len() as i32;
+    env.push(0.0);
+
+    let p_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&p_exp);
+    let p_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&p_coeff);
+
+    let d_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&d_exp);
+    let d_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&d_coeff);
+
+    let mut atm = vec![0_i32; 2 * ATM_SLOTS];
+    atm[CHARGE_OF] = 80; // Hg
+    atm[PTR_COORD] = hg_ptr;
+    atm[NUC_MOD_OF] = POINT_NUC;
+    atm[PTR_ZETA] = zeta_ptr;
+    atm[ATM_SLOTS + CHARGE_OF] = 1; // ligand (H)
+    atm[ATM_SLOTS + PTR_COORD] = lig_ptr;
+    atm[ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+    atm[ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+
+    let mut bas = vec![0_i32; 2 * BAS_SLOTS];
+    // shell 0: Hg p, nctr=1, kappa=+1 → LT (di = 2).
+    bas[ATOM_OF] = 0;
+    bas[ANG_OF] = 1;
+    bas[NPRIM_OF] = 3;
+    bas[NCTR_OF] = 1;
+    bas[KAPPA_OF] = 1;
+    bas[PTR_EXP] = p_exp_ptr;
+    bas[PTR_COEFF] = p_coeff_ptr;
+    // shell 1: ligand-center d, nctr=1, kappa=−1 → GT (dj = 6).
+    bas[BAS_SLOTS + ATOM_OF] = 1;
+    bas[BAS_SLOTS + ANG_OF] = 2;
+    bas[BAS_SLOTS + NPRIM_OF] = 3;
+    bas[BAS_SLOTS + NCTR_OF] = 1;
+    bas[BAS_SLOTS + KAPPA_OF] = -1;
+    bas[BAS_SLOTS + PTR_EXP] = d_exp_ptr;
+    bas[BAS_SLOTS + PTR_COEFF] = d_coeff_ptr;
+
+    (atm, bas, env)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Cu/LANL2DZ molecular fixture (Phase 19 Plan 01 Wave 0 scaffold).
 //
 // Source: basissetexchange.org "LANL2DZ" element 29 (Cu); see
