@@ -329,10 +329,40 @@ fn build_output_layout(
     })
 }
 
+/// Required staging-buffer element count for a single scheduled chunk.
+///
+/// # WR-01 / FND-06: monolithic complex/GIAO writers need the FULL block per chunk
+///
+/// GIAO and other complex-interleaved families are evaluated by MONOLITHIC
+/// whole-block launchers (`write_giao_complex_staging`, `launch_two_electron_giao2e`)
+/// that scatter the ENTIRE `2 * real_total` interleaved block in one pass — they do
+/// NOT honor a per-chunk work-unit sub-range. Handing such a launcher the sliced
+/// `suffix - prefix` staging (smaller than the full block whenever `chunk_count > 1`)
+/// yields a per-chunk `BufferTooSmall`, making the family inoperable under any
+/// `memory_limit_bytes` that forces chunking (WR-01 availability regression).
+///
+/// `eval_raw` already solves this by allocating the FULL `staging_elements` per chunk
+/// for these monolithic writers (crates/cintx-compat/src/raw.rs:1061-1070; FND-06,
+/// project memory: "family kernels are MONOLITHIC whole-block writers → per-chunk
+/// staging must be FULL-block sized; never re-add `if dst < staging.len()` guards").
+/// The safe-API `evaluate` path mirrors that here: when
+/// `plan.output_layout.complex_interleaved` is set, return the full
+/// `plan.output_layout.staging_elements` so every chunk hands the launcher a
+/// full-block buffer. If the full block cannot fit, the upfront workspace check fails
+/// closed with a typed `MemoryLimitExceeded` (no partial write).
+///
+/// Real (non-complex) families ARE genuinely chunk-partitionable, so they keep the
+/// sliced `suffix - prefix` sizing below.
 fn staging_elements_for_chunk(
     plan: &ExecutionPlan<'_>,
     chunk: &ChunkInfo,
 ) -> Result<usize, cintxRsError> {
+    // WR-01 / FND-06: monolithic complex/GIAO writers require the full interleaved
+    // block per chunk — mirror eval_raw (raw.rs:1061-1070). Never the sliced suffix.
+    if plan.output_layout.complex_interleaved {
+        return Ok(plan.output_layout.staging_elements.max(1));
+    }
+
     let total_units = plan.workspace.work_units.max(1);
     let start = chunk.work_unit_start.min(total_units);
     let end = chunk
