@@ -8497,9 +8497,11 @@ fn write_giao_complex_staging<F: CintFloat>(
     } else {
         1e-18
     });
+    // WR-04: GIAO output is [re=0, im=v] interleaved; count
+    // the imaginary component only so not0 matches libcint's real double* semantics.
     let not0 = staging
-        .iter()
-        .filter(|&&v| v.abs() > nonzero_threshold)
+        .chunks_exact(2)
+        .filter(|c| c[1].abs() > nonzero_threshold)
         .count() as i32;
     Ok(not0)
 }
