@@ -108,8 +108,8 @@
 
 - [x] **REL-01**: `int1e_spsp`, `int1e_spnucsp`, `int1e_sprinvsp` match vendored libcint at atol=1e-12 (spinor). `spnucsp`/`sprinvsp` route through the FND-05 `c2s_si` path (scalar `cart_to_spinor_sf` rejected — the σ's sandwich a potential and do not contract); `int1e_spsp` legitimately uses `c2s_sf_1e` (the two adjacent σ·p contract to spin-free ∇², `intor3.c:411`), still proven by spinor byte-identity.
 - [x] **REL-02**: `int1e_srsr`, `int1e_sr`/`srnucsr`, `int1e_sigma`, `int1e_sp` match at atol=1e-12 (spinor).
-- [ ] **REL-03**: `int2e_spsp1`, `int2e_srsr1` (and `spsp1spsp2`/`srsr1srsr2`) match at atol=1e-12 (spinor).
-- [ ] **REL-04**: `int2e_ssp1ssp2`, `int2e_sps1sps2`, `int2e_vsp1*`, `int2e_spv1*` match at atol=1e-12 (spinor).
+- [x] **REL-03**: `int2e_spsp1`, `int2e_srsr1` (and `spsp1spsp2`/`srsr1srsr2`) match at atol=1e-12 (spinor).
+- [x] **REL-04**: `int2e_ssp1ssp2`, `int2e_sps1sps2`, `int2e_vsp1*`, `int2e_spv1*` match at atol=1e-12 (spinor).
 
 ### Group 5 — GIAO / Magnetic-Property (NMR)
 
@@ -214,8 +214,8 @@
 | FND-05 | Phase 28 | Complete |
 | REL-01 | Phase 29 | Complete |
 | REL-02 | Phase 29 | Complete |
-| REL-03 | Phase 29 | Pending |
-| REL-04 | Phase 29 | Pending |
+| REL-03 | Phase 29 | Complete |
+| REL-04 | Phase 29 | Complete |
 | GIAO-03 | Phase 30 | Pending |
 | BREIT-01 | Phase 31 | Pending |
 | BREIT-02 | Phase 31 | Pending |
