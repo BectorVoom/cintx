@@ -2,26 +2,18 @@
 phase: 26-group-5-spin-free-giao-nmr-integrals-complex
 reviewed: 2026-05-31T00:00:00Z
 depth: standard
-files_reviewed: 13
+files_reviewed: 5
 files_reviewed_list:
-  - crates/cintx-compat/src/raw.rs
-  - crates/cintx-cubecl/src/kernels/f12.rs
   - crates/cintx-cubecl/src/kernels/one_electron.rs
   - crates/cintx-cubecl/src/kernels/two_electron.rs
-  - crates/cintx-ops/build.rs
-  - crates/cintx-ops/src/resolver.rs
-  - crates/cintx-oracle/build.rs
-  - crates/cintx-oracle/src/compare.rs
-  - crates/cintx-oracle/src/vendor_ffi.rs
+  - crates/cintx-runtime/src/planner.rs
   - crates/cintx-oracle/tests/giao_1e_parity.rs
   - crates/cintx-oracle/tests/giao_2e_parity.rs
-  - crates/cintx-oracle/tests/giao_complex_roundtrip.rs
-  - crates/cintx-runtime/src/planner.rs
 findings:
-  critical: 1
-  warning: 5
-  info: 3
-  total: 9
+  critical: 0
+  warning: 3
+  info: 2
+  total: 5
 status: issues_found
 ---
 
@@ -29,104 +21,133 @@ status: issues_found
 
 **Reviewed:** 2026-05-31
 **Depth:** standard
-**Files Reviewed:** 13
+**Files Reviewed:** 5
 **Status:** issues_found
 
 ## Summary
 
-Phase 26 adds the spin-free GIAO/NMR families (GIAO-01 1e: 11 families; GIAO-02 2e: g1/ig1/gg1/g1g2) on top of the FND-03 complex-output foundation. The complex plumbing — manifest `complex_output` flag → planner `build_output_layout` 2× sizing + `complex_interleaved` → `CompatDims` → `complex_values()` view — is wired consistently and end-to-end; the `[re=0, im=v]` materialization writers (`write_giao_complex_staging`, `launch_two_electron_giao2e`) both fail closed with `BufferTooSmall` rather than partial-write. Manifest registration is internally consistent (verified against the lock: 347 entries, `int1e_ovlp_spinor` still at positional id 2, all GIAO rows `complex_output=true`, spinor rows `oracle_covered=false`). The gout transcriptions in `f12.rs` (`gout_g1`/`gout_ig1`/`gout_gg1`/`gout_g1g2`) and the device kernels mirror the libcint autocode and the 10 covered families have vendor byte-identity parity tests.
+Scope: the phase-26 GIAO gap-closure diff against `8d64fd1` (plans 26-04..26-08) —
+the `int1e_a01gp` 0.5 common-factor fix + guard removal, the GIAO `not0`
+imaginary-half counting, the explicit per-family `is_rinv_center` dispatch bool, the
+shared GIAO headroom `const fn`s, the removal of the inert moment `complex_output`
+comptime arg, the full-block chunk staging in `planner.rs`, and the
+`giao_2e_parity` → `moment_common` refactor.
 
-The dominant concern is the `int1e_a01gp` family: it is a fully *dispatchable* public API (`eval_raw` op_kind 3, manifest-registered, kernel'd, vendor-wrapped) that returns *known-incorrect* results (~2× on a subset of components) with NO runtime guard — a silent-wrong-answer hazard in a project whose core value is byte-identity parity. The remaining findings are robustness/quality issues: GIAO families are unusable under memory-limit chunking (fail-closed, not corrupting), and some test-helper duplication.
+The core numeric fixes are sound and well-justified:
 
-## Critical Issues
+- The **a01gp 0.5 factor** (`op_kind == 3`, one_electron.rs:3289) is correct and matches
+  the libcint `envs.common_factor *= 0.5` (intor1.c:551/572). The `fam_factor` chain
+  still leaves `ia01p` (`op_kind == 2`) at the default `1.0`, which is intentional
+  (rank-3 ia01p passes parity) — not a gap.
+- The **`is_rinv_center` enumeration** is byte-equivalent to the old `op_kind >= 2`
+  threshold (gnuc/ignuc=false; ia01p/a01gp/cg_a11part/giao_a11part=true) and is genuinely
+  more robust against table reordering. Verified row-by-row.
+- The **`const fn` headroom** (`giao_ovlp_nmax = li+lj+3`, `giao_nuc_nmax = li+lj+5`,
+  `giao_nuc_nroots = nmax/2+1`) exactly reproduces the prior inline arithmetic, is used at
+  all three host sites (buffer sizing lines 3100/3729 + guard 8745 + nroots 8825), and
+  matches the inline `#[cube]` kernel bodies at lines 2795 (`+3`) and 3269 (`+5`). No drift.
+- The **`complex_output` comptime-arg removal** is clean: no dangling references remain
+  across `run_1e_moment_device`, the macro, the 5-arm `run_1e_moment_on_backend`, or the
+  launcher call site.
+- The **`moment_common` refactor** preserves gate semantics: for `RTOL = 0.0` both the
+  old per-`ref`-divisor mismatch test and the shared `atol + rtol*|ref|` test reduce to
+  `diff <= atol`. The shared `count_mismatches`/`assert_any_nonzero`/`ncart`/`nsph`
+  helpers exist with matching signatures (moment_common.rs:152/170/46/51).
 
-### CR-01: `int1e_a01gp` is dispatchable but returns known-incorrect results with no guard
-
-**File:** `crates/cintx-cubecl/src/kernels/one_electron.rs:8608`, `crates/cintx-compat/src/raw.rs:240-242`
-
-**Issue:** `int1e_a01gp_{cart,sph}` is registered in the manifest, declared as a `RawApiId`, mapped in the `giao_nuc_op` dispatch table (`"a01gp" => Some((3, 9))`), and has a live `#[cube]` kernel arm (op_kind 3) plus a vendor FFI wrapper. The parity test for it is `#[ignore]`d with a comment documenting that the rank-9 27-s table is byte-identical only on component 0 and is "~2× on a subset of ket-varying elements of components 1..8" (`giao_1e_parity.rs:209-228`), and the manifest correctly carries `oracle_covered=false`. However, *nothing prevents a caller from invoking it*: `eval_raw(RawApiId::INT1E_A01GP_CART, ...)` resolves a valid descriptor, builds a plan, dispatches to op_kind 3, and returns a silently-wrong complex buffer. For a library whose stated core value is "libcint-compatible results … byte-identity as the primary goal," shipping a public, dispatchable entry point that emits incorrect numbers with no error is the highest-severity defect class (silent data incorrectness).
-
-**Fix:** Gate the known-broken family behind a typed fail-closed stop until the ket-derivative double-count is fixed, so callers get an explicit `UnsupportedApi`/`NotYetImplemented` instead of wrong numbers. For example, in the `giao_nuc_op` dispatch (or at the top of the op_kind-3 arm):
-```rust
-if op_name == "a01gp" {
-    return Err(cintxRsError::UnsupportedApi {
-        requested: format!(
-            "int1e_a01gp is registered but not yet correct (rank-9 ket-derivative \
-             double-count; tracked, oracle_covered=false) — refusing to return \
-             non-parity output for {op_name}"
-        ),
-    });
-}
-```
-This preserves the "registered for surface completeness" goal while honoring the no-silent-wrong-output contract. Remove the guard when the kernel passes vendor parity and `oracle_covered` flips to true.
+Three WARNINGs concern second-order correctness/contract issues that the new code
+introduces or now relies on but does not verify, plus two INFO items.
 
 ## Warnings
 
-### WR-01: GIAO complex families fail closed under memory-limit chunking (unusable, not corrupting)
+### WR-01: Chunked complex/GIAO families over-count `not0` by a factor of `chunk_count`
 
-**File:** `crates/cintx-runtime/src/planner.rs:332-350` (`staging_elements_for_chunk`) vs `crates/cintx-cubecl/src/kernels/one_electron.rs:8424-8430` and `crates/cintx-cubecl/src/kernels/two_electron.rs:2425-2431`
+**File:** `crates/cintx-runtime/src/planner.rs:280` (with `crates/cintx-cubecl/src/kernels/one_electron.rs:8519` and `crates/cintx-cubecl/src/kernels/two_electron.rs:2528`)
+**Issue:** The gap-closure `staging_elements_for_chunk` now hands the **full**
+interleaved block to *every* chunk for `complex_interleaved` families (correct — fixes the
+BufferTooSmall regression). But the monolithic GIAO launchers
+(`write_giao_complex_staging`, `launch_two_electron_giao2e`) compute `not0` over the
+**entire full block** and return it once per chunk, and `evaluate` accumulates it via
+`metrics.observe_not0(io.not0())` at planner.rs:280 (`RunMetrics::observe_not0` does a
+`saturating_add`). So when `memory_limit_bytes` forces `chunk_count = N`, the reported
+`not0` becomes `N × (true full-block not0)`. Before this fix the family was inoperable
+under chunking (returned `BufferTooSmall`), so the over-count never surfaced; it is newly
+reachable now. `not0` is a libcint-compatibility signal (non-zero/early-exit work report),
+so an N× inflation is an observable contract value that is now wrong for any chunked
+complex family. The new test `evaluate_giao_complex_family_survives_memory_chunking`
+asserts only `chunk_count > 1` and `fallback_reason`, never `not0`, so it does not catch
+this.
+**Fix:** Compute the full-block `not0` exactly once for `complex_interleaved` families
+(e.g. only on the first chunk, or set the final `not0` to the single full-block value
+rather than summing per chunk), and add a chunked-vs-single assertion:
+```rust
+assert_eq!(chunk_stats.not0, baseline_stats.not0,
+    "chunked complex family must not inflate not0 by chunk_count");
+```
 
-**Issue:** The GIAO launchers are monolithic whole-block writers: `write_giao_complex_staging` and `launch_two_electron_giao2e` both require a staging buffer of the *full* `2 * real_total` and reject anything smaller with `BufferTooSmall`. In the safe-API `evaluate` path, `staging_elements_for_chunk` slices `output_layout.staging_elements` by `(suffix - prefix)` per chunk. With a default (no) memory limit there is a single chunk and `suffix - prefix == staging_elements`, so the round-trip test passes. But under any `memory_limit_bytes` that forces `chunk_count > 1`, the per-chunk staging is smaller than `2 * real_total`, so every GIAO call fails closed with `BufferTooSmall`. This is the documented FND-06 monolithic-writer hazard (project memory: "family kernels are MONOLITHIC whole-block writers → per-chunk staging must be FULL-block sized"). It is *safe* (no partial write / no corruption) but renders the entire GIAO family inoperable whenever memory chunking engages, which is a real availability regression vs. the raw path (`eval_raw` correctly allocates a full-block `chunk_staging` of `staging_elements` per chunk — see `raw.rs:1061-1070`).
+### WR-02: `staging_elements_for_chunk` doc claims an upfront fail-closed guard the workspace estimate does not provide for complex families
 
-**Fix:** Make the safe-API `evaluate` path size GIAO (and other monolithic complex/whole-block writers') chunk staging to the full `plan.output_layout.staging_elements`, mirroring `eval_raw`'s `chunk_staging` allocation, OR mark these families as non-chunkable in the planner so a memory limit that would split them produces a single typed `MemoryLimitExceeded` up front rather than a per-chunk `BufferTooSmall`. At minimum, add a runtime test driving a GIAO family through `SessionRequest::evaluate` with a `memory_limit_bytes` small enough to force `chunk_count > 1` and assert the intended behavior.
+**File:** `crates/cintx-runtime/src/planner.rs:351-352` (claim) vs `crates/cintx-runtime/src/planner.rs:426-433` (estimate)
+**Issue:** The new doc comment states: *"If the full block cannot fit, the upfront
+workspace check fails closed with a typed `MemoryLimitExceeded` (no partial write)."* That
+guarantee is not real. `estimate_workspace_request` (lines 426-433) sizes
+`output_bytes = output_elements * component_multiplier * size_of::<f64>()` and never
+applies the `complex_output` 2× multiplier — only `build_output_layout` (lines 311-318)
+doubles `staging_elements`. So `required_bytes`, the `memory_limit_bytes` check, and the
+chunk plan all **undercount complex families by 2×**, while the per-chunk staging
+allocation (`try_alloc_staging(required_elements)`, line 265) requests the full doubled
+block independently of the limit. The doubled staging is therefore not gated by the
+upfront workspace check the comment cites. (No memory-unsafety: staging is fallibly
+allocated via `try_reserve_exact`, so OOM yields a typed `HostAllocationFailed`, not UB —
+but it is not the cited `MemoryLimitExceeded` path, and `memory_limit_bytes` does not
+actually bound the complex staging.)
+**Fix:** Either fold the complex multiplier into `estimate_workspace_request` so the
+memory-limit check and chunk plan reflect the true doubled footprint, or correct the doc
+comment to state that the complex doubling is bounded by fallible host allocation
+(`HostAllocationFailed`), not by the `memory_limit_bytes` / `MemoryLimitExceeded` upfront
+check.
 
-### WR-02: a01gp deferral conflates "oracle coverage" with "kernel correctness"
+### WR-03: WR-01 chunking test asserts survival but not output equality, and its docstring overclaims
 
-**File:** `crates/cintx-oracle/tests/giao_1e_parity.rs:209-228`
-
-**Issue:** The `#[ignore]` comment frames a01gp as "tracked in SUMMARY Known Stubs" and the prompt frames it as "deferred, tracked." But the family is not merely *untested* — it is *demonstrably wrong* (the comment itself states the rank-9 table is ~2× on a subset of components). Marking `oracle_covered=false` removes it from coverage gates but does not remove it from the dispatch surface, so the manifest flag silently understates a correctness defect rather than an absence of evidence. This is the metadata side of CR-01.
-
-**Fix:** Pair the `oracle_covered=false` flag with the CR-01 runtime guard so the manifest's "not covered" honestly implies "not callable for results," not "callable but wrong." Alternatively, drop the a01gp dispatch arm entirely (keep only the symbol registration) until the kernel is correct.
-
-### WR-03: `giao_2e_parity.rs` duplicates comparison helpers instead of reusing `moment_common`
-
-**File:** `crates/cintx-oracle/tests/giao_2e_parity.rs:42-153`
-
-**Issue:** `ncart`, `nsph`, `matches_with_tol`, `count_mismatches`, `assert_any_nonzero`, and the `ATOL`/`RTOL` consts are re-implemented locally, whereas the sibling `giao_1e_parity.rs:30-33` imports the same helpers from `moment_common`. Duplicated tolerance/mismatch logic drifts: the two files could silently diverge on `RTOL` or the mismatch-printing threshold, weakening the parity gate. (The 1e file's `count_mismatches` comes from `moment_common`; the 2e file's local copy hard-codes `ATOL`/`RTOL` inside the function instead of taking them as parameters, so a future tolerance change to one path won't track the other.)
-
-**Fix:** Import the shared helpers from `moment_common` (add a `#[path = "moment_common.rs"] mod moment_common;` as in `giao_1e_parity.rs`) and delete the local copies, or factor a `giao_common` module shared by both GIAO parity files.
-
-### WR-04: GIAO `not0` counts the always-zero real (re) half of the interleaved buffer
-
-**File:** `crates/cintx-cubecl/src/kernels/one_electron.rs:8493-8497`, `crates/cintx-cubecl/src/kernels/two_electron.rs:2526-2528`
-
-**Issue:** `not0` is computed by filtering the *entire interleaved* staging (`staging.iter().filter(|v| v.abs() > threshold)`). Because the re half is deliberately zeroed, the count reflects only the imaginary entries — which is *numerically* fine — but the reported `not0` for a GIAO family is therefore the count of non-zero imaginary values, not a count over a contiguous real block, and is not directly comparable to the `not0` libcint would report for the same call (libcint counts over its real `double*`). Any downstream consumer treating `not0` as a libcint-comparable nonzero count for these families will see a value that happens to match only because the imaginary half is dense; if a future GIAO family had structural zeros in the imaginary half, the semantics would be subtly off. This is a contract-clarity issue, not a wrong-result issue.
-
-**Fix:** Count `not0` over the imaginary half only (`staging.chunks_exact(2).filter(|c| c[1].abs() > threshold)`) so the reported nonzero count matches the libcint real-output semantics, and document that GIAO `not0` is an imaginary-component count.
-
-### WR-05: Unused/inert comptime `complex_output` hint threaded through the moment/1e device path
-
-**File:** `crates/cintx-cubecl/src/kernels/one_electron.rs:7034-7046`, `8913-8918`
-
-**Issue:** The comptime `complex_output` hint is plumbed into the moment/1e device kernel (`let _is_complex_out = comptime!(complex_output == 1u32);`) but is explicitly inert ("stays inert on-device today"). The GIAO families do NOT use this device hint — they go through the separate `one_electron_giao_ovlp_kernel`/`one_electron_giao_nuc_kernel` + host `write_giao_complex_staging` path, and the complex interleaving is a pure host concern. The threaded hint is dead plumbing (an `_`-prefixed bind that is never read) carried through the launcher signature and call sites, adding surface area with no current consumer.
-
-**Fix:** Either remove the inert hint from the moment device path until a real GIAO-on-device path needs it, or add a short `// reserved for <ticket>` note pointing at the concrete future consumer so it is not mistaken for live behavior.
+**File:** `crates/cintx-runtime/src/planner.rs:1308-1309, 1395-1407`
+**Issue:** The test docstring (lines 1308-1309) says the chunked run *"matches the
+single-chunk run"*, but the test never compares any output value or `not0` between
+`baseline_stats` and `chunk_stats` — it only checks `chunk_count > 1` and
+`fallback_reason == Some("memory_limit")`. Combined with the `MockBackend` (which writes
+only `staging[0] = 1.0`), the test proves "no `BufferTooSmall`" but provides **zero**
+evidence that a monolithic full-block writer driven once per chunk yields a correct,
+non-duplicated result — exactly the regression class WR-01 describes.
+**Fix:** Add value/`not0` parity assertions between the baseline (single-chunk) and chunked
+runs, or soften the docstring to "survives chunking without `BufferTooSmall`" and note
+that output-equality under chunking is covered by the compat `eval_raw` scatter tests, not
+here.
 
 ## Info
 
-### IN-01: `giao_2e_parity.rs` lacks the shared-fixture comment cross-references used elsewhere
+### IN-01: `assert_any_nonzero` deduplicated in 2e but left as a local copy in 1e
 
-**File:** `crates/cintx-oracle/tests/giao_2e_parity.rs:52-54`
+**File:** `crates/cintx-oracle/tests/giao_1e_parity.rs:96-101`
+**Issue:** The WR-03 dedup pulled `ATOL`/`RTOL`/`count_mismatches`/`ncart`/`nsph`/
+`assert_any_nonzero` into `moment_common`, and `giao_2e_parity.rs` now imports the shared
+`assert_any_nonzero` (moment_common.rs:170). `giao_1e_parity.rs` still keeps a **local**
+copy (identical `1e-14` threshold) instead of importing the shared one, so the same
+"single source of truth" rationale the 2e refactor cites is only half applied. Harmless
+(thresholds match) but a latent drift point.
+**Fix:** Drop the local `assert_any_nonzero` in `giao_1e_parity.rs` and add it to the
+`use super::moment_common::{...}` import, matching `giao_2e_parity.rs`.
 
-**Issue:** `cross_center_non_square_quartet()` hard-codes `[3, 2, 3, 2]` with an inline comment naming the shells, but unlike the 1e file it does not source the pair from a shared `moment_common` helper. If the `build_h2o_sto3g_common_orig` shell ordering ever changes, this literal quartet silently selects different shells. Low risk (the fixture is stable), but a named helper would be self-documenting and refactor-safe.
+### IN-02: a01gp `fam_factor` rationale comment carries the superseded (wrong) diagnosis
 
-**Fix:** Move the quartet selection into `moment_common` (or assert the selected shell angular momenta match the expected `[0,1,0,1]` before use).
-
-### IN-02: `gnuc`/`ignuc` rinv-center exclusion relies on an implicit `op_kind >= 2` convention
-
-**File:** `crates/cintx-cubecl/src/kernels/one_electron.rs:8813`
-
-**Issue:** The single-center-vs-atom-sum split is encoded as `let is_rinv_center = op_kind >= 2;` with the family→op_kind mapping living separately in `giao_nuc_op` (`raw.rs` reads `is_giao_rinv_center_symbol` for env extraction). The `op_kind >= 2` magic boundary couples the kernel to the exact numbering of the dispatch table — re-numbering `giao_nuc_op` (e.g., inserting a new rank-3 family at slot 2) would silently flip gnuc/ignuc onto the rinv-center path. This is the same positional-coupling class flagged in project memory ("new family registration shifts ids → breaks hardcoded consts"), here applied to op_kind ordinals.
-
-**Fix:** Derive `is_rinv_center` from an explicit per-family property (e.g., a field on the dispatch tuple, matching the `is_origj` precedent the moment path already uses at `one_electron.rs:8654-8661`) rather than from the ordinal value of `op_kind`.
-
-### IN-03: Magic angular-momentum ceilings duplicated across host guard and device sizing
-
-**File:** `crates/cintx-cubecl/src/kernels/one_electron.rs:8710` (`li + lj + 3 > 8`), `8783` (`(li + lj + 5) / 2 + 1`), `3098`/`3718` (`nmax = li + lj + 3` / `+ 5`)
-
-**Issue:** The GIAO headroom constants (`+3` for the overlap engine, `+5` for the nuclear engine, the `<= 8` VRR envelope) appear as bare literals in both the host fail-closed guard and the device `run_*_device` sizing, with the relationship between them ("nmax = li+lj+5; nroots = nmax/2+1") spelled out only in comments. A change to one site that is not mirrored in the other would either over-allocate or (worse) under-size the device G-tensor without the host guard catching it. The moment path already centralizes this via a shared `moment_params` const fn (cited at `one_electron.rs:8627-8661`); the GIAO path does not.
-
-**Fix:** Hoist the per-engine headroom into shared `const fn`s (mirroring `moment_params`) consumed by both the host guard and the device sizing so the envelope cannot drift between the two.
+**File:** `crates/cintx-cubecl/src/kernels/one_electron.rs:3290-3294`
+**Issue:** The comment labels the missing-0.5 scale fix as *"the 26-02 ket-derivative
+double-count"*, but the actual root cause is a missing family-level
+`common_factor *= 0.5` (a uniform scale), not a ket-derivative double-count in the
+`g2 = D_J + D_I` tensor — the latter was the earlier (incorrect) 26-02 hypothesis quoted
+verbatim from the now-removed deferral note (and the removed-note block at
+giao_1e_parity.rs:289-297 itself acknowledges the gout already matched verbatim). Carrying
+the superseded diagnosis inline risks future readers re-chasing the wrong tensor path.
+**Fix:** Reword to: "uniform ~2× from a missing family `common_factor *= 0.5`
+(intor1.c:551/572); the s-table/gout already matched verbatim — the 26-02
+'ket-derivative double-count' hypothesis was wrong."
 
 ---
 
