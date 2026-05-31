@@ -878,11 +878,27 @@ fn dims_for_arity(
     representation: Representation,
     arity: usize,
 ) -> Result<Vec<usize>> {
-    inputs
-        .shells_for_arity(arity)
+    let shells = inputs.shells_for_arity(arity);
+    shells
         .iter()
         .copied()
-        .map(|shell| ao_count_for_rep(shell, representation, &inputs.bas))
+        .enumerate()
+        .map(|(axis, shell)| {
+            // Arity-3 SPINOR families size the auxiliary-k axis (the tail shell,
+            // axis == arity - 1) SPHERICALLY as nsph(lk) = (2lk+1)*nctr_k, NOT spinor.
+            // Source-verified: libcint CINT3c2e_spinor_drv is_ssc=0 branch
+            // (cint3c2e.c:631-636) sets counts[2] = (k_l*2+1)*x_ctr[2]; only bra i
+            // and ket j use CINTcgto_spinor (4l+2). See 27-SPIKE-FINDINGS CORRECTION
+            // NOTICE — the earlier spinor-sized aux-k (the disproven 720) was a
+            // compat-dims over-sizing bug in this function.
+            if representation == Representation::Spinor && arity == 3 && axis == arity - 1 {
+                CINTcgto_spheric(shell, &inputs.bas).with_context(|| {
+                    format!("spherical aux-k ao count for arity-3 spinor shell {shell}")
+                })
+            } else {
+                ao_count_for_rep(shell, representation, &inputs.bas)
+            }
+        })
         .collect()
 }
 
