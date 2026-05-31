@@ -9,23 +9,17 @@
 //!   REL-04 (dkb.c):     spv1, vsp1 (si_2e1+sf_2e2); spv1spv2, vsp1spv2,
 //!                       spv1vsp2, vsp1vsp2, spv1spsp2, vsp1spsp2 (si_2e1+si_2e2)
 //!
-//! STATE: RED scaffold (Plan 29-05). The vendor shims + manifest rows + the
-//! gaunt1.c/dkb.c vendor build wiring all land in 29-05; the cintx-side family
-//! LAUNCHERS land in 29-06. Until then the cintx collectors return UnsupportedApi
-//! (the families are not yet wired in `launch_two_electron_typed`), so each
-//! per-family byte-identity gate is `#[ignore]`'d with a TODO referencing 29-06.
+//! STATE: LIVE (Plan 29-06). All 15 family launcher arms are wired in
+//! `launch_two_electron_typed` (REL-03 Task 1 + REL-04 Task 2); the cintx collector
+//! drives each via `rel2e_family_dispatch`, and every per-family byte-identity gate
+//! runs under the double gate at atol=1e-12.
 //!
-//! ALWAYS-ON (pass NOW, even as a RED scaffold):
+//! ALWAYS-ON:
 //!   - `test_kappa_sizing_2e_non_4l_plus_2` — GT/LT sizing on the fixture momenta.
 //!   - `test_all_rel_2e_rows_registered` — all 15 manifest rows present, spinor-only,
-//!     component_rank=1, oracle_covered=false (the 29-06 pre-flip state).
+//!     component_rank=1. (oracle_covered flips true per family in Task 3.)
 //!   - `test_no_silent_skip` — under the double gate every vendor arm MUST execute
-//!     and produce nonzero output (FAIL, not skip). This proves the gaunt1.c/dkb.c
-//!     build wiring (29-05 Task 1) actually linked a real driver per family.
-//!
-//! DEFERRED to 29-06 (the `#[ignore]`'d byte-identity gates): wire each family's
-//! launcher arm, drop the cintx-side `UnsupportedApi` stub, remove `#[ignore]`,
-//! and flip `oracle_covered=true` per family once green.
+//!     and produce nonzero output (FAIL, not skip).
 //!
 //! Double gate (memory `reference_oracle_vendor_parity_invocation`): vendor arms are
 //! gated on `--features cpu` AND env `CINTX_ORACLE_BUILD_VENDOR=1` (`has_vendor_libcint`).
@@ -381,37 +375,11 @@ fn test_no_silent_skip() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DEFERRED to 29-06 — per-family byte-identity gates (RED: cintx launchers not
-// yet wired). Each is #[ignore]'d; 29-06 wires the launcher, drops the cintx-side
-// stub + #[ignore], and flips oracle_covered=true once green.
-//
-// Pattern (mirror si_2e_transform_parity.rs::test_int2e_spsp1_kappa_spinor_byte_identity):
-//   let vendor = collect_vendor_family(SYM, &atm, &bas, &env);
-//   let cintx  = collect_cintx_family(SYM, &atm, &bas, &env);   // real in 29-06
-//   assert_eq!(count_mismatches(&vendor, &cintx, ATOL, RTOL), 0, ...);
+// Per-family byte-identity gates — all LIVE (29-06): each family's launcher arm is
+// wired in `launch_two_electron_typed`, and the cintx collector drives it via
+// `rel2e_family_dispatch`. Each gate runs the cintx vs vendor comparison under the
+// double gate at atol=1e-12 on the non-square kappa fixture.
 // ─────────────────────────────────────────────────────────────────────────────
-macro_rules! rel_2e_byte_identity_gate {
-    ($test_name:ident, $symbol:literal) => {
-        #[cfg(has_vendor_libcint)]
-        #[cfg(feature = "cpu")]
-        #[test]
-        #[ignore = "RED scaffold (29-05): cintx launcher arm for this family wired in 29-06"]
-        fn $test_name() {
-            let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_2e_fixture();
-            let vendor = collect_vendor_family($symbol, &atm, &bas, &env);
-            let cintx = collect_cintx_family($symbol, &atm, &bas, &env); // panics until 29-06
-            assert_eq!(vendor.len(), cintx.len(), "{}: length mismatch", $symbol);
-            assert_any_nonzero(&vendor, concat!($symbol, " vendor"));
-            assert_any_nonzero(&cintx, concat!($symbol, " cintx"));
-            let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
-            assert_eq!(
-                mismatches, 0,
-                "{}: {} mismatches vs vendored libcint at atol={} (29-06 byte-identity gate)",
-                $symbol, mismatches, ATOL
-            );
-        }
-    };
-}
 
 /// LIVE byte-identity gate (29-06): cintx launcher wired, runs under the double gate.
 macro_rules! rel_2e_byte_identity_gate_live {
@@ -442,19 +410,19 @@ rel_2e_byte_identity_gate_live!(test_spsp1spsp2_byte_identity, "int2e_spsp1spsp2
 
 rel_2e_byte_identity_gate_live!(test_srsr1srsr2_byte_identity, "int2e_srsr1srsr2_spinor");
 // REL-04 (gaunt1.c)
-rel_2e_byte_identity_gate!(test_ssp1ssp2_byte_identity, "int2e_ssp1ssp2_spinor");
-rel_2e_byte_identity_gate!(test_ssp1sps2_byte_identity, "int2e_ssp1sps2_spinor");
-rel_2e_byte_identity_gate!(test_sps1ssp2_byte_identity, "int2e_sps1ssp2_spinor");
-rel_2e_byte_identity_gate!(test_sps1sps2_byte_identity, "int2e_sps1sps2_spinor");
+rel_2e_byte_identity_gate_live!(test_ssp1ssp2_byte_identity, "int2e_ssp1ssp2_spinor");
+rel_2e_byte_identity_gate_live!(test_ssp1sps2_byte_identity, "int2e_ssp1sps2_spinor");
+rel_2e_byte_identity_gate_live!(test_sps1ssp2_byte_identity, "int2e_sps1ssp2_spinor");
+rel_2e_byte_identity_gate_live!(test_sps1sps2_byte_identity, "int2e_sps1sps2_spinor");
 // REL-04 (dkb.c)
-rel_2e_byte_identity_gate!(test_spv1_byte_identity, "int2e_spv1_spinor");
-rel_2e_byte_identity_gate!(test_vsp1_byte_identity, "int2e_vsp1_spinor");
-rel_2e_byte_identity_gate!(test_spv1spv2_byte_identity, "int2e_spv1spv2_spinor");
-rel_2e_byte_identity_gate!(test_vsp1spv2_byte_identity, "int2e_vsp1spv2_spinor");
-rel_2e_byte_identity_gate!(test_spv1vsp2_byte_identity, "int2e_spv1vsp2_spinor");
-rel_2e_byte_identity_gate!(test_vsp1vsp2_byte_identity, "int2e_vsp1vsp2_spinor");
-rel_2e_byte_identity_gate!(test_spv1spsp2_byte_identity, "int2e_spv1spsp2_spinor");
-rel_2e_byte_identity_gate!(test_vsp1spsp2_byte_identity, "int2e_vsp1spsp2_spinor");
+rel_2e_byte_identity_gate_live!(test_spv1_byte_identity, "int2e_spv1_spinor");
+rel_2e_byte_identity_gate_live!(test_vsp1_byte_identity, "int2e_vsp1_spinor");
+rel_2e_byte_identity_gate_live!(test_spv1spv2_byte_identity, "int2e_spv1spv2_spinor");
+rel_2e_byte_identity_gate_live!(test_vsp1spv2_byte_identity, "int2e_vsp1spv2_spinor");
+rel_2e_byte_identity_gate_live!(test_spv1vsp2_byte_identity, "int2e_spv1vsp2_spinor");
+rel_2e_byte_identity_gate_live!(test_vsp1vsp2_byte_identity, "int2e_vsp1vsp2_spinor");
+rel_2e_byte_identity_gate_live!(test_spv1spsp2_byte_identity, "int2e_spv1spsp2_spinor");
+rel_2e_byte_identity_gate_live!(test_vsp1spsp2_byte_identity, "int2e_vsp1spsp2_spinor");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Non-vendor smoke: keep the binary non-empty under `--features cpu` alone (the

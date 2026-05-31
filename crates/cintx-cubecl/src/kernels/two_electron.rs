@@ -2831,6 +2831,21 @@ pub fn rel2e_family_dispatch(name: &str) -> Option<(Rel2eGout, E1Transform, E2Tr
         // REL-03 (intor4.c): 2-sided σ → si_2e1 + si_2e2.
         "spsp1spsp2" => Some((Rel2eGout::Spsp1spsp2, Si, E2::Si)),
         "srsr1srsr2" => Some((Rel2eGout::Srsr1srsr2, Si, E2::Si)),
+        // REL-04 (gaunt1.c): ssp/sps → si_2e1i + si_2e2i (BOTH imaginary).
+        "ssp1ssp2" => Some((Rel2eGout::Ssp1ssp2, SiI, E2::SiI)),
+        "ssp1sps2" => Some((Rel2eGout::Ssp1sps2, SiI, E2::SiI)),
+        "sps1ssp2" => Some((Rel2eGout::Sps1ssp2, SiI, E2::SiI)),
+        "sps1sps2" => Some((Rel2eGout::Sps1sps2, SiI, E2::SiI)),
+        // REL-04 (dkb.c): 1-sided vsp/spv → si_2e1 + sf_2e2.
+        "spv1" => Some((Rel2eGout::Spv1, Si, E2::Sf)),
+        "vsp1" => Some((Rel2eGout::Vsp1, Si, E2::Sf)),
+        // REL-04 (dkb.c): 2-sided spv/vsp → si_2e1 + si_2e2.
+        "spv1spv2" => Some((Rel2eGout::Spv1spv2, Si, E2::Si)),
+        "vsp1spv2" => Some((Rel2eGout::Vsp1spv2, Si, E2::Si)),
+        "spv1vsp2" => Some((Rel2eGout::Spv1vsp2, Si, E2::Si)),
+        "vsp1vsp2" => Some((Rel2eGout::Vsp1vsp2, Si, E2::Si)),
+        "spv1spsp2" => Some((Rel2eGout::Spv1spsp2, Si, E2::Si)),
+        "vsp1spsp2" => Some((Rel2eGout::Vsp1spsp2, Si, E2::Si)),
         _ => None,
     }
 }
@@ -2923,32 +2938,57 @@ pub enum E2Transform {
 /// `CINTgout2e_int2e_*` (intor4.c / gaunt1.c / dkb.c).
 #[derive(Clone, Copy, PartialEq)]
 pub enum Rel2eGout {
-    /// σ·p₁ (1-sided e1), 4 blocks. Headroom (i+1, j+1, k, l).
+    // REL-03 (intor4.c)
     Spsp1,
-    /// σ·r₁ (1-sided e1), 4 blocks. Headroom (i+1, j+1, k, l).
     Srsr1,
-    /// (σ·p₁)(σ·p₂), 16 blocks. Headroom (i+1, j+1, k+1, l).
     Spsp1spsp2,
-    /// (σ·r₁)(σ·r₂), 16 blocks. Headroom (i+1, j+1, k+1, l).
     Srsr1srsr2,
+    // REL-04 gaunt1.c (rank-9, ncomp 16)
+    Ssp1ssp2,
+    Ssp1sps2,
+    Sps1ssp2,
+    Sps1sps2,
+    // REL-04 dkb.c rank-4 (ncomp 4, 1-sided σ·∇)
+    Spv1,
+    Vsp1,
+    // REL-04 dkb.c rank-9 2-sided (ncomp 16)
+    Spv1spv2,
+    Vsp1spv2,
+    Spv1vsp2,
+    Vsp1vsp2,
+    // REL-04 dkb.c rank-27 2-sided (ncomp 16)
+    Spv1spsp2,
+    Vsp1spsp2,
 }
 
 impl Rel2eGout {
-    /// Component count (4 for 1-sided, 16 for 2-sided).
+    /// Output component count (4 for 1-sided families, 16 for 2-sided σ⊗σ).
     fn ncomp(self) -> usize {
+        use Rel2eGout::*;
         match self {
-            Rel2eGout::Spsp1 | Rel2eGout::Srsr1 => 4,
-            Rel2eGout::Spsp1spsp2 | Rel2eGout::Srsr1srsr2 => 16,
+            Spsp1 | Srsr1 | Spv1 | Vsp1 => 4,
+            _ => 16,
         }
     }
     /// Headroom (i_inc, j_inc, k_inc, l_inc) for the G-tensor build — the libcint
-    /// `ng[0..3]` increments. spsp1/srsr1 = {1,1,0,0}; the 2-sided σ⊗σ families raise
-    /// ALL FOUR indices ({1,1,1,1}, intor4.c ng = {1,1,1,1,4,4,4,1}) because the σ·p₂
-    /// (σ·r₂) operator nablas/shifts both k and l.
+    /// `ng[0..3]` increments (read verbatim from each driver's optimizer ng).
     fn headroom(self) -> (usize, usize, usize, usize) {
+        use Rel2eGout::*;
         match self {
-            Rel2eGout::Spsp1 | Rel2eGout::Srsr1 => (1, 1, 0, 0),
-            Rel2eGout::Spsp1spsp2 | Rel2eGout::Srsr1srsr2 => (1, 1, 1, 1),
+            Spsp1 | Srsr1 => (1, 1, 0, 0),
+            Spsp1spsp2 | Srsr1srsr2 => (1, 1, 1, 1),
+            Ssp1ssp2 => (0, 1, 0, 1),
+            Ssp1sps2 => (0, 1, 1, 0),
+            Sps1ssp2 => (1, 0, 0, 1),
+            Sps1sps2 => (1, 0, 1, 0),
+            Spv1 => (1, 0, 0, 0),
+            Vsp1 => (0, 1, 0, 0),
+            Spv1spv2 => (1, 0, 1, 0),
+            Vsp1spv2 => (0, 1, 1, 0),
+            Spv1vsp2 => (1, 0, 0, 1),
+            Vsp1vsp2 => (0, 1, 0, 1),
+            Spv1spsp2 => (1, 0, 1, 1),
+            Vsp1spsp2 => (0, 1, 1, 1),
         }
     }
 }
@@ -3036,21 +3076,26 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
                         ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
                     );
 
+                    use crate::kernels::f12 as f12;
+                    let (gli, glj, glk, gll) =
+                        (li as usize, lj as usize, lk as usize, ll as usize);
                     let gout = match gout_kind {
-                        Rel2eGout::Spsp1 => crate::kernels::f12::gout_spsp1(
-                            &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
-                            ai, aj,
-                        ),
-                        Rel2eGout::Srsr1 => crate::kernels::f12::gout_srsr1(
-                            &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
-                        ),
-                        Rel2eGout::Spsp1spsp2 => crate::kernels::f12::gout_spsp1spsp2(
-                            &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
-                            ai, aj, ak, al,
-                        ),
-                        Rel2eGout::Srsr1srsr2 => crate::kernels::f12::gout_srsr1srsr2(
-                            &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
-                        ),
+                        Rel2eGout::Spsp1 => f12::gout_spsp1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj),
+                        Rel2eGout::Srsr1 => f12::gout_srsr1(&g, &grad_f12_shape, gli, glj, glk, gll),
+                        Rel2eGout::Spsp1spsp2 => f12::gout_spsp1spsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Srsr1srsr2 => f12::gout_srsr1srsr2(&g, &grad_f12_shape, gli, glj, glk, gll),
+                        Rel2eGout::Ssp1ssp2 => f12::gout_ssp1ssp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Ssp1sps2 => f12::gout_ssp1sps2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Sps1ssp2 => f12::gout_sps1ssp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Sps1sps2 => f12::gout_sps1sps2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Spv1 => f12::gout_spv1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Vsp1 => f12::gout_vsp1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Spv1spv2 => f12::gout_spv1spv2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Vsp1spv2 => f12::gout_vsp1spv2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Spv1vsp2 => f12::gout_spv1vsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Vsp1vsp2 => f12::gout_vsp1vsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Spv1spsp2 => f12::gout_spv1spsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Vsp1spsp2 => f12::gout_vsp1spsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
                     };
 
                     for ci in 0..nctr_i {
