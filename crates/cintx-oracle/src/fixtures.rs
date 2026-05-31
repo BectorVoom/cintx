@@ -390,6 +390,51 @@ pub fn build_kappa_spinor_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 30 (GIAO-03 / D-02): combined gauge≠0 ∧ kappa≠0 1e spinor fixture.
+//
+// PRIMARY Wave-0/Wave-1 GATE for the GIAO×σ 1e families. Internally reproduces
+// build_kappa_spinor_fixture's exact geometry (p kappa=+1 LT nctr=2 × d kappa=−1
+// GT, non-square (2,6), COLUMN-major env coeffs) and ADDITIONALLY sets a non-zero
+// asymmetric gauge origin at env[PTR_COMMON_ORIG..+3]. The `int1e_cg_sa10*` arms
+// read PTR_COMMON_ORIG (dri = ri − common_orig); without a non-zero origin the
+// gauge×kappa cross-term the integrand couples is never exercised.
+//
+// The 5 D-02 hard constraints (all hold):
+//   (1) env[PTR_COMMON_ORIG..+3] = [0.30, -0.45, 0.60] ≠ [0,0,0]  — cg_sa10* reads it
+//   (2) kappa≠0 GT/LT mix: p kappa=+1 (LT, di=2) AND d kappa=−1 (GT, dj=6) →
+//       BOTH spinor_len branches
+//   (3) non-square block dims (2,6) — defeats KET→BRA transpose symmetry
+//   (4) ≥1 shell with nctr>1: the p shell keeps NCTR_OF=2 (COLUMN-major env coeff)
+//   (5) the PTR_RINV_ORIG block stays for the nucsp/sa01 Rys arms
+//
+// Does NOT mutate build_kappa_spinor_fixture (Phase-29 REL tests depend on it).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the D-02 combined gauge≠0 ∧ kappa≠0 **1e** spinor fixture (atm, bas, env).
+///
+/// Same geometry as [`build_kappa_spinor_fixture`] (p kappa=+1 LT nctr=2 × d
+/// kappa=−1 GT, non-square (2,6)) plus a non-zero asymmetric gauge origin written
+/// at `env[PTR_COMMON_ORIG..+3]`. This is the Wave-0 gauge-gout micro-test vehicle
+/// and the Wave-1 1e parity gate for every GIAO×σ 1e family.
+pub fn build_gauge_kappa_spinor_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    use cintx_compat::raw::PTR_COMMON_ORIG;
+
+    // Reuse the Phase-29 kappa fixture verbatim (geometry, coeffs, kappa mix,
+    // nctr>1, PTR_RINV_ORIG). The ONLY D-02 addition is the gauge origin below.
+    let (atm, bas, mut env) = build_kappa_spinor_fixture();
+
+    // D-02 constraint (1): non-zero asymmetric gauge origin — the cg_sa10* arms
+    // read dri = ri − env[PTR_COMMON_ORIG]. PTR_COMMON_ORIG = 1 (raw.rs:50). Same
+    // off-center asymmetric triple already used for PTR_RINV_ORIG so the gauge≠0
+    // path is exercised without re-tuning convergence.
+    env[PTR_COMMON_ORIG] = 0.30;
+    env[PTR_COMMON_ORIG + 1] = -0.45;
+    env[PTR_COMMON_ORIG + 2] = 0.60;
+
+    (atm, bas, env)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Phase 29 (REL-03/04 / D-02): kappa≠0 adversarial 2e (4-shell) spinor fixture.
 //
 // PRIMARY GATE for every REL-03/04 2e σ family. A 2-electron quartet (i,j,k,l) of
