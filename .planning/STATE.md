@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: verifying
-stopped_at: Phase 29 context gathered
-last_updated: "2026-05-31T12:59:49.082Z"
+status: executing
+stopped_at: Completed 29-02-PLAN.md
+last_updated: "2026-05-31T14:38:06.701Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 21
   completed_phases: 18
-  total_plans: 95
-  completed_plans: 95
-  percent: 100
+  total_plans: 101
+  completed_plans: 97
+  percent: 96
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 28 — spin-included-c2s-si-transform-p-module-gap-b2
+**Current focus:** Phase 29 — group-4-relativistic-spin-operator-integrals-spinor
 
 ## Current Position
 
-Phase: 28
-Plan: Not started
-Status: Phase complete — ready for verification
-Resume file: .planning/phases/29-group-4-relativistic-spin-operator-integrals-spinor/29-CONTEXT.md
+Phase: 29 (group-4-relativistic-spin-operator-integrals-spinor) — EXECUTING
+Plan: 3 of 6
+Status: Ready to execute
+Resume file: None
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 
@@ -166,6 +166,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 28 P02 | 9 | 1 tasks | 2 files |
 | Phase 28 P03 | 38 | 2 tasks | 8 files |
 | Phase 28 P04 | 42min | 2 tasks | 3 files |
+| Phase 29 P02 | 100min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -363,6 +364,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: [Phase 28]: σ·p assembler emits PRE-BLOCKED component-leading gc[comp*block_len+n] on-device (not interleaved gout[n*4+comp]) so cart_to_spinor_si_2d reads gc_x=block0..gc_1=block3 with no host transpose; rank-parameterized via #[comptime] tensor_rank for int1e_sigma reuse (D-03)
 - [Phase ?]: Phase 28-03: int1e_sp_spinor registered infrastructure-only (oracle_covered=false, appended last so OperatorId 347, no positional shift); SC#4 enforced via is_skipped_spinor_fixture so oracle-covered-update refuses to flip it; vendor_int1e_sp_spinor FFI shim + bindgen allowlist added; D-01 honored (σ flips deferred to Phase 29).
 - [Phase ?]: FND-05 proven byte-identical: int1e_sp σ·p assembler → cart_to_spinor_si_2d vs vendor int1e_sp_spinor at atol=1e-12 (no manifest flip, D-01)
+- [Phase ?]: int1e_sigma is component_rank=3 (3 stacked Pauli σ-matrices), empirically measured — 29-01 rank-1 prior disproven
+- [Phase ?]: 29-02: 7 1e Group-4 σ families byte-identical to libcint at atol=1e-12 via overlap+Rys nuclear #[cube] engines; 8 rows oracle_covered=true spinor-only
 
 ### Roadmap Evolution
 
@@ -409,6 +412,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T12:59:49.077Z
-Stopped at: Phase 29 context gathered
+Last session: 2026-05-31T14:38:02.594Z
+Stopped at: Completed 29-02-PLAN.md
 Resume file: None

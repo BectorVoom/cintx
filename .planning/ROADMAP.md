@@ -678,7 +678,7 @@ Gap-Wave 3 (after 26-05):
 
 **Plans**: 6 plans (3 sequential waves per D-04, each gated vendor-parity-green before the next)
 - [x] 29-01-PLAN.md (wave 1 — 1e σ) — new `cart_to_spinor_si_2di` imaginary-ket transform + 7 1e Group-4 manifest rows (spinor-only, rank=1) + `vendor_int1e_*_spinor` shims + `rel_1e_sigma_parity.rs` scaffold
-- [ ] 29-02-PLAN.md (wave 1 — 1e σ) — wire 7 1e σ launcher arms (per-family transform: spsp→sf_2d, spnucsp/sprinvsp/srsr/srnucsr→si_2d, sr/sigma→si_2di) + resolve int1e_sigma rank empirically + flip int1e_sp; REL-01/02 byte-identity green
+- [x] 29-02-PLAN.md (wave 1 — 1e σ) — wire 7 1e σ launcher arms (per-family transform: spsp→sf_2d, spnucsp/sprinvsp/srsr/srnucsr→si_2d, sr/sigma→si_2di) + resolve int1e_sigma rank empirically + flip int1e_sp; REL-01/02 byte-identity green
 - [ ] 29-03-PLAN.md (wave 2 — 2e foundation) — full 2e si/sf transform suite (si_2e1/2e2/2e1i/2e2i + sf_2e1/2e2) + `apply_2d_spinor_zi` (2×2 Pauli σ·n, transcribed cart2sph.c:4118) + `build_kappa_spinor_2e_fixture` (D-02)
 - [ ] 29-04-PLAN.md (wave 2 — 2e foundation) — [BLOCKING D-03 gate] `si_2e_transform_parity.rs` micro-test: int2e_spsp1 (c2s_si_2e1+c2s_sf_2e2) byte-identical to vendor at atol=1e-12 BEFORE any 2e family wires onto the transform
 - [ ] 29-05-PLAN.md (wave 3 — 2e families) — [BLOCKING] add gaunt1.c + dkb.c to oracle build.rs (REL-04 enablement; corrects CONTEXT.md) + remaining 2e manifest rows + `vendor_int2e_*_spinor` shims + `rel_2e_sigma_parity.rs` scaffold
