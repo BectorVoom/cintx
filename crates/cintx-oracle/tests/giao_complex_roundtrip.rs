@@ -202,3 +202,45 @@ fn giao_complex_roundtrip_flag_flows_to_complex_values_view() {
          component (zero-fill regression?)"
     );
 }
+
+/// Full D-07 (Plan 26-02): drive `int1e_igovlp` (the registered Cluster-A GIAO
+/// family) through the safe API and assert its `Complex<f64>` view is purely
+/// imaginary — imaginary half NON-ZERO somewhere, real half EXACTLY 0.0.
+///
+/// `int1e_igovlp` is purely imaginary: the device emits real components, the host
+/// materializes them as `[re=0, im=value]`. This is the canonical FND-03 proof on
+/// an actual GIAO family (upgrades the Plan 26-01 seam which used int1e_ovlp_spinor).
+#[test]
+fn giao_igovlp_complex_view_is_purely_imaginary() {
+    use cintx_ops::resolver::Resolver;
+
+    // Resolve int1e_igovlp_cart's OperatorId BY SYMBOL (never a hardcoded integer —
+    // the positional id is high since GIAO rows append at the manifest tail).
+    let descriptor = Resolver::descriptor_by_symbol("int1e_igovlp_cart")
+        .expect("int1e_igovlp_cart must be registered in the manifest");
+    let operator_id = descriptor.id;
+    let rep = Representation::Cart;
+    let (basis, shells) = build_h2o_sto3g_common_orig_safe_basis(rep);
+
+    // Cross-center NON-SQUARE pair (H1-1s shell 3 × O-2p shell 2): the igovlp gout
+    // carries a c = ri - rj factor that vanishes same-center, so a cross-center
+    // ket makes the integral genuinely non-zero. Non-square = D-12 transpose gate.
+    let view = complex_view_for_pair(operator_id, rep, &basis, &shells, 3, 2)
+        .expect("int1e_igovlp complex_output=true must expose a complex_values() view");
+    assert!(!view.is_empty(), "complex_values() must be non-empty");
+
+    let imag_nonzero = view.iter().any(|c| c.im.abs() > 1e-12);
+    assert!(
+        imag_nonzero,
+        "int1e_igovlp: the imaginary half must be non-zero somewhere (D-07: GIAO \
+         content landed, not silently zeroed)"
+    );
+    for (i, c) in view.iter().enumerate() {
+        assert_eq!(
+            c.re, 0.0,
+            "int1e_igovlp: real part at element {i} must be EXACTLY 0.0 (D-07: \
+             purely imaginary), got {}",
+            c.re
+        );
+    }
+}

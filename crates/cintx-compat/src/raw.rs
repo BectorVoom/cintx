@@ -907,6 +907,18 @@ pub unsafe fn eval_raw(
             &plan.operator_env_params,
         )?;
     }
+    // Phase 26 GIAO-01: ia01p / a01gp / cg_a11part / giao_a11part are NABLA-RINV
+    // families evaluated at the SINGLE rinv center (libcint CINTg1e_nuc nuc_id=-1,
+    // env[PTR_RINV_ORIG], charge +1) — NOT atom-summed. Extract the rinv origin so
+    // the kernel evaluates at the caller-supplied center. Unlike iprinv these read
+    // the origin without a strict non-zero validation (a center on a nucleus is a
+    // legitimate, byte-identity-comparable case vs vendored libcint).
+    if is_giao_rinv_center_symbol(sym) && env.len() >= PTR_RINV_ORIG + 3 {
+        let x = env[PTR_RINV_ORIG];
+        let y = env[PTR_RINV_ORIG + 1];
+        let z = env[PTR_RINV_ORIG + 2];
+        plan.operator_env_params.rinv_orig = Some([x, y, z]);
+    }
     // Phase 22 FND-01: extract common_orig (gauge origin) from env[PTR_COMMON_ORIG..PTR_COMMON_ORIG+3].
     // D-02: operator-AGNOSTIC — read unconditionally; no operator-name guard exists yet (moments/GIAO
     // add their own dispatch in Phases 24/26). Only the bounds guard (T-22-01) prevents OOB indexing.
@@ -1100,6 +1112,16 @@ fn is_f12_family_symbol(symbol: &str) -> bool {
 /// gating insertion point in `eval_raw`.
 fn is_ecp_family_symbol(symbol: &str) -> bool {
     symbol.starts_with("int1e_ecp_")
+}
+
+/// Phase 26 GIAO-01: the four NABLA-RINV families evaluated at the SINGLE rinv
+/// center (libcint int1e_type=1, `CINTg1e_nuc` nuc_id=-1). These read
+/// `env[PTR_RINV_ORIG]` with charge +1 — distinct from the atom-summed gnuc/ignuc.
+fn is_giao_rinv_center_symbol(symbol: &str) -> bool {
+    symbol.starts_with("int1e_ia01p_")
+        || symbol.starts_with("int1e_a01gp_")
+        || symbol.starts_with("int1e_cg_a11part_")
+        || symbol.starts_with("int1e_giao_a11part_")
 }
 
 /// Phase 21-01: identifies iprinv-family operator symbols.

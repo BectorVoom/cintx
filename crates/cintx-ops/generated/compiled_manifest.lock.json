@@ -9246,7 +9246,7 @@
         "representation": "cart",
         "symbol": "int1e_govlp_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9279,7 +9279,7 @@
         "representation": "sph",
         "symbol": "int1e_govlp_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9345,7 +9345,7 @@
         "representation": "cart",
         "symbol": "int1e_gnuc_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9378,7 +9378,7 @@
         "representation": "sph",
         "symbol": "int1e_gnuc_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9444,7 +9444,7 @@
         "representation": "cart",
         "symbol": "int1e_igovlp_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9477,7 +9477,7 @@
         "representation": "sph",
         "symbol": "int1e_igovlp_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9543,7 +9543,7 @@
         "representation": "cart",
         "symbol": "int1e_ignuc_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9576,7 +9576,7 @@
         "representation": "sph",
         "symbol": "int1e_ignuc_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9642,7 +9642,7 @@
         "representation": "cart",
         "symbol": "int1e_igkin_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9675,7 +9675,7 @@
         "representation": "sph",
         "symbol": "int1e_igkin_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9840,7 +9840,7 @@
         "representation": "cart",
         "symbol": "int1e_ia01p_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9873,7 +9873,7 @@
         "representation": "sph",
         "symbol": "int1e_ia01p_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9939,7 +9939,7 @@
         "representation": "cart",
         "symbol": "int1e_cg_irxp_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9972,7 +9972,7 @@
         "representation": "sph",
         "symbol": "int1e_cg_irxp_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10038,7 +10038,7 @@
         "representation": "cart",
         "symbol": "int1e_giao_irjxp_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10071,7 +10071,7 @@
         "representation": "sph",
         "symbol": "int1e_giao_irjxp_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10137,7 +10137,7 @@
         "representation": "cart",
         "symbol": "int1e_cg_a11part_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10170,7 +10170,7 @@
         "representation": "sph",
         "symbol": "int1e_cg_a11part_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10236,7 +10236,7 @@
         "representation": "cart",
         "symbol": "int1e_giao_a11part_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10269,7 +10269,7 @@
         "representation": "sph",
         "symbol": "int1e_giao_a11part_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",

@@ -2884,10 +2884,12 @@ fn one_electron_giao_ovlp_kernel<F: Float + CubeElement>(
                     rcj_1e_into::<F>(t2, g, g_per_axis, dj, lj + 1u32, li, rjx, rjy, rjz);
                     d_j_1e_into::<F>(t3, t2, g_per_axis, dj, lj, li, aj2);
                 } else {
-                    // igkin: g1=D_J(g0)[i+1], g2=D_J(D_J(g0))[i+1], g3=D_J(g2)[i+1],
-                    // then t4..t7 = R0I(g0,g1,g2,g3).
-                    d_j_1e_into::<F>(t1, g, g_per_axis, dj, lj + 1u32, li + 1u32, aj2);
-                    d_j_1e_into::<F>(t2, t1, g_per_axis, dj, lj, li + 1u32, aj2);
+                    // igkin (intor1.c): g1=D_J(g0,j_l), g2=D_J(g0,j_l+1),
+                    // g3=D_J(g2,j_l) = D_J²(g0); then g4..g7 = R0I(g0,g1,g2,g3).
+                    // The gout only references g0, g3, g4=R0I(g0), g7=R0I(g3), so
+                    // g3 MUST be the SECOND derivative (not the third).
+                    d_j_1e_into::<F>(t1, g, g_per_axis, dj, lj, li + 1u32, aj2);
+                    d_j_1e_into::<F>(t2, g, g_per_axis, dj, lj + 1u32, li + 1u32, aj2);
                     d_j_1e_into::<F>(t3, t2, g_per_axis, dj, lj, li + 1u32, aj2);
                     r0i_1e_into::<F>(t4, g, g_per_axis, dj, lj, li, rix, riy, riz);
                     r0i_1e_into::<F>(t5, t1, g_per_axis, dj, lj, li, rix, riy, riz);
@@ -8804,15 +8806,26 @@ fn launch_one_electron_typed<F: CintFloat>(
         let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
         let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
 
-        // Nuclear families sum over ALL nuclei with charge -Z_C (g1e.c attraction
-        // convention), low→high (D-10). gnuc/ignuc/a01gp/ia01p/a11part are all
-        // <...|NUC or NABLA-RINV|...> = the full nuclear-attraction operator.
-        let mut origin_coords = Vec::with_capacity(atoms.len() * 3);
-        let mut origin_charges = Vec::with_capacity(atoms.len());
-        for atom in atoms.iter() {
-            origin_coords.extend_from_slice(&atom.coord_bohr);
-            origin_charges.push(-(atom.atomic_number as f64));
-        }
+        // Nuclear model (libcint cint1e.c make_g1e_gout int1e_type):
+        //   gnuc/ignuc → type 2: sum over ALL nuclei, charge -Z_C, low→high (D-10).
+        //   ia01p/a01gp/cg_a11part/giao_a11part → type 1: SINGLE rinv center
+        //     (env[PTR_RINV_ORIG]) with charge +1 (CINTg1e_nuc nuc_id=-1).
+        let is_rinv_center = op_kind >= 2; // 2=ia01p 3=a01gp 4/5=a11part
+        let (origin_coords, origin_charges): (Vec<f64>, Vec<f64>) = if is_rinv_center {
+            let rc = plan
+                .operator_env_params
+                .rinv_orig
+                .unwrap_or([0.0, 0.0, 0.0]);
+            (vec![rc[0], rc[1], rc[2]], vec![1.0])
+        } else {
+            let mut oc = Vec::with_capacity(atoms.len() * 3);
+            let mut och = Vec::with_capacity(atoms.len());
+            for atom in atoms.iter() {
+                oc.extend_from_slice(&atom.coord_bohr);
+                och.push(-(atom.atomic_number as f64));
+            }
+            (oc, och)
+        };
 
         let mut cart_comp = run_1e_giao_nuc_on_backend(
             backend, op_kind, rank, nuc_nroots, li as u32, lj as u32, n_prim_i as u32,
