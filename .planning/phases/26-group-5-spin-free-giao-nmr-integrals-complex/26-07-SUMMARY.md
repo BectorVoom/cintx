@@ -86,6 +86,13 @@ None - no external service configuration required.
 - The GIAO-02 parity gate (`giao_2e_parity.rs`) is now refactor-safe: tolerance drift and fixture shell-ordering drift both fail loudly.
 - No blockers. This plan touched only `giao_2e_parity.rs`, with no overlap with any other Phase 26 gap-closure plan.
 
+## Self-Check: PASSED
+
+- `crates/cintx-oracle/tests/giao_2e_parity.rs` modified and committed.
+- SUMMARY.md present at `.planning/phases/26-group-5-spin-free-giao-nmr-integrals-complex/26-07-SUMMARY.md`.
+- Commits verified in git log: `b54a54e` (Task 1), `8d8418d` (Task 2), `0c716cb` (SUMMARY).
+- All 4 GIAO-02 vendor parity tests pass at atol=1e-12 with the refactored helpers.
+
 ---
 *Phase: 26-group-5-spin-free-giao-nmr-integrals-complex*
 *Completed: 2026-05-31*
