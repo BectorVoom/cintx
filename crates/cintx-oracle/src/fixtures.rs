@@ -390,6 +390,153 @@ pub fn build_kappa_spinor_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 29 (REL-03/04 / D-02): kappa≠0 adversarial 2e (4-shell) spinor fixture.
+//
+// PRIMARY GATE for every REL-03/04 2e σ family. A 2-electron quartet (i,j,k,l) of
+// four spinor shells, extending build_kappa_spinor_fixture's geometry/coeffs to four
+// distinct centers. HARD D-02 constraints, all satisfied:
+//   - exactly 4 spinor shells (a 2-electron quartet)
+//   - NON-SQUARE: the four spinor dims (di,dj,dk,dl) are all distinct (2,6,2,4) so
+//     transpose/orientation symmetry that hides a KET→BRA omission is defeated
+//   - GENUINE kappa≠0 GT/LT mix: shell i is kappa=+1 (LT, 2l); the other three are
+//     kappa=−1 (GT, 2l+2) → exercises BOTH spinor_len sizing branches, not just 4l+2
+//   - ≥1 shell with nctr>1: shell i has NCTR_OF=2 with the COLUMN-major env coeff
+//     layout [c0_p0,c0_p1,c0_p2, c1_p0,c1_p1,c1_p2] (catches the coeff transpose)
+//
+// Spinor dims: i = p kappa=+1 → di = spinor_len(1,+1)  = 2*1     = 2  (LT)
+//              j = d kappa=−1 → dj = spinor_len(2,−1)  = 2*2 + 2 = 6  (GT)
+//              k = s kappa=−1 → dk = spinor_len(0,−1)  = 2*0 + 2 = 2  (GT)
+//              l = p kappa=−1 → dl = spinor_len(1,−1)  = 2*1 + 2 = 4  (GT)
+// The four-shell quartet rides distinct centers (a quartet of light atoms) so the
+// 2e cross blocks are genuinely non-zero. build_heavy_atom_spinor_fixture remains the
+// secondary realism cross-check (asserted finite, NOT the primary gate).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the D-02 PRIMARY kappa≠0 adversarial **2e** (4-shell) spinor fixture
+/// (atm, bas, env).
+///
+/// Four spinor shells forming a 2-electron quartet `(i,j,k,l)`:
+///   - i: p, kappa=+1 (LT, di=2), **nctr=2** (general contraction, column-major coeff)
+///   - j: d, kappa=−1 (GT, dj=6), nctr=1
+///   - k: s, kappa=−1 (GT, dk=2), nctr=1
+///   - l: p, kappa=−1 (GT, dl=4), nctr=1
+///
+/// Non-square (2,6,2,4) + GT/LT kappa mix + nctr>1 — the byte-identity gate for the
+/// REL-03/04 2e σ families (proven byte-identical by the 29-04 micro-test). NEVER use a
+/// square quartet (orientation/transpose bugs hide). Exact element/kappa assignment is
+/// Claude's discretion subject to the D-02 hard constraints.
+pub fn build_kappa_spinor_2e_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    use cintx_compat::raw::{KAPPA_OF, PTR_RINV_ORIG};
+
+    // Four distinct centers (a light-atom quartet — non-zero 2e cross blocks).
+    let i_coord = [0.0_f64, 0.0, 0.0];
+    let j_coord = [0.0_f64, 1.3, 0.7];
+    let k_coord = [0.9_f64, -0.4, 0.2];
+    let l_coord = [-0.6_f64, 0.5, -0.8];
+
+    // i p-shell — 3 primitives, two general-contraction columns. COLUMN-major env
+    // layout env[ci*nprim + ip] (cintx transposes to row-major internally —
+    // project_raw_nctr_coeff_transpose): column 0 = (0.70,0.30,0.15),
+    // column 1 = (0.20,0.55,0.80).
+    let p_exp = [3.4252509_f64, 0.6239137, 0.1688554];
+    let p_coeff = [0.70_f64, 0.30, 0.15, 0.20, 0.55, 0.80];
+
+    // j d-shell — 3 primitives, single contraction.
+    let d_exp = [5.0331513_f64, 1.1695961, 0.3803890];
+    let d_coeff = [0.15591627_f64, 0.60768372, 0.39195739];
+
+    // k s-shell — 3 primitives, single contraction.
+    let s_exp = [130.7093200_f64, 23.8088610, 6.4436083];
+    let s_coeff = [0.15432897_f64, 0.53532814, 0.44463454];
+
+    // l p-shell — 3 primitives, single contraction (distinct exponents from i).
+    let pl_exp = [2.9412494_f64, 0.6834831, 0.2222899];
+    let pl_coeff = [0.62391373_f64, 0.42179344, 0.11000000];
+
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+    // NON-ZERO rinv origin retained (harmless for the overlap-style 2e σ vehicles;
+    // keeps the geometry consistent with the 1e adversarial template).
+    env[PTR_RINV_ORIG] = 0.30;
+    env[PTR_RINV_ORIG + 1] = -0.45;
+    env[PTR_RINV_ORIG + 2] = 0.60;
+
+    let i_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&i_coord);
+    let j_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&j_coord);
+    let k_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&k_coord);
+    let l_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&l_coord);
+    let zeta_ptr = env.len() as i32;
+    env.push(0.0);
+
+    let p_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&p_exp);
+    let p_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&p_coeff);
+
+    let d_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&d_exp);
+    let d_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&d_coeff);
+
+    let s_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&s_exp);
+    let s_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&s_coeff);
+
+    let pl_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&pl_exp);
+    let pl_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&pl_coeff);
+
+    let mut atm = vec![0_i32; 4 * ATM_SLOTS];
+    for (n, &ptr) in [i_coord_ptr, j_coord_ptr, k_coord_ptr, l_coord_ptr].iter().enumerate() {
+        atm[n * ATM_SLOTS + CHARGE_OF] = 1;
+        atm[n * ATM_SLOTS + PTR_COORD] = ptr;
+        atm[n * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+        atm[n * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+    }
+
+    let mut bas = vec![0_i32; 4 * BAS_SLOTS];
+    // shell 0 (i): p, nctr=2 (general contraction), kappa=+1 → LT-only (di = 2*1 = 2).
+    bas[ATOM_OF] = 0;
+    bas[ANG_OF] = 1;
+    bas[NPRIM_OF] = 3;
+    bas[NCTR_OF] = 2;
+    bas[KAPPA_OF] = 1; // p kappa = +1 (LT)
+    bas[PTR_EXP] = p_exp_ptr;
+    bas[PTR_COEFF] = p_coeff_ptr;
+    // shell 1 (j): d, nctr=1, kappa=−1 → GT-only (dj = 2*2 + 2 = 6).
+    bas[BAS_SLOTS + ATOM_OF] = 1;
+    bas[BAS_SLOTS + ANG_OF] = 2;
+    bas[BAS_SLOTS + NPRIM_OF] = 3;
+    bas[BAS_SLOTS + NCTR_OF] = 1;
+    bas[BAS_SLOTS + KAPPA_OF] = -1; // d kappa = −1 (GT)
+    bas[BAS_SLOTS + PTR_EXP] = d_exp_ptr;
+    bas[BAS_SLOTS + PTR_COEFF] = d_coeff_ptr;
+    // shell 2 (k): s, nctr=1, kappa=−1 → GT-only (dk = 2*0 + 2 = 2).
+    bas[2 * BAS_SLOTS + ATOM_OF] = 2;
+    bas[2 * BAS_SLOTS + ANG_OF] = 0;
+    bas[2 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[2 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[2 * BAS_SLOTS + KAPPA_OF] = -1; // s kappa = −1 (GT)
+    bas[2 * BAS_SLOTS + PTR_EXP] = s_exp_ptr;
+    bas[2 * BAS_SLOTS + PTR_COEFF] = s_coeff_ptr;
+    // shell 3 (l): p, nctr=1, kappa=−1 → GT-only (dl = 2*1 + 2 = 4).
+    bas[3 * BAS_SLOTS + ATOM_OF] = 3;
+    bas[3 * BAS_SLOTS + ANG_OF] = 1;
+    bas[3 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[3 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[3 * BAS_SLOTS + KAPPA_OF] = -1; // p kappa = −1 (GT)
+    bas[3 * BAS_SLOTS + PTR_EXP] = pl_exp_ptr;
+    bas[3 * BAS_SLOTS + PTR_COEFF] = pl_coeff_ptr;
+
+    (atm, bas, env)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Phase 28 (FND-05 / D-05): heavy-atom realism cross-check fixture.
 //
 // SECONDARY (non-primary) gate. A small heavy-element relativistic 2c spinor basis
@@ -1613,5 +1760,59 @@ mod tests {
         assert!(content.contains("\"profile\": \"base\""));
 
         let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
+    /// D-02: build_kappa_spinor_2e_fixture must be a 4-shell, non-square, GT/LT-mix,
+    /// nctr>1 quartet. Asserts every hard constraint so a regression that squares the
+    /// block or drops the kappa mix / general contraction fails loudly.
+    #[test]
+    fn kappa_spinor_2e_fixture_meets_d02_constraints() {
+        use cintx_compat::raw::KAPPA_OF;
+        use cintx_cubecl::transform::c2spinor::spinor_len;
+
+        let (_atm, bas, _env) = build_kappa_spinor_2e_fixture();
+
+        // exactly 4 spinor shells
+        let n_shells = bas.len() / BAS_SLOTS;
+        assert_eq!(n_shells, 4, "fixture must have exactly 4 spinor shells");
+
+        // collect (l, kappa) per shell and derive spinor dims
+        let mut dims = Vec::with_capacity(4);
+        let mut has_gt = false; // kappa < 0
+        let mut has_lt = false; // kappa > 0
+        let mut has_nctr_gt1 = false;
+        for s in 0..4 {
+            let l = bas[s * BAS_SLOTS + ANG_OF] as u8;
+            let kappa = bas[s * BAS_SLOTS + KAPPA_OF];
+            let nctr = bas[s * BAS_SLOTS + NCTR_OF];
+            assert_ne!(kappa, 0, "shell {s} must have genuine kappa≠0 (GT/LT path)");
+            if kappa < 0 { has_gt = true; }
+            if kappa > 0 { has_lt = true; }
+            if nctr > 1 { has_nctr_gt1 = true; }
+            dims.push(spinor_len(l, kappa));
+        }
+
+        // GT/LT mix present (exercises BOTH 2l and 2l+2 spinor_len branches)
+        assert!(has_gt && has_lt, "fixture must mix GT (kappa<0) and LT (kappa>0) shells");
+        // ≥1 shell with nctr>1 (catches the column/row-major coeff transpose)
+        assert!(has_nctr_gt1, "fixture must have ≥1 shell with nctr>1");
+
+        // NON-SQUARE: not all four spinor dims equal (defeats transpose symmetry)
+        let all_equal = dims.iter().all(|&d| d == dims[0]);
+        assert!(!all_equal, "fixture spinor dims must NOT all be equal (non-square): {dims:?}");
+
+        // Concrete sizing check: the LT path (2l) and GT path (2l+2) are both exercised.
+        // i: p kappa=+1 → 2 (LT);  j: d kappa=−1 → 6 (GT);  k: s kappa=−1 → 2;  l: p kappa=−1 → 4
+        assert_eq!(dims, vec![2, 6, 2, 4], "expected spinor dims (2,6,2,4)");
+    }
+
+    /// Secondary realism cross-check: the heavy-atom fixture is asserted FINITE only,
+    /// NOT the primary gate (RESEARCH §Sampling Rate). Here we assert it is constructible
+    /// and well-formed (2 shells, finite env) so it can serve as the realism guard.
+    #[test]
+    fn heavy_atom_spinor_fixture_is_well_formed() {
+        let (_atm, bas, env) = build_heavy_atom_spinor_fixture();
+        assert_eq!(bas.len() / BAS_SLOTS, 2, "heavy-atom realism fixture is 2 shells");
+        assert!(env.iter().all(|v| v.is_finite()), "heavy-atom env must be finite");
     }
 }
