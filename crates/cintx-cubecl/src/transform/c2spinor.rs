@@ -747,6 +747,125 @@ fn bra_coeff_refs(l: u8) -> (&'static [f64], &'static [f64], &'static [f64], &'s
     }
 }
 
+/// Spin-included (si) bra step of the 2D `c2s_si_1e` transform — all kappa cases.
+///
+/// This is the σ-coupled bra analog of [`apply_bra_sf_block_all_kappa`]: it consumes
+/// FOUR Cartesian blocks (`gc_1` scalar + `gc_x/gc_y/gc_z` Pauli-σ) instead of one and
+/// applies the `a_bra_cart2spinor_si` accumulation (libcint `cart2sph.c:3958-3961`).
+///
+/// **Sign convention (THE landmine):** this transcribes `a_bra_cart2spinor_si`, NOT
+/// [`apply_si_block`]. The 2D `c2s_si_1e` path uses `a_bra_cart2spinor_si`, whose signs
+/// differ from `CINTc2s_ket_spinor_si1` (the single-block helper `apply_si_block` ports)
+/// on three of four cross/imaginary terms. Do NOT delegate to `apply_si_block`.
+///
+/// Each block is read BRA-major as `block[n * ncj + j]` (n=bra cart, j=ket cart); the
+/// KET→BRA orientation transpose is owned by the caller [`cart_to_spinor_si_2d`].
+///
+/// Kappa==0 ordering mirrors `apply_bra_sf_block_all_kappa`: LT rows first, GT rows next.
+#[allow(clippy::too_many_arguments)]
+fn apply_bra_si_block(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r: &mut [f64],
+    beta_i: &mut [f64],
+    gc_x: &[f64],
+    gc_y: &[f64],
+    gc_z: &[f64],
+    gc_1: &[f64],
+    nci: usize,
+    ncj: usize,
+    di: usize,
+    li: u8,
+    kappa_i: i32,
+) {
+    let (coeff_gt_r, coeff_gt_i, coeff_lt_r, coeff_lt_i) = bra_coeff_refs(li);
+
+    if kappa_i < 0 {
+        apply_bra_si_block_one(alpha_r, alpha_i, beta_r, beta_i,
+                               gc_x, gc_y, gc_z, gc_1, nci, ncj, di,
+                               coeff_gt_r, coeff_gt_i, 0);
+    } else if kappa_i > 0 {
+        apply_bra_si_block_one(alpha_r, alpha_i, beta_r, beta_i,
+                               gc_x, gc_y, gc_z, gc_1, nci, ncj, di,
+                               coeff_lt_r, coeff_lt_i, 0);
+    } else {
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd).
+        let nd_lt = 2 * li as usize;
+        let nd_gt = 2 * li as usize + 2;
+        if nd_lt > 0 {
+            apply_bra_si_block_one(alpha_r, alpha_i, beta_r, beta_i,
+                                   gc_x, gc_y, gc_z, gc_1, nci, ncj, nd_lt,
+                                   coeff_lt_r, coeff_lt_i, 0);
+        }
+        apply_bra_si_block_one(alpha_r, alpha_i, beta_r, beta_i,
+                               gc_x, gc_y, gc_z, gc_1, nci, ncj, nd_gt,
+                               coeff_gt_r, coeff_gt_i, nd_lt);
+    }
+}
+
+/// Apply the σ-coupled (si) bra transform for one kappa block.
+///
+/// Writes `nd` spinor rows starting at `row_offset` in the alpha/beta buffers, copying
+/// the loop/index/coeff-layout structure of [`apply_bra_block`] but accumulating the
+/// `a_bra_cart2spinor_si` signs over the four `gc_*` blocks.
+///
+/// Accumulation (libcint `cart2sph.c:3958-3961`, transcribed verbatim):
+/// ```text
+///   sa_r +=  ca_r * v1 + ca_i * vz - cb_r * vy + cb_i * vx;
+///   sa_i += -ca_i * v1 + ca_r * vz + cb_i * vy + cb_r * vx;
+///   sb_r +=  cb_r * v1 - cb_i * vz + ca_r * vy + ca_i * vx;
+///   sb_i += -cb_i * v1 - cb_r * vz - ca_i * vy + ca_r * vx;
+/// ```
+#[allow(clippy::too_many_arguments)]
+fn apply_bra_si_block_one(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r: &mut [f64],
+    beta_i: &mut [f64],
+    gc_x: &[f64],
+    gc_y: &[f64],
+    gc_z: &[f64],
+    gc_1: &[f64],
+    nci: usize,
+    ncj: usize,
+    nd: usize,
+    coeff_r: &[f64],
+    coeff_i: &[f64],
+    row_offset: usize,
+) {
+    // di_total = total bra spinor rows (for indexing into the output buffers).
+    let di_total = alpha_r.len() / ncj;
+    for j in 0..ncj {
+        for i in 0..nd {
+            let out_idx = j * di_total + (row_offset + i);
+            let mut sa_r = 0.0f64;
+            let mut sa_i = 0.0f64;
+            let mut sb_r = 0.0f64;
+            let mut sb_i = 0.0f64;
+            for n in 0..nci {
+                // BRA-major read: block[bra_n * ncj + ket_j].
+                let v1 = gc_1[n * ncj + j];
+                let vx = gc_x[n * ncj + j];
+                let vy = gc_y[n * ncj + j];
+                let vz = gc_z[n * ncj + j];
+                let ca_r = coeff_r[i * 2 * nci + n];
+                let ca_i = coeff_i[i * 2 * nci + n];
+                let cb_r = coeff_r[i * 2 * nci + nci + n];
+                let cb_i = coeff_i[i * 2 * nci + nci + n];
+                // a_bra_cart2spinor_si signs — NOT apply_si_block's signs.
+                sa_r += ca_r * v1 + ca_i * vz - cb_r * vy + cb_i * vx;
+                sa_i += -ca_i * v1 + ca_r * vz + cb_i * vy + cb_r * vx;
+                sb_r += cb_r * v1 - cb_i * vz + ca_r * vy + ca_i * vx;
+                sb_i += -cb_i * v1 - cb_r * vz - ca_i * vy + ca_r * vx;
+            }
+            alpha_r[out_idx] = sa_r;
+            alpha_i[out_idx] = sa_i;
+            beta_r[out_idx] = sb_r;
+            beta_i[out_idx] = sb_i;
+        }
+    }
+}
+
 /// Ket step of the 2D c2spinor_sf transform.
 ///
 /// Matches `a_ket_cart2spinor` in libcint `cart2sph.c`.
@@ -1647,6 +1766,115 @@ mod tests {
             (a - b).abs() < TOL,
             "{}: got {:.15e}, expected {:.15e}, diff={:.3e}",
             label, a, b, (a - b).abs()
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  apply_bra_si_block: a_bra_cart2spinor_si sign convention (THE landmine)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// Hand-derived l=1 (nf=3), kappa=-1 (GT, nd=4), single ket column (ncj=1).
+    ///
+    /// Fills gc_1/gc_x/gc_y/gc_z with 4 distinct cart vectors, pulls the CG coeffs
+    /// CJ_GT_L1_R/I, and computes (saR,saI,sbR,sbI) by an INDEPENDENT transcription of
+    /// the `a_bra_cart2spinor_si` equations (cart2sph.c:3958-3961), asserting the
+    /// `apply_bra_si_block` output matches to 1e-14. Also guards that the output is NOT
+    /// what `apply_si_block` (the WRONG single-block sign convention) would produce.
+    #[test]
+    fn apply_bra_si_block_l1_kappa_neg1_hand_derived() {
+        let li: u8 = 1;
+        let nci = ncart(li); // 3
+        let ncj = 1usize;
+        let di = spinor_len(li, -1); // GT → 4
+        assert_eq!(nci, 3);
+        assert_eq!(di, 4);
+
+        // Four distinct cart vectors (length nci*ncj = 3), BRA-major (ncj=1).
+        let gc_1 = [1.0, 2.0, 3.0];
+        let gc_x = [0.5, -1.5, 2.5];
+        let gc_y = [-0.25, 0.75, -1.25];
+        let gc_z = [4.0, -2.0, 1.0];
+
+        // CG coeffs flattened: row i has [alpha(0..nci), beta(nci..2nci)] = 6 entries.
+        let coeff_r = cj::CJ_GT_L1_R.as_flattened();
+        let coeff_i = cj::CJ_GT_L1_I.as_flattened();
+
+        // ── Independent reference using the a_bra_cart2spinor_si equations ──────
+        let mut ref_ar = vec![0.0f64; di * ncj];
+        let mut ref_ai = vec![0.0f64; di * ncj];
+        let mut ref_br = vec![0.0f64; di * ncj];
+        let mut ref_bi = vec![0.0f64; di * ncj];
+        for j in 0..ncj {
+            for i in 0..di {
+                let mut sa_r = 0.0;
+                let mut sa_i = 0.0;
+                let mut sb_r = 0.0;
+                let mut sb_i = 0.0;
+                for n in 0..nci {
+                    let v1 = gc_1[n * ncj + j];
+                    let vx = gc_x[n * ncj + j];
+                    let vy = gc_y[n * ncj + j];
+                    let vz = gc_z[n * ncj + j];
+                    let ca_r = coeff_r[i * 2 * nci + n];
+                    let ca_i = coeff_i[i * 2 * nci + n];
+                    let cb_r = coeff_r[i * 2 * nci + nci + n];
+                    let cb_i = coeff_i[i * 2 * nci + nci + n];
+                    sa_r += ca_r * v1 + ca_i * vz - cb_r * vy + cb_i * vx;
+                    sa_i += -ca_i * v1 + ca_r * vz + cb_i * vy + cb_r * vx;
+                    sb_r += cb_r * v1 - cb_i * vz + ca_r * vy + ca_i * vx;
+                    sb_i += -cb_i * v1 - cb_r * vz - ca_i * vy + ca_r * vx;
+                }
+                let idx = j * di + i;
+                ref_ar[idx] = sa_r;
+                ref_ai[idx] = sa_i;
+                ref_br[idx] = sb_r;
+                ref_bi[idx] = sb_i;
+            }
+        }
+
+        // ── Function under test ────────────────────────────────────────────────
+        let mut a_r = vec![0.0f64; di * ncj];
+        let mut a_i = vec![0.0f64; di * ncj];
+        let mut b_r = vec![0.0f64; di * ncj];
+        let mut b_i = vec![0.0f64; di * ncj];
+        apply_bra_si_block(
+            &mut a_r, &mut a_i, &mut b_r, &mut b_i,
+            &gc_x, &gc_y, &gc_z, &gc_1, nci, ncj, di, li, -1,
+        );
+
+        for idx in 0..di * ncj {
+            assert!((a_r[idx] - ref_ar[idx]).abs() < 1e-14, "alpha_r[{idx}]");
+            assert!((a_i[idx] - ref_ai[idx]).abs() < 1e-14, "alpha_i[{idx}]");
+            assert!((b_r[idx] - ref_br[idx]).abs() < 1e-14, "beta_r[{idx}]");
+            assert!((b_i[idx] - ref_bi[idx]).abs() < 1e-14, "beta_i[{idx}]");
+        }
+
+        // ── Sign-discrepancy guard: bra-si output ≠ apply_si_block output ───────
+        // apply_si_block uses the WRONG (CINTc2s_ket_spinor_si1) sign convention for
+        // this 2D path. Build a (coeff-row-major) reference and prove they differ.
+        let coeff_r_rows: Vec<&[f64]> = (0..di)
+            .map(|i| &coeff_r[i * 2 * nci..(i + 1) * 2 * nci])
+            .collect();
+        let coeff_i_rows: Vec<&[f64]> = (0..di)
+            .map(|i| &coeff_i[i * 2 * nci..(i + 1) * 2 * nci])
+            .collect();
+        // apply_si_block expects per-block cart vectors of length nf (=nci), single column.
+        let mut si_out = vec![0.0f64; 4 * di];
+        apply_si_block(
+            &mut si_out, &gc_1, &gc_x, &gc_y, &gc_z,
+            &coeff_r_rows, &coeff_i_rows, di, nci, di, 0,
+        );
+        // apply_si_block writes interleaved re/im: alpha rows [0..di], beta rows [di..2di].
+        let mut any_diff = false;
+        for i in 0..di {
+            let si_alpha_r = si_out[i * 2];
+            if (si_alpha_r - ref_ar[i]).abs() > 1e-12 {
+                any_diff = true;
+            }
+        }
+        assert!(
+            any_diff,
+            "apply_bra_si_block must NOT match apply_si_block's (wrong) sign convention"
         );
     }
 
