@@ -4447,12 +4447,14 @@ pub fn vendor_int3c2e_spinor(
 // ipnuc/iprinv above). Each writes a component-leading, interleaved-complex
 // buffer:
 //   1e / 2c2e:  out[comp * ni_sp * nj_sp * 2 + (j*ni_sp + i)*2 + {0:re,1:im}]
-//   3c2e / 3c1e: out[comp * ni_sp * nj_sp * nk_sp * 2 + ...]
-// where nX_sp = CINTcgto_spinor(shls[X]). IMPORTANT (27-SPIKE-FINDINGS D2/D3):
-// the auxiliary-k axis of the arity-3 families is SPINOR-sized
-// (CINTcgto_spinor(k) = 4l+2 = 2 at kappa=0), NOT nsph(lk) — the caller must
-// size the out buffer with vendor_CINTcgto_spinor for ALL THREE shell axes
-// (i, j, AND aux k), or libcint under-writes and trips BufferTooSmall.
+//   3c2e / 3c1e: out[comp * ni_sp * nj_sp * nk_sph * 2 + ...]
+// where ni_sp / nj_sp = CINTcgto_spinor(shls[i|j]) (bra i and ket j are spinor,
+// 4l+2). IMPORTANT (27-SPIKE-FINDINGS CORRECTION NOTICE): the auxiliary-k axis of
+// the arity-3 families is SPHERICAL nsph(lk) = (2lk+1)*nctr_k (libcint
+// CINT3c2e_spinor_drv is_ssc=0, cint3c2e.c:631-636), NOT spinor-sized. Size the out
+// buffer with vendor_cgto_spheric for the aux-k axis and vendor_CINTcgto_spinor only
+// for the bra-i and ket-j axes. The earlier "spinor aux-k = 720" was a compat-dims
+// over-sizing artifact, not a real vendor requirement (correct p×d×s kappa=0 is 360).
 
 /// Evaluate int1e_ipovlpip_spinor (rank-9 both-side 1e gradient) for a shell pair.
 ///
@@ -4543,8 +4545,9 @@ pub fn vendor_int2c2e_ip1_spinor(
 /// Evaluate int3c2e_ip1_spinor (rank-3 3-center 2e gradient on bra i) for a triple.
 ///
 /// `shls` is `[i, j, k]`. `out` must be pre-allocated with
-/// `3 * ni_sp * nj_sp * nk_sp * 2` f64 elements. The aux-k axis is SPINOR-sized
-/// (CINTcgto_spinor(k) = 4lk+2), NOT nsph(lk) (27-SPIKE-FINDINGS D2).
+/// `3 * ni_sp * nj_sp * nk_sph * 2` f64 elements. The aux-k axis is SPHERICAL
+/// (nsph(lk) = (2lk+1)*nctr_k), NOT spinor-sized; only bra i and ket j use
+/// CINTcgto_spinor (4l+2) (27-SPIKE-FINDINGS CORRECTION NOTICE, cint3c2e.c:631-636).
 pub fn vendor_int3c2e_ip1_spinor(
     out: &mut [f64],
     shls: &[i32; 3],
@@ -4573,7 +4576,8 @@ pub fn vendor_int3c2e_ip1_spinor(
 /// Evaluate int3c1e_ip1_spinor (rank-3 3-center 1e overlap gradient on bra i).
 ///
 /// `shls` is `[i, j, k]`. `out` must be pre-allocated with
-/// `3 * ni_sp * nj_sp * nk_sp * 2` f64 elements (aux-k axis SPINOR-sized).
+/// `3 * ni_sp * nj_sp * nk_sph * 2` f64 elements (aux-k axis SPHERICAL,
+/// nsph(lk) = (2lk+1)*nctr_k; only bra i and ket j are spinor-sized).
 pub fn vendor_int3c1e_ip1_spinor(
     out: &mut [f64],
     shls: &[i32; 3],
@@ -4603,8 +4607,8 @@ pub fn vendor_int3c1e_ip1_spinor(
 ///
 /// The rinv origin must be set in `env[PTR_RINV_ORIG..+3]` by the caller (a
 /// zero origin trivially passes — use a displaced origin). `shls` is `[i, j, k]`.
-/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * nk_sp * 2` f64 elements
-/// (aux-k axis SPINOR-sized).
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * nk_sph * 2` f64 elements
+/// (aux-k axis SPHERICAL, nsph(lk) = (2lk+1)*nctr_k; only bra i and ket j spinor-sized).
 pub fn vendor_int3c1e_iprinv_spinor(
     out: &mut [f64],
     shls: &[i32; 3],
