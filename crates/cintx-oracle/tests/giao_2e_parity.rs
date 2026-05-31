@@ -29,61 +29,29 @@
 
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
+#[path = "moment_common.rs"]
+mod moment_common;
+
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 mod parity {
+    // Single source of truth for parity tolerances + mismatch logic (WR-03): the
+    // tolerance/mismatch/zero-fill helpers are shared with `giao_1e_parity.rs` and the
+    // Phase 24 moment parity scaffolds via `moment_common`, so a tolerance change tracks
+    // every parity file rather than silently drifting. moment_common's
+    // `count_mismatches(ref, obs, atol, rtol)` takes the tolerances as arguments (vs the
+    // former local 2-arg copy that hard-coded ATOL/RTOL inside the fn); call sites pass
+    // `ATOL, RTOL` so the gate semantics are byte-identical (atol=1e-12, rtol=0).
+    use super::moment_common::{ATOL, RTOL, assert_any_nonzero, count_mismatches, ncart, nsph};
     use cintx_compat::raw::{ANG_OF, ATM_SLOTS, BAS_SLOTS, RawApiId, eval_raw};
     use cintx_oracle::fixtures::build_h2o_sto3g_common_orig;
     use cintx_oracle::vendor_ffi;
-
-    const ATOL: f64 = 1e-12;
-    const RTOL: f64 = 0.0;
-
-    fn ncart(l: i32) -> usize {
-        ((l + 1) * (l + 2) / 2) as usize
-    }
-    fn nsph(l: i32) -> usize {
-        (2 * l + 1) as usize
-    }
 
     /// A NON-SQUARE quartet on cross-center bra AND cross-center ket electron pairs.
     /// H2O/STO-3G shells: 0=O-1s, 1=O-2s, 2=O-2p(l=1), 3=H1-1s(l=0), 4=H2-1s(l=0).
     /// [H1-1s, O-2p, H1-1s, O-2p] → rirj≠0 (e1) AND rkrl≠0 (e2), non-square (D-12).
     fn cross_center_non_square_quartet() -> [usize; 4] {
         [3, 2, 3, 2]
-    }
-
-    fn matches_with_tol(reference: f64, observed: f64, atol: f64, rtol: f64) -> bool {
-        let diff = (observed - reference).abs();
-        if diff <= atol {
-            return true;
-        }
-        let denom = reference.abs().max(1.0e-15);
-        (diff / denom) <= rtol
-    }
-
-    fn count_mismatches(reference: &[f64], observed: &[f64]) -> usize {
-        assert_eq!(
-            reference.len(),
-            observed.len(),
-            "output length mismatch: {} vs {}",
-            reference.len(),
-            observed.len()
-        );
-        let mut mismatches = 0usize;
-        for (idx, (&r, &o)) in reference.iter().zip(observed.iter()).enumerate() {
-            if !matches_with_tol(r, o, ATOL, RTOL) {
-                mismatches += 1;
-                if mismatches <= 16 {
-                    let diff = (o - r).abs();
-                    let rel = diff / r.abs().max(1.0e-15);
-                    eprintln!(
-                        "  MISMATCH[{idx}] ref={r:.15e} obs={o:.15e} diff={diff:.3e} rel={rel:.3e}"
-                    );
-                }
-            }
-        }
-        mismatches
     }
 
     /// Collect cintx `eval_raw` output for ONE non-square quartet as a COMPLEX
@@ -145,13 +113,6 @@ mod parity {
         out
     }
 
-    fn assert_any_nonzero(block: &[f64], label: &str) {
-        assert!(
-            block.iter().any(|v| v.abs() > 1e-14),
-            "{label}: block is all-zero (zero-fill regression)"
-        );
-    }
-
     /// GIAO-2e vendor parity for ONE family: compares cintx's imaginary half (sph
     /// and cart) against vendor's real output at atol=1e-12 on the non-square
     /// cross-center quartet; also asserts the real half is exactly 0.0 (D-07).
@@ -178,7 +139,7 @@ mod parity {
         for (i, &v) in re_s.iter().enumerate() {
             assert_eq!(v, 0.0, "{label}_sph: real part at {i} must be exactly 0.0, got {v}");
         }
-        let mm = count_mismatches(&vendor_s, &im_s);
+        let mm = count_mismatches(&vendor_s, &im_s, ATOL, RTOL);
         assert_eq!(mm, 0, "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}");
 
         // ── cart ──
@@ -189,7 +150,7 @@ mod parity {
         for (i, &v) in re_c.iter().enumerate() {
             assert_eq!(v, 0.0, "{label}_cart: real part at {i} must be exactly 0.0, got {v}");
         }
-        let mm = count_mismatches(&vendor_c, &im_c);
+        let mm = count_mismatches(&vendor_c, &im_c, ATOL, RTOL);
         assert_eq!(mm, 0, "{label}_cart: {mm} mismatches vs vendored libcint at atol={ATOL}");
     }
 
