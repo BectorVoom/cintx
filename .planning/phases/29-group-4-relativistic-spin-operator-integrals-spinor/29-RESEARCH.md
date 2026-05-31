@@ -369,17 +369,19 @@ A Group-4 family is legitimately `oracle_covered=true` only when: (1) its `vendo
 | A2 | `int1e_sigma` lock component_rank should be "1" (not 3) — the σ-component axis is folded by the transform, mirroring the existing sp row | Per-Family Map item 4 | Medium — if libcint emits sigma as a rank-3 spinor output (3 separate σ matrices), the row needs rank 3 and the launcher a component loop. MUST confirm against `vendor_int1e_sigma_spinor` output shape during Wave-1 first task (compare `CINTcgto_spinor`-sized output count). The gout is rank-12 (`gout[n*12+..]`, 3 σ blocks ×4 cart-block components) which the `c2s_si_1ei` transform consumes — this strongly implies a single fused spinor output, but verify the buffer length empirically. |
 | A3 | gaunt1.c/dkb.c compile cleanly with the existing include set + cc flags (same includes as intor4.c) | Pitfall 1 | Low — includes verified identical this session; risk is only an unexpected missing symbol, caught at link time in Wave 3. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`int1e_sigma` output rank (component_rank 1 vs 3)**
    - What we know: gout is `gout[n*12+..]` (12 slots = 3 σ-components × 4 cart-blocks); driver routes through `c2s_si_1ei`; `ng[7]=3`.
    - What's unclear: whether the final spinor buffer is a single `di*dj*2` complex matrix (rank 1) or three stacked σ-matrices (rank 3).
    - Recommendation: Wave-1 first task — call `vendor_int1e_sigma_spinor` on the kappa fixture, measure output length vs `di*dj*2`. Set component_rank from the measured shape. (A2.)
+   - **RESOLVED:** `component_rank = "1"`. `int1e_sigma_spinor` (intor3.c:75-82) makes a SINGLE `CINT1e_spinor_drv(..., &c2s_si_1ei, 0)` call producing one fused complex spinor matrix; the `ng[7]=3` / rank-12 gout is the σ-component count the `c2s_si_1ei` transform CONSUMES, not a free output axis — mirroring the existing `int1e_sp` lock row (rank "1"). Belt-and-suspenders: 29-02 T1 still empirically measures the vendor output length vs `di*dj*2` and branches if it disagrees.
 
 2. **2e σ·p device assembler reuse vs new**
    - What we know: `sigma_p.rs` is a generic 1e σ·p `#[cube]` emitter (tensor_rank param). The 2e families need the same 4-block (x,y,z,1) gout but in the 2e G-tensor layout (`<ik|lj>` ordered, k/l electron-2 indices interleaved).
    - What's unclear: whether `sigma_p.rs` generalizes to 2e directly or needs a 2e sibling.
    - Recommendation: Plan Wave 2/3 to mine `center_4c1e.rs::test_device_matches_host_spsp` (L1878) for the 2e σ·p-on-both-sides cart gout; treat a thin 2e σ·p assembler as expected new code, not a reuse.
+   - **RESOLVED:** a NEW thin 2e σ·p sibling is required (do not reuse `sigma_p.rs` as-is). The 2e σ·p gout (intor4.c:19, rank 4 — same x,y,z,1 block structure) needs the 2e G-tensor `<ik|lj>` electron-index layout, which `sigma_p.rs`'s 1e emitter cannot express; mine `center_4c1e.rs::test_device_matches_host_spsp` (L1878) for the cart gout pattern.
 
 ## Environment Availability
 
