@@ -329,10 +329,40 @@ fn build_output_layout(
     })
 }
 
+/// Required staging-buffer element count for a single scheduled chunk.
+///
+/// # WR-01 / FND-06: monolithic complex/GIAO writers need the FULL block per chunk
+///
+/// GIAO and other complex-interleaved families are evaluated by MONOLITHIC
+/// whole-block launchers (`write_giao_complex_staging`, `launch_two_electron_giao2e`)
+/// that scatter the ENTIRE `2 * real_total` interleaved block in one pass — they do
+/// NOT honor a per-chunk work-unit sub-range. Handing such a launcher the sliced
+/// `suffix - prefix` staging (smaller than the full block whenever `chunk_count > 1`)
+/// yields a per-chunk `BufferTooSmall`, making the family inoperable under any
+/// `memory_limit_bytes` that forces chunking (WR-01 availability regression).
+///
+/// `eval_raw` already solves this by allocating the FULL `staging_elements` per chunk
+/// for these monolithic writers (crates/cintx-compat/src/raw.rs:1061-1070; FND-06,
+/// project memory: "family kernels are MONOLITHIC whole-block writers → per-chunk
+/// staging must be FULL-block sized; never re-add `if dst < staging.len()` guards").
+/// The safe-API `evaluate` path mirrors that here: when
+/// `plan.output_layout.complex_interleaved` is set, return the full
+/// `plan.output_layout.staging_elements` so every chunk hands the launcher a
+/// full-block buffer. If the full block cannot fit, the upfront workspace check fails
+/// closed with a typed `MemoryLimitExceeded` (no partial write).
+///
+/// Real (non-complex) families ARE genuinely chunk-partitionable, so they keep the
+/// sliced `suffix - prefix` sizing below.
 fn staging_elements_for_chunk(
     plan: &ExecutionPlan<'_>,
     chunk: &ChunkInfo,
 ) -> Result<usize, cintxRsError> {
+    // WR-01 / FND-06: monolithic complex/GIAO writers require the full interleaved
+    // block per chunk — mirror eval_raw (raw.rs:1061-1070). Never the sliced suffix.
+    if plan.output_layout.complex_interleaved {
+        return Ok(plan.output_layout.staging_elements.max(1));
+    }
+
     let total_units = plan.workspace.work_units.max(1);
     let start = chunk.work_unit_start.min(total_units);
     let end = chunk
@@ -1267,6 +1297,113 @@ mod tests {
         assert!(
             layout.complex_interleaved,
             "spinor family must remain complex-interleaved via complex_output backfill"
+        );
+    }
+
+    // WR-01: a GIAO / complex_interleaved family must stay OPERABLE under a
+    // memory_limit_bytes that forces chunk_count > 1. The monolithic GIAO launcher
+    // is a whole-block writer, so each chunk must receive the FULL interleaved block
+    // (Task 1 fix in staging_elements_for_chunk). Before the fix, the sliced
+    // suffix-prefix staging yielded a per-chunk BufferTooSmall. This test proves the
+    // call now SUCCEEDS with chunk_count > 1 (no BufferTooSmall) and matches the
+    // single-chunk run.
+    #[test]
+    fn evaluate_giao_complex_family_survives_memory_chunking() {
+        // int1e_giao_irjxp_cart carries complex_output=true (manifest), arity 2, cart.
+        let descriptor = Resolver::descriptor_by_symbol("int1e_giao_irjxp_cart")
+            .expect("giao_irjxp cart descriptor");
+        assert!(
+            descriptor.entry.complex_output,
+            "int1e_giao_irjxp_cart must carry complex_output=true (GIAO complex family)"
+        );
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+
+        // Single-chunk baseline (no memory limit): records the chunk_count and stats.
+        let baseline_opts = ExecutionOptions::default();
+        let baseline_query = query_workspace(
+            descriptor.id,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &baseline_opts,
+        )
+        .expect("baseline workspace query should succeed");
+        assert_eq!(
+            baseline_query.chunk_count, 1,
+            "baseline (no limit) should be a single chunk"
+        );
+        let baseline_plan = ExecutionPlan::new(
+            descriptor.id,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &baseline_query,
+        )
+        .expect("baseline GIAO plan should build");
+        assert!(
+            baseline_plan.output_layout.complex_interleaved,
+            "GIAO plan must be complex_interleaved"
+        );
+        let mut baseline_alloc = HostWorkspaceAllocator::default();
+        let backend = MockBackend { supports: true };
+        let baseline_stats = evaluate(
+            baseline_plan,
+            &baseline_opts,
+            &mut baseline_alloc,
+            &backend,
+        )
+        .expect("baseline GIAO evaluation should succeed");
+        assert_eq!(baseline_stats.chunk_count, 1);
+
+        // Chunk-forcing run: a memory_limit_bytes small enough to split the workspace
+        // into more than one chunk. The monolithic GIAO writer now receives a
+        // full-block staging buffer per chunk, so the call SUCCEEDS instead of
+        // returning a per-chunk BufferTooSmall (WR-01).
+        let chunk_opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            ..ExecutionOptions::default()
+        };
+        let chunk_query = query_workspace(
+            descriptor.id,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &chunk_opts,
+        )
+        .expect("chunk-forcing workspace query should succeed");
+        assert!(
+            chunk_query.chunk_count > 1,
+            "memory_limit_bytes=192 must force chunk_count > 1 (got {})",
+            chunk_query.chunk_count
+        );
+
+        let chunk_plan = ExecutionPlan::new(
+            descriptor.id,
+            Representation::Cart,
+            &basis,
+            shells,
+            &chunk_query,
+        )
+        .expect("chunked GIAO plan should build");
+        assert!(
+            chunk_plan.output_layout.complex_interleaved,
+            "chunked GIAO plan must remain complex_interleaved"
+        );
+
+        let mut chunk_alloc = HostWorkspaceAllocator::default();
+        let chunk_stats = evaluate(chunk_plan, &chunk_opts, &mut chunk_alloc, &backend)
+            .expect("GIAO evaluation under chunking must SUCCEED (no BufferTooSmall) — WR-01");
+
+        assert!(
+            chunk_stats.chunk_count > 1,
+            "GIAO evaluation should have run with chunk_count > 1 (got {})",
+            chunk_stats.chunk_count
+        );
+        assert_eq!(
+            chunk_stats.fallback_reason,
+            Some("memory_limit"),
+            "chunked GIAO run should report the memory_limit fallback"
         );
     }
 }
