@@ -2556,6 +2556,48 @@ fn rcj_1e_into<F: Float + CubeElement>(
     }
 }
 
+/// `#[cube]` helper: bra-direction position multiply `dst = R0I(src)` for a 3-axis
+/// 1e G-tensor, filled over j∈0..=jmax, i∈0..=imax. This is libcint's `CINTx1i_1e`
+/// (`G1E_R0I`): each axis shifts the BRA level up by one and adds `ri` times the
+/// same level —   R0I[j][i] = src[j][i+1] + ri_axis * src[j][i].
+/// `ri` is the ABSOLUTE bra basis-center coordinate (g1e.c:446, `gx[i+1]+ri*gx[i]`).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn r0i_1e_into<F: Float + CubeElement>(
+    dst: &mut Array<F>,
+    src: &Array<F>,
+    g_per_axis: u32,
+    dj: u32,
+    jmax: u32,
+    imax: u32,
+    rix: F,
+    riy: F,
+    riz: F,
+) {
+    let mut axisn = 0u32;
+    while axisn < 3u32 {
+        let off = axisn * g_per_axis;
+        let mut ri = rix;
+        if axisn == 1u32 {
+            ri = riy;
+        } else if axisn == 2u32 {
+            ri = riz;
+        }
+        let mut jn = 0u32;
+        while jn <= jmax {
+            let jbase = jn * dj;
+            let mut ii = 0u32;
+            while ii <= imax {
+                dst[(off + jbase + ii) as usize] = src[(off + jbase + ii + 1u32) as usize]
+                    + ri * src[(off + jbase + ii) as usize];
+                ii += 1u32;
+            }
+            jn += 1u32;
+        }
+        axisn += 1u32;
+    }
+}
+
 /// Dispatch [`one_electron_irp_kernel`] at `f64` on a backend client. Returns the
 /// rank-9 component-leading accumulator (`nctr_i * nctr_j * 9 * nci * ncj`).
 #[allow(clippy::too_many_arguments)]
@@ -2677,6 +2719,1124 @@ fn run_1e_irp_on_backend(
         ResolvedBackend::Metal(client, _) => run_1e_irp_device::<cubecl_wgpu::WgpuRuntime>(
             client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j, coeff_i,
             coeff_j,
+        ),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Device kernel — `#[cube(launch)]` — 1e GIAO OVERLAP-engine families (rank 3)
+//
+//  Implements the spin-free 1e GIAO/CG families that ride the no-Rys overlap
+//  G-tensor engine (Phase 26 GIAO-01). op_kind selects the family:
+//    0 = int1e_govlp  (<G i|OVLP|j>, intor3.c CINTgout1e_int1e_govlp, factor 0.5)
+//    1 = int1e_igovlp (<G i|OVLP|j>, intor1.c CINTgout1e_int1e_igovlp, factor 0.5,
+//                       sign-flipped gout vs govlp)
+//    2 = int1e_cg_irxp   (<i|OVLP|RC CROSS P j>, intor1.c, gauge-relative drj)
+//    3 = int1e_giao_irjxp(<i|OVLP|R CROSS P j>, intor1.c, ket-center rj)
+//    4 = int1e_igkin  (<G i|P DOT P|j>, intor1.c CINTgout1e_int1e_igkin, factor 0.25)
+//
+//  The gout `c[]·s[]` combos are transcribed VERBATIM from the cited libcint gout
+//  functions (intor1.c / intor3.c). c = ri - rj (the bra-minus-ket displacement).
+//
+//  g-tensor recipe per family (built into the named scratch tensors):
+//    govlp/igovlp: g1 = R0I(g0)   (bra position multiply; G1E_R0I)
+//    cg_irxp:      g1 = D_J(g0),   g2 = RCJ(g0)[j+1] (gauge-relative), g3 = D_J(g2)
+//    giao_irjxp:   g1 = D_J(g0),   g2 = R_J(g0)[j+1] (ket-center rj),  g3 = D_J(g2)
+//    igkin:        g1 = D_J(g0)[i+1], g2 = D_J(D_J(g0))[i+1], g3 = D_J(g2)[i+1]
+//                  then g4..g7 = R0I(g0..g3)  (27-s kinetic-of-r table)
+//
+//  Headroom: govlp/igovlp need bra+1 (R0I reads i+1) → nmax=li+lj+1, lj_ext=lj.
+//  cg_irxp/giao_irjxp need ket+2 → nmax=li+lj+2, lj_ext=lj+2.
+//  igkin needs bra+2 (R0I after D_J), ket+1 → nmax=li+lj+3, lj_ext=lj+1.
+//  We size for the maximum (nmax=li+lj+3, lj_ext=lj+2) at comptime per op_kind.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// On-device 1e GIAO overlap-engine kernel (rank 3). `op_kind` selects the family
+/// (0=govlp 1=igovlp 2=cg_irxp 3=giao_irjxp 4=igkin). Emits REAL components
+/// (component-leading; the host materializes the complex re=0/im=value view).
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn one_electron_giao_ovlp_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    g: &mut Array<F>,
+    t1: &mut Array<F>,
+    t2: &mut Array<F>,
+    t3: &mut Array<F>,
+    t4: &mut Array<F>,
+    t5: &mut Array<F>,
+    t6: &mut Array<F>,
+    t7: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    drjx: F,
+    drjy: F,
+    drjz: F,
+    sqrtpi: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    #[comptime] op_kind: u32,
+) {
+    if UNIT_POS == 0u32 {
+        // Comptime headroom (sized for the max over all op_kinds so one buffer
+        // shape serves every family; the host runner sizes scratch identically).
+        let nmax = li + lj + 3u32;
+        let lj_ext = lj + 2u32;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let total_len = 3u32 * block_len;
+        let out_total = nctr_i * nctr_j * total_len;
+
+        // common_factor per family: govlp/igovlp *= 0.5, igkin *= 0.25, others *= 1.
+        let mut fam_factor = F::new(1.0);
+        if comptime!(op_kind == 0u32) {
+            fam_factor = F::new(0.5);
+        } else if comptime!(op_kind == 1u32) {
+            fam_factor = F::new(0.5);
+        } else if comptime!(op_kind == 4u32) {
+            fam_factor = F::new(0.25);
+        }
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                // Overlap base G-tensor g0.
+                let mut gi = 0u32;
+                while gi < total_g {
+                    g[gi as usize] = F::new(0.0);
+                    t1[gi as usize] = F::new(0.0);
+                    t2[gi as usize] = F::new(0.0);
+                    t3[gi as usize] = F::new(0.0);
+                    t4[gi as usize] = F::new(0.0);
+                    t5[gi as usize] = F::new(0.0);
+                    t6[gi as usize] = F::new(0.0);
+                    t7[gi as usize] = F::new(0.0);
+                    gi += 1u32;
+                }
+                g[gx as usize] = F::new(1.0);
+                g[gy as usize] = F::new(1.0);
+                g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+
+                one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+                one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+
+                let aj2 = F::new(-2.0) * aj;
+
+                // Build the family-specific decorating g-tensors.
+                if comptime!(op_kind == 0u32) {
+                    // govlp / igovlp share R0I(g0).
+                    r0i_1e_into::<F>(t1, g, g_per_axis, dj, lj, li, rix, riy, riz);
+                } else if comptime!(op_kind == 1u32) {
+                    r0i_1e_into::<F>(t1, g, g_per_axis, dj, lj, li, rix, riy, riz);
+                } else if comptime!(op_kind == 2u32) {
+                    // cg_irxp: g1=D_J(g0); g2=RCJ(g0)[j+1]; g3=D_J(g2).
+                    d_j_1e_into::<F>(t1, g, g_per_axis, dj, lj, li, aj2);
+                    rcj_1e_into::<F>(t2, g, g_per_axis, dj, lj + 1u32, li, drjx, drjy, drjz);
+                    d_j_1e_into::<F>(t3, t2, g_per_axis, dj, lj, li, aj2);
+                } else if comptime!(op_kind == 3u32) {
+                    // giao_irjxp: g1=D_J(g0); g2=R_J(g0)[j+1] (ket-center rj); g3=D_J(g2).
+                    d_j_1e_into::<F>(t1, g, g_per_axis, dj, lj, li, aj2);
+                    rcj_1e_into::<F>(t2, g, g_per_axis, dj, lj + 1u32, li, rjx, rjy, rjz);
+                    d_j_1e_into::<F>(t3, t2, g_per_axis, dj, lj, li, aj2);
+                } else {
+                    // igkin: g1=D_J(g0)[i+1], g2=D_J(D_J(g0))[i+1], g3=D_J(g2)[i+1],
+                    // then t4..t7 = R0I(g0,g1,g2,g3).
+                    d_j_1e_into::<F>(t1, g, g_per_axis, dj, lj + 1u32, li + 1u32, aj2);
+                    d_j_1e_into::<F>(t2, t1, g_per_axis, dj, lj, li + 1u32, aj2);
+                    d_j_1e_into::<F>(t3, t2, g_per_axis, dj, lj, li + 1u32, aj2);
+                    r0i_1e_into::<F>(t4, g, g_per_axis, dj, lj, li, rix, riy, riz);
+                    r0i_1e_into::<F>(t5, t1, g_per_axis, dj, lj, li, rix, riy, riz);
+                    r0i_1e_into::<F>(t6, t2, g_per_axis, dj, lj, li, rix, riy, riz);
+                    r0i_1e_into::<F>(t7, t3, g_per_axis, dj, lj, li, rix, riy, riz);
+                }
+
+                let cx = rirjx;
+                let cy = rirjy;
+                let cz = rirjz;
+
+                let mut ci = 0u32;
+                while ci < nctr_i {
+                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                    let mut cj = 0u32;
+                    while cj < nctr_j {
+                        let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                        let weight = fam_factor * coeff_i_val * coeff_j_val;
+                        let base = (ci * nctr_j + cj) * total_len;
+
+                        let mut cj_idx = 0u32;
+                        let mut ja = 0u32;
+                        while ja <= lj {
+                            let jx = lj - ja;
+                            let lj_minus_jx = lj - jx;
+                            let mut jb = 0u32;
+                            while jb <= lj_minus_jx {
+                                let jy = lj_minus_jx - jb;
+                                let jz = lj - jx - jy;
+
+                                let mut ci_idx = 0u32;
+                                let mut ia = 0u32;
+                                while ia <= li {
+                                    let ix = li - ia;
+                                    let li_minus_ix = li - ix;
+                                    let mut ib = 0u32;
+                                    while ib <= li_minus_ix {
+                                        let iy = li_minus_ix - ib;
+                                        let iz = li - ix - iy;
+
+                                        let nx = jx * dj + ix;
+                                        let ny = jy * dj + iy;
+                                        let nz = jz * dj + iz;
+
+                                        let g0x = g[(gx + nx) as usize];
+                                        let g0y = g[(gy + ny) as usize];
+                                        let g0z = g[(gz + nz) as usize];
+
+                                        let mut o0 = F::new(0.0);
+                                        let mut o1 = F::new(0.0);
+                                        let mut o2 = F::new(0.0);
+
+                                        if comptime!(op_kind <= 1u32) {
+                                            // govlp / igovlp: s = R0I components.
+                                            let g1x = t1[(gx + nx) as usize];
+                                            let g1y = t1[(gy + ny) as usize];
+                                            let g1z = t1[(gz + nz) as usize];
+                                            let s0 = g1x * g0y * g0z;
+                                            let s1 = g0x * g1y * g0z;
+                                            let s2 = g0x * g0y * g1z;
+                                            // govlp: + c1 s2 - c2 s1, etc.
+                                            o0 = cy * s2 - cz * s1;
+                                            o1 = cz * s0 - cx * s2;
+                                            o2 = cx * s1 - cy * s0;
+                                            if comptime!(op_kind == 1u32) {
+                                                // igovlp = -govlp gout.
+                                                o0 = F::new(0.0) - o0;
+                                                o1 = F::new(0.0) - o1;
+                                                o2 = F::new(0.0) - o2;
+                                            }
+                                        } else if comptime!(op_kind <= 3u32) {
+                                            // cg_irxp / giao_irjxp: 9-s curl table.
+                                            let g1x = t1[(gx + nx) as usize];
+                                            let g1y = t1[(gy + ny) as usize];
+                                            let g1z = t1[(gz + nz) as usize];
+                                            let g2x = t2[(gx + nx) as usize];
+                                            let g2y = t2[(gy + ny) as usize];
+                                            let g2z = t2[(gz + nz) as usize];
+                                            let g3x = t3[(gx + nx) as usize];
+                                            let g3y = t3[(gy + ny) as usize];
+                                            let g3z = t3[(gz + nz) as usize];
+                                            let s1 = g2x * g1y * g0z;
+                                            let s2 = g2x * g0y * g1z;
+                                            let s3 = g1x * g2y * g0z;
+                                            let s5 = g0x * g2y * g1z;
+                                            let s6 = g1x * g0y * g2z;
+                                            let s7 = g0x * g1y * g2z;
+                                            // gout: s5-s7, s6-s2, s1-s3.
+                                            o0 = s5 - s7;
+                                            o1 = s6 - s2;
+                                            o2 = s1 - s3;
+                                            let _ = g3x;
+                                            let _ = g3y;
+                                            let _ = g3z;
+                                        } else {
+                                            // igkin: 27-s kinetic-of-r table.
+                                            let g0x4 = t4[(gx + nx) as usize];
+                                            let g0y4 = t4[(gy + ny) as usize];
+                                            let g0z4 = t4[(gz + nz) as usize];
+                                            let g1x = t1[(gx + nx) as usize];
+                                            let g1y = t1[(gy + ny) as usize];
+                                            let g1z = t1[(gz + nz) as usize];
+                                            let g1x5 = t5[(gx + nx) as usize];
+                                            let g1y5 = t5[(gy + ny) as usize];
+                                            let g1z5 = t5[(gz + nz) as usize];
+                                            let g2x = t2[(gx + nx) as usize];
+                                            let g2y = t2[(gy + ny) as usize];
+                                            let g2z = t2[(gz + nz) as usize];
+                                            let g2x6 = t6[(gx + nx) as usize];
+                                            let g2y6 = t6[(gy + ny) as usize];
+                                            let g2z6 = t6[(gz + nz) as usize];
+                                            let g3x = t3[(gx + nx) as usize];
+                                            let g3y = t3[(gy + ny) as usize];
+                                            let g3z = t3[(gz + nz) as usize];
+                                            let g3x7 = t7[(gx + nx) as usize];
+                                            let g3y7 = t7[(gy + ny) as usize];
+                                            let g3z7 = t7[(gz + nz) as usize];
+                                            // s[] table (intor1.c igkin): g0..g3 = D_J chain,
+                                            // g4..g7 = R0I(g0..g3). Index map matches the
+                                            // 27-entry s[] of CINTgout1e_int1e_igkin.
+                                            let s0 = g3x7 * g0y * g0z;
+                                            let s4 = g0x4 * g3y * g0z;
+                                            let s8 = g0x4 * g0y * g3z;
+                                            let s9 = g3x * g0y4 * g0z;
+                                            let s13 = g0x * g3y7 * g0z;
+                                            let s17 = g0x * g0y4 * g3z;
+                                            let s18 = g3x * g0y * g0z4;
+                                            let s22 = g0x * g3y * g0z4;
+                                            let s26 = g0x * g0y * g3z7;
+                                            let _ = g1x;
+                                            let _ = g1y;
+                                            let _ = g1z;
+                                            let _ = g1x5;
+                                            let _ = g1y5;
+                                            let _ = g1z5;
+                                            let _ = g2x;
+                                            let _ = g2y;
+                                            let _ = g2z;
+                                            let _ = g2x6;
+                                            let _ = g2y6;
+                                            let _ = g2z6;
+                                            // gout (intor1.c igkin):
+                                            //  [0]=c1 s18 - c2 s9 + c1 s22 - c2 s13 + c1 s26 - c2 s17
+                                            //  [1]=c2 s0 - c0 s18 + c2 s4 - c0 s22 + c2 s8 - c0 s26
+                                            //  [2]=c0 s9 - c1 s0 + c0 s13 - c1 s4 + c0 s17 - c1 s8
+                                            o0 = cy * s18 - cz * s9 + cy * s22 - cz * s13 + cy * s26
+                                                - cz * s17;
+                                            o1 = cz * s0 - cx * s18 + cz * s4 - cx * s22 + cz * s8
+                                                - cx * s26;
+                                            o2 = cx * s9 - cy * s0 + cx * s13 - cy * s4 + cx * s17
+                                                - cy * s8;
+                                        }
+
+                                        let elem = cj_idx * nci + ci_idx;
+                                        cart_out[(base + 0u32 * block_len + elem) as usize] +=
+                                            weight * o0;
+                                        cart_out[(base + 1u32 * block_len + elem) as usize] +=
+                                            weight * o1;
+                                        cart_out[(base + 2u32 * block_len + elem) as usize] +=
+                                            weight * o2;
+
+                                        ci_idx += 1u32;
+                                        ib += 1u32;
+                                    }
+                                    ia += 1u32;
+                                }
+                                cj_idx += 1u32;
+                                jb += 1u32;
+                            }
+                            ja += 1u32;
+                        }
+                        cj += 1u32;
+                    }
+                    ci += 1u32;
+                }
+
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`one_electron_giao_ovlp_kernel`] at `f64` on a backend client.
+/// Returns the rank-3 component-leading accumulator.
+#[allow(clippy::too_many_arguments)]
+fn run_1e_giao_ovlp_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    op_kind: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    drj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + lj_u + 3;
+    let lj_ext_u = lj_u + 2;
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * 3 * nci * ncj;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+
+    let g_zero = vec![0.0_f64; total_g];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let t1_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let t2_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let t3_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let t4_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let t5_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let t6_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let t7_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    macro_rules! launch_with {
+        ($kind:expr) => {
+            one_electron_giao_ovlp_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(t1_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(t2_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(t3_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(t4_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(t5_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(t6_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(t7_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], drj[0], drj[1], drj[2],
+                SQRTPI, std::f64::consts::PI,
+                li, lj, nprim_i, nprim_j, nctr_i, nctr_j, $kind,
+            )
+        };
+    }
+
+    match op_kind {
+        0u32 => launch_with!(0u32),
+        1u32 => launch_with!(1u32),
+        2u32 => launch_with!(2u32),
+        3u32 => launch_with!(3u32),
+        4u32 => launch_with!(4u32),
+        _ => unreachable!("invalid GIAO overlap op_kind {op_kind} (must be 0..=4)"),
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_1e_giao_ovlp_device`].
+#[allow(clippy::too_many_arguments)]
+fn run_1e_giao_ovlp_on_backend(
+    backend: &ResolvedBackend,
+    op_kind: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    drj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_1e_giao_ovlp_device::<cubecl::cpu::CpuRuntime>(
+            client, op_kind, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_1e_giao_ovlp_device::<cubecl_wgpu::WgpuRuntime>(
+            client, op_kind, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_1e_giao_ovlp_device::<cubecl_cuda::CudaRuntime>(
+            client, op_kind, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_1e_giao_ovlp_device::<cubecl_hip::HipRuntime>(
+            client, op_kind, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_1e_giao_ovlp_device::<cubecl_wgpu::WgpuRuntime>(
+            client, op_kind, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j,
+            coeff_i, coeff_j,
+        ),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Device kernel — `#[cube(launch)]` — 1e GIAO NUCLEAR-engine families
+//
+//  Implements the spin-free 1e GIAO/CG families that ride the nuclear/Rys 1e path
+//  (Phase 26 GIAO-01). op_kind selects the family:
+//    0 = int1e_gnuc  (<G i|NUC|j>,  rank 3, intor3.c, factor 0.5)
+//    1 = int1e_ignuc (<G i|NUC|j>,  rank 3, intor1.c, factor 0.5, sign-flip)
+//    2 = int1e_ia01p (<i|NABLA-RINV|CROSS P j>, rank 3, intor1.c)
+//    3 = int1e_a01gp (<G i|NABLA-RINV CROSS P|j>, rank 9, intor1.c, factor 0.5)
+//    4 = int1e_cg_a11part   (<i|NABLA-RINV|RC j>, rank 9, intor1.c, factor -0.5)
+//    5 = int1e_giao_a11part (<i|NABLA-RINV|R  j>, rank 9, intor1.c, factor -0.5)
+//
+//  All emit REAL components → host complex re=0/im=value materialization (D-15).
+//  gout `c[]·s[]` combos transcribed VERBATIM from the cited libcint gout fns.
+//  Flat gbuf holds 8 tensors (g0 + t1..t7); decorations via the flat helpers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// On-device 1e GIAO nuclear-engine kernel. `op_kind` selects the family;
+/// `rank` (comptime) is 3 (gnuc/ignuc/ia01p) or 9 (a01gp/cg_a11part/giao_a11part).
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    origin_coords: &Array<F>,
+    origin_charges: &Array<F>,
+    gbuf: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    cart_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    drjx: F,
+    drjy: F,
+    drjz: F,
+    pie4: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    norig: u32,
+    #[comptime] op_kind: u32,
+    #[comptime] rank: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let nrys = nroots;
+        // Headroom sized for the max over families (a01gp: bra i+3, ket j+2).
+        let nmax = li + lj + 5u32;
+        let lj_ext = lj + 2u32;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let total_len = rank * block_len;
+        let out_total = nctr_i * nctr_j * total_len;
+
+        let mut fam_factor = F::new(1.0);
+        if comptime!(op_kind == 0u32) {
+            fam_factor = F::new(0.5);
+        } else if comptime!(op_kind == 1u32) {
+            fam_factor = F::new(0.5);
+        } else if comptime!(op_kind == 4u32) {
+            fam_factor = F::new(-0.5);
+        } else if comptime!(op_kind == 5u32) {
+            fam_factor = F::new(-0.5);
+        }
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            cart_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        let cx = rix - rjx;
+        let cy = riy - rjy;
+        let cz = riz - rjz;
+
+        let li1 = li + 1u32;
+        let li2 = li + 2u32;
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                let ai2 = F::new(-2.0) * ai;
+                let aj2 = F::new(-2.0) * aj;
+
+                let mut orig = 0u32;
+                while orig < norig {
+                    let charge_factor = origin_charges[orig as usize];
+                    let rcx = origin_coords[(orig * 3u32) as usize];
+                    let rcy = origin_coords[(orig * 3u32 + 1u32) as usize];
+                    let rcz = origin_coords[(orig * 3u32 + 2u32) as usize];
+
+                    let crijx = rcx - px;
+                    let crijy = rcy - py;
+                    let crijz = rcz - pz;
+                    let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
+
+                    if comptime!(nroots == 1u32) {
+                        rys_root1::<F>(x_boys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 2u32) {
+                        rys_root2::<F>(x_boys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 3u32) {
+                        rys_root3::<F>(x_boys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 4u32) {
+                        rys_root4::<F>(x_boys, urys, wrys, pie4);
+                    } else {
+                        rys_root5::<F>(x_boys, urys, wrys, pie4);
+                    }
+
+                    let fac1 = F::new(2.0) * pi_const * charge_factor * fac / zeta;
+
+                    let mut irys: u32 = 0u32;
+                    while irys < nrys {
+                        let u_n = urys[irys as usize];
+                        let w_n = wrys[irys as usize];
+                        let tau = u_n / (F::new(1.0) + u_n);
+                        let rt = aij2 * (F::new(1.0) - tau);
+
+                        let c00x = (px - rix) + tau * crijx;
+                        let c00y = (py - riy) + tau * crijy;
+                        let c00z = (pz - riz) + tau * crijz;
+
+                        // Zero the whole flat buffer (g0 + t1..t7 = 8 tensors).
+                        let mut zi = 0u32;
+                        while zi < 8u32 * total_g {
+                            gbuf[zi as usize] = F::new(0.0);
+                            zi += 1u32;
+                        }
+                        // Per-root nuclear base G-tensor g0 (tensor slot 0).
+                        gbuf[gx as usize] = F::new(1.0);
+                        gbuf[gy as usize] = F::new(1.0);
+                        gbuf[gz as usize] = fac1 * w_n;
+                        one_electron_vrr2e_axis::<F>(gbuf, gx, c00x, rt, nmax);
+                        one_electron_vrr2e_axis::<F>(gbuf, gy, c00y, rt, nmax);
+                        one_electron_vrr2e_axis::<F>(gbuf, gz, c00z, rt, nmax);
+                        one_electron_hrr_axis::<F>(gbuf, gx, rirjx, dj, nmax, lj_ext);
+                        one_electron_hrr_axis::<F>(gbuf, gy, rirjy, dj, nmax, lj_ext);
+                        one_electron_hrr_axis::<F>(gbuf, gz, rirjz, dj, nmax, lj_ext);
+
+                        // Build the family-specific decoration tensors.
+                        if comptime!(op_kind <= 1u32) {
+                            // gnuc / ignuc: t1 = R0I(g0).
+                            r0i_1e_flat::<F>(
+                                gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li, rix, riy, riz,
+                            );
+                        } else if comptime!(op_kind == 2u32) {
+                            // ia01p: t1=D_J(g0); t2=D_J(g0,j+1); t3=D_I(g0,j+1);
+                            // t2+=t3; t3=D_J(t2).
+                            d_j_1e_flat::<F>(gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li, aj2);
+                            d_j_1e_flat::<F>(
+                                gbuf, 2u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li, aj2,
+                            );
+                            d_i_1e_flat::<F>(
+                                gbuf, 3u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li, ai2,
+                            );
+                            add_tensor_flat::<F>(gbuf, 2u32, 3u32, total_g);
+                            d_j_1e_flat::<F>(gbuf, 3u32, 2u32, total_g, g_per_axis, dj, lj, li, aj2);
+                        } else if comptime!(op_kind == 3u32) {
+                            // a01gp: t1=D_J(g0,i+2); t2=D_J(g0,i+1,j+1);
+                            // t3=D_I(g0,i+1,j+1); t2+=t3; t3=D_J(t2,i+2);
+                            // t4=R0I(g0); t5=R0I(t1); t6=R0I(t2); t7=R0I(t3).
+                            d_j_1e_flat::<F>(gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li2, aj2);
+                            d_j_1e_flat::<F>(
+                                gbuf, 2u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li1, aj2,
+                            );
+                            d_i_1e_flat::<F>(
+                                gbuf, 3u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li1, ai2,
+                            );
+                            add_tensor_flat::<F>(gbuf, 2u32, 3u32, total_g);
+                            d_j_1e_flat::<F>(gbuf, 3u32, 2u32, total_g, g_per_axis, dj, lj, li2, aj2);
+                            r0i_1e_flat::<F>(
+                                gbuf, 4u32, 0u32, total_g, g_per_axis, dj, lj, li, rix, riy, riz,
+                            );
+                            r0i_1e_flat::<F>(
+                                gbuf, 5u32, 1u32, total_g, g_per_axis, dj, lj, li, rix, riy, riz,
+                            );
+                            r0i_1e_flat::<F>(
+                                gbuf, 6u32, 2u32, total_g, g_per_axis, dj, lj, li, rix, riy, riz,
+                            );
+                            r0i_1e_flat::<F>(
+                                gbuf, 7u32, 3u32, total_g, g_per_axis, dj, lj, li, rix, riy, riz,
+                            );
+                        } else {
+                            // cg_a11part(4) / giao_a11part(5): t1=RCJ/R_J(g0);
+                            // t2=D_J(g0,j+1); t3=D_I(g0,j+1); t2+=t3; t3=RCJ/R_J(t2).
+                            // RCJ uses drj (gauge-relative); R_J uses rj (ket center).
+                            let mut ox = drjx;
+                            let mut oy = drjy;
+                            let mut oz = drjz;
+                            if comptime!(op_kind == 5u32) {
+                                ox = rjx;
+                                oy = rjy;
+                                oz = rjz;
+                            }
+                            rcj_1e_flat::<F>(
+                                gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li, ox, oy, oz,
+                            );
+                            d_j_1e_flat::<F>(
+                                gbuf, 2u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li, aj2,
+                            );
+                            d_i_1e_flat::<F>(
+                                gbuf, 3u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li, ai2,
+                            );
+                            add_tensor_flat::<F>(gbuf, 2u32, 3u32, total_g);
+                            rcj_1e_flat::<F>(
+                                gbuf, 3u32, 2u32, total_g, g_per_axis, dj, lj, li, ox, oy, oz,
+                            );
+                        }
+
+                        // Contract + accumulate the s-table into cart_out.
+                        let mut ci = 0u32;
+                        while ci < nctr_i {
+                            let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                            let mut cj = 0u32;
+                            while cj < nctr_j {
+                                let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                                let weight = fam_factor * coeff_i_val * coeff_j_val;
+                                let base = (ci * nctr_j + cj) * total_len;
+
+                                let mut cj_idx = 0u32;
+                                let mut ja = 0u32;
+                                while ja <= lj {
+                                    let jx = lj - ja;
+                                    let lj_minus_jx = lj - jx;
+                                    let mut jb = 0u32;
+                                    while jb <= lj_minus_jx {
+                                        let jy = lj_minus_jx - jb;
+                                        let jz = lj - jx - jy;
+
+                                        let mut ci_idx = 0u32;
+                                        let mut ia = 0u32;
+                                        while ia <= li {
+                                            let ix = li - ia;
+                                            let li_minus_ix = li - ix;
+                                            let mut ib = 0u32;
+                                            while ib <= li_minus_ix {
+                                                let iy = li_minus_ix - ib;
+                                                let iz = li - ix - iy;
+
+                                                let nx = jx * dj + ix;
+                                                let ny = jy * dj + iy;
+                                                let nz = jz * dj + iz;
+                                                let elem = cj_idx * nci + ci_idx;
+
+                                                giao_nuc_accumulate::<F>(
+                                                    gbuf, cart_out, base, block_len, total_g,
+                                                    g_per_axis, gx, gy, gz, nx, ny, nz, elem,
+                                                    weight, cx, cy, cz, op_kind,
+                                                );
+
+                                                ci_idx += 1u32;
+                                                ib += 1u32;
+                                            }
+                                            ia += 1u32;
+                                        }
+                                        cj_idx += 1u32;
+                                        jb += 1u32;
+                                    }
+                                    ja += 1u32;
+                                }
+                                cj += 1u32;
+                            }
+                            ci += 1u32;
+                        }
+
+                        irys += 1u32;
+                    }
+                    orig += 1u32;
+                }
+
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// `#[cube]` helper: accumulate the GIAO nuclear-family s-table for one AO pair.
+/// Reads g0 (slot 0) + decoration tensors (slots 1..7) from `gbuf` and scatters
+/// the rank-3 or rank-9 component combo into `cart_out` (component-leading). The
+/// gout combos are transcribed verbatim from the cited libcint gout functions.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn giao_nuc_accumulate<F: Float + CubeElement>(
+    gbuf: &Array<F>,
+    cart_out: &mut Array<F>,
+    base: u32,
+    block_len: u32,
+    total_g: u32,
+    g_per_axis: u32,
+    gx: u32,
+    gy: u32,
+    gz: u32,
+    nx: u32,
+    ny: u32,
+    nz: u32,
+    elem: u32,
+    weight: F,
+    cx: F,
+    cy: F,
+    cz: F,
+    #[comptime] op_kind: u32,
+) {
+    // Slot helpers: tensor t, axis offset a, index n → gbuf[t*total_g + a + n].
+    let t0x = gbuf[(0u32 * total_g + gx + nx) as usize];
+    let t0y = gbuf[(0u32 * total_g + gy + ny) as usize];
+    let t0z = gbuf[(0u32 * total_g + gz + nz) as usize];
+
+    if comptime!(op_kind <= 1u32) {
+        // gnuc / ignuc: s = R0I (slot 1).
+        let t1x = gbuf[(1u32 * total_g + gx + nx) as usize];
+        let t1y = gbuf[(1u32 * total_g + gy + ny) as usize];
+        let t1z = gbuf[(1u32 * total_g + gz + nz) as usize];
+        let s0 = t1x * t0y * t0z;
+        let s1 = t0x * t1y * t0z;
+        let s2 = t0x * t0y * t1z;
+        let mut o0 = cy * s2 - cz * s1;
+        let mut o1 = cz * s0 - cx * s2;
+        let mut o2 = cx * s1 - cy * s0;
+        if comptime!(op_kind == 1u32) {
+            o0 = F::new(0.0) - o0;
+            o1 = F::new(0.0) - o1;
+            o2 = F::new(0.0) - o2;
+        }
+        cart_out[(base + 0u32 * block_len + elem) as usize] += weight * o0;
+        cart_out[(base + 1u32 * block_len + elem) as usize] += weight * o1;
+        cart_out[(base + 2u32 * block_len + elem) as usize] += weight * o2;
+    } else if comptime!(op_kind == 2u32) {
+        // ia01p: 9-s curl table (g0,t1=g1,t2=g2,t3=g3). gout: s5-s7, s6-s2, s1-s3.
+        let g1x = gbuf[(1u32 * total_g + gx + nx) as usize];
+        let g1y = gbuf[(1u32 * total_g + gy + ny) as usize];
+        let g1z = gbuf[(1u32 * total_g + gz + nz) as usize];
+        let g2x = gbuf[(2u32 * total_g + gx + nx) as usize];
+        let g2y = gbuf[(2u32 * total_g + gy + ny) as usize];
+        let g2z = gbuf[(2u32 * total_g + gz + nz) as usize];
+        let s1 = g2x * g1y * t0z;
+        let s2 = g2x * t0y * g1z;
+        let s3 = g1x * g2y * t0z;
+        let s5 = t0x * g2y * g1z;
+        let s6 = g1x * t0y * g2z;
+        let s7 = t0x * g1y * g2z;
+        cart_out[(base + 0u32 * block_len + elem) as usize] += weight * (s5 - s7);
+        cart_out[(base + 1u32 * block_len + elem) as usize] += weight * (s6 - s2);
+        cart_out[(base + 2u32 * block_len + elem) as usize] += weight * (s1 - s3);
+    } else if comptime!(op_kind == 3u32) {
+        // a01gp: 27-s table (g0..g3 = slots 0..3, g4..g7 = slots 4..7).
+        // s[k] index map matches CINTgout1e_int1e_a01gp; 9-component gout uses c.
+        let g0x = t0x;
+        let g0y = t0y;
+        let g0z = t0z;
+        let g1x = gbuf[(1u32 * total_g + gx + nx) as usize];
+        let g1y = gbuf[(1u32 * total_g + gy + ny) as usize];
+        let g1z = gbuf[(1u32 * total_g + gz + nz) as usize];
+        let g2x = gbuf[(2u32 * total_g + gx + nx) as usize];
+        let g2y = gbuf[(2u32 * total_g + gy + ny) as usize];
+        let g2z = gbuf[(2u32 * total_g + gz + nz) as usize];
+        let g3x = gbuf[(3u32 * total_g + gx + nx) as usize];
+        let g3y = gbuf[(3u32 * total_g + gy + ny) as usize];
+        let g3z = gbuf[(3u32 * total_g + gz + nz) as usize];
+        let g4x = gbuf[(4u32 * total_g + gx + nx) as usize];
+        let g4y = gbuf[(4u32 * total_g + gy + ny) as usize];
+        let g4z = gbuf[(4u32 * total_g + gz + nz) as usize];
+        let g5x = gbuf[(5u32 * total_g + gx + nx) as usize];
+        let g5y = gbuf[(5u32 * total_g + gy + ny) as usize];
+        let g5z = gbuf[(5u32 * total_g + gz + nz) as usize];
+        let g6x = gbuf[(6u32 * total_g + gx + nx) as usize];
+        let g6y = gbuf[(6u32 * total_g + gy + ny) as usize];
+        let g6z = gbuf[(6u32 * total_g + gz + nz) as usize];
+        let g7x = gbuf[(7u32 * total_g + gx + nx) as usize];
+        let g7y = gbuf[(7u32 * total_g + gy + ny) as usize];
+        let g7z = gbuf[(7u32 * total_g + gz + nz) as usize];
+        // 27 s[] (intor1.c CINTgout1e_int1e_a01gp).
+        let s1 = g6x * g1y * g0z;
+        let s2 = g6x * g0y * g1z;
+        let s3 = g5x * g2y * g0z;
+        let s5 = g4x * g2y * g1z;
+        let s6 = g5x * g0y * g2z;
+        let s7 = g4x * g1y * g2z;
+        let s10 = g2x * g5y * g0z;
+        let s11 = g2x * g4y * g1z;
+        let s12 = g1x * g6y * g0z;
+        let s14 = g0x * g6y * g1z;
+        let s15 = g1x * g4y * g2z;
+        let s16 = g0x * g5y * g2z;
+        let s19 = g2x * g1y * g4z;
+        let s20 = g2x * g0y * g5z;
+        let s21 = g1x * g2y * g4z;
+        let s23 = g0x * g2y * g5z;
+        let s24 = g1x * g0y * g6z;
+        let s25 = g0x * g1y * g6z;
+        let _ = g3x;
+        let _ = g3y;
+        let _ = g3z;
+        let _ = g7x;
+        let _ = g7y;
+        let _ = g7z;
+        let _ = g0x;
+        let _ = g0y;
+        let _ = g0z;
+        // gout (intor1.c), c = ri - rj.
+        let o0 = cy * s23 - cz * s14 - cy * s25 + cz * s16;
+        let o1 = cy * s24 - cz * s15 - cy * s20 + cz * s11;
+        let o2 = cy * s19 - cz * s10 - cy * s21 + cz * s12;
+        let o3 = cz * s5 - cx * s23 - cz * s7 + cx * s25;
+        let o4 = cz * s6 - cx * s24 - cz * s2 + cx * s20;
+        let o5 = cz * s1 - cx * s19 - cz * s3 + cx * s21;
+        let o6 = cx * s14 - cy * s5 - cx * s16 + cy * s7;
+        let o7 = cx * s15 - cy * s6 - cx * s11 + cy * s2;
+        let o8 = cx * s10 - cy * s1 - cx * s12 + cy * s3;
+        cart_out[(base + 0u32 * block_len + elem) as usize] += weight * o0;
+        cart_out[(base + 1u32 * block_len + elem) as usize] += weight * o1;
+        cart_out[(base + 2u32 * block_len + elem) as usize] += weight * o2;
+        cart_out[(base + 3u32 * block_len + elem) as usize] += weight * o3;
+        cart_out[(base + 4u32 * block_len + elem) as usize] += weight * o4;
+        cart_out[(base + 5u32 * block_len + elem) as usize] += weight * o5;
+        cart_out[(base + 6u32 * block_len + elem) as usize] += weight * o6;
+        cart_out[(base + 7u32 * block_len + elem) as usize] += weight * o7;
+        cart_out[(base + 8u32 * block_len + elem) as usize] += weight * o8;
+    } else {
+        // cg_a11part / giao_a11part: direct gout[k] = s[k], 9-s table.
+        let g1x = gbuf[(1u32 * total_g + gx + nx) as usize];
+        let g1y = gbuf[(1u32 * total_g + gy + ny) as usize];
+        let g1z = gbuf[(1u32 * total_g + gz + nz) as usize];
+        let g2x = gbuf[(2u32 * total_g + gx + nx) as usize];
+        let g2y = gbuf[(2u32 * total_g + gy + ny) as usize];
+        let g2z = gbuf[(2u32 * total_g + gz + nz) as usize];
+        let g3x = gbuf[(3u32 * total_g + gx + nx) as usize];
+        let g3y = gbuf[(3u32 * total_g + gy + ny) as usize];
+        let g3z = gbuf[(3u32 * total_g + gz + nz) as usize];
+        let s0 = g3x * t0y * t0z;
+        let s1 = g2x * g1y * t0z;
+        let s2 = g2x * t0y * g1z;
+        let s3 = g1x * g2y * t0z;
+        let s4 = t0x * g3y * t0z;
+        let s5 = t0x * g2y * g1z;
+        let s6 = g1x * t0y * g2z;
+        let s7 = t0x * g1y * g2z;
+        let s8 = t0x * t0y * g3z;
+        cart_out[(base + 0u32 * block_len + elem) as usize] += weight * s0;
+        cart_out[(base + 1u32 * block_len + elem) as usize] += weight * s1;
+        cart_out[(base + 2u32 * block_len + elem) as usize] += weight * s2;
+        cart_out[(base + 3u32 * block_len + elem) as usize] += weight * s3;
+        cart_out[(base + 4u32 * block_len + elem) as usize] += weight * s4;
+        cart_out[(base + 5u32 * block_len + elem) as usize] += weight * s5;
+        cart_out[(base + 6u32 * block_len + elem) as usize] += weight * s6;
+        cart_out[(base + 7u32 * block_len + elem) as usize] += weight * s7;
+        cart_out[(base + 8u32 * block_len + elem) as usize] += weight * s8;
+    }
+    let _ = g_per_axis;
+}
+
+/// Dispatch [`one_electron_giao_nuc_kernel`] at `f64` on a backend client.
+#[allow(clippy::too_many_arguments)]
+fn run_1e_giao_nuc_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    op_kind: u32,
+    rank: u32,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    drj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    origin_coords: &[f64],
+    origin_charges: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + lj_u + 5;
+    let lj_ext_u = lj_u + 2;
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * (rank as usize) * nci * ncj;
+    let norig = origin_charges.len();
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+    let oc_h = client.create_from_slice(f64::as_bytes(origin_coords));
+    let och_h = client.create_from_slice(f64::as_bytes(origin_charges));
+
+    // Flat buffer holds 8 tensors (g0 + t1..t7).
+    let gbuf_zero = vec![0.0_f64; 8 * total_g];
+    let gbuf_h = client.create_from_slice(f64::as_bytes(&gbuf_zero));
+    let urys_zero = vec![0.0_f64; nroots as usize];
+    let urys_h = client.create_from_slice(f64::as_bytes(&urys_zero));
+    let wrys_h = client.create_from_slice(f64::as_bytes(&urys_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    macro_rules! launch_with {
+        ($kind:expr, $rank:expr, $nr:expr) => {
+            one_electron_giao_nuc_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(oc_h.clone(), origin_coords.len()) },
+                unsafe { ArrayArg::from_raw_parts(och_h.clone(), origin_charges.len()) },
+                unsafe { ArrayArg::from_raw_parts(gbuf_h.clone(), 8 * total_g) },
+                unsafe { ArrayArg::from_raw_parts(urys_h.clone(), nroots as usize) },
+                unsafe { ArrayArg::from_raw_parts(wrys_h.clone(), nroots as usize) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], drj[0], drj[1], drj[2],
+                PIE4, std::f64::consts::PI,
+                li, lj, nprim_i, nprim_j, nctr_i, nctr_j, norig as u32,
+                $kind, $rank, $nr,
+            )
+        };
+    }
+
+    // Comptime (op_kind, rank, nroots). nroots ∈ 1..=5 (MAX_DEVICE_NROOTS), rank
+    // is fixed per op_kind. Enumerate the valid combinations explicitly.
+    macro_rules! by_nroots {
+        ($kind:expr, $rank:expr) => {
+            match nroots {
+                1u32 => launch_with!($kind, $rank, 1u32),
+                2u32 => launch_with!($kind, $rank, 2u32),
+                3u32 => launch_with!($kind, $rank, 3u32),
+                4u32 => launch_with!($kind, $rank, 4u32),
+                _ => launch_with!($kind, $rank, 5u32),
+            }
+        };
+    }
+    match op_kind {
+        0u32 => by_nroots!(0u32, 3u32),
+        1u32 => by_nroots!(1u32, 3u32),
+        2u32 => by_nroots!(2u32, 3u32),
+        3u32 => by_nroots!(3u32, 9u32),
+        4u32 => by_nroots!(4u32, 9u32),
+        5u32 => by_nroots!(5u32, 9u32),
+        _ => unreachable!("invalid GIAO nuclear op_kind {op_kind} (must be 0..=5)"),
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_1e_giao_nuc_device`].
+#[allow(clippy::too_many_arguments)]
+fn run_1e_giao_nuc_on_backend(
+    backend: &ResolvedBackend,
+    op_kind: u32,
+    rank: u32,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    drj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    origin_coords: &[f64],
+    origin_charges: &[f64],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_1e_giao_nuc_device::<cubecl::cpu::CpuRuntime>(
+            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
+            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_1e_giao_nuc_device::<cubecl_wgpu::WgpuRuntime>(
+            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
+            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_1e_giao_nuc_device::<cubecl_cuda::CudaRuntime>(
+            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
+            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_1e_giao_nuc_device::<cubecl_hip::HipRuntime>(
+            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
+            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_1e_giao_nuc_device::<cubecl_wgpu::WgpuRuntime>(
+            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
+            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
         ),
     }
 }
@@ -5061,6 +6221,108 @@ fn d_j_1e_flat<F: Float + CubeElement>(
     }
 }
 
+/// `#[cube]` helper: bra-direction position multiply `dst = R0I(src)` into a flat
+/// tensor buffer (G2E_R0I / G1E_R0I: `f[i] = g[i+1] + ri*g[i]`, i-direction).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn r0i_1e_flat<F: Float + CubeElement>(
+    gbuf: &mut Array<F>,
+    dst_t: u32,
+    src_t: u32,
+    total_g: u32,
+    g_per_axis: u32,
+    dj: u32,
+    jmax: u32,
+    imax: u32,
+    rix: F,
+    riy: F,
+    riz: F,
+) {
+    let dbase = dst_t * total_g;
+    let sbase = src_t * total_g;
+    let mut axisn = 0u32;
+    while axisn < 3u32 {
+        let off = axisn * g_per_axis;
+        let mut ri = rix;
+        if axisn == 1u32 {
+            ri = riy;
+        } else if axisn == 2u32 {
+            ri = riz;
+        }
+        let mut jn = 0u32;
+        while jn <= jmax {
+            let jbase = jn * dj;
+            let mut ii = 0u32;
+            while ii <= imax {
+                gbuf[(dbase + off + jbase + ii) as usize] = gbuf
+                    [(sbase + off + jbase + ii + 1u32) as usize]
+                    + ri * gbuf[(sbase + off + jbase + ii) as usize];
+                ii += 1u32;
+            }
+            jn += 1u32;
+        }
+        axisn += 1u32;
+    }
+}
+
+/// `#[cube]` helper: ket-direction position multiply `dst = RCJ(src)` into a flat
+/// tensor buffer (G2E_RCJ / G1E_RCJ: `f[i] = g[i+dj] + drj*g[i]`, j-direction).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn rcj_1e_flat<F: Float + CubeElement>(
+    gbuf: &mut Array<F>,
+    dst_t: u32,
+    src_t: u32,
+    total_g: u32,
+    g_per_axis: u32,
+    dj: u32,
+    jmax: u32,
+    imax: u32,
+    drjx: F,
+    drjy: F,
+    drjz: F,
+) {
+    let dbase = dst_t * total_g;
+    let sbase = src_t * total_g;
+    let mut axisn = 0u32;
+    while axisn < 3u32 {
+        let off = axisn * g_per_axis;
+        let mut drj = drjx;
+        if axisn == 1u32 {
+            drj = drjy;
+        } else if axisn == 2u32 {
+            drj = drjz;
+        }
+        let mut jn = 0u32;
+        while jn <= jmax {
+            let jbase = jn * dj;
+            let jhi = (jn + 1u32) * dj;
+            let mut ii = 0u32;
+            while ii <= imax {
+                gbuf[(dbase + off + jbase + ii) as usize] = gbuf
+                    [(sbase + off + jhi + ii) as usize]
+                    + drj * gbuf[(sbase + off + jbase + ii) as usize];
+                ii += 1u32;
+            }
+            jn += 1u32;
+        }
+        axisn += 1u32;
+    }
+}
+
+/// `#[cube]` helper: in-place add of one flat tensor into another (`dst += src`),
+/// over the full tensor span (used for the ia01p/a01gp/a11part `g2 += g3` step).
+#[cube]
+fn add_tensor_flat<F: Float + CubeElement>(gbuf: &mut Array<F>, dst_t: u32, src_t: u32, total_g: u32) {
+    let dbase = dst_t * total_g;
+    let sbase = src_t * total_g;
+    let mut ix = 0u32;
+    while ix < total_g {
+        gbuf[(dbase + ix) as usize] = gbuf[(dbase + ix) as usize] + gbuf[(sbase + ix) as usize];
+        ix += 1u32;
+    }
+}
+
 /// On-device bra-only rank-9 kinetic Hessian (`int1e_ipipkin`).
 #[cube(launch)]
 #[allow(clippy::too_many_arguments)]
@@ -7113,6 +8375,126 @@ fn write_component_leading_staging<F: CintFloat>(
     Ok(not0)
 }
 
+/// Phase 26 GIAO-01 (FND-03 / D-07): complex-interleaved staging writer.
+///
+/// The GIAO families are purely imaginary: libcint's cart/sph symbol returns the
+/// REAL magnitude of the imaginary part, so the device emits REAL components. This
+/// writer materializes the safe-API `Complex<f64>` view by writing each real value
+/// `v` as the interleaved pair `[re=0.0, im=v]` into a `2×`-sized staging buffer
+/// (the planner sized staging `2 * rank * block` because the manifest flag
+/// `complex_output=true`). `complex_values()` then reads `chunks_exact(2)` → re=0,
+/// im=v. The element ordering within each component block mirrors
+/// `write_component_leading_staging` (column-major bra-fastest), so the imaginary
+/// half is byte-identical (atol=1e-12) to the vendor's real `double*` output.
+#[allow(clippy::too_many_arguments)]
+fn write_giao_complex_staging<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    rank: usize,
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    nci: usize,
+    ncj: usize,
+    nsi: usize,
+    nsj: usize,
+    li: u8,
+    lj: u8,
+    total_len: usize,
+    block_len: usize,
+    cart_comp: &[f64],
+    staging: &mut [F],
+) -> Result<i32, cintxRsError> {
+    let rep = plan.representation;
+    // Build the REAL component-leading block first into a scratch Vec, then splice
+    // it into the interleaved staging as [0, v] pairs. The real block layout is
+    // identical to `write_component_leading_staging`.
+    let (ni, nj, real_block) = match rep {
+        Representation::Spheric => (n_ctr_i * nsi, n_ctr_j * nsj, nsi * nsj),
+        Representation::Cart => (n_ctr_i * nci, n_ctr_j * ncj, nci * ncj),
+        Representation::Spinor => {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: "spinor GIAO complex staging".to_owned(),
+            });
+        }
+    };
+    let real_total = rank * ni * nj;
+    // complex_output=true → staging sized 2 * real_total. Fail closed otherwise
+    // (never a silent partial write — FND-06 / D-04).
+    let needed = 2 * real_total;
+    if staging.len() < needed {
+        return Err(cintxRsError::BufferTooSmall {
+            required: needed,
+            provided: staging.len(),
+        });
+    }
+
+    let mut real = vec![0.0_f64; real_total];
+    match rep {
+        Representation::Spheric => {
+            let ni_sph = ni;
+            for comp in 0..rank {
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                        let mut sph_tmp = vec![0.0_f64; nsi * nsj];
+                        cart_to_sph_1e(
+                            &cart_comp[cart_base..cart_base + block_len],
+                            &mut sph_tmp,
+                            li,
+                            lj,
+                        );
+                        let comp_base = comp * real_block;
+                        for mj in 0..nsj {
+                            let jj = cj * nsj + mj;
+                            for mi in 0..nsi {
+                                let ii = ci * nsi + mi;
+                                real[comp_base + ii + jj * ni_sph] = sph_tmp[mj * nsi + mi];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let ni_cart = ni;
+            for comp in 0..rank {
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        let src_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
+                        let block = &cart_comp[src_base..src_base + block_len];
+                        let comp_base = comp * real_block;
+                        for jc in 0..ncj {
+                            let jj = cj * ncj + jc;
+                            for ic in 0..nci {
+                                let ii = ci * nci + ic;
+                                real[comp_base + ii + jj * ni_cart] = block[jc * nci + ic];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!(),
+    }
+
+    // Interleave: staging[2p] = 0 (re), staging[2p+1] = real[p] (im).
+    let zero = F::from_f64_lossy(0.0);
+    for (p, &v) in real.iter().enumerate() {
+        staging[2 * p] = zero;
+        staging[2 * p + 1] = F::from_f64_lossy(v);
+    }
+
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
+    Ok(not0)
+}
+
 /// Generic inner for the 1e launcher.
 ///
 /// Contains the full algorithm of `launch_one_electron` parameterized over the
@@ -7202,6 +8584,32 @@ fn launch_one_electron_typed<F: CintFloat>(
     // ket headroom +2 (ng={0,2,...}).
     let is_irp = op_name == "irp";
 
+    // Phase 26 GIAO-01: spin-free 1e GIAO/CG families (complex output). The
+    // overlap-engine families (govlp/igovlp/cg_irxp/giao_irjxp/igkin) ride the
+    // no-Rys overlap G-tensor; the nuclear-engine families (gnuc/ignuc/ia01p/
+    // a01gp/cg_a11part/giao_a11part) ride the nuclear/Rys 1e path. Each maps to a
+    // (op_kind, rank) tuple. The device emits REAL components; the host then
+    // materializes the complex re=0/im=value interleaved view (FND-03 / D-15).
+    let giao_ovlp_op: Option<u32> = match op_name {
+        "govlp" => Some(0),
+        "igovlp" => Some(1),
+        "cg_irxp" => Some(2),
+        "giao_irjxp" => Some(3),
+        "igkin" => Some(4),
+        _ => None,
+    };
+    let is_giao_ovlp = giao_ovlp_op.is_some();
+    let giao_nuc_op: Option<(u32, u32)> = match op_name {
+        "gnuc" => Some((0, 3)),
+        "ignuc" => Some((1, 3)),
+        "ia01p" => Some((2, 3)),
+        "a01gp" => Some((3, 9)),
+        "cg_a11part" => Some((4, 9)),
+        "giao_a11part" => Some((5, 9)),
+        _ => None,
+    };
+    let is_giao_nuc = giao_nuc_op.is_some();
+
     // Phase 25 HESS-04 (Cluster D): 3rd/4th-order 1e derivative families
     // (deriv3.c rank 27: ipipipnuc/ipipiprinv/ipipnucip/ipiprinvip;
     //  deriv4.c rank 81: ipipipiprinv/ipiprinvipip/ipipiprinvip). Host-routed
@@ -7265,6 +8673,8 @@ fn launch_one_electron_typed<F: CintFloat>(
         && !is_drinv
         && !is_p4
         && !is_irp
+        && !is_giao_ovlp
+        && !is_giao_nuc
         && !is_deriv34
     {
         return Err(cintxRsError::UnsupportedApi {
@@ -7277,6 +8687,163 @@ fn launch_one_electron_typed<F: CintFloat>(
     let ncj = ncart(lj);
     let nsi = nsph(li);
     let nsj = nsph(lj);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 26 GIAO-01 overlap-engine families (govlp/igovlp/cg_irxp/
+    // giao_irjxp/igkin) — rank 3, no Rys. Reads the gauge origin (common_orig)
+    // for cg_irxp via drj; emits REAL components → host complex re=0/im=value.
+    // ─────────────────────────────────────────────────────────────────────────
+    if let Some(op_kind) = giao_ovlp_op {
+        // D-11: spinor GIAO reps are registered for surface completeness but
+        // return UnsupportedApi (no spin block silently computed as spin-free).
+        if plan.representation == Representation::Spinor {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!("spinor int1e_{op_name}"),
+            });
+        }
+
+        // Internal G-tensor ceiling: nmax = li+lj+3 (max headroom over the
+        // overlap-engine families). Fail closed if a corpus shell exceeds the
+        // li+lj<=8 VRR envelope rather than silently truncating (D-13).
+        if li as u32 + lj as u32 + 3 > 8 {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "device 1e GIAO kernel supports l_i+l_j+3<=8; got l_i={li}, l_j={lj} \
+                     for int1e_{op_name}"
+                ),
+            });
+        }
+
+        // Gauge origin (Phase 22): cg_irxp reads drj = rj - common_orig; the
+        // other overlap families ignore drj (govlp/igovlp/igkin use ri/rj only,
+        // giao_irjxp uses rj directly inside the kernel).
+        let origin: [f64; 3] = plan.operator_env_params.common_orig.unwrap_or([0.0; 3]);
+        let drj = [rj[0] - origin[0], rj[1] - origin[1], rj[2] - origin[2]];
+
+        let n_prim_i = shell_i.nprim as usize;
+        let n_prim_j = shell_j.nprim as usize;
+        let n_ctr_i = shell_i.nctr as usize;
+        let n_ctr_j = shell_j.nctr as usize;
+
+        let rank: usize = 3;
+        let block_len = nci * ncj;
+        let total_len = rank * block_len;
+
+        let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+        let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+        let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+        let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+
+        let mut cart_comp = run_1e_giao_ovlp_on_backend(
+            backend, op_kind, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
+            n_ctr_i as u32, n_ctr_j as u32, ri, rj, drj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+        );
+
+        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+        if (sp_scale - 1.0).abs() > 1e-15 {
+            for v in cart_comp.iter_mut() {
+                *v *= sp_scale;
+            }
+        }
+
+        let not0 = write_giao_complex_staging::<F>(
+            plan, rank, n_ctr_i, n_ctr_j, nci, ncj, nsi, nsj, li, lj, total_len, block_len,
+            &cart_comp, staging,
+        )?;
+
+        let staging_bytes = staging.len() * std::mem::size_of::<F>();
+        return Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: staging_bytes,
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes: staging_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 26 GIAO-01 nuclear-engine families (gnuc/ignuc/ia01p/a01gp/
+    // cg_a11part/giao_a11part) — rank 3/9, Rys atom-sum. cg_a11part reads the
+    // gauge origin (drj); emits REAL → host complex re=0/im=value (D-15).
+    // ─────────────────────────────────────────────────────────────────────────
+    if let Some((op_kind, rank)) = giao_nuc_op {
+        if plan.representation == Representation::Spinor {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!("spinor int1e_{op_name}"),
+            });
+        }
+
+        // Rys nroots fail-closed guard (D-13). Internal ceiling nmax = li+lj+5
+        // (the a01gp bra+3/ket+2 headroom); nroots = nmax/2 + 1.
+        let nuc_nroots = (li as u32 + lj as u32 + 5) / 2 + 1;
+        if nuc_nroots as usize > MAX_DEVICE_NROOTS {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "device int1e_{op_name} kernel supports nroots<={MAX_DEVICE_NROOTS}; \
+                     got nroots={nuc_nroots} for l_i={li}, l_j={lj}"
+                ),
+            });
+        }
+
+        let origin: [f64; 3] = plan.operator_env_params.common_orig.unwrap_or([0.0; 3]);
+        let drj = [rj[0] - origin[0], rj[1] - origin[1], rj[2] - origin[2]];
+
+        let n_prim_i = shell_i.nprim as usize;
+        let n_prim_j = shell_j.nprim as usize;
+        let n_ctr_i = shell_i.nctr as usize;
+        let n_ctr_j = shell_j.nctr as usize;
+
+        let block_len = nci * ncj;
+        let total_len = (rank as usize) * block_len;
+
+        let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+        let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+        let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+        let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+
+        // Nuclear families sum over ALL nuclei with charge -Z_C (g1e.c attraction
+        // convention), low→high (D-10). gnuc/ignuc/a01gp/ia01p/a11part are all
+        // <...|NUC or NABLA-RINV|...> = the full nuclear-attraction operator.
+        let mut origin_coords = Vec::with_capacity(atoms.len() * 3);
+        let mut origin_charges = Vec::with_capacity(atoms.len());
+        for atom in atoms.iter() {
+            origin_coords.extend_from_slice(&atom.coord_bohr);
+            origin_charges.push(-(atom.atomic_number as f64));
+        }
+
+        let mut cart_comp = run_1e_giao_nuc_on_backend(
+            backend, op_kind, rank, nuc_nroots, li as u32, lj as u32, n_prim_i as u32,
+            n_prim_j as u32, n_ctr_i as u32, n_ctr_j as u32, ri, rj, drj, &exps_i, &exps_j,
+            &coeff_i, &coeff_j, &origin_coords, &origin_charges,
+        );
+
+        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+        if (sp_scale - 1.0).abs() > 1e-15 {
+            for v in cart_comp.iter_mut() {
+                *v *= sp_scale;
+            }
+        }
+
+        let not0 = write_giao_complex_staging::<F>(
+            plan, rank as usize, n_ctr_i, n_ctr_j, nci, ncj, nsi, nsj, li, lj, total_len,
+            block_len, &cart_comp, staging,
+        )?;
+
+        let staging_bytes = staging.len() * std::mem::size_of::<F>();
+        return Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: staging_bytes,
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes: staging_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        });
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Phase 24 Cluster A moment path (r/rr/rrr/rrrr/r2/r4/z/zz + _origj)
@@ -10817,3 +12384,4 @@ mod tests {
         );
     }
 }
+
