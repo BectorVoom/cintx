@@ -2525,7 +2525,12 @@ fn launch_two_electron_giao2e<F: CintFloat>(
 
     let nonzero_threshold =
         F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    // WR-04: GIAO output is [re=0, im=v] interleaved; count
+    // the imaginary component only so not0 matches libcint's real double* semantics.
+    let not0 = staging
+        .chunks_exact(2)
+        .filter(|c| c[1].abs() > nonzero_threshold)
+        .count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
