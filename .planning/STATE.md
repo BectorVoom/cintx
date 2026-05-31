@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: executing
-stopped_at: Completed 29-03-PLAN.md
-last_updated: "2026-05-31T15:05:24.903Z"
-last_activity: 2026-05-31
+status: verifying
+stopped_at: Completed 29-06-PLAN.md — Phase 29 complete (Group 4)
+last_updated: "2026-06-01T00:00:00.000Z"
+last_activity: 2026-06-01
 progress:
   total_phases: 21
-  completed_phases: 18
+  completed_phases: 19
   total_plans: 101
-  completed_plans: 98
-  percent: 97
+  completed_plans: 101
+  percent: 100
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 29 (group-4-relativistic-spin-operator-integrals-spinor) — EXECUTING
-Plan: 5 of 6
-Status: Ready to execute
+Plan: 6 of 6
+Status: Phase complete — ready for verification
 Resume file: None
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
@@ -169,6 +169,9 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 29 P02 | 100min | 3 tasks | 8 files |
 | Phase 29 P03 | 35min | 3 tasks | 2 files |
 | Phase 29 P04 | 55min | 3 tasks | 6 files |
+| Phase 29 P05 | 7 | 3 tasks | 6 files |
+| Phase 29 P06 | 95min | 3 tasks | 7 files |
+| Phase 29 P6 | 95min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -372,6 +375,10 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 29-03]: apply_2d_spinor_zi transcribes the 2×2 Pauli σ·n expansion verbatim from cart2sph.c:4118-4186; the σ-mix is bra1-only so the ket1 step reuses apply_ket1_block_all_kappa unchanged
 - [Phase 29-03]: build_kappa_spinor_2e_fixture is a 4-shell non-square (2,6,2,4) GT/LT-mix nctr>1 quartet (D-02); 29-03 delivers compiling structural code only — 2e byte-identity is the 29-04 [BLOCKING] micro-test
 - [Phase ?]: [Phase 29-04]: int2e_spsp1 reuses the ipvip1 (nabla_i nabla_j) s[0..8] triple-product tensor; its sigma-p1 gout (gc_x=s5-s7, gc_y=s6-s2, gc_z=s1-s3, gc_1=s0+s4+s8) is a different linear fold of the SAME tensor + headroom (i+1,j+1), proven byte-identical to vendored libcint at atol=1e-12. The D-03 BLOCKING gate is GREEN; Wave 3 unblocked.
+- [Phase ?]: [Phase 29-05]: REL-04 ssp/sps drivers live in gaunt1.c and vsp/spv in dkb.c — NEITHER was in oracle build.rs; added both .file() entries (corrects CONTEXT.md, trusts RESEARCH Pitfall 1). Without them REL-04 vendor shims have no symbol to link.
+- [Phase ?]: [Phase 29-05]: inserted 15 remaining 2e Group-4 manifest rows after the spsp1 row (index >=349), past every hardcoded OperatorId const (<=106) — no positional drift; all component_rank=1 (σ fold internal to c2s), spinor-only, oracle_covered=false until 29-06.
+- [Phase ?]: [Phase 29-05]: rel_2e_sigma_parity.rs is a RED scaffold (cintx launchers land in 29-06: cintx collector is a panic-stub, 15 byte-identity gates #[ignore]'d); the always-on no-silent-skip sweep runs all 15 vendor arms NON-SKIPPED, proving the gaunt1.c/dkb.c build wiring linked a real driver per family.
+- [Phase ?]: 29-06: all 16 2e Group-4 σ families byte-identical to libcint 6.1.3 (atol 1e-12); oracle_covered=true spinor-only; 24/24 Group-4 covered. Group 4 complete. Key: 2-sided σ⊗σ headroom {1,1,1,1}.
 
 ### Roadmap Evolution
 
@@ -418,6 +425,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T15:04:59.685Z
-Stopped at: Completed 29-03-PLAN.md
+Last session: 2026-05-31T16:13:24.608Z
+Stopped at: Completed 29-05-PLAN.md
 Resume file: None

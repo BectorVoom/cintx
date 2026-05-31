@@ -30,7 +30,7 @@
 - [x] **Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)** - Spin-free 1e+2e GIAO/CG families (purely imaginary, even in cart/sph) at byte-identity, introducing the complex-interleaved output capability. (v1.4) (gap-closure plans 04-08 executed 2026-05-31 — awaiting phase verification) (completed 2026-05-31)
 - [x] **Phase 27: Spinor-Derivative Transform (Gap B1)** - `cart_to_spinor_sf_derivative_*` so `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity, closing the Phase-21 R5/D-03 deferral. (v1.4)
 - [x] **Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)** - The 4-block (`gc_x/y/z/1`) spin-included spinor transform plus the σ·p G-tensor assembler, validated against a kappa-bearing relativistic fixture — the prerequisite for all σ-operator families. (v1.4) (completed 2026-05-31)
-- [ ] **Phase 29: Group 4 — Relativistic Spin-Operator Integrals (spinor)** - The relativistic σ-operator families (`spsp`, `spnucsp`, `sprinvsp`, `srsr`, `sigma`, `sp`, 2e `spsp1/srsr1/ssp*/sps*/vsp*`) at spinor byte-identity via the Gap B2 `c2s_si` path. (v1.4)
+- [x] **Phase 29: Group 4 — Relativistic Spin-Operator Integrals (spinor)** - The relativistic σ-operator families (`spsp`, `spnucsp`, `sprinvsp`, `srsr`, `sigma`, `sp`, 2e `spsp1/srsr1/ssp*/sps*/vsp*`) at spinor byte-identity via the Gap B2 `c2s_si` path. (v1.4) (completed 2026-05-31)
 - [ ] **Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals (spinor)** - The relativistic-NMR GIAO×σ slice (`int1e_spg*`, `spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) at spinor byte-identity, completing the magnetic-property suite. (v1.4)
 - [ ] **Phase 31: Group 6 — Gauge / Breit–Gaunt 2e + Full-Parity Verification (apex)** - The Dirac–Coulomb–Breit 2e set (`int2e_gauge_r1/r2_*`, Gaunt `ssp/sps`) at spinor byte-identity AND the milestone-closing full-parity gate: every libcint 6.1.3 family `oracle_covered=true` with an empty unsupported-families list. (v1.4)
 
@@ -682,7 +682,7 @@ Gap-Wave 3 (after 26-05):
 - [x] 29-03-PLAN.md (wave 2 — 2e foundation) — full 2e si/sf transform suite (si_2e1/2e2/2e1i/2e2i + sf_2e1/2e2) + `apply_2d_spinor_zi` (2×2 Pauli σ·n, transcribed cart2sph.c:4118) + `build_kappa_spinor_2e_fixture` (D-02)
 - [x] 29-04-PLAN.md (wave 2 — 2e foundation) — [BLOCKING D-03 gate] `si_2e_transform_parity.rs` micro-test: int2e_spsp1 (c2s_si_2e1+c2s_sf_2e2) byte-identical to vendor at atol=1e-12 BEFORE any 2e family wires onto the transform (Completed 2026-06-01; GREEN at atol=1e-12, vendor arm non-skipped; gout_spsp1 reuses the ipvip1 tensor; Wave 3 unblocked. SUMMARY: `.planning/phases/29-group-4-relativistic-spin-operator-integrals-spinor/29-04-SUMMARY.md`)
 - [x] 29-05-PLAN.md (wave 3 — 2e families) — [BLOCKING] add gaunt1.c + dkb.c to oracle build.rs (REL-04 enablement; corrects CONTEXT.md) + remaining 2e manifest rows + `vendor_int2e_*_spinor` shims + `rel_2e_sigma_parity.rs` scaffold
-- [ ] 29-06-PLAN.md (wave 3 — 2e families) — wire all REL-03/04 2e σ launcher arms (per-family pairing incl. ssp/sps imaginary si_2e1i+si_2e2i) + flip all 16 2e rows oracle_covered=true spinor-only; REL-03/04 byte-identity green; manifest-audit green
+- [x] 29-06-PLAN.md (wave 3 — 2e families) — wire all REL-03/04 2e σ launcher arms (per-family pairing incl. ssp/sps imaginary si_2e1i+si_2e2i) + flip all 16 2e rows oracle_covered=true spinor-only; REL-03/04 byte-identity green; manifest-audit green
 
 ### Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals (spinor)
 
