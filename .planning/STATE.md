@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: verifying
-stopped_at: Phase 26 context re-reviewed (D-01–D-14 unchanged)
+status: executing
+stopped_at: Phase 26 verification — gaps_found (int1e_a01gp dispatchable-but-wrong); awaiting --gaps closure
 last_updated: "2026-05-31T03:06:59.390Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 21
-  completed_phases: 16
+  completed_phases: 15
   total_plans: 80
   completed_plans: 80
   percent: 100
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 26 (group-5-spin-free-giao-nmr-integrals-complex) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Resume file: None
+Phase: 26 (group-5-spin-free-giao-nmr-integrals-complex) — GAPS FOUND (4/5 must-haves)
+Plan: 3 of 3 plans built; phase goal has 1 open BLOCKER gap
+Status: gaps_found — int1e_a01gp dispatchable-but-wrong (CR-01); run /gsd-plan-phase 26 --gaps
+Resume file: .planning/phases/26-group-5-spin-free-giao-nmr-integrals-complex/26-VERIFICATION.md
 Last activity: 2026-05-31
 
 **v1.4 phase sequence (dependency-ordered):**

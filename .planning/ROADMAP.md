@@ -27,7 +27,7 @@
 - [x] **Phase 23: Group 1 — Remaining 1st-Derivative Families (cart/sph)** - The 8 remaining first-derivative families (`int2e_ip2`, `int1e_ip*ip`, `int3c1e_ip1/iprinv`, `int2c2e_ip1/ip2`, `int3c2e_ip2`) at byte-identity, reusing the Phase-21 nabla/`gout_ip1` engine. (v1.4) (completed 2026-05-30)
 - [x] **Phase 24: Group 3 — Position / Multipole-Moment Integrals** - Dipole through hexadecapole moments (`int1e_r/rr/rrr/rrrr`, `r2/r4`, `z/zz`, `p4`, `rinv/drinv`, `irp`) plus `_origj` variants, gated on the non-zero gauge-origin fixture. (v1.4) (completed 2026-05-30)
 - [x] **Phase 25: Group 2 — Hessian & Higher-Order Derivatives** - 2nd/3rd/4th-order derivative families (`int1e_ipip*`, `int2c2e_ipip1`, `int3c2e_ipip1/ipip2`, the promoted 2e Hessian set, 4th-order families) at component_rank 9/27/81, with the Rys `nroots>=6` Wheeler fallback and fail-closed high-rank staging landing first. (v1.4) (completed 2026-05-30)
-- [x] **Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)** - Spin-free 1e+2e GIAO/CG families (purely imaginary, even in cart/sph) at byte-identity, introducing the complex-interleaved output capability. (v1.4) (completed 2026-05-31)
+- [ ] **Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)** - Spin-free 1e+2e GIAO/CG families (purely imaginary, even in cart/sph) at byte-identity, introducing the complex-interleaved output capability. (v1.4) (gaps_found 2026-05-31 — int1e_a01gp dispatchable-but-wrong; awaiting `--gaps` closure)
 - [ ] **Phase 27: Spinor-Derivative Transform (Gap B1)** - `cart_to_spinor_sf_derivative_*` so `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity, closing the Phase-21 R5/D-03 deferral. (v1.4)
 - [ ] **Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)** - The 4-block (`gc_x/y/z/1`) spin-included spinor transform plus the σ·p G-tensor assembler, validated against a kappa-bearing relativistic fixture — the prerequisite for all σ-operator families. (v1.4)
 - [ ] **Phase 29: Group 4 — Relativistic Spin-Operator Integrals (spinor)** - The relativistic σ-operator families (`spsp`, `spnucsp`, `sprinvsp`, `srsr`, `sigma`, `sp`, 2e `spsp1/srsr1/ssp*/sps*/vsp*`) at spinor byte-identity via the Gap B2 `c2s_si` path. (v1.4)
@@ -63,7 +63,7 @@
 | Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 5/5 | Complete | 2026-05-30 |
 | Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 5/5 | Complete | 2026-05-30 |
 | Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 6/6 | Complete | 2026-05-31 |
-| Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/3 | Planned | - |
+| Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 3/3 | Gaps found | - |
 | Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 0/0 | Not started | - |
 | Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 0/0 | Not started | - |
 | Phase 29: Group 4 — Relativistic Spin-Operator Integrals | v1.4 | 0/0 | Not started | - |
