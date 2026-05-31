@@ -681,7 +681,7 @@ Gap-Wave 3 (after 26-05):
 - [x] 29-02-PLAN.md (wave 1 — 1e σ) — wire 7 1e σ launcher arms (per-family transform: spsp→sf_2d, spnucsp/sprinvsp/srsr/srnucsr→si_2d, sr/sigma→si_2di) + resolve int1e_sigma rank empirically + flip int1e_sp; REL-01/02 byte-identity green
 - [x] 29-03-PLAN.md (wave 2 — 2e foundation) — full 2e si/sf transform suite (si_2e1/2e2/2e1i/2e2i + sf_2e1/2e2) + `apply_2d_spinor_zi` (2×2 Pauli σ·n, transcribed cart2sph.c:4118) + `build_kappa_spinor_2e_fixture` (D-02)
 - [x] 29-04-PLAN.md (wave 2 — 2e foundation) — [BLOCKING D-03 gate] `si_2e_transform_parity.rs` micro-test: int2e_spsp1 (c2s_si_2e1+c2s_sf_2e2) byte-identical to vendor at atol=1e-12 BEFORE any 2e family wires onto the transform (Completed 2026-06-01; GREEN at atol=1e-12, vendor arm non-skipped; gout_spsp1 reuses the ipvip1 tensor; Wave 3 unblocked. SUMMARY: `.planning/phases/29-group-4-relativistic-spin-operator-integrals-spinor/29-04-SUMMARY.md`)
-- [ ] 29-05-PLAN.md (wave 3 — 2e families) — [BLOCKING] add gaunt1.c + dkb.c to oracle build.rs (REL-04 enablement; corrects CONTEXT.md) + remaining 2e manifest rows + `vendor_int2e_*_spinor` shims + `rel_2e_sigma_parity.rs` scaffold
+- [x] 29-05-PLAN.md (wave 3 — 2e families) — [BLOCKING] add gaunt1.c + dkb.c to oracle build.rs (REL-04 enablement; corrects CONTEXT.md) + remaining 2e manifest rows + `vendor_int2e_*_spinor` shims + `rel_2e_sigma_parity.rs` scaffold
 - [ ] 29-06-PLAN.md (wave 3 — 2e families) — wire all REL-03/04 2e σ launcher arms (per-family pairing incl. ssp/sps imaginary si_2e1i+si_2e2i) + flip all 16 2e rows oracle_covered=true spinor-only; REL-03/04 byte-identity green; manifest-audit green
 
 ### Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals (spinor)
