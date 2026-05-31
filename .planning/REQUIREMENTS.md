@@ -114,7 +114,7 @@
 ### Group 5 — GIAO / Magnetic-Property (NMR)
 
 - [x] **GIAO-01**: Spin-free 1e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`) — purely imaginary — match at atol=1e-12 (cart+sph) via FND-03.
-- [ ] **GIAO-02**: 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12.
+- [x] **GIAO-02**: 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12.
 - [ ] **GIAO-03**: GIAO×σ slice (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) match at atol=1e-12 (spinor) via FND-05.
 
 ### Group 6 — Gauge / Breit–Gaunt 2e (apex)
@@ -208,7 +208,7 @@
 | FND-02 | Phase 25 | Complete |
 | FND-06 | Phase 25 | Complete |
 | GIAO-01 | Phase 26 | Complete |
-| GIAO-02 | Phase 26 | Pending |
+| GIAO-02 | Phase 26 | Complete |
 | FND-03 | Phase 26 | Complete |
 | FND-04 | Phase 27 | Pending |
 | FND-05 | Phase 28 | Pending |
