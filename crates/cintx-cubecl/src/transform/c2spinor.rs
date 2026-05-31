@@ -2061,4 +2061,114 @@ mod tests {
         );
         assert_eq!(staging[0], 12345.0, "sentinel overwritten — wrote before size check");
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  cart_to_spinor_sf_derivative_3c2e / _3c1e tests (Task 2)
+    //  Aux-k axis is SPHERICAL nsph(lk) — the canonical p×d×s nctr=1 kappa=0 ncomp=3
+    //  buffer is 360, NOT 720 (27-SPIKE-FINDINGS ⚠ CORRECTION NOTICE).
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// Build a deterministic KET-major derivative 3c cart buffer `[comp][k][ket][bra]`
+    /// for nctr=1: cart[comp*kblock + ck*(ncj*nci) + jc*nci + ic], kblock = nck*ncj*nci.
+    fn make_deriv_cart_3c_nctr1(ncomp: usize, nci: usize, ncj: usize, nck: usize) -> Vec<f64> {
+        let kblock = nck * ncj * nci;
+        let mut cart = vec![0.0f64; ncomp * kblock];
+        for comp in 0..ncomp {
+            for ck in 0..nck {
+                for jc in 0..ncj {
+                    for ic in 0..nci {
+                        let idx = comp * kblock + (ck * ncj + jc) * nci + ic;
+                        cart[idx] = 1.0 + comp as f64 + 0.5 * ic as f64
+                            + 0.25 * jc as f64 + 0.1 * ck as f64;
+                    }
+                }
+            }
+        }
+        cart
+    }
+
+    /// (a) ncomp=3, NON-SQUARE p×d ket + s aux, nctr=1, kappa=0:
+    /// output length = 3*(nctr_i*di)*(nctr_j*dj)*nsph(lk)*2, split into 3 non-overlapping
+    /// all-nonzero comp_stride slices, AND the canonical total is exactly 360 (3*6*10*1*2),
+    /// NEVER 720.
+    #[test]
+    fn derivative_3c2e_rank3_layout() {
+        use super::super::c2s::nsph;
+        let (li, lj, lk): (u8, u8, u8) = (1, 2, 0); // p × d × s aux
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li); // 3
+        let ncj = ncart(lj); // 6
+        let nck = ncart(lk); // 1
+        let di = spinor_len(li, ki as i32); // 6
+        let dj = spinor_len(lj, kj as i32); // 10
+        let nsk = nsph(lk); // 1 (SPHERICAL aux-k)
+        let ncomp = 3usize;
+        let comp_stride = di * dj * nsk * 2; // 6*10*1*2 = 120
+        let total = ncomp * comp_stride; // 360, NOT 720
+
+        // Canonical figure assertion: 360 not 720.
+        assert_eq!(total, 360, "canonical p×d×s ncomp=3 buffer must be 360, not 720");
+
+        let cart = make_deriv_cart_3c_nctr1(ncomp, nci, ncj, nck);
+        let mut got = vec![0.0f64; total];
+        cart_to_spinor_sf_derivative_3c2e::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, lk, 1, 1,
+        ).expect("derivative_3c2e rank3 should succeed");
+
+        assert_eq!(got.len(), total, "3c2e output length mismatch");
+        for comp in 0..ncomp {
+            let slice = &got[comp * comp_stride..comp * comp_stride + comp_stride];
+            let nonzero = slice.iter().filter(|&&v| v.abs() > 1e-15).count();
+            assert!(nonzero > 0, "3c2e component {comp} slice is all-zero (truncation landmine)");
+        }
+    }
+
+    /// (b) staging too small: returns BufferTooSmall BEFORE any write (sentinel survives).
+    #[test]
+    fn derivative_3c2e_staging_too_small_fails_closed() {
+        let (li, lj, lk): (u8, u8, u8) = (1, 2, 0);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let nck = ncart(lk);
+        let ncomp = 3usize;
+        let cart = make_deriv_cart_3c_nctr1(ncomp, nci, ncj, nck);
+
+        let mut staging = vec![0.0f64; 4];
+        staging[0] = 98765.0;
+        let res = cart_to_spinor_sf_derivative_3c2e::<f64>(
+            &mut staging, &cart, ncomp, li, ki, lj, kj, lk, 1, 1,
+        );
+        assert!(
+            matches!(res, Err(cintxRsError::BufferTooSmall { .. })),
+            "undersized staging must return BufferTooSmall, got {res:?}"
+        );
+        assert_eq!(staging[0], 98765.0, "sentinel overwritten — wrote before size check");
+    }
+
+    /// (c) the int3c1e thin sibling shares the SPHERICAL aux-k contract and the same fold.
+    #[test]
+    fn derivative_3c1e_rank3_spherical_auxk() {
+        use super::super::c2s::nsph;
+        let (li, lj, lk): (u8, u8, u8) = (1, 2, 0);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let nck = ncart(lk);
+        let di = spinor_len(li, ki as i32);
+        let dj = spinor_len(lj, kj as i32);
+        let nsk = nsph(lk);
+        let ncomp = 3usize;
+        let comp_stride = di * dj * nsk * 2;
+        let total = ncomp * comp_stride;
+
+        let cart = make_deriv_cart_3c_nctr1(ncomp, nci, ncj, nck);
+        let mut got = vec![0.0f64; total];
+        cart_to_spinor_sf_derivative_3c1e::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, lk, 1, 1,
+        ).expect("derivative_3c1e rank3 should succeed");
+        assert_eq!(got.len(), total);
+        let nonzero = got.iter().filter(|&&v| v.abs() > 1e-15).count();
+        assert!(nonzero > 0, "3c1e sibling output should be non-zero");
+    }
 }
