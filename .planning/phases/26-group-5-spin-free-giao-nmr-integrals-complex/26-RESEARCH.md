@@ -111,17 +111,18 @@ No new external dependencies. All work is within the existing cintx workspace + 
 
 **Roster note:** the CONTEXT wildcard `int1e_ig*` resolves to exactly `igovlp`, `ignuc`, `igkin` (the only spin-free `ig`-prefixed families; `int1e_ia01p` is `ia01p` not an `ig*`). The `int1e_cg_*`/`int1e_giao_*` wildcards in scope resolve to `{cg_irxp, cg_a11part}` and `{giao_irjxp, giao_a11part}` — the `*_sa10*` variants are deferred (Phase 30).
 
-### GIAO-02 — Spin-free 2e (IN SCOPE) — 3 families × {cart, sph} = 6 symbols
+### GIAO-02 — Spin-free 2e (IN SCOPE) — 4 families × {cart, sph} = 8 symbols
 
-`[VERIFIED: src/autocode/intor4.c, intor2.c]`
+`[VERIFIED: src/autocode/intor4.c, intor2.c]` — **roster updated per CONTEXT D-16 (A2 resolved IN scope).**
 
 | # | Family | cart/sph | `ng[]` | **component_rank** | gout def | Closest 2e clone |
 |---|--------|----------|--------|--------------------|----------|------------------|
 | 1 | `int2e_g1` | `_cart`, `_sph` | `{1,0,0,0,1,1,1,3}` | **3** | `intor4.c:1255` `CINTgout2e_int2e_g1` (gout: `c[1]s[2]−c[2]s[1]`, …) | `int2e` arity-4 + rank-3 deco (e.g. `int2e_ip1`) |
 | 2 | `int2e_ig1` | `_cart`, `_sph` | `{1,0,0,0,1,1,1,3}` | **3** | `intor2.c:19` `CINTgout2e_int2e_ig1` (gout: `−c[1]s[2]+c[2]s[1]`, …) | `int2e_ip1` |
 | 3 | `int2e_gg1` | `_cart`, `_sph` | `{2,0,0,0,2,1,1,9}` | **9** | `intor2.c:148` `CINTgout2e_int2e_gg1` (9 components, 2nd-order gauge tensor) | `int2e_ipip1` (rank 9, arity-4) |
+| 4 | `int2e_g1g2` | `_cart`, `_sph` | **DERIVE** from `intor2.c` `ng[]` | **DERIVE** (`ng[TENSOR]`=`ng[7]`) | `CINTgout2e_int2e_g1g2` in `src/autocode/intor2.c` — transcribe verbatim; do NOT guess (D-13) | `int2e_ipip1` (rank-9 candidate — CONFIRM rank from source) |
 
-**Roster note:** the CONTEXT wildcard `int2e_giao_*` resolves to ONLY `int2e_giao_sa10sp1` and `int2e_giao_sa10sp1spsp2` in libcint 6.1.3 — **both have `ng[POS_E1]≠1` (spin block) and are DEFERRED to Phase 30** (GIAO-03). So GIAO-02's concrete spin-free scope is exactly `{int2e_g1, int2e_ig1, int2e_gg1}`. The `int2e_g1g2` and `int2e_g1spsp2` families also exist but `g1g2` is a 2nd-gauge-on-both-electrons family and `g1spsp2` carries `spsp2` (spin) — **confirm with planner whether `int2e_g1g2` (no spin) is in or out**; CONTEXT lists only `g1`/`gg1`/`ig1`/`giao_*` so `g1g2` appears out of scope for GIAO-02 as written. `[ASSUMED: g1g2 out of scope based on literal CONTEXT roster — confirm]`
+**Roster note:** the CONTEXT wildcard `int2e_giao_*` resolves to ONLY `int2e_giao_sa10sp1` and `int2e_giao_sa10sp1spsp2` in libcint 6.1.3 — **both have `ng[POS_E1]≠1` (spin block) and are DEFERRED to Phase 30** (GIAO-03). GIAO-02's concrete spin-free scope is **`{int2e_g1, int2e_ig1, int2e_gg1, int2e_g1g2}`** — `int2e_g1g2` (2nd-gauge-on-both-electrons, no spin block) was **confirmed IN scope by the user at plan-phase (CONTEXT D-16)**; its `component_rank` and gout order are derived from `src/autocode/intor2.c` in Plan 26-03 (not guessed, per D-13). `int2e_g1spsp2` carries `spsp2` (spin) and remains DEFERRED to Phase 30. `[RESOLVED: A2 — g1g2 IN scope per D-16]`
 
 ### Deferred (Phase 30 — verify NOT registered as parity targets here)
 `int1e_*_sa10sp`, `*_sa10nucsp`, `*_sa10sa01` (both `cg_` and `giao_` prefixes), `int2e_giao_sa10sp1*`, `int2e_g1spsp2`. All have `ng[POS_E1]=4` (spin). `[VERIFIED: ng tuples above]`
@@ -277,7 +278,7 @@ No missing dependencies.
 | FND-03 | `assert_flat_buffer_contract` fails a complex family staged real-only | unit | `cargo test -p cintx-oracle --lib assert_flat_buffer_contract` | ❌ Wave 0 |
 | FND-03 | `int1e_igovlp` safe-API round-trip: imag non-zero, real exactly zero (D-07) | integration | `cargo test -p cintx-oracle --features cpu giao_complex_roundtrip` | ❌ Wave 0 (`tests/giao_complex_roundtrip.rs`) |
 | GIAO-01 | 11 spin-free 1e families byte-identical cart+sph, non-square + non-zero-gauge | integration (vendor-gated) | `CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu giao_1e_parity` | ❌ Wave 0 (`tests/giao_1e_parity.rs`) |
-| GIAO-02 | 3 spin-free 2e families byte-identical cart+sph | integration (vendor-gated) | `CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu giao_2e_parity` | ❌ Wave 0 (`tests/giao_2e_parity.rs`) |
+| GIAO-02 | 4 spin-free 2e families (g1, ig1, gg1, g1g2 — D-16) byte-identical cart+sph | integration (vendor-gated) | `CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu giao_2e_parity` | ❌ Wave 0 (`tests/giao_2e_parity.rs`) |
 | (recipe) | `manifest-audit` green after registration | xtask/unit | per D-10 (auto-syncs from lock) | ✓ existing |
 
 ### Sampling Rate
@@ -287,7 +288,7 @@ No missing dependencies.
 
 ### Wave 0 Gaps
 - [ ] `crates/cintx-oracle/tests/giao_1e_parity.rs` — covers GIAO-01 (11 families × cart/sph)
-- [ ] `crates/cintx-oracle/tests/giao_2e_parity.rs` — covers GIAO-02 (3 families × cart/sph)
+- [ ] `crates/cintx-oracle/tests/giao_2e_parity.rs` — covers GIAO-02 (4 families × cart/sph: g1, ig1, gg1, g1g2 — D-16)
 - [ ] `crates/cintx-oracle/tests/giao_complex_roundtrip.rs` — covers FND-03 safe-API D-07 assertion
 - [ ] `crates/cintx-runtime` unit test for manifest-driven `complex_output` → `complex_interleaved`/staging (FND-03)
 - [ ] `crates/cintx-oracle` lib unit test for generalized fail-closed `assert_flat_buffer_contract` (D-04)
@@ -334,14 +335,14 @@ Not applicable in the conventional sense — this is a numerical library with no
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
 | A1 | libcint 6.1.3 cart/sph GIAO symbols are real `double *out` (1×), NOT `double complex` (2×); the `2×`/`*mut f64` len-2N D-05 binding applies only to `_spinor` (out of scope). Vendor comparison is real-vs-real; the `Complex<f64>` view is cintx-side i-materialization. | Summary, Vendor FFI, D-05/D-07 | **HIGH** — changes vendor-FFI binding work and D-07 assertion target. This is `[VERIFIED]` against source (`cint_funcs.h:14`, `cart2sph.c:5820`), so risk is in the *plan reconciliation* not the fact: discuss-phase must confirm the team accepts treating the cintx complex view as a presentation layer over real vendor output. |
-| A2 | `int2e_g1g2` is OUT of GIAO-02 scope (CONTEXT lists only `g1`/`gg1`/`ig1`/`giao_*`; `g1g2` is 2nd-gauge-both-electrons, no spin block but not enumerated). | GIAO-02 roster | MEDIUM — if intended in scope, one extra family (rank TBD from `intor2.c` `ng[]`) is missed. Confirm with planner. |
+| A2 | ~~`int2e_g1g2` is OUT of GIAO-02 scope~~ — **RESOLVED at plan-phase: `int2e_g1g2` is IN scope (CONTEXT D-16).** GIAO-02 = `{g1, ig1, gg1, g1g2}`; g1g2 delivered in Plan 26-03 with rank derived from `intor2.c` (not guessed). | GIAO-02 roster | RESOLVED — no longer a risk; the extra family is planned. |
 | A3 | `int1e_govlp`/`int1e_gnuc` (vs the `ig`-prefixed `igovlp`/`ignuc`) are distinct in-scope families (both exist in source). | GIAO-01 roster | LOW — both `[VERIFIED]` present; `g*` and `ig*` differ by a factor/derivative. Both registered. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **D-05 reconciliation (A1):** the planner must decide whether the cintx safe-API `2×` complex view is materialized in the kernel (D-02 comptime emits `[0, value]` pairs) or post-kernel on host. Recommendation: emit real components on device (matches Phase-24 moments), materialize re=0/im=value in the host marshaling layer before the `complex_values()` view. Vendor comparison takes cintx's imag half vs vendor real.
-2. **`int2e_g1g2` scope (A2):** confirm in/out for GIAO-02.
-3. **Kernel structure (discretion):** one parameterized `#[cube]` with comptime op-kind vs per-family launchers — recommend per-family launchers for the rank-9 families (a01gp/gg1/a11part have distinct 27→9 contractions) and a shared parameterized entry for the rank-3 cross-product families (igovlp/ignuc/ig1/g1 share curl structure).
+1. **D-05 reconciliation (A1) — RESOLVED:** user accepted A1 at plan-phase (CONTEXT **D-15**). cintx emits real components on device (matches Phase-24 moments); the safe-API `Complex<f64>` view is materialized **host-side** (re=0, im=value) before `complex_values()`; vendor comparison is **real-vs-real** (cintx's imag half vs vendor's real `double*`). Implemented in Plan 26-01 Task 3.
+2. **`int2e_g1g2` scope (A2) — RESOLVED:** **IN scope** (CONTEXT **D-16**). Delivered in Plan 26-03 (rank derived from `intor2.c`, not guessed).
+3. **Kernel structure (discretion) — RESOLVED:** per-family launchers for the rank-9 families (a01gp/gg1/a11part have distinct 27→9 contractions) and a shared parameterized entry for the rank-3 cross-product families (igovlp/ignuc/ig1/g1 share curl structure), per implementer's discretion in Plans 26-02/26-03.
 
 ## Sources
 
