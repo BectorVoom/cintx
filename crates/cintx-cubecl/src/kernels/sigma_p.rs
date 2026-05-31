@@ -1056,6 +1056,57 @@ pub fn launch_int1e_cg_sa10sp_spinor_pair<F: CintFloat>(
     Ok(())
 }
 
+/// Live `int1e_giao_sa10sp` Spinor launcher — the natural-center gauge family.
+///
+/// `int1e_giao_sa10sp` shares the `int1e_cg_sa10sp` gout body byte-for-byte; the
+/// sole difference is the G-tensor builder — `G1E_R_I` (natural bra center, no
+/// gauge shift) instead of `G1E_RCI` (`dri = ri − common_orig`). In the
+/// `CINTx1i_1e` recurrence `f[i] = g[i+1] + origin·g[i]`, `G1E_R_I` is exactly
+/// `origin = [0,0,0]`. So this launcher is `launch_int1e_cg_sa10sp_spinor_pair`
+/// with `origin = [0,0,0]` (verified by the Wave-0 cg→giao collapse witness:
+/// `giao_sigma_micro` already proves cg at `common_orig=[0,0,0]` is byte-identical
+/// to vendored `int1e_giao_sa10sp_spinor`).
+#[allow(clippy::too_many_arguments)]
+pub fn launch_int1e_giao_sa10sp_spinor_pair<F: CintFloat>(
+    backend: &ResolvedBackend,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    // giao = cg with the natural bra center: x1i origin = [0,0,0] (G1E_R_I).
+    launch_int1e_cg_sa10sp_spinor_pair::<F>(
+        backend,
+        li,
+        kappa_i,
+        lj,
+        kappa_j,
+        nprim_i,
+        nprim_j,
+        nctr_i,
+        nctr_j,
+        ri,
+        rj,
+        [0.0, 0.0, 0.0],
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+        staging,
+    )
+}
+
 /// libcint `CINTcommon_fac_sp` s/p normalization factor (matches
 /// `one_electron.rs::common_fac_sp`). libcint moves the s/p spherical
 /// normalization out of the c2s tables and into the primitive loop
