@@ -41,7 +41,7 @@ Design decisions that emerged during spiking. Non-negotiable for the real build.
 | 002 | cart-vs-sph-fold-invariance | standard | Component axis outermost in both paths; fold differs only by block dims + per-component c2s transform | ✓ VALIDATED | cart, sph, transform, invariance |
 | 004 | multi-index-block-ordering | integration | 3-/4-index families: inner block is `ni`-fastest then nj/nk/[nl] per documented order — pinned by permutation-disagreement vs vendor, cart+sph | ✓ VALIDATED | layout, multi-index, 2e, 3c2e, vendor |
 | 005 | nctr-axisfold-composition | frontier | nctr>1 at rank 3/9/27/81: `out[comp*(ni_full*nj_full)+(j_global*ni_full+i_global)]`, `i_global=ci*di+i` — vendor byte-identity across tiers | ✓ VALIDATED | layout, nctr, contraction, rank-tiers, vendor |
-| 006 | spinor-layout-divergence | frontier | rank-3 spinor: interleaved-complex alpha/beta (NOT component-leading real); component axis folds around the complex interleave vs vendor | PENDING | layout, spinor, complex, divergence, vendor |
+| 006 | spinor-layout-divergence | frontier | rank-3 spinor: interleaved-complex alpha/beta (NOT component-leading real); component axis folds around the complex interleave vs vendor | ✓ VALIDATED | layout, spinor, complex, divergence, vendor |
 
 ## Probe Target
 
