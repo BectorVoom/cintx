@@ -1467,6 +1467,163 @@ pub fn cart_to_spinor_sf_derivative_2d<F: CintFloat>(
     Ok(())
 }
 
+/// Internal: shared per-(comp,k) `[ket][bra]` spherical-aux-k derivative fold for arity-3
+/// families. Both the 3c2e wrapper and the int3c1e thin sibling delegate here — they consume
+/// the SAME device/host cart layout family (`[comp][k][ket][bra]`, KET-major bra-fastest) and
+/// fold it the SAME way; only the producing code path differs (D-11 / D3).
+///
+/// AUX-K is SPHERICAL: `nsk = nsph(lk) = (2lk+1)` (libcint `CINT3c2e_spinor_drv` is_ssc=0,
+/// cint3c2e.c:631-636). Only bra i and ket j are spinor-sized (4l+2). NEVER reconcile aux-k up
+/// to `CINTcgto_spinor` — that produced the disproven 720 (27-SPIKE-FINDINGS ⚠ CORRECTION NOTICE).
+///
+/// Fail-closed (FND-06): sizes checked ONCE upfront; no `if dst < len` scatter guards.
+#[allow(clippy::too_many_arguments)]
+fn cart_to_spinor_sf_derivative_3c_impl<F: CintFloat>(
+    from: &'static str,
+    staging: &mut [F],
+    cart: &[f64],
+    ncomp: usize,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+    nctr_i: usize,
+    nctr_j: usize,
+) -> Result<(), cintxRsError> {
+    use super::c2s::nsph;
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    // SPHERICAL aux-k — IDENTICAL to what the inner cart_to_spinor_sf_3c2e computes (L1293).
+    let nsk = nsph(lk);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_full = nctr_i * di;
+    let nj_full = nctr_j * dj;
+    let kblock = nck * ncj * nci; // per-component cart extent for one (ci,cj) sub-block
+    let total_len = ncomp * kblock;
+    // Component-outer stride includes the SPHERICAL k axis (the SAME nsk the inner uses).
+    let comp_stride = ni_full * nj_full * nsk * 2;
+
+    // ── FAIL-CLOSED upfront (FND-06) ──
+    let cart_required = ncomp * kblock * nctr_i * nctr_j;
+    if cart.len() < cart_required {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from,
+            detail: format!(
+                "cart buffer length {} < ncomp*nci*ncj*nck*nctr_i*nctr_j = {}*{}*{}*{}*{}*{} = {}",
+                cart.len(), ncomp, nci, ncj, nck, nctr_i, nctr_j, cart_required
+            ),
+        });
+    }
+    let staging_required = ncomp * comp_stride;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // Scratch for one (comp,ci,cj) inner 3c2e fold: di*dj*nsk*2 (the inner's required size).
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * nsk * 2];
+
+    for comp in 0..ncomp {
+        let comp_base = comp * comp_stride;
+        for ci in 0..nctr_i {
+            for cj in 0..nctr_j {
+                let src_base = (ci * nctr_j + cj) * total_len + comp * kblock;
+                let block = &cart[src_base..src_base + kblock];
+
+                // Inner transform owns the per-(comp,k) cart→sph(k) + KET→BRA + sf_2d fold.
+                cart_to_spinor_sf_3c2e::<F>(
+                    &mut scratch, block, li, kappa_i, lj, kappa_j, lk,
+                )?;
+
+                // scratch layout (per inner): scratch[mk*di*dj*2 + (j*di + i)*2 + {re,im}].
+                // Scatter into contraction-major output with the SPHERICAL k axis preserved.
+                for mk in 0..nsk {
+                    for j in 0..dj {
+                        let j_global = cj * dj + j;
+                        for i in 0..di {
+                            let i_global = ci * di + i;
+                            let src = (mk * di * dj + j * di + i) * 2;
+                            let dst = comp_base
+                                + (mk * ni_full * nj_full + j_global * ni_full + i_global) * 2;
+                            staging[dst] = scratch[src];
+                            staging[dst + 1] = scratch[src + 1];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Derivative (multi-component) spin-free cart→spinor transform for arity-3 2-electron
+/// families (`int3c2e_ip1_spinor` / `int3c2e_ip2_spinor`; ip1 and ip2 share this shape).
+///
+/// Loops the already-byte-identity-proven inner `cart_to_spinor_sf_3c2e` `ncomp` times with
+/// `comp_stride = ni_full*nj_full*nsph(lk)*2`. The KET→BRA transpose and the cart→sph(k) fold
+/// live inside that inner transform (per-(comp,k) granularity, D-11 spike).
+///
+/// AUX-K IS SPHERICAL `nsph(lk) = (2lk+1)*nctr_k` — never `CINTcgto_spinor`. For p×d×s kappa=0
+/// nctr=1 ncomp=3 the buffer is 360, NOT 720 (27-SPIKE-FINDINGS ⚠ CORRECTION NOTICE).
+///
+/// nctr>1 composes contraction-major on bra i / ket j only (`i_global = ci*di + ic`); the aux-k
+/// stays a single spherical axis. Fail-closed (FND-06): sizes checked upfront, no scatter guards.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_sf_derivative_3c2e<F: CintFloat>(
+    staging: &mut [F],
+    cart: &[f64],
+    ncomp: usize,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+    nctr_i: usize,
+    nctr_j: usize,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_sf_derivative_3c_impl::<F>(
+        "c2spinor_sf_derivative_3c2e",
+        staging, cart, ncomp, li, kappa_i, lj, kappa_j, lk, nctr_i, nctr_j,
+    )
+}
+
+/// THIN SIBLING (D3 decision): derivative spin-free cart→spinor transform for the
+/// `int3c1e_ip1` / `int3c1e_iprinv` spinor gradients. NOT the shared `_3c2e` wrapper because
+/// the int3c1e launcher produces its own host-side `out_buf` (a DIFFERENT code path:
+/// host scatter, not the device kernel + `cart_to_spinor_sf_3c2e`). The fold math is identical
+/// (per-(comp,k) `[ket][bra]`, SPHERICAL aux-k), so this sibling delegates to the same
+/// internal implementation while keeping the 3c2e wrapper's device-cart precondition decoupled
+/// from the 3c1e host scatter.
+///
+/// AUX-K IS SPHERICAL `nsph(lk)` (int3c1e_spinor sizes aux-k spherically exactly as int3c2e does);
+/// never `CINTcgto_spinor`. Fail-closed (FND-06). iprinv differs only in the gout (reads
+/// `env[PTR_RINV_ORIG]`) — that lives in the launcher, not here.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_sf_derivative_3c1e<F: CintFloat>(
+    staging: &mut [F],
+    cart: &[f64],
+    ncomp: usize,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+    nctr_i: usize,
+    nctr_j: usize,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_sf_derivative_3c_impl::<F>(
+        "c2spinor_sf_derivative_3c1e",
+        staging, cart, ncomp, li, kappa_i, lj, kappa_j, lk, nctr_i, nctr_j,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
