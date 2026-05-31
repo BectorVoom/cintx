@@ -41,7 +41,10 @@ created: 2026-06-01
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 30-00-01 | 00 | 0 | GIAO-03 | — | gauge `g`-factor fold byte-identical to vendored thin family | unit/parity | `CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu gauge_gout_micro` | ❌ W0 | ⬜ pending |
-| 30-01-01 | 01 | 1 | GIAO-03 | — | 1e GIAO×σ families byte-identical (spinor, atol=1e-12) | parity | `... cargo test ... vendor_int1e_spg` | ❌ W0 | ⬜ pending |
+| 30-01a-02 | 01a | 1 | GIAO-03 | — | spgsp (+cg/giao_sa10sp) byte-identical (spinor, atol=1e-12, non-square) | parity | `CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu giao_sigma_1e` | ❌ W0 | ⬜ pending |
+| 30-01b-02 | 01b | 1 | GIAO-03 | — | cg/giao_sa10nucsp byte-identical (spinor, atol=1e-12, non-square) | parity | `CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu giao_sigma_1e` | ❌ W0 | ⬜ pending |
+| 30-01c-02 | 01c | 1 | GIAO-03 | — | cg/giao_sa10sa01 (rank 9) byte-identical (spinor, atol=1e-12, non-square) | parity | `CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu giao_sigma_1e` | ❌ W0 | ⬜ pending |
+| 30-01d-02 | 01d | 1 | GIAO-03 | — | spgnucsp + spgsa01 byte-identical; full 9-family 1e gate (spinor, atol=1e-12, non-square) | parity | `CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu giao_sigma_1e` | ❌ W0 | ⬜ pending |
 | 30-02-01 | 02 | 2 | GIAO-03 | — | 2e GIAO×σ families byte-identical (spinor, atol=1e-12) | parity | `... cargo test ... vendor_int2e_spg` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky · Task IDs are illustrative — the planner sets final per-plan IDs.*
