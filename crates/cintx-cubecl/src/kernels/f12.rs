@@ -781,6 +781,410 @@ pub(crate) fn nabla1l_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usi
     }
 }
 
+/// Apply the `r0i` position operator (multiply by `r - ri` in the i-index) to the
+/// G tensor. Corresponds to `CINTx1i_2e` / the `G2E_R0I` macro in libcint/g2e.h.
+///
+/// Formula (per axis), reading the i+1-elevated index from the headroom tensor:
+///   f[n @ i] = g[n + di] + ri[axis] * g[n]
+///
+/// Used by the Phase-26 GIAO-02 2e families (`int2e_g1`/`ig1`/`gg1`/`g1g2`). The
+/// final post-HRR G tensor carries the true i-center in the i-index, so the
+/// position multiply uses the actual `ri` coordinate exactly as libcint does
+/// (gout runs after the HRR transfer). `ri` is the i-center coordinate `[x,y,z]`.
+pub(crate) fn r0i_2e(
+    f: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    shape: &F12Shape,
+) {
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        let ri_a = ri[axis];
+        for j in 0..=lj {
+            for l in 0..=ll {
+                for k in 0..=lk {
+                    for i in 0..=li {
+                        let ptr = dj * j + dl * l + dk * k + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = g[off + n + di] + ri_a * g[off + n];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Apply the `r0k` position operator (multiply by `r - rk` in the k-index) to the
+/// G tensor. Corresponds to `CINTx1k_2e` / the `G2E_R0K` macro in libcint/g2e.h.
+///
+/// Formula (per axis): f[n @ k] = g[n + dk] + rk[axis] * g[n].
+///
+/// Used by the Phase-26 GIAO-02 `int2e_g1g2` family (gauge factor on electron 2).
+pub(crate) fn r0k_2e(
+    f: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    rk: &[f64; 3],
+    shape: &F12Shape,
+) {
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        let rk_a = rk[axis];
+        for j in 0..=lj {
+            for l in 0..=ll {
+                for k in 0..=lk {
+                    for i in 0..=li {
+                        let ptr = dj * j + dl * l + dk * k + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = g[off + n + dk] + rk_a * g[off + n];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 26 GIAO-02 (D-16): spin-free 2e GIAO gout contractions.
+//
+// Each gout is transcribed VERBATIM from libcint autocode (intor4.c:1255 g1,
+// intor2.c:19 ig1, intor2.c:148 gg1, intor2.c:283 g1g2). The `c[]` gauge factor
+// uses rirj = ri - rj (and rkrl = rk - rl for g1g2); the derivative tensors are
+// built with the r0i_2e / r0k_2e position operators above. The C gout writes
+// gout[n*rank + comp] DIRECTLY (no column-major reorder — unlike ipip1).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// gout for `int2e_g1` (rank 3) — intor4.c:1255 `CINTgout2e_int2e_g1`.
+///
+/// g1 = R0I(g0, i_l+0); c = ri - rj;
+///   gout[0] = + c1*s2 - c2*s1, gout[1] = + c2*s0 - c0*s2, gout[2] = + c0*s1 - c1*s0
+/// where s0 = g1x*g0y*g0z, s1 = g0x*g1y*g0z, s2 = g0x*g0y*g1z.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_g1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+) -> Vec<f64> {
+    gout_g1_signed(g, shape, li, lj, lk, ll, ri, rj, 1.0)
+}
+
+/// gout for `int2e_ig1` (rank 3) — intor2.c:19 `CINTgout2e_int2e_ig1`.
+///
+/// Identical s[] triple products as g1, but the gout combos are sign-flipped:
+///   gout[0] = - c1*s2 + c2*s1, gout[1] = - c2*s0 + c0*s2, gout[2] = - c0*s1 + c1*s0
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ig1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+) -> Vec<f64> {
+    gout_g1_signed(g, shape, li, lj, lk, ll, ri, rj, -1.0)
+}
+
+/// Shared rank-3 GIAO cross-product body for g1 (`sign=+1`) and ig1 (`sign=-1`).
+#[allow(clippy::too_many_arguments)]
+fn gout_g1_signed(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    sign: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let c = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+
+    // g1 = R0I(g0, i_l+0); built with i_l+1 headroom in the G tensor.
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    r0i_2e(&mut g1, g, li, lj, lk, ll, ri, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 3 * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 3];
+                    for r in 0..shape.nroots {
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        s[0] += g1x * g0y * g0z;
+                        s[1] += g0x * g1y * g0z;
+                        s[2] += g0x * g0y * g1z;
+                    }
+                    // g1:  gout = + (c1*s2 - c2*s1, c2*s0 - c0*s2, c0*s1 - c1*s0)
+                    // ig1: gout = - (the same)  → `sign` carries the overall flip.
+                    out[n * 3 + 0] = sign * (c[1] * s[2] - c[2] * s[1]);
+                    out[n * 3 + 1] = sign * (c[2] * s[0] - c[0] * s[2]);
+                    out[n * 3 + 2] = sign * (c[0] * s[1] - c[1] * s[0]);
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// gout for `int2e_gg1` (rank 9) — intor2.c:148 `CINTgout2e_int2e_gg1`.
+///
+/// 2nd-order gauge tensor on electron 1. c = (ri-rj)⊗(ri-rj) (9 components).
+/// g1 = R0I(g0, i_l+1); g2 = R0I(g0, i_l+0); g3 = R0I(g1, i_l+0).
+/// s[] and the 9-component gout combos transcribed verbatim from the source.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_gg1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+    let c = [
+        rirj[0] * rirj[0], rirj[0] * rirj[1], rirj[0] * rirj[2],
+        rirj[1] * rirj[0], rirj[1] * rirj[1], rirj[1] * rirj[2],
+        rirj[2] * rirj[0], rirj[2] * rirj[1], rirj[2] * rirj[2],
+    ];
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // g1 = R0I at li+1 (elevated); g2 = R0I at li+0; g3 = R0I(g1) at li+0.
+    r0i_2e(&mut g1, g, li + 1, lj, lk, ll, ri, shape);
+    r0i_2e(&mut g2, g, li, lj, lk, ll, ri, shape);
+    r0i_2e(&mut g3, &g1, li, lj, lk, ll, ri, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for r in 0..shape.nroots {
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // Verbatim from intor2.c:192-200 (direct gout[n*9+..] write).
+                    out[n * 9 + 0] = -c[4] * s[8] + 2.0 * c[5] * s[7] - c[8] * s[4];
+                    out[n * 9 + 1] = -c[7] * s[2] + c[1] * s[8] + c[8] * s[1] - c[2] * s[7];
+                    out[n * 9 + 2] = -c[1] * s[5] + c[4] * s[2] + c[2] * s[4] - c[5] * s[1];
+                    out[n * 9 + 3] = -c[5] * s[6] + c[8] * s[3] + c[3] * s[8] - c[6] * s[5];
+                    out[n * 9 + 4] = -c[8] * s[0] + 2.0 * c[6] * s[2] - c[0] * s[8];
+                    out[n * 9 + 5] = -c[2] * s[3] + c[5] * s[0] + c[0] * s[5] - c[3] * s[2];
+                    out[n * 9 + 6] = -c[3] * s[7] + c[6] * s[4] + c[4] * s[6] - c[7] * s[3];
+                    out[n * 9 + 7] = -c[6] * s[1] + c[0] * s[7] + c[7] * s[0] - c[1] * s[6];
+                    out[n * 9 + 8] = -c[0] * s[4] + 2.0 * c[1] * s[3] - c[4] * s[0];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// gout for `int2e_g1g2` (rank 9) — intor2.c:283 `CINTgout2e_int2e_g1g2` (D-16).
+///
+/// Gauge factor on BOTH electrons: c = (ri-rj)⊗(rk-rl) (9 components).
+/// g1 = R0K(g0, i_l+1); g2 = R0I(g0, i_l+0); g3 = R0I(g1, i_l+0).
+/// (Note: g1 raises i by +1 then R0K; g3 = R0I(g1).)
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_g1g2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    rk: &[f64; 3],
+    rl: &[f64; 3],
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+    let rkrl = [rk[0] - rl[0], rk[1] - rl[1], rk[2] - rl[2]];
+    let c = [
+        rirj[0] * rkrl[0], rirj[0] * rkrl[1], rirj[0] * rkrl[2],
+        rirj[1] * rkrl[0], rirj[1] * rkrl[1], rirj[1] * rkrl[2],
+        rirj[2] * rkrl[0], rirj[2] * rkrl[1], rirj[2] * rkrl[2],
+    ];
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // intor2.c:310-312: g1=R0K(g0,i_l+1); g2=R0I(g0,i_l+0); g3=R0I(g1,i_l+0).
+    r0k_2e(&mut g1, g, li + 1, lj, lk, ll, rk, shape);
+    r0i_2e(&mut g2, g, li, lj, lk, ll, ri, shape);
+    r0i_2e(&mut g3, &g1, li, lj, lk, ll, ri, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for r in 0..shape.nroots {
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // Verbatim from intor2.c:331-339 (direct gout[n*9+..] write).
+                    out[n * 9 + 0] = c[4] * s[8] - c[7] * s[5] - c[5] * s[7] + c[8] * s[4];
+                    out[n * 9 + 1] = c[5] * s[6] - c[8] * s[3] - c[3] * s[8] + c[6] * s[5];
+                    out[n * 9 + 2] = c[3] * s[7] - c[6] * s[4] - c[4] * s[6] + c[7] * s[3];
+                    out[n * 9 + 3] = c[7] * s[2] - c[1] * s[8] - c[8] * s[1] + c[2] * s[7];
+                    out[n * 9 + 4] = c[8] * s[0] - c[2] * s[6] - c[6] * s[2] + c[0] * s[8];
+                    out[n * 9 + 5] = c[6] * s[1] - c[0] * s[7] - c[7] * s[0] + c[1] * s[6];
+                    out[n * 9 + 6] = c[1] * s[5] - c[4] * s[2] - c[2] * s[4] + c[5] * s[1];
+                    out[n * 9 + 7] = c[2] * s[3] - c[5] * s[0] - c[0] * s[5] + c[3] * s[2];
+                    out[n * 9 + 8] = c[0] * s[4] - c[3] * s[1] - c[1] * s[3] + c[4] * s[0];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-variant gout contraction functions
 //
