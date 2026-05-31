@@ -1107,6 +1107,646 @@ pub fn launch_int1e_giao_sa10sp_spinor_pair<F: CintFloat>(
     )
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  Phase 30 (GIAO-03 / Sub-wave 1a): int1e_spgsp 8-G-tensor London overlap.
+//
+//  `<G SIGMA DOT P i| OVLP |SIGMA DOT P j>` — NOT the cg/giao gauge fold. This is
+//  a distinct OVERLAP engine (no Rys atom-sum). Transcribed VERBATIM from
+//  libcint autocode/intor3.c:1724-1758 (CINTgout1e_int1e_spgsp), including the
+//  London `rirj = ri − rj` post-multiply.
+//
+//  THREE differences from cg_sa10sp:
+//   (1) Builder is `G1E_R0I` (origin = `ri`, the bra center itself — NOT
+//       `dri = ri − common_orig`; spgsp does NOT read PTR_COMMON_ORIG).
+//   (2) An 8-G-tensor build (g0..g7):
+//         g0 = overlap base
+//         g1 = G1E_D_J(g0)          ket nabla ∇_j  (needs i_l+2 / j_l+1 headroom)
+//         g2 = G1E_R0I(g0, ri)      x1i-with-origin=ri  (bra raise + ri shift)
+//         g3 = G1E_R0I(g1, ri)      x1i-with-origin=ri of the ket-nabla
+//         g4 = G1E_D_I(g0)          bra nabla ∇_i  (back-compose)
+//         g5 = G1E_D_I(g1)
+//         g6 = G1E_D_I(g2)
+//         g7 = G1E_D_I(g3)
+//       folding a 27-component cart mix s[0..26] into the 12-component gout.
+//   (3) A London `rirj = ri − rj` (ri MINUS rj, NOT common_orig) post-multiply
+//       in the gout: `c[k] = rirj[k]`, applied per-component (intor3.c:1742-1757).
+//
+//  The London/gauge fold is the `x1i` position recurrence (sigma_p_x1i), NOT a
+//  cross-product (RESEARCH Pitfall 1). The 12-component gout maps to 3 groups ×
+//  gc 4-block component-leading KET-major (k = tensor*4 + e1), the same layout the
+//  cg_sa10sp kernel uses, consumed by the c2s_si_1ei (imaginary-ket) transform.
+//
+//  Headroom: nmax = li+lj+2 (D_J reads i+2 of g0; x1i reads i+1; D_I reads ±1),
+//  lj_ext = lj+1 (D_J reads j+1). Identical to the cg kernel; int1e_sp and the
+//  cg/giao paths above are NOT touched.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// `CINTnabla1i_1e` (g1e.c:322,345) bra nabla applied to a STENCIL value triple
+/// `(v_lo, v_hi)` already read at bra indices `ix−1` and `ix+1`:
+/// `f[ix] = ix*v_lo − 2ai*v_hi` (the `ix==0` branch drops the lowering term).
+/// `ai2 = −2*ai`.
+#[cube]
+fn sigma_p_nabla_i_combine<F: Float>(v_lo: F, v_hi: F, ai2: F, iexp: u32) -> F {
+    if iexp == 0u32 {
+        ai2 * v_hi
+    } else {
+        F::cast_from(iexp) * v_lo + ai2 * v_hi
+    }
+}
+
+/// Device kernel — `int1e_spgsp` 8-G-tensor London overlap assembler (rank 3, 12
+/// gout components → 3 groups × gc 4-block, component-leading KET-major).
+///
+/// `rix/riy/riz` and `rjx/rjy/rjz` carry the bra/ket centers; the x1i origin is
+/// `ri` (G1E_R0I) and the London phase is `rirj = ri − rj`. NEITHER reads
+/// PTR_COMMON_ORIG. Single `UNIT_POS==0` work item, mirroring
+/// `sigma_p_cg_sa10sp_kernel`.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn sigma_p_spgsp_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    g: &mut Array<F>,
+    gc_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    sqrtpi: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+) {
+    if UNIT_POS == 0u32 {
+        // Headroom: +2 in bra (D_J reads i+2 of g0; x1i reads i+1; D_I reads ±1),
+        // +1 in ket (D_J reads j+1). Matches sigma_p_cg_sa10sp_kernel.
+        let nmax = li + lj + 2u32;
+        let lj_ext = lj + 1u32;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let rank = 3u32;
+        let total_len = rank * N_GC * block_len;
+        let out_total = nctr_i * nctr_j * total_len;
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            gc_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        // London phase rirj = ri − rj (NOT common_orig).
+        let cx = rix - rjx;
+        let cy = riy - rjy;
+        let cz = riz - rjz;
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                // ── OVERLAP base G-tensor g0 (fixed-center VRR + HRR). ──
+                let mut gi = 0u32;
+                while gi < total_g {
+                    g[gi as usize] = F::new(0.0);
+                    gi += 1u32;
+                }
+                g[gx as usize] = F::new(1.0);
+                g[gy as usize] = F::new(1.0);
+                g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+
+                sigma_p_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                sigma_p_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                sigma_p_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+
+                if lj_ext >= 1u32 {
+                    sigma_p_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                    sigma_p_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                    sigma_p_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                }
+
+                let aj2 = F::new(-2.0) * aj;
+                let ai2 = F::new(-2.0) * ai;
+
+                let mut ci = 0u32;
+                while ci < nctr_i {
+                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                    let mut cj = 0u32;
+                    while cj < nctr_j {
+                        let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                        let weight = coeff_i_val * coeff_j_val;
+                        let base = (ci * nctr_j + cj) * total_len;
+
+                        let mut cj_idx = 0u32;
+                        let mut ja = 0u32;
+                        while ja <= lj {
+                            let jx = lj - ja;
+                            let lj_minus_jx = lj - jx;
+                            let mut jb = 0u32;
+                            while jb <= lj_minus_jx {
+                                let jy = lj_minus_jx - jb;
+                                let jz = lj - jx - jy;
+
+                                let mut ci_idx = 0u32;
+                                let mut ia = 0u32;
+                                while ia <= li {
+                                    let ix = li - ia;
+                                    let li_minus_ix = li - ix;
+                                    let mut ib = 0u32;
+                                    while ib <= li_minus_ix {
+                                        let iy = li_minus_ix - ib;
+                                        let iz = li - ix - iy;
+
+                                        // Per-axis base index n = jcart*dj + icart.
+                                        let bx = gx + jx * dj + ix;
+                                        let by = gy + jy * dj + iy;
+                                        let bz = gz + jz * dj + iz;
+
+                                        // ── Per-axis g0..g7. The D_I (bra nabla)
+                                        // back-compose of g0..g3 (→ g4..g7) reads the
+                                        // bra-neighbors ix±1, so g0..g3 are evaluated
+                                        // at ix−1, ix, ix+1 (x-axis) etc.
+
+                                        // X axis ────────────────────────────────
+                                        // g0 at ix-1/ix/ix+1
+                                        let g0xm = if ix == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            g[(bx - 1u32) as usize]
+                                        };
+                                        let g0x = g[bx as usize];
+                                        let g0xp = g[(bx + 1u32) as usize];
+                                        // g1 = D_J(g0) at ix-1/ix/ix+1
+                                        let g1xm = if ix == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_nabla_j::<F>(g, bx - 1u32, dj, aj2, jx)
+                                        };
+                                        let g1x = sigma_p_nabla_j::<F>(g, bx, dj, aj2, jx);
+                                        let g1xp = sigma_p_nabla_j::<F>(g, bx + 1u32, dj, aj2, jx);
+                                        // g2 = x1i(g0, ri) at ix-1/ix/ix+1
+                                        let g2xm = if ix == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_x1i::<F>(g, bx - 1u32, rix)
+                                        };
+                                        let g2x = sigma_p_x1i::<F>(g, bx, rix);
+                                        let g2xp = sigma_p_x1i::<F>(g, bx + 1u32, rix);
+                                        // g3 = x1i(g1, ri) at ix-1/ix/ix+1
+                                        let g3xm = if ix == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_x1i_of_j::<F>(g, bx - 1u32, dj, aj2, jx, rix)
+                                        };
+                                        let g3x = sigma_p_x1i_of_j::<F>(g, bx, dj, aj2, jx, rix);
+                                        let g3xp =
+                                            sigma_p_x1i_of_j::<F>(g, bx + 1u32, dj, aj2, jx, rix);
+                                        // g4..g7 = D_I(g0..g3) at ix.
+                                        let g4x = sigma_p_nabla_i_combine::<F>(g0xm, g0xp, ai2, ix);
+                                        let g5x = sigma_p_nabla_i_combine::<F>(g1xm, g1xp, ai2, ix);
+                                        let g6x = sigma_p_nabla_i_combine::<F>(g2xm, g2xp, ai2, ix);
+                                        let g7x = sigma_p_nabla_i_combine::<F>(g3xm, g3xp, ai2, ix);
+
+                                        // Y axis ────────────────────────────────
+                                        let g0ym = if iy == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            g[(by - 1u32) as usize]
+                                        };
+                                        let g0y = g[by as usize];
+                                        let g0yp = g[(by + 1u32) as usize];
+                                        let g1ym = if iy == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_nabla_j::<F>(g, by - 1u32, dj, aj2, jy)
+                                        };
+                                        let g1y = sigma_p_nabla_j::<F>(g, by, dj, aj2, jy);
+                                        let g1yp = sigma_p_nabla_j::<F>(g, by + 1u32, dj, aj2, jy);
+                                        let g2ym = if iy == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_x1i::<F>(g, by - 1u32, riy)
+                                        };
+                                        let g2y = sigma_p_x1i::<F>(g, by, riy);
+                                        let g2yp = sigma_p_x1i::<F>(g, by + 1u32, riy);
+                                        let g3ym = if iy == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_x1i_of_j::<F>(g, by - 1u32, dj, aj2, jy, riy)
+                                        };
+                                        let g3y = sigma_p_x1i_of_j::<F>(g, by, dj, aj2, jy, riy);
+                                        let g3yp =
+                                            sigma_p_x1i_of_j::<F>(g, by + 1u32, dj, aj2, jy, riy);
+                                        let g4y = sigma_p_nabla_i_combine::<F>(g0ym, g0yp, ai2, iy);
+                                        let g5y = sigma_p_nabla_i_combine::<F>(g1ym, g1yp, ai2, iy);
+                                        let g6y = sigma_p_nabla_i_combine::<F>(g2ym, g2yp, ai2, iy);
+                                        let g7y = sigma_p_nabla_i_combine::<F>(g3ym, g3yp, ai2, iy);
+
+                                        // Z axis ────────────────────────────────
+                                        let g0zm = if iz == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            g[(bz - 1u32) as usize]
+                                        };
+                                        let g0z = g[bz as usize];
+                                        let g0zp = g[(bz + 1u32) as usize];
+                                        let g1zm = if iz == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_nabla_j::<F>(g, bz - 1u32, dj, aj2, jz)
+                                        };
+                                        let g1z = sigma_p_nabla_j::<F>(g, bz, dj, aj2, jz);
+                                        let g1zp = sigma_p_nabla_j::<F>(g, bz + 1u32, dj, aj2, jz);
+                                        let g2zm = if iz == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_x1i::<F>(g, bz - 1u32, riz)
+                                        };
+                                        let g2z = sigma_p_x1i::<F>(g, bz, riz);
+                                        let g2zp = sigma_p_x1i::<F>(g, bz + 1u32, riz);
+                                        let g3zm = if iz == 0u32 {
+                                            F::new(0.0)
+                                        } else {
+                                            sigma_p_x1i_of_j::<F>(g, bz - 1u32, dj, aj2, jz, riz)
+                                        };
+                                        let g3z = sigma_p_x1i_of_j::<F>(g, bz, dj, aj2, jz, riz);
+                                        let g3zp =
+                                            sigma_p_x1i_of_j::<F>(g, bz + 1u32, dj, aj2, jz, riz);
+                                        let g4z = sigma_p_nabla_i_combine::<F>(g0zm, g0zp, ai2, iz);
+                                        let g5z = sigma_p_nabla_i_combine::<F>(g1zm, g1zp, ai2, iz);
+                                        let g6z = sigma_p_nabla_i_combine::<F>(g2zm, g2zp, ai2, iz);
+                                        let g7z = sigma_p_nabla_i_combine::<F>(g3zm, g3zp, ai2, iz);
+
+                                        // ── 27-element s[] product mix (intor3.c:1742-1768). ──
+                                        let s0 = g7x * g0y * g0z;
+                                        let s1 = g6x * g1y * g0z;
+                                        let s2 = g6x * g0y * g1z;
+                                        let s3 = g5x * g2y * g0z;
+                                        let s4 = g4x * g3y * g0z;
+                                        let s5 = g4x * g2y * g1z;
+                                        let s6 = g5x * g0y * g2z;
+                                        let s7 = g4x * g1y * g2z;
+                                        let s8 = g4x * g0y * g3z;
+                                        let s9 = g3x * g4y * g0z;
+                                        let s10 = g2x * g5y * g0z;
+                                        let s11 = g2x * g4y * g1z;
+                                        let s12 = g1x * g6y * g0z;
+                                        let s13 = g0x * g7y * g0z;
+                                        let s14 = g0x * g6y * g1z;
+                                        let s15 = g1x * g4y * g2z;
+                                        let s16 = g0x * g5y * g2z;
+                                        let s17 = g0x * g4y * g3z;
+                                        let s18 = g3x * g0y * g4z;
+                                        let s19 = g2x * g1y * g4z;
+                                        let s20 = g2x * g0y * g5z;
+                                        let s21 = g1x * g2y * g4z;
+                                        let s22 = g0x * g3y * g4z;
+                                        let s23 = g0x * g2y * g5z;
+                                        let s24 = g1x * g0y * g6z;
+                                        let s25 = g0x * g1y * g6z;
+                                        let s26 = g0x * g0y * g7z;
+                                        // Silence unused-by-gout cart products
+                                        // (s5/s7/s11/s15/s19/s21 — the spgsp London
+                                        // mix uses only the other 21 of the 27).
+                                        let _ = s5 + s7 + s11 + s15 + s19 + s21;
+
+                                        let elem = cj_idx * nci + ci_idx;
+
+                                        // 12-component gout (intor3.c:1742-1757) →
+                                        // 3 groups × gc 4-block (k = tensor*4 + e1).
+                                        let gp0 = base;
+                                        // gout[0] = c1*s17 - c2*s14 - c1*s25 + c2*s22
+                                        gc_out[(gp0 + elem) as usize] +=
+                                            weight * (cy * s17 - cz * s14 - cy * s25 + cz * s22);
+                                        // gout[1] = c1*s24 - c1*s8
+                                        gc_out[(gp0 + block_len + elem) as usize] +=
+                                            weight * (cy * s24 - cy * s8);
+                                        // gout[2] = -c2*s4 + c2*s12
+                                        gc_out[(gp0 + 2u32 * block_len + elem) as usize] +=
+                                            weight * (-cz * s4 + cz * s12);
+                                        // gout[3] = c1*s6 - c2*s3 + c1*s16 - c2*s13 + c1*s26 - c2*s23
+                                        gc_out[(gp0 + 3u32 * block_len + elem) as usize] += weight
+                                            * (cy * s6 - cz * s3 + cy * s16 - cz * s13 + cy * s26
+                                                - cz * s23);
+
+                                        let gp1 = base + N_GC * block_len;
+                                        // gout[4] = -c0*s17 + c0*s25
+                                        gc_out[(gp1 + elem) as usize] +=
+                                            weight * (-cx * s17 + cx * s25);
+                                        // gout[5] = c2*s18 - c0*s24 - c2*s2 + c0*s8
+                                        gc_out[(gp1 + block_len + elem) as usize] +=
+                                            weight * (cz * s18 - cx * s24 - cz * s2 + cx * s8);
+                                        // gout[6] = c2*s1 - c2*s9
+                                        gc_out[(gp1 + 2u32 * block_len + elem) as usize] +=
+                                            weight * (cz * s1 - cz * s9);
+                                        // gout[7] = c2*s0 - c0*s6 + c2*s10 - c0*s16 + c2*s20 - c0*s26
+                                        gc_out[(gp1 + 3u32 * block_len + elem) as usize] += weight
+                                            * (cz * s0 - cx * s6 + cz * s10 - cx * s16 + cz * s20
+                                                - cx * s26);
+
+                                        let gp2 = base + 2u32 * N_GC * block_len;
+                                        // gout[8] = c0*s14 - c0*s22
+                                        gc_out[(gp2 + elem) as usize] +=
+                                            weight * (cx * s14 - cx * s22);
+                                        // gout[9] = -c1*s18 + c1*s2
+                                        gc_out[(gp2 + block_len + elem) as usize] +=
+                                            weight * (-cy * s18 + cy * s2);
+                                        // gout[10] = c0*s4 - c1*s1 - c0*s12 + c1*s9
+                                        gc_out[(gp2 + 2u32 * block_len + elem) as usize] +=
+                                            weight * (cx * s4 - cy * s1 - cx * s12 + cy * s9);
+                                        // gout[11] = c0*s3 - c1*s0 + c0*s13 - c1*s10 + c0*s23 - c1*s20
+                                        gc_out[(gp2 + 3u32 * block_len + elem) as usize] += weight
+                                            * (cx * s3 - cy * s0 + cx * s13 - cy * s10 + cx * s23
+                                                - cy * s20);
+
+                                        ci_idx += 1u32;
+                                        ib += 1u32;
+                                    }
+                                    ia += 1u32;
+                                }
+                                cj_idx += 1u32;
+                                jb += 1u32;
+                            }
+                            ja += 1u32;
+                        }
+                        cj += 1u32;
+                    }
+                    ci += 1u32;
+                }
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`sigma_p_spgsp_kernel`] at `f64` on a backend client. Returns the
+/// `3 * N_GC`-block component-leading gc accumulator
+/// (`nctr_i*nctr_j*3*N_GC*nci*ncj`). The x1i origin is `ri` and the London phase
+/// is `ri − rj`; NEITHER reads PTR_COMMON_ORIG.
+#[allow(clippy::too_many_arguments)]
+fn run_sigma_p_spgsp_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + lj_u + 2;
+    let lj_ext_u = lj_u + 1;
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let n_blocks = 3 * (N_GC as usize);
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * n_blocks * nci * ncj;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+
+    let g_zero = vec![0.0_f64; total_g];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    sigma_p_spgsp_kernel::launch::<f64, R>(
+        client,
+        CubeCount::Static(1, 1, 1),
+        CubeDim::new_1d(1),
+        unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+        unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+        unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
+        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+        ri[0],
+        ri[1],
+        ri[2],
+        rj[0],
+        rj[1],
+        rj[2],
+        SQRTPI,
+        std::f64::consts::PI,
+        li,
+        lj,
+        nprim_i,
+        nprim_j,
+        nctr_i,
+        nctr_j,
+    );
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_sigma_p_spgsp_device`].
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_sigma_p_spgsp_on_backend(
+    backend: &ResolvedBackend,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Result<Vec<f64>, cintxRsError> {
+    let out = match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_sigma_p_spgsp_device::<cubecl::cpu::CpuRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
+            coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_sigma_p_spgsp_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
+            coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_sigma_p_spgsp_device::<cubecl_cuda::CudaRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
+            coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_sigma_p_spgsp_device::<cubecl_hip::HipRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
+            coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_sigma_p_spgsp_device::<cubecl_wgpu::WgpuRuntime>(
+            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
+            coeff_j,
+        ),
+    };
+    Ok(out)
+}
+
+/// Live `int1e_spgsp` Spinor launcher — the Sub-wave 1a 8-G London overlap path.
+///
+/// Composes the spgsp London overlap assembler ([`run_sigma_p_spgsp_on_backend`],
+/// rank 3) with the imaginary-ket spin-included transform
+/// [`cart_to_spinor_si_2di`] (`c2s_si_1ei`), producing the flat interleaved-complex
+/// rank-3 spinor block for one shell pair `(i, j)`.
+///
+/// The x1i origin is `ri` (G1E_R0I) and the London phase is `ri − rj`; spgsp does
+/// NOT read PTR_COMMON_ORIG, so no `origin`/`common_orig` argument is threaded.
+///
+/// Output layout: 3 stacked spinor matrices, column-major (ket outer, bra inner),
+/// interleaved complex, contraction-major:
+/// `out[grp*(ni_sp*nj_sp*2) + (j_global*ni_sp + i_global)*2 + {0:re,1:im}]`.
+///
+/// Applies its OWN fail-closed staging guard BEFORE any write (Phase-28 CR-01).
+#[allow(clippy::too_many_arguments)]
+pub fn launch_int1e_spgsp_spinor_pair<F: CintFloat>(
+    backend: &ResolvedBackend,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    const RANK: usize = 3;
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let block_len = nci * ncj;
+    let total_len = RANK * (N_GC as usize) * block_len;
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_sp = nctr_i * di;
+    let nj_sp = nctr_j * dj;
+
+    // Fail-closed staging guard BEFORE any write (full-block, ×2 complex, ×rank).
+    let staging_required = ni_sp * nj_sp * 2 * RANK;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    let mut gc = run_sigma_p_spgsp_on_backend(
+        backend,
+        li as u32,
+        lj as u32,
+        nprim_i as u32,
+        nprim_j as u32,
+        nctr_i as u32,
+        nctr_j as u32,
+        ri,
+        rj,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+    )?;
+
+    // s/p normalization scale (no extra common_factor for spgsp; ng[6]=1).
+    let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+    if (sp_scale - 1.0).abs() > 1e-15 {
+        for v in gc.iter_mut() {
+            *v *= sp_scale;
+        }
+    }
+
+    let group_out = ni_sp * nj_sp * 2; // one spinor matrix's flat length
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+    for ci in 0..nctr_i {
+        for cj in 0..nctr_j {
+            let base = (ci * nctr_j + cj) * total_len;
+            for grp in 0..RANK {
+                let gbase = base + grp * (N_GC as usize) * block_len;
+                let gc_x = &gc[gbase..gbase + block_len];
+                let gc_y = &gc[gbase + block_len..gbase + 2 * block_len];
+                let gc_z = &gc[gbase + 2 * block_len..gbase + 3 * block_len];
+                let gc_1 = &gc[gbase + 3 * block_len..gbase + 4 * block_len];
+
+                // c2s_si_1ei owns the KET→BRA transpose (imaginary-ket arm).
+                cart_to_spinor_si_2di::<F>(
+                    &mut scratch,
+                    gc_x,
+                    gc_y,
+                    gc_z,
+                    gc_1,
+                    li,
+                    kappa_i,
+                    lj,
+                    kappa_j,
+                )?;
+
+                let grp_off = grp * group_out;
+                for j in 0..dj {
+                    let j_global = cj * dj + j;
+                    for i in 0..di {
+                        let i_global = ci * di + i;
+                        let src = (j * di + i) * 2;
+                        let dst = grp_off + (j_global * ni_sp + i_global) * 2;
+                        staging[dst] = scratch[src];
+                        staging[dst + 1] = scratch[src + 1];
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// libcint `CINTcommon_fac_sp` s/p normalization factor (matches
 /// `one_electron.rs::common_fac_sp`). libcint moves the s/p spherical
 /// normalization out of the c2s tables and into the primitive loop

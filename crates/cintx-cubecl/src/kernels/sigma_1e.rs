@@ -820,3 +820,146 @@ fn build_sigma_cart(
         )
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Phase 30 (GIAO-03 / Sub-wave 1a): GIAO×σ 1e family dispatch.
+//
+//  Wires the three Sub-wave-1a GIAO×σ 1e families — `spgsp` (8-G London overlap,
+//  net-new engine), `cg_sa10sp` and `giao_sa10sp` (proven in 30-00) — through a
+//  single dispatch table that routes each to its `sigma_p.rs` launcher. All three
+//  are component_rank 3 and use the imaginary-ket `c2s_si_1ei` transform (SiI).
+//
+//  Each arm applies its OWN fail-closed full-block staging guard before calling
+//  the launcher (the launchers also guard, but per Phase-28 CR-01 every inline
+//  dispatch arm must fail closed independently — defense in depth, no partial
+//  writes). spgsp's origin is `ri` (G1E_R0I) + London `ri−rj`; cg uses the gauge
+//  `dri = ri − common_orig`; giao is cg at `origin = [0,0,0]`.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// GIAO×σ 1e family selector for Sub-wave 1a (symbol-name resolution; the
+/// returned id is informational, NOT a positional OperatorId — Pitfall 6).
+#[allow(dead_code)]
+pub(crate) fn giao_family_id(op: &str) -> Option<u32> {
+    match op {
+        "spgsp" => Some(0),
+        "cg_sa10sp" => Some(1),
+        "giao_sa10sp" => Some(2),
+        _ => None,
+    }
+}
+
+/// Component_rank for the Sub-wave-1a GIAO×σ 1e families (all rank 3 = ng[7]).
+#[allow(dead_code)]
+pub(crate) fn giao_family_rank(op: &str) -> usize {
+    match op {
+        "spgsp" | "cg_sa10sp" | "giao_sa10sp" => 3,
+        _ => 0,
+    }
+}
+
+/// Transform selector for the Sub-wave-1a GIAO×σ 1e families (all SiI =
+/// `cart_to_spinor_si_2di`, imaginary-ket — RESEARCH per-family map).
+#[allow(dead_code)]
+pub(crate) fn giao_family_transform(op: &str) -> TransformKind {
+    let _ = TransformKind::Sf; // keep the variant referenced for non-spgsp arms
+    let _ = TransformKind::Si;
+    match op {
+        // All three Sub-wave-1a families are imaginary-ket (c2s_si_1ei).
+        _ => TransformKind::SiI,
+    }
+}
+
+/// Unified GIAO×σ 1e Spinor launcher for one shell pair `(i, j)` (Sub-wave 1a).
+///
+/// `op` is the operator name without the `int1e_`/`_spinor` affixes
+/// (`spgsp` / `cg_sa10sp` / `giao_sa10sp`). `common_orig` is the gauge origin read
+/// from `plan.operator_env_params.common_orig.unwrap_or([0.0;3])`; it is used ONLY
+/// for `cg_sa10sp` (the gauge shift `dri = ri − common_orig`). `spgsp` ignores it
+/// (its origin is `ri`, London phase `ri − rj`); `giao_sa10sp` uses `[0,0,0]`.
+///
+/// Output layout: 3 stacked spinor matrices, column-major (ket outer, bra inner),
+/// interleaved complex, contraction-major:
+/// `out[grp*(ni_sp*nj_sp*2) + (j_global*ni_sp + i_global)*2 + {0:re,1:im}]`.
+///
+/// Each arm applies its OWN fail-closed full-block staging guard
+/// (`ni_sp*nj_sp*2*rank`) BEFORE any write (Phase-28 CR-01).
+#[allow(clippy::too_many_arguments)]
+pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
+    backend: &ResolvedBackend,
+    op: &str,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    common_orig: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    use crate::kernels::sigma_p::{
+        launch_int1e_cg_sa10sp_spinor_pair, launch_int1e_giao_sa10sp_spinor_pair,
+        launch_int1e_spgsp_spinor_pair,
+    };
+
+    let rank = giao_family_rank(op);
+    if rank == 0 {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("int1e_{op}_spinor is not a Sub-wave-1a GIAO×σ 1e family"),
+        });
+    }
+
+    // Fail-closed full-block staging guard BEFORE any write (Phase-28 CR-01: each
+    // inline dispatch arm guards independently, no partial writes).
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_sp = nctr_i * di;
+    let nj_sp = nctr_j * dj;
+    let staging_required = ni_sp * nj_sp * 2 * rank;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    match op {
+        "spgsp" => {
+            // 8-G London overlap; origin = ri, London phase = ri − rj (no common_orig).
+            // Its OWN BufferTooSmall guard runs inside the launcher too.
+            launch_int1e_spgsp_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
+                exps_i, exps_j, coeff_i, coeff_j, staging,
+            )
+        }
+        "cg_sa10sp" => {
+            // Gauge fold: dri = ri − common_orig.
+            let dri = [
+                ri[0] - common_orig[0],
+                ri[1] - common_orig[1],
+                ri[2] - common_orig[2],
+            ];
+            launch_int1e_cg_sa10sp_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, dri,
+                exps_i, exps_j, coeff_i, coeff_j, staging,
+            )
+        }
+        "giao_sa10sp" => {
+            // Natural-center: cg at origin = [0,0,0] (G1E_R_I).
+            launch_int1e_giao_sa10sp_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
+                exps_i, exps_j, coeff_i, coeff_j, staging,
+            )
+        }
+        other => Err(cintxRsError::UnsupportedApi {
+            requested: format!("int1e_{other}_spinor is not a Sub-wave-1a GIAO×σ 1e family"),
+        }),
+    }
+}
