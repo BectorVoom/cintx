@@ -635,7 +635,7 @@ Gap-Wave 3 (after 26-05):
   3. A dedicated `vendor_*` spinor parity test executes under both flags (`running N>0 tests`) and is not a `skipped` fixture; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
 **Plans**: 5 plans
-- [ ] 27-01-PLAN.md — D-11 design spike (confirm device derivative cart block layout + 3c2e transpose granularity + nctr composition) + Wave-0 scaffolding (RED parity test file, D-08 adversarial fixture, missing vendor FFI)
+- [x] 27-01-PLAN.md — D-11 design spike (confirm device derivative cart block layout + 3c2e transpose granularity + nctr composition) + Wave-0 scaffolding (RED parity test file, D-08 adversarial fixture, missing vendor FFI)
 - [ ] 27-02-PLAN.md — `cart_to_spinor_sf_derivative_2d` + `_3c2e` wrappers in c2spinor.rs (ncomp loop, D-06 internal transpose, nctr>1, FND-06 fail-closed) + unit tests
 - [ ] 27-03-PLAN.md — rewire sf_2d-path launchers (one_electron.rs all rank tiers + center_2c2e.rs ip1/ip2); sf_2d/2c2e vendor parity green
 - [ ] 27-04-PLAN.md — rewire sf_3c2e-path launchers (center_3c2e.rs int3c2e_ip1/ip2 + int3c1e_ip1/iprinv); int3c2e_ip1 vendor parity green
