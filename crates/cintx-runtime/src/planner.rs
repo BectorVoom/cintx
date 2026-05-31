@@ -1196,4 +1196,73 @@ mod tests {
             }
         }
     }
+
+    // FND-03 (D-01): build_output_layout sizes complex staging from the manifest
+    // `complex_output` flag, NOT from Representation::Spinor.
+    #[test]
+    fn build_output_layout_sizes_complex_from_manifest_flag_true() {
+        // int1e_ovlp_spinor was backfilled complex_output=true in Task 1.
+        let descriptor =
+            Resolver::descriptor_by_symbol("int1e_ovlp_spinor").expect("spinor descriptor");
+        assert!(
+            descriptor.entry.complex_output,
+            "int1e_ovlp_spinor must carry complex_output=true"
+        );
+        let (basis, shells) = sample_basis(Representation::Spinor);
+        let validated =
+            validate_shell_tuple(descriptor, Representation::Spinor, &basis, &shells).unwrap();
+        let component_count = component_multiplier_for_descriptor(descriptor).unwrap();
+        let base_elements: usize = validated
+            .as_slice()
+            .iter()
+            .map(|shell| shell.ao_per_shell())
+            .product();
+
+        let layout = build_output_layout(descriptor, &validated, component_count).unwrap();
+        assert!(layout.complex_interleaved);
+        assert_eq!(
+            layout.staging_elements,
+            base_elements * component_count * 2
+        );
+    }
+
+    #[test]
+    fn build_output_layout_sizes_real_from_manifest_flag_false() {
+        // int1e_ovlp_cart is a real family: complex_output=false (default).
+        let descriptor =
+            Resolver::descriptor_by_symbol("int1e_ovlp_cart").expect("cart descriptor");
+        assert!(
+            !descriptor.entry.complex_output,
+            "int1e_ovlp_cart must carry complex_output=false"
+        );
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let validated =
+            validate_shell_tuple(descriptor, Representation::Cart, &basis, &shells).unwrap();
+        let component_count = component_multiplier_for_descriptor(descriptor).unwrap();
+        let base_elements: usize = validated
+            .as_slice()
+            .iter()
+            .map(|shell| shell.ao_per_shell())
+            .product();
+
+        let layout = build_output_layout(descriptor, &validated, component_count).unwrap();
+        assert!(!layout.complex_interleaved);
+        assert_eq!(layout.staging_elements, base_elements * component_count);
+    }
+
+    #[test]
+    fn build_output_layout_spinor_family_still_complex_via_backfill() {
+        // Existing spinor family stays complex because Task 1 backfilled the flag.
+        let descriptor =
+            Resolver::descriptor_by_symbol("int1e_kin_spinor").expect("kin spinor descriptor");
+        let (basis, shells) = sample_basis(Representation::Spinor);
+        let validated =
+            validate_shell_tuple(descriptor, Representation::Spinor, &basis, &shells).unwrap();
+        let component_count = component_multiplier_for_descriptor(descriptor).unwrap();
+        let layout = build_output_layout(descriptor, &validated, component_count).unwrap();
+        assert!(
+            layout.complex_interleaved,
+            "spinor family must remain complex-interleaved via complex_output backfill"
+        );
+    }
 }

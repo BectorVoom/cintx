@@ -1610,6 +1610,55 @@ mod tests {
         verify_helper_surface_coverage(&inputs).expect("helper parity");
     }
 
+    // FND-03 (D-04): assert_flat_buffer_contract is always-on fail-closed gated
+    // on `complex_interleaved` for ANY representation, not just "spinor".
+    fn complex_fixture(representation: &str, dims: Vec<usize>) -> OracleFixture {
+        OracleFixture {
+            family: "1e".to_string(),
+            symbol: "int1e_igovlp_test".to_string(),
+            representation: representation.to_string(),
+            arity: 2,
+            dims,
+            component_count: 1,
+            complex_interleaved: true,
+        }
+    }
+
+    #[test]
+    fn assert_flat_buffer_contract_rejects_odd_complex_buffer() {
+        // complex_interleaved fixture whose flat buffer has an odd length must FAIL.
+        let fixture = complex_fixture("spinor", vec![2, 2]);
+        // required_elements = 2*2*1*2 = 8; supply an odd-length buffer.
+        let values = vec![1.0_f64; 7];
+        assert!(
+            !assert_flat_buffer_contract(&fixture, &values),
+            "odd-length complex buffer must fail the fail-closed contract"
+        );
+    }
+
+    #[test]
+    fn assert_flat_buffer_contract_honors_complex_cart_sph() {
+        // A complex cart/sph (non-spinor) fixture is honored: a correctly-sized
+        // interleaved buffer passes, and a real-only (half-sized) buffer fails.
+        let fixture = complex_fixture("cart", vec![2, 2]);
+        let required = fixture.required_elements();
+        assert_eq!(required, 8, "complex cart 2x2 must require 8 interleaved doubles");
+
+        let good = vec![1.0_f64; required];
+        assert!(
+            assert_flat_buffer_contract(&fixture, &good),
+            "correctly-sized complex cart buffer must pass"
+        );
+
+        // A complex family staged real-only (half the elements) must FAIL even in
+        // release (always-on, no debug gate).
+        let real_only = vec![1.0_f64; required / 2];
+        assert!(
+            !assert_flat_buffer_contract(&fixture, &real_only),
+            "complex cart family staged real-only must fail fail-closed"
+        );
+    }
+
     #[test]
     fn evaluated_output_parity_and_optimizer_equivalence_hold() {
         let inputs = OracleRawInputs::sample();
