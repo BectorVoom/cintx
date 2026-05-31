@@ -1,6 +1,9 @@
 # Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex) - Context
 
 **Gathered:** 2026-05-31
+**Reviewed:** 2026-05-31 — re-discussed all four decision clusters (FND-03 routing,
+safe-API/vendor binding, proof/fixture, sequencing/kernel); all 14 decisions
+(D-01–D-14) reaffirmed unchanged. Manifest complex-flag shape stays implementer's call (D-01).
 **Status:** Ready for planning
 
 <domain>

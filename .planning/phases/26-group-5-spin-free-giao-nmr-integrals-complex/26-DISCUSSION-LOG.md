@@ -87,3 +87,19 @@ Conditionals) before writing any kernel code. Reinforces the standing project-wi
 - Spinor GIAO representations → `UnsupportedApi` this phase.
 - `Complex64` repr-C FFI binding → later ergonomics improvement, not needed for byte-identity.
 - `rys-nroots-ge6-wheeler-fallback` todo → resolved in Phase 25; reviewed, not folded.
+
+---
+
+## Review session — 2026-05-31 (re-discuss, "Update it")
+
+Re-opened all four decision clusters; every locked decision held unchanged.
+
+| Cluster | Question asked | Selection |
+|---------|----------------|-----------|
+| FND-03 routing | Pin manifest complex-flag shape now, or keep open? (Keep open / bool `complex_output` / u32 multiplier) | **Keep open** — implementer's call (D-01 unchanged) |
+| Safe-API & vendor binding | Change D-03 surface or D-05 binding? (Keep both / repr(C) Complex64 / raw buffer) | **Keep both as locked** |
+| Proof & fixture | Strengthen, relax, or keep D-06/D-07? (Keep / add multi-atom origin / relax real-zero) | **Keep as locked** |
+| Sequencing & kernel | Change D-09 clustering or D-08 authoring? (Keep both / serialize / re-split clusters) | **Keep both as locked** |
+
+**Outcome:** No decision changes. CONTEXT.md re-stamped with a `Reviewed:` line confirming
+D-01–D-14 unchanged. Phase remains Ready for planning.
