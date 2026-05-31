@@ -106,6 +106,10 @@ None. The build.rs codegen path meant Task 2 required no hand-editing of the 355
 - 29-02 can now wire the 7 `one_electron.rs` Spinor launcher arms onto the existing transforms (`spsp`→sf_2d, `spnucsp/sprinvsp/srsr/srnucsr`→si_2d, `sr/sigma`→the new si_2di), replace the `collect_cintx_rel_1e` stub, remove the `#[ignore]` markers, and flip `oracle_covered=true` per family after each byte-identity gate passes under the double gate (`--features cpu` + `CINTX_ORACLE_BUILD_VENDOR=1`).
 - No blockers. Vendor shims link, manifest rows registered, scaffold compiles and the always-on assertions pass.
 
+## Self-Check: PASSED
+
+All created/modified files exist on disk; all 4 task/doc commits (9d38f67, 62761ff, bd06ada, 42e2f3a) present in git history.
+
 ---
 *Phase: 29-group-4-relativistic-spin-operator-integrals-spinor*
 *Completed: 2026-05-31*
