@@ -634,12 +634,13 @@ Gap-Wave 3 (after 26-05):
   2. `int1e_ipovlp_spinor` moves from `UnsupportedApi` to byte-identity at atol=1e-12 against a spinor fixture, and the sibling `ip`-decorated spinor families that depend only on B1 are flipped `oracle_covered=true` (FND-04).
   3. A dedicated `vendor_*` spinor parity test executes under both flags (`running N>0 tests`) and is not a `skipped` fixture; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
-**Plans**: 5 plans
-- [x] 27-01-PLAN.md — D-11 design spike (confirm device derivative cart block layout + 3c2e transpose granularity + nctr composition) + Wave-0 scaffolding (RED parity test file, D-08 adversarial fixture, missing vendor FFI)
-- [ ] 27-02-PLAN.md — `cart_to_spinor_sf_derivative_2d` + `_3c2e` wrappers in c2spinor.rs (ncomp loop, D-06 internal transpose, nctr>1, FND-06 fail-closed) + unit tests
-- [ ] 27-03-PLAN.md — rewire sf_2d-path launchers (one_electron.rs all rank tiers + center_2c2e.rs ip1/ip2); sf_2d/2c2e vendor parity green
-- [ ] 27-04-PLAN.md — rewire sf_3c2e-path launchers (center_3c2e.rs int3c2e_ip1/ip2 + int3c1e_ip1/iprinv); int3c2e_ip1 vendor parity green
-- [ ] 27-05-PLAN.md — flip oracle_covered for 24 in-scope families, update R5/D-03 note, complete D-10 no-silent-skip assertion, manifest-audit green
+**Plans**: 6 plans (re-planned 2026-05-31 — disproven spinor aux-k reconciled to SPHERICAL nsph(lk); added 27-02a to fix committed scaffolding)
+- [x] 27-01-PLAN.md — D-11 design spike (confirm device derivative cart block layout + 3c2e transpose granularity + nctr composition) + Wave-0 scaffolding (RED parity test file, D-08 adversarial fixture, missing vendor FFI). NOTE: encoded the WRONG (spinor) aux-k contract; corrected by 27-02a.
+- [ ] 27-02-PLAN.md (wave 2) — `cart_to_spinor_sf_derivative_2d` + `_3c2e` + `_3c1e` (thin sibling) wrappers in c2spinor.rs (ncomp loop, D-06 internal transpose, nctr>1, SPHERICAL aux-k nsph(lk), FND-06 fail-closed) + unit tests (pins 360-not-720)
+- [ ] 27-02a-PLAN.md (wave 2, parallel) — RECONCILE committed 27-01 scaffolding to SPHERICAL aux-k: fix spinor_deriv_parity.rs collectors (aux-k = nsph(lk)), fixtures.rs ao_count_for_rep, vendor_ffi.rs doc comments; assert p×d×s buffer = 360, not 720
+- [ ] 27-03-PLAN.md (wave 3) — rewire sf_2d-path launchers (one_electron.rs all rank tiers + center_2c2e.rs ip1/ip2); sf_2d/2c2e vendor parity green
+- [ ] 27-04-PLAN.md (wave 3) — rewire sf_3c2e-path launchers (center_3c2e.rs int3c2e_ip1/ip2 via _3c2e + int3c1e_ip1/iprinv via the _3c1e thin sibling), SPHERICAL aux-k; int3c2e_ip1 + both int3c1e vendor parity green at 360-element buffer
+- [ ] 27-05-PLAN.md (wave 4) — flip oracle_covered for 24 in-scope families, update R5/D-03 note, complete D-10 no-silent-skip assertion, manifest-audit green
 **Research flag**: The D-11 design spike is scheduled as Plan 27-01 (a HARD GATE before the `_3c2e` wrapper signature and nctr>1 composition are finalized in Plan 27-02) — it confirms the device-emitted derivative cart block layout and the 3c2e transpose granularity against hand-checked vendor values.
 
 ### Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)
