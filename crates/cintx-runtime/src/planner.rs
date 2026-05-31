@@ -292,10 +292,31 @@ fn build_output_layout(
     shells: &ValidatedShellTuple,
     component_count: usize,
 ) -> Result<OutputLayoutMetadata, cintxRsError> {
-    let extents: Vec<usize> = shells
-        .as_slice()
+    let shell_slice = shells.as_slice();
+    let arity = shell_slice.len();
+    let extents: Vec<usize> = shell_slice
         .iter()
-        .map(|shell| shell.ao_per_shell())
+        .enumerate()
+        .map(|(axis, shell)| {
+            // 27-04 (AUX-K CONTRACT): arity-3 SPINOR derivative families
+            // (int3c2e_ip1/ip2, int3c1e_ip1/iprinv) size the auxiliary-k axis (the
+            // tail shell, axis == arity-1) SPHERICALLY as nsph(lk) = (2lk+1)*nctr_k,
+            // NOT spinor (4l+2). Only bra i and ket j are spinor-sized. Source:
+            // libcint CINT3c2e_spinor_drv is_ssc=0 (cint3c2e.c:631-636,
+            // counts[2] = (k_l*2+1)*x_ctr[2]); 27-SPIKE-FINDINGS CORRECTION NOTICE.
+            // ao_per_shell() over-sizes the aux-k as spinor (the disproven 720); this
+            // positional override mirrors the oracle fixtures' dims_for_arity so the
+            // compat output-length contract matches the vendor buffer (spherical k).
+            if arity == 3
+                && axis == arity - 1
+                && shell.representation == Representation::Spinor
+            {
+                let l = shell.ang_momentum as usize;
+                (2 * l + 1) * shell.nctr as usize
+            } else {
+                shell.ao_per_shell()
+            }
+        })
         .collect();
     let base_elements = extents
         .iter()
