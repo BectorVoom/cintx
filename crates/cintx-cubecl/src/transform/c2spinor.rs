@@ -1358,6 +1358,115 @@ fn c2s_k_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
     }
 }
 
+/// Derivative (multi-component) spin-free cart→spinor transform for arity-2 families
+/// (1e gradients/Hessians: ipovlp, ipkin, ipnuc, iprinv, and their higher-order siblings).
+///
+/// This is the SINGLE audited place that owns the KET→BRA orientation transpose (D-06).
+/// No launcher may own that transpose again — the scalar-spinor orientation bug
+/// (project memory `1e family fully on-device + spinor orientation fixed`) came from a
+/// launcher doing it incorrectly on a square block. Here it is centralized and regression-
+/// anchored to a NON-SQUARE p×d block.
+///
+/// # Layout contract
+/// - `cart`: device-native, component-leading, KET-major per (comp, contraction) sub-block:
+///   `cart[(ci*nctr_j + cj)*total_len + comp*block_len + jc*nci + ic]`, `total_len = ncomp*block_len`,
+///   `block_len = nci*ncj` (matches the cart/sph nctr>1 scatter in one_electron.rs L9897-9916).
+/// - `staging`: component-outer interleaved-complex spinor output:
+///   `staging[comp*spinor_block + (j_global*ni_full + i_global)*2 + {0:re, 1:im}]`,
+///   `spinor_block = ni_full*nj_full*2`, `ni_full = nctr_i*di`, `nj_full = nctr_j*dj`,
+///   `di = spinor_len(li, kappa_i)`, `dj = spinor_len(lj, kappa_j)`.
+/// - nctr>1 composes contraction-MAJOR: `i_global = ci*di + ic`, `j_global = cj*dj + jc`
+///   (D-08 / spike D4). The env coeff column→row transpose lives in the launcher, not here;
+///   this wrapper consumes the already-emitted device cart blocks, so no coefficient transpose
+///   leaks to the output.
+///
+/// # Fail-closed (FND-06)
+/// Sizes are checked ONCE upfront from `ncomp`/`nctr_*`; on mismatch a typed error is returned
+/// BEFORE any write. There are NO `if dst < staging.len()` scatter guards (monolithic-writer
+/// contract).
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_sf_derivative_2d<F: CintFloat>(
+    staging: &mut [F],
+    cart: &[f64],
+    ncomp: usize,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nctr_i: usize,
+    nctr_j: usize,
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let block_len = nci * ncj;
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_full = nctr_i * di;
+    let nj_full = nctr_j * dj;
+    let spinor_block = ni_full * nj_full * 2; // D-07 component-outer stride
+    let total_len = ncomp * block_len; // per (ci,cj) component-leading cart extent
+
+    // ── FAIL-CLOSED upfront (FND-06): size-check once, then write unconditionally ──
+    let cart_required = ncomp * block_len * nctr_i * nctr_j;
+    if cart.len() < cart_required {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "c2spinor_sf_derivative_2d",
+            detail: format!(
+                "cart buffer length {} < ncomp*block_len*nctr_i*nctr_j = {}*{}*{}*{} = {}",
+                cart.len(), ncomp, block_len, nctr_i, nctr_j, cart_required
+            ),
+        });
+    }
+    let staging_required = ncomp * spinor_block;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // Scratch reused across (comp, ci, cj) iterations.
+    let mut block_bra_major = vec![0.0f64; block_len];
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+
+    for comp in 0..ncomp {
+        let comp_base = comp * spinor_block;
+        for ci in 0..nctr_i {
+            for cj in 0..nctr_j {
+                // Device-native KET-major sub-block for this (comp, ci, cj).
+                let src_base = (ci * nctr_j + cj) * total_len + comp * block_len;
+                let block = &cart[src_base..src_base + block_len];
+
+                // D-06: KET→BRA transpose so cart_to_spinor_sf_2d reads bra-major.
+                for ic in 0..nci {
+                    for jc in 0..ncj {
+                        block_bra_major[ic * ncj + jc] = block[jc * nci + ic];
+                    }
+                }
+
+                cart_to_spinor_sf_2d::<F>(
+                    &mut scratch, &block_bra_major, li, kappa_i, lj, kappa_j,
+                )?;
+
+                // Scatter the di*dj*2 spinor block into the contraction-major position.
+                // scratch is column-major: scratch[(j*di + i)*2 + {re,im}].
+                for j in 0..dj {
+                    let j_global = cj * dj + j;
+                    for i in 0..di {
+                        let i_global = ci * di + i;
+                        let src = (j * di + i) * 2;
+                        let dst = comp_base + (j_global * ni_full + i_global) * 2;
+                        staging[dst] = scratch[src];
+                        staging[dst + 1] = scratch[src + 1];
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
