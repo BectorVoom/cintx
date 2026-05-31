@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Phase 27 context gathered
+stopped_at: Phase 27 PAUSED at Plan 02 — re-plan pending (spike D2 k-axis disproven)
 last_updated: "2026-05-31T06:51:45.109Z"
-last_activity: 2026-05-31 -- Phase 27 execution started
+last_activity: 2026-05-31 -- Phase 27 paused: 27-01 done, 27-02 blocked on 3c2e k-axis re-plan
 progress:
   total_phases: 21
   completed_phases: 16
@@ -25,11 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 27 (spinor-derivative-transform-gap-b1) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 27
+Phase: 27 (spinor-derivative-transform-gap-b1) — PAUSED (re-plan pending)
+Plan: 27-01 complete; 27-02 paused before any commit
+Status: Paused at Plan 02 decision — spike finding D2 (3c2e aux-k = spinor 4lk+2) DISPROVEN against libcint 6.1.3 source (int3c2e_*_spinor emits SPHERICAL aux-k = 2lk+1, verified cint3c2e.c:631-636, cart2sph.c:6014, autocode/int3c2e.c:94/175). User chose Option 3: re-spike/re-plan to reconcile spike + RED test k-sizing + compat-dims over-sizing before resuming Plan 02.
 Resume file: .planning/phases/27-spinor-derivative-transform-gap-b1/27-CONTEXT.md
-Last activity: 2026-05-31 -- Phase 27 execution started
+Re-plan inputs: 27-SPIKE-FINDINGS.md (D2 needs correction), spinor_deriv_parity.rs (RED test k-sizing), fixtures.rs ao_count_for_rep (compat-dims over-sizing root cause), draft/27-02-c2spinor-wrappers-draft.patch (paused executor's uncommitted draft)
+Last activity: 2026-05-31 -- Phase 27 paused: 27-01 done, 27-02 blocked on 3c2e k-axis re-plan
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
