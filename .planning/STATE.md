@@ -4,14 +4,14 @@ milestone: v1.4
 milestone_name: milestone
 status: executing
 stopped_at: Completed 28-02-PLAN.md
-last_updated: "2026-05-31T11:37:46.651Z"
+last_updated: "2026-05-31T11:54:31.842Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 28
   completed_phases: 27
   total_plans: 142
-  completed_plans: 141
-  percent: 99
+  completed_plans: 142
+  percent: 100
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 28 (spin-included-c2s-si-transform-p-module-gap-b2) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Resume file: None
 
@@ -163,6 +163,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 26 P03 | 70 | 3 tasks | 8 files |
 | Phase 28 P01 | 12 | 2 tasks | 1 files |
 | Phase 28 P02 | 9 | 1 tasks | 2 files |
+| Phase 28 P03 | 38 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -358,6 +359,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: [Phase 28-01]: si 2D bra step (cart_to_spinor_si_2d) uses a_bra_cart2spinor_si signs (+ca_i*vz/-cb_r*vy/+cb_i*vx), NOT apply_si_block's CINTc2s_ket_spinor_si1 convention; apply_si_block left untouched for the single-block helper surface.
 - [Phase ?]: [Phase 28-01]: cart_to_spinor_si_2d owns the KET->BRA transpose internally per gc block (Phase-27 D-06), reuses ordinary apply_ket_transform verbatim, sizes all buffers via spinor_len (never hardcoded 4l+2), and fail-closes before any write.
 - [Phase ?]: [Phase 28]: σ·p assembler emits PRE-BLOCKED component-leading gc[comp*block_len+n] on-device (not interleaved gout[n*4+comp]) so cart_to_spinor_si_2d reads gc_x=block0..gc_1=block3 with no host transpose; rank-parameterized via #[comptime] tensor_rank for int1e_sigma reuse (D-03)
+- [Phase ?]: Phase 28-03: int1e_sp_spinor registered infrastructure-only (oracle_covered=false, appended last so OperatorId 347, no positional shift); SC#4 enforced via is_skipped_spinor_fixture so oracle-covered-update refuses to flip it; vendor_int1e_sp_spinor FFI shim + bindgen allowlist added; D-01 honored (σ flips deferred to Phase 29).
 
 ### Roadmap Evolution
 
@@ -404,6 +406,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T11:37:46.647Z
+Last session: 2026-05-31T11:54:22.856Z
 Stopped at: Completed 28-02-PLAN.md
 Resume file: None
