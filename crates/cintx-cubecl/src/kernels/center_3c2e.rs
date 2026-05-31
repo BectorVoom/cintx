@@ -24,7 +24,7 @@ use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_3c2e, ncart, nsph};
-use crate::transform::c2spinor::cart_to_spinor_sf_3c2e;
+use crate::transform::c2spinor::{cart_to_spinor_sf_3c2e, cart_to_spinor_sf_derivative_3c2e};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -2390,12 +2390,9 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
     lk: u8,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    // R5 / T-21-06-04: spinor gradient is not supported. Reject before any compute.
-    if plan.representation == Representation::Spinor {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int3c2e_ip1 gradient".to_owned(),
-        });
-    }
+    // Phase 27 (27-04, D-06): spinor gradient now evaluates via the Plan-02 derivative
+    // wrapper `cart_to_spinor_sf_derivative_3c2e` (SPHERICAL aux-k). The early reject is
+    // removed; the Spinor arm in the staging match below folds the device cart blocks.
 
     // 3c2e kl mapping into the 2e shape (Pitfall-4): real k → 2e `ll` slot, phantom
     // 2e `lk` slot = 0; bra `i` raised to `li+1` so `nabla1i_2e` can read index li+1.
@@ -2569,7 +2566,35 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                 }
             }
         }
-        Representation::Spinor => unreachable!("spinor int3c2e_ip1 rejected above"),
+        Representation::Spinor => {
+            // 27-04 (D-06): fold the device cart blocks to spinor via the Plan-02
+            // derivative wrapper. Aux-k is SPHERICAL nsph(lk); only bra i / ket j are
+            // spinor-sized (4l+2). The wrapper owns the KET→BRA transpose and the
+            // per-(comp,k) cart→sph(k) + sf_2d fold (no transpose lives here).
+            //
+            // The wrapper indexes the device cart_blocks as
+            // `[(ci*n_ctr_j+cj)][comp][k][j][i]` (a single spherical aux-k axis per
+            // (ci,cj) sub-block). It does not handle a contracted aux-k axis, so
+            // fail closed for n_ctr_k > 1 rather than silently producing wrong data.
+            if n_ctr_k > 1 {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "spinor int3c2e_ip1 gradient with general-contracted aux-k (nctr_k>1)"
+                        .to_owned(),
+                });
+            }
+            cart_to_spinor_sf_derivative_3c2e::<F>(
+                staging,
+                &cart_blocks,
+                3,
+                li,
+                shell_i.kappa,
+                lj,
+                shell_j.kappa,
+                lk,
+                n_ctr_i,
+                n_ctr_j,
+            )?;
+        }
     }
 
     // Per-symbol nonzero sentinel (precision-aware; matches the scalar path).
@@ -2628,12 +2653,10 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
     lk: u8,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    // D-06: spinor gradient is not supported. Reject before any compute.
-    if plan.representation == Representation::Spinor {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int3c2e_ip2 gradient".to_owned(),
-        });
-    }
+    // Phase 27 (27-04, D-06): spinor gradient now evaluates via the same Plan-02
+    // derivative wrapper `cart_to_spinor_sf_derivative_3c2e` (SPHERICAL aux-k) — ip2
+    // shares ip1's buffer SHAPE, differing only in which center is differentiated
+    // (the device kernel already picked nabla1l). The early reject is removed.
 
     // 3c2e kl mapping into the 2e shape (Pitfall 2): real k → 2e `ll` slot, phantom
     // 2e `lk` slot = 0. For ip2 the bra `i` is NOT raised; the real aux k (`ll` slot)
@@ -2807,7 +2830,31 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                 }
             }
         }
-        Representation::Spinor => unreachable!("spinor int3c2e_ip2 rejected above"),
+        Representation::Spinor => {
+            // 27-04 (D-06): ip2 spinor gradient folds the device cart blocks through
+            // the SAME derivative wrapper as ip1 (identical buffer shape per the spike;
+            // the device kernel already chose the aux/ket-center gradient). Aux-k stays
+            // SPHERICAL nsph(lk); only bra i / ket j are spinor-sized (4l+2). No
+            // transpose lives here (D-06: it is owned inside the wrapper).
+            if n_ctr_k > 1 {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "spinor int3c2e_ip2 gradient with general-contracted aux-k (nctr_k>1)"
+                        .to_owned(),
+                });
+            }
+            cart_to_spinor_sf_derivative_3c2e::<F>(
+                staging,
+                &cart_blocks,
+                3,
+                li,
+                shell_i.kappa,
+                lj,
+                shell_j.kappa,
+                lk,
+                n_ctr_i,
+                n_ctr_j,
+            )?;
+        }
     }
 
     // Per-symbol nonzero sentinel (precision-aware; matches the scalar path).

@@ -1332,14 +1332,26 @@ pub fn cart_to_spinor_sf_3c2e<F: CintFloat>(
     }
 
     // ── Step 2+3: apply 2D spinor transform (i,j) for each k_sph slice ────
-    // Input per k: sph_k[(mk * ncj + j) * nci + i] — layout: k outer, j middle, i inner
-    // For each k_sph, extract the [nci * ncj] slice and apply cart_to_spinor_sf_2d.
+    // Input per k: sph_k[(mk * ncj + j) * nci + i] — KET-major (k outer, j=ket middle,
+    // i=bra inner). `cart_to_spinor_sf_2d` reads its cart input BRA-major as
+    // `cart[bra_n * ncj + ket_j]` (apply_bra_block L693). So the per-k slice must be
+    // transposed KET→BRA before the spin-free fold. This is the D-06 orientation
+    // transpose (it lives in the transform layer, never the launcher); it was latent
+    // because no NON-SQUARE 3c2e spinor block (nci != ncj) was ever exercised — for a
+    // square block the two layouts coincide and the bug is invisible (27-04).
+    let mut bra_major = vec![0.0f64; ncj * nci];
     for mk in 0..nsk {
         let slice_start = mk * ncj * nci;
         let cart_slice = &sph_k[slice_start..slice_start + ncj * nci];
+        // ket-major sph_k[j*nci + i]  →  bra-major bra_major[i*ncj + j]
+        for j in 0..ncj {
+            for i in 0..nci {
+                bra_major[i * ncj + j] = cart_slice[j * nci + i];
+            }
+        }
         let staging_start = mk * di * dj * 2;
         let staging_slice = &mut staging[staging_start..staging_start + di * dj * 2];
-        cart_to_spinor_sf_2d(staging_slice, cart_slice, li, kappa_i, lj, kappa_j)?;
+        cart_to_spinor_sf_2d(staging_slice, &bra_major, li, kappa_i, lj, kappa_j)?;
     }
 
     Ok(())
