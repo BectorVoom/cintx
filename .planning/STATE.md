@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: milestone
-status: executing
-stopped_at: Completed 28-02-PLAN.md
-last_updated: "2026-05-31T11:54:31.842Z"
+status: verifying
+stopped_at: Completed 28-04-PLAN.md
+last_updated: "2026-05-31T12:09:23.652Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 28
-  completed_phases: 27
+  completed_phases: 28
   total_plans: 142
-  completed_plans: 142
+  completed_plans: 143
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 Phase: 28 (spin-included-c2s-si-transform-p-module-gap-b2) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Resume file: None
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
@@ -164,6 +164,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 28 P01 | 12 | 2 tasks | 1 files |
 | Phase 28 P02 | 9 | 1 tasks | 2 files |
 | Phase 28 P03 | 38 | 2 tasks | 8 files |
+| Phase 28 P04 | 42min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -360,6 +361,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: [Phase 28-01]: cart_to_spinor_si_2d owns the KET->BRA transpose internally per gc block (Phase-27 D-06), reuses ordinary apply_ket_transform verbatim, sizes all buffers via spinor_len (never hardcoded 4l+2), and fail-closes before any write.
 - [Phase ?]: [Phase 28]: σ·p assembler emits PRE-BLOCKED component-leading gc[comp*block_len+n] on-device (not interleaved gout[n*4+comp]) so cart_to_spinor_si_2d reads gc_x=block0..gc_1=block3 with no host transpose; rank-parameterized via #[comptime] tensor_rank for int1e_sigma reuse (D-03)
 - [Phase ?]: Phase 28-03: int1e_sp_spinor registered infrastructure-only (oracle_covered=false, appended last so OperatorId 347, no positional shift); SC#4 enforced via is_skipped_spinor_fixture so oracle-covered-update refuses to flip it; vendor_int1e_sp_spinor FFI shim + bindgen allowlist added; D-01 honored (σ flips deferred to Phase 29).
+- [Phase ?]: FND-05 proven byte-identical: int1e_sp σ·p assembler → cart_to_spinor_si_2d vs vendor int1e_sp_spinor at atol=1e-12 (no manifest flip, D-01)
 
 ### Roadmap Evolution
 
@@ -406,6 +408,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T11:54:22.856Z
-Stopped at: Completed 28-02-PLAN.md
+Last session: 2026-05-31T12:09:19.126Z
+Stopped at: Completed 28-04-PLAN.md
 Resume file: None
