@@ -1358,6 +1358,272 @@ fn c2s_k_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
     }
 }
 
+/// Derivative (multi-component) spin-free cart→spinor transform for arity-2 families
+/// (1e gradients/Hessians: ipovlp, ipkin, ipnuc, iprinv, and their higher-order siblings).
+///
+/// This is the SINGLE audited place that owns the KET→BRA orientation transpose (D-06).
+/// No launcher may own that transpose again — the scalar-spinor orientation bug
+/// (project memory `1e family fully on-device + spinor orientation fixed`) came from a
+/// launcher doing it incorrectly on a square block. Here it is centralized and regression-
+/// anchored to a NON-SQUARE p×d block.
+///
+/// # Layout contract
+/// - `cart`: device-native, component-leading, KET-major per (comp, contraction) sub-block:
+///   `cart[(ci*nctr_j + cj)*total_len + comp*block_len + jc*nci + ic]`, `total_len = ncomp*block_len`,
+///   `block_len = nci*ncj` (matches the cart/sph nctr>1 scatter in one_electron.rs L9897-9916).
+/// - `staging`: component-outer interleaved-complex spinor output:
+///   `staging[comp*spinor_block + (j_global*ni_full + i_global)*2 + {0:re, 1:im}]`,
+///   `spinor_block = ni_full*nj_full*2`, `ni_full = nctr_i*di`, `nj_full = nctr_j*dj`,
+///   `di = spinor_len(li, kappa_i)`, `dj = spinor_len(lj, kappa_j)`.
+/// - nctr>1 composes contraction-MAJOR: `i_global = ci*di + ic`, `j_global = cj*dj + jc`
+///   (D-08 / spike D4). The env coeff column→row transpose lives in the launcher, not here;
+///   this wrapper consumes the already-emitted device cart blocks, so no coefficient transpose
+///   leaks to the output.
+///
+/// # Fail-closed (FND-06)
+/// Sizes are checked ONCE upfront from `ncomp`/`nctr_*`; on mismatch a typed error is returned
+/// BEFORE any write. There are NO `if dst < staging.len()` scatter guards (monolithic-writer
+/// contract).
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_sf_derivative_2d<F: CintFloat>(
+    staging: &mut [F],
+    cart: &[f64],
+    ncomp: usize,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nctr_i: usize,
+    nctr_j: usize,
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let block_len = nci * ncj;
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_full = nctr_i * di;
+    let nj_full = nctr_j * dj;
+    let spinor_block = ni_full * nj_full * 2; // D-07 component-outer stride
+    let total_len = ncomp * block_len; // per (ci,cj) component-leading cart extent
+
+    // ── FAIL-CLOSED upfront (FND-06): size-check once, then write unconditionally ──
+    let cart_required = ncomp * block_len * nctr_i * nctr_j;
+    if cart.len() < cart_required {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "c2spinor_sf_derivative_2d",
+            detail: format!(
+                "cart buffer length {} < ncomp*block_len*nctr_i*nctr_j = {}*{}*{}*{} = {}",
+                cart.len(), ncomp, block_len, nctr_i, nctr_j, cart_required
+            ),
+        });
+    }
+    let staging_required = ncomp * spinor_block;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // Scratch reused across (comp, ci, cj) iterations.
+    let mut block_bra_major = vec![0.0f64; block_len];
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+
+    for comp in 0..ncomp {
+        let comp_base = comp * spinor_block;
+        for ci in 0..nctr_i {
+            for cj in 0..nctr_j {
+                // Device-native KET-major sub-block for this (comp, ci, cj).
+                let src_base = (ci * nctr_j + cj) * total_len + comp * block_len;
+                let block = &cart[src_base..src_base + block_len];
+
+                // D-06: KET→BRA transpose so cart_to_spinor_sf_2d reads bra-major.
+                for ic in 0..nci {
+                    for jc in 0..ncj {
+                        block_bra_major[ic * ncj + jc] = block[jc * nci + ic];
+                    }
+                }
+
+                cart_to_spinor_sf_2d::<F>(
+                    &mut scratch, &block_bra_major, li, kappa_i, lj, kappa_j,
+                )?;
+
+                // Scatter the di*dj*2 spinor block into the contraction-major position.
+                // scratch is column-major: scratch[(j*di + i)*2 + {re,im}].
+                for j in 0..dj {
+                    let j_global = cj * dj + j;
+                    for i in 0..di {
+                        let i_global = ci * di + i;
+                        let src = (j * di + i) * 2;
+                        let dst = comp_base + (j_global * ni_full + i_global) * 2;
+                        staging[dst] = scratch[src];
+                        staging[dst + 1] = scratch[src + 1];
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Internal: shared per-(comp,k) `[ket][bra]` spherical-aux-k derivative fold for arity-3
+/// families. Both the 3c2e wrapper and the int3c1e thin sibling delegate here — they consume
+/// the SAME device/host cart layout family (`[comp][k][ket][bra]`, KET-major bra-fastest) and
+/// fold it the SAME way; only the producing code path differs (D-11 / D3).
+///
+/// AUX-K is SPHERICAL: `nsk = nsph(lk) = (2lk+1)` (libcint `CINT3c2e_spinor_drv` is_ssc=0,
+/// cint3c2e.c:631-636). Only bra i and ket j are spinor-sized (4l+2). NEVER reconcile aux-k up
+/// to `CINTcgto_spinor` — that produced the disproven 720 (27-SPIKE-FINDINGS ⚠ CORRECTION NOTICE).
+///
+/// Fail-closed (FND-06): sizes checked ONCE upfront; no `if dst < len` scatter guards.
+#[allow(clippy::too_many_arguments)]
+fn cart_to_spinor_sf_derivative_3c_impl<F: CintFloat>(
+    from: &'static str,
+    staging: &mut [F],
+    cart: &[f64],
+    ncomp: usize,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+    nctr_i: usize,
+    nctr_j: usize,
+) -> Result<(), cintxRsError> {
+    use super::c2s::nsph;
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    // SPHERICAL aux-k — IDENTICAL to what the inner cart_to_spinor_sf_3c2e computes (L1293).
+    let nsk = nsph(lk);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_full = nctr_i * di;
+    let nj_full = nctr_j * dj;
+    let kblock = nck * ncj * nci; // per-component cart extent for one (ci,cj) sub-block
+    let total_len = ncomp * kblock;
+    // Component-outer stride includes the SPHERICAL k axis (the SAME nsk the inner uses).
+    let comp_stride = ni_full * nj_full * nsk * 2;
+
+    // ── FAIL-CLOSED upfront (FND-06) ──
+    let cart_required = ncomp * kblock * nctr_i * nctr_j;
+    if cart.len() < cart_required {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from,
+            detail: format!(
+                "cart buffer length {} < ncomp*nci*ncj*nck*nctr_i*nctr_j = {}*{}*{}*{}*{}*{} = {}",
+                cart.len(), ncomp, nci, ncj, nck, nctr_i, nctr_j, cart_required
+            ),
+        });
+    }
+    let staging_required = ncomp * comp_stride;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // Scratch for one (comp,ci,cj) inner 3c2e fold: di*dj*nsk*2 (the inner's required size).
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * nsk * 2];
+
+    for comp in 0..ncomp {
+        let comp_base = comp * comp_stride;
+        for ci in 0..nctr_i {
+            for cj in 0..nctr_j {
+                let src_base = (ci * nctr_j + cj) * total_len + comp * kblock;
+                let block = &cart[src_base..src_base + kblock];
+
+                // Inner transform owns the per-(comp,k) cart→sph(k) + KET→BRA + sf_2d fold.
+                cart_to_spinor_sf_3c2e::<F>(
+                    &mut scratch, block, li, kappa_i, lj, kappa_j, lk,
+                )?;
+
+                // scratch layout (per inner): scratch[mk*di*dj*2 + (j*di + i)*2 + {re,im}].
+                // Scatter into contraction-major output with the SPHERICAL k axis preserved.
+                for mk in 0..nsk {
+                    for j in 0..dj {
+                        let j_global = cj * dj + j;
+                        for i in 0..di {
+                            let i_global = ci * di + i;
+                            let src = (mk * di * dj + j * di + i) * 2;
+                            let dst = comp_base
+                                + (mk * ni_full * nj_full + j_global * ni_full + i_global) * 2;
+                            staging[dst] = scratch[src];
+                            staging[dst + 1] = scratch[src + 1];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Derivative (multi-component) spin-free cart→spinor transform for arity-3 2-electron
+/// families (`int3c2e_ip1_spinor` / `int3c2e_ip2_spinor`; ip1 and ip2 share this shape).
+///
+/// Loops the already-byte-identity-proven inner `cart_to_spinor_sf_3c2e` `ncomp` times with
+/// `comp_stride = ni_full*nj_full*nsph(lk)*2`. The KET→BRA transpose and the cart→sph(k) fold
+/// live inside that inner transform (per-(comp,k) granularity, D-11 spike).
+///
+/// AUX-K IS SPHERICAL `nsph(lk) = (2lk+1)*nctr_k` — never `CINTcgto_spinor`. For p×d×s kappa=0
+/// nctr=1 ncomp=3 the buffer is 360, NOT 720 (27-SPIKE-FINDINGS ⚠ CORRECTION NOTICE).
+///
+/// nctr>1 composes contraction-major on bra i / ket j only (`i_global = ci*di + ic`); the aux-k
+/// stays a single spherical axis. Fail-closed (FND-06): sizes checked upfront, no scatter guards.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_sf_derivative_3c2e<F: CintFloat>(
+    staging: &mut [F],
+    cart: &[f64],
+    ncomp: usize,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+    nctr_i: usize,
+    nctr_j: usize,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_sf_derivative_3c_impl::<F>(
+        "c2spinor_sf_derivative_3c2e",
+        staging, cart, ncomp, li, kappa_i, lj, kappa_j, lk, nctr_i, nctr_j,
+    )
+}
+
+/// THIN SIBLING (D3 decision): derivative spin-free cart→spinor transform for the
+/// `int3c1e_ip1` / `int3c1e_iprinv` spinor gradients. NOT the shared `_3c2e` wrapper because
+/// the int3c1e launcher produces its own host-side `out_buf` (a DIFFERENT code path:
+/// host scatter, not the device kernel + `cart_to_spinor_sf_3c2e`). The fold math is identical
+/// (per-(comp,k) `[ket][bra]`, SPHERICAL aux-k), so this sibling delegates to the same
+/// internal implementation while keeping the 3c2e wrapper's device-cart precondition decoupled
+/// from the 3c1e host scatter.
+///
+/// AUX-K IS SPHERICAL `nsph(lk)` (int3c1e_spinor sizes aux-k spherically exactly as int3c2e does);
+/// never `CINTcgto_spinor`. Fail-closed (FND-06). iprinv differs only in the gout (reads
+/// `env[PTR_RINV_ORIG]`) — that lives in the launcher, not here.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_sf_derivative_3c1e<F: CintFloat>(
+    staging: &mut [F],
+    cart: &[f64],
+    ncomp: usize,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+    nctr_i: usize,
+    nctr_j: usize,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_sf_derivative_3c_impl::<F>(
+        "c2spinor_sf_derivative_3c1e",
+        staging, cart, ncomp, li, kappa_i, lj, kappa_j, lk, nctr_i, nctr_j,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1772,5 +2038,294 @@ mod tests {
         }
         let nonzero = staging_f32.iter().filter(|&&v| v.abs() > 1e-5f32).count();
         assert!(nonzero > 0, "f32 2d spinor sf s-s should produce non-zero output");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  cart_to_spinor_sf_derivative_2d tests (Task 1)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// Build a deterministic KET-major derivative cart buffer `[comp][ket][bra]`
+    /// for nctr=1: cart[comp*block_len + jc*nci + ic].
+    fn make_deriv_cart_nctr1(ncomp: usize, nci: usize, ncj: usize) -> Vec<f64> {
+        let block_len = nci * ncj;
+        let mut cart = vec![0.0f64; ncomp * block_len];
+        for comp in 0..ncomp {
+            for jc in 0..ncj {
+                for ic in 0..nci {
+                    // distinct, non-zero per (comp,ic,jc)
+                    cart[comp * block_len + jc * nci + ic] =
+                        1.0 + comp as f64 + 0.5 * ic as f64 + 0.25 * jc as f64;
+                }
+            }
+        }
+        cart
+    }
+
+    /// (a) ncomp=3, nctr=1, NON-SQUARE p×d, kappa=0: wrapper output must equal a manual
+    /// replay of the inline rank-3 transform (one_electron.rs L9937-9965) byte-for-byte.
+    #[test]
+    fn derivative_2d_rank3_matches_inline() {
+        let (li, lj): (u8, u8) = (1, 2); // p × d (NON-SQUARE)
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li); // 3
+        let ncj = ncart(lj); // 6
+        let block_len = nci * ncj; // 18
+        let di = spinor_len(li, ki as i32); // 6
+        let dj = spinor_len(lj, kj as i32); // 10
+        let spinor_block = di * dj * 2;
+        let ncomp = 3usize;
+
+        let cart = make_deriv_cart_nctr1(ncomp, nci, ncj);
+
+        // Manual replay of the inline rank-3 transform.
+        let mut expected = vec![0.0f64; ncomp * spinor_block];
+        for comp in 0..ncomp {
+            let block = &cart[comp * block_len..comp * block_len + block_len];
+            let mut block_bra_major = vec![0.0f64; block_len];
+            for ic in 0..nci {
+                for jc in 0..ncj {
+                    block_bra_major[ic * ncj + jc] = block[jc * nci + ic];
+                }
+            }
+            cart_to_spinor_sf_2d::<f64>(
+                &mut expected[comp * spinor_block..comp * spinor_block + spinor_block],
+                &block_bra_major,
+                li, ki, lj, kj,
+            ).unwrap();
+        }
+
+        let mut got = vec![0.0f64; ncomp * spinor_block];
+        cart_to_spinor_sf_derivative_2d::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, 1, 1,
+        ).expect("derivative_2d rank3 should succeed");
+
+        for (idx, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            check_close(*g, *e, &format!("derivative_2d_rank3[{idx}]"));
+        }
+    }
+
+    /// (b) ncomp=9: output splits into exactly 9 non-overlapping all-nonzero di*dj*2 slices
+    /// (component-truncation guard — no trailing zero slice).
+    #[test]
+    fn derivative_2d_rank9_no_trailing_zero() {
+        let (li, lj): (u8, u8) = (1, 2);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let di = spinor_len(li, ki as i32);
+        let dj = spinor_len(lj, kj as i32);
+        let spinor_block = di * dj * 2;
+        let ncomp = 9usize;
+
+        let cart = make_deriv_cart_nctr1(ncomp, nci, ncj);
+        let mut got = vec![0.0f64; ncomp * spinor_block];
+        cart_to_spinor_sf_derivative_2d::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, 1, 1,
+        ).expect("derivative_2d rank9 should succeed");
+
+        for comp in 0..ncomp {
+            let slice = &got[comp * spinor_block..comp * spinor_block + spinor_block];
+            let nonzero = slice.iter().filter(|&&v| v.abs() > 1e-15).count();
+            assert!(nonzero > 0, "component {comp} slice is all-zero (truncation landmine)");
+        }
+    }
+
+    /// (c) nctr_i=2: output length is ncomp*(nctr_i*di)*(nctr_j*dj)*2 and contraction-major
+    /// composition places ci=1 at i_global = di..2*di (no coefficient transpose leaks).
+    #[test]
+    fn derivative_2d_nctr2_sizing() {
+        let (li, lj): (u8, u8) = (1, 2);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let block_len = nci * ncj;
+        let di = spinor_len(li, ki as i32);
+        let dj = spinor_len(lj, kj as i32);
+        let ncomp = 3usize;
+        let nctr_i = 2usize;
+        let nctr_j = 1usize;
+        let ni_full = nctr_i * di;
+        let nj_full = nctr_j * dj;
+        let spinor_block = ni_full * nj_full * 2;
+        let total_len = ncomp * block_len;
+
+        // KET-major cart with contraction sub-blocks: base = (ci*nctr_j+cj)*total_len + comp*block_len.
+        let mut cart = vec![0.0f64; nctr_i * nctr_j * total_len];
+        for ci in 0..nctr_i {
+            for cj in 0..nctr_j {
+                for comp in 0..ncomp {
+                    let base = (ci * nctr_j + cj) * total_len + comp * block_len;
+                    for jc in 0..ncj {
+                        for ic in 0..nci {
+                            // ci=0 sub-block deliberately ZERO; ci=1 non-zero so we can locate it.
+                            cart[base + jc * nci + ic] = if ci == 0 {
+                                0.0
+                            } else {
+                                1.0 + comp as f64 + 0.5 * ic as f64 + 0.25 * jc as f64
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut got = vec![0.0f64; ncomp * spinor_block];
+        cart_to_spinor_sf_derivative_2d::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, nctr_i, nctr_j,
+        ).expect("derivative_2d nctr2 should succeed");
+
+        assert_eq!(got.len(), ncomp * spinor_block, "nctr2 output length mismatch");
+
+        // ci=0 region (i_global in 0..di) must be all-zero; ci=1 region (di..2di) non-zero.
+        let comp = 0usize;
+        let mut ci0_nonzero = 0usize;
+        let mut ci1_nonzero = 0usize;
+        for jg in 0..nj_full {
+            for ig in 0..ni_full {
+                let v = got[comp * spinor_block + (jg * ni_full + ig) * 2];
+                let im = got[comp * spinor_block + (jg * ni_full + ig) * 2 + 1];
+                let mag = v.abs() + im.abs();
+                if ig < di {
+                    if mag > 1e-15 { ci0_nonzero += 1; }
+                } else if mag > 1e-15 {
+                    ci1_nonzero += 1;
+                }
+            }
+        }
+        assert_eq!(ci0_nonzero, 0, "ci=0 (zero cart sub-block) should map to zero output");
+        assert!(ci1_nonzero > 0, "ci=1 sub-block should populate i_global in di..2*di");
+    }
+
+    /// (d) staging too small: returns BufferTooSmall BEFORE any write (sentinel survives).
+    #[test]
+    fn derivative_2d_staging_too_small_fails_closed() {
+        let (li, lj): (u8, u8) = (1, 2);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let ncomp = 3usize;
+        let cart = make_deriv_cart_nctr1(ncomp, nci, ncj);
+
+        // Deliberately undersized staging with a sentinel at [0].
+        let mut staging = vec![0.0f64; 4];
+        staging[0] = 12345.0;
+        let res = cart_to_spinor_sf_derivative_2d::<f64>(
+            &mut staging, &cart, ncomp, li, ki, lj, kj, 1, 1,
+        );
+        assert!(
+            matches!(res, Err(cintxRsError::BufferTooSmall { .. })),
+            "undersized staging must return BufferTooSmall, got {res:?}"
+        );
+        assert_eq!(staging[0], 12345.0, "sentinel overwritten — wrote before size check");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  cart_to_spinor_sf_derivative_3c2e / _3c1e tests (Task 2)
+    //  Aux-k axis is SPHERICAL nsph(lk) — the canonical p×d×s nctr=1 kappa=0 ncomp=3
+    //  buffer is 360, NOT 720 (27-SPIKE-FINDINGS ⚠ CORRECTION NOTICE).
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// Build a deterministic KET-major derivative 3c cart buffer `[comp][k][ket][bra]`
+    /// for nctr=1: cart[comp*kblock + ck*(ncj*nci) + jc*nci + ic], kblock = nck*ncj*nci.
+    fn make_deriv_cart_3c_nctr1(ncomp: usize, nci: usize, ncj: usize, nck: usize) -> Vec<f64> {
+        let kblock = nck * ncj * nci;
+        let mut cart = vec![0.0f64; ncomp * kblock];
+        for comp in 0..ncomp {
+            for ck in 0..nck {
+                for jc in 0..ncj {
+                    for ic in 0..nci {
+                        let idx = comp * kblock + (ck * ncj + jc) * nci + ic;
+                        cart[idx] = 1.0 + comp as f64 + 0.5 * ic as f64
+                            + 0.25 * jc as f64 + 0.1 * ck as f64;
+                    }
+                }
+            }
+        }
+        cart
+    }
+
+    /// (a) ncomp=3, NON-SQUARE p×d ket + s aux, nctr=1, kappa=0:
+    /// output length = 3*(nctr_i*di)*(nctr_j*dj)*nsph(lk)*2, split into 3 non-overlapping
+    /// all-nonzero comp_stride slices, AND the canonical total is exactly 360 (3*6*10*1*2),
+    /// NEVER 720.
+    #[test]
+    fn derivative_3c2e_rank3_layout() {
+        use super::super::c2s::nsph;
+        let (li, lj, lk): (u8, u8, u8) = (1, 2, 0); // p × d × s aux
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li); // 3
+        let ncj = ncart(lj); // 6
+        let nck = ncart(lk); // 1
+        let di = spinor_len(li, ki as i32); // 6
+        let dj = spinor_len(lj, kj as i32); // 10
+        let nsk = nsph(lk); // 1 (SPHERICAL aux-k)
+        let ncomp = 3usize;
+        let comp_stride = di * dj * nsk * 2; // 6*10*1*2 = 120
+        let total = ncomp * comp_stride; // 360, NOT 720
+
+        // Canonical figure assertion: 360 not 720.
+        assert_eq!(total, 360, "canonical p×d×s ncomp=3 buffer must be 360, not 720");
+
+        let cart = make_deriv_cart_3c_nctr1(ncomp, nci, ncj, nck);
+        let mut got = vec![0.0f64; total];
+        cart_to_spinor_sf_derivative_3c2e::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, lk, 1, 1,
+        ).expect("derivative_3c2e rank3 should succeed");
+
+        assert_eq!(got.len(), total, "3c2e output length mismatch");
+        for comp in 0..ncomp {
+            let slice = &got[comp * comp_stride..comp * comp_stride + comp_stride];
+            let nonzero = slice.iter().filter(|&&v| v.abs() > 1e-15).count();
+            assert!(nonzero > 0, "3c2e component {comp} slice is all-zero (truncation landmine)");
+        }
+    }
+
+    /// (b) staging too small: returns BufferTooSmall BEFORE any write (sentinel survives).
+    #[test]
+    fn derivative_3c2e_staging_too_small_fails_closed() {
+        let (li, lj, lk): (u8, u8, u8) = (1, 2, 0);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let nck = ncart(lk);
+        let ncomp = 3usize;
+        let cart = make_deriv_cart_3c_nctr1(ncomp, nci, ncj, nck);
+
+        let mut staging = vec![0.0f64; 4];
+        staging[0] = 98765.0;
+        let res = cart_to_spinor_sf_derivative_3c2e::<f64>(
+            &mut staging, &cart, ncomp, li, ki, lj, kj, lk, 1, 1,
+        );
+        assert!(
+            matches!(res, Err(cintxRsError::BufferTooSmall { .. })),
+            "undersized staging must return BufferTooSmall, got {res:?}"
+        );
+        assert_eq!(staging[0], 98765.0, "sentinel overwritten — wrote before size check");
+    }
+
+    /// (c) the int3c1e thin sibling shares the SPHERICAL aux-k contract and the same fold.
+    #[test]
+    fn derivative_3c1e_rank3_spherical_auxk() {
+        use super::super::c2s::nsph;
+        let (li, lj, lk): (u8, u8, u8) = (1, 2, 0);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let nck = ncart(lk);
+        let di = spinor_len(li, ki as i32);
+        let dj = spinor_len(lj, kj as i32);
+        let nsk = nsph(lk);
+        let ncomp = 3usize;
+        let comp_stride = di * dj * nsk * 2;
+        let total = ncomp * comp_stride;
+
+        let cart = make_deriv_cart_3c_nctr1(ncomp, nci, ncj, nck);
+        let mut got = vec![0.0f64; total];
+        cart_to_spinor_sf_derivative_3c1e::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, lk, 1, 1,
+        ).expect("derivative_3c1e rank3 should succeed");
+        assert_eq!(got.len(), total);
+        let nonzero = got.iter().filter(|&&v| v.abs() > 1e-15).count();
+        assert!(nonzero > 0, "3c1e sibling output should be non-zero");
     }
 }
