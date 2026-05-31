@@ -47,6 +47,16 @@ fn common_fac_sp(l: u8) -> f64 {
     }
 }
 
+/// The 2e common prefactor `(π³·2/√π) · ∏ common_fac_sp(l)` for a shell quartet
+/// `(li,lj,lk,ll)` — the same value `launch_two_electron_typed` builds before
+/// dispatch. Exposed so external drivers (the D-03 transform parity test) can
+/// invoke [`launch_int2e_spsp1_spinor_quartet`] with the identical normalization
+/// the eval_raw path uses, without duplicating the constant.
+pub fn int2e_common_factor(li: u8, lj: u8, lk: u8, ll: u8) -> f64 {
+    let sp_factor = common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk) * common_fac_sp(ll);
+    (PI * PI * PI) * 2.0 / SQRTPI * sp_factor
+}
+
 /// Enumerate Cartesian component triples (ix, iy, iz) with ix+iy+iz = l.
 ///
 /// Test-only since quick-260529-q4k: the scalar 2e contraction now runs on-device
