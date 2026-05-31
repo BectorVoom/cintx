@@ -78,7 +78,7 @@
 - [x] **FND-01**: `PTR_COMMON_ORIG` gauge-origin env slot (`env[1..3]`) is plumbed end-to-end following the `PTR_RINV_ORIG` precedent — `OperatorEnvParams.common_orig: Option<[f64;3]>`, `raw.rs::eval_raw` env-read, validator gate, `with_common_origin` safe-API setter; a non-zero gauge-origin oracle fixture exists and is the parity gate for moments + GIAO. Env round-trip + validator unit tests pass.
 - [x] **FND-02**: Rys `nroots≥6` Wheeler-fallback is implemented so high angular-momentum (d/f) shells reach byte-identity; closes `.planning/todos/pending/rys-nroots-ge6-wheeler-fallback.md`. No family returns `UnsupportedApi` purely due to `nroots>5`.
 - [x] **FND-03**: Complex/imaginary output capability — `complex_interleaved` is set per-family from driver routing (not the representation string), `assert_flat_buffer_contract` fires on the flag, and staging is sized `2×ncomp×…`; a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API without silent zeroing.
-- [ ] **FND-04**: Spinor-derivative transform (Gap B1) — `cart_to_spinor_sf_derivative_*` in `c2spinor.rs`; `int1e_ipovlp_spinor` and sibling `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity at atol=1e-12 (closes the Phase-21 R5/D-03 deferral).
+- [x] **FND-04**: Spinor-derivative transform (Gap B1) — `cart_to_spinor_sf_derivative_*` in `c2spinor.rs`; `int1e_ipovlp_spinor` and sibling `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity at atol=1e-12 (closes the Phase-21 R5/D-03 deferral). [Phase 27: 20 vendor-backed sf-derivative spinor families oracle_covered=true; 4 D-12 vendor-stub arms + D-03/D-04 deferred follow-ups remain false.]
 - [ ] **FND-05**: Spin-included `c2s_si` 4-block (`gc_x/gc_y/gc_z/gc_1`) spinor transform + σ·p G-tensor assembler module — validated against a kappa-bearing relativistic oracle fixture at atol=1e-12; the σ-coupling matches libcint `c2s_si_1e`.
 - [x] **FND-06**: High-rank (component_rank 9/27/81) staging is fail-closed — an upfront size assertion replaces the `if dst < staging.len()` scatter guards (no silent partial writes), and the chunk planner's OOM-safe-stop is re-validated at rank 81.
 
@@ -210,7 +210,7 @@
 | GIAO-01 | Phase 26 | Complete |
 | GIAO-02 | Phase 26 | Complete |
 | FND-03 | Phase 26 | Complete |
-| FND-04 | Phase 27 | Pending |
+| FND-04 | Phase 27 | Complete |
 | FND-05 | Phase 28 | Pending |
 | REL-01 | Phase 29 | Pending |
 | REL-02 | Phase 29 | Pending |
