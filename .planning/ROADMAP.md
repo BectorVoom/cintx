@@ -613,9 +613,9 @@ Plans:
 **Gap closure (from 26-VERIFICATION.md gaps_found + 26-REVIEW.md CR-01/WR-01..05/IN-01..03):**
 
 Gap-Wave 1 (parallel, no file overlap):
-- [ ] 26-04-PLAN.md — [BLOCKING gap] Fail-closed `UnsupportedApi` guard on `int1e_a01gp` before any compute (CR-01) + non-vendor test proving the raw path is fail-closed.
-- [ ] 26-06-PLAN.md — WR-01: full-block per-chunk staging for GIAO/monolithic-complex writers in the safe-API `evaluate` path (mirror eval_raw) + chunk-forcing memory-limit runtime test.
-- [ ] 26-07-PLAN.md — WR-03 + IN-01: dedup `giao_2e_parity.rs` onto shared `moment_common` helpers; self-document/assert the cross-center quartet AM.
+- [x] 26-04-PLAN.md — [BLOCKING gap] Fail-closed `UnsupportedApi` guard on `int1e_a01gp` before any compute (CR-01) + non-vendor test proving the raw path is fail-closed.
+- [x] 26-06-PLAN.md — WR-01: full-block per-chunk staging for GIAO/monolithic-complex writers in the safe-API `evaluate` path (mirror eval_raw) + chunk-forcing memory-limit runtime test.
+- [x] 26-07-PLAN.md — WR-03 + IN-01: dedup `giao_2e_parity.rs` onto shared `moment_common` helpers; self-document/assert the cross-center quartet AM.
 
 Gap-Wave 2 (after 26-04):
 - [ ] 26-05-PLAN.md — a01gp kernel correctness fix (attempt): root-cause the rank-9 ket-derivative ~2× double-count; on parity pass remove guard + un-ignore test + flip `oracle_covered=true`, else keep the guard with a tracked follow-up.
