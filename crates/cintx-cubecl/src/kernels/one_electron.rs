@@ -21,7 +21,9 @@ use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
-use crate::transform::c2spinor::{cart_to_spinor_sf_2d, cart_to_spinor_sf_derivative_2d};
+use crate::transform::c2spinor::{
+    cart_to_spinor_sf_2d, cart_to_spinor_sf_derivative_2d, cart_to_spinor_si_2d, spinor_len,
+};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -788,18 +790,17 @@ fn one_electron_grad_bra_kernel<F: Float + CubeElement>(
                                     g0_lo = g[(off + nx - 2u32 * dj) as usize];
                                     g1_lo = g1[(off + nx - 2u32 * dj) as usize];
                                 }
-                                let coef_mid =
-                                    F::new(2.0) * aj * (F::new(2.0) * jf + F::new(1.0));
+                                let coef_mid = F::new(2.0) * aj * (F::new(2.0) * jf + F::new(1.0));
                                 let coef_hi = F::new(4.0) * aj * aj;
                                 let coef_lo = jf * (jf - F::new(1.0));
-                                d2g0[(off + nx) as usize] =
-                                    coef_hi * g[(off + nx + 2u32 * dj) as usize]
-                                        - coef_mid * g[(off + nx) as usize]
-                                        + coef_lo * g0_lo;
-                                d2g1[(off + nx) as usize] =
-                                    coef_hi * g1[(off + nx + 2u32 * dj) as usize]
-                                        - coef_mid * g1[(off + nx) as usize]
-                                        + coef_lo * g1_lo;
+                                d2g0[(off + nx) as usize] = coef_hi
+                                    * g[(off + nx + 2u32 * dj) as usize]
+                                    - coef_mid * g[(off + nx) as usize]
+                                    + coef_lo * g0_lo;
+                                d2g1[(off + nx) as usize] = coef_hi
+                                    * g1[(off + nx + 2u32 * dj) as usize]
+                                    - coef_mid * g1[(off + nx) as usize]
+                                    + coef_lo * g1_lo;
                                 id += 1u32;
                             }
                             jd += 1u32;
@@ -881,10 +882,8 @@ fn one_electron_grad_bra_kernel<F: Float + CubeElement>(
 
                                         let elem = cj_idx * nci + ci_idx;
                                         cart_out[(base + elem) as usize] += weight * s0;
-                                        cart_out[(base + block_len + elem) as usize] +=
-                                            weight * s1;
-                                        cart_out
-                                            [(base + 2u32 * block_len + elem) as usize] +=
+                                        cart_out[(base + block_len + elem) as usize] += weight * s1;
+                                        cart_out[(base + 2u32 * block_len + elem) as usize] +=
                                             weight * s2;
 
                                         ci_idx += 1u32;
@@ -1293,8 +1292,7 @@ fn one_electron_grad_both_kernel<F: Float + CubeElement>(
 
                                         let elem = cj_idx * nci + ci_idx;
                                         cart_out[(base + elem) as usize] += weight * s0;
-                                        cart_out[(base + block_len + elem) as usize] +=
-                                            weight * s1;
+                                        cart_out[(base + block_len + elem) as usize] += weight * s1;
                                         cart_out[(base + 2u32 * block_len + elem) as usize] +=
                                             weight * s2;
                                         cart_out[(base + 3u32 * block_len + elem) as usize] +=
@@ -1806,10 +1804,12 @@ fn run_1e_gradgrad_bra_ovlp_on_backend(
             )
         }
         #[cfg(feature = "cuda")]
-        ResolvedBackend::Cuda(client) => run_1e_gradgrad_bra_ovlp_device::<cubecl_cuda::CudaRuntime>(
-            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
-            coeff_j,
-        ),
+        ResolvedBackend::Cuda(client) => {
+            run_1e_gradgrad_bra_ovlp_device::<cubecl_cuda::CudaRuntime>(
+                client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
+                coeff_j,
+            )
+        }
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_gradgrad_bra_ovlp_device::<cubecl_hip::HipRuntime>(
             client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
@@ -2115,12 +2115,7 @@ fn one_electron_p4_kernel<F: Float + CubeElement>(
                                         let s44 = a0x * c2y * b2z;
                                         let s80 = a0x * a0y * d2z;
                                         let two = F::new(2.0);
-                                        let val = s0
-                                            + two * s4
-                                            + two * s8
-                                            + s40
-                                            + two * s44
-                                            + s80;
+                                        let val = s0 + two * s4 + two * s8 + s40 + two * s44 + s80;
 
                                         let elem = cj_idx * nci + ci_idx;
                                         cart_out[(base + elem) as usize] += weight * val;
@@ -2588,8 +2583,8 @@ fn r0i_1e_into<F: Float + CubeElement>(
             let jbase = jn * dj;
             let mut ii = 0u32;
             while ii <= imax {
-                dst[(off + jbase + ii) as usize] = src[(off + jbase + ii + 1u32) as usize]
-                    + ri * src[(off + jbase + ii) as usize];
+                dst[(off + jbase + ii) as usize] =
+                    src[(off + jbase + ii + 1u32) as usize] + ri * src[(off + jbase + ii) as usize];
                 ii += 1u32;
             }
             jn += 1u32;
@@ -3035,7 +3030,8 @@ fn one_electron_giao_ovlp_kernel<F: Float + CubeElement>(
                                             //  [0]=c1 s18 - c2 s9 + c1 s22 - c2 s13 + c1 s26 - c2 s17
                                             //  [1]=c2 s0 - c0 s18 + c2 s4 - c0 s22 + c2 s8 - c0 s26
                                             //  [2]=c0 s9 - c1 s0 + c0 s13 - c1 s4 + c0 s17 - c1 s8
-                                            o0 = cy * s18 - cz * s9 + cy * s22 - cz * s13 + cy * s26
+                                            o0 = cy * s18 - cz * s9 + cy * s22 - cz * s13
+                                                + cy * s26
                                                 - cz * s17;
                                             o1 = cz * s0 - cx * s18 + cz * s4 - cx * s22 + cz * s8
                                                 - cx * s26;
@@ -3141,9 +3137,24 @@ fn run_1e_giao_ovlp_device<R: Runtime>(
                 unsafe { ArrayArg::from_raw_parts(t6_h.clone(), total_g) },
                 unsafe { ArrayArg::from_raw_parts(t7_h.clone(), total_g) },
                 unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], drj[0], drj[1], drj[2],
-                SQRTPI, std::f64::consts::PI,
-                li, lj, nprim_i, nprim_j, nctr_i, nctr_j, $kind,
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                drj[0],
+                drj[1],
+                drj[2],
+                SQRTPI,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                $kind,
             )
         };
     }
@@ -3396,28 +3407,68 @@ fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
                         } else if comptime!(op_kind == 2u32) {
                             // ia01p: t1=D_J(g0); t2=D_J(g0,j+1); t3=D_I(g0,j+1);
                             // t2+=t3; t3=D_J(t2).
-                            d_j_1e_flat::<F>(gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li, aj2);
                             d_j_1e_flat::<F>(
-                                gbuf, 2u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li, aj2,
+                                gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li, aj2,
+                            );
+                            d_j_1e_flat::<F>(
+                                gbuf,
+                                2u32,
+                                0u32,
+                                total_g,
+                                g_per_axis,
+                                dj,
+                                lj + 1u32,
+                                li,
+                                aj2,
                             );
                             d_i_1e_flat::<F>(
-                                gbuf, 3u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li, ai2,
+                                gbuf,
+                                3u32,
+                                0u32,
+                                total_g,
+                                g_per_axis,
+                                dj,
+                                lj + 1u32,
+                                li,
+                                ai2,
                             );
                             add_tensor_flat::<F>(gbuf, 2u32, 3u32, total_g);
-                            d_j_1e_flat::<F>(gbuf, 3u32, 2u32, total_g, g_per_axis, dj, lj, li, aj2);
+                            d_j_1e_flat::<F>(
+                                gbuf, 3u32, 2u32, total_g, g_per_axis, dj, lj, li, aj2,
+                            );
                         } else if comptime!(op_kind == 3u32) {
                             // a01gp: t1=D_J(g0,i+2); t2=D_J(g0,i+1,j+1);
                             // t3=D_I(g0,i+1,j+1); t2+=t3; t3=D_J(t2,i+2);
                             // t4=R0I(g0); t5=R0I(t1); t6=R0I(t2); t7=R0I(t3).
-                            d_j_1e_flat::<F>(gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li2, aj2);
                             d_j_1e_flat::<F>(
-                                gbuf, 2u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li1, aj2,
+                                gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li2, aj2,
+                            );
+                            d_j_1e_flat::<F>(
+                                gbuf,
+                                2u32,
+                                0u32,
+                                total_g,
+                                g_per_axis,
+                                dj,
+                                lj + 1u32,
+                                li1,
+                                aj2,
                             );
                             d_i_1e_flat::<F>(
-                                gbuf, 3u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li1, ai2,
+                                gbuf,
+                                3u32,
+                                0u32,
+                                total_g,
+                                g_per_axis,
+                                dj,
+                                lj + 1u32,
+                                li1,
+                                ai2,
                             );
                             add_tensor_flat::<F>(gbuf, 2u32, 3u32, total_g);
-                            d_j_1e_flat::<F>(gbuf, 3u32, 2u32, total_g, g_per_axis, dj, lj, li2, aj2);
+                            d_j_1e_flat::<F>(
+                                gbuf, 3u32, 2u32, total_g, g_per_axis, dj, lj, li2, aj2,
+                            );
                             r0i_1e_flat::<F>(
                                 gbuf, 4u32, 0u32, total_g, g_per_axis, dj, lj, li, rix, riy, riz,
                             );
@@ -3446,10 +3497,26 @@ fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
                                 gbuf, 1u32, 0u32, total_g, g_per_axis, dj, lj, li, ox, oy, oz,
                             );
                             d_j_1e_flat::<F>(
-                                gbuf, 2u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li, aj2,
+                                gbuf,
+                                2u32,
+                                0u32,
+                                total_g,
+                                g_per_axis,
+                                dj,
+                                lj + 1u32,
+                                li,
+                                aj2,
                             );
                             d_i_1e_flat::<F>(
-                                gbuf, 3u32, 0u32, total_g, g_per_axis, dj, lj + 1u32, li, ai2,
+                                gbuf,
+                                3u32,
+                                0u32,
+                                total_g,
+                                g_per_axis,
+                                dj,
+                                lj + 1u32,
+                                li,
+                                ai2,
                             );
                             add_tensor_flat::<F>(gbuf, 2u32, 3u32, total_g);
                             rcj_1e_flat::<F>(
@@ -3767,10 +3834,27 @@ fn run_1e_giao_nuc_device<R: Runtime>(
                 unsafe { ArrayArg::from_raw_parts(urys_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(wrys_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], drj[0], drj[1], drj[2],
-                PIE4, std::f64::consts::PI,
-                li, lj, nprim_i, nprim_j, nctr_i, nctr_j, norig as u32,
-                $kind, $rank, $nr,
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                drj[0],
+                drj[1],
+                drj[2],
+                PIE4,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                norig as u32,
+                $kind,
+                $rank,
+                $nr,
             )
         };
     }
@@ -3828,28 +3912,113 @@ fn run_1e_giao_nuc_on_backend(
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_1e_giao_nuc_device::<cubecl::cpu::CpuRuntime>(
-            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
-            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            op_kind,
+            rank,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_1e_giao_nuc_device::<cubecl_wgpu::WgpuRuntime>(
-            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
-            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            op_kind,
+            rank,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_1e_giao_nuc_device::<cubecl_cuda::CudaRuntime>(
-            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
-            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            op_kind,
+            rank,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_giao_nuc_device::<cubecl_hip::HipRuntime>(
-            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
-            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            op_kind,
+            rank,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_1e_giao_nuc_device::<cubecl_wgpu::WgpuRuntime>(
-            client, op_kind, rank, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj,
-            exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            op_kind,
+            rank,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
     }
 }
@@ -4050,20 +4219,28 @@ fn one_electron_grad_kin_both_kernel<F: Float + CubeElement>(
 
                                         // libcint hess.c CINTgout1e_int1e_ipkinip
                                         // (27 used terms; -0.5 folded into `weight`).
-                                        let s0 = c3x * a0y * a0z + c1x * b2y * a0z + c1x * a0y * b2z;
-                                        let s1 = c2x * b1y * a0z + c0x * b3y * a0z + c0x * b1y * b2z;
-                                        let s2 = c2x * a0y * b1z + c0x * b2y * b1z + c0x * a0y * b3z;
-                                        let s3 = b3x * c0y * a0z + b1x * c2y * a0z + b1x * c0y * b2z;
-                                        let s4 = b2x * c1y * a0z + a0x * c3y * a0z + a0x * c1y * b2z;
-                                        let s5 = b2x * c0y * b1z + a0x * c2y * b1z + a0x * c0y * b3z;
-                                        let s6 = b3x * a0y * c0z + b1x * b2y * c0z + b1x * a0y * c2z;
-                                        let s7 = b2x * b1y * c0z + a0x * b3y * c0z + a0x * b1y * c2z;
-                                        let s8 = b2x * a0y * c1z + a0x * b2y * c1z + a0x * a0y * c3z;
+                                        let s0 =
+                                            c3x * a0y * a0z + c1x * b2y * a0z + c1x * a0y * b2z;
+                                        let s1 =
+                                            c2x * b1y * a0z + c0x * b3y * a0z + c0x * b1y * b2z;
+                                        let s2 =
+                                            c2x * a0y * b1z + c0x * b2y * b1z + c0x * a0y * b3z;
+                                        let s3 =
+                                            b3x * c0y * a0z + b1x * c2y * a0z + b1x * c0y * b2z;
+                                        let s4 =
+                                            b2x * c1y * a0z + a0x * c3y * a0z + a0x * c1y * b2z;
+                                        let s5 =
+                                            b2x * c0y * b1z + a0x * c2y * b1z + a0x * c0y * b3z;
+                                        let s6 =
+                                            b3x * a0y * c0z + b1x * b2y * c0z + b1x * a0y * c2z;
+                                        let s7 =
+                                            b2x * b1y * c0z + a0x * b3y * c0z + a0x * b1y * c2z;
+                                        let s8 =
+                                            b2x * a0y * c1z + a0x * b2y * c1z + a0x * a0y * c3z;
 
                                         let elem = cj_idx * nci + ci_idx;
                                         cart_out[(base + elem) as usize] += weight * s0;
-                                        cart_out[(base + block_len + elem) as usize] +=
-                                            weight * s1;
+                                        cart_out[(base + block_len + elem) as usize] += weight * s1;
                                         cart_out[(base + 2u32 * block_len + elem) as usize] +=
                                             weight * s2;
                                         cart_out[(base + 3u32 * block_len + elem) as usize] +=
@@ -4340,8 +4517,7 @@ fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
                     let crijx = rcx - px;
                     let crijy = rcy - py;
                     let crijz = rcz - pz;
-                    let x_boys =
-                        zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
+                    let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
                     // Rys roots/weights (comptime nroots).
                     if comptime!(nroots == 1u32) {
@@ -4401,8 +4577,7 @@ fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
                             let mut jn = 0u32;
                             while jn <= lj {
                                 let jbase = jn * dj;
-                                g1[(off + jbase) as usize] =
-                                    ai2 * g[(off + jbase + 1u32) as usize];
+                                g1[(off + jbase) as usize] = ai2 * g[(off + jbase + 1u32) as usize];
                                 let mut ix = 1u32;
                                 while ix <= li {
                                     g1[(off + jbase + ix) as usize] = F::cast_from(ix)
@@ -4459,13 +4634,10 @@ fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
                                                 let elem = cj_idx * nci + ci_idx;
                                                 cart_out[(base + elem) as usize] +=
                                                     weight * g1x * g0y * g0z;
-                                                cart_out
-                                                    [(base + block_len + elem) as usize] +=
+                                                cart_out[(base + block_len + elem) as usize] +=
                                                     weight * g0x * g1y * g0z;
-                                                cart_out[(base
-                                                    + 2u32 * block_len
-                                                    + elem)
-                                                    as usize] +=
+                                                cart_out
+                                                    [(base + 2u32 * block_len + elem) as usize] +=
                                                     weight * g0x * g0y * g1z;
 
                                                 ci_idx += 1u32;
@@ -4631,28 +4803,98 @@ fn run_1e_nuc_grad_on_backend(
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_1e_nuc_grad_device::<cubecl::cpu::CpuRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_1e_nuc_grad_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_1e_nuc_grad_device::<cubecl_cuda::CudaRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_nuc_grad_device::<cubecl_hip::HipRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_1e_nuc_grad_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
     }
 }
@@ -5211,8 +5453,7 @@ fn one_electron_drinv_kernel<F: Float + CubeElement>(
                                                 weight * g1x * g0y * g0z;
                                             cart_out[(base + block_len + elem) as usize] +=
                                                 weight * g0x * g1y * g0z;
-                                            cart_out
-                                                [(base + 2u32 * block_len + elem) as usize] +=
+                                            cart_out[(base + 2u32 * block_len + elem) as usize] +=
                                                 weight * g0x * g0y * g1z;
 
                                             ci_idx += 1u32;
@@ -5782,29 +6023,101 @@ fn run_1e_nuc_grad_both_on_backend(
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_1e_nuc_grad_both_device::<cubecl::cpu::CpuRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "wgpu")]
-        ResolvedBackend::Wgpu(client, _) => run_1e_nuc_grad_both_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
-        ),
+        ResolvedBackend::Wgpu(client, _) => {
+            run_1e_nuc_grad_both_device::<cubecl_wgpu::WgpuRuntime>(
+                client,
+                nroots,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                ri,
+                rj,
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
+            )
+        }
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_1e_nuc_grad_both_device::<cubecl_cuda::CudaRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_nuc_grad_both_device::<cubecl_hip::HipRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => {
             run_1e_nuc_grad_both_device::<cubecl_wgpu::WgpuRuntime>(
-                client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-                coeff_i, coeff_j, origin_coords, origin_charges,
+                client,
+                nroots,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                ri,
+                rj,
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
             )
         }
     }
@@ -6112,31 +6425,103 @@ fn run_1e_nuc_gradgrad_bra_on_backend(
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_1e_nuc_gradgrad_bra_device::<cubecl::cpu::CpuRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => {
             run_1e_nuc_gradgrad_bra_device::<cubecl_wgpu::WgpuRuntime>(
-                client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-                coeff_i, coeff_j, origin_coords, origin_charges,
+                client,
+                nroots,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                ri,
+                rj,
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
             )
         }
         #[cfg(feature = "cuda")]
-        ResolvedBackend::Cuda(client) => run_1e_nuc_gradgrad_bra_device::<cubecl_cuda::CudaRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
-        ),
+        ResolvedBackend::Cuda(client) => {
+            run_1e_nuc_gradgrad_bra_device::<cubecl_cuda::CudaRuntime>(
+                client,
+                nroots,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                ri,
+                rj,
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
+            )
+        }
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_nuc_gradgrad_bra_device::<cubecl_hip::HipRuntime>(
-            client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j, origin_coords, origin_charges,
+            client,
+            nroots,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => {
             run_1e_nuc_gradgrad_bra_device::<cubecl_wgpu::WgpuRuntime>(
-                client, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-                coeff_i, coeff_j, origin_coords, origin_charges,
+                client,
+                nroots,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                ri,
+                rj,
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
             )
         }
     }
@@ -6222,8 +6607,8 @@ fn d_j_1e_flat<F: Float + CubeElement>(
             while ii <= imax {
                 let mut val = aj2 * gbuf[(sbase + off + jhi + ii) as usize];
                 if jn >= 1u32 {
-                    val =
-                        F::cast_from(jn) * gbuf[(sbase + off + (jn - 1u32) * dj + ii) as usize] + val;
+                    val = F::cast_from(jn) * gbuf[(sbase + off + (jn - 1u32) * dj + ii) as usize]
+                        + val;
                 }
                 gbuf[(dbase + off + jbase + ii) as usize] = val;
                 ii += 1u32;
@@ -6312,8 +6697,7 @@ fn rcj_1e_flat<F: Float + CubeElement>(
             let jhi = (jn + 1u32) * dj;
             let mut ii = 0u32;
             while ii <= imax {
-                gbuf[(dbase + off + jbase + ii) as usize] = gbuf
-                    [(sbase + off + jhi + ii) as usize]
+                gbuf[(dbase + off + jbase + ii) as usize] = gbuf[(sbase + off + jhi + ii) as usize]
                     + drj * gbuf[(sbase + off + jbase + ii) as usize];
                 ii += 1u32;
             }
@@ -6326,7 +6710,12 @@ fn rcj_1e_flat<F: Float + CubeElement>(
 /// `#[cube]` helper: in-place add of one flat tensor into another (`dst += src`),
 /// over the full tensor span (used for the ia01p/a01gp/a11part `g2 += g3` step).
 #[cube]
-fn add_tensor_flat<F: Float + CubeElement>(gbuf: &mut Array<F>, dst_t: u32, src_t: u32, total_g: u32) {
+fn add_tensor_flat<F: Float + CubeElement>(
+    gbuf: &mut Array<F>,
+    dst_t: u32,
+    src_t: u32,
+    total_g: u32,
+) {
     let dbase = dst_t * total_g;
     let sbase = src_t * total_g;
     let mut ix = 0u32;
@@ -6702,10 +7091,12 @@ fn run_1e_gradgrad_bra_kin_on_backend(
             )
         }
         #[cfg(feature = "cuda")]
-        ResolvedBackend::Cuda(client) => run_1e_gradgrad_bra_kin_device::<cubecl_cuda::CudaRuntime>(
-            client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
-            coeff_j,
-        ),
+        ResolvedBackend::Cuda(client) => {
+            run_1e_gradgrad_bra_kin_device::<cubecl_cuda::CudaRuntime>(
+                client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
+                coeff_j,
+            )
+        }
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_gradgrad_bra_kin_device::<cubecl_hip::HipRuntime>(
             client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
@@ -7176,16 +7567,46 @@ fn one_electron_moment_kernel<F: Float + CubeElement>(
 
                                         // x axis
                                         moment_axis_ladder::<F>(
-                                            g, gx, jx, dj, ix, drjx, moment_order, &mut mx0,
-                                            &mut mx1, &mut mx2, &mut mx3, &mut mx4,
+                                            g,
+                                            gx,
+                                            jx,
+                                            dj,
+                                            ix,
+                                            drjx,
+                                            moment_order,
+                                            &mut mx0,
+                                            &mut mx1,
+                                            &mut mx2,
+                                            &mut mx3,
+                                            &mut mx4,
                                         );
                                         moment_axis_ladder::<F>(
-                                            g, gy, jy, dj, iy, drjy, moment_order, &mut my0,
-                                            &mut my1, &mut my2, &mut my3, &mut my4,
+                                            g,
+                                            gy,
+                                            jy,
+                                            dj,
+                                            iy,
+                                            drjy,
+                                            moment_order,
+                                            &mut my0,
+                                            &mut my1,
+                                            &mut my2,
+                                            &mut my3,
+                                            &mut my4,
                                         );
                                         moment_axis_ladder::<F>(
-                                            g, gz, jz, dj, iz, drjz, moment_order, &mut mz0,
-                                            &mut mz1, &mut mz2, &mut mz3, &mut mz4,
+                                            g,
+                                            gz,
+                                            jz,
+                                            dj,
+                                            iz,
+                                            drjz,
+                                            moment_order,
+                                            &mut mz0,
+                                            &mut mz1,
+                                            &mut mz2,
+                                            &mut mz3,
+                                            &mut mz4,
                                         );
 
                                         let elem = cj_idx * nci + ci_idx;
@@ -7200,9 +7621,8 @@ fn one_electron_moment_kernel<F: Float + CubeElement>(
                                                 weight * (mx0 * my0 * mz2);
                                         } else if comptime!(op_mode == 4u32) {
                                             // r2 trace: m2x + m2y + m2z (s0+s4+s8 of rr)
-                                            let t = mx2 * my0 * mz0
-                                                + mx0 * my2 * mz0
-                                                + mx0 * my0 * mz2;
+                                            let t =
+                                                mx2 * my0 * mz0 + mx0 * my2 * mz0 + mx0 * my0 * mz2;
                                             cart_out[(base + elem) as usize] += weight * t;
                                         } else if comptime!(op_mode == 5u32) {
                                             // r4: s0+2s4+2s8+s40+2s44+s80 of rrrr
@@ -7327,10 +7747,7 @@ fn moment_axis_ladder<F: Float>(
         let ov2 = g[(off + (jx + 2u32) * dj + i) as usize];
         let ov3 = g[(off + (jx + 3u32) * dj + i) as usize];
         let d2 = drj * drj;
-        *m3 = ov3
-            + F::new(3.0) * drj * ov2
-            + F::new(3.0) * d2 * ov1
-            + d2 * drj * ov0;
+        *m3 = ov3 + F::new(3.0) * drj * ov2 + F::new(3.0) * d2 * ov1 + d2 * drj * ov0;
     }
     if comptime!(moment_order >= 4u32) {
         let ov1 = g[(off + (jx + 1u32) * dj + i) as usize];
@@ -7547,28 +7964,103 @@ fn run_1e_moment_on_backend(
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_1e_moment_device::<cubecl::cpu::CpuRuntime>(
-            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            op_mode,
+            moment_order,
+            rank,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_1e_moment_device::<cubecl_wgpu::WgpuRuntime>(
-            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            op_mode,
+            moment_order,
+            rank,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_1e_moment_device::<cubecl_cuda::CudaRuntime>(
-            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            op_mode,
+            moment_order,
+            rank,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_moment_device::<cubecl_hip::HipRuntime>(
-            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            op_mode,
+            moment_order,
+            rank,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_1e_moment_device::<cubecl_wgpu::WgpuRuntime>(
-            client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            op_mode,
+            moment_order,
+            rank,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            drj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
     }
 }
@@ -8612,6 +9104,14 @@ fn launch_one_electron_typed<F: CintFloat>(
     // ket headroom +2 (ng={0,2,...}).
     let is_irp = op_name == "irp";
 
+    // Phase 28 FND-05 (Gap B2): `int1e_sp` = σ·p on the bra only. Detected by
+    // SYMBOL name (Pitfall 6 — never a positional OperatorId literal). This is the
+    // proof VEHICLE for the spin-included si_2d transform + σ·p assembler; it stays
+    // UnsupportedApi at the manifest level (D-01) and is driven only via the Spinor
+    // representation. The σ·p assembler emits the four gc_x/gc_y/gc_z/gc_1 blocks the
+    // host `cart_to_spinor_si_2d` consumes; nctr>1 is HANDLED (not rejected).
+    let is_sp = op_name == "sp";
+
     // Phase 26 GIAO-01: spin-free 1e GIAO/CG families (complex output). The
     // overlap-engine families (govlp/igovlp/cg_irxp/giao_irjxp/igkin) ride the
     // no-Rys overlap G-tensor; the nuclear-engine families (gnuc/ignuc/ia01p/
@@ -8711,6 +9211,7 @@ fn launch_one_electron_typed<F: CintFloat>(
         && !is_giao_ovlp
         && !is_giao_nuc
         && !is_deriv34
+        && !is_sp
     {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("1e operator '{}' is not supported", op_name),
@@ -8772,8 +9273,21 @@ fn launch_one_electron_typed<F: CintFloat>(
         let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
 
         let mut cart_comp = run_1e_giao_ovlp_on_backend(
-            backend, op_kind, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-            n_ctr_i as u32, n_ctr_j as u32, ri, rj, drj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+            backend,
+            op_kind,
+            li as u32,
+            lj as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            ri,
+            rj,
+            drj,
+            &exps_i,
+            &exps_j,
+            &coeff_i,
+            &coeff_j,
         );
 
         let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
@@ -8872,9 +9386,25 @@ fn launch_one_electron_typed<F: CintFloat>(
         };
 
         let mut cart_comp = run_1e_giao_nuc_on_backend(
-            backend, op_kind, rank, nuc_nroots, li as u32, lj as u32, n_prim_i as u32,
-            n_prim_j as u32, n_ctr_i as u32, n_ctr_j as u32, ri, rj, drj, &exps_i, &exps_j,
-            &coeff_i, &coeff_j, &origin_coords, &origin_charges,
+            backend,
+            op_kind,
+            rank,
+            nuc_nroots,
+            li as u32,
+            lj as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            ri,
+            rj,
+            drj,
+            &exps_i,
+            &exps_j,
+            &coeff_i,
+            &coeff_j,
+            &origin_coords,
+            &origin_charges,
         );
 
         let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
@@ -8885,8 +9415,20 @@ fn launch_one_electron_typed<F: CintFloat>(
         }
 
         let not0 = write_giao_complex_staging::<F>(
-            plan, rank as usize, n_ctr_i, n_ctr_j, nci, ncj, nsi, nsj, li, lj, total_len,
-            block_len, &cart_comp, staging,
+            plan,
+            rank as usize,
+            n_ctr_i,
+            n_ctr_j,
+            nci,
+            ncj,
+            nsi,
+            nsj,
+            li,
+            lj,
+            total_len,
+            block_len,
+            &cart_comp,
+            staging,
         )?;
 
         let staging_bytes = staging.len() * std::mem::size_of::<F>();
@@ -8960,9 +9502,23 @@ fn launch_one_electron_typed<F: CintFloat>(
         // GIAO-on-device path (Phase 30 GIAO×σ) will introduce its own output-convention
         // plumbing when it lands rather than carrying a dead arg through the launcher.
         let mut cart_comp = run_1e_moment_on_backend(
-            backend, op_mode, moment_order, rank, li as u32, lj as u32, n_prim_i as u32,
-            n_prim_j as u32, n_ctr_i as u32, n_ctr_j as u32, ri, rj, drj, &exps_i, &exps_j,
-            &coeff_i, &coeff_j,
+            backend,
+            op_mode,
+            moment_order,
+            rank,
+            li as u32,
+            lj as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            ri,
+            rj,
+            drj,
+            &exps_i,
+            &exps_j,
+            &coeff_i,
+            &coeff_j,
         );
 
         // Apply the libcint CINTcommon_fac_sp normalization to all components.
@@ -9065,14 +9621,40 @@ fn launch_one_electron_typed<F: CintFloat>(
         // charge = +1 (single-center 1/r, no -Z_C, no atom-sum — g1e.c:226-228).
         let mut cart_comp = if is_rinv {
             run_1e_rinv_on_backend(
-                backend, nuc_nroots, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, rc, 1.0, &exps_i, &exps_j, &coeff_i,
+                backend,
+                nuc_nroots,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                rc,
+                1.0,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
                 &coeff_j,
             )
         } else {
             run_1e_drinv_on_backend(
-                backend, nuc_nroots, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, rc, 1.0, &exps_i, &exps_j, &coeff_i,
+                backend,
+                nuc_nroots,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                rc,
+                1.0,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
                 &coeff_j,
             )
         };
@@ -9157,8 +9739,19 @@ fn launch_one_electron_typed<F: CintFloat>(
         let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
 
         let mut cart_comp = run_1e_p4_on_backend(
-            backend, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32, n_ctr_i as u32,
-            n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+            backend,
+            li as u32,
+            lj as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            ri,
+            rj,
+            &exps_i,
+            &exps_j,
+            &coeff_i,
+            &coeff_j,
         );
 
         // Apply the libcint CINTcommon_fac_sp normalization to all components.
@@ -9247,8 +9840,20 @@ fn launch_one_electron_typed<F: CintFloat>(
         let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
 
         let mut cart_9comp = run_1e_irp_on_backend(
-            backend, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32, n_ctr_i as u32,
-            n_ctr_j as u32, ri, rj, drj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+            backend,
+            li as u32,
+            lj as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            ri,
+            rj,
+            drj,
+            &exps_i,
+            &exps_j,
+            &coeff_i,
+            &coeff_j,
         );
 
         // Apply the libcint CINTcommon_fac_sp normalization to all components.
@@ -9325,13 +9930,35 @@ fn launch_one_electron_typed<F: CintFloat>(
 
         let mut cart_9comp = if is_ipovlpip {
             run_1e_grad_both_on_backend(
-                backend, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32, n_ctr_i as u32,
-                n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+                backend,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
             )
         } else if is_ipkinip {
             run_1e_grad_kin_both_on_backend(
-                backend, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32, n_ctr_i as u32,
-                n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+                backend,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
             )
         } else {
             // ipnucip: ∑_C (-Z_C)·∇²-mixed over ALL nuclei, low→high (D-10).
@@ -9342,9 +9969,22 @@ fn launch_one_electron_typed<F: CintFloat>(
                 origin_charges.push(-(atom.atomic_number as f64));
             }
             run_1e_nuc_grad_both_on_backend(
-                backend, nuc_nroots_both, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
-                &origin_coords, &origin_charges,
+                backend,
+                nuc_nroots_both,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
+                &origin_coords,
+                &origin_charges,
             )
         };
 
@@ -9413,7 +10053,14 @@ fn launch_one_electron_typed<F: CintFloat>(
             // The wrapper owns the KET→BRA transpose (D-06).
             Representation::Spinor => {
                 cart_to_spinor_sf_derivative_2d::<F>(
-                    staging, &cart_9comp, 9, li, shell_i.kappa, lj, shell_j.kappa, n_ctr_i,
+                    staging,
+                    &cart_9comp,
+                    9,
+                    li,
+                    shell_i.kappa,
+                    lj,
+                    shell_j.kappa,
+                    n_ctr_i,
                     n_ctr_j,
                 )?;
             }
@@ -9524,7 +10171,12 @@ fn launch_one_electron_typed<F: CintFloat>(
                         for cj in 0..n_ctr_j {
                             let cart_base = (ci * n_ctr_j + cj) * total_len + comp * block_len;
                             let mut sph_tmp = vec![0.0_f64; nsi * nsj];
-                            cart_to_sph_1e(&cart[cart_base..cart_base + block_len], &mut sph_tmp, li, lj);
+                            cart_to_sph_1e(
+                                &cart[cart_base..cart_base + block_len],
+                                &mut sph_tmp,
+                                li,
+                                lj,
+                            );
                             let staging_comp_base = comp * sph_block;
                             for mj in 0..nsj {
                                 let jj = cj * nsj + mj;
@@ -9564,7 +10216,14 @@ fn launch_one_electron_typed<F: CintFloat>(
             // (ncomp = deriv34 lock rank 27/81). Wrapper owns KET→BRA (D-06).
             Representation::Spinor => {
                 cart_to_spinor_sf_derivative_2d::<F>(
-                    staging, &cart, rank, li, shell_i.kappa, lj, shell_j.kappa, n_ctr_i,
+                    staging,
+                    &cart,
+                    rank,
+                    li,
+                    shell_i.kappa,
+                    lj,
+                    shell_j.kappa,
+                    n_ctr_i,
                     n_ctr_j,
                 )?;
             }
@@ -9575,7 +10234,10 @@ fn launch_one_electron_typed<F: CintFloat>(
         } else {
             1e-18
         });
-        let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+        let not0 = staging
+            .iter()
+            .filter(|&&v| v.abs() > nonzero_threshold)
+            .count() as i32;
         let staging_bytes = staging.len() * std::mem::size_of::<F>();
         return Ok(ExecutionStats {
             workspace_bytes: plan.workspace.bytes,
@@ -9640,13 +10302,35 @@ fn launch_one_electron_typed<F: CintFloat>(
 
         let mut cart_9comp = if is_ipipovlp {
             run_1e_gradgrad_bra_ovlp_on_backend(
-                backend, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32, n_ctr_i as u32,
-                n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+                backend,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
             )
         } else if is_ipipkin {
             run_1e_gradgrad_bra_kin_on_backend(
-                backend, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32, n_ctr_i as u32,
-                n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+                backend,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
             )
         } else if is_ipipnuc {
             // ipipnuc: ∑_C (-Z_C)·∇²-bra over ALL nuclei, low→high (D-10).
@@ -9657,17 +10341,43 @@ fn launch_one_electron_typed<F: CintFloat>(
                 origin_charges.push(-(atom.atomic_number as f64));
             }
             run_1e_nuc_gradgrad_bra_on_backend(
-                backend, nuc_nroots, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
-                &origin_coords, &origin_charges,
+                backend,
+                nuc_nroots,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
+                &origin_coords,
+                &origin_charges,
             )
         } else {
             // ipiprinv: single rinv origin, factor +1.0, no -Z_C.
             let origin = ipiprinv_origin.expect("ipiprinv origin resolved above");
             run_1e_nuc_gradgrad_bra_on_backend(
-                backend, nuc_nroots, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
-                &[origin[0], origin[1], origin[2]], &[1.0],
+                backend,
+                nuc_nroots,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
+                &[origin[0], origin[1], origin[2]],
+                &[1.0],
             )
         };
 
@@ -9735,9 +10445,144 @@ fn launch_one_electron_typed<F: CintFloat>(
             // (ncomp=9, lock rank for ipipovlp/ipipnuc/ipipkin/ipiprinv).
             Representation::Spinor => {
                 cart_to_spinor_sf_derivative_2d::<F>(
-                    staging, &cart_9comp, 9, li, shell_i.kappa, lj, shell_j.kappa, n_ctr_i,
+                    staging,
+                    &cart_9comp,
+                    9,
+                    li,
+                    shell_i.kappa,
+                    lj,
+                    shell_j.kappa,
+                    n_ctr_i,
                     n_ctr_j,
                 )?;
+            }
+        }
+
+        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+            1e-12
+        } else {
+            1e-18
+        });
+        let not0 = staging
+            .iter()
+            .filter(|&&v| v.abs() > nonzero_threshold)
+            .count() as i32;
+
+        let staging_bytes = staging.len() * std::mem::size_of::<F>();
+        return Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: staging_bytes,
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes: staging_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Phase 28 FND-05: int1e_sp Spinor path — σ·p assembler → cart_to_spinor_si_2d
+    //
+    // The σ·p device assembler (`run_sigma_p_on_backend`, tensor_rank=1) emits the
+    // four component-leading gc_x/gc_y/gc_z/gc_1 cart blocks per (ci,cj). The host
+    // si_2d transform owns the KET→BRA transpose and reduces them to the spinor
+    // block (Pauli-σ bra mix + ordinary ket). nctr>1 is HANDLED: loop the (ci,cj)
+    // contraction pairs and scatter each di*dj*2 sub-block into the
+    // contraction-major spinor AO grid. int1e_sp is Spinor-only (D-02 vehicle);
+    // Spheric/Cart are rejected (no public cart/sph int1e_sp this phase, D-01).
+    // ─────────────────────────────────────────────────────────────────────────
+    if is_sp {
+        if plan.representation != Representation::Spinor {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: "int1e_sp is Spinor-only (the FND-05 σ·p proof vehicle); \
+                            cart/spheric int1e_sp is not registered this phase (D-01)"
+                    .to_owned(),
+            });
+        }
+
+        let n_prim_i = shell_i.nprim as usize;
+        let n_prim_j = shell_j.nprim as usize;
+        let n_ctr_i = shell_i.nctr as usize;
+        let n_ctr_j = shell_j.nctr as usize;
+        let block_len = nci * ncj;
+        // tensor_rank=1 → 4 gc blocks (gc_x/gc_y/gc_z/gc_1) per (ci,cj).
+        let total_len = 4 * block_len;
+
+        let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
+        let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
+        let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+        let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+
+        // Device σ·p assembler: 4 component-leading KET-major gc blocks per (ci,cj).
+        let mut gc = crate::kernels::sigma_p::run_sigma_p_on_backend(
+            backend,
+            1, // tensor_rank = 1 (int1e_sp: 3 Pauli + 1 zero scalar slot)
+            li as u32,
+            lj as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            ri,
+            rj,
+            &exps_i,
+            &exps_j,
+            &coeff_i,
+            &coeff_j,
+        )?;
+
+        // s/p normalization scale (matches the scalar/gradient 1e arms).
+        let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+        if (sp_scale - 1.0).abs() > 1e-15 {
+            for v in gc.iter_mut() {
+                *v *= sp_scale;
+            }
+        }
+
+        let kappa_i = shell_i.kappa;
+        let kappa_j = shell_j.kappa;
+        let di = spinor_len(li, kappa_i as i32);
+        let dj = spinor_len(lj, kappa_j as i32);
+        let ni_sp = n_ctr_i * di;
+        let nj_sp = n_ctr_j * dj;
+
+        // Fold + scatter per (ci,cj). cart_to_spinor_si_2d OWNS the KET→BRA
+        // transpose, so the gc blocks are passed as the assembler emits them
+        // (KET-major) — no launcher transpose (do NOT copy the sf_2d single-block
+        // launcher transpose, and do NOT copy the sf_2d nctr>1 rejection).
+        let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+        for ci in 0..n_ctr_i {
+            for cj in 0..n_ctr_j {
+                let base = (ci * n_ctr_j + cj) * total_len;
+                let gc_x = &gc[base..base + block_len];
+                let gc_y = &gc[base + block_len..base + 2 * block_len];
+                let gc_z = &gc[base + 2 * block_len..base + 3 * block_len];
+                let gc_1 = &gc[base + 3 * block_len..base + 4 * block_len];
+
+                cart_to_spinor_si_2d::<F>(
+                    &mut scratch,
+                    gc_x,
+                    gc_y,
+                    gc_z,
+                    gc_1,
+                    li,
+                    kappa_i,
+                    lj,
+                    kappa_j,
+                )?;
+
+                // scratch is column-major: scratch[(j*di + i)*2 + {re,im}].
+                for j in 0..dj {
+                    let j_global = cj * dj + j;
+                    for i in 0..di {
+                        let i_global = ci * di + i;
+                        let src = (j * di + i) * 2;
+                        let dst = (j_global * ni_sp + i_global) * 2;
+                        staging[dst] = scratch[src];
+                        staging[dst + 1] = scratch[src + 1];
+                    }
+                }
             }
         }
 
@@ -9833,13 +10678,37 @@ fn launch_one_electron_typed<F: CintFloat>(
         // returns the per-(ci,cj) 3-component component-leading cart buffer.
         let mut cart_3comp = if is_ipovlp {
             run_1e_grad_bra_on_backend(
-                backend, 0, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+                backend,
+                0,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
             )
         } else if is_ipkin {
             run_1e_grad_bra_on_backend(
-                backend, 1, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
+                backend,
+                1,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
             )
         } else if is_ipnuc {
             // ipnuc: ∑_C (-Z_C)·∇ over ALL nuclei, ordered low→high (D-10).
@@ -9850,17 +10719,43 @@ fn launch_one_electron_typed<F: CintFloat>(
                 origin_charges.push(*charge);
             }
             run_1e_nuc_grad_on_backend(
-                backend, nuc_nroots, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
-                &origin_coords, &origin_charges,
+                backend,
+                nuc_nroots,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
+                &origin_coords,
+                &origin_charges,
             )
         } else {
             // iprinv: single rinv origin, factor +1.0, no -Z_C (D-08).
             let origin = iprinv_origin.expect("iprinv origin resolved above");
             run_1e_nuc_grad_on_backend(
-                backend, nuc_nroots, li as u32, lj as u32, n_prim_i as u32, n_prim_j as u32,
-                n_ctr_i as u32, n_ctr_j as u32, ri, rj, &exps_i, &exps_j, &coeff_i, &coeff_j,
-                &[origin[0], origin[1], origin[2]], &[1.0],
+                backend,
+                nuc_nroots,
+                li as u32,
+                lj as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                ri,
+                rj,
+                &exps_i,
+                &exps_j,
+                &coeff_i,
+                &coeff_j,
+                &[origin[0], origin[1], origin[2]],
+                &[1.0],
             )
         };
 
@@ -9932,7 +10827,14 @@ fn launch_one_electron_typed<F: CintFloat>(
             // so the previous nctr>1 rejection is dropped.
             Representation::Spinor => {
                 cart_to_spinor_sf_derivative_2d::<F>(
-                    staging, &cart_3comp, 3, li, shell_i.kappa, lj, shell_j.kappa, n_ctr_i,
+                    staging,
+                    &cart_3comp,
+                    3,
+                    li,
+                    shell_i.kappa,
+                    lj,
+                    shell_j.kappa,
+                    n_ctr_i,
                     n_ctr_j,
                 )?;
             }
@@ -10789,8 +11691,7 @@ mod tests {
         let aj = 1.3_f64;
         for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1), (2, 2)] {
             // Host reference: overlap G-tensor with nmax = li+lj+1, then bra nabla.
-            let pd =
-                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             let nmax = (li + lj) as u32 + 1;
             let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32);
             let host = contract_grad_1e_bra(&g, li, lj, nmax, ai);
@@ -10823,8 +11724,7 @@ mod tests {
         let aj = 1.3_f64;
         for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1), (2, 2)] {
             // Host reference: G-tensor with lj_ext=lj+2 AND nmax=li+lj+3.
-            let pd =
-                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             let nmax = (li + lj) as u32 + 3;
             let g = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj as u32 + 2);
             let host = contract_ipkin(&g, li, lj, nmax, ai, aj);
@@ -10869,8 +11769,7 @@ mod tests {
             let dj = (nmax + 1) as usize;
             let g_per_axis = ((nmax + 1) * (lj_ext + 1)) as usize;
 
-            let pd =
-                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             let g0 = fill_g_tensor_overlap(&pd, ri, rj, nmax, lj_ext);
 
             // g1 = D_j(g0) over i..=li+1, j..=lj.
@@ -10983,7 +11882,14 @@ mod tests {
     }
 
     /// Host ket-nabla `D_j` of a 3-axis 1e G-tensor (test reference).
-    fn host_dj_1e(src: &[f64], gpa: usize, dj: usize, jmax: usize, imax: usize, aj2: f64) -> Vec<f64> {
+    fn host_dj_1e(
+        src: &[f64],
+        gpa: usize,
+        dj: usize,
+        jmax: usize,
+        imax: usize,
+        aj2: f64,
+    ) -> Vec<f64> {
         let mut dst = vec![0.0f64; 3 * gpa];
         for axis in 0..3 {
             let off = axis * gpa;
@@ -11003,7 +11909,14 @@ mod tests {
     }
 
     /// Host bra-nabla `D_i` of a 3-axis 1e G-tensor (test reference).
-    fn host_di_1e(src: &[f64], gpa: usize, dj: usize, jmax: usize, imax: usize, ai2: f64) -> Vec<f64> {
+    fn host_di_1e(
+        src: &[f64],
+        gpa: usize,
+        dj: usize,
+        jmax: usize,
+        imax: usize,
+        ai2: f64,
+    ) -> Vec<f64> {
         let mut dst = vec![0.0f64; 3 * gpa];
         for axis in 0..3 {
             let off = axis * gpa;
@@ -11011,8 +11924,8 @@ mod tests {
                 let jbase = jn * dj;
                 dst[off + jbase] = ai2 * src[off + jbase + 1];
                 for ii in 1..=imax {
-                    dst[off + jbase + ii] = (ii as f64) * src[off + jbase + ii - 1]
-                        + ai2 * src[off + jbase + ii + 1];
+                    dst[off + jbase + ii] =
+                        (ii as f64) * src[off + jbase + ii - 1] + ai2 * src[off + jbase + ii + 1];
                 }
             }
         }
@@ -11289,8 +12202,7 @@ mod tests {
         let ai = 0.9_f64;
         let aj = 1.3_f64;
         // 2-atom origins list (coords + charge factor -Z): ipnuc shape.
-        let origins: [([f64; 3], f64); 2] =
-            [([0.0, 0.0, 0.0], -8.0), ([0.4, 0.3, 0.9], -1.0)];
+        let origins: [([f64; 3], f64); 2] = [([0.0, 0.0, 0.0], -8.0), ([0.4, 0.3, 0.9], -1.0)];
         let origin_coords: Vec<f64> = origins
             .iter()
             .flat_map(|(c, _)| c.iter().copied())
@@ -11301,8 +12213,7 @@ mod tests {
         // cross-check bound; rys_roots_host covers nrys<=5 but the host reference
         // exercises the device-supported grid).
         for &(li, lj) in &[(0u8, 0u8), (0, 1), (1, 0), (1, 1)] {
-            let pd =
-                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             let nroots = ((li as u32 + lj as u32) + 1) / 2 + 1;
             let host = contract_nuclear_grad(&pd, ri, rj, li, lj, ai, &origins);
             let dev = run_1e_nuc_grad_device::<cubecl::cpu::CpuRuntime>(
@@ -11331,8 +12242,7 @@ mod tests {
         let ip_coords: Vec<f64> = iprinv_origins[0].0.to_vec();
         let ip_charges: Vec<f64> = vec![iprinv_origins[0].1];
         for &(li, lj) in &[(0u8, 0u8), (1, 1)] {
-            let pd =
-                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             let nroots = ((li as u32 + lj as u32) + 1) / 2 + 1;
             let host = contract_nuclear_grad(&pd, ri, rj, li, lj, ai, &iprinv_origins);
             let dev = run_1e_nuc_grad_device::<cubecl::cpu::CpuRuntime>(
@@ -12089,8 +12999,14 @@ mod tests {
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op_sph, Representation::Spheric, &basis, shells.clone(), &opts)
-            .unwrap();
+        let q = query_workspace(
+            op_sph,
+            Representation::Spheric,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
         let mut plan =
             ExecutionPlan::new(op_sph, Representation::Spheric, &basis, shells, &q).unwrap();
         // Force spinor representation on the plan to exercise the spinor gradient arm.
@@ -12405,8 +13321,7 @@ mod tests {
     #[test]
     fn test_iprinv_spinor_grad_evaluates() {
         // iprinv needs a resolved rinv origin (env[PTR_RINV_ORIG]).
-        let result =
-            run_forced_spinor_grad("int1e_iprinv_sph", 0, 1, Some([0.0, 0.0, 0.0]), 24);
+        let result = run_forced_spinor_grad("int1e_iprinv_sph", 0, 1, Some([0.0, 0.0, 0.0]), 24);
         let staging = result.expect("spinor iprinv gradient (nctr=1) should evaluate");
         assert!(
             staging.iter().any(|v| v.abs() > 1e-14),
@@ -12414,4 +13329,3 @@ mod tests {
         );
     }
 }
-

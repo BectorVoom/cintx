@@ -43,6 +43,9 @@
 //! mix, so the host transform / si_2d path is shared across the whole σ-group.
 
 use crate::backend::ResolvedBackend;
+use crate::transform::c2spinor::{cart_to_spinor_si_2d, spinor_len};
+use crate::transform::c2s::ncart;
+use cintx_core::CintFloat;
 use cintx_core::cintxRsError;
 use cubecl::Runtime;
 use cubecl::client::ComputeClient;
@@ -410,13 +413,11 @@ fn run_sigma_p_device<R: Runtime>(
 
 /// 5-arm backend dispatch for [`run_sigma_p_device`] (Cpu/Wgpu/Cuda/Rocm/Metal).
 ///
-/// Mirrors `one_electron.rs::run_1e_grad_bra_on_backend`. Currently called only
-/// from the device-vs-host test harness; the live `int1e_sp` Spinor dispatch arm
-/// (which feeds these gc blocks into `cart_to_spinor_si_2d`) is wired in a
-/// later plan task.
-#[allow(dead_code)]
+/// Mirrors `one_electron.rs::run_1e_grad_bra_on_backend`. Driven live by
+/// [`launch_int1e_sp_spinor_pair`] (the FND-05 path), which feeds these gc
+/// blocks into `cart_to_spinor_si_2d`.
 #[allow(clippy::too_many_arguments)]
-fn run_sigma_p_on_backend(
+pub(crate) fn run_sigma_p_on_backend(
     backend: &ResolvedBackend,
     tensor_rank: u32,
     li: u32,
@@ -520,6 +521,152 @@ fn run_sigma_p_on_backend(
         ),
     };
     Ok(out)
+}
+
+/// libcint `CINTcommon_fac_sp` s/p normalization factor (matches
+/// `one_electron.rs::common_fac_sp`). libcint moves the s/p spherical
+/// normalization out of the c2s tables and into the primitive loop
+/// (`g1e.c:120`), so the σ·p overlap base G-tensor (built with 1.0 for s/p in
+/// the c2s convention) must be scaled by `common_fac_sp(li)*common_fac_sp(lj)`
+/// before the spinor transform — exactly as the scalar/gradient 1e arms do.
+fn common_fac_sp(l: u8) -> f64 {
+    match l {
+        0 => 0.282094791773878143_f64, // 1/(2*sqrt(pi))
+        1 => 0.488602511902919921_f64, // sqrt(3/(4*pi))
+        _ => 1.0,
+    }
+}
+
+/// Live `int1e_sp` Spinor launcher — the FND-05 end-to-end path (Plan 28-04).
+///
+/// Composes the device σ·p assembler ([`run_sigma_p_on_backend`], `tensor_rank=1`)
+/// with the host spin-included transform [`cart_to_spinor_si_2d`], producing the
+/// flat interleaved-complex spinor block for one shell pair `(i, j)`.
+///
+/// # Layout
+/// Output is column-major (ket-spinor outer, bra-spinor inner), interleaved
+/// complex `[re,im,…]`, contraction-major:
+/// `out[(j_global*ni_sp + i_global)*2 + {0:re,1:im}]` where
+/// `ni_sp = nctr_i*spinor_len(li,kappa_i)`, `nj_sp = nctr_j*spinor_len(lj,kappa_j)`.
+///
+/// # nctr>1 (D-08 carryover)
+/// Handles general contraction: the σ·p assembler emits one component-leading
+/// gc 4-block per `(ci,cj)` contraction pair; this launcher slices each pair's
+/// four KET-major gc blocks and folds them through `cart_to_spinor_si_2d` (which
+/// owns the KET→BRA transpose internally — Pitfall 4 / Phase-27 D-06), scattering
+/// the `di*dj*2` spinor sub-block into the contraction-major grid. NO second
+/// transpose is applied in the launcher.
+///
+/// `coeff_i` / `coeff_j` are ROW-major `[ip*nctr + ic]` (the cintx `Shell`
+/// convention after raw.rs transposes libcint's COLUMN-major env block — see
+/// `project_raw_nctr_coeff_transpose`); the σ·p kernel reads them as
+/// `coeff[pi*nctr_i + ci]`, matching that row-major layout.
+#[allow(clippy::too_many_arguments)]
+pub fn launch_int1e_sp_spinor_pair<F: CintFloat>(
+    backend: &ResolvedBackend,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let block_len = nci * ncj;
+    // tensor_rank=1 → N_GC=4 gc blocks per (ci,cj). total_len matches the
+    // assembler's per-(ci,cj) extent.
+    let total_len = (N_GC as usize) * block_len;
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_sp = nctr_i * di;
+    let nj_sp = nctr_j * dj;
+
+    // Fail-closed BEFORE any write (OOM-safe stop, no partial writes).
+    let staging_required = ni_sp * nj_sp * 2;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Device σ·p assembler: 4 component-leading gc blocks per (ci,cj). ──
+    let mut gc = run_sigma_p_on_backend(
+        backend,
+        1, // tensor_rank = 1 (int1e_sp)
+        li as u32,
+        lj as u32,
+        nprim_i as u32,
+        nprim_j as u32,
+        nctr_i as u32,
+        nctr_j as u32,
+        ri,
+        rj,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+    )?;
+
+    // Apply the s/p normalization scale (matches the scalar/gradient 1e arms).
+    let sp_scale = common_fac_sp(li) * common_fac_sp(lj);
+    if (sp_scale - 1.0).abs() > 1e-15 {
+        for v in gc.iter_mut() {
+            *v *= sp_scale;
+        }
+    }
+
+    // ── Per-(ci,cj): slice the 4 KET-major gc blocks, fold + scatter. ──
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+    for ci in 0..nctr_i {
+        for cj in 0..nctr_j {
+            let base = (ci * nctr_j + cj) * total_len;
+            let gc_x = &gc[base..base + block_len];
+            let gc_y = &gc[base + block_len..base + 2 * block_len];
+            let gc_z = &gc[base + 2 * block_len..base + 3 * block_len];
+            let gc_1 = &gc[base + 3 * block_len..base + 4 * block_len];
+
+            // cart_to_spinor_si_2d owns the KET→BRA transpose; pass the gc blocks
+            // as the assembler emits them (KET-major) — no launcher transpose.
+            cart_to_spinor_si_2d::<F>(
+                &mut scratch,
+                gc_x,
+                gc_y,
+                gc_z,
+                gc_1,
+                li,
+                kappa_i,
+                lj,
+                kappa_j,
+            )?;
+
+            // Scatter the di*dj*2 spinor sub-block into the contraction-major grid.
+            // scratch is column-major: scratch[(j*di + i)*2 + {re,im}].
+            for j in 0..dj {
+                let j_global = cj * dj + j;
+                for i in 0..di {
+                    let i_global = ci * di + i;
+                    let src = (j * di + i) * 2;
+                    let dst = (j_global * ni_sp + i_global) * 2;
+                    staging[dst] = scratch[src];
+                    staging[dst + 1] = scratch[src + 1];
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Pure-Rust host reference replicating [`sigma_p_kernel`] exactly.
