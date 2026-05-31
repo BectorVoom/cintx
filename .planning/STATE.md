@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: verifying
-stopped_at: Completed 29-05-PLAN.md
-last_updated: "2026-05-31T18:18:56.018Z"
+stopped_at: Phase 30 context gathered
+last_updated: "2026-05-31T21:44:16.944Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 21
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 30
 Plan: Not started
 Status: Phase complete — ready for verification
-Resume file: None
+Resume file: .planning/phases/30-group-5-giao-slice-spin-giao-integrals-spinor/30-CONTEXT.md
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 
@@ -426,6 +426,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T16:13:24.608Z
-Stopped at: Completed 29-05-PLAN.md
+Last session: 2026-05-31T21:44:16.940Z
+Stopped at: Phase 30 context gathered
 Resume file: None
