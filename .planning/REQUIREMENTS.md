@@ -76,11 +76,11 @@
 ### Foundations
 
 - [x] **FND-01**: `PTR_COMMON_ORIG` gauge-origin env slot (`env[1..3]`) is plumbed end-to-end following the `PTR_RINV_ORIG` precedent — `OperatorEnvParams.common_orig: Option<[f64;3]>`, `raw.rs::eval_raw` env-read, validator gate, `with_common_origin` safe-API setter; a non-zero gauge-origin oracle fixture exists and is the parity gate for moments + GIAO. Env round-trip + validator unit tests pass.
-- [ ] **FND-02**: Rys `nroots≥6` Wheeler-fallback is implemented so high angular-momentum (d/f) shells reach byte-identity; closes `.planning/todos/pending/rys-nroots-ge6-wheeler-fallback.md`. No family returns `UnsupportedApi` purely due to `nroots>5`.
-- [ ] **FND-03**: Complex/imaginary output capability — `complex_interleaved` is set per-family from driver routing (not the representation string), `assert_flat_buffer_contract` fires on the flag, and staging is sized `2×ncomp×…`; a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API without silent zeroing.
-- [ ] **FND-04**: Spinor-derivative transform (Gap B1) — `cart_to_spinor_sf_derivative_*` in `c2spinor.rs`; `int1e_ipovlp_spinor` and sibling `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity at atol=1e-12 (closes the Phase-21 R5/D-03 deferral).
-- [ ] **FND-05**: Spin-included `c2s_si` 4-block (`gc_x/gc_y/gc_z/gc_1`) spinor transform + σ·p G-tensor assembler module — validated against a kappa-bearing relativistic oracle fixture at atol=1e-12; the σ-coupling matches libcint `c2s_si_1e`.
-- [ ] **FND-06**: High-rank (component_rank 9/27/81) staging is fail-closed — an upfront size assertion replaces the `if dst < staging.len()` scatter guards (no silent partial writes), and the chunk planner's OOM-safe-stop is re-validated at rank 81.
+- [x] **FND-02**: Rys `nroots≥6` Wheeler-fallback is implemented so high angular-momentum (d/f) shells reach byte-identity; closes `.planning/todos/pending/rys-nroots-ge6-wheeler-fallback.md`. No family returns `UnsupportedApi` purely due to `nroots>5`.
+- [x] **FND-03**: Complex/imaginary output capability — `complex_interleaved` is set per-family from driver routing (not the representation string), `assert_flat_buffer_contract` fires on the flag, and staging is sized `2×ncomp×…`; a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API without silent zeroing.
+- [x] **FND-04**: Spinor-derivative transform (Gap B1) — `cart_to_spinor_sf_derivative_*` in `c2spinor.rs`; `int1e_ipovlp_spinor` and sibling `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity at atol=1e-12 (closes the Phase-21 R5/D-03 deferral). [Phase 27: 20 vendor-backed sf-derivative spinor families oracle_covered=true; 4 D-12 vendor-stub arms + D-03/D-04 deferred follow-ups remain false.]
+- [x] **FND-05**: Spin-included `c2s_si` 4-block (`gc_x/gc_y/gc_z/gc_1`) spinor transform + σ·p G-tensor assembler module — validated against a kappa-bearing relativistic oracle fixture at atol=1e-12; the σ-coupling matches libcint `c2s_si_1e`.
+- [x] **FND-06**: High-rank (component_rank 9/27/81) staging is fail-closed — an upfront size assertion replaces the `if dst < staging.len()` scatter guards (no silent partial writes), and the chunk planner's OOM-safe-stop is re-validated at rank 81.
 
 ### Group 1 — Remaining 1st-Derivatives
 
@@ -92,10 +92,10 @@
 
 ### Group 2 — Hessian & Higher-Order Derivatives
 
-- [ ] **HESS-01**: `int1e_ipipovlp`, `int1e_ipipnuc`, `int1e_ipipkin`, `int1e_ipiprinv` (component_rank=9) match at atol=1e-12 (cart+sph).
-- [ ] **HESS-02**: The 2e Hessian set (`int2e_ipip1`, `int2e_ipvip1`, `int2e_ip1ip2`, `int2e_ipip1ipip2`) — promoted from `unstable` where present — match at atol=1e-12 (cart+sph).
-- [ ] **HESS-03**: `int2c2e_ipip1`, `int3c2e_ipip1`, `int3c2e_ipip2` match at atol=1e-12 (cart+sph).
-- [ ] **HESS-04**: 3rd/4th-order families (`int1e_ipipipnuc`, `int1e_ipipipiprinv`, and siblings) match at atol=1e-12 (cart+sph), with `ng[]`-driven bra+ket headroom.
+- [x] **HESS-01**: `int1e_ipipovlp`, `int1e_ipipnuc`, `int1e_ipipkin`, `int1e_ipiprinv` (component_rank=9) match at atol=1e-12 (cart+sph).
+- [x] **HESS-02**: The 2e Hessian set (`int2e_ipip1`, `int2e_ipvip1`, `int2e_ip1ip2`, `int2e_ipip1ipip2`) — promoted from `unstable` where present — match at atol=1e-12 (cart+sph).
+- [x] **HESS-03**: `int2c2e_ipip1`, `int3c2e_ipip1`, `int3c2e_ipip2` match at atol=1e-12 (cart+sph).
+- [x] **HESS-04**: 3rd/4th-order families (`int1e_ipipipnuc`, `int1e_ipipipiprinv`, and siblings) match at atol=1e-12 (cart+sph), with `ng[]`-driven bra+ket headroom.
 
 ### Group 3 — Position / Multipole Moments
 
@@ -113,8 +113,8 @@
 
 ### Group 5 — GIAO / Magnetic-Property (NMR)
 
-- [ ] **GIAO-01**: Spin-free 1e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`) — purely imaginary — match at atol=1e-12 (cart+sph) via FND-03.
-- [ ] **GIAO-02**: 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12.
+- [x] **GIAO-01**: Spin-free 1e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`) — purely imaginary — match at atol=1e-12 (cart+sph) via FND-03.
+- [x] **GIAO-02**: 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12.
 - [ ] **GIAO-03**: GIAO×σ slice (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) match at atol=1e-12 (spinor) via FND-05.
 
 ### Group 6 — Gauge / Breit–Gaunt 2e (apex)
@@ -201,17 +201,17 @@
 | MOM-02 | Phase 24 | Complete |
 | MOM-03 | Phase 24 | Complete |
 | MOM-04 | Phase 24 | Complete |
-| HESS-01 | Phase 25 | Pending |
-| HESS-02 | Phase 25 | Pending |
-| HESS-03 | Phase 25 | Pending |
-| HESS-04 | Phase 25 | Pending |
-| FND-02 | Phase 25 | Pending |
-| FND-06 | Phase 25 | Pending |
-| GIAO-01 | Phase 26 | Pending |
-| GIAO-02 | Phase 26 | Pending |
-| FND-03 | Phase 26 | Pending |
-| FND-04 | Phase 27 | Pending |
-| FND-05 | Phase 28 | Pending |
+| HESS-01 | Phase 25 | Complete |
+| HESS-02 | Phase 25 | Complete |
+| HESS-03 | Phase 25 | Complete |
+| HESS-04 | Phase 25 | Complete |
+| FND-02 | Phase 25 | Complete |
+| FND-06 | Phase 25 | Complete |
+| GIAO-01 | Phase 26 | Complete |
+| GIAO-02 | Phase 26 | Complete |
+| FND-03 | Phase 26 | Complete |
+| FND-04 | Phase 27 | Complete |
+| FND-05 | Phase 28 | Complete |
 | REL-01 | Phase 29 | Pending |
 | REL-02 | Phase 29 | Pending |
 | REL-03 | Phase 29 | Pending |

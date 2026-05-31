@@ -26,10 +26,10 @@
 - [x] **Phase 22: Gauge-Origin Env Slot (Gap A — `PTR_COMMON_ORIG`)** - Plumb the `PTR_COMMON_ORIG` gauge-origin env slot (env[1..3]) end-to-end on the `PTR_RINV_ORIG` precedent and add the non-zero gauge-origin oracle fixture that gates all moment + GIAO parity. (v1.4) (completed 2026-05-29)
 - [x] **Phase 23: Group 1 — Remaining 1st-Derivative Families (cart/sph)** - The 8 remaining first-derivative families (`int2e_ip2`, `int1e_ip*ip`, `int3c1e_ip1/iprinv`, `int2c2e_ip1/ip2`, `int3c2e_ip2`) at byte-identity, reusing the Phase-21 nabla/`gout_ip1` engine. (v1.4) (completed 2026-05-30)
 - [x] **Phase 24: Group 3 — Position / Multipole-Moment Integrals** - Dipole through hexadecapole moments (`int1e_r/rr/rrr/rrrr`, `r2/r4`, `z/zz`, `p4`, `rinv/drinv`, `irp`) plus `_origj` variants, gated on the non-zero gauge-origin fixture. (v1.4) (completed 2026-05-30)
-- [ ] **Phase 25: Group 2 — Hessian & Higher-Order Derivatives** - 2nd/3rd/4th-order derivative families (`int1e_ipip*`, `int2c2e_ipip1`, `int3c2e_ipip1/ipip2`, the promoted 2e Hessian set, 4th-order families) at component_rank 9/27/81, with the Rys `nroots>=6` Wheeler fallback and fail-closed high-rank staging landing first. (v1.4)
-- [ ] **Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)** - Spin-free 1e+2e GIAO/CG families (purely imaginary, even in cart/sph) at byte-identity, introducing the complex-interleaved output capability. (v1.4)
-- [ ] **Phase 27: Spinor-Derivative Transform (Gap B1)** - `cart_to_spinor_sf_derivative_*` so `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity, closing the Phase-21 R5/D-03 deferral. (v1.4)
-- [ ] **Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)** - The 4-block (`gc_x/y/z/1`) spin-included spinor transform plus the σ·p G-tensor assembler, validated against a kappa-bearing relativistic fixture — the prerequisite for all σ-operator families. (v1.4)
+- [x] **Phase 25: Group 2 — Hessian & Higher-Order Derivatives** - 2nd/3rd/4th-order derivative families (`int1e_ipip*`, `int2c2e_ipip1`, `int3c2e_ipip1/ipip2`, the promoted 2e Hessian set, 4th-order families) at component_rank 9/27/81, with the Rys `nroots>=6` Wheeler fallback and fail-closed high-rank staging landing first. (v1.4) (completed 2026-05-30)
+- [x] **Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)** - Spin-free 1e+2e GIAO/CG families (purely imaginary, even in cart/sph) at byte-identity, introducing the complex-interleaved output capability. (v1.4) (gap-closure plans 04-08 executed 2026-05-31 — awaiting phase verification) (completed 2026-05-31)
+- [x] **Phase 27: Spinor-Derivative Transform (Gap B1)** - `cart_to_spinor_sf_derivative_*` so `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity, closing the Phase-21 R5/D-03 deferral. (v1.4)
+- [x] **Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)** - The 4-block (`gc_x/y/z/1`) spin-included spinor transform plus the σ·p G-tensor assembler, validated against a kappa-bearing relativistic fixture — the prerequisite for all σ-operator families. (v1.4) (completed 2026-05-31)
 - [ ] **Phase 29: Group 4 — Relativistic Spin-Operator Integrals (spinor)** - The relativistic σ-operator families (`spsp`, `spnucsp`, `sprinvsp`, `srsr`, `sigma`, `sp`, 2e `spsp1/srsr1/ssp*/sps*/vsp*`) at spinor byte-identity via the Gap B2 `c2s_si` path. (v1.4)
 - [ ] **Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals (spinor)** - The relativistic-NMR GIAO×σ slice (`int1e_spg*`, `spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) at spinor byte-identity, completing the magnetic-property suite. (v1.4)
 - [ ] **Phase 31: Group 6 — Gauge / Breit–Gaunt 2e + Full-Parity Verification (apex)** - The Dirac–Coulomb–Breit 2e set (`int2e_gauge_r1/r2_*`, Gaunt `ssp/sps`) at spinor byte-identity AND the milestone-closing full-parity gate: every libcint 6.1.3 family `oracle_covered=true` with an empty unsupported-families list. (v1.4)
@@ -62,10 +62,10 @@
 | Phase 22: Gauge-Origin Env Slot (Gap A — PTR_COMMON_ORIG) | v1.4 | 0/2 | Planned | - |
 | Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 5/5 | Complete | 2026-05-30 |
 | Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 5/5 | Complete | 2026-05-30 |
-| Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 0/0 | Not started | - |
-| Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/0 | Not started | - |
-| Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 0/0 | Not started | - |
-| Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 0/0 | Not started | - |
+| Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 6/6 | Complete | 2026-05-31 |
+| Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 8/8 | Complete | 2026-05-31 |
+| Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 6/6 | Complete | 2026-05-31 |
+| Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 4/4 | Complete | 2026-05-31 |
 | Phase 29: Group 4 — Relativistic Spin-Operator Integrals | v1.4 | 0/0 | Not started | - |
 | Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals | v1.4 | 0/0 | Not started | - |
 | Phase 31: Group 6 — Gauge/Breit–Gaunt 2e + Full-Parity Verification | v1.4 | 0/0 | Not started | - |
@@ -587,17 +587,41 @@ Plans:
 
 ### Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)
 
-**Goal**: The spin-free 1e and 2e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`, and the 2e `int2e_g1/gg1/ig1/giao_*`) — which are **purely imaginary even in cart/sph** — reach byte-identity through a per-family complex-interleaved output capability, validated against the non-zero gauge-origin fixture so the imaginary content actually lands (not silently zeroed).
+**Goal**: The spin-free 1e and 2e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`, and the 2e `int2e_g1/gg1/ig1/g1g2`) — which are **purely imaginary even in cart/sph** — reach byte-identity through a per-family complex-interleaved output capability (FND-03), validated against the non-zero gauge-origin fixture so the imaginary content actually lands (not silently zeroed).
 **Depends on**: Phase 22 (gauge origin — GIAO = gauge-including atomic orbital). Phases 23 + 24 (the nabla step + position-operator tensor the `r_gauge × ∇` factor combines).
 **Requirements**: GIAO-01, GIAO-02, FND-03
+**Plan-time reconciliations (D-15/D-16):** vendor cart/sph GIAO symbols are real `double *out` (1×), NOT `double complex` (2×) — vendor parity is real-vs-real at atol=1e-12 and the `Complex<f64>` view is materialized cintx-side (re=0, im=value); GIAO-02 includes `int2e_g1g2` (4 families total).
 **Success Criteria** (what must be TRUE):
 
-  1. Complex/imaginary output capability is real: `complex_interleaved` is set per-family from driver routing (not the representation string), `assert_flat_buffer_contract` fires on the flag (a complex cart/sph family staged as real-only FAILS the contract), staging is sized `2×ncomp×…`, and a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API without silent zeroing (FND-03).
-  2. The spin-free 1e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`) match at atol=1e-12 (cart + sph) via the complex path, with the vendor wrapper passing the same `2×`-interleaved buffer to the `double complex *out` libcint symbol (GIAO-01).
-  3. The 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12, with `autocode/intor4.c` added to the oracle `cc::Build` (GIAO-02).
-  4. Every family is gated on the non-zero gauge-origin fixture (a zero-origin GIAO test is doubly-trivial), has a dedicated `vendor_*` test executing under both flags, and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+  1. Complex/imaginary output capability is real: `complex_interleaved` is set per-family from a manifest `complex_output` flag (not the representation string), `assert_flat_buffer_contract` fires fail-closed on the flag, staging is sized `2×ncomp×…`, and a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API as a `Complex<f64>` view without silent zeroing (FND-03).
+  2. The 11 spin-free 1e GIAO/CG families match at atol=1e-12 (cart + sph) via the complex path; vendor parity is real-vs-real (D-15) on a non-zero-gauge non-square block (GIAO-01).
+  3. The 4 spin-free 2e GIAO families (`int2e_g1`, `int2e_ig1`, `int2e_gg1`, `int2e_g1g2` per D-16) match at atol=1e-12 cart + sph (`autocode/intor4.c`/`intor2.c` already in the oracle build) (GIAO-02).
+  4. Every family is gated on the non-zero gauge-origin fixture, has a dedicated `vendor_*` test under both flags, and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
-**Plans**: TBD
+**Plans**: 8 plans (3 original + 5 gap-closure)
+
+Plans:
+**Wave 1 (FND-03 foundation — merges first, blocks all families)**
+
+- [x] 26-01-PLAN.md — FND-03: add manifest `complex_output` flag end-to-end + backfill spinor rows; re-key planner SET; generalize fail-closed `assert_flat_buffer_contract`; comptime kernel hint; `giao_complex_roundtrip` proof.
+
+**Wave 2 (worktree-parallel after 26-01 merges)**
+
+- [x] 26-02-PLAN.md — Cluster A (GIAO-01): register + kernel + vendor-parity the 11 spin-free 1e GIAO/CG families (rank 3/9) at atol=1e-12.
+- [x] 26-03-PLAN.md — Cluster B (GIAO-02): register + kernel + vendor-parity the 4 spin-free 2e GIAO families (g1, ig1, gg1, g1g2 per D-16) at atol=1e-12.
+
+**Gap closure (from 26-VERIFICATION.md gaps_found + 26-REVIEW.md CR-01/WR-01..05/IN-01..03):**
+
+Gap-Wave 1 (parallel, no file overlap):
+- [x] 26-04-PLAN.md — [BLOCKING gap] Fail-closed `UnsupportedApi` guard on `int1e_a01gp` before any compute (CR-01) + non-vendor test proving the raw path is fail-closed.
+- [x] 26-06-PLAN.md — WR-01: full-block per-chunk staging for GIAO/monolithic-complex writers in the safe-API `evaluate` path (mirror eval_raw) + chunk-forcing memory-limit runtime test.
+- [x] 26-07-PLAN.md — WR-03 + IN-01: dedup `giao_2e_parity.rs` onto shared `moment_common` helpers; self-document/assert the cross-center quartet AM.
+
+Gap-Wave 2 (after 26-04):
+- [x] 26-05-PLAN.md — a01gp kernel correctness fix (attempt): root-cause the rank-9 ket-derivative ~2× double-count; on parity pass remove guard + un-ignore test + flip `oracle_covered=true`, else keep the guard with a tracked follow-up.
+
+Gap-Wave 3 (after 26-05):
+- [x] 26-08-PLAN.md — WR-04/WR-05/IN-02/IN-03: imaginary-half `not0` (both kernel files); explicit `is_rinv_center` dispatch property; remove/annotate inert comptime hint; hoist GIAO headroom into shared `const fn`s.
 
 ### Phase 27: Spinor-Derivative Transform (Gap B1)
 
@@ -610,8 +634,14 @@ Plans:
   2. `int1e_ipovlp_spinor` moves from `UnsupportedApi` to byte-identity at atol=1e-12 against a spinor fixture, and the sibling `ip`-decorated spinor families that depend only on B1 are flipped `oracle_covered=true` (FND-04).
   3. A dedicated `vendor_*` spinor parity test executes under both flags (`running N>0 tests`) and is not a `skipped` fixture; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
-**Plans**: TBD
-**Research flag**: The spinor-derivative per-component axis-fold design is not yet exercised — a one-day design spike against `int1e_ipovlp_spinor` is recommended before this phase's plans are finalized.
+**Plans**: 6 plans (re-planned 2026-05-31 — disproven spinor aux-k reconciled to SPHERICAL nsph(lk); added 27-02a to fix committed scaffolding)
+- [x] 27-01-PLAN.md — D-11 design spike (confirm device derivative cart block layout + 3c2e transpose granularity + nctr composition) + Wave-0 scaffolding (RED parity test file, D-08 adversarial fixture, missing vendor FFI). NOTE: encoded the WRONG (spinor) aux-k contract; corrected by 27-02a.
+- [x] 27-02-PLAN.md (wave 2) — `cart_to_spinor_sf_derivative_2d` + `_3c2e` + `_3c1e` (thin sibling) wrappers in c2spinor.rs (ncomp loop, D-06 internal transpose, nctr>1, SPHERICAL aux-k nsph(lk), FND-06 fail-closed) + unit tests (pins 360-not-720)
+- [x] 27-02a-PLAN.md (wave 2, parallel) — RECONCILE committed 27-01 scaffolding to SPHERICAL aux-k: fix spinor_deriv_parity.rs collectors (aux-k = nsph(lk)), fixtures.rs ao_count_for_rep, vendor_ffi.rs doc comments; assert p×d×s buffer = 360, not 720
+- [x] 27-03-PLAN.md (wave 3) — rewire sf_2d-path launchers (one_electron.rs all rank tiers + center_2c2e.rs ip1/ip2). 1e sf_2d vendor parity GREEN (byte-identical, ranks 3/9/81). ⚠ int2c2e_ip1/ip2 spinor parity DEFERRED — libcint 6.1.3 ships these as unimplemented stubs (return 0); no vendor reference. FD re-plan pending; oracle_covered stays false.
+- [x] 27-04-PLAN.md (wave 3) — rewire sf_3c2e-path launchers (center_3c2e.rs int3c2e_ip1/ip2 via _3c2e + int3c1e_ip1/iprinv via the _3c1e thin sibling), SPHERICAL aux-k. int3c2e_ip1 vendor parity GREEN at 360-element buffer. ⚠ int3c1e_ip1/iprinv spinor parity DEFERRED — libcint CINT3c1e_spinor_drv is an exit(1) stub; FD re-plan pending; oracle_covered stays false. (Auto-fixed planner.rs aux-k over-sizing + latent c2spinor KET→BRA transpose en route.)
+- [x] 27-05-PLAN.md (wave 4) — Flipped oracle_covered=true for the 20 vendor-backed sf-derivative spinor families (18 arity-2 1e sf_2d ranks 3/9/27/81 + int3c2e_ip1/ip2 sf_3c2e rank-3); component_rank verified against the rank-tier table before each flip. The 4 D-12 vendor-stub arms (int2c2e_ip1/ip2 + int3c1e_ip1/iprinv spinor) + 6 D-03 int2e + 1 D-04 ECP stay oracle_covered=false. Completed the D-10 no-silent-skip assertion (FLIPPED/DEFERRED split read from MANIFEST_ENTRIES at runtime); updated the D-12 deferral note in oracle_covered_update.rs (skipped guard retained). manifest-audit green; full vendor parity suite green under both flags (6 passed, 0 failed, 3 ignored). No capi/legacy surface added. FD verification of the 4 stub arms remains a deferred follow-up.
+**Research flag**: The D-11 design spike is scheduled as Plan 27-01 (a HARD GATE before the `_3c2e` wrapper signature and nctr>1 composition are finalized in Plan 27-02) — it confirms the device-emitted derivative cart block layout and the 3c2e transpose granularity against hand-checked vendor values.
 
 ### Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)
 
@@ -625,8 +655,13 @@ Plans:
   3. A kappa-bearing relativistic oracle fixture (a molecule with spinor shells — H2O/STO-3G has none) is added to `fixtures.rs`, and the `si` transform + σ·p assembler pass an end-to-end byte-identity check at atol=1e-12 against it (FND-05).
   4. `oracle-covered-update` mechanically refuses to flip `oracle_covered=true` for a σ/spinor family whose only fixture was `skipped`; all σ families stay `UnsupportedApi` until this phase passes on the kappa fixture. No capi/legacy-wrapper surface is added.
 
-**Plans**: TBD
-**Research flag**: Confirm the `a_bra_cart2spinor_si` 4-block stride/ordering from `cart2sph.c:4947-4992` (a design spike) before this phase's plans are finalized.
+**Plans**: 4 plans (all complete 2026-05-31)
+- [x] 28-01-PLAN.md (wave 1) — HOST si transform: `apply_bra_si_block` (NEW `a_bra_cart2spinor_si` sign convention, NOT `apply_si_block`) + `cart_to_spinor_si_2d` (4-block gc input, ordinary ket reuse, KET→BRA transpose owned internally, spinor_len sizing) in c2spinor.rs
+- [x] 28-02-PLAN.md (wave 1, parallel) — DEVICE σ·p generic `#[cube]` assembler `kernels/sigma_p.rs` (rank-parameterized per D-03; emits pre-blocked gc_x/gc_y/gc_z/gc_1, scalar slot 0 for int1e_sp)
+- [x] 28-03-PLAN.md (wave 1, parallel) — manifest infra: int1e_sp_spinor row (oracle_covered=false, D-01) + vendor_int1e_sp_spinor FFI shim + SC#4 skipped-fixture guard assertion; no capi/legacy surface
+- [x] 28-04-PLAN.md (wave 2) — int1e_sp Spinor dispatch wiring (σ·p → si_2d, nctr>1) + build_kappa_spinor_fixture (kappa≠0 p+1/d−1, non-square, nctr=2) + heavy-atom fixture + si_transform_parity.rs end-to-end byte-identity vs vendor at atol=1e-12 (no flag flip, no-silent-skip)
+**Research flag**: DISCHARGED — the D-06 design spike is the 28-RESEARCH.md `## Validation Architecture` section (Spike Targets A–E), verified against vendored `cart2sph.c`/`intor3.c`. Key finding: the 2D `c2s_si_1e` bra step uses `a_bra_cart2spinor_si` signs, which DIFFER from the existing `apply_si_block`; the new `apply_bra_si_block` must transcribe them verbatim.
+**Verification**: passed 5/5 must-haves (28-VERIFICATION.md). Code review CR-01 (fail-closed staging guard) resolved in 8d049cc. FND-05 proven byte-identical (6/6).
 
 ### Phase 29: Group 4 — Relativistic Spin-Operator Integrals (spinor)
 

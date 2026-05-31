@@ -7,6 +7,14 @@ edition = "2024"
 name = "xtask"
 path = "src/main.rs"
 
+[features]
+default = []
+# Forward the CPU compute backend down to cintx-oracle/compat so the vendor
+# parity path (oracle-covered-update / oracle-compare) drives the real CPU
+# kernels. Double-gated with CINTX_ORACLE_BUILD_VENDOR=1 for byte-identity
+# parity (reference_oracle_vendor_parity_invocation).
+cpu = ["cintx-oracle/cpu", "cintx-compat/cpu"]
+
 [dependencies]
 anyhow = "1.0.102"
 bytemuck = "1"

@@ -13,9 +13,9 @@
 
 use crate::backend::ResolvedBackend;
 use crate::kernels::two_electron::{build_2e_shape, two_e_shape_as_f12};
-#[cfg(test)]
 use crate::kernels::two_electron::fill_g_tensor_2e;
-#[cfg(test)]
+// Phase 25 HESS-03: verbatim Hessian gout helpers (bra-i ∇² + ket-k ∇²).
+use crate::kernels::f12::{gout_ipip1, gout_ipip2_l};
 use crate::math::pdata::compute_pdata_host;
 #[cfg(test)]
 use crate::math::pdata::PairData;
@@ -24,7 +24,7 @@ use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_3c2e, ncart, nsph};
-use crate::transform::c2spinor::cart_to_spinor_sf_3c2e;
+use crate::transform::c2spinor::{cart_to_spinor_sf_3c2e, cart_to_spinor_sf_derivative_3c2e};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -35,6 +35,12 @@ use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI = sqrt(M_PI)`.
 const SQRTPI: f64 = 1.7724538509055159_f64;
+
+/// Host Rys nroots ceiling (FND-02 Wheeler engine supports nroots 6..12). The
+/// multi-center Hessian families (ipip1/ipip2) route through the HOST
+/// `fill_g_tensor_2e` path so the `+2` headroom raise can reach nroots 6..12;
+/// nroots>12 stays fail-closed.
+const HOST_RYS_NROOTS_CEILING: usize = 12;
 
 /// Rys `PIE4 = pi/4` constant passed into the device `rys_root{1..5}` kernels.
 const PIE4: f64 = 0.78539816339744827900_f64;
@@ -2384,12 +2390,9 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
     lk: u8,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    // R5 / T-21-06-04: spinor gradient is not supported. Reject before any compute.
-    if plan.representation == Representation::Spinor {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int3c2e_ip1 gradient".to_owned(),
-        });
-    }
+    // Phase 27 (27-04, D-06): spinor gradient now evaluates via the Plan-02 derivative
+    // wrapper `cart_to_spinor_sf_derivative_3c2e` (SPHERICAL aux-k). The early reject is
+    // removed; the Spinor arm in the staging match below folds the device cart blocks.
 
     // 3c2e kl mapping into the 2e shape (Pitfall-4): real k → 2e `ll` slot, phantom
     // 2e `lk` slot = 0; bra `i` raised to `li+1` so `nabla1i_2e` can read index li+1.
@@ -2522,9 +2525,7 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                                         let dst = staging_comp_base
                                             + iidx
                                             + di * (jidx + dj * kidx);
-                                        if dst < staging.len() {
-                                            staging[dst] = F::from_f64_lossy(sph[src]);
-                                        }
+                                        staging[dst] = F::from_f64_lossy(sph[src]);
                                     }
                                 }
                             }
@@ -2556,9 +2557,7 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                                         let dst = staging_comp_base
                                             + iidx
                                             + di * (jidx + dj * kidx);
-                                        if dst < staging.len() {
-                                            staging[dst] = F::from_f64_lossy(block[src]);
-                                        }
+                                        staging[dst] = F::from_f64_lossy(block[src]);
                                     }
                                 }
                             }
@@ -2567,7 +2566,35 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                 }
             }
         }
-        Representation::Spinor => unreachable!("spinor int3c2e_ip1 rejected above"),
+        Representation::Spinor => {
+            // 27-04 (D-06): fold the device cart blocks to spinor via the Plan-02
+            // derivative wrapper. Aux-k is SPHERICAL nsph(lk); only bra i / ket j are
+            // spinor-sized (4l+2). The wrapper owns the KET→BRA transpose and the
+            // per-(comp,k) cart→sph(k) + sf_2d fold (no transpose lives here).
+            //
+            // The wrapper indexes the device cart_blocks as
+            // `[(ci*n_ctr_j+cj)][comp][k][j][i]` (a single spherical aux-k axis per
+            // (ci,cj) sub-block). It does not handle a contracted aux-k axis, so
+            // fail closed for n_ctr_k > 1 rather than silently producing wrong data.
+            if n_ctr_k > 1 {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "spinor int3c2e_ip1 gradient with general-contracted aux-k (nctr_k>1)"
+                        .to_owned(),
+                });
+            }
+            cart_to_spinor_sf_derivative_3c2e::<F>(
+                staging,
+                &cart_blocks,
+                3,
+                li,
+                shell_i.kappa,
+                lj,
+                shell_j.kappa,
+                lk,
+                n_ctr_i,
+                n_ctr_j,
+            )?;
+        }
     }
 
     // Per-symbol nonzero sentinel (precision-aware; matches the scalar path).
@@ -2626,12 +2653,10 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
     lk: u8,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    // D-06: spinor gradient is not supported. Reject before any compute.
-    if plan.representation == Representation::Spinor {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int3c2e_ip2 gradient".to_owned(),
-        });
-    }
+    // Phase 27 (27-04, D-06): spinor gradient now evaluates via the same Plan-02
+    // derivative wrapper `cart_to_spinor_sf_derivative_3c2e` (SPHERICAL aux-k) — ip2
+    // shares ip1's buffer SHAPE, differing only in which center is differentiated
+    // (the device kernel already picked nabla1l). The early reject is removed.
 
     // 3c2e kl mapping into the 2e shape (Pitfall 2): real k → 2e `ll` slot, phantom
     // 2e `lk` slot = 0. For ip2 the bra `i` is NOT raised; the real aux k (`ll` slot)
@@ -2764,9 +2789,7 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                                         let dst = staging_comp_base
                                             + iidx
                                             + di * (jidx + dj * kidx);
-                                        if dst < staging.len() {
-                                            staging[dst] = F::from_f64_lossy(sph[src]);
-                                        }
+                                        staging[dst] = F::from_f64_lossy(sph[src]);
                                     }
                                 }
                             }
@@ -2798,9 +2821,7 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                                         let dst = staging_comp_base
                                             + iidx
                                             + di * (jidx + dj * kidx);
-                                        if dst < staging.len() {
-                                            staging[dst] = F::from_f64_lossy(block[src]);
-                                        }
+                                        staging[dst] = F::from_f64_lossy(block[src]);
                                     }
                                 }
                             }
@@ -2809,7 +2830,31 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                 }
             }
         }
-        Representation::Spinor => unreachable!("spinor int3c2e_ip2 rejected above"),
+        Representation::Spinor => {
+            // 27-04 (D-06): ip2 spinor gradient folds the device cart blocks through
+            // the SAME derivative wrapper as ip1 (identical buffer shape per the spike;
+            // the device kernel already chose the aux/ket-center gradient). Aux-k stays
+            // SPHERICAL nsph(lk); only bra i / ket j are spinor-sized (4l+2). No
+            // transpose lives here (D-06: it is owned inside the wrapper).
+            if n_ctr_k > 1 {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: "spinor int3c2e_ip2 gradient with general-contracted aux-k (nctr_k>1)"
+                        .to_owned(),
+                });
+            }
+            cart_to_spinor_sf_derivative_3c2e::<F>(
+                staging,
+                &cart_blocks,
+                3,
+                li,
+                shell_i.kappa,
+                lj,
+                shell_j.kappa,
+                lk,
+                n_ctr_i,
+                n_ctr_j,
+            )?;
+        }
     }
 
     // Per-symbol nonzero sentinel (precision-aware; matches the scalar path).
@@ -2831,6 +2876,268 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
         not0,
         fallback_reason: plan.workspace.fallback_reason,
     })
+}
+
+/// Which center the `int3c2e_ipip*` double-nabla is applied to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HessKind {
+    /// `int3c2e_ipip1` — ∇² on the bra center i (`gout_ipip1`, `nabla1i_2e`, li+2).
+    Ipip1,
+    /// `int3c2e_ipip2` — ∇² on the auxiliary k center (mapped to the 2e `ll` slot
+    /// via `gout_ipip2_l`, `nabla1l_2e`, ll=lk+2 headroom). KET-side (D-09).
+    Ipip2,
+}
+
+/// Shared HOST launcher for the two multi-center 3c2e rank-9 Hessian families
+/// (`int3c2e_ipip1` bra-side, `int3c2e_ipip2` ket-side — HESS-03).
+///
+/// 3c2e kl mapping (Pitfall 2): the real aux k → 2e `ll` slot, the 2e `lk` slot is
+/// a phantom s-function. ipip1 raises bra `i` to `li+2`; ipip2 raises the real aux
+/// (`ll` slot) to `lk+2`. The G-tensor is built through the SHARED 2e recurrence
+/// (`fill_g_tensor_2e`); the family's verbatim gout (`gout_ipip1` / `gout_ipip2_l`)
+/// emits the 9 column-major Hessian components. Emits `[9, nk, nj, ni]` F-order.
+///
+/// HOST-routed so the `+2` raise can reach nroots 6..12 (FND-02); nroots>12 stays
+/// fail-closed. Spinor → `UnsupportedApi` (D-11).
+#[allow(clippy::too_many_arguments)]
+fn launch_center_3c2e_hess<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    shell_i: &cintx_core::Shell,
+    shell_j: &cintx_core::Shell,
+    shell_k: &cintx_core::Shell,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    kind: HessKind,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    const NCOMP: usize = 9;
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: match kind {
+                HessKind::Ipip1 => "spinor int3c2e_ipip1 Hessian".to_owned(),
+                HessKind::Ipip2 => "spinor int3c2e_ipip2 Hessian".to_owned(),
+            },
+        });
+    }
+
+    // ipip1: bra i raised +2; real aux k (ll slot) at base lk.
+    // ipip2: bra i at base; real aux k (ll slot) raised +2.
+    let hess_shape = match kind {
+        HessKind::Ipip1 => build_2e_shape(li as usize + 2, lj as usize, 0, lk as usize),
+        HessKind::Ipip2 => build_2e_shape(li as usize, lj as usize, 0, lk as usize + 2),
+    };
+
+    if hess_shape.nroots > HOST_RYS_NROOTS_CEILING {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", hess_shape.nroots),
+        });
+    }
+
+    let atoms = plan.basis.atoms();
+    let ri = atoms[shell_i.atom_index as usize].coord_bohr;
+    let rj = atoms[shell_j.atom_index as usize].coord_bohr;
+    let rk = atoms[shell_k.atom_index as usize].coord_bohr;
+    // The 2e `lk` slot is a phantom s-function on the same center as the real aux k.
+    let rl = rk;
+    let rk_phantom = rk;
+
+    let common_factor =
+        (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let block_len = nci * ncj * nck;
+    let total_len = NCOMP * block_len;
+
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+
+    let hess_f12_shape = two_e_shape_as_f12(&hess_shape);
+
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * total_len];
+
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pj in 0..n_prim_j {
+            let aj = shell_j.exponents[pj];
+            for pk in 0..n_prim_k {
+                let ak = shell_k.exponents[pk];
+
+                // Per-primitive Gaussian-overlap prefactors (the `pdata.fac`
+                // exp(-mu*r²) terms) — same as the device ip1/ip2 host bridge
+                // (host_ip1_cart_blocks): bra pair (i,j) and ket pair (phantom-k, aux-l).
+                let pdata_ij = compute_pdata_host(
+                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+                );
+                let pdata_kl = compute_pdata_host(
+                    0.0, ak, rk_phantom[0], rk_phantom[1], rk_phantom[2], rl[0], rl[1], rl[2],
+                    1.0, 1.0,
+                );
+                let fac_env = common_factor * pdata_ij.fac * pdata_kl.fac;
+
+                // 2e G-tensor with the real aux k in the `ll` slot (al = ak) and a
+                // phantom s in the `lk` slot (ak_2e = 0). Mirrors the 3c2e ip1/ip2
+                // host bridge (host_ip1_cart_blocks in the test module).
+                let g = fill_g_tensor_2e(
+                    ai, aj, 0.0, ak, &ri, &rj, &rk_phantom, &rl, hess_shape, fac_env,
+                );
+
+                // Verbatim Hessian gout: ipip1 nabla²_i (bra), ipip2 nabla²_l (ket aux).
+                let gout = match kind {
+                    HessKind::Ipip1 => gout_ipip1(
+                        &g, &hess_f12_shape, li as usize, lj as usize, 0, lk as usize, ai,
+                    ),
+                    HessKind::Ipip2 => gout_ipip2_l(
+                        &g, &hess_f12_shape, li as usize, lj as usize, 0, lk as usize, ak,
+                    ),
+                };
+
+                for ci in 0..n_ctr_i {
+                    let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                    for cj in 0..n_ctr_j {
+                        let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                        for ck in 0..n_ctr_k {
+                            let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                            let weight = coeff_i * coeff_j * coeff_k;
+                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len;
+                            for n in 0..block_len {
+                                for comp in 0..NCOMP {
+                                    cart_blocks[base + comp * block_len + n] +=
+                                        weight * gout[n * NCOMP + comp];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Component-leading `[9, nk, nj, ni]` F-order write.
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dj = n_ctr_j * nsj;
+            let dk = n_ctr_k * nsk;
+            let sph_block = di * dj * dk;
+            for comp in 0..NCOMP {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
+                                + comp * block_len;
+                            let sph =
+                                cart_to_sph_3c2e(&cart_blocks[base..base + block_len], li, lj, lk);
+                            for mk in 0..nsk {
+                                let kidx = ck * nsk + mk;
+                                for mj in 0..nsj {
+                                    let jidx = cj * nsj + mj;
+                                    for mi in 0..nsi {
+                                        let iidx = ci * nsi + mi;
+                                        let src = mi + nsi * (mj + nsj * mk);
+                                        let dst =
+                                            staging_comp_base + iidx + di * (jidx + dj * kidx);
+                                        staging[dst] = F::from_f64_lossy(sph[src]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nci;
+            let dj = n_ctr_j * ncj;
+            let dk = n_ctr_k * nck;
+            let cart_block = di * dj * dk;
+            for comp in 0..NCOMP {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
+                                + comp * block_len;
+                            let block = &cart_blocks[base..base + block_len];
+                            for kc in 0..nck {
+                                let kidx = ck * nck + kc;
+                                for jc in 0..ncj {
+                                    let jidx = cj * ncj + jc;
+                                    for ic in 0..nci {
+                                        let iidx = ci * nci + ic;
+                                        let src = ic + nci * (jc + ncj * kc);
+                                        let dst =
+                                            staging_comp_base + iidx + di * (jidx + dj * kidx);
+                                        staging[dst] = F::from_f64_lossy(block[src]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor int3c2e Hessian rejected above"),
+    }
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
+/// `int3c2e_ipip1` — ∇² on the bra center i (HESS-03). Thin wrapper over
+/// [`launch_center_3c2e_hess`] with [`HessKind::Ipip1`].
+#[allow(clippy::too_many_arguments)]
+fn launch_center_3c2e_hess1<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    shell_i: &cintx_core::Shell,
+    shell_j: &cintx_core::Shell,
+    shell_k: &cintx_core::Shell,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    launch_center_3c2e_hess::<F>(plan, shell_i, shell_j, shell_k, li, lj, lk, HessKind::Ipip1, staging)
+}
+
+/// `int3c2e_ipip2` — ∇² on the auxiliary k center (KET headroom, HESS-03). Thin
+/// wrapper over [`launch_center_3c2e_hess`] with [`HessKind::Ipip2`].
+#[allow(clippy::too_many_arguments)]
+fn launch_center_3c2e_hess2<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    shell_i: &cintx_core::Shell,
+    shell_j: &cintx_core::Shell,
+    shell_k: &cintx_core::Shell,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    launch_center_3c2e_hess::<F>(plan, shell_i, shell_j, shell_k, li, lj, lk, HessKind::Ipip2, staging)
 }
 
 fn launch_center_3c2e_typed<F: CintFloat>(
@@ -2892,6 +3199,20 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     if plan.descriptor.operator_name() == "ip2" {
         return launch_center_3c2e_ip2::<F>(
             backend, plan, shell_i_in, shell_j_in, shell_k, li_in, lj_in, lk, staging,
+        );
+    }
+
+    // Phase 25 HESS-03: int3c2e_ipip1 (∇² on bra center i) and int3c2e_ipip2 (∇²
+    // on the auxiliary k center — KET headroom). Both rank-9, HOST-routed through
+    // `fill_g_tensor_2e` (the +2 raise can reach nroots 6..12, FND-02).
+    if plan.descriptor.operator_name() == "ipip1" {
+        return launch_center_3c2e_hess1::<F>(
+            plan, shell_i_in, shell_j_in, shell_k, li_in, lj_in, lk, staging,
+        );
+    }
+    if plan.descriptor.operator_name() == "ipip2" {
+        return launch_center_3c2e_hess2::<F>(
+            plan, shell_i_in, shell_j_in, shell_k, li_in, lj_in, lk, staging,
         );
     }
 
@@ -3817,7 +4138,9 @@ mod ip2_device_tests {
 //   - NOT-equal-to-plain: the (p,s,s) ip1 output is NOT element-wise equal to the
 //     plain int3c2e output broadcast across components (regression-proof for R1).
 //   - determinism (D-10): repeated evaluation is bit-identical.
-//   - spinor (R5): int3c2e_ip1 with Representation::Spinor returns UnsupportedApi.
+//   - spinor (27-04, D-06): int3c2e_ip1 with Representation::Spinor is SUPPORTED via
+//     the cart_to_spinor_sf_derivative_3c2e wrapper (byte-identity vs libcint proven
+//     in cintx-oracle/tests/spinor_deriv_parity.rs).
 // ─────────────────────────────────────────────────────────────────────────────
 #[cfg(all(test, feature = "cpu"))]
 mod ip1_tests {
@@ -4044,9 +4367,15 @@ mod ip1_tests {
         }
     }
 
-    // Spinor (R5): int3c2e_ip1 with Representation::Spinor returns UnsupportedApi.
+    // Spinor (27-04, D-06): int3c2e_ip1 with Representation::Spinor is now SUPPORTED
+    // via the cart_to_spinor_sf_derivative_3c2e wrapper (the pre-27 UnsupportedApi
+    // rejection was lifted in plan 27-04). Byte-identity vs vendored libcint is proven
+    // in cintx-oracle/tests/spinor_deriv_parity.rs; this is a launcher-level smoke test
+    // that the arm computes (no longer UnsupportedApi) and writes a correctly-sized,
+    // nonzero spinor block. The plan is built Spheric then flipped to Spinor — the cart
+    // blocks are representation-independent; only the final fold differs.
     #[test]
-    fn test_int3c2e_ip1_spinor_unsupported() {
+    fn test_int3c2e_ip1_spinor_supported() {
         let (basis, shells, op) = build_ip1_plan(0, 0, 0);
         let opts = ExecutionOptions::default();
         let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
@@ -4057,11 +4386,17 @@ mod ip1_tests {
         let spec = SpecializationKey::from_plan(&plan);
         let cpu_client = resolve_cpu_client().unwrap();
         let backend = ResolvedBackend::Cpu(cpu_client);
-        let mut staging = vec![0.0_f64; 6];
+        // (s,s,s) spinor int3c2e_ip1 output: di=dj=spinor_len(0,0)=2, aux-k SPHERICAL
+        // nsk=nsph(0)=1, ncomp=3, complex interleaved → 3*(2*2*1*2) = 24 f64.
+        let mut staging = vec![0.0_f64; 24];
         let result = launch_center_3c2e_typed::<f64>(&backend, &plan, &spec, &mut staging);
         assert!(
-            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor int3c2e_ip1 should return UnsupportedApi, got: {result:?}"
+            result.is_ok(),
+            "spinor int3c2e_ip1 is SUPPORTED since plan 27-04 (derivative wrapper), got: {result:?}"
+        );
+        assert!(
+            staging.iter().any(|v| v.abs() > 1e-18),
+            "spinor int3c2e_ip1 produced all-zero output: {staging:?}"
         );
     }
 }

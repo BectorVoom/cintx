@@ -1,5 +1,6 @@
 mod bench_report;
 mod gen_ecp_tables;
+mod gen_rys_tables;
 mod manifest_audit;
 mod oracle_covered_update;
 mod oracle_update;
@@ -54,6 +55,12 @@ enum Command {
     GenEcpTables {
         check: bool,
     },
+    /// Phase 25 FND-02 / D-04. Extract libcint Jacobi/Flocke Rys tables into
+    /// `roots_jacobi_data.rs`; `--check` re-derives and fails closed if the
+    /// committed module diverges from the vendored C source.
+    GenRysTables {
+        check: bool,
+    },
     Help,
 }
 
@@ -81,6 +88,7 @@ fn run() -> Result<()> {
         "rocm-oracle" => parse_rocm_oracle(args)?,
         "wgpu-capability-gate" => parse_wgpu_capability_gate(args)?,
         "gen-ecp-tables" => parse_gen_ecp_tables(args)?,
+        "gen-rys-tables" => parse_gen_rys_tables(args)?,
         "--help" | "-h" | "help" => Command::Help,
         other => return Err(anyhow!("unknown xtask command: {other}")),
     };
@@ -111,6 +119,7 @@ fn execute(command: Command) -> Result<()> {
             require_adapter,
         } => wgpu_capability_gate::run_wgpu_capability_gate(&profiles, require_adapter),
         Command::GenEcpTables { check } => gen_ecp_tables::run_gen_ecp_tables(check),
+        Command::GenRysTables { check } => gen_rys_tables::run_gen_rys_tables(check),
         Command::Help => {
             print_help();
             Ok(())
@@ -311,6 +320,23 @@ fn parse_gen_ecp_tables(args: impl Iterator<Item = String>) -> Result<Command> {
         }
     }
     Ok(Command::GenEcpTables { check })
+}
+
+fn parse_gen_rys_tables(args: impl Iterator<Item = String>) -> Result<Command> {
+    let items: Vec<String> = args.collect();
+    let mut check = false;
+    let mut index = 0;
+    while let Some(flag) = items.get(index) {
+        match flag.as_str() {
+            "--check" => {
+                check = true;
+                index += 1;
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => return Err(anyhow!("unknown gen-rys-tables flag: {other}")),
+        }
+    }
+    Ok(Command::GenRysTables { check })
 }
 
 fn parse_profiles_csv(csv: &str) -> Result<Vec<String>> {

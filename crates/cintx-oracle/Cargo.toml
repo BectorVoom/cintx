@@ -29,6 +29,16 @@ cintx-rs = { path = "../cintx-rs", default-features = false }
 cintx-runtime = { path = "../cintx-runtime", default-features = false }
 serde_json = "1.0.145"
 
+[dev-dependencies]
+# Phase 25 FND-02: the nroots-sweep parity test exercises the host Rys
+# `rys_roots_host` engine (cintx-cubecl::math::rys) directly against the
+# vendored `CINTrys_roots`. Host-only path; no GPU backend feature needed.
+cintx-cubecl = { path = "../cintx-cubecl", default-features = false }
+# Phase 26 FND-03: the giao_complex_roundtrip test names the safe-API
+# `Complex<f64>` view type returned by `IntegralTensor::complex_values()`.
+# Pinned to the same 0.4 line as cintx-rs (single resolved graph).
+num-complex = "0.4"
+
 [build-dependencies]
 bindgen = "0.71.1"
 cc = "1.2.15"

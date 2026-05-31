@@ -740,6 +740,598 @@ pub fn vendor_int1e_ipnucip_cart(
     }
 }
 
+/// Evaluate int1e_ipipovlp_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipipovlp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipovlp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipovlp_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipipovlp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipovlp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipnuc_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipipnuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipnuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipnuc_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipipnuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipnuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipkin_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipipkin_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipkin_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipkin_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipipkin_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipkin_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipiprinv_sph for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipiprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipiprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipiprinv_cart for a single shell pair using vendored libcint.
+pub fn vendor_int1e_ipiprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipiprinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipipnuc_sph for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipipnuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipipnuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipipnuc_cart for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipipnuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipipnuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipiprinv_sph for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipiprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipiprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipiprinv_cart for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipiprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipiprinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipnucip_sph for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipnucip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipnucip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipnucip_cart for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipnucip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipnucip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipiprinvip_sph for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipiprinvip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipiprinvip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipiprinvip_cart for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipiprinvip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipiprinvip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipipiprinv_sph for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipipiprinv_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipipiprinv_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipipiprinv_cart for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipipiprinv_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipipiprinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipiprinvipip_sph for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipiprinvipip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipiprinvipip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipiprinvipip_cart for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipiprinvipip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipiprinvipip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipiprinvip_sph for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipiprinvip_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipiprinvip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipiprinvip_cart for a single shell pair using vendored libcint (Phase 25 HESS-04).
+pub fn vendor_int1e_ipipiprinvip_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipiprinvip_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Safe wrapper for the vendored libcint `CINTrys_roots(nroots, x, u, w)`
+/// root/weight dispatcher (Phase 25 FND-02 — the byte-identity reference for the
+/// host Wheeler nroots>=6 port). The C signature is
+/// `int CINTrys_roots(int nroots, double x, double *u, double *w)` (rys_roots.c:57),
+/// the `lower == 0` long-range path; the short-range `lower != 0` dispatcher is a
+/// separate symbol (`CINTsr_rys_roots`) and is out of scope for Phase 25.
+///
+/// Returns `(roots, weights)` each of length `nroots`. The rys symbols are already
+/// compiled into the vendor static lib (build.rs rys source list); `CINTrys_roots`
+/// is allowlisted + declared in the supplemental header (build.rs).
+pub fn vendor_CINTrys_roots(nroots: i32, x: f64) -> (Vec<f64>, Vec<f64>) {
+    let n = nroots.max(0) as usize;
+    let mut u = vec![0.0f64; n];
+    let mut w = vec![0.0f64; n];
+    unsafe {
+        ffi::CINTrys_roots(nroots, x, u.as_mut_ptr(), w.as_mut_ptr());
+    }
+    (u, w)
+}
+
 /// Evaluate int1e_iprinv_sph for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
@@ -2044,6 +2636,433 @@ pub fn vendor_int2e_ip2_cart(
     }
 }
 
+// ── Phase 25 HESS-02: 2e Hessian families (rank 9 / 81), 4-shell arity ──
+// Component-leading F-order `out[comp * (ni*nj*nk*nl) + n]`, same convention as
+// vendor_int2e_ip2_*. ipip1/ipvip1/ip1ip2 are rank 9; ipip1ipip2 is rank 81.
+
+/// Evaluate int2e_ipip1_sph for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_ipip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ipip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ipip1_cart for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_ipip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ipip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ipvip1_sph for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_ipvip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ipvip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ipvip1_cart for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_ipvip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ipvip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ip1ip2_sph for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_ip1ip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ip1ip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ip1ip2_cart for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_ip1ip2_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ip1ip2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ipip1ipip2_sph (rank 81) for a single shell quartet.
+pub fn vendor_int2e_ipip1ipip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ipip1ipip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ipip1ipip2_cart (rank 81) for a single shell quartet.
+pub fn vendor_int2e_ipip1ipip2_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ipip1ipip2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ── Phase 26 GIAO-02 (D-16): spin-free 2e GIAO families, 4-shell arity ──
+// Real `double *out`, component-leading F-order `out[comp * (ni*nj*nk*nl) + n]`,
+// same convention as vendor_int2e_ip1_*. g1/ig1 are rank 3; gg1/g1g2 are rank 9.
+// (D-15: the cart/sph vendor symbols are plain real double*, NOT double complex —
+// the cintx-side Complex<f64> view is materialized from the real device output.)
+
+/// Evaluate int2e_g1_sph for a single shell quartet using vendored libcint.
+/// `out` must be pre-allocated with `3 * ni*nj*nk*nl` elements (rank 3).
+pub fn vendor_int2e_g1_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_g1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_g1_cart for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_g1_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_g1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ig1_sph for a single shell quartet using vendored libcint (rank 3).
+pub fn vendor_int2e_ig1_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ig1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_ig1_cart for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_ig1_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ig1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_gg1_sph for a single shell quartet using vendored libcint (rank 9).
+pub fn vendor_int2e_gg1_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_gg1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_gg1_cart for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_gg1_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_gg1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_g1g2_sph for a single shell quartet using vendored libcint (rank 9).
+pub fn vendor_int2e_g1g2_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_g1g2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2e_g1g2_cart for a single shell quartet using vendored libcint.
+pub fn vendor_int2e_g1g2_cart(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_g1g2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int2c2e_ip1_sph for a single shell pair using vendored libcint.
 ///
 /// Phase 23 DRV1-04 (`int2c2e_ip1` — ∇ on bra center i). 2-shell arity
@@ -2520,6 +3539,169 @@ pub fn vendor_int3c2e_ip2_sph(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 25 HESS-03 — multi-center rank-9 Hessian vendor references.
+// int2c2e_ipip1 (2-shell, ∇² on bra center 1), int3c2e_ipip1 (3-shell, ∇² on bra
+// center 1), int3c2e_ipip2 (3-shell, ∇² on the auxiliary k center — KET headroom).
+// `out` is component-leading: out[comp*nf + n] for comp in 0..9.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// int2c2e_ipip1_cart — 2-shell, ∇² on bra center 1 (rank 9).
+pub fn vendor_int2c2e_ipip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ipip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int2c2e_ipip1_sph — 2-shell, ∇² on bra center 1 (rank 9).
+pub fn vendor_int2c2e_ipip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ipip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int3c2e_ipip1_cart — 3-shell, ∇² on bra center 1 (rank 9).
+pub fn vendor_int3c2e_ipip1_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ipip1_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int3c2e_ipip1_sph — 3-shell, ∇² on bra center 1 (rank 9).
+pub fn vendor_int3c2e_ipip1_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ipip1_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int3c2e_ipip2_cart — 3-shell, ∇² on the auxiliary k center (KET headroom, rank 9).
+pub fn vendor_int3c2e_ipip2_cart(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ipip2_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// int3c2e_ipip2_sph — 3-shell, ∇² on the auxiliary k center (KET headroom, rank 9).
+pub fn vendor_int3c2e_ipip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ipip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 // ---- Helper symbol vendor FFI wrappers ----
 // Integer-returning helpers (exact equality comparison per D-02).
 
@@ -2941,6 +4123,44 @@ pub fn vendor_int1e_ovlp_spinor(
     }
 }
 
+/// Evaluate int1e_sp_spinor (σ·p on the bra) for a single shell pair using
+/// vendored libcint. This is the Phase-28 Gap B2 byte-identity reference for
+/// the spin-included `c2s_si_1e` transform driven through the σ·p assembler.
+///
+/// `int1e_sp_spinor` is a tensor-rank-1 spinor family (libcint ng[7]=1): the
+/// four `gc_x/gc_y/gc_z/gc_1` cart blocks are `ncomp_e1`, folded into a single
+/// `di*dj` complex output by `c2s_si_1e`. So `out` is sized `ni_sp * nj_sp * 2`
+/// f64 (interleaved real/imaginary), exactly like int1e_ovlp_spinor — NOT
+/// 3-component like the ipovlp gradient block. ni_sp = CINTcgto_spinor(shls[0]),
+/// nj_sp = CINTcgto_spinor(shls[1]) (use `vendor_CINTcgto_spinor` for sizing;
+/// kappa≠0 → 2l or 2l+2, never a hardcoded 4l+2).
+///
+/// Returns the libcint status (1 for non-zero, 0 for zero by symmetry).
+pub fn vendor_int1e_sp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_sp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means use default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL
+            ptr::null_mut(), // cache = NULL (let libcint allocate)
+        )
+    }
+}
+
 /// Evaluate int1e_kin_spinor for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with `ni_sp * nj_sp * 2` f64 elements.
@@ -3244,6 +4464,200 @@ pub fn vendor_int3c2e_spinor(
 ) -> i32 {
     unsafe {
         ffi::int3c2e_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ---- Phase 27: spinor DERIVATIVE integral vendor FFI wrappers (D-09) ----
+//
+// Six new spinor-gradient operators that complete the spinor derivative parity
+// matrix beyond the four existing rank-3 1e ip-spinor wrappers (ipovlp/ipkin/
+// ipnuc/iprinv above). Each writes a component-leading, interleaved-complex
+// buffer:
+//   1e / 2c2e:  out[comp * ni_sp * nj_sp * 2 + (j*ni_sp + i)*2 + {0:re,1:im}]
+//   3c2e / 3c1e: out[comp * ni_sp * nj_sp * nk_sph * 2 + ...]
+// where ni_sp / nj_sp = CINTcgto_spinor(shls[i|j]) (bra i and ket j are spinor,
+// 4l+2). IMPORTANT (27-SPIKE-FINDINGS CORRECTION NOTICE): the auxiliary-k axis of
+// the arity-3 families is SPHERICAL nsph(lk) = (2lk+1)*nctr_k (libcint
+// CINT3c2e_spinor_drv is_ssc=0, cint3c2e.c:631-636), NOT spinor-sized. Size the out
+// buffer with vendor_cgto_spheric for the aux-k axis and vendor_CINTcgto_spinor only
+// for the bra-i and ket-j axes. The earlier "spinor aux-k = 720" was a compat-dims
+// over-sizing artifact, not a real vendor requirement (correct p×d×s kappa=0 is 360).
+
+/// Evaluate int1e_ipovlpip_spinor (rank-9 both-side 1e gradient) for a shell pair.
+///
+/// `out` must be pre-allocated with `9 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_ipovlpip_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlpip_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipipiprinv_spinor (rank-81 1e rinv gradient) for a shell pair.
+///
+/// The rinv origin must be set in `env[PTR_RINV_ORIG..+3]` by the caller.
+/// `out` must be pre-allocated with `81 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_ipipipiprinv_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipipiprinv_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2c2e_ip1_spinor (rank-3 2-center 2e gradient) for a shell pair.
+///
+/// `shls` is `[i, k]`. `out` must be pre-allocated with `3 * ni_sp * nk_sp * 2`
+/// f64 elements (both axes spinor-sized via CINTcgto_spinor).
+pub fn vendor_int2c2e_ip1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ip1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c2e_ip1_spinor (rank-3 3-center 2e gradient on bra i) for a triple.
+///
+/// `shls` is `[i, j, k]`. `out` must be pre-allocated with
+/// `3 * ni_sp * nj_sp * nk_sph * 2` f64 elements. The aux-k axis is SPHERICAL
+/// (nsph(lk) = (2lk+1)*nctr_k), NOT spinor-sized; only bra i and ket j use
+/// CINTcgto_spinor (4l+2) (27-SPIKE-FINDINGS CORRECTION NOTICE, cint3c2e.c:631-636).
+pub fn vendor_int3c2e_ip1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ip1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_ip1_spinor (rank-3 3-center 1e overlap gradient on bra i).
+///
+/// `shls` is `[i, j, k]`. `out` must be pre-allocated with
+/// `3 * ni_sp * nj_sp * nk_sph * 2` f64 elements (aux-k axis SPHERICAL,
+/// nsph(lk) = (2lk+1)*nctr_k; only bra i and ket j are spinor-sized).
+pub fn vendor_int3c1e_ip1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_iprinv_spinor (rank-3 3-center 1e rinv-Coulomb gradient on i).
+///
+/// The rinv origin must be set in `env[PTR_RINV_ORIG..+3]` by the caller (a
+/// zero origin trivially passes — use a displaced origin). `shls` is `[i, j, k]`.
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * nk_sph * 2` f64 elements
+/// (aux-k axis SPHERICAL, nsph(lk) = (2lk+1)*nctr_k; only bra i and ket j spinor-sized).
+pub fn vendor_int3c1e_iprinv_spinor(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_iprinv_spinor(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,
@@ -3594,6 +5008,694 @@ pub fn vendor_ECPscalar_iprinv_cart(
     );
     unsafe {
         ffi::ECPscalar_iprinv_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 26 GIAO-01: spin-free 1e GIAO/CG magnetic-property vendor wrappers.
+// 22 real `double *out` wrappers (11 families x {cart, sph}). D-15: cart/sph
+// GIAO symbols are real doubles, so these clone vendor_int1e_r_* verbatim.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Evaluate int1e_govlp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_govlp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_govlp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_govlp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_govlp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_govlp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_gnuc_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_gnuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_gnuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_gnuc_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_gnuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_gnuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_igovlp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_igovlp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_igovlp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_igovlp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_igovlp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_igovlp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ignuc_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_ignuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ignuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ignuc_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_ignuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ignuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_igkin_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_igkin_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_igkin_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_igkin_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_igkin_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_igkin_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_a01gp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_a01gp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_a01gp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_a01gp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_a01gp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_a01gp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ia01p_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_ia01p_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ia01p_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ia01p_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_ia01p_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ia01p_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_cg_irxp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_cg_irxp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_irxp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_cg_irxp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_cg_irxp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_irxp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_irjxp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_giao_irjxp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_irjxp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_irjxp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_giao_irjxp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_irjxp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_cg_a11part_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_cg_a11part_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_a11part_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_cg_a11part_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_cg_a11part_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_a11part_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_a11part_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_giao_a11part_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_a11part_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_a11part_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_giao_a11part_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_a11part_cart(
             out.as_mut_ptr(),
             ptr::null_mut(),
             shls.as_ptr() as *mut i32,

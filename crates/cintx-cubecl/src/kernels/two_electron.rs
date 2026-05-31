@@ -30,6 +30,12 @@ const PIE4: f64 = 0.78539816339744827900_f64;
 /// Scalar 2e `nroots = (li+lj+lk+ll)/2 + 1`, so this covers `l-sum <= 8`.
 const MAX_DEVICE_NROOTS: usize = 5;
 
+/// Maximum `nroots` the HOST Rys engine (`rys_roots_host` → `rys_wheeler`) evaluates
+/// (Phase 25 FND-02). The host gradient/Hessian path uses the Wheeler nroots 6..12
+/// engine; the vendor build caps at 12 (quadmath disabled), so nroots>12 stays
+/// fail-closed (T-25-03). Device kernels keep their own `MAX_DEVICE_NROOTS=5` cap.
+const HOST_RYS_NROOTS_CEILING: usize = 12;
+
 /// Spherical harmonic normalization prefactor for s and p shells.
 fn common_fac_sp(l: u8) -> f64 {
     match l {
@@ -1426,9 +1432,10 @@ fn run_2e_scalar_device<R: Runtime>(
 /// `[3, nl, nk, nj, ni]` F-order matching pyscf-gto `layout_table.rs` (Risk R3).
 ///
 /// Guards (fail-closed):
-///   - `grad_shape.nroots > 5` → `UnsupportedApi` (R2 / T-21-05-01): the li→li+1
-///     raise can push high-l f/g quartets past the rys_root1..5 ceiling; we reject
-///     BEFORE any rys dispatch so we never index a nonexistent rys_root.
+///   - `grad_shape.nroots > 12` → `UnsupportedApi` (Phase 25 FND-02 / T-25-03): the
+///     host Rys engine (`rys_roots_host` → `rys_wheeler`) supports nroots 6..12, so the
+///     li→li+1 raise routes Hessian-elevated quartets to the host `fill_g_tensor_2e`
+///     path; only nroots>12 (vendor quadmath ceiling) is rejected.
 ///   - `Representation::Spinor` → `UnsupportedApi` (R5 / T-21-05-04).
 #[allow(clippy::too_many_arguments)]
 fn launch_two_electron_ip1<F: CintFloat>(
@@ -1454,9 +1461,13 @@ fn launch_two_electron_ip1<F: CintFloat>(
     // li → li+1 headroom shape (D-06). gout_ip1's nabla1i_2e reads up to index li+1.
     let grad_shape = build_2e_shape(li as usize + 1, lj as usize, lk as usize, ll as usize);
 
-    // R2 / T-21-05-01: the elevated li can push nroots past the rys_root1..5 ceiling.
-    // Reject fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
-    if grad_shape.nroots > 5 {
+    // Phase 25 FND-02: this is the HOST gradient path (the loop below calls
+    // `fill_g_tensor_2e` → `rys_roots_host`, NOT the device comptime kernel). The host
+    // Rys engine now supports nroots 6..12 (rys_wheeler.rs), so the elevated-li Hessian
+    // d-quartets that push nroots to 6 route here instead of returning UnsupportedApi.
+    // The ceiling is the vendor-validated 12 (quadmath disabled); nroots>12 stays
+    // fail-closed (T-25-03: typed error, never a panic).
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
         });
@@ -1597,9 +1608,7 @@ fn launch_two_electron_ip1<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                if dst < staging.len() {
-                                                    staging[dst] = F::from_f64_lossy(sph[src]);
-                                                }
+                                                staging[dst] = F::from_f64_lossy(sph[src]);
                                             }
                                         }
                                     }
@@ -1638,9 +1647,7 @@ fn launch_two_electron_ip1<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                if dst < staging.len() {
-                                                    staging[dst] = F::from_f64_lossy(block[src]);
-                                                }
+                                                staging[dst] = F::from_f64_lossy(block[src]);
                                             }
                                         }
                                     }
@@ -1706,9 +1713,10 @@ fn launch_two_electron_ip2<F: CintFloat>(
     // lk → lk+1 headroom shape (D-06). gout_ipn's nabla1k_2e reads up to index lk+1.
     let grad_shape = build_2e_shape(li as usize, lj as usize, lk as usize + 1, ll as usize);
 
-    // R2 / D-13: the elevated lk can push nroots past the rys_root1..5 ceiling.
-    // Reject fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
-    if grad_shape.nroots > 5 {
+    // Phase 25 FND-02: HOST gradient path (fill_g_tensor_2e → rys_roots_host). The host
+    // Rys engine supports nroots 6..12 (rys_wheeler.rs); route Hessian-elevated quartets
+    // here instead of UnsupportedApi. Ceiling = vendor-validated 12; nroots>12 fail-closed.
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
         });
@@ -1842,9 +1850,7 @@ fn launch_two_electron_ip2<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                if dst < staging.len() {
-                                                    staging[dst] = F::from_f64_lossy(sph[src]);
-                                                }
+                                                staging[dst] = F::from_f64_lossy(sph[src]);
                                             }
                                         }
                                     }
@@ -1883,9 +1889,7 @@ fn launch_two_electron_ip2<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                if dst < staging.len() {
-                                                    staging[dst] = F::from_f64_lossy(block[src]);
-                                                }
+                                                staging[dst] = F::from_f64_lossy(block[src]);
                                             }
                                         }
                                     }
@@ -1902,6 +1906,631 @@ fn launch_two_electron_ip2<F: CintFloat>(
     let nonzero_threshold =
         F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
     let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
+/// Which 2e Hessian family a [`launch_two_electron_hess2e`] call evaluates.
+///
+/// Each variant carries its own G-tensor headroom (`i_inc`/`j_inc`/`k_inc`) and
+/// selects the matching verbatim-from-hess.c gout permutation. The host path
+/// (`fill_g_tensor_2e` → `rys_roots_host`) is shared with the gradient families
+/// so nroots≥6 Hessian-elevated d-quartets reach the FND-02 host Rys engine.
+#[derive(Clone, Copy)]
+enum Hess2eKind {
+    /// int2e_ipip1 (∇²bra-i), rank 9, headroom i+2.
+    Ipip1,
+    /// int2e_ipvip1 (∇_i∇_j), rank 9, headroom i+1, j+1.
+    Ipvip1,
+    /// int2e_ip1ip2 (∇_i∇_k), rank 9, headroom i+1, k+1.
+    Ip1ip2,
+    /// int2e_ipip1ipip2 (∇²_i∇²_k), rank 81, headroom i+2, k+2.
+    Ipip1ipip2,
+}
+
+impl Hess2eKind {
+    fn ncomp(self) -> usize {
+        match self {
+            Hess2eKind::Ipip1 | Hess2eKind::Ipvip1 | Hess2eKind::Ip1ip2 => 9,
+            Hess2eKind::Ipip1ipip2 => 81,
+        }
+    }
+    /// (i_inc, j_inc, k_inc) headroom raised on the plain G-tensor (ll never raised).
+    fn headroom(self) -> (usize, usize, usize) {
+        match self {
+            Hess2eKind::Ipip1 => (2, 0, 0),
+            Hess2eKind::Ipvip1 => (1, 1, 0),
+            Hess2eKind::Ip1ip2 => (1, 0, 1),
+            Hess2eKind::Ipip1ipip2 => (2, 0, 2),
+        }
+    }
+}
+
+/// Host-routed 2e Hessian launcher (Phase 25 HESS-02 / D-07).
+///
+/// Mirrors [`launch_two_electron_ip1`]/[`launch_two_electron_ip2`] but emits
+/// `ncomp` (9 or 81) components via the verbatim-from-hess.c gout helpers in
+/// `f12.rs` (`gout_ipip1`/`gout_ipvip1`/`gout_ip1ip2`/`gout_ipip1ipip2`). The plain
+/// Coulomb G-tensor is built with the per-family headroom and the launcher routes
+/// through the HOST `fill_g_tensor_2e` (→ `rys_roots_host`) so nroots 6..12
+/// Hessian-elevated d-quartets hit the FND-02 host Rys engine, not the device
+/// comptime kernel (capped at MAX_DEVICE_NROOTS=5). Spinor → UnsupportedApi (D-11).
+#[allow(clippy::too_many_arguments)]
+fn launch_two_electron_hess2e<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    kind: Hess2eKind,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
+    common_factor: f64,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    // Spinor Hessian: not supported (D-11). Reject before any compute.
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor 2e Hessian".to_owned(),
+        });
+    }
+
+    let ncomp = kind.ncomp();
+    let (i_inc, j_inc, k_inc) = kind.headroom();
+
+    // Per-family headroom shape (D-09): raise the G-tensor angular momenta so the
+    // gout's nabla compositions can read up to the elevated indices.
+    let grad_shape = build_2e_shape(
+        li as usize + i_inc,
+        lj as usize + j_inc,
+        lk as usize + k_inc,
+        ll as usize,
+    );
+
+    // FND-02 host Rys ceiling: nroots 6..12 route here; >12 stays fail-closed.
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_j = &shells[1];
+    let shell_k = &shells[2];
+    let shell_l = &shells[3];
+
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let block_len = nfi * nfj * nfk * nfl;
+    let total_len = ncomp * block_len;
+
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+    let nsl = nsph(ll);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_prim_l = shell_l.nprim as usize;
+
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+    let n_ctr_l = shell_l.nctr as usize;
+
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * total_len];
+
+    let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
+
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pj in 0..n_prim_j {
+            let aj = shell_j.exponents[pj];
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            for pk in 0..n_prim_k {
+                let ak = shell_k.exponents[pk];
+                for pl in 0..n_prim_l {
+                    let al = shell_l.exponents[pl];
+                    let pdata_kl = compute_pdata_host(
+                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                    );
+                    let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+
+                    // Plain Coulomb G-tensor at the elevated headroom.
+                    let g = fill_g_tensor_2e(
+                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                    );
+
+                    // Reuse the verbatim hess.c gout permutation. gout is called at
+                    // BASE (li,lj,lk,ll); the G-tensor carries the headroom. Returns
+                    // interleaved out[n*ncomp+comp]; n walks [cl,ck,cj,ci].
+                    let li_b = li as usize;
+                    let lj_b = lj as usize;
+                    let lk_b = lk as usize;
+                    let ll_b = ll as usize;
+                    let gout = match kind {
+                        Hess2eKind::Ipip1 => crate::kernels::f12::gout_ipip1(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai,
+                        ),
+                        Hess2eKind::Ipvip1 => crate::kernels::f12::gout_ipvip1(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, aj,
+                        ),
+                        Hess2eKind::Ip1ip2 => crate::kernels::f12::gout_ip1ip2(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, ak,
+                        ),
+                        Hess2eKind::Ipip1ipip2 => crate::kernels::f12::gout_ipip1ipip2(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, ak,
+                        ),
+                    };
+
+                    for ci in 0..n_ctr_i {
+                        let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                        for cj in 0..n_ctr_j {
+                            let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                            for ck in 0..n_ctr_k {
+                                let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                                for cl in 0..n_ctr_l {
+                                    let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
+                                    let weight = coeff_i * coeff_j * coeff_k * coeff_l;
+                                    let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l
+                                        + cl)
+                                        * total_len;
+                                    // TRANSPOSE interleaved gout[n*ncomp+comp] into
+                                    // the component-leading block: cart[comp*block + n].
+                                    for n in 0..block_len {
+                                        for comp in 0..ncomp {
+                                            cart_blocks[base + comp * block_len + n] +=
+                                                weight * gout[n * ncomp + comp];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Component-leading `[ncomp, nl, nk, nj, ni]` F-order write.
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dj = n_ctr_j * nsj;
+            let dk = n_ctr_k * nsk;
+            let dl = n_ctr_l * nsl;
+            let sph_block = di * dj * dk * dl;
+            for comp in 0..ncomp {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let sph = cart_to_sph_2e(
+                                    &cart_blocks[base..base + block_len],
+                                    li,
+                                    lj,
+                                    lk,
+                                    ll,
+                                );
+                                for ml in 0..nsl {
+                                    let lidx = cl * nsl + ml;
+                                    for mk in 0..nsk {
+                                        let kidx = ck * nsk + mk;
+                                        for mj in 0..nsj {
+                                            let jidx = cj * nsj + mj;
+                                            for mi in 0..nsi {
+                                                let iidx = ci * nsi + mi;
+                                                let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                staging[dst] = F::from_f64_lossy(sph[src]);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nfi;
+            let dj = n_ctr_j * nfj;
+            let dk = n_ctr_k * nfk;
+            let dl = n_ctr_l * nfl;
+            let cart_block = di * dj * dk * dl;
+            for comp in 0..ncomp {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let block = &cart_blocks[base..base + block_len];
+                                for lc in 0..nfl {
+                                    let lidx = cl * nfl + lc;
+                                    for kc in 0..nfk {
+                                        let kidx = ck * nfk + kc;
+                                        for jc in 0..nfj {
+                                            let jidx = cj * nfj + jc;
+                                            for ic in 0..nfi {
+                                                let iidx = ci * nfi + ic;
+                                                let src = ic + nfi * (jc + nfj * (kc + nfk * lc));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                staging[dst] = F::from_f64_lossy(block[src]);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor 2e Hessian rejected above"),
+    }
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+
+    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    Ok(ExecutionStats {
+        workspace_bytes: plan.workspace.bytes,
+        required_workspace_bytes: plan.workspace.required_bytes,
+        peak_workspace_bytes: staging_bytes,
+        chunk_count: 1,
+        planned_batches: 1,
+        transfer_bytes: staging_bytes,
+        not0,
+        fallback_reason: plan.workspace.fallback_reason,
+    })
+}
+
+/// Which spin-free 2e GIAO family a [`launch_two_electron_giao2e`] call evaluates
+/// (Phase 26 GIAO-02 / D-16). Each variant carries its component_rank, its plain
+/// Coulomb G-tensor headroom, and the per-family libcint `common_factor` multiplier.
+#[derive(Clone, Copy)]
+enum Giao2eKind {
+    /// int2e_g1 (gauge on e1, rank 3), headroom i+1, cf ×0.5.
+    G1,
+    /// int2e_ig1 (sign-flipped g1, rank 3), headroom i+1, cf ×0.5.
+    Ig1,
+    /// int2e_gg1 (2nd-order gauge on e1, rank 9), headroom i+2, cf ×0.25.
+    Gg1,
+    /// int2e_g1g2 (gauge on both e1+e2, rank 9), headroom i+2 & k+1, cf ×-0.25 (D-16).
+    G1g2,
+}
+
+impl Giao2eKind {
+    fn ncomp(self) -> usize {
+        match self {
+            Giao2eKind::G1 | Giao2eKind::Ig1 => 3,
+            Giao2eKind::Gg1 | Giao2eKind::G1g2 => 9,
+        }
+    }
+    /// (i_inc, j_inc, k_inc) headroom raised on the plain G-tensor (ll never raised).
+    /// g1/ig1: a single R0I needs i+1. gg1: R0I(R0I(·,i+1)) needs i+2. g1g2:
+    /// R0I(R0K(·,i+1)) needs i+2 on the i-side and k+1 for the R0K shift.
+    fn headroom(self) -> (usize, usize, usize) {
+        match self {
+            Giao2eKind::G1 | Giao2eKind::Ig1 => (1, 0, 0),
+            Giao2eKind::Gg1 => (2, 0, 0),
+            Giao2eKind::G1g2 => (2, 0, 1),
+        }
+    }
+    /// libcint per-family `common_factor` multiplier (intor4.c:1323 / intor2.c).
+    fn common_factor_scale(self) -> f64 {
+        match self {
+            Giao2eKind::G1 | Giao2eKind::Ig1 => 0.5,
+            Giao2eKind::Gg1 => 0.25,
+            Giao2eKind::G1g2 => -0.25,
+        }
+    }
+}
+
+/// Host-routed spin-free 2e GIAO launcher (Phase 26 GIAO-02 / D-16).
+///
+/// Mirrors [`launch_two_electron_hess2e`] but emits COMPLEX-INTERLEAVED staging:
+/// the GIAO families are purely imaginary, so the device emits the REAL magnitude
+/// and the host materializes `[re=0, im=value]` pairs for the FND-03 `Complex<f64>`
+/// view (D-15). gout combos are transcribed verbatim from libcint autocode via the
+/// f12.rs `gout_g1`/`gout_ig1`/`gout_gg1`/`gout_g1g2` helpers (built on the
+/// `r0i_2e`/`r0k_2e` position operators). Spinor → UnsupportedApi (D-11).
+#[allow(clippy::too_many_arguments)]
+fn launch_two_electron_giao2e<F: CintFloat>(
+    plan: &ExecutionPlan<'_>,
+    kind: Giao2eKind,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
+    common_factor: f64,
+    staging: &mut [F],
+) -> Result<ExecutionStats, cintxRsError> {
+    // Spinor GIAO: not supported (D-11). Reject before any compute.
+    if plan.representation == Representation::Spinor {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor 2e GIAO".to_owned(),
+        });
+    }
+
+    let ncomp = kind.ncomp();
+    let (i_inc, j_inc, k_inc) = kind.headroom();
+    let cf = common_factor * kind.common_factor_scale();
+
+    // Per-family headroom shape (D-12: raise ket-side k via ng, not bra).
+    let grad_shape = build_2e_shape(
+        li as usize + i_inc,
+        lj as usize + j_inc,
+        lk as usize + k_inc,
+        ll as usize,
+    );
+
+    // FND-02 host Rys ceiling: nroots 6..12 route here; >12 stays fail-closed.
+    if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
+        });
+    }
+
+    let shells = plan.shells.as_slice();
+    let shell_i = &shells[0];
+    let shell_j = &shells[1];
+    let shell_k = &shells[2];
+    let shell_l = &shells[3];
+
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let block_len = nfi * nfj * nfk * nfl;
+    let total_len = ncomp * block_len;
+
+    let nsi = nsph(li);
+    let nsj = nsph(lj);
+    let nsk = nsph(lk);
+    let nsl = nsph(ll);
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_prim_l = shell_l.nprim as usize;
+
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+    let n_ctr_l = shell_l.nctr as usize;
+
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * total_len];
+
+    let grad_f12_shape = two_e_shape_as_f12(&grad_shape);
+
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pj in 0..n_prim_j {
+            let aj = shell_j.exponents[pj];
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            for pk in 0..n_prim_k {
+                let ak = shell_k.exponents[pk];
+                for pl in 0..n_prim_l {
+                    let al = shell_l.exponents[pl];
+                    let pdata_kl = compute_pdata_host(
+                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                    );
+                    let quartet_fac = cf * pdata_ij.fac * pdata_kl.fac;
+
+                    // Plain Coulomb G-tensor at the elevated headroom.
+                    let g = fill_g_tensor_2e(
+                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                    );
+
+                    let li_b = li as usize;
+                    let lj_b = lj as usize;
+                    let lk_b = lk as usize;
+                    let ll_b = ll as usize;
+                    // gout is called at BASE (li,lj,lk,ll); the G-tensor carries the
+                    // headroom. Returns interleaved out[n*ncomp+comp]; n walks
+                    // [cl,ck,cj,ci] (matching the Hess2e / ip1 convention).
+                    let gout = match kind {
+                        Giao2eKind::G1 => crate::kernels::f12::gout_g1(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, &ri, &rj,
+                        ),
+                        Giao2eKind::Ig1 => crate::kernels::f12::gout_ig1(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, &ri, &rj,
+                        ),
+                        Giao2eKind::Gg1 => crate::kernels::f12::gout_gg1(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, &ri, &rj,
+                        ),
+                        Giao2eKind::G1g2 => crate::kernels::f12::gout_g1g2(
+                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, &ri, &rj, &rk, &rl,
+                        ),
+                    };
+
+                    for ci in 0..n_ctr_i {
+                        let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                        for cj in 0..n_ctr_j {
+                            let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                            for ck in 0..n_ctr_k {
+                                let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                                for cl in 0..n_ctr_l {
+                                    let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
+                                    let weight = coeff_i * coeff_j * coeff_k * coeff_l;
+                                    let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l
+                                        + cl)
+                                        * total_len;
+                                    // TRANSPOSE interleaved gout[n*ncomp+comp] into
+                                    // the component-leading block: cart[comp*block + n].
+                                    for n in 0..block_len {
+                                        for comp in 0..ncomp {
+                                            cart_blocks[base + comp * block_len + n] +=
+                                                weight * gout[n * ncomp + comp];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // COMPLEX-INTERLEAVED component-leading write: the GIAO families are purely
+    // imaginary, so each real value `v` is materialized as `[re=0, im=v]` (D-15 /
+    // FND-03). staging is sized 2 * ncomp * ni*nj*nk*nl (complex_output=true). Fail
+    // closed on undersized staging (FND-06 / no silent partial write).
+    let real_total = match plan.representation {
+        Representation::Spheric => {
+            ncomp * (n_ctr_i * nsi) * (n_ctr_j * nsj) * (n_ctr_k * nsk) * (n_ctr_l * nsl)
+        }
+        Representation::Cart => {
+            ncomp * (n_ctr_i * nfi) * (n_ctr_j * nfj) * (n_ctr_k * nfk) * (n_ctr_l * nfl)
+        }
+        Representation::Spinor => unreachable!("spinor 2e GIAO rejected above"),
+    };
+    let needed = 2 * real_total;
+    if staging.len() < needed {
+        return Err(cintxRsError::BufferTooSmall {
+            required: needed,
+            provided: staging.len(),
+        });
+    }
+    // Zero the interleaved buffer so the real (re) half is exactly 0.0 (D-07).
+    for slot in staging.iter_mut().take(needed) {
+        *slot = F::from_f64_lossy(0.0);
+    }
+
+    match plan.representation {
+        Representation::Spheric => {
+            let di = n_ctr_i * nsi;
+            let dj = n_ctr_j * nsj;
+            let dk = n_ctr_k * nsk;
+            let dl = n_ctr_l * nsl;
+            let sph_block = di * dj * dk * dl;
+            for comp in 0..ncomp {
+                let staging_comp_base = comp * sph_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let sph = cart_to_sph_2e(
+                                    &cart_blocks[base..base + block_len],
+                                    li,
+                                    lj,
+                                    lk,
+                                    ll,
+                                );
+                                for ml in 0..nsl {
+                                    let lidx = cl * nsl + ml;
+                                    for mk in 0..nsk {
+                                        let kidx = ck * nsk + mk;
+                                        for mj in 0..nsj {
+                                            let jidx = cj * nsj + mj;
+                                            for mi in 0..nsi {
+                                                let iidx = ci * nsi + mi;
+                                                let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                // [re=0, im=value] at 2*dst.
+                                                staging[2 * dst + 1] = F::from_f64_lossy(sph[src]);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Cart => {
+            let di = n_ctr_i * nfi;
+            let dj = n_ctr_j * nfj;
+            let dk = n_ctr_k * nfk;
+            let dl = n_ctr_l * nfl;
+            let cart_block = di * dj * dk * dl;
+            for comp in 0..ncomp {
+                let staging_comp_base = comp * cart_block;
+                for ci in 0..n_ctr_i {
+                    for cj in 0..n_ctr_j {
+                        for ck in 0..n_ctr_k {
+                            for cl in 0..n_ctr_l {
+                                let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                    * total_len
+                                    + comp * block_len;
+                                let block = &cart_blocks[base..base + block_len];
+                                for lc in 0..nfl {
+                                    let lidx = cl * nfl + lc;
+                                    for kc in 0..nfk {
+                                        let kidx = ck * nfk + kc;
+                                        for jc in 0..nfj {
+                                            let jidx = cj * nfj + jc;
+                                            for ic in 0..nfi {
+                                                let iidx = ci * nfi + ic;
+                                                let src = ic + nfi * (jc + nfj * (kc + nfk * lc));
+                                                let dst = staging_comp_base
+                                                    + iidx
+                                                    + di * (jidx + dj * (kidx + dk * lidx));
+                                                staging[2 * dst + 1] = F::from_f64_lossy(block[src]);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Representation::Spinor => unreachable!("spinor 2e GIAO rejected above"),
+    }
+
+    let nonzero_threshold =
+        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    // WR-04: GIAO output is [re=0, im=v] interleaved; count
+    // the imaginary component only so not0 matches libcint's real double* semantics.
+    let not0 = staging
+        .chunks_exact(2)
+        .filter(|c| c[1].abs() > nonzero_threshold)
+        .count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
@@ -2045,6 +2674,58 @@ fn launch_two_electron_typed<F: CintFloat>(
         );
     }
 
+    // Phase 25 HESS-02 (D-07): host-routed 2e Hessian families (rank 9 / 81).
+    // int2e_ipip1/ipvip1/ip1ip2 (rank 9) + int2e_ipip1ipip2 (rank 81). All route
+    // through fill_g_tensor_2e (FND-02 host Rys) so nroots≥6 d-quartets are served.
+    if let Some(kind) = match plan.descriptor.operator_name() {
+        "ipip1" => Some(Hess2eKind::Ipip1),
+        "ipvip1" => Some(Hess2eKind::Ipvip1),
+        "ip1ip2" => Some(Hess2eKind::Ip1ip2),
+        "ipip1ipip2" => Some(Hess2eKind::Ipip1ipip2),
+        _ => None,
+    } {
+        return launch_two_electron_hess2e::<F>(
+            plan,
+            kind,
+            li,
+            lj,
+            lk,
+            ll,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            staging,
+        );
+    }
+
+    // Phase 26 GIAO-02 (D-16): host-routed spin-free 2e GIAO families. int2e_g1/ig1
+    // (rank 3) + int2e_gg1/g1g2 (rank 9). The device emits REAL components; the
+    // FND-03 host materialization wraps them into the interleaved complex view.
+    if let Some(kind) = match plan.descriptor.operator_name() {
+        "g1" => Some(Giao2eKind::G1),
+        "ig1" => Some(Giao2eKind::Ig1),
+        "gg1" => Some(Giao2eKind::Gg1),
+        "g1g2" => Some(Giao2eKind::G1g2),
+        _ => None,
+    } {
+        return launch_two_electron_giao2e::<F>(
+            plan,
+            kind,
+            li,
+            lj,
+            lk,
+            ll,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            staging,
+        );
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Scalar 2e device dispatch (quick task 260529-q4k).
     //
@@ -2170,9 +2851,7 @@ fn launch_two_electron_typed<F: CintFloat>(
                                             let iidx = ci * nsi + mi;
                                             let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
                                             let dst = iidx + di * (jidx + dj * (kidx + dk * lidx));
-                                            if dst < staging.len() {
-                                                staging[dst] = F::from_f64_lossy(sph[src]);
-                                            }
+                                            staging[dst] = F::from_f64_lossy(sph[src]);
                                         }
                                     }
                                 }
@@ -2228,9 +2907,7 @@ fn launch_two_electron_typed<F: CintFloat>(
                                             let iidx = ci * nfi + ic;
                                             let src = ic + nfi * (jc + nfj * (kc + nfk * lc));
                                             let dst = iidx + di * (jidx + dj * (kidx + dk * lidx));
-                                            if dst < staging.len() {
-                                                staging[dst] = F::from_f64_lossy(block[src]);
-                                            }
+                                            staging[dst] = F::from_f64_lossy(block[src]);
                                         }
                                     }
                                 }
@@ -2708,20 +3385,32 @@ mod ip1_tests {
         Ok((staging, stats))
     }
 
-    // nroots guard (R2 / T-21-05-01): an all-f quartet has gradient
-    // nroots = (3+1 + 3 + 3 + 3)/2 + 1 = 13/2 + 1 = 7 > 5 → UnsupportedApi.
-    // An s/p/d quartet (max d,d,d,d → gradient nroots = (2+1+2+2+2)/2+1 = 5) is OK.
+    // nroots ceiling (Phase 25 FND-02): the HOST gradient path now supports nroots 6..12
+    // via the Wheeler engine. An all-f quartet has gradient nroots = (3+1+3+3+3)/2+1 = 7,
+    // which previously returned UnsupportedApi but now routes to the host fill_g_tensor_2e
+    // path. The fail-closed ceiling moves to nroots>12 (HOST_RYS_NROOTS_CEILING), e.g. an
+    // all-i (l=6) quartet → gradient nroots = (6+1+6+6+6)/2+1 = 13 > 12 → UnsupportedApi.
     #[test]
     fn test_int2e_ip1_nroots_guard() {
+        // (f,f,f,f) gradient nroots = 7 ∈ 6..=12 → now ALLOWED via the host Wheeler path.
         let (basis, shells, op) = build_ip1_plan_lll(3, 3, 3, 3);
+        let ok = run_ip1(&basis, shells, op, Representation::Spheric);
+        assert!(
+            ok.is_ok(),
+            "all-f int2e_ip1 quartet (nroots=7) must route to the host path (FND-02), got: {:?}",
+            ok.err()
+        );
+
+        // (i,i,i,i) gradient nroots = (6+1+6+6+6)/2 + 1 = 13 > 12 → fail-closed (T-25-03).
+        let (basis, shells, op) = build_ip1_plan_lll(6, 6, 6, 6);
         let result = run_ip1(&basis, shells, op, Representation::Spheric);
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "all-f int2e_ip1 quartet (nroots=7) must return UnsupportedApi, got: {:?}",
+            "all-i int2e_ip1 quartet (nroots=13 > 12) must return UnsupportedApi, got: {:?}",
             result.map(|(s, _)| s.len())
         );
 
-        // (d,d,d,d) gradient nroots = (2+1+2+2+2)/2 + 1 = 4 + 1 = 5 ≤ 5 → allowed.
+        // (d,d,d,d) gradient nroots = (2+1+2+2+2)/2 + 1 = 5 → allowed.
         let (basis, shells, op) = build_ip1_plan_lll(2, 2, 2, 2);
         let ok = run_ip1(&basis, shells, op, Representation::Spheric);
         assert!(
@@ -2878,15 +3567,27 @@ mod ip2_tests {
         Ok((staging, stats))
     }
 
-    // nroots guard (D-13): an all-f quartet (gradient nroots = (3+3+(3+1)+3)/2+1=7)
-    // > 5 → UnsupportedApi. A (d,d,d,d) quartet ((2+2+(2+1)+2)/2+1=5) ≤ 5 → allowed.
+    // nroots ceiling (Phase 25 FND-02): the HOST ip2 gradient path now supports nroots
+    // 6..12 via the Wheeler engine. An all-f quartet (gradient nroots = (3+3+(3+1)+3)/2+1
+    // = 7) routes to the host path; an all-i quartet ((6+6+(6+1)+6)/2+1 = 13 > 12) stays
+    // fail-closed (T-25-03).
     #[test]
     fn test_int2e_ip2_nroots_guard() {
+        // (f,f,f,f) gradient nroots = 7 ∈ 6..=12 → now ALLOWED via the host Wheeler path.
         let (basis, shells, op) = build_ip2_plan_lll(3, 3, 3, 3);
+        let ok = run_ip2(&basis, shells, op, Representation::Spheric);
+        assert!(
+            ok.is_ok(),
+            "all-f int2e_ip2 quartet (nroots=7) must route to the host path (FND-02), got: {:?}",
+            ok.err()
+        );
+
+        // (i,i,i,i) gradient nroots = (6+6+(6+1)+6)/2 + 1 = 13 > 12 → fail-closed.
+        let (basis, shells, op) = build_ip2_plan_lll(6, 6, 6, 6);
         let result = run_ip2(&basis, shells, op, Representation::Spheric);
         assert!(
             matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "all-f int2e_ip2 quartet (nroots=7) must return UnsupportedApi, got: {:?}",
+            "all-i int2e_ip2 quartet (nroots=13 > 12) must return UnsupportedApi, got: {:?}",
             result.map(|(s, _)| s.len())
         );
 

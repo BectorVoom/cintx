@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: verifying
-stopped_at: Phase 25 context gathered
-last_updated: "2026-05-30T08:59:08.653Z"
-last_activity: 2026-05-30
+stopped_at: Phase 29 context gathered
+last_updated: "2026-05-31T12:59:49.082Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 21
-  completed_phases: 14
-  total_plans: 71
-  completed_plans: 71
+  completed_phases: 18
+  total_plans: 95
+  completed_plans: 95
   percent: 100
 ---
 
@@ -21,15 +21,32 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 24 — group-3-position-multipole-moment-integrals
+**Current focus:** Phase 28 — spin-included-c2s-si-transform-p-module-gap-b2
 
 ## Current Position
 
-Phase: 25
+Phase: 28
 Plan: Not started
 Status: Phase complete — ready for verification
-Resume file: .planning/phases/25-group-2-hessian-higher-order-derivatives/25-CONTEXT.md
-Last activity: 2026-05-30
+Resume file: .planning/phases/29-group-4-relativistic-spin-operator-integrals-spinor/29-CONTEXT.md
+
+Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
+
+  - 27-05 flipped oracle_covered=true for the 20 vendor-backed sf-derivative spinor families
+    (18 arity-2 1e sf_2d ranks 3/9/27/81 + int3c2e_ip1/ip2 sf_3c2e rank-3); component_rank
+    verified against the rank-tier table before each flip (no rank edits).
+
+  - 4 D-12 vendor-stub arms (int2c2e_ip1/ip2_spinor + int3c1e_ip1/iprinv_spinor) stay
+    oracle_covered=false — libcint 6.1.3 ships them as return-0 / exit(1) stubs (no byte-identity
+    reference). 6 D-03 arity-4 int2e_ip* + 1 D-04 int1e_ecp_iprinv_spinor also stay false.
+
+  - D-10 no-silent-skip assertion completed (test_no_silent_skip reads MANIFEST_ENTRIES at runtime,
+    asserts the FLIPPED=true / DEFERRED=false split); manifest-audit green; full vendor parity suite
+    green under both gate flags (6 passed, 0 failed, 3 ignored). No capi/legacy surface added.
+Deferred follow-up: finite-difference verification of the 4 D-12 vendor-stub arms (FD of cintx scalar
+  int2c2e_spinor / int3c1e_spinor), then flip under an FD-tolerance gate. D-03 needs an sf_4d derivative
+  wrapper; D-04 belongs to the relativistic/ECP-spinor track.
+Last activity: 2026-05-31
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -45,7 +62,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 **Velocity:**
 
-- Total plans completed: 36
+- Total plans completed: 54
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -60,6 +77,9 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | 22 | 2 | - | - |
 | 23 | 5 | - | - |
 | 24 | 5 | - | - |
+| 26 | 8 | - | - |
+| 27 | 6 | - | - |
+| 28 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -135,6 +155,17 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 24 P24-03 | 28 | 1 tasks | 5 files |
 | Phase 24 P24-04 | 38 | 1 tasks | 5 files |
 | Phase 24 P24-05 | 22 | 1 tasks | 4 files |
+| Phase 25 P02 | 24 | 3 tasks | 7 files |
+| Phase 25 P03 | 70 | 3 tasks | 6 files |
+| Phase 25 P04 | 55 | 3 tasks | 7 files |
+| Phase 25 P05 | 10 | 3 tasks | 7 files |
+| Phase 26 P01 | 12 | 3 tasks | 9 files |
+| Phase 26 P02 | 95min | 3 tasks | 9 files |
+| Phase 26 P03 | 70 | 3 tasks | 8 files |
+| Phase 28 P01 | 12 | 2 tasks | 1 files |
+| Phase 28 P02 | 9 | 1 tasks | 2 files |
+| Phase 28 P03 | 38 | 2 tasks | 8 files |
+| Phase 28 P04 | 42min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -309,6 +340,29 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 24]: _origj parity tests use a CROSS-center non-square block (H1-1s x O-2p); same-center even-moment _origj integrals are identically zero (vendor included)
 - [Phase ?]: [Phase 24-03]: rinv/drinv read env[PTR_RINV_ORIG] (env[4..6]) NOT PTR_COMMON_ORIG (D-04/OQ-1); separate is_rinv_family_symbol gate. int1e_rinv = scalar nuclear Rys arm with atom-loop dropped to single rinv-center origin, charge=+1 no -Z_C; int1e_drinv = D_I+D_J of the rinv G-tensor (transl-invariance grad), rank 3, bra+1/ket+1 headroom; both fail-closed nroots>5. Vendor parity 0 at atol=1e-12 cart+sph
 - [Phase 24]: int1e_p4 (∇⁴, rank 1) = Laplacian-of-Laplacian on the overlap G-tensor (no Rys), BOTH-side +2 headroom (ng={2,2,...}, nmax=li+lj+4); built from d_i_1e_into/d_j_1e_into as four tensors (g0, D_J², D_I², D_I²·D_J²); rank-1 contraction s0+2s4+2s8+s40+2s44+s80 verbatim from intor1.c:2534; even+origin-free → CROSS-center non-square parity block (H1-1s × O-2p); fail-closed li+lj+4>8; vendor parity 0 at atol=1e-12 cart+sph.
+- [Phase 25]: FND-06: single upfront assert_staging_size() BufferTooSmall contract point in planner.rs evaluate() replaces all per-element scatter guards (D-04); 20 guards stripped across 6 kernel files
+- [Phase 25]: FND-06: rank-81 OOM no-partial-write proven via int1e_rrrr_cart driver + sentinel-survives-typed-stop test (D-05)
+- [Phase 25]: oracle-cart-offset-vendor-zero CONFIRMED pre-existing at pre-phase-20 commit 00771ab (CINTshells_cart_offset[4] cintx=8 vendor=0); not a Phase-25 regression; does not block family gate (integration --test passes)
+- [Phase 25-03]: HESS-01 — int1e_ipip{ovlp,nuc,kin,rinv} are bra-only ∇² = the Phase-23 first-order D_I engine applied twice (g1=D_I(g0,i+1), g2=D_I(g0,i), g3=D_I(g1,i)); ovlp uses the no-Rys overlap base, nuc/rinv the nuclear Rys base, all sharing ONE gout-permutation helper (gradgrad_bra_contract) with the verbatim hess.c order [s0,s3,s6,s1,s4,s7,s2,s5,s8]
+- [Phase 25-03]: ipipkin's -½ kinetic factor must be folded into cintx's gout (observed=2× vendor without it): libcint emits -(s) and scales by ½ in CINT1e_drv, but cintx contracts s directly into staging. ng={2,2,...} (nmax=li+lj+4, lj_ext=lj+2) vs ng={2,0,...} for ovlp/nuc/rinv
+- [Phase 25-03]: ipiprinv parity REQUIRES a PTR_ENV_START-aligned fixture (env[0..20] reserved) so the rinv origin at env[4..6] is not clobbered by atom coords; inject a nonzero rinv origin via env_with_rinv_origin (zero origin is trivially-passing)
+- [Phase 25-03]: xtask is a standalone cargo project (own Cargo.lock), NOT a workspace member — run `cd xtask && cargo run -- manifest-audit`, not `cargo run -p xtask` from the workspace root
+- [Phase ?]: [Phase 25-04]: 2e Hessian gout permutation is identical between F12 and plain Coulomb — reuse the Phase-13 gout_ipip1/ipvip1/ip1ip2 helpers verbatim (pub(crate)); only the rank-81 gout_ipip1ipip2 was new
+- [Phase ?]: [Phase 25-04]: D-07 re-home preserves the two source-only-gate raw.rs tests by repointing to int2e_breit_r1p2_spinor (still source-only) instead of deleting coverage
+- [Phase 25-05]: HESS-03 — int3c2e_ipip1 == gout_ipip1 verbatim (identical s[] + column-major reorder); ipip2 = same with G2E_D_K, so one new gout_ipip2_l (nabla1l_2e on the 2e `ll` slot, ll+2) covers the ket case. ipip2 KET headroom (lk+2) distinct from ipip1's bra li+2
+- [Phase 25-05]: 3c2e host Hessian launchers MUST include the per-primitive Gaussian-overlap prefactors (fac_env = common_factor * pdata_ij.fac * pdata_kl.fac), exactly like the device ip1/ip2 host bridge host_ip1_cart_blocks; bare common_factor scales 3c2e output wrong. 2c2e is immune (phantom j,l coincide with i,k → overlap fac=1)
+- [Phase 25-05]: manifest lock stores component_rank only, NOT the ng[] tuple — ket k_inc=2 is a code contract (build_2e_shape(li,lj,0,lk+2)) verified by byte-identity parity vs vendor G2E_D_K, not a lock grep
+- [Phase 26-01]: complex_output is a per-family lock.json bool defaulting false; only spinor operator rows backfilled true. Planner build_output_layout + assert_flat_buffer_contract re-key off this flag (complex_interleaved) instead of Representation::Spinor, so GIAO cart/sph families size 2x from manifest data.
+- [Phase ?]: [Phase 26-02]: Append new manifest families at the END to preserve all positional OperatorIds (zero-shift registration).
+- [Phase ?]: [Phase 26-02]: GIAO families per-family nuclear model: gnuc/ignuc atom-sum -Z (int1e_type=2); ia01p/a01gp/cg_a11part/giao_a11part single rinv center +1 (int1e_type=1).
+- [Phase ?]: [Phase 26-02]: complex_output families emit REAL device output materialized host-side as [re=0, im=value]; vendor parity extracts imaginary half, asserts real==0 (D-07/D-15).
+- [Phase ?]: [Phase 26-03 GIAO-02]: int2e_g1g2 component_rank derived from intor2.c ng[7]=9 (D-16, not guessed); rank-9 both-electron gauge family byte-identical first try.
+- [Phase ?]: [Phase 26-03 GIAO-02]: 2e GIAO families host-routed via fill_g_tensor_2e (Hess2e analog) with new r0i_2e/r0k_2e position operators in f12.rs; complex-interleaved [re=0,im=value] 4-shell staging.
+- [Phase ?]: [Phase 28-01]: si 2D bra step (cart_to_spinor_si_2d) uses a_bra_cart2spinor_si signs (+ca_i*vz/-cb_r*vy/+cb_i*vx), NOT apply_si_block's CINTc2s_ket_spinor_si1 convention; apply_si_block left untouched for the single-block helper surface.
+- [Phase ?]: [Phase 28-01]: cart_to_spinor_si_2d owns the KET->BRA transpose internally per gc block (Phase-27 D-06), reuses ordinary apply_ket_transform verbatim, sizes all buffers via spinor_len (never hardcoded 4l+2), and fail-closes before any write.
+- [Phase ?]: [Phase 28]: σ·p assembler emits PRE-BLOCKED component-leading gc[comp*block_len+n] on-device (not interleaved gout[n*4+comp]) so cart_to_spinor_si_2d reads gc_x=block0..gc_1=block3 with no host transpose; rank-parameterized via #[comptime] tensor_rank for int1e_sigma reuse (D-03)
+- [Phase ?]: Phase 28-03: int1e_sp_spinor registered infrastructure-only (oracle_covered=false, appended last so OperatorId 347, no positional shift); SC#4 enforced via is_skipped_spinor_fixture so oracle-covered-update refuses to flip it; vendor_int1e_sp_spinor FFI shim + bindgen allowlist added; D-01 honored (σ flips deferred to Phase 29).
+- [Phase ?]: FND-05 proven byte-identical: int1e_sp σ·p assembler → cart_to_spinor_si_2d vs vendor int1e_sp_spinor at atol=1e-12 (no manifest flip, D-01)
 
 ### Roadmap Evolution
 
@@ -322,6 +376,7 @@ None yet.
 ### Blockers/Concerns
 
 - ~~[Phase 19, 2026-05-20] **ECP byte-identity blocked on missing K-Taylor port.**~~ **RESOLVED 2026-05-20.** The K-Taylor replan (19-05..08) shipped and is verified: 19-05 ported PySCF's exact table-interpolation radial machinery (`ecpsph_ine_opt_host`, `ecprad_part_host`, `type1_rad_part_host`, `type2_facs_rad_host`) with the two K-Taylor tables embedded as byte-locked `.bin` blobs + an xtask drift-gate; 19-06 rewired the scalar `compute_type1/2_pair` onto it (byte-identity atol=1e-12 confirmed); 19-07 ported `nr_ecp_deriv.c::_deriv1_cart` for the gradient (byte-identity atol=1e-12 confirmed); 19-08 added the optional non-blocking libecpint cross-check. All four ECP rows are `oracle_covered=true`. The dropped-into-generic-parity-matrix regression and the CLAUDE.md fail-closed hardening gaps surfaced during the execute-phase gates were both fixed (commits f589c3d/52b5086/cbe95bb).
+- int1e_a01gp (rank-9 GIAO) deferred: 2x ket-element parity discrepancy; 10/11 GIAO-01 families byte-identical.
 
 ### Quick Tasks Completed
 
@@ -350,9 +405,10 @@ None yet.
 | 260530-iiq | fix WR-03: int3c1e general-contraction (nctr>1) support — nctr-blocked output for the scalar + ip1 + iprinv launchers (center_3c1e.rs). The mandated empirical block-ordering step uncovered a deeper root cause: the libcint env coefficient block is COLUMN-MAJOR (env[ci*nprim+ip]) while cintx Shells are ROW-MAJOR (coeff[ip*nctr+ci]); the eval_raw env→Shell parse copied verbatim, silently TRANSPOSING nctr>1 coefficients for EVERY family's raw path (latent — no prior nctr>1 parity test existed). Fixed with a transpose at the env→Shell boundary in raw.rs. New int3c1e_genctr_parity vendor test 6/6 byte-identical at atol=1e-12 (cart+sph, non-square p(nctr=2)×d×s) for scalar+ip1+iprinv. nctr==1 preserved across families (int3c1e_ip 5/5, center_3c1e 2/2, one_electron 6/6, two_electron 2/2; cubecl --lib 280, compat 43, ops 11). Device #[cube] kernels unchanged. Closes WR-03. | 2026-05-30 | 9be0141 | [260530-iiq-int3c1e-general-contraction-nctr-1-suppo](./quick/260530-iiq-int3c1e-general-contraction-nctr-1-suppo/) |
 | 260530-j62 | fix CR-01: make the unstable-source profile-membership check in raw.rs validate_profile_and_source_gate REACHABLE. Two is_source_only() blocks collapsed to one — the first returned Ok() early, making the second's is_compiled_in_profile check dead code (a source-only op in no available profile was silently accepted). The code-review's literal suggestion (check only "unstable-source") was WRONG: active_manifest_profile() never returns "unstable-source" and two source-only int2e symbols ship in BASE profiles, so the correct rule is accept iff compiled in the active profile OR unstable-source, else reject. Verified: compat 43, cubecl --lib 280, unstable_source_parity 23/23 (--features cpu,unstable-source-api + vendor) — no source family falsely rejected. | 2026-05-30 | 108dfe2 | [260530-j62-fix-cr-01-unreachable-unstable-source-pr](./quick/260530-j62-fix-cr-01-unreachable-unstable-source-pr/) |
 | 260530-k0s | fix the pre-existing grids derivative host-fallback Rys-root undersize bug (surfaced by the ROCm device oracle). grids_contract_{nuclear_like,ip,ipip,ipvip} computed nrys_roots up to 5 but fetched only 2 roots (rys_root1/2_host), so the device->host fallback for nroots>2 panicked 'index out of bounds: len 2 index 2'. Replaced with rys_roots_host(nrys_roots) (byte-identical for nroots<=2, correct 3..=5); spvsp delegates to ipvip (covered). Verified: grids_random_rocm_parity now passes on gfx1152 (was panicking); unstable_source_parity 23/23; cubecl --lib 280. | 2026-05-30 | 1395aae | [260530-k0s-fix-grids-ipvip-rys-root-array-undersize](./quick/260530-k0s-fix-grids-ipvip-rys-root-array-undersize/) |
+| 260531-aw1 | force-port the remaining host-side math (eigh.rs symmetric-tridiagonal eigensolver + rys_wheeler.rs long-double Rys nroots>=6 engine, previously host-by-design per FND-02) to CubeCL #[cube] CPU kernels. eigh `cint_diagonalize` now a #[cube] kernel (bit-identical to host MRRR/QL+Rayleigh+Sturm ref, MAXDIFF=0 over 2000 random tridiagonals). FMA fidelity probe verdict FUSED (CubeCL 0.10.0 CpuRuntime lowers fma() bit-for-bit = host mul_add) → double-double two_prod uses the device fma intrinsic, no Dekker-split fallback. Rys nroots 8..12 (double-double Jacobi/Laguerre/Schmidt via a DdDev CubeType) ported fully ON-DEVICE, byte-identical to host dd path + vendor at the documented split. New in-crate vendor reference-table test rys_roots_host_nroots6to12_matches_libcint (gold from libcint harness). **Vendor parity preserved: 29/29 family suite byte-identical (center_2c2e 2, center_3c1e 2, deriv34 14, hess1e_ipip 8, hess2e 2, hess_multicenter_ipip 2, int2c2e_ip 4) + rys_nroots_sweep GREEN; NO tolerance loosened, NO reference value edited** (orchestrator-run vendor gate, --features cpu + CINTX_ORACLE_BUILD_VENDOR=1). DEVIATION (parity-honest escape hatch, plan-sanctioned): Rys nroots **6,7** production dispatch kept HOST — the f64 device kernels are bit-identical in isolation but a CubeCL CpuRuntime launch in the family hot path perturbs subsequent HOST g-tensor accumulation ~1e-11 (FP-environment side effect), tripping the flat-1e-12 family gate; device kernels retained in-module. Follow-up: root-cause the CubeCL launch FP-environment side effect to land 6,7 on-device too. Diff confined to crates/cintx-cubecl/src/math/. | 2026-05-31 | 93b7840 | [260531-aw1-port-host-eigh-and-rys-wheeler-to-cubecl](./quick/260531-aw1-port-host-eigh-and-rys-wheeler-to-cubecl/) |
 
 ## Session Continuity
 
-Last session: 2026-05-30T08:59:08.648Z
-Stopped at: Phase 25 context gathered
+Last session: 2026-05-31T12:59:49.077Z
+Stopped at: Phase 29 context gathered
 Resume file: None

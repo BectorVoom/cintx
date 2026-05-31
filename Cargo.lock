@@ -413,9 +413,11 @@ dependencies = [
  "cc",
  "cintx-compat",
  "cintx-core",
+ "cintx-cubecl",
  "cintx-ops",
  "cintx-rs",
  "cintx-runtime",
+ "num-complex",
  "serde_json",
 ]
 

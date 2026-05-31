@@ -74,6 +74,10 @@ jobs:
               run: |
                   cargo run --manifest-path xtask/Cargo.toml --locked -- gen-ecp-tables --check
 
+            - name: Run Rys Jacobi/Flocke table drift gate
+              run: |
+                  cargo run --manifest-path xtask/Cargo.toml --locked -- gen-rys-tables --check
+
     oracle_parity_gate:
         name: oracle_parity_gate (${{ matrix.profile }})
         runs-on: ubuntu-latest

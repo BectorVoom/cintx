@@ -781,6 +781,410 @@ pub(crate) fn nabla1l_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usi
     }
 }
 
+/// Apply the `r0i` position operator (multiply by `r - ri` in the i-index) to the
+/// G tensor. Corresponds to `CINTx1i_2e` / the `G2E_R0I` macro in libcint/g2e.h.
+///
+/// Formula (per axis), reading the i+1-elevated index from the headroom tensor:
+///   f[n @ i] = g[n + di] + ri[axis] * g[n]
+///
+/// Used by the Phase-26 GIAO-02 2e families (`int2e_g1`/`ig1`/`gg1`/`g1g2`). The
+/// final post-HRR G tensor carries the true i-center in the i-index, so the
+/// position multiply uses the actual `ri` coordinate exactly as libcint does
+/// (gout runs after the HRR transfer). `ri` is the i-center coordinate `[x,y,z]`.
+pub(crate) fn r0i_2e(
+    f: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    shape: &F12Shape,
+) {
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        let ri_a = ri[axis];
+        for j in 0..=lj {
+            for l in 0..=ll {
+                for k in 0..=lk {
+                    for i in 0..=li {
+                        let ptr = dj * j + dl * l + dk * k + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = g[off + n + di] + ri_a * g[off + n];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Apply the `r0k` position operator (multiply by `r - rk` in the k-index) to the
+/// G tensor. Corresponds to `CINTx1k_2e` / the `G2E_R0K` macro in libcint/g2e.h.
+///
+/// Formula (per axis): f[n @ k] = g[n + dk] + rk[axis] * g[n].
+///
+/// Used by the Phase-26 GIAO-02 `int2e_g1g2` family (gauge factor on electron 2).
+pub(crate) fn r0k_2e(
+    f: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    rk: &[f64; 3],
+    shape: &F12Shape,
+) {
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+
+    for axis in 0..3 {
+        let off = axis * g_size;
+        let rk_a = rk[axis];
+        for j in 0..=lj {
+            for l in 0..=ll {
+                for k in 0..=lk {
+                    for i in 0..=li {
+                        let ptr = dj * j + dl * l + dk * k + di * i;
+                        for n in ptr..ptr + nroots {
+                            f[off + n] = g[off + n + dk] + rk_a * g[off + n];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 26 GIAO-02 (D-16): spin-free 2e GIAO gout contractions.
+//
+// Each gout is transcribed VERBATIM from libcint autocode (intor4.c:1255 g1,
+// intor2.c:19 ig1, intor2.c:148 gg1, intor2.c:283 g1g2). The `c[]` gauge factor
+// uses rirj = ri - rj (and rkrl = rk - rl for g1g2); the derivative tensors are
+// built with the r0i_2e / r0k_2e position operators above. The C gout writes
+// gout[n*rank + comp] DIRECTLY (no column-major reorder — unlike ipip1).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// gout for `int2e_g1` (rank 3) — intor4.c:1255 `CINTgout2e_int2e_g1`.
+///
+/// g1 = R0I(g0, i_l+0); c = ri - rj;
+///   gout[0] = + c1*s2 - c2*s1, gout[1] = + c2*s0 - c0*s2, gout[2] = + c0*s1 - c1*s0
+/// where s0 = g1x*g0y*g0z, s1 = g0x*g1y*g0z, s2 = g0x*g0y*g1z.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_g1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+) -> Vec<f64> {
+    gout_g1_signed(g, shape, li, lj, lk, ll, ri, rj, 1.0)
+}
+
+/// gout for `int2e_ig1` (rank 3) — intor2.c:19 `CINTgout2e_int2e_ig1`.
+///
+/// Identical s[] triple products as g1, but the gout combos are sign-flipped:
+///   gout[0] = - c1*s2 + c2*s1, gout[1] = - c2*s0 + c0*s2, gout[2] = - c0*s1 + c1*s0
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ig1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+) -> Vec<f64> {
+    gout_g1_signed(g, shape, li, lj, lk, ll, ri, rj, -1.0)
+}
+
+/// Shared rank-3 GIAO cross-product body for g1 (`sign=+1`) and ig1 (`sign=-1`).
+#[allow(clippy::too_many_arguments)]
+fn gout_g1_signed(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    sign: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let c = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+
+    // g1 = R0I(g0, i_l+0); built with i_l+1 headroom in the G tensor.
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    r0i_2e(&mut g1, g, li, lj, lk, ll, ri, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 3 * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 3];
+                    for r in 0..shape.nroots {
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        s[0] += g1x * g0y * g0z;
+                        s[1] += g0x * g1y * g0z;
+                        s[2] += g0x * g0y * g1z;
+                    }
+                    // g1:  gout = + (c1*s2 - c2*s1, c2*s0 - c0*s2, c0*s1 - c1*s0)
+                    // ig1: gout = - (the same)  → `sign` carries the overall flip.
+                    out[n * 3 + 0] = sign * (c[1] * s[2] - c[2] * s[1]);
+                    out[n * 3 + 1] = sign * (c[2] * s[0] - c[0] * s[2]);
+                    out[n * 3 + 2] = sign * (c[0] * s[1] - c[1] * s[0]);
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// gout for `int2e_gg1` (rank 9) — intor2.c:148 `CINTgout2e_int2e_gg1`.
+///
+/// 2nd-order gauge tensor on electron 1. c = (ri-rj)⊗(ri-rj) (9 components).
+/// g1 = R0I(g0, i_l+1); g2 = R0I(g0, i_l+0); g3 = R0I(g1, i_l+0).
+/// s[] and the 9-component gout combos transcribed verbatim from the source.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_gg1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+    let c = [
+        rirj[0] * rirj[0], rirj[0] * rirj[1], rirj[0] * rirj[2],
+        rirj[1] * rirj[0], rirj[1] * rirj[1], rirj[1] * rirj[2],
+        rirj[2] * rirj[0], rirj[2] * rirj[1], rirj[2] * rirj[2],
+    ];
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // g1 = R0I at li+1 (elevated); g2 = R0I at li+0; g3 = R0I(g1) at li+0.
+    r0i_2e(&mut g1, g, li + 1, lj, lk, ll, ri, shape);
+    r0i_2e(&mut g2, g, li, lj, lk, ll, ri, shape);
+    r0i_2e(&mut g3, &g1, li, lj, lk, ll, ri, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for r in 0..shape.nroots {
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // Verbatim from intor2.c:192-200 (direct gout[n*9+..] write).
+                    out[n * 9 + 0] = -c[4] * s[8] + 2.0 * c[5] * s[7] - c[8] * s[4];
+                    out[n * 9 + 1] = -c[7] * s[2] + c[1] * s[8] + c[8] * s[1] - c[2] * s[7];
+                    out[n * 9 + 2] = -c[1] * s[5] + c[4] * s[2] + c[2] * s[4] - c[5] * s[1];
+                    out[n * 9 + 3] = -c[5] * s[6] + c[8] * s[3] + c[3] * s[8] - c[6] * s[5];
+                    out[n * 9 + 4] = -c[8] * s[0] + 2.0 * c[6] * s[2] - c[0] * s[8];
+                    out[n * 9 + 5] = -c[2] * s[3] + c[5] * s[0] + c[0] * s[5] - c[3] * s[2];
+                    out[n * 9 + 6] = -c[3] * s[7] + c[6] * s[4] + c[4] * s[6] - c[7] * s[3];
+                    out[n * 9 + 7] = -c[6] * s[1] + c[0] * s[7] + c[7] * s[0] - c[1] * s[6];
+                    out[n * 9 + 8] = -c[0] * s[4] + 2.0 * c[1] * s[3] - c[4] * s[0];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// gout for `int2e_g1g2` (rank 9) — intor2.c:283 `CINTgout2e_int2e_g1g2` (D-16).
+///
+/// Gauge factor on BOTH electrons: c = (ri-rj)⊗(rk-rl) (9 components).
+/// g1 = R0K(g0, i_l+1); g2 = R0I(g0, i_l+0); g3 = R0I(g1, i_l+0).
+/// (Note: g1 raises i by +1 then R0K; g3 = R0I(g1).)
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_g1g2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    rk: &[f64; 3],
+    rl: &[f64; 3],
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+    let rkrl = [rk[0] - rl[0], rk[1] - rl[1], rk[2] - rl[2]];
+    let c = [
+        rirj[0] * rkrl[0], rirj[0] * rkrl[1], rirj[0] * rkrl[2],
+        rirj[1] * rkrl[0], rirj[1] * rkrl[1], rirj[1] * rkrl[2],
+        rirj[2] * rkrl[0], rirj[2] * rkrl[1], rirj[2] * rkrl[2],
+    ];
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // intor2.c:310-312: g1=R0K(g0,i_l+1); g2=R0I(g0,i_l+0); g3=R0I(g1,i_l+0).
+    r0k_2e(&mut g1, g, li + 1, lj, lk, ll, rk, shape);
+    r0i_2e(&mut g2, g, li, lj, lk, ll, ri, shape);
+    r0i_2e(&mut g3, &g1, li, lj, lk, ll, ri, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for r in 0..shape.nroots {
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // Verbatim from intor2.c:331-339 (direct gout[n*9+..] write).
+                    out[n * 9 + 0] = c[4] * s[8] - c[7] * s[5] - c[5] * s[7] + c[8] * s[4];
+                    out[n * 9 + 1] = c[5] * s[6] - c[8] * s[3] - c[3] * s[8] + c[6] * s[5];
+                    out[n * 9 + 2] = c[3] * s[7] - c[6] * s[4] - c[4] * s[6] + c[7] * s[3];
+                    out[n * 9 + 3] = c[7] * s[2] - c[1] * s[8] - c[8] * s[1] + c[2] * s[7];
+                    out[n * 9 + 4] = c[8] * s[0] - c[2] * s[6] - c[6] * s[2] + c[0] * s[8];
+                    out[n * 9 + 5] = c[6] * s[1] - c[0] * s[7] - c[7] * s[0] + c[1] * s[6];
+                    out[n * 9 + 6] = c[1] * s[5] - c[4] * s[2] - c[2] * s[4] + c[5] * s[1];
+                    out[n * 9 + 7] = c[2] * s[3] - c[5] * s[0] - c[0] * s[5] + c[3] * s[2];
+                    out[n * 9 + 8] = c[0] * s[4] - c[3] * s[1] - c[1] * s[3] + c[4] * s[0];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-variant gout contraction functions
 //
@@ -928,7 +1332,11 @@ pub(crate) fn gout_ip1(
 /// Matches `CINTgout2e_int2e_ipip1` in autocode/hess.c.
 /// CRITICAL: output has column-major reordering of the 3×3 Hessian.
 /// Output layout: gout[n*9+{0,1,2,3,4,5,6,7,8}] = {s0,s3,s6,s1,s4,s7,s2,s5,s8}
-fn gout_ipip1(
+///
+/// `pub(crate)` so the plain-Coulomb 2e Hessian launcher
+/// (`two_electron.rs::launch_two_electron_hess2e`) can reuse it verbatim with a
+/// plain Coulomb G-tensor (Phase 25 HESS-02 / D-07).
+pub(crate) fn gout_ipip1(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
@@ -1019,11 +1427,113 @@ fn gout_ipip1(
     out
 }
 
+/// Compute gout for the ket-side `ipip2` variant (ncomp=9): `\nabla_k \nabla_k`
+/// on electron 2 (the real auxiliary center), applied to the 2e `ll` slot.
+///
+/// Matches `CINTgout2e_int3c2e_ipip2` in autocode/int3c2e.c — IDENTICAL `s[]`
+/// triple product and column-major 3×3 reorder as `gout_ipip1`, but the second
+/// derivative is taken on the KET (`G2E_D_K` in the C source). In cintx's 3c2e
+/// layout the real aux k is mapped to the 2e `ll` slot (`int3c2e_ip2` Pitfall 2),
+/// so the ket double-nabla is applied via `nabla1l_2e` with `ll+1`/`ll+0`
+/// headroom (the G-tensor is built with `build_2e_shape(li, lj, 0, lk+2)`).
+///
+/// `pub(crate)` for the multi-center 3c2e Hessian launcher (Phase 25 HESS-03).
+pub(crate) fn gout_ipip2_l(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    al: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // G2E_D_K(g1, g0, ..., ll+1); G2E_D_K(g2, g0, ..., ll+0); G2E_D_K(g3, g1, ..., ll+0).
+    // The real aux k lives in the 2e `ll` slot, so nabla1l_2e is the ket derivative.
+    nabla1l_2e(&mut g1, g, li, lj, lk, ll + 1, al, shape);
+    nabla1l_2e(&mut g2, g, li, lj, lk, ll, al, shape);
+    nabla1l_2e(&mut g3, &g1, li, lj, lk, ll, al, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 9 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for irys in 0..shape.nroots {
+                        let r = irys;
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        // Matches libcint CINTgout2e_int3c2e_ipip2 exactly.
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // Column-major reorder (same as ipip1): {s0,s3,s6,s1,s4,s7,s2,s5,s8}.
+                    out[n * 9 + 0] = s[0];
+                    out[n * 9 + 1] = s[3];
+                    out[n * 9 + 2] = s[6];
+                    out[n * 9 + 3] = s[1];
+                    out[n * 9 + 4] = s[4];
+                    out[n * 9 + 5] = s[7];
+                    out[n * 9 + 6] = s[2];
+                    out[n * 9 + 7] = s[5];
+                    out[n * 9 + 8] = s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Compute gout for the ipvip1 variant (ncomp=9): `\nabla_i \nabla_j` on electron 1.
 ///
 /// Matches `CINTgout2e_int2e_ipvip1` in autocode/hess.c.
 /// No column-major reordering (unlike ipip1).
-fn gout_ipvip1(
+///
+/// `pub(crate)` for the plain-Coulomb 2e Hessian launcher (Phase 25 HESS-02).
+pub(crate) fn gout_ipvip1(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
@@ -1117,7 +1627,9 @@ fn gout_ipvip1(
 ///
 /// Matches `CINTgout2e_int2e_ip1ip2` in autocode/hess.c.
 /// No column-major reordering.
-fn gout_ip1ip2(
+///
+/// `pub(crate)` for the plain-Coulomb 2e Hessian launcher (Phase 25 HESS-02).
+pub(crate) fn gout_ip1ip2(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
@@ -1199,6 +1711,280 @@ fn gout_ip1ip2(
                     out[n * 9 + 6] = s[6];
                     out[n * 9 + 7] = s[7];
                     out[n * 9 + 8] = s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Compute gout for the ipip1ipip2 variant (ncomp=81, 4th-order 2e):
+/// `\nabla_i \nabla_i` on electron 1 AND `\nabla_k \nabla_k` on electron 2.
+///
+/// Matches `CINTgout2e_int2e_ipip1ipip2` in autocode/hess.c VERBATIM — the 16
+/// G2E_D_K/G2E_D_I composition (g0..g15), the 81-term `s[]` triple product, and
+/// the column-major 9×9 reorder permutation are copied 1:1 from the C source
+/// (D-09/D-10: rank-81, transpose-sensitive, must emit all 81 components).
+///
+/// G-tensor headroom (D-09): built with `build_2e_shape(li+2, lj, lk+2, ll)` so
+/// the D_K composition reads up to k_l+2 and the D_I composition reads up to i_l+2.
+///
+/// `pub(crate)` for the plain-Coulomb 2e Hessian launcher (Phase 25 HESS-02).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ipip1ipip2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    ak: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    // 16 work buffers (g0 is the input G tensor; g1..g15 are derived).
+    // Composition copied VERBATIM from hess.c CINTgout2e_int2e_ipip1ipip2:
+    //   G2E_D_K(g1,  g0, i+2, j, k+1, l);  G2E_D_K(g2,  g0, i+2, j, k,   l);
+    //   G2E_D_K(g3,  g1, i+2, j, k,   l);  G2E_D_I(g4,  g0, i+1, j, k,   l);
+    //   G2E_D_I(g5,  g1, i+1, j, k, l);    G2E_D_I(g6,  g2, i+1, j, k, l);
+    //   G2E_D_I(g7,  g3, i+1, j, k, l);    G2E_D_I(g8,  g0, i+0, j, k, l);
+    //   G2E_D_I(g9,  g1, i+0, j, k, l);    G2E_D_I(g10, g2, i+0, j, k, l);
+    //   G2E_D_I(g11, g3, i+0, j, k, l);    G2E_D_I(g12, g4, i+0, j, k, l);
+    //   G2E_D_I(g13, g5, i+0, j, k, l);    G2E_D_I(g14, g6, i+0, j, k, l);
+    //   G2E_D_I(g15, g7, i+0, j, k, l);
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    let mut g4 = vec![0.0_f64; 3 * g_size];
+    let mut g5 = vec![0.0_f64; 3 * g_size];
+    let mut g6 = vec![0.0_f64; 3 * g_size];
+    let mut g7 = vec![0.0_f64; 3 * g_size];
+    let mut g8 = vec![0.0_f64; 3 * g_size];
+    let mut g9 = vec![0.0_f64; 3 * g_size];
+    let mut g10 = vec![0.0_f64; 3 * g_size];
+    let mut g11 = vec![0.0_f64; 3 * g_size];
+    let mut g12 = vec![0.0_f64; 3 * g_size];
+    let mut g13 = vec![0.0_f64; 3 * g_size];
+    let mut g14 = vec![0.0_f64; 3 * g_size];
+    let mut g15 = vec![0.0_f64; 3 * g_size];
+
+    nabla1k_2e(&mut g1, g, li + 2, lj, lk + 1, ll, ak, shape);
+    nabla1k_2e(&mut g2, g, li + 2, lj, lk, ll, ak, shape);
+    nabla1k_2e(&mut g3, &g1, li + 2, lj, lk, ll, ak, shape);
+    nabla1i_2e(&mut g4, g, li + 1, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g5, &g1, li + 1, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g6, &g2, li + 1, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g7, &g3, li + 1, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g8, g, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g9, &g1, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g10, &g2, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g11, &g3, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g12, &g4, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g13, &g5, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g14, &g6, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g15, &g7, li, lj, lk, ll, ai, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 81 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 81];
+                    for irys in 0..shape.nroots {
+                        let r = irys;
+                        // closures to fetch the x/y/z component of buffer b at the
+                        // (ix_base/iy_base/iz_base + r) index.
+                        macro_rules! gx { ($b:expr) => { $b[gx_off + ix_base + r] }; }
+                        macro_rules! gy { ($b:expr) => { $b[gy_off + iy_base + r] }; }
+                        macro_rules! gz { ($b:expr) => { $b[gz_off + iz_base + r] }; }
+                        // s[] triple products — copied VERBATIM from hess.c.
+                        s[0] += gx!(g15) * gy!(g) * gz!(g);
+                        s[1] += gx!(g14) * gy!(g1) * gz!(g);
+                        s[2] += gx!(g14) * gy!(g) * gz!(g1);
+                        s[3] += gx!(g13) * gy!(g2) * gz!(g);
+                        s[4] += gx!(g12) * gy!(g3) * gz!(g);
+                        s[5] += gx!(g12) * gy!(g2) * gz!(g1);
+                        s[6] += gx!(g13) * gy!(g) * gz!(g2);
+                        s[7] += gx!(g12) * gy!(g1) * gz!(g2);
+                        s[8] += gx!(g12) * gy!(g) * gz!(g3);
+                        s[9] += gx!(g11) * gy!(g4) * gz!(g);
+                        s[10] += gx!(g10) * gy!(g5) * gz!(g);
+                        s[11] += gx!(g10) * gy!(g4) * gz!(g1);
+                        s[12] += gx!(g9) * gy!(g6) * gz!(g);
+                        s[13] += gx!(g8) * gy!(g7) * gz!(g);
+                        s[14] += gx!(g8) * gy!(g6) * gz!(g1);
+                        s[15] += gx!(g9) * gy!(g4) * gz!(g2);
+                        s[16] += gx!(g8) * gy!(g5) * gz!(g2);
+                        s[17] += gx!(g8) * gy!(g4) * gz!(g3);
+                        s[18] += gx!(g11) * gy!(g) * gz!(g4);
+                        s[19] += gx!(g10) * gy!(g1) * gz!(g4);
+                        s[20] += gx!(g10) * gy!(g) * gz!(g5);
+                        s[21] += gx!(g9) * gy!(g2) * gz!(g4);
+                        s[22] += gx!(g8) * gy!(g3) * gz!(g4);
+                        s[23] += gx!(g8) * gy!(g2) * gz!(g5);
+                        s[24] += gx!(g9) * gy!(g) * gz!(g6);
+                        s[25] += gx!(g8) * gy!(g1) * gz!(g6);
+                        s[26] += gx!(g8) * gy!(g) * gz!(g7);
+                        s[27] += gx!(g7) * gy!(g8) * gz!(g);
+                        s[28] += gx!(g6) * gy!(g9) * gz!(g);
+                        s[29] += gx!(g6) * gy!(g8) * gz!(g1);
+                        s[30] += gx!(g5) * gy!(g10) * gz!(g);
+                        s[31] += gx!(g4) * gy!(g11) * gz!(g);
+                        s[32] += gx!(g4) * gy!(g10) * gz!(g1);
+                        s[33] += gx!(g5) * gy!(g8) * gz!(g2);
+                        s[34] += gx!(g4) * gy!(g9) * gz!(g2);
+                        s[35] += gx!(g4) * gy!(g8) * gz!(g3);
+                        s[36] += gx!(g3) * gy!(g12) * gz!(g);
+                        s[37] += gx!(g2) * gy!(g13) * gz!(g);
+                        s[38] += gx!(g2) * gy!(g12) * gz!(g1);
+                        s[39] += gx!(g1) * gy!(g14) * gz!(g);
+                        s[40] += gx!(g) * gy!(g15) * gz!(g);
+                        s[41] += gx!(g) * gy!(g14) * gz!(g1);
+                        s[42] += gx!(g1) * gy!(g12) * gz!(g2);
+                        s[43] += gx!(g) * gy!(g13) * gz!(g2);
+                        s[44] += gx!(g) * gy!(g12) * gz!(g3);
+                        s[45] += gx!(g3) * gy!(g8) * gz!(g4);
+                        s[46] += gx!(g2) * gy!(g9) * gz!(g4);
+                        s[47] += gx!(g2) * gy!(g8) * gz!(g5);
+                        s[48] += gx!(g1) * gy!(g10) * gz!(g4);
+                        s[49] += gx!(g) * gy!(g11) * gz!(g4);
+                        s[50] += gx!(g) * gy!(g10) * gz!(g5);
+                        s[51] += gx!(g1) * gy!(g8) * gz!(g6);
+                        s[52] += gx!(g) * gy!(g9) * gz!(g6);
+                        s[53] += gx!(g) * gy!(g8) * gz!(g7);
+                        s[54] += gx!(g7) * gy!(g) * gz!(g8);
+                        s[55] += gx!(g6) * gy!(g1) * gz!(g8);
+                        s[56] += gx!(g6) * gy!(g) * gz!(g9);
+                        s[57] += gx!(g5) * gy!(g2) * gz!(g8);
+                        s[58] += gx!(g4) * gy!(g3) * gz!(g8);
+                        s[59] += gx!(g4) * gy!(g2) * gz!(g9);
+                        s[60] += gx!(g5) * gy!(g) * gz!(g10);
+                        s[61] += gx!(g4) * gy!(g1) * gz!(g10);
+                        s[62] += gx!(g4) * gy!(g) * gz!(g11);
+                        s[63] += gx!(g3) * gy!(g4) * gz!(g8);
+                        s[64] += gx!(g2) * gy!(g5) * gz!(g8);
+                        s[65] += gx!(g2) * gy!(g4) * gz!(g9);
+                        s[66] += gx!(g1) * gy!(g6) * gz!(g8);
+                        s[67] += gx!(g) * gy!(g7) * gz!(g8);
+                        s[68] += gx!(g) * gy!(g6) * gz!(g9);
+                        s[69] += gx!(g1) * gy!(g4) * gz!(g10);
+                        s[70] += gx!(g) * gy!(g5) * gz!(g10);
+                        s[71] += gx!(g) * gy!(g4) * gz!(g11);
+                        s[72] += gx!(g3) * gy!(g) * gz!(g12);
+                        s[73] += gx!(g2) * gy!(g1) * gz!(g12);
+                        s[74] += gx!(g2) * gy!(g) * gz!(g13);
+                        s[75] += gx!(g1) * gy!(g2) * gz!(g12);
+                        s[76] += gx!(g) * gy!(g3) * gz!(g12);
+                        s[77] += gx!(g) * gy!(g2) * gz!(g13);
+                        s[78] += gx!(g1) * gy!(g) * gz!(g14);
+                        s[79] += gx!(g) * gy!(g1) * gz!(g14);
+                        s[80] += gx!(g) * gy!(g) * gz!(g15);
+                    }
+                    // Column-major reorder — copied VERBATIM from hess.c gout_empty.
+                    let base = n * 81;
+                    out[base + 0] = s[0];
+                    out[base + 1] = s[3];
+                    out[base + 2] = s[6];
+                    out[base + 3] = s[1];
+                    out[base + 4] = s[4];
+                    out[base + 5] = s[7];
+                    out[base + 6] = s[2];
+                    out[base + 7] = s[5];
+                    out[base + 8] = s[8];
+                    out[base + 9] = s[27];
+                    out[base + 10] = s[30];
+                    out[base + 11] = s[33];
+                    out[base + 12] = s[28];
+                    out[base + 13] = s[31];
+                    out[base + 14] = s[34];
+                    out[base + 15] = s[29];
+                    out[base + 16] = s[32];
+                    out[base + 17] = s[35];
+                    out[base + 18] = s[54];
+                    out[base + 19] = s[57];
+                    out[base + 20] = s[60];
+                    out[base + 21] = s[55];
+                    out[base + 22] = s[58];
+                    out[base + 23] = s[61];
+                    out[base + 24] = s[56];
+                    out[base + 25] = s[59];
+                    out[base + 26] = s[62];
+                    out[base + 27] = s[9];
+                    out[base + 28] = s[12];
+                    out[base + 29] = s[15];
+                    out[base + 30] = s[10];
+                    out[base + 31] = s[13];
+                    out[base + 32] = s[16];
+                    out[base + 33] = s[11];
+                    out[base + 34] = s[14];
+                    out[base + 35] = s[17];
+                    out[base + 36] = s[36];
+                    out[base + 37] = s[39];
+                    out[base + 38] = s[42];
+                    out[base + 39] = s[37];
+                    out[base + 40] = s[40];
+                    out[base + 41] = s[43];
+                    out[base + 42] = s[38];
+                    out[base + 43] = s[41];
+                    out[base + 44] = s[44];
+                    out[base + 45] = s[63];
+                    out[base + 46] = s[66];
+                    out[base + 47] = s[69];
+                    out[base + 48] = s[64];
+                    out[base + 49] = s[67];
+                    out[base + 50] = s[70];
+                    out[base + 51] = s[65];
+                    out[base + 52] = s[68];
+                    out[base + 53] = s[71];
+                    out[base + 54] = s[18];
+                    out[base + 55] = s[21];
+                    out[base + 56] = s[24];
+                    out[base + 57] = s[19];
+                    out[base + 58] = s[22];
+                    out[base + 59] = s[25];
+                    out[base + 60] = s[20];
+                    out[base + 61] = s[23];
+                    out[base + 62] = s[26];
+                    out[base + 63] = s[45];
+                    out[base + 64] = s[48];
+                    out[base + 65] = s[51];
+                    out[base + 66] = s[46];
+                    out[base + 67] = s[49];
+                    out[base + 68] = s[52];
+                    out[base + 69] = s[47];
+                    out[base + 70] = s[50];
+                    out[base + 71] = s[53];
+                    out[base + 72] = s[72];
+                    out[base + 73] = s[75];
+                    out[base + 74] = s[78];
+                    out[base + 75] = s[73];
+                    out[base + 76] = s[76];
+                    out[base + 77] = s[79];
+                    out[base + 78] = s[74];
+                    out[base + 79] = s[77];
+                    out[base + 80] = s[80];
                     n += 1;
                 }
             }
@@ -1780,10 +2566,11 @@ fn f12_kernel_core(
                     let cart_slice = &gout_contracted[comp * nf_base..(comp + 1) * nf_base];
                     let sph = cart_to_sph_2e(cart_slice, li_base_u8, lj_base_u8, lk_base_u8, ll_base_u8);
                     let stage_off = comp * sph_size;
-                    let copy_len = (staging.len() - stage_off).min(sph.len()).min(sph_size);
-                    if stage_off < staging.len() {
-                        staging[stage_off..stage_off + copy_len].copy_from_slice(&sph[..copy_len]);
-                    }
+                    // FND-06 (D-04): the upfront planner assertion proves staging is
+                    // large enough for all `ncomp` components; copy unconditionally
+                    // (no staging.len() clamp, no silent truncation of trailing comps).
+                    let copy_len = sph.len().min(sph_size);
+                    staging[stage_off..stage_off + copy_len].copy_from_slice(&sph[..copy_len]);
                 }
             }
             Representation::Cart => {

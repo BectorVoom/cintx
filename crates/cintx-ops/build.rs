@@ -106,6 +106,11 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
         )?;
         writeln!(
             rs_buffer,
+            "        complex_output: {complex_output},",
+            complex_output = entry.complex_output
+        )?;
+        writeln!(
+            rs_buffer,
             "        feature_flag: {feature_flag},",
             feature_flag = feature_flag
         )?;
@@ -163,12 +168,12 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(rs_buffer, "];")?;
 
     let mut csv_buffer = String::from(
-        "family_name,operator_name,symbol_name,category,arity,forms,component_rank,feature_flag,stability,declared_in,compiled_in_profiles,oracle_covered,helper_kind,canonical_family\n",
+        "family_name,operator_name,symbol_name,category,arity,forms,component_rank,complex_output,feature_flag,stability,declared_in,compiled_in_profiles,oracle_covered,helper_kind,canonical_family\n",
     );
     for entry in &entries {
         writeln!(
             csv_buffer,
-            "{family},{operator},{symbol},{category},{arity},{forms},{component},{feature_flag},{stability},{declared},{compiled},{oracle},{helper},{canonical}",
+            "{family},{operator},{symbol},{category},{arity},{forms},{component},{complex_output},{feature_flag},{stability},{declared},{compiled},{oracle},{helper},{canonical}",
             family = csv_quote(&entry.family),
             operator = csv_quote(&entry.operator),
             symbol = csv_quote(&entry.symbol),
@@ -176,6 +181,7 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
             arity = entry.arity,
             forms = csv_quote(&entry.forms.join("|")),
             component = csv_quote(&entry.component_rank),
+            complex_output = entry.complex_output,
             feature_flag = csv_quote(&entry.feature_flag),
             stability = csv_quote(&entry.stability),
             declared = csv_quote(&entry.declared_in),
@@ -339,6 +345,7 @@ struct LockEntry {
     arity: Option<u8>,
     forms: Option<Vec<String>>,
     component_rank: Option<String>,
+    complex_output: Option<bool>,
     feature_flag: Option<String>,
     declared_in: Option<String>,
     compiled_in_profiles: Option<Vec<String>>,
@@ -363,6 +370,7 @@ struct GeneratedEntry {
     arity: u8,
     forms: Vec<String>,
     component_rank: String,
+    complex_output: bool,
     feature_flag: String,
     stability: String,
     declared_in: String,
@@ -398,6 +406,7 @@ impl From<&LockEntry> for GeneratedEntry {
             arity: entry.arity.unwrap_or_else(|| family_arity(&family)),
             forms,
             component_rank: entry.component_rank.clone().unwrap_or_default(),
+            complex_output: entry.complex_output.unwrap_or(false),
             feature_flag: entry.feature_flag.clone().unwrap_or_else(|| "none".into()),
             stability: entry.stability.clone().unwrap_or_else(|| "stable".into()),
             declared_in: entry

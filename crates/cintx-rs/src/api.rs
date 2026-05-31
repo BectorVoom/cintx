@@ -259,40 +259,46 @@ impl<'basis> SessionQuery<'basis> {
         owned_values.resize(staging_elements, F::zero());
 
         let schedule = schedule_chunks(&plan.workspace);
-        let total_units = plan.workspace.work_units.max(1);
         let mut total_not0: i32 = 0;
         let mut total_transfer_bytes: usize = 0;
         let mut total_peak_workspace_bytes: usize = 0;
 
         for chunk in schedule.chunks() {
-            // Compute staging slice range for this chunk.
-            let start = chunk.work_unit_start.min(total_units);
-            let end = chunk
-                .work_unit_start
-                .saturating_add(chunk.work_unit_count)
-                .min(total_units);
-            let prefix = staging_elements.saturating_mul(start) / total_units;
-            let suffix = staging_elements.saturating_mul(end) / total_units;
-            let chunk_len = suffix.saturating_sub(prefix).max(1);
-
-            // chunk_staging is always Vec<f64> — the kernel dispatchers receive &mut [f64]
-            // (frozen ExecutionIo interface) and reinterpret internally for f32 precision.
-            // A Vec<f64> of chunk_len elements has chunk_len * 8 bytes = chunk_len * 2 f32
-            // lanes, which over-allocates for f32 (proven Plan 01 A5 / Plan 06 T06-2d).
-            let chunk_staging_bytes = chunk_len.checked_mul(size_of::<f64>()).ok_or(
+            // FND-06 / 25-02 chunk-staging contract (chunk-aware proven-sized output).
+            //
+            // The family kernels are MONOLITHIC whole-block writers: each launch
+            // computes ALL components and ALL AO pairs of the shell tuple and scatters
+            // them at ABSOLUTE output indices `[0, staging_elements)`. The executor
+            // does NOT translate `chunk.work_unit_start` into a scatter offset. So
+            // memory-limit chunking partitions the *workspace* (compute scratch,
+            // `chunk.bytes`) — NOT the output buffer. Handing the kernel a
+            // `chunk_len`-sized staging slice under-sizes the buffer (the absolute
+            // `dst` overflows it); the now-removed `if dst < staging.len()` scatter
+            // guards used to mask this with silent partial writes — the exact
+            // anti-pattern FND-06 eliminates. Mirror of the fix in
+            // `cintx-compat::eval_raw`. The OOM no-partial-write contract is preserved
+            // upstream: `query_workspace` returns `MemoryLimitExceeded` (no staging
+            // touched) when even one workspace chunk cannot fit the limit.
+            //
+            // chunk_staging is always Vec<f64> — the kernel dispatchers receive
+            // &mut [f64] (frozen ExecutionIo interface) and reinterpret internally for
+            // f32 precision. A Vec<f64> of `staging_elements` elements gives
+            // `staging_elements * 2` f32 lanes; the f32 dispatcher bounds its writes to
+            // `out_elems = staging.len()` pre-cast == `staging_elements`.
+            let chunk_staging_bytes = staging_elements.checked_mul(size_of::<f64>()).ok_or(
                 FacadeError::Memory {
                     detail: "chunk staging byte count overflowed usize".to_owned(),
                 },
             )?;
             let mut chunk_staging: Vec<f64> = Vec::new();
             chunk_staging
-                .try_reserve_exact(chunk_len)
+                .try_reserve_exact(staging_elements)
                 .map_err(|_| FacadeError::Memory {
                     detail: format!(
                         "failed to allocate chunk staging buffer of {chunk_staging_bytes} bytes"
                     ),
                 })?;
-            chunk_staging.resize(chunk_len, 0.0f64);
+            chunk_staging.resize(staging_elements, 0.0f64);
 
             let mut workspace = allocator
                 .try_alloc(chunk.bytes, plan.workspace.alignment)
@@ -307,7 +313,10 @@ impl<'basis> SessionQuery<'basis> {
                 )
                 .map_err(FacadeError::from)?;
                 let chunk_stats = executor.execute(&plan, &mut io).map_err(FacadeError::from)?;
-                total_not0 = total_not0.saturating_add(chunk_stats.not0.max(0));
+                // Each chunk recomputes the same full block, so `not0` is the SAME
+                // full-block nonzero count every chunk — take the representative
+                // value (max), not a sum, to avoid N× over-counting under multi-chunk.
+                total_not0 = total_not0.max(chunk_stats.not0.max(0));
                 total_transfer_bytes = total_transfer_bytes
                     .saturating_add(io.transfer_bytes())
                     .saturating_add(chunk_stats.transfer_bytes);
@@ -316,17 +325,16 @@ impl<'basis> SessionQuery<'basis> {
             }
             allocator.release(workspace);
 
-            // Copy chunk staging into the accumulator by reinterpreting the f64 buffer as
-            // &[F]. For f64: zero-cost cast (bytemuck identity). For f32: the kernel wrote
-            // chunk_len f32 values at indices 0..chunk_len in the f32 view of the f64 buffer
-            // (see one_electron.rs / two_electron.rs outer dispatchers). We read exactly
-            // chunk_len F values.
+            // The kernel wrote the entire monolithic block into `chunk_staging`. Copy
+            // the full block into the accumulator by reinterpreting the f64 buffer as
+            // &[F] (f64: zero-cost identity cast; f32: the kernel wrote
+            // `staging_elements` f32 values at indices 0..staging_elements in the f32
+            // view). Each chunk recomputes the same full block (the kernel ignores
+            // chunk boundaries for output), so the accumulator holds the complete,
+            // correct output regardless of chunk_count.
             let chunk_as_f: &[F] = bytemuck::cast_slice::<f64, F>(&chunk_staging);
-            let dest_end = prefix.saturating_add(chunk_len).min(staging_elements);
-            if prefix < dest_end {
-                owned_values[prefix..dest_end]
-                    .copy_from_slice(&chunk_as_f[..dest_end - prefix]);
-            }
+            let copy_len = chunk_as_f.len().min(staging_elements);
+            owned_values[..copy_len].copy_from_slice(&chunk_as_f[..copy_len]);
         }
 
         if owned_values.len() != output_layout.staging_elements {
@@ -667,9 +675,6 @@ mod tests {
     // int2e_ipip1_sph is at position 116).
     #[cfg(feature = "with-f12")]
     const INT2E_STG_SPH_OPERATOR_ID: u32 = 106;
-    #[cfg(not(feature = "unstable-source-api"))]
-    const INT2E_IPIP1_SPH_OPERATOR_ID: u32 = 116;
-
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_vec().into_boxed_slice())
     }
@@ -873,9 +878,17 @@ mod tests {
     #[cfg(not(feature = "unstable-source-api"))]
     #[test] // source unsupported
     fn evaluate_rejects_source_only_symbols_via_compat_policy_gate() {
-        let (basis, shells) = sample_basis_with_shells(Representation::Spheric, &[1, 1, 1, 1]);
+        // int2e_ipip1_sph was promoted to stable in Phase 25 HESS-02 (25-04, D-07),
+        // so it no longer exercises the source-only gate. Resolve a still-source-only
+        // symbol BY NAME so this test survives the OperatorId reordering that adding
+        // manifest rows causes — do NOT hardcode a numeric id (the old `= 116` constant
+        // silently came to point at int1e_r2_origi_sph after the Phase-25 rows landed).
+        let operator = cintx_ops::resolver::Resolver::descriptor_by_symbol("int1e_r2_origi_sph")
+            .expect("source-only symbol must exist in manifest")
+            .id;
+        let (basis, shells) = sample_basis_with_shells(Representation::Spheric, &[1, 1]);
         let request = SessionRequest::new(
-            OperatorId::new(INT2E_IPIP1_SPH_OPERATOR_ID),
+            operator,
             Representation::Spheric,
             &basis,
             shells,

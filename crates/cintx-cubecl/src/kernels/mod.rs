@@ -3,6 +3,11 @@ pub mod center_3c1e;
 pub mod center_3c2e;
 #[cfg(feature = "with-4c1e")]
 pub mod center_4c1e;
+// Phase 25 HESS-04: host f64 evaluators for the 3rd/4th-order 1e derivative
+// families (deriv3.c rank 27, deriv4.c rank 81). Routed host-side because the
+// bra/ket +2/+3 headroom can elevate the nuclear Rys nroots beyond the device
+// MAX_DEVICE_NROOTS=5 cap (FND-02).
+pub mod deriv34;
 pub mod ecp;
 // The `f12` module is always compiled: its derivative math (`gout_ip1`,
 // `nabla1i_2e`, `F12Shape`) is F12-free and is reused verbatim by the
@@ -14,6 +19,11 @@ pub mod ecp;
 // already ungated, so the module compiles cleanly without `with-f12`.
 pub mod f12;
 pub mod one_electron;
+// Phase 28 FND-05 (Gap B2): generic σ·p G-tensor assembler (device #[cube]).
+// Emits the four gc_x/gc_y/gc_z/gc_1 component-leading blocks the host
+// spin-included transform `cart_to_spinor_si_2d` reads in order; rank-
+// parameterized so int1e_sigma (rank 3) and the Phase-29 σ-group reuse it.
+pub mod sigma_p;
 pub mod two_electron;
 #[cfg(feature = "unstable-source-api")]
 pub mod unstable;

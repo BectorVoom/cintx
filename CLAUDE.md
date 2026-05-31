@@ -90,6 +90,8 @@ Conventions not yet established. Will populate as patterns emerge during develop
 ## Architecture
 
 Architecture not yet mapped. Follow existing patterns found in the codebase.
+
+- **Spike findings for cintx** (device output layout: per-component axis-fold offset formula, rank-tier coverage, cart↔sph fold invariance, dual hand-derived+vendor verification) → `Skill("spike-findings-cintx")`
 <!-- GSD:architecture-end -->
 
 <!-- GSD:workflow-start source:GSD defaults -->

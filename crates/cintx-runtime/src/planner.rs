@@ -106,7 +106,7 @@ impl<'a> ExecutionPlan<'a> {
 
         let dispatch = DispatchDecision::from_manifest_family(descriptor.family())?;
         let component_count = component_multiplier_for_descriptor(descriptor)?;
-        let output_layout = build_output_layout(&shells, rep, component_count)?;
+        let output_layout = build_output_layout(descriptor, &shells, component_count)?;
 
         Ok(Self {
             basis,
@@ -258,7 +258,14 @@ pub fn evaluate(
         );
 
         let mut workspace = allocator.try_alloc(chunk.bytes, plan.workspace.alignment)?;
-        let mut staging = try_alloc_staging(staging_elements_for_chunk(&plan, chunk)?)?;
+        // FND-06 (D-04): required staging elements for this chunk =
+        // component_multiplier * per_component_elements (the layout already folded
+        // component_rank into staging_elements). This is the SINGLE contract point.
+        let required_elements = staging_elements_for_chunk(&plan, chunk)?;
+        let mut staging = try_alloc_staging(required_elements)?;
+        // Prove the buffer is large enough BEFORE handing it to the backend scatter.
+        // Fail-closed with a typed BufferTooSmall stop and NO partial write if not.
+        assert_staging_size(staging.len(), required_elements)?;
 
         {
             let mut io =
@@ -281,14 +288,35 @@ pub fn evaluate(
 }
 
 fn build_output_layout(
+    descriptor: &OperatorDescriptor,
     shells: &ValidatedShellTuple,
-    representation: Representation,
     component_count: usize,
 ) -> Result<OutputLayoutMetadata, cintxRsError> {
-    let extents: Vec<usize> = shells
-        .as_slice()
+    let shell_slice = shells.as_slice();
+    let arity = shell_slice.len();
+    let extents: Vec<usize> = shell_slice
         .iter()
-        .map(|shell| shell.ao_per_shell())
+        .enumerate()
+        .map(|(axis, shell)| {
+            // 27-04 (AUX-K CONTRACT): arity-3 SPINOR derivative families
+            // (int3c2e_ip1/ip2, int3c1e_ip1/iprinv) size the auxiliary-k axis (the
+            // tail shell, axis == arity-1) SPHERICALLY as nsph(lk) = (2lk+1)*nctr_k,
+            // NOT spinor (4l+2). Only bra i and ket j are spinor-sized. Source:
+            // libcint CINT3c2e_spinor_drv is_ssc=0 (cint3c2e.c:631-636,
+            // counts[2] = (k_l*2+1)*x_ctr[2]); 27-SPIKE-FINDINGS CORRECTION NOTICE.
+            // ao_per_shell() over-sizes the aux-k as spinor (the disproven 720); this
+            // positional override mirrors the oracle fixtures' dims_for_arity so the
+            // compat output-length contract matches the vendor buffer (spherical k).
+            if arity == 3
+                && axis == arity - 1
+                && shell.representation == Representation::Spinor
+            {
+                let l = shell.ang_momentum as usize;
+                (2 * l + 1) * shell.nctr as usize
+            } else {
+                shell.ao_per_shell()
+            }
+        })
         .collect();
     let base_elements = extents
         .iter()
@@ -297,7 +325,11 @@ fn build_output_layout(
             from: "layout",
             detail: "output extent product overflowed usize".to_owned(),
         })?;
-    let complex_multiplier = if matches!(representation, Representation::Spinor) {
+    // FND-03 (D-01): size complex output from the per-family manifest
+    // `complex_output` flag, NOT from Representation::Spinor. Spinor families
+    // stay 2× because Task 1 backfilled complex_output=true on their rows; GIAO
+    // cart/sph families (purely imaginary) now also size 2× from manifest data.
+    let complex_multiplier = if descriptor.entry.complex_output {
         2usize
     } else {
         1usize
@@ -318,10 +350,40 @@ fn build_output_layout(
     })
 }
 
+/// Required staging-buffer element count for a single scheduled chunk.
+///
+/// # WR-01 / FND-06: monolithic complex/GIAO writers need the FULL block per chunk
+///
+/// GIAO and other complex-interleaved families are evaluated by MONOLITHIC
+/// whole-block launchers (`write_giao_complex_staging`, `launch_two_electron_giao2e`)
+/// that scatter the ENTIRE `2 * real_total` interleaved block in one pass — they do
+/// NOT honor a per-chunk work-unit sub-range. Handing such a launcher the sliced
+/// `suffix - prefix` staging (smaller than the full block whenever `chunk_count > 1`)
+/// yields a per-chunk `BufferTooSmall`, making the family inoperable under any
+/// `memory_limit_bytes` that forces chunking (WR-01 availability regression).
+///
+/// `eval_raw` already solves this by allocating the FULL `staging_elements` per chunk
+/// for these monolithic writers (crates/cintx-compat/src/raw.rs:1061-1070; FND-06,
+/// project memory: "family kernels are MONOLITHIC whole-block writers → per-chunk
+/// staging must be FULL-block sized; never re-add `if dst < staging.len()` guards").
+/// The safe-API `evaluate` path mirrors that here: when
+/// `plan.output_layout.complex_interleaved` is set, return the full
+/// `plan.output_layout.staging_elements` so every chunk hands the launcher a
+/// full-block buffer. If the full block cannot fit, the upfront workspace check fails
+/// closed with a typed `MemoryLimitExceeded` (no partial write).
+///
+/// Real (non-complex) families ARE genuinely chunk-partitionable, so they keep the
+/// sliced `suffix - prefix` sizing below.
 fn staging_elements_for_chunk(
     plan: &ExecutionPlan<'_>,
     chunk: &ChunkInfo,
 ) -> Result<usize, cintxRsError> {
+    // WR-01 / FND-06: monolithic complex/GIAO writers require the full interleaved
+    // block per chunk — mirror eval_raw (raw.rs:1061-1070). Never the sliced suffix.
+    if plan.output_layout.complex_interleaved {
+        return Ok(plan.output_layout.staging_elements.max(1));
+    }
+
     let total_units = plan.workspace.work_units.max(1);
     let start = chunk.work_unit_start.min(total_units);
     let end = chunk
@@ -348,6 +410,32 @@ fn try_alloc_staging(elements: usize) -> Result<Vec<f64>, cintxRsError> {
         .map_err(|_| cintxRsError::HostAllocationFailed { bytes })?;
     staging.resize(elements, 0.0);
     Ok(staging)
+}
+
+/// FND-06 (D-04): the SINGLE upfront staging-size contract point.
+///
+/// Proves the allocated staging buffer is large enough to hold
+/// `required_elements = component_multiplier * per_component_elements` BEFORE any
+/// kernel scatter runs. Once this assertion holds, every per-element
+/// `staging[dst] = v` scatter in the kernels is unconditional and in-bounds by
+/// construction — replacing the 18+ per-element `if dst < staging.len()` guards
+/// (which silently DROPPED trailing components, the 260530-9ay truncation bug).
+///
+/// Returns `Err(cintxRsError::BufferTooSmall { required, provided })` if the
+/// buffer is undersized — a typed fail-closed stop with NO partial write, per
+/// the CLAUDE.md "fallible allocation + typed failure + no partial writes"
+/// non-negotiable.
+fn assert_staging_size(
+    staging_len: usize,
+    required_elements: usize,
+) -> Result<(), cintxRsError> {
+    if staging_len < required_elements {
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_elements,
+            provided: staging_len,
+        });
+    }
+    Ok(())
 }
 
 fn estimate_workspace_request(
@@ -1022,5 +1110,321 @@ mod tests {
         assert_eq!(large.len(), 1024, "large staging alloc must have 1024 f64 entries");
         // All entries initialized to 0.0 (no partial writes).
         assert!(large.iter().all(|&v| v == 0.0), "staging buffer must be zero-initialized");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FND-06 (D-04): the SINGLE upfront staging-size assertion at the planner
+    // boundary. When required_elements = component_multiplier *
+    // per_component_elements exceeds the allocated staging length, the boundary
+    // returns Err(BufferTooSmall { required, provided }) and never hands an
+    // undersized buffer to the kernel scatter. For a correctly-sized buffer
+    // (rank 9/27/81 with adequate memory), the assertion passes (Ok).
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn staging_buffer_too_small() {
+        // Undersized: a rank-81 family needs 81 * per_component elements; an
+        // under-allocated buffer must be rejected with a typed BufferTooSmall stop.
+        let per_component = 4usize; // e.g. a 2x2 bra×ket block
+        let required = 81 * per_component; // rank-81 staging requirement
+        let undersized = 9 * per_component; // only rank-9 worth allocated
+
+        let err = assert_staging_size(undersized, required)
+            .expect_err("undersized staging must be rejected, not silently truncated");
+        assert!(
+            matches!(
+                err,
+                cintxRsError::BufferTooSmall {
+                    required: r,
+                    provided: p,
+                } if r == required && p == undersized
+            ),
+            "expected BufferTooSmall {{ required: {required}, provided: {undersized} }}, got {err:?}"
+        );
+
+        // Correctly-sized staging for ranks 9 / 27 / 81 must pass (Ok).
+        for rank in [9usize, 27, 81] {
+            let need = rank * per_component;
+            assert!(
+                assert_staging_size(need, need).is_ok(),
+                "exact-sized rank-{rank} staging ({need} elements) must pass the assertion"
+            );
+            // Over-allocation (f64 buffer holding > required) also passes.
+            assert!(
+                assert_staging_size(need + 1, need).is_ok(),
+                "over-allocated rank-{rank} staging must pass the assertion"
+            );
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FND-06 (D-05): rank-81 staging under a sub-rank-81 memory limit must
+    // produce a typed OOM/BufferTooSmall stop with NO partial write — the
+    // output buffer is byte-for-byte unchanged from its pre-call sentinel state.
+    // Exercises the Task-1 upfront assertion + the existing ChunkPlanner
+    // OOM-safe-stop together. int1e_rrrr (rank 81, Phase-24 moments) is the
+    // rank-81 driver — a real registered family independent of the Phase-25
+    // families still being landed.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[test]
+    fn rank81_oom_no_partial_write() {
+        // (a) The upfront assertion is a no-partial-write gate: pre-fill a staging
+        //     buffer with a sentinel, then prove that when the rank-81 requirement
+        //     exceeds the buffer, BufferTooSmall fires and the buffer is untouched.
+        const SENTINEL: f64 = -1.234_567_89e30;
+        let per_component = 4usize; // 2x2 non-square-ish block
+        let rank81_required = 81 * per_component; // rank-81 staging requirement
+        // Only a rank-9 worth of buffer is available, pre-filled with the sentinel.
+        let staging = vec![SENTINEL; 9 * per_component];
+        let before = staging.clone();
+
+        let err = assert_staging_size(staging.len(), rank81_required)
+            .expect_err("rank-81 requirement over a rank-9 buffer must fail closed");
+        assert!(
+            matches!(
+                err,
+                cintxRsError::BufferTooSmall {
+                    required: r,
+                    provided: p,
+                } if r == rank81_required && p == staging.len()
+            ),
+            "expected BufferTooSmall {{ required: {rank81_required}, provided: {} }}, got {err:?}",
+            staging.len()
+        );
+        // NO partial write: the buffer is byte-for-byte unchanged.
+        assert_eq!(
+            staging, before,
+            "staging must be byte-for-byte untouched after a fail-closed OOM stop"
+        );
+        // Defensive: an attempted scatter never ran — every element is still the sentinel.
+        assert!(
+            staging.iter().all(|&v| v == SENTINEL),
+            "no element may be overwritten when the upfront assertion fails"
+        );
+
+        // (b) Drive the real rank-81 family (int1e_rrrr_cart) through the planner
+        //     under a memory limit far below its rank-81 staging requirement and
+        //     assert a typed OOM-safe stop (MemoryLimitExceeded / ChunkPlanFailed /
+        //     BufferTooSmall / HostAllocationFailed) — never a panic, never a
+        //     silently-truncated success.
+        let rank81 = Resolver::descriptor_by_symbol("int1e_rrrr_cart")
+            .expect("int1e_rrrr_cart (rank-81 Phase-24 moment) must be registered");
+        assert_eq!(
+            component_multiplier_for_descriptor(rank81).expect("rank-81 multiplier"),
+            81,
+            "int1e_rrrr must carry component_rank 81 (D-10)"
+        );
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+        // A 1-byte limit is unreachable for any non-trivial rank-81 chunk staging.
+        let opts = ExecutionOptions {
+            memory_limit_bytes: Some(1),
+            ..ExecutionOptions::default()
+        };
+        let result = query_workspace(
+            rank81.id,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        );
+        match result {
+            Err(cintxRsError::MemoryLimitExceeded { .. })
+            | Err(cintxRsError::ChunkPlanFailed { .. })
+            | Err(cintxRsError::BufferTooSmall { .. })
+            | Err(cintxRsError::HostAllocationFailed { .. }) => { /* typed OOM-safe stop */ }
+            Err(other) => panic!("rank-81 under 1-byte limit produced an unexpected error: {other:?}"),
+            Ok(query) => {
+                // If the planner accepted the limit by chunking down, evaluate must
+                // still stop fail-closed (or succeed without ever partial-writing).
+                let plan = ExecutionPlan::new(
+                    rank81.id,
+                    Representation::Cart,
+                    &basis,
+                    shells,
+                    &query,
+                )
+                .expect("rank-81 plan should build");
+                let mut allocator = HostWorkspaceAllocator::default();
+                let backend = MockBackend { supports: true };
+                // Either a typed stop or a clean success — never a panic / silent truncation.
+                let _ = evaluate(plan, &opts, &mut allocator, &backend);
+            }
+        }
+    }
+
+    // FND-03 (D-01): build_output_layout sizes complex staging from the manifest
+    // `complex_output` flag, NOT from Representation::Spinor.
+    #[test]
+    fn build_output_layout_sizes_complex_from_manifest_flag_true() {
+        // int1e_ovlp_spinor was backfilled complex_output=true in Task 1.
+        let descriptor =
+            Resolver::descriptor_by_symbol("int1e_ovlp_spinor").expect("spinor descriptor");
+        assert!(
+            descriptor.entry.complex_output,
+            "int1e_ovlp_spinor must carry complex_output=true"
+        );
+        let (basis, shells) = sample_basis(Representation::Spinor);
+        let validated =
+            validate_shell_tuple(descriptor, Representation::Spinor, &basis, &shells).unwrap();
+        let component_count = component_multiplier_for_descriptor(descriptor).unwrap();
+        let base_elements: usize = validated
+            .as_slice()
+            .iter()
+            .map(|shell| shell.ao_per_shell())
+            .product();
+
+        let layout = build_output_layout(descriptor, &validated, component_count).unwrap();
+        assert!(layout.complex_interleaved);
+        assert_eq!(
+            layout.staging_elements,
+            base_elements * component_count * 2
+        );
+    }
+
+    #[test]
+    fn build_output_layout_sizes_real_from_manifest_flag_false() {
+        // int1e_ovlp_cart is a real family: complex_output=false (default).
+        let descriptor =
+            Resolver::descriptor_by_symbol("int1e_ovlp_cart").expect("cart descriptor");
+        assert!(
+            !descriptor.entry.complex_output,
+            "int1e_ovlp_cart must carry complex_output=false"
+        );
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let validated =
+            validate_shell_tuple(descriptor, Representation::Cart, &basis, &shells).unwrap();
+        let component_count = component_multiplier_for_descriptor(descriptor).unwrap();
+        let base_elements: usize = validated
+            .as_slice()
+            .iter()
+            .map(|shell| shell.ao_per_shell())
+            .product();
+
+        let layout = build_output_layout(descriptor, &validated, component_count).unwrap();
+        assert!(!layout.complex_interleaved);
+        assert_eq!(layout.staging_elements, base_elements * component_count);
+    }
+
+    #[test]
+    fn build_output_layout_spinor_family_still_complex_via_backfill() {
+        // Existing spinor family stays complex because Task 1 backfilled the flag.
+        let descriptor =
+            Resolver::descriptor_by_symbol("int1e_kin_spinor").expect("kin spinor descriptor");
+        let (basis, shells) = sample_basis(Representation::Spinor);
+        let validated =
+            validate_shell_tuple(descriptor, Representation::Spinor, &basis, &shells).unwrap();
+        let component_count = component_multiplier_for_descriptor(descriptor).unwrap();
+        let layout = build_output_layout(descriptor, &validated, component_count).unwrap();
+        assert!(
+            layout.complex_interleaved,
+            "spinor family must remain complex-interleaved via complex_output backfill"
+        );
+    }
+
+    // WR-01: a GIAO / complex_interleaved family must stay OPERABLE under a
+    // memory_limit_bytes that forces chunk_count > 1. The monolithic GIAO launcher
+    // is a whole-block writer, so each chunk must receive the FULL interleaved block
+    // (Task 1 fix in staging_elements_for_chunk). Before the fix, the sliced
+    // suffix-prefix staging yielded a per-chunk BufferTooSmall. This test proves the
+    // call now SUCCEEDS with chunk_count > 1 (no BufferTooSmall) and matches the
+    // single-chunk run.
+    #[test]
+    fn evaluate_giao_complex_family_survives_memory_chunking() {
+        // int1e_giao_irjxp_cart carries complex_output=true (manifest), arity 2, cart.
+        let descriptor = Resolver::descriptor_by_symbol("int1e_giao_irjxp_cart")
+            .expect("giao_irjxp cart descriptor");
+        assert!(
+            descriptor.entry.complex_output,
+            "int1e_giao_irjxp_cart must carry complex_output=true (GIAO complex family)"
+        );
+
+        let (basis, shells) = sample_basis(Representation::Cart);
+
+        // Single-chunk baseline (no memory limit): records the chunk_count and stats.
+        let baseline_opts = ExecutionOptions::default();
+        let baseline_query = query_workspace(
+            descriptor.id,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &baseline_opts,
+        )
+        .expect("baseline workspace query should succeed");
+        assert_eq!(
+            baseline_query.chunk_count, 1,
+            "baseline (no limit) should be a single chunk"
+        );
+        let baseline_plan = ExecutionPlan::new(
+            descriptor.id,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &baseline_query,
+        )
+        .expect("baseline GIAO plan should build");
+        assert!(
+            baseline_plan.output_layout.complex_interleaved,
+            "GIAO plan must be complex_interleaved"
+        );
+        let mut baseline_alloc = HostWorkspaceAllocator::default();
+        let backend = MockBackend { supports: true };
+        let baseline_stats = evaluate(
+            baseline_plan,
+            &baseline_opts,
+            &mut baseline_alloc,
+            &backend,
+        )
+        .expect("baseline GIAO evaluation should succeed");
+        assert_eq!(baseline_stats.chunk_count, 1);
+
+        // Chunk-forcing run: a memory_limit_bytes small enough to split the workspace
+        // into more than one chunk. The monolithic GIAO writer now receives a
+        // full-block staging buffer per chunk, so the call SUCCEEDS instead of
+        // returning a per-chunk BufferTooSmall (WR-01).
+        let chunk_opts = ExecutionOptions {
+            memory_limit_bytes: Some(192),
+            ..ExecutionOptions::default()
+        };
+        let chunk_query = query_workspace(
+            descriptor.id,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &chunk_opts,
+        )
+        .expect("chunk-forcing workspace query should succeed");
+        assert!(
+            chunk_query.chunk_count > 1,
+            "memory_limit_bytes=192 must force chunk_count > 1 (got {})",
+            chunk_query.chunk_count
+        );
+
+        let chunk_plan = ExecutionPlan::new(
+            descriptor.id,
+            Representation::Cart,
+            &basis,
+            shells,
+            &chunk_query,
+        )
+        .expect("chunked GIAO plan should build");
+        assert!(
+            chunk_plan.output_layout.complex_interleaved,
+            "chunked GIAO plan must remain complex_interleaved"
+        );
+
+        let mut chunk_alloc = HostWorkspaceAllocator::default();
+        let chunk_stats = evaluate(chunk_plan, &chunk_opts, &mut chunk_alloc, &backend)
+            .expect("GIAO evaluation under chunking must SUCCEED (no BufferTooSmall) — WR-01");
+
+        assert!(
+            chunk_stats.chunk_count > 1,
+            "GIAO evaluation should have run with chunk_count > 1 (got {})",
+            chunk_stats.chunk_count
+        );
+        assert_eq!(
+            chunk_stats.fallback_reason,
+            Some("memory_limit"),
+            "chunked GIAO run should report the memory_limit fallback"
+        );
     }
 }

@@ -212,6 +212,55 @@ impl RawApiId {
     pub const INT1E_IRP_SPH: Self = Self::Symbol("int1e_irp_sph");
     pub const INT1E_IRP_SPINOR: Self = Self::Symbol("int1e_irp_spinor");
 
+    // Phase 26 GIAO-01: spin-free 1e GIAO/CG magnetic-property families (complex
+    // output, FND-03). cart/sph emit the real magnitude of the purely-imaginary
+    // integral (D-15); the safe-API Complex<f64> view materializes re=0/im=value.
+    // Spinor reps are registered for surface completeness but return UnsupportedApi
+    // (D-11). Symbol strings MUST match the manifest lock symbol_name exactly.
+    pub const INT1E_GOVLP_CART: Self = Self::Symbol("int1e_govlp_cart");
+    pub const INT1E_GOVLP_SPH: Self = Self::Symbol("int1e_govlp_sph");
+    pub const INT1E_GOVLP_SPINOR: Self = Self::Symbol("int1e_govlp_spinor");
+
+    pub const INT1E_GNUC_CART: Self = Self::Symbol("int1e_gnuc_cart");
+    pub const INT1E_GNUC_SPH: Self = Self::Symbol("int1e_gnuc_sph");
+    pub const INT1E_GNUC_SPINOR: Self = Self::Symbol("int1e_gnuc_spinor");
+
+    pub const INT1E_IGOVLP_CART: Self = Self::Symbol("int1e_igovlp_cart");
+    pub const INT1E_IGOVLP_SPH: Self = Self::Symbol("int1e_igovlp_sph");
+    pub const INT1E_IGOVLP_SPINOR: Self = Self::Symbol("int1e_igovlp_spinor");
+
+    pub const INT1E_IGNUC_CART: Self = Self::Symbol("int1e_ignuc_cart");
+    pub const INT1E_IGNUC_SPH: Self = Self::Symbol("int1e_ignuc_sph");
+    pub const INT1E_IGNUC_SPINOR: Self = Self::Symbol("int1e_ignuc_spinor");
+
+    pub const INT1E_IGKIN_CART: Self = Self::Symbol("int1e_igkin_cart");
+    pub const INT1E_IGKIN_SPH: Self = Self::Symbol("int1e_igkin_sph");
+    pub const INT1E_IGKIN_SPINOR: Self = Self::Symbol("int1e_igkin_spinor");
+
+    pub const INT1E_A01GP_CART: Self = Self::Symbol("int1e_a01gp_cart");
+    pub const INT1E_A01GP_SPH: Self = Self::Symbol("int1e_a01gp_sph");
+    pub const INT1E_A01GP_SPINOR: Self = Self::Symbol("int1e_a01gp_spinor");
+
+    pub const INT1E_IA01P_CART: Self = Self::Symbol("int1e_ia01p_cart");
+    pub const INT1E_IA01P_SPH: Self = Self::Symbol("int1e_ia01p_sph");
+    pub const INT1E_IA01P_SPINOR: Self = Self::Symbol("int1e_ia01p_spinor");
+
+    pub const INT1E_CG_IRXP_CART: Self = Self::Symbol("int1e_cg_irxp_cart");
+    pub const INT1E_CG_IRXP_SPH: Self = Self::Symbol("int1e_cg_irxp_sph");
+    pub const INT1E_CG_IRXP_SPINOR: Self = Self::Symbol("int1e_cg_irxp_spinor");
+
+    pub const INT1E_GIAO_IRJXP_CART: Self = Self::Symbol("int1e_giao_irjxp_cart");
+    pub const INT1E_GIAO_IRJXP_SPH: Self = Self::Symbol("int1e_giao_irjxp_sph");
+    pub const INT1E_GIAO_IRJXP_SPINOR: Self = Self::Symbol("int1e_giao_irjxp_spinor");
+
+    pub const INT1E_CG_A11PART_CART: Self = Self::Symbol("int1e_cg_a11part_cart");
+    pub const INT1E_CG_A11PART_SPH: Self = Self::Symbol("int1e_cg_a11part_sph");
+    pub const INT1E_CG_A11PART_SPINOR: Self = Self::Symbol("int1e_cg_a11part_spinor");
+
+    pub const INT1E_GIAO_A11PART_CART: Self = Self::Symbol("int1e_giao_a11part_cart");
+    pub const INT1E_GIAO_A11PART_SPH: Self = Self::Symbol("int1e_giao_a11part_sph");
+    pub const INT1E_GIAO_A11PART_SPINOR: Self = Self::Symbol("int1e_giao_a11part_spinor");
+
     // Phase 24 Cluster A (MOM-01/02/03): overlap-derived position-tensor moment
     // families. Each `_origj` variant is its OWN operator/symbol (D-02): the shared
     // moment kernel branches on origin-source (env[PTR_COMMON_ORIG] for the base
@@ -289,6 +338,58 @@ impl RawApiId {
     pub const INT1E_IPNUCIP_SPH: Self = Self::Symbol("int1e_ipnucip_sph");
     pub const INT1E_IPNUCIP_SPINOR: Self = Self::Symbol("int1e_ipnucip_spinor");
 
+    // Phase 25 HESS-01 bra-only rank-9 1e Hessian families (∇²bra, component_rank=9;
+    // spinor returns UnsupportedApi, D-11). ovlp/kin ride the no-Rys overlap-deriv
+    // engine; nuc/rinv ride the nuclear/Rys 1e path.
+    pub const INT1E_IPIPOVLP_CART: Self = Self::Symbol("int1e_ipipovlp_cart");
+    pub const INT1E_IPIPOVLP_SPH: Self = Self::Symbol("int1e_ipipovlp_sph");
+    pub const INT1E_IPIPOVLP_SPINOR: Self = Self::Symbol("int1e_ipipovlp_spinor");
+
+    pub const INT1E_IPIPNUC_CART: Self = Self::Symbol("int1e_ipipnuc_cart");
+    pub const INT1E_IPIPNUC_SPH: Self = Self::Symbol("int1e_ipipnuc_sph");
+    pub const INT1E_IPIPNUC_SPINOR: Self = Self::Symbol("int1e_ipipnuc_spinor");
+
+    pub const INT1E_IPIPKIN_CART: Self = Self::Symbol("int1e_ipipkin_cart");
+    pub const INT1E_IPIPKIN_SPH: Self = Self::Symbol("int1e_ipipkin_sph");
+    pub const INT1E_IPIPKIN_SPINOR: Self = Self::Symbol("int1e_ipipkin_spinor");
+
+    pub const INT1E_IPIPRINV_CART: Self = Self::Symbol("int1e_ipiprinv_cart");
+    pub const INT1E_IPIPRINV_SPH: Self = Self::Symbol("int1e_ipiprinv_sph");
+    pub const INT1E_IPIPRINV_SPINOR: Self = Self::Symbol("int1e_ipiprinv_spinor");
+
+    // Phase 25 HESS-04 3rd-order (deriv3.c, rank 27): ∇∇∇ on bra/ket per family.
+    // ipipipnuc/ipipiprinv = bra ∇∇∇; ipipnucip/ipiprinvip = bra ∇∇ + ket ∇.
+    pub const INT1E_IPIPIPNUC_CART: Self = Self::Symbol("int1e_ipipipnuc_cart");
+    pub const INT1E_IPIPIPNUC_SPH: Self = Self::Symbol("int1e_ipipipnuc_sph");
+    pub const INT1E_IPIPIPNUC_SPINOR: Self = Self::Symbol("int1e_ipipipnuc_spinor");
+
+    pub const INT1E_IPIPIPRINV_CART: Self = Self::Symbol("int1e_ipipiprinv_cart");
+    pub const INT1E_IPIPIPRINV_SPH: Self = Self::Symbol("int1e_ipipiprinv_sph");
+    pub const INT1E_IPIPIPRINV_SPINOR: Self = Self::Symbol("int1e_ipipiprinv_spinor");
+
+    pub const INT1E_IPIPNUCIP_CART: Self = Self::Symbol("int1e_ipipnucip_cart");
+    pub const INT1E_IPIPNUCIP_SPH: Self = Self::Symbol("int1e_ipipnucip_sph");
+    pub const INT1E_IPIPNUCIP_SPINOR: Self = Self::Symbol("int1e_ipipnucip_spinor");
+
+    pub const INT1E_IPIPRINVIP_CART: Self = Self::Symbol("int1e_ipiprinvip_cart");
+    pub const INT1E_IPIPRINVIP_SPH: Self = Self::Symbol("int1e_ipiprinvip_sph");
+    pub const INT1E_IPIPRINVIP_SPINOR: Self = Self::Symbol("int1e_ipiprinvip_spinor");
+
+    // Phase 25 HESS-04 4th-order (deriv4.c, rank 81): bra+2 AND ket+2 dual
+    // headroom. ipipipiprinv = bra ∇∇∇∇; ipiprinvipip = ket ∇∇ + bra ∇∇;
+    // ipipiprinvip = bra ∇∇∇ + ket ∇.
+    pub const INT1E_IPIPIPIPRINV_CART: Self = Self::Symbol("int1e_ipipipiprinv_cart");
+    pub const INT1E_IPIPIPIPRINV_SPH: Self = Self::Symbol("int1e_ipipipiprinv_sph");
+    pub const INT1E_IPIPIPIPRINV_SPINOR: Self = Self::Symbol("int1e_ipipipiprinv_spinor");
+
+    pub const INT1E_IPIPRINVIPIP_CART: Self = Self::Symbol("int1e_ipiprinvipip_cart");
+    pub const INT1E_IPIPRINVIPIP_SPH: Self = Self::Symbol("int1e_ipiprinvipip_sph");
+    pub const INT1E_IPIPRINVIPIP_SPINOR: Self = Self::Symbol("int1e_ipiprinvipip_spinor");
+
+    pub const INT1E_IPIPIPRINVIP_CART: Self = Self::Symbol("int1e_ipipiprinvip_cart");
+    pub const INT1E_IPIPIPRINVIP_SPH: Self = Self::Symbol("int1e_ipipiprinvip_sph");
+    pub const INT1E_IPIPIPRINVIP_SPINOR: Self = Self::Symbol("int1e_ipipiprinvip_spinor");
+
     pub const INT2E_IP1_CART: Self = Self::Symbol("int2e_ip1_cart");
     pub const INT2E_IP1_SPH: Self = Self::Symbol("int2e_ip1_sph");
     pub const INT2E_IP1_SPINOR: Self = Self::Symbol("int2e_ip1_spinor");
@@ -298,6 +399,47 @@ impl RawApiId {
     pub const INT2E_IP2_CART: Self = Self::Symbol("int2e_ip2_cart");
     pub const INT2E_IP2_SPH: Self = Self::Symbol("int2e_ip2_sph");
     pub const INT2E_IP2_SPINOR: Self = Self::Symbol("int2e_ip2_spinor");
+
+    // Phase 25 HESS-02: 2e Hessian set, promoted to STABLE (D-07). int2e_ipip1
+    // (∇²bra-i) and int2e_ipvip1 (∇_i∇_j) were sph-only `unstable::source::2e`
+    // stubs — re-homed here as one canonical stable entry per symbol (no alias,
+    // no unstable gate). int2e_ip1ip2 (∇_i∇_k, rank 9) and int2e_ipip1ipip2
+    // (∇²_i∇²_k, rank 81, 4th-order 2e) are registered fresh. All host-routed
+    // through fill_g_tensor_2e (FND-02). Spinor → UnsupportedApi (D-11).
+    pub const INT2E_IPIP1_CART: Self = Self::Symbol("int2e_ipip1_cart");
+    pub const INT2E_IPIP1_SPH: Self = Self::Symbol("int2e_ipip1_sph");
+    pub const INT2E_IPIP1_SPINOR: Self = Self::Symbol("int2e_ipip1_spinor");
+
+    pub const INT2E_IPVIP1_CART: Self = Self::Symbol("int2e_ipvip1_cart");
+    pub const INT2E_IPVIP1_SPH: Self = Self::Symbol("int2e_ipvip1_sph");
+    pub const INT2E_IPVIP1_SPINOR: Self = Self::Symbol("int2e_ipvip1_spinor");
+
+    pub const INT2E_IP1IP2_CART: Self = Self::Symbol("int2e_ip1ip2_cart");
+    pub const INT2E_IP1IP2_SPH: Self = Self::Symbol("int2e_ip1ip2_sph");
+    pub const INT2E_IP1IP2_SPINOR: Self = Self::Symbol("int2e_ip1ip2_spinor");
+
+    pub const INT2E_IPIP1IPIP2_CART: Self = Self::Symbol("int2e_ipip1ipip2_cart");
+    pub const INT2E_IPIP1IPIP2_SPH: Self = Self::Symbol("int2e_ipip1ipip2_sph");
+    pub const INT2E_IPIP1IPIP2_SPINOR: Self = Self::Symbol("int2e_ipip1ipip2_spinor");
+
+    // Phase 26 GIAO-02 (D-16): spin-free 2e GIAO magnetic-property families
+    // (complex_output=true; rank 3 for g1/ig1, rank 9 for gg1/g1g2). Spinor reps
+    // registered for surface completeness; the kernel returns UnsupportedApi (D-11).
+    pub const INT2E_G1_CART: Self = Self::Symbol("int2e_g1_cart");
+    pub const INT2E_G1_SPH: Self = Self::Symbol("int2e_g1_sph");
+    pub const INT2E_G1_SPINOR: Self = Self::Symbol("int2e_g1_spinor");
+
+    pub const INT2E_IG1_CART: Self = Self::Symbol("int2e_ig1_cart");
+    pub const INT2E_IG1_SPH: Self = Self::Symbol("int2e_ig1_sph");
+    pub const INT2E_IG1_SPINOR: Self = Self::Symbol("int2e_ig1_spinor");
+
+    pub const INT2E_GG1_CART: Self = Self::Symbol("int2e_gg1_cart");
+    pub const INT2E_GG1_SPH: Self = Self::Symbol("int2e_gg1_sph");
+    pub const INT2E_GG1_SPINOR: Self = Self::Symbol("int2e_gg1_spinor");
+
+    pub const INT2E_G1G2_CART: Self = Self::Symbol("int2e_g1g2_cart");
+    pub const INT2E_G1G2_SPH: Self = Self::Symbol("int2e_g1g2_sph");
+    pub const INT2E_G1G2_SPINOR: Self = Self::Symbol("int2e_g1g2_spinor");
 
     // Phase 23 DRV1-04: int2c2e_ip1 (∇ on bra center i) + int2c2e_ip2 (∇ on ket
     // center k). Spinor registered for surface completeness (D-06).
@@ -333,6 +475,20 @@ impl RawApiId {
     pub const INT1E_ECP_IPRINV_SPH: Self = Self::Symbol("int1e_ecp_iprinv_sph");
     /// Spinor form registered for surface completeness; kernel returns UnsupportedApi (D-03/R5).
     pub const INT1E_ECP_IPRINV_SPINOR: Self = Self::Symbol("int1e_ecp_iprinv_spinor");
+
+    // Phase 25 HESS-03: multi-center rank-9 Hessian families (component_rank=9).
+    // int2c2e_ipip1 / int3c2e_ipip1 raise the bra center-1 headroom (i_inc=2);
+    // int3c2e_ipip2 raises the KET (auxiliary k → 2e `ll` slot) headroom
+    // (k_inc=2, third ng[] element — D-09 ket-side). Spinor reps registered for
+    // surface completeness; kernel returns UnsupportedApi (D-11).
+    pub const INT2C2E_IPIP1_CART: Self = Self::Symbol("int2c2e_ipip1_cart");
+    pub const INT2C2E_IPIP1_SPH: Self = Self::Symbol("int2c2e_ipip1_sph");
+
+    pub const INT3C2E_IPIP1_CART: Self = Self::Symbol("int3c2e_ipip1_cart");
+    pub const INT3C2E_IPIP1_SPH: Self = Self::Symbol("int3c2e_ipip1_sph");
+
+    pub const INT3C2E_IPIP2_CART: Self = Self::Symbol("int3c2e_ipip2_cart");
+    pub const INT3C2E_IPIP2_SPH: Self = Self::Symbol("int3c2e_ipip2_sph");
 
     fn symbol(self) -> &'static str {
         match self {
@@ -770,6 +926,18 @@ pub unsafe fn eval_raw(
             &plan.operator_env_params,
         )?;
     }
+    // Phase 26 GIAO-01: ia01p / a01gp / cg_a11part / giao_a11part are NABLA-RINV
+    // families evaluated at the SINGLE rinv center (libcint CINTg1e_nuc nuc_id=-1,
+    // env[PTR_RINV_ORIG], charge +1) — NOT atom-summed. Extract the rinv origin so
+    // the kernel evaluates at the caller-supplied center. Unlike iprinv these read
+    // the origin without a strict non-zero validation (a center on a nucleus is a
+    // legitimate, byte-identity-comparable case vs vendored libcint).
+    if is_giao_rinv_center_symbol(sym) && env.len() >= PTR_RINV_ORIG + 3 {
+        let x = env[PTR_RINV_ORIG];
+        let y = env[PTR_RINV_ORIG + 1];
+        let z = env[PTR_RINV_ORIG + 2];
+        plan.operator_env_params.rinv_orig = Some([x, y, z]);
+    }
     // Phase 22 FND-01: extract common_orig (gauge origin) from env[PTR_COMMON_ORIG..PTR_COMMON_ORIG+3].
     // D-02: operator-AGNOSTIC — read unconditionally; no operator-name guard exists yet (moments/GIAO
     // add their own dispatch in Phases 24/26). Only the bounds guard (T-22-01) prevents OOB indexing.
@@ -857,33 +1025,49 @@ pub unsafe fn eval_raw(
     }
 
     let schedule = schedule_chunks(&plan.workspace);
-    let total_units = plan.workspace.work_units.max(1);
 
     let mut total_not0: i32 = 0;
     let mut total_transfer_bytes: usize = 0;
 
     for chunk in schedule.chunks() {
-        // Compute staging slice range for this chunk (mirrors staging_elements_for_chunk logic).
-        let start = chunk.work_unit_start.min(total_units);
-        let end = chunk
-            .work_unit_start
-            .saturating_add(chunk.work_unit_count)
-            .min(total_units);
-        let prefix = staging_elements.saturating_mul(start) / total_units;
-        let suffix = staging_elements.saturating_mul(end) / total_units;
-        let chunk_len = suffix.saturating_sub(prefix).max(1);
-
-        // Allocate the chunk staging slice and workspace.
-        let chunk_staging_bytes = chunk_len
+        // FND-06 / 25-02 chunk-staging contract (chunk-aware proven-sized output).
+        //
+        // The family kernels (`launch_one_electron` and every sibling: 2e, 2c2e,
+        // 3c2e, f12, grids) are MONOLITHIC whole-block writers: each launch computes
+        // ALL components and ALL AO pairs of the shell tuple and scatters them at
+        // ABSOLUTE output indices `[0, staging_elements)` (e.g. one_electron.rs
+        // `dst = staging_comp_base + ii + jj * di_cart`). The executor passes the
+        // staging slice straight through and does NOT translate `chunk.work_unit_start`
+        // into a scatter offset — the kernel has no notion of "produce only this
+        // chunk's output sub-range".
+        //
+        // Memory-limit chunking therefore partitions the *workspace* (compute
+        // scratch, `chunk.bytes`) — NOT the output buffer. Slicing the output by
+        // `[prefix, suffix)` and handing the kernel a `chunk_len`-sized staging slice
+        // (the previous behavior) under-sized the buffer for every chunk whose span
+        // is smaller than the full block, so the kernel's absolute `dst` overflowed
+        // the slice. Before af25716 the now-removed `if dst < staging.len()` scatter
+        // guard masked this by silently DROPPING the overflowing writes — a silent
+        // partial write, exactly the anti-pattern FND-06 was written to eliminate.
+        //
+        // Fix (option b): give the kernel a staging buffer sized to the FULL output
+        // block it actually writes (`staging_elements`). FND-06's proven-sized
+        // invariant then holds per chunk by construction — every unconditional
+        // `staging[dst] = v` is in-bounds. The OOM no-partial-write contract is
+        // preserved upstream: `query_workspace_raw` already returns
+        // `MemoryLimitExceeded` (no staging touched) when even one workspace chunk
+        // cannot fit the limit, so an impossibly small limit fails closed here before
+        // this loop runs.
+        let chunk_staging_bytes = staging_elements
             .checked_mul(size_of::<f64>())
             .ok_or(cintxRsError::HostAllocationFailed { bytes: usize::MAX })?;
         let mut chunk_staging = Vec::new();
-        chunk_staging.try_reserve_exact(chunk_len).map_err(|_| {
-            cintxRsError::HostAllocationFailed {
+        chunk_staging
+            .try_reserve_exact(staging_elements)
+            .map_err(|_| cintxRsError::HostAllocationFailed {
                 bytes: chunk_staging_bytes,
-            }
-        })?;
-        chunk_staging.resize(chunk_len, 0.0);
+            })?;
+        chunk_staging.resize(staging_elements, 0.0);
 
         let mut workspace = allocator.try_alloc(chunk.bytes, plan.workspace.alignment)?;
 
@@ -892,16 +1076,20 @@ pub unsafe fn eval_raw(
                 ExecutionIo::new(chunk, &mut chunk_staging, &mut workspace, plan.dispatch)?;
             io.ensure_output_contract()?;
             let chunk_stats = executor.execute(&plan, &mut io)?;
-            total_not0 = total_not0.saturating_add(chunk_stats.not0.max(0));
+            // Each chunk recomputes the same full block, so `not0` is the SAME
+            // full-block nonzero count every chunk — take the representative value
+            // (max), not a sum, to avoid N× over-counting under multi-chunk.
+            total_not0 = total_not0.max(chunk_stats.not0.max(0));
             total_transfer_bytes = total_transfer_bytes.saturating_add(io.transfer_bytes());
         }
         allocator.release(workspace);
 
-        // Copy chunk staging into the appropriate range of the accumulator.
-        let dest_end = prefix.saturating_add(chunk_len).min(staging_elements);
-        if prefix < dest_end {
-            staging[prefix..dest_end].copy_from_slice(&chunk_staging[..dest_end - prefix]);
-        }
+        // The kernel wrote the entire monolithic block into `chunk_staging`. Copy the
+        // full block into the accumulator. Each chunk recomputes the same full block
+        // (the kernel ignores chunk boundaries for output), so the final accumulator
+        // holds the complete, correct output regardless of chunk_count.
+        let copy_len = chunk_staging.len().min(staging_elements);
+        staging[..copy_len].copy_from_slice(&chunk_staging[..copy_len]);
     }
 
     let out = out.expect("checked out.is_some()");
@@ -943,6 +1131,16 @@ fn is_f12_family_symbol(symbol: &str) -> bool {
 /// gating insertion point in `eval_raw`.
 fn is_ecp_family_symbol(symbol: &str) -> bool {
     symbol.starts_with("int1e_ecp_")
+}
+
+/// Phase 26 GIAO-01: the four NABLA-RINV families evaluated at the SINGLE rinv
+/// center (libcint int1e_type=1, `CINTg1e_nuc` nuc_id=-1). These read
+/// `env[PTR_RINV_ORIG]` with charge +1 — distinct from the atom-summed gnuc/ignuc.
+fn is_giao_rinv_center_symbol(symbol: &str) -> bool {
+    symbol.starts_with("int1e_ia01p_")
+        || symbol.starts_with("int1e_a01gp_")
+        || symbol.starts_with("int1e_cg_a11part_")
+        || symbol.starts_with("int1e_giao_a11part_")
 }
 
 /// Phase 21-01: identifies iprinv-family operator symbols.
@@ -2133,7 +2331,9 @@ mod tests {
     #[cfg(not(feature = "unstable-source-api"))]
     #[test] // safe-facade policy gate
     fn safe_facade_gate_rejects_source_only_symbol_without_unstable_feature() {
-        let descriptor = Resolver::descriptor_by_symbol("int2e_ipip1_sph")
+        // int2e_ipip1_sph was promoted to stable in Phase 25 HESS-02 (D-07); use a
+        // still-source-only symbol to exercise the unstable-feature gate.
+        let descriptor = Resolver::descriptor_by_symbol("int2e_breit_r1p2_spinor")
             .expect("source-only symbol must exist in manifest");
         let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
         let atm = RawAtmView::new(&atm).expect("atm layout");
@@ -2169,7 +2369,9 @@ mod tests {
         let (shls_4, atm, bas, env) = RawFixture::single_atom_four_shells();
         let err = unsafe {
             query_workspace_raw(
-                RawApiId::Symbol("int2e_ipip1_sph"),
+                // int2e_ipip1_sph promoted to stable (Phase 25 HESS-02 D-07); use a
+                // still-source-only symbol to exercise the unstable-feature gate.
+                RawApiId::Symbol("int2e_breit_r1p2_spinor"),
                 None,
                 &shls_4,
                 &atm,
