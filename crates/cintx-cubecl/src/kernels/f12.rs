@@ -1623,6 +1623,115 @@ pub(crate) fn gout_ipvip1(
     out
 }
 
+/// Compute the σ·p₁ G-tensor for `int2e_spsp1` (component_rank=1 → 4 cart blocks).
+///
+/// Matches `CINTgout2e_int2e_spsp1` in autocode/intor4.c:19-58 VERBATIM. The σ·p₁
+/// operator `(σ·∇_i)(σ·∇_j)` on electron 1 (bra i, ket j) uses the IDENTICAL `s[0..8]`
+/// triple-product tensor as `gout_ipvip1` (∇_i∇_j: `g1=nabla1j(g,li+1)`,
+/// `g2=nabla1i(g)`, `g3=nabla1i(g1)`), then folds it into the four σ-tensor cart
+/// blocks the `c2s_si_2e1` transform consumes (gc_x, gc_y, gc_z, gc_1):
+///
+/// ```text
+/// gc_x = + s[5] - s[7]   (σ_x)
+/// gc_y = + s[6] - s[2]   (σ_y)
+/// gc_z = + s[1] - s[3]   (σ_z)
+/// gc_1 = + s[0] + s[4] + s[8]   (scalar)
+/// ```
+///
+/// Returns interleaved `out[n*4 + comp]` (`comp` in {x,y,z,1}); `n` walks `[cl,ck,cj,ci]`
+/// i-fastest. The hess2e-style launcher TRANSPOSES this into the four contiguous
+/// component-leading cart blocks `cart[comp*block + n]` that `cart_to_spinor_si_2e1`
+/// reads as gc_x/gc_y/gc_z/gc_1.
+///
+/// Headroom matches `Hess2eKind::Ipvip1` = `(i_inc, j_inc, k_inc) = (1, 1, 0)`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_spsp1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // Identical derivative setup to gout_ipvip1 (= libcint spsp1 g1/g2/g3):
+    //   g1 = G2E_D_J(g0, i_l+1)  → nabla1j at (li+1, lj+0)
+    //   g2 = G2E_D_I(g0)         → nabla1i at (li+0)
+    //   g3 = G2E_D_I(g1)         → nabla1i(g1) (mixed i,j second derivative)
+    nabla1j_2e(&mut g1, g, li + 1, lj, lk, ll, aj, shape);
+    nabla1i_2e(&mut g2, g, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g3, &g1, li, lj, lk, ll, ai, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 4 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for irys in 0..shape.nroots {
+                        let r = irys;
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        // Identical s[] triple products to CINTgout2e_int2e_spsp1.
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // σ·p₁ fold (intor4.c:49-52). gc order = (x, y, z, scalar).
+                    out[n * 4 + 0] = s[5] - s[7];
+                    out[n * 4 + 1] = s[6] - s[2];
+                    out[n * 4 + 2] = s[1] - s[3];
+                    out[n * 4 + 3] = s[0] + s[4] + s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Compute gout for the ip1ip2 variant (ncomp=9): `\nabla_i` on e1 and `\nabla_k` on e2.
 ///
 /// Matches `CINTgout2e_int2e_ip1ip2` in autocode/hess.c.
