@@ -30,8 +30,12 @@
 //! actually execute and produce nonzero output for a SUPPORTED family — fail (not
 //! skip) if the vendor side compiled out or the fixture was skipped.
 //!
-//! Aux-k spinor sizing (27-SPIKE-FINDINGS D2/D3): the arity-3 families size the
-//! auxiliary-k axis with `CINTcgto_spinor(k) = 4l+2 = 2` (kappa=0), NOT nsph(lk).
+//! Aux-k SPHERICAL sizing (27-SPIKE-FINDINGS CORRECTION NOTICE): the arity-3
+//! families size the auxiliary-k axis SPHERICALLY as nsph(lk) = (2lk+1)*nctr_k
+//! (libcint CINT3c2e_spinor_drv is_ssc=0, cint3c2e.c:631-636), NOT CINTcgto_spinor.
+//! Only bra i and ket j are spinor-sized (4l+2). The earlier spinor aux-k (the
+//! disproven p×d×s kappa=0 total 720) was a compat-dims over-sizing bug; the
+//! correct single-contraction total is 3·6·10·1·2 = 360.
 //!
 //! Double gate: vendor parity requires `--features cpu` AND `CINTX_ORACLE_BUILD_VENDOR=1`
 //! (the `has_vendor_libcint` cfg). Without both, the vendor bodies compile out and the
@@ -68,6 +72,13 @@ fn shell_nctr(bas: &[i32], s: usize) -> usize {
 /// Full spinor axis length for shell `s`: `nctr * (4l+2)`.
 fn shell_nsp_full(bas: &[i32], s: usize) -> usize {
     spinor_len_kappa0(shell_ang(bas, s)) * shell_nctr(bas, s)
+}
+
+/// Spherical axis length for shell `s`: `(2l+1) * nctr` (libcint
+/// CINT3c2e_spinor_drv is_ssc=0, cint3c2e.c:631-636). Used for the arity-3
+/// auxiliary-k axis, which is SPHERICAL, not spinor.
+fn shell_nsph_full(bas: &[i32], s: usize) -> usize {
+    (2 * shell_ang(bas, s) + 1) as usize * shell_nctr(bas, s)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,12 +144,14 @@ fn collect_cintx_2c(api_id: RawApiId, ncomp: usize, atm: &[i32], bas: &[i32], en
 }
 
 /// cintx collector for a SINGLE arity-3 spinor-derivative block (i, j, k).
-/// The aux-k axis is SPINOR-sized (CINTcgto_spinor(k)=4l+2), per 27-SPIKE-FINDINGS D2/D3.
+/// The aux-k axis is SPHERICAL (nsph(lk) = (2lk+1)*nctr_k), per 27-SPIKE-FINDINGS
+/// CORRECTION NOTICE (libcint CINT3c2e_spinor_drv is_ssc=0, cint3c2e.c:631-636).
+/// Only bra i and ket j are spinor-sized (4l+2).
 #[allow(dead_code)]
 fn collect_cintx_3c(api_id: RawApiId, ncomp: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
     let ni = shell_nsp_full(bas, SI);
     let nj = shell_nsp_full(bas, SJ);
-    let nk = shell_nsp_full(bas, SK);
+    let nk = shell_nsph_full(bas, SK);
     let shls = [SI as i32, SJ as i32, SK as i32];
     let mut out = vec![0.0_f64; ncomp * ni * nj * nk * 2];
     // SAFETY: atm/bas/env are well-formed by construction; shls are valid.
@@ -177,7 +190,9 @@ where
     use cintx_compat::raw::ATM_SLOTS;
     let ni = shell_nsp_full(bas, SI);
     let nj = shell_nsp_full(bas, SJ);
-    let nk = shell_nsp_full(bas, SK);
+    // aux-k axis is SPHERICAL (nsph(lk)), matching the cintx collector and libcint
+    // CINT3c2e_spinor_drv is_ssc=0 (cint3c2e.c:631-636).
+    let nk = shell_nsph_full(bas, SK);
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
     let shls = [SI as i32, SJ as i32, SK as i32];
@@ -437,8 +452,27 @@ fn test_fixture_builds_without_vendor() {
     let (atm, bas, env) = build_adversarial_spinor_fixture();
     assert_eq!(bas.len() % BAS_SLOTS, 0, "bas rows well-formed");
     assert!(!atm.is_empty() && !env.is_empty(), "fixture populated");
-    // Spinor axis lengths at kappa=0: p(nctr=2)=12, d=10, s=2.
+    // Axis lengths at kappa=0: bra i = p(nctr=2) spinor = 12, ket j = d spinor = 10,
+    // aux k = s(nctr=1) SPHERICAL aux-k = (2*0+1)*1 = 1 (NOT spinor 2).
     assert_eq!(shell_nsp_full(&bas, SI), 12);
     assert_eq!(shell_nsp_full(&bas, SJ), 10);
-    assert_eq!(shell_nsp_full(&bas, SK), 2);
+    assert_eq!(shell_nsph_full(&bas, SK), 1, "aux-k (s, nctr=1) spherical count = (2*0+1)*1 = 1");
+
+    // Canonical 27-SPIKE-FINDINGS figure: single-contraction p×d×s kappa=0 rank-3 buffer.
+    // nctr_i=1 -> ni_sp=6, nj_sp=10, nk_sph=1, ncomp=3, complex -> 3*6*10*1*2 = 360 (NOT 720).
+    let nctr1_buf = 3 * spinor_len_kappa0(1) * spinor_len_kappa0(2) * 1 /*nsph s*/ * 2;
+    assert_eq!(
+        nctr1_buf, 360,
+        "corrected single-contraction spinor-deriv buffer is 360, not the over-sized 720"
+    );
+
+    // The committed nctr=2 fixture's actual arity-3 buffer uses the spherical aux-k
+    // (k=1), halving vs the disproven spinor aux-k (k=2): 3*12*10*1*2 = 720, not 1440.
+    let fixture_buf =
+        3 * shell_nsp_full(&bas, SI) * shell_nsp_full(&bas, SJ) * shell_nsph_full(&bas, SK) * 2;
+    assert_eq!(
+        fixture_buf,
+        3 * 12 * 10 * 1 * 2,
+        "fixture arity-3 buffer uses spherical aux-k (k=1), not spinor (k=2)"
+    );
 }
