@@ -4161,6 +4161,196 @@ pub fn vendor_int1e_sp_spinor(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 29 Wave 1 — 1e Group-4 relativistic σ spinor families (REL-01/02).
+// Each is a verbatim clone of `vendor_int1e_sp_spinor` with only the
+// `ffi::int1e_X_spinor` driver symbol swapped. All are component_rank=1: the
+// σ-component fold is internal to the c2s transform, so `out` is sized
+// `ni_sp * nj_sp * 2` f64 (interleaved real/imaginary) via `vendor_CINTcgto_spinor`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Evaluate `int1e_spsp_spinor` (REL-01, `c2s_sf_1e` path) — `out` sized `ni_sp*nj_sp*2`.
+pub fn vendor_int1e_spsp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_spsp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int1e_spnucsp_spinor` (REL-01, `c2s_si_1e` path) — `out` sized `ni_sp*nj_sp*2`.
+pub fn vendor_int1e_spnucsp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_spnucsp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int1e_sprinvsp_spinor` (REL-01, `c2s_si_1e` path) — `out` sized `ni_sp*nj_sp*2`.
+pub fn vendor_int1e_sprinvsp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_sprinvsp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int1e_srsr_spinor` (REL-02, `c2s_si_1e` path) — `out` sized `ni_sp*nj_sp*2`.
+pub fn vendor_int1e_srsr_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_srsr_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int1e_srnucsr_spinor` (REL-02, `c2s_si_1e` path) — `out` sized `ni_sp*nj_sp*2`.
+pub fn vendor_int1e_srnucsr_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_srnucsr_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int1e_sr_spinor` (REL-02, `c2s_si_1ei` imaginary-ket path) — `out` sized `ni_sp*nj_sp*2`.
+pub fn vendor_int1e_sr_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_sr_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int1e_sigma_spinor` (REL-02, `c2s_si_1ei` imaginary-ket path) — `out` sized `ni_sp*nj_sp*2`.
+pub fn vendor_int1e_sigma_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_sigma_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int1e_kin_spinor for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with `ni_sp * nj_sp * 2` f64 elements.
