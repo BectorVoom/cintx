@@ -275,8 +275,12 @@ fn assert_flat_buffer_contract(fixture: &OracleFixture, values: &[f64]) -> bool 
         return false;
     }
 
-    if fixture.representation == "spinor" {
-        if !fixture.complex_interleaved || values.len() % 2 != 0 {
+    // FND-03 (D-04): always-on fail-closed contract gated on `complex_interleaved`
+    // for ANY representation (spinor OR complex cart/sph GIAO families), not just
+    // "spinor". A complex family staged real-only is rejected, not silently
+    // accepted. This is the V5-analog input-validation control (T-26-01).
+    if fixture.complex_interleaved {
+        if values.len() % 2 != 0 {
             return false;
         }
         return values

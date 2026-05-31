@@ -106,7 +106,7 @@ impl<'a> ExecutionPlan<'a> {
 
         let dispatch = DispatchDecision::from_manifest_family(descriptor.family())?;
         let component_count = component_multiplier_for_descriptor(descriptor)?;
-        let output_layout = build_output_layout(&shells, rep, component_count)?;
+        let output_layout = build_output_layout(descriptor, &shells, component_count)?;
 
         Ok(Self {
             basis,
@@ -288,8 +288,8 @@ pub fn evaluate(
 }
 
 fn build_output_layout(
+    descriptor: &OperatorDescriptor,
     shells: &ValidatedShellTuple,
-    representation: Representation,
     component_count: usize,
 ) -> Result<OutputLayoutMetadata, cintxRsError> {
     let extents: Vec<usize> = shells
@@ -304,7 +304,11 @@ fn build_output_layout(
             from: "layout",
             detail: "output extent product overflowed usize".to_owned(),
         })?;
-    let complex_multiplier = if matches!(representation, Representation::Spinor) {
+    // FND-03 (D-01): size complex output from the per-family manifest
+    // `complex_output` flag, NOT from Representation::Spinor. Spinor families
+    // stay 2× because Task 1 backfilled complex_output=true on their rows; GIAO
+    // cart/sph families (purely imaginary) now also size 2× from manifest data.
+    let complex_multiplier = if descriptor.entry.complex_output {
         2usize
     } else {
         1usize
