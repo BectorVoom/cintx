@@ -3095,7 +3095,9 @@ fn run_1e_giao_ovlp_device<R: Runtime>(
 ) -> Vec<f64> {
     let li_u = li as usize;
     let lj_u = lj as usize;
-    let nmax_u = li_u + lj_u + 3;
+    // IN-03: device buffer envelope from the shared const fn (same source as the
+    // host guard at the dispatcher) so the VRR envelope cannot drift (D-13).
+    let nmax_u = giao_ovlp_nmax(li, lj) as usize;
     let lj_ext_u = lj_u + 2;
     let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
     let total_g = 3 * g_per_axis;
@@ -3722,7 +3724,9 @@ fn run_1e_giao_nuc_device<R: Runtime>(
 ) -> Vec<f64> {
     let li_u = li as usize;
     let lj_u = lj as usize;
-    let nmax_u = li_u + lj_u + 5;
+    // IN-03: device buffer envelope from the shared const fn (same source as the
+    // host nuclear nroots ceiling at the dispatcher) so it cannot drift (D-13).
+    let nmax_u = giao_nuc_nmax(li, lj) as usize;
     let lj_ext_u = lj_u + 2;
     let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
     let total_g = 3 * g_per_axis;
@@ -7384,6 +7388,27 @@ const fn moment_params(op_mode: u32) -> (u32, u32) {
     }
 }
 
+/// IN-03: single source of truth for the GIAO 1e per-engine VRR headroom. The host
+/// fail-closed guard, the host nuclear Rys-nroots ceiling, and the host-side device
+/// buffer sizing (`run_1e_giao_ovlp_device` / `run_1e_giao_nuc_device`) all derive
+/// from these `const fn`s so the VRR envelope cannot drift between the guard and the
+/// allocation. (D-13: under-sizing the device scratch silently truncates output, so
+/// the guard and the sizing MUST agree by construction.) The `#[cube]` kernel bodies
+/// recompute the same `nmax = li+lj+{3,5}` inline because CubeCL forbids plain-fn
+/// calls inside `#[cube]` (D-08); these const fns govern the host envelope they read.
+///
+/// overlap engine: `nmax = li + lj + 3`, VRR envelope checked `nmax <= 8`.
+/// nuclear engine: `nmax = li + lj + 5`, Rys `nroots = nmax / 2 + 1`.
+const fn giao_ovlp_nmax(li: u32, lj: u32) -> u32 {
+    li + lj + 3
+}
+const fn giao_nuc_nmax(li: u32, lj: u32) -> u32 {
+    li + lj + 5
+}
+const fn giao_nuc_nroots(li: u32, lj: u32) -> u32 {
+    giao_nuc_nmax(li, lj) / 2 + 1
+}
+
 /// Dispatch [`one_electron_moment_kernel`] at `f64` on a backend client. Returns
 /// the component-leading cart buffer of length `rank * nci * ncj * nctr_i*nctr_j`.
 #[allow(clippy::too_many_arguments)]
@@ -8714,8 +8739,10 @@ fn launch_one_electron_typed<F: CintFloat>(
 
         // Internal G-tensor ceiling: nmax = li+lj+3 (max headroom over the
         // overlap-engine families). Fail closed if a corpus shell exceeds the
-        // li+lj<=8 VRR envelope rather than silently truncating (D-13).
-        if li as u32 + lj as u32 + 3 > 8 {
+        // li+lj+3<=8 VRR envelope rather than silently truncating (D-13).
+        // IN-03: envelope from the shared `giao_ovlp_nmax` const fn — same source
+        // as the host-side device buffer sizing, so the two cannot drift.
+        if giao_ovlp_nmax(li as u32, lj as u32) > 8 {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
                     "device 1e GIAO kernel supports l_i+l_j+3<=8; got l_i={li}, l_j={lj} \
@@ -8793,7 +8820,9 @@ fn launch_one_electron_typed<F: CintFloat>(
 
         // Rys nroots fail-closed guard (D-13). Internal ceiling nmax = li+lj+5
         // (the a01gp bra+3/ket+2 headroom); nroots = nmax/2 + 1.
-        let nuc_nroots = (li as u32 + lj as u32 + 5) / 2 + 1;
+        // IN-03: nroots from the shared `giao_nuc_nroots` const fn — same source as
+        // the host-side device nuclear buffer sizing, so they cannot drift.
+        let nuc_nroots = giao_nuc_nroots(li as u32, lj as u32);
         if nuc_nroots as usize > MAX_DEVICE_NROOTS {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
