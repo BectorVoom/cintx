@@ -6386,7 +6386,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         category: "1e",
         arity: 2,
         forms: &["spinor"],
-        component_rank: "1",
+        component_rank: "3",
         complex_output: true,
         feature_flag: FeatureFlag::None,
         stability: Stability::Stable,

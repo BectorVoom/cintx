@@ -353,4 +353,4 @@ family_name,operator_name,symbol_name,category,arity,forms,component_rank,comple
 "1e","srsr","int1e_srsr_spinor","1e",2,"spinor","1",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","1e"
 "1e","srnucsr","int1e_srnucsr_spinor","1e",2,"spinor","1",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","1e"
 "1e","sr","int1e_sr_spinor","1e",2,"spinor","1",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","1e"
-"1e","sigma","int1e_sigma_spinor","1e",2,"spinor","1",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","1e"
+"1e","sigma","int1e_sigma_spinor","1e",2,"spinor","3",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","1e"
