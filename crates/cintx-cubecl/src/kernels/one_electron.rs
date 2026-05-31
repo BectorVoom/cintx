@@ -3284,6 +3284,13 @@ fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
             fam_factor = F::new(0.5);
         } else if comptime!(op_kind == 1u32) {
             fam_factor = F::new(0.5);
+        } else if comptime!(op_kind == 3u32) {
+            // a01gp: libcint applies `envs.common_factor *= 0.5`
+            // (intor1.c:551,572 int1e_a01gp_{cart,sph}). The earlier kernel
+            // left this at 1.0, producing a uniform ~2x on every output
+            // component (component 0 vanishes on the H1xO test block, masking
+            // the factor there). This is the 26-02 ket-derivative "double-count".
+            fam_factor = F::new(0.5);
         } else if comptime!(op_kind == 4u32) {
             fam_factor = F::new(-0.5);
         } else if comptime!(op_kind == 5u32) {
