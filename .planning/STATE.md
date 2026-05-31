@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: planning
-stopped_at: Phase 27 context gathered
-last_updated: "2026-05-31T10:04:12.878Z"
+stopped_at: Phase 28 context gathered
+last_updated: "2026-05-31T10:33:15.783Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 21
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 Phase: 28
 Plan: Not started
 Status: Phase 27 done; ready to plan/execute Phase 28
-Resume file: None
+Resume file: .planning/phases/28-spin-included-c2s-si-transform-p-module-gap-b2/28-CONTEXT.md
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 
@@ -399,6 +399,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T05:12:44.750Z
-Stopped at: Phase 27 context gathered
+Last session: 2026-05-31T10:33:15.774Z
+Stopped at: Phase 28 context gathered
 Resume file: None
