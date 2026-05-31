@@ -37,7 +37,7 @@ Design decisions that emerged during spiking. Non-negotiable for the real build.
 | # | Name | Type | Validates | Verdict | Tags |
 |---|------|------|-----------|---------|------|
 | 001 | axis-fold-stride-probe | standard | Per-component stride == `ni*nj`, clean `rank` slices, no truncation, across rank 3/9/27/81 (cart) | ✓ VALIDATED | layout, stride, rank-tiers |
-| 003 | hand-checked-vendor-stride | standard | Non-square block: every `(comp,i,j)` lands at `comp*(ni*nj)+j*ni+i` vs hand-derived table + vendor FFI | PENDING | layout, vendor, orientation, transpose |
+| 003 | hand-checked-vendor-stride | standard | Non-square block: every `(comp,i,j)` lands at `comp*(ni*nj)+j*ni+i` vs hand-derived table + vendor FFI | ✓ VALIDATED | layout, vendor, orientation, transpose |
 | 002 | cart-vs-sph-fold-invariance | standard | Component axis outermost in both paths; fold differs only by block dims + per-component c2s transform | PENDING | cart, sph, transform, invariance |
 
 ## Probe Target
