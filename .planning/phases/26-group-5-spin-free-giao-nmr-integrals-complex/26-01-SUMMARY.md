@@ -145,7 +145,12 @@ _TDD: Tasks 1 and 2 followed RED→GREEN with separate test/feat commits. Task 3
 - FND-03 foundation is complete and MUST merge to main before Plan 26-02 / 26-03 start (D-09). After merge, verify `git merge-base --is-ancestor <this-wave-branch> main`; merge manually if not an ancestor (worktree auto-merge is inconsistent — project memory).
 - Plan 26-02 (Cluster A): register `int1e_igovlp` + GIAO kernels, set their manifest `complex_output=true`, consume the comptime hint, add host re=0 materialization, and upgrade `giao_complex_roundtrip.rs` to the full D-07 imag/real assertion.
 
-## Self-Check: PENDING
+## Self-Check: PASSED
+
+- Created `crates/cintx-oracle/tests/giao_complex_roundtrip.rs` — FOUND
+- Created `.planning/phases/26-group-5-spin-free-giao-nmr-integrals-complex/26-01-SUMMARY.md` — FOUND
+- All task commits (`2d6f932`, `4fae610`, `2470260`, `8134507`, `b2088cc`) — FOUND
+- All four verify gates exit 0 (cintx-ops build, planner build_output_layout, oracle assert_flat_buffer_contract, giao_complex_roundtrip)
 
 ---
 *Phase: 26-group-5-spin-free-giao-nmr-integrals-complex*

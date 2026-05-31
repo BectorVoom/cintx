@@ -603,7 +603,7 @@ Plans:
 Plans:
 **Wave 1 (FND-03 foundation — merges first, blocks all families)**
 
-- [ ] 26-01-PLAN.md — FND-03: add manifest `complex_output` flag end-to-end + backfill spinor rows; re-key planner SET; generalize fail-closed `assert_flat_buffer_contract`; comptime kernel hint; `giao_complex_roundtrip` proof.
+- [x] 26-01-PLAN.md — FND-03: add manifest `complex_output` flag end-to-end + backfill spinor rows; re-key planner SET; generalize fail-closed `assert_flat_buffer_contract`; comptime kernel hint; `giao_complex_roundtrip` proof.
 
 **Wave 2 (worktree-parallel after 26-01 merges)**
 
