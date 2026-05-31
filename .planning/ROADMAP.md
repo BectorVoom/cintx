@@ -63,7 +63,7 @@
 | Phase 23: Group 1 — Remaining 1st-Derivative Families | v1.4 | 5/5 | Complete | 2026-05-30 |
 | Phase 24: Group 3 — Position / Multipole-Moment Integrals | v1.4 | 5/5 | Complete | 2026-05-30 |
 | Phase 25: Group 2 — Hessian & Higher-Order Derivatives | v1.4 | 6/6 | Complete | 2026-05-31 |
-| Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/0 | Not started | - |
+| Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals | v1.4 | 0/3 | Planned | - |
 | Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 0/0 | Not started | - |
 | Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 0/0 | Not started | - |
 | Phase 29: Group 4 — Relativistic Spin-Operator Integrals | v1.4 | 0/0 | Not started | - |
@@ -587,17 +587,28 @@ Plans:
 
 ### Phase 26: Group 5 (spin-free) — GIAO / NMR Integrals (complex)
 
-**Goal**: The spin-free 1e and 2e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`, and the 2e `int2e_g1/gg1/ig1/giao_*`) — which are **purely imaginary even in cart/sph** — reach byte-identity through a per-family complex-interleaved output capability, validated against the non-zero gauge-origin fixture so the imaginary content actually lands (not silently zeroed).
+**Goal**: The spin-free 1e and 2e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`, and the 2e `int2e_g1/gg1/ig1/g1g2`) — which are **purely imaginary even in cart/sph** — reach byte-identity through a per-family complex-interleaved output capability (FND-03), validated against the non-zero gauge-origin fixture so the imaginary content actually lands (not silently zeroed).
 **Depends on**: Phase 22 (gauge origin — GIAO = gauge-including atomic orbital). Phases 23 + 24 (the nabla step + position-operator tensor the `r_gauge × ∇` factor combines).
 **Requirements**: GIAO-01, GIAO-02, FND-03
+**Plan-time reconciliations (D-15/D-16):** vendor cart/sph GIAO symbols are real `double *out` (1×), NOT `double complex` (2×) — vendor parity is real-vs-real at atol=1e-12 and the `Complex<f64>` view is materialized cintx-side (re=0, im=value); GIAO-02 includes `int2e_g1g2` (4 families total).
 **Success Criteria** (what must be TRUE):
 
-  1. Complex/imaginary output capability is real: `complex_interleaved` is set per-family from driver routing (not the representation string), `assert_flat_buffer_contract` fires on the flag (a complex cart/sph family staged as real-only FAILS the contract), staging is sized `2×ncomp×…`, and a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API without silent zeroing (FND-03).
-  2. The spin-free 1e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`) match at atol=1e-12 (cart + sph) via the complex path, with the vendor wrapper passing the same `2×`-interleaved buffer to the `double complex *out` libcint symbol (GIAO-01).
-  3. The 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12, with `autocode/intor4.c` added to the oracle `cc::Build` (GIAO-02).
-  4. Every family is gated on the non-zero gauge-origin fixture (a zero-origin GIAO test is doubly-trivial), has a dedicated `vendor_*` test executing under both flags, and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
+  1. Complex/imaginary output capability is real: `complex_interleaved` is set per-family from a manifest `complex_output` flag (not the representation string), `assert_flat_buffer_contract` fires fail-closed on the flag, staging is sized `2×ncomp×…`, and a purely-imaginary family (e.g. `int1e_igovlp`) round-trips through the safe API as a `Complex<f64>` view without silent zeroing (FND-03).
+  2. The 11 spin-free 1e GIAO/CG families match at atol=1e-12 (cart + sph) via the complex path; vendor parity is real-vs-real (D-15) on a non-zero-gauge non-square block (GIAO-01).
+  3. The 4 spin-free 2e GIAO families (`int2e_g1`, `int2e_ig1`, `int2e_gg1`, `int2e_g1g2` per D-16) match at atol=1e-12 cart + sph (`autocode/intor4.c`/`intor2.c` already in the oracle build) (GIAO-02).
+  4. Every family is gated on the non-zero gauge-origin fixture, has a dedicated `vendor_*` test under both flags, and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1 (FND-03 foundation — merges first, blocks all families)**
+
+- [ ] 26-01-PLAN.md — FND-03: add manifest `complex_output` flag end-to-end + backfill spinor rows; re-key planner SET; generalize fail-closed `assert_flat_buffer_contract`; comptime kernel hint; `giao_complex_roundtrip` proof.
+
+**Wave 2 (worktree-parallel after 26-01 merges)**
+
+- [ ] 26-02-PLAN.md — Cluster A (GIAO-01): register + kernel + vendor-parity the 11 spin-free 1e GIAO/CG families (rank 3/9) at atol=1e-12.
+- [ ] 26-03-PLAN.md — Cluster B (GIAO-02): register + kernel + vendor-parity the 4 spin-free 2e GIAO families (g1, ig1, gg1, g1g2 per D-16) at atol=1e-12.
 
 ### Phase 27: Spinor-Derivative Transform (Gap B1)
 
