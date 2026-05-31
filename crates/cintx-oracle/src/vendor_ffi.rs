@@ -5938,6 +5938,407 @@ pub fn vendor_int1e_giao_a11part_cart(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 29 Wave 3 — remaining 2e Group-4 relativistic σ spinor families
+// (REL-03 intor4.c; REL-04 gaunt1.c/dkb.c, BLOCKING-wired in 29-05 build.rs).
+// Each is a verbatim clone of `vendor_int2e_spsp1_spinor` with only the
+// `ffi::int2e_X_spinor` driver symbol swapped. All component_rank=1: the
+// σ-component fold is internal to the c2s_si/sf_2e transform pair, so `out` is
+// sized `ni_sp*nj_sp*nk_sp*nl_sp*2` f64 (interleaved real/imaginary) via
+// `vendor_CINTcgto_spinor` (kappa≠0 → 2l or 2l+2, never a hardcoded 4l+2).
+// `shls` is `&[i32; 4]` (the four shell indices). Returns the libcint status.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Evaluate `int2e_srsr1_spinor` (Group-4 2e σ, intor4.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_srsr1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_srsr1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_spsp1spsp2_spinor` (Group-4 2e σ, intor4.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_spsp1spsp2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_spsp1spsp2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_srsr1srsr2_spinor` (Group-4 2e σ, intor4.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_srsr1srsr2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_srsr1srsr2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_ssp1ssp2_spinor` (Group-4 2e σ, gaunt1.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_ssp1ssp2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ssp1ssp2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_ssp1sps2_spinor` (Group-4 2e σ, gaunt1.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_ssp1sps2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_ssp1sps2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_sps1ssp2_spinor` (Group-4 2e σ, gaunt1.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_sps1ssp2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_sps1ssp2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_sps1sps2_spinor` (Group-4 2e σ, gaunt1.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_sps1sps2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_sps1sps2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_spv1_spinor` (Group-4 2e σ, dkb.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_spv1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_spv1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_vsp1_spinor` (Group-4 2e σ, dkb.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_vsp1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_vsp1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_spv1spv2_spinor` (Group-4 2e σ, dkb.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_spv1spv2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_spv1spv2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_vsp1spv2_spinor` (Group-4 2e σ, dkb.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_vsp1spv2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_vsp1spv2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_spv1vsp2_spinor` (Group-4 2e σ, dkb.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_spv1vsp2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_spv1vsp2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_vsp1vsp2_spinor` (Group-4 2e σ, dkb.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_vsp1vsp2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_vsp1vsp2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_spv1spsp2_spinor` (Group-4 2e σ, dkb.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_spv1spsp2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_spv1spsp2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate `int2e_vsp1spsp2_spinor` (Group-4 2e σ, dkb.c) — `out` sized `ni*nj*nk*nl*2`.
+pub fn vendor_int2e_vsp1spsp2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_vsp1spsp2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FFI ABI smoke test — catches symbol/ABI mismatches between cintx-oracle's
 // bindgen output and the vendored PySCF nr_ecp shared object before parity
 // tests run.
