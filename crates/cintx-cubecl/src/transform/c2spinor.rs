@@ -1411,6 +1411,196 @@ fn apply_2d_spinor_zf(
     );
 }
 
+/// Apply the 2D **spin-included** (si) electron-2 spinor transform — the σ-mix sibling
+/// of [`apply_2d_spinor_zf`]. Matches libcint `c2s_si_2e2` step 2:
+///   `a_bra1_cart2spinor_zi(...)` then `a_ket1_cart2spinor(...)`.
+///
+/// Unlike the scalar-only `zf` path (which folds a single complex block `g1`), the `zi`
+/// bra step consumes the **four** complex Cartesian blocks `gx/gy/gz/g1` (the σ_x/σ_y/σ_z
+/// and scalar G-tensor blocks) and applies the 2×2 Pauli σ·n expansion
+/// `[[1+iz, y+ix], [-y+ix, 1-iz]]` per Cartesian element, transcribed verbatim from
+/// libcint `a_bra1_cart2spinor_zi` (cart2sph.c:4118-4186):
+/// ```text
+/// v11R = g1R - gzI;  v11I = g1I + gzR;
+/// v12R = gyR - gxI;  v12I = gyI + gxR;
+/// v21R = -gyR - gxI; v21I = -gyI + gxR;
+/// v22R = g1R + gzI;  v22I = g1I - gzR;
+/// gspaR += caR*v11R + caI*v11I + cbR*v21R + cbI*v21I;
+/// gspaI += caR*v11I - caI*v11R + cbR*v21I - cbI*v21R;
+/// gspbR += caR*v12R + caI*v12I + cbR*v22R + cbI*v22I;
+/// gspbI += caR*v12I - caI*v12R + cbR*v22I - cbI*v22R;
+/// ```
+/// (ngrids == 1 in the cintx host path; each gx/gy/gz/g1 block is the complex `[ncl*nck]`
+/// slice the caller extracted for one `(i_sp, j_sp)` electron-1 pair.)
+///
+/// Step 2 (`a_ket1_cart2spinor`) is IDENTICAL to the zf path — the σ-mix lives entirely
+/// in the bra1 fold. The imaginary-ket variant (`c2s_si_2e2i`) is handled by the caller
+/// (`cart_to_spinor_si_2e2i`) which i-rotates the ket output, mirroring
+/// `cart_to_spinor_iket_si` vs `cart_to_spinor_si`.
+#[allow(clippy::too_many_arguments)]
+fn apply_2d_spinor_zi(
+    out_r: &mut [f64],
+    out_i: &mut [f64],
+    gx_re: &[f64], gx_im: &[f64],
+    gy_re: &[f64], gy_im: &[f64],
+    gz_re: &[f64], gz_im: &[f64],
+    g1_re: &[f64], g1_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    dk: usize,
+    dl: usize,
+    lk: u8, kappa_k: i32,
+    ll: u8, kappa_l: i32,
+) {
+    // Zero output
+    for v in out_r.iter_mut() { *v = 0.0; }
+    for v in out_i.iter_mut() { *v = 0.0; }
+
+    // Step 1: bra1_zi on k — the σ·n 2×2 Pauli fold over the four complex blocks.
+    // tmp_alpha/beta: [dk * ncl] each — indexed [k_sp * ncl + l_cart].
+    let mut tmp_alpha_r = vec![0.0f64; dk * ncl];
+    let mut tmp_alpha_i = vec![0.0f64; dk * ncl];
+    let mut tmp_beta_r  = vec![0.0f64; dk * ncl];
+    let mut tmp_beta_i  = vec![0.0f64; dk * ncl];
+
+    let (coeff_k_gt_r, coeff_k_gt_i, coeff_k_lt_r, coeff_k_lt_i) = bra_coeff_refs(lk);
+    apply_bra1_zi_block_all_kappa(
+        &mut tmp_alpha_r, &mut tmp_alpha_i,
+        &mut tmp_beta_r,  &mut tmp_beta_i,
+        gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+        nck, ncl, dk, lk, kappa_k,
+        coeff_k_gt_r, coeff_k_gt_i, coeff_k_lt_r, coeff_k_lt_i,
+    );
+
+    // Step 2: ket1 on l — IDENTICAL to the zf path (a_ket1_cart2spinor).
+    let (coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i) = bra_coeff_refs(ll);
+    apply_ket1_block_all_kappa(
+        out_r, out_i,
+        &tmp_alpha_r, &tmp_alpha_i,
+        &tmp_beta_r,  &tmp_beta_i,
+        dk, ncl, dl, ll, kappa_l,
+        coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i,
+    );
+}
+
+/// bra1_zi block: the σ·n 2×2 Pauli fold (kappa dispatch), sibling of
+/// [`apply_bra1_zf_block_all_kappa`]. Mirrors libcint `a_bra1_cart2spinor_zi`.
+///
+/// Consumes the four complex `gx/gy/gz/g1` blocks (each `[ncl*nck]`, l_cart outer,
+/// k_cart inner) and produces alpha/beta k-spinor blocks `[dk * ncl]`.
+#[allow(clippy::too_many_arguments)]
+fn apply_bra1_zi_block_all_kappa(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r:  &mut [f64],
+    beta_i:  &mut [f64],
+    gx_re: &[f64], gx_im: &[f64],
+    gy_re: &[f64], gy_im: &[f64],
+    gz_re: &[f64], gz_im: &[f64],
+    g1_re: &[f64], g1_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    dk: usize,
+    lk: u8,
+    kappa_k: i32,
+    coeff_gt_r: &[f64],
+    coeff_gt_i: &[f64],
+    coeff_lt_r: &[f64],
+    coeff_lt_i: &[f64],
+) {
+    for v in alpha_r.iter_mut() { *v = 0.0; }
+    for v in alpha_i.iter_mut() { *v = 0.0; }
+    for v in beta_r.iter_mut()  { *v = 0.0; }
+    for v in beta_i.iter_mut()  { *v = 0.0; }
+
+    if kappa_k < 0 {
+        apply_bra1_zi_block(alpha_r, alpha_i, beta_r, beta_i,
+            gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+            nck, ncl, dk, coeff_gt_r, coeff_gt_i, 0);
+    } else if kappa_k > 0 {
+        apply_bra1_zi_block(alpha_r, alpha_i, beta_r, beta_i,
+            gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+            nck, ncl, dk, coeff_lt_r, coeff_lt_i, 0);
+    } else {
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd) — mirrors
+        // the zf path's libcint memory-layout ordering.
+        let nd_lt = 2 * lk as usize;
+        let nd_gt = 2 * lk as usize + 2;
+        if nd_lt > 0 {
+            apply_bra1_zi_block(alpha_r, alpha_i, beta_r, beta_i,
+                gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+                nck, ncl, nd_lt, coeff_lt_r, coeff_lt_i, 0);
+        }
+        apply_bra1_zi_block(alpha_r, alpha_i, beta_r, beta_i,
+            gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+            nck, ncl, nd_gt, coeff_gt_r, coeff_gt_i, nd_lt);
+    }
+}
+
+/// bra1_zi block for one kappa sub-block: the verbatim σ·n 2×2 Pauli fold from
+/// libcint `a_bra1_cart2spinor_zi` (cart2sph.c:4118-4186). `ngrids == 1`.
+///
+/// Coefficient layout: `[k_sp][2*nck]` — first `nck` = alpha (ca), next `nck` = beta (cb).
+/// Input blocks: `[ncl * nck]` complex (l_cart outer, k_cart inner).
+/// Output alpha/beta: `[dk_total * ncl]` (k_spinor outer, l_cart inner), `nd` rows at `row_off`.
+#[allow(clippy::too_many_arguments)]
+fn apply_bra1_zi_block(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r:  &mut [f64],
+    beta_i:  &mut [f64],
+    gx_re: &[f64], gx_im: &[f64],
+    gy_re: &[f64], gy_im: &[f64],
+    gz_re: &[f64], gz_im: &[f64],
+    g1_re: &[f64], g1_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    nd: usize,
+    coeff_r: &[f64],
+    coeff_i: &[f64],
+    row_off: usize,
+) {
+    for l_cart in 0..ncl {
+        for k_sp in 0..nd {
+            let out_idx = (row_off + k_sp) * ncl + l_cart;
+            let mut sa_r = 0.0f64;
+            let mut sa_i = 0.0f64;
+            let mut sb_r = 0.0f64;
+            let mut sb_i = 0.0f64;
+            for n in 0..nck {
+                // coeff layout: [k_sp][2*nck]: first nck = alpha (ca), next nck = beta (cb)
+                let ca_r = coeff_r[k_sp * 2 * nck + n];
+                let ca_i = coeff_i[k_sp * 2 * nck + n];
+                let cb_r = coeff_r[k_sp * 2 * nck + nck + n];
+                let cb_i = coeff_i[k_sp * 2 * nck + nck + n];
+
+                let idx = l_cart * nck + n;
+                let g1r = g1_re[idx]; let g1i = g1_im[idx];
+                let gxr = gx_re[idx]; let gxi = gx_im[idx];
+                let gyr = gy_re[idx]; let gyi = gy_im[idx];
+                let gzr = gz_re[idx]; let gzi = gz_im[idx];
+
+                // σ·n 2×2 Pauli expansion [[1+iz, y+ix], [-y+ix, 1-iz]]
+                // (verbatim from cart2sph.c:4171-4178):
+                let v11_r =  g1r - gzi;  let v11_i =  g1i + gzr;
+                let v12_r =  gyr - gxi;  let v12_i =  gyi + gxr;
+                let v21_r = -gyr - gxi;  let v21_i = -gyi + gxr;
+                let v22_r =  g1r + gzi;  let v22_i =  g1i - gzr;
+
+                // accumulate (verbatim from cart2sph.c:4179-4182):
+                sa_r += ca_r * v11_r + ca_i * v11_i + cb_r * v21_r + cb_i * v21_i;
+                sa_i += ca_r * v11_i - ca_i * v11_r + cb_r * v21_i - cb_i * v21_r;
+                sb_r += ca_r * v12_r + ca_i * v12_i + cb_r * v22_r + cb_i * v22_i;
+                sb_i += ca_r * v12_i - ca_i * v12_r + cb_r * v22_i - cb_i * v22_r;
+            }
+            alpha_r[out_idx] = sa_r;
+            alpha_i[out_idx] = sa_i;
+            beta_r[out_idx]  = sb_r;
+            beta_i[out_idx]  = sb_i;
+        }
+    }
+}
+
 /// bra1_zf block: apply `conj(coeff) * v` to transform k_cart → k_spinor for each l_cart.
 ///
 /// Mirrors `a_bra1_cart2spinor_zf` in libcint: for each k_sp row, multiply complex input
