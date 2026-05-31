@@ -28,10 +28,25 @@ pub fn run_oracle_covered_update() -> Result<()> {
             .with_context(|| format!("oracle parity failed for profile `{profile}`"))?;
 
         for fixture in &report.fixtures {
-            // Skipped fixtures carry no numeric parity obligation (e.g. spinor gradients,
-            // UnsupportedApi by design per R5/D-03). They are recorded as passing to keep
-            // fixture_count == fixtures.len(), but must NOT be stamped oracle_covered=true —
-            // doing so would be a false verification claim (threat T-21-08-02).
+            // Skipped fixtures carry no numeric parity obligation. They are recorded as
+            // passing to keep fixture_count == fixtures.len(), but must NOT be stamped
+            // oracle_covered=true — doing so would be a false verification claim
+            // (threat T-21-08-02).
+            //
+            // Phase 27 (D-12, 2026-05-31): the sf-derivative SPINOR families are now
+            // oracle_covered via real libcint 6.1.3 vendor byte-identity parity (Plans
+            // 03/04, see crates/cintx-oracle/tests/spinor_deriv_parity.rs) — the 18
+            // arity-2 1e ip families (sf_2d) plus int3c2e_ip1/ip2_spinor (sf_3c2e).
+            // EXCEPTION — four vendor-stub arms stay oracle_covered=false because
+            // libcint 6.1.3 ships them as unimplemented stubs, so NO byte-identity
+            // reference is achievable:
+            //   - int2c2e_ip1_spinor / int2c2e_ip2_spinor  -> stub `return 0` (all-zero)
+            //   - int3c1e_ip1_spinor / int3c1e_iprinv_spinor -> CINT3c1e_spinor_drv exit(1)
+            // Their parity tests stay #[ignore]'d; finite-difference verification is a
+            // deferred follow-up. The D-03 arity-4 int2e_ip* spinor families and the
+            // D-04 int1e_ecp_iprinv_spinor family also remain intentionally
+            // skipped/deferred. The `skipped` guard below is what keeps every such
+            // deferred family from ever being stamped covered.
             if fixture.skipped {
                 continue;
             }

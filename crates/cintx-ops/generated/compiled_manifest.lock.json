@@ -397,7 +397,7 @@
         "symbol": "int3c2e_ip1_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -3886,7 +3886,7 @@
         "symbol": "int1e_ipovlp_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -3983,7 +3983,7 @@
         "symbol": "int1e_ipkin_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4080,7 +4080,7 @@
         "symbol": "int1e_ipovlpip_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4177,7 +4177,7 @@
         "symbol": "int1e_ipkinip_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4274,7 +4274,7 @@
         "symbol": "int1e_ipnucip_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4371,7 +4371,7 @@
         "symbol": "int1e_ipipovlp_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4468,7 +4468,7 @@
         "symbol": "int1e_ipipnuc_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4565,7 +4565,7 @@
         "symbol": "int1e_ipipkin_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4662,7 +4662,7 @@
         "symbol": "int1e_ipiprinv_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4759,7 +4759,7 @@
         "symbol": "int1e_ipnuc_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -4856,7 +4856,7 @@
         "symbol": "int1e_iprinv_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -8340,7 +8340,7 @@
         "symbol": "int3c2e_ip2_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -8631,7 +8631,7 @@
         "symbol": "int1e_ipipipnuc_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -8728,7 +8728,7 @@
         "symbol": "int1e_ipipiprinv_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -8825,7 +8825,7 @@
         "symbol": "int1e_ipipnucip_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -8922,7 +8922,7 @@
         "symbol": "int1e_ipiprinvip_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9019,7 +9019,7 @@
         "symbol": "int1e_ipipipiprinv_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9116,7 +9116,7 @@
         "symbol": "int1e_ipiprinvipip_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9213,7 +9213,7 @@
         "symbol": "int1e_ipipiprinvip_spinor"
       },
       "complex_output": true,
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
