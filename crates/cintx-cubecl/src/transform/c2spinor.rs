@@ -730,6 +730,124 @@ pub fn cart_to_spinor_si_2d<F: CintFloat>(
     Ok(())
 }
 
+/// Host-side spin-included IMAGINARY-KET (si) 2D cart→spinor transform — libcint `c2s_si_1ei`.
+///
+/// This is the imaginary-ket sibling of [`cart_to_spinor_si_2d`]. `c2s_si_1ei` differs from
+/// `c2s_si_1e` in EXACTLY ONE way: the Stage-2 ket transform uses `a_iket_cart2spinor`
+/// (multiply-by-i) instead of the ordinary `a_ket_cart2spinor`. Multiply-by-i on the
+/// interleaved-complex output is `(re, im) → (-im, re)` — identical to the relationship
+/// between [`cart_to_spinor_iket_si`] and [`cart_to_spinor_si`] (see [`apply_iket_si_block`]
+/// vs [`apply_si_block`], which differ only by this i-rotation).
+///
+/// Used by `int1e_sr` and `int1e_sigma` (the `c2s_si_1ei` driver path in intor3.c).
+///
+/// Everything else is IDENTICAL to [`cart_to_spinor_si_2d`]:
+/// - Buffer guards: `need = nci*ncj` per gc block → [`cintxRsError::ChunkPlanFailed`];
+///   `required = di*dj*2` → [`cintxRsError::BufferTooSmall`]. No writes before guards pass.
+/// - The transform OWNS the KET→BRA transpose (`dst[i*ncj+j] = src[j*nci+i]`) for each of
+///   the four `gc_x/gc_y/gc_z/gc_1` device-KET-major blocks.
+/// - Stage-1 bra σ-mix ([`apply_bra_si_block`]) is unchanged.
+/// - Stage-3 interleaved column-major zcopy `staging[(j*di+i)*2] = re, +1 = im`.
+///
+/// All `di`/`dj` come from [`spinor_len`] — never a hardcoded `4l+2`.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_si_2di<F: CintFloat>(
+    staging: &mut [F],
+    gc_x: &[f64],
+    gc_y: &[f64],
+    gc_z: &[f64],
+    gc_1: &[f64],
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+
+    // ── Buffer guards (no writes before these pass) ────────────────────────────
+    let need = nci * ncj;
+    for (name, block) in [
+        ("gc_x", gc_x), ("gc_y", gc_y), ("gc_z", gc_z), ("gc_1", gc_1),
+    ] {
+        if block.len() < need {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "c2spinor_si_2di",
+                detail: format!(
+                    "{} block length {} < nci*ncj = {}*{} = {}",
+                    name, block.len(), nci, ncj, need
+                ),
+            });
+        }
+    }
+    let required = di * dj * 2;
+    if staging.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Stage 0: KET→BRA transpose for each of the four gc blocks ──────────────
+    // Device cart blocks are KET-major block[j*nci+i]; the bra step reads BRA-major
+    // block[i*ncj+j]. Latent on square blocks (nci==ncj); the kappa fixture is
+    // non-square (p×d) precisely to surface this.
+    let transpose_ket_to_bra = |src: &[f64]| -> Vec<f64> {
+        let mut dst = vec![0.0f64; nci * ncj];
+        for i in 0..nci {
+            for j in 0..ncj {
+                dst[i * ncj + j] = src[j * nci + i];
+            }
+        }
+        dst
+    };
+    let bm_x = transpose_ket_to_bra(gc_x);
+    let bm_y = transpose_ket_to_bra(gc_y);
+    let bm_z = transpose_ket_to_bra(gc_z);
+    let bm_1 = transpose_ket_to_bra(gc_1);
+
+    // ── Stage 1: Bra σ-mix (a_bra_cart2spinor_si) ──────────────────────────────
+    let mut tmp_alpha_r = vec![0.0f64; di * ncj];
+    let mut tmp_alpha_i = vec![0.0f64; di * ncj];
+    let mut tmp_beta_r = vec![0.0f64; di * ncj];
+    let mut tmp_beta_i = vec![0.0f64; di * ncj];
+
+    apply_bra_si_block(
+        &mut tmp_alpha_r, &mut tmp_alpha_i,
+        &mut tmp_beta_r, &mut tmp_beta_i,
+        &bm_x, &bm_y, &bm_z, &bm_1,
+        nci, ncj, di, li, kappa_i as i32,
+    );
+
+    // ── Stage 2: Ordinary ket transform, then multiply by i (the ONLY change) ──
+    // c2s_si_1ei == c2s_si_1e with a_iket_cart2spinor in place of a_ket_cart2spinor.
+    // The iket variant is exactly multiply-by-i of the ordinary ket output:
+    // (re, im) → (-im, re). Compute the ordinary ket transform, then rotate.
+    let mut out_r = vec![0.0f64; di * dj];
+    let mut out_i = vec![0.0f64; di * dj];
+
+    apply_ket_transform(
+        &mut out_r, &mut out_i,
+        &tmp_alpha_r, &tmp_alpha_i,
+        &tmp_beta_r, &tmp_beta_i,
+        di, ncj, dj, lj, kappa_j as i32,
+    );
+
+    // ── Stage 3: Column-major interleaved zcopy to staging, multiplied by i ─────
+    // (re, im) → (-im, re): staging[..*2] = -out_i, staging[..*2+1] = out_r.
+    for j in 0..dj {
+        for i in 0..di {
+            let out_idx = j * di + i;
+            staging[out_idx * 2] = F::from_f64_lossy(-out_i[j * di + i]);
+            staging[out_idx * 2 + 1] = F::from_f64_lossy(out_r[j * di + i]);
+        }
+    }
+
+    Ok(())
+}
+
 /// Bra step of the 2D c2spinor_sf transform for all kappa cases.
 ///
 /// Matches `a_bra_cart2spinor_sf` in libcint `cart2sph.c`.
