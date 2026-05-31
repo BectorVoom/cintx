@@ -422,6 +422,25 @@ impl RawApiId {
     pub const INT2E_IPIP1IPIP2_SPH: Self = Self::Symbol("int2e_ipip1ipip2_sph");
     pub const INT2E_IPIP1IPIP2_SPINOR: Self = Self::Symbol("int2e_ipip1ipip2_spinor");
 
+    // Phase 26 GIAO-02 (D-16): spin-free 2e GIAO magnetic-property families
+    // (complex_output=true; rank 3 for g1/ig1, rank 9 for gg1/g1g2). Spinor reps
+    // registered for surface completeness; the kernel returns UnsupportedApi (D-11).
+    pub const INT2E_G1_CART: Self = Self::Symbol("int2e_g1_cart");
+    pub const INT2E_G1_SPH: Self = Self::Symbol("int2e_g1_sph");
+    pub const INT2E_G1_SPINOR: Self = Self::Symbol("int2e_g1_spinor");
+
+    pub const INT2E_IG1_CART: Self = Self::Symbol("int2e_ig1_cart");
+    pub const INT2E_IG1_SPH: Self = Self::Symbol("int2e_ig1_sph");
+    pub const INT2E_IG1_SPINOR: Self = Self::Symbol("int2e_ig1_spinor");
+
+    pub const INT2E_GG1_CART: Self = Self::Symbol("int2e_gg1_cart");
+    pub const INT2E_GG1_SPH: Self = Self::Symbol("int2e_gg1_sph");
+    pub const INT2E_GG1_SPINOR: Self = Self::Symbol("int2e_gg1_spinor");
+
+    pub const INT2E_G1G2_CART: Self = Self::Symbol("int2e_g1g2_cart");
+    pub const INT2E_G1G2_SPH: Self = Self::Symbol("int2e_g1g2_sph");
+    pub const INT2E_G1G2_SPINOR: Self = Self::Symbol("int2e_g1g2_spinor");
+
     // Phase 23 DRV1-04: int2c2e_ip1 (∇ on bra center i) + int2c2e_ip2 (∇ on ket
     // center k). Spinor registered for surface completeness (D-06).
     pub const INT2C2E_IP1_CART: Self = Self::Symbol("int2c2e_ip1_cart");
