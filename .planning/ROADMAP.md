@@ -670,7 +670,7 @@ Gap-Wave 3 (after 26-05):
 **Requirements**: REL-01, REL-02, REL-03, REL-04
 **Success Criteria** (what must be TRUE):
 
-  1. `int1e_spsp`, `int1e_spnucsp`, `int1e_sprinvsp` match vendored libcint at atol=1e-12 (spinor) via the Gap B2 `c2s_si` path — routing through the scalar `cart_to_spinor_sf` is explicitly rejected (REL-01).
+  1. `int1e_spsp`, `int1e_spnucsp`, `int1e_sprinvsp` match vendored libcint at atol=1e-12 (spinor). `spnucsp`/`sprinvsp` route through the Gap B2 `c2s_si` path — routing through the scalar `cart_to_spinor_sf` is explicitly rejected for these (the σ's sandwich a potential and do not contract); `int1e_spsp` legitimately uses `c2s_sf_1e` (the two adjacent σ·p contract to spin-free ∇², `intor3.c:411`), still proven by spinor byte-identity (REL-01).
   2. `int1e_srsr`, `int1e_sr`/`srnucsr`, `int1e_sigma`, `int1e_sp` match at atol=1e-12 (spinor), with the σ 12-component Pauli pattern copied verbatim from the libcint gout (REL-02).
   3. `int2e_spsp1`, `int2e_srsr1` (and `spsp1spsp2`/`srsr1srsr2`) match at atol=1e-12 (spinor), with `autocode/intor4.c` wired into the oracle build for the spin 2e block (REL-03).
   4. `int2e_ssp1ssp2`, `int2e_sps1sps2`, `int2e_vsp1*`, `int2e_spv1*` match at atol=1e-12 (spinor) (REL-04).
