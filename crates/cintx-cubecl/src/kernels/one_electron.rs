@@ -5767,8 +5767,19 @@ fn one_electron_moment_kernel<F: Float + CubeElement>(
     #[comptime] op_mode: u32,
     #[comptime] moment_order: u32,
     #[comptime] rank: u32,
+    // FND-03 (D-02): comptime complex-output hint plumbed from the manifest
+    // `complex_output` flag (1 = complex-interleaved family, 0 = real). The device
+    // kernel emits REAL moment components exactly as before (RESEARCH Open-Q1:
+    // host materializes re=0/im=value before the safe-API complex_values() view),
+    // so this hint stays inert on-device today; it lets a future GIAO device path
+    // branch its output convention at compile time without changing the launcher
+    // signature again.
+    #[comptime] complex_output: u32,
 ) {
     if UNIT_POS == 0u32 {
+        // Bind the comptime complex-output hint so the device path can specialize
+        // its output convention (no device math today — see the param doc above).
+        let _is_complex_out = comptime!(complex_output == 1u32);
         // Ket headroom: overlap G-tensor must span j..=lj+moment_order so the
         // per-axis moment ladder can read overlap[jx + t] for t up to moment_order.
         let nmax = li + lj + moment_order;
@@ -6128,6 +6139,7 @@ fn run_1e_moment_device<R: Runtime>(
     exps_j: &[f64],
     coeff_i: &[f64],
     coeff_j: &[f64],
+    complex_output: u32,
 ) -> Vec<f64> {
     // WR-01: the passed (moment_order, rank) MUST match the comptime triple selected
     // from `op_mode` below. Both derive from `moment_params` (the single source of
@@ -6190,6 +6202,7 @@ fn run_1e_moment_device<R: Runtime>(
                 $mode,
                 $order,
                 $rank,
+                complex_output,
             )
         };
     }
@@ -6241,32 +6254,33 @@ fn run_1e_moment_on_backend(
     exps_j: &[f64],
     coeff_i: &[f64],
     coeff_j: &[f64],
+    complex_output: u32,
 ) -> Vec<f64> {
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_1e_moment_device::<cubecl::cpu::CpuRuntime>(
             client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j, complex_output,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_1e_moment_device::<cubecl_wgpu::WgpuRuntime>(
             client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j, complex_output,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_1e_moment_device::<cubecl_cuda::CudaRuntime>(
             client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j, complex_output,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_moment_device::<cubecl_hip::HipRuntime>(
             client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j, complex_output,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_1e_moment_device::<cubecl_wgpu::WgpuRuntime>(
             client, op_mode, moment_order, rank, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri,
-            rj, drj, exps_i, exps_j, coeff_i, coeff_j,
+            rj, drj, exps_i, exps_j, coeff_i, coeff_j, complex_output,
         ),
     }
 }
@@ -7316,10 +7330,19 @@ fn launch_one_electron_typed<F: CintFloat>(
         let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
         let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
 
+        // FND-03 (D-02): thread the manifest `complex_output` flag in as a comptime
+        // hint (1 = complex-interleaved family). For the present moment families this
+        // is 0 (real); GIAO families (Cluster A) will carry it true so the device path
+        // can specialize its output convention without re-threading the launcher.
+        let complex_output_hint: u32 = if plan.descriptor.entry.complex_output {
+            1u32
+        } else {
+            0u32
+        };
         let mut cart_comp = run_1e_moment_on_backend(
             backend, op_mode, moment_order, rank, li as u32, lj as u32, n_prim_i as u32,
             n_prim_j as u32, n_ctr_i as u32, n_ctr_j as u32, ri, rj, drj, &exps_i, &exps_j,
-            &coeff_i, &coeff_j,
+            &coeff_i, &coeff_j, complex_output_hint,
         );
 
         // Apply the libcint CINTcommon_fac_sp normalization to all components.

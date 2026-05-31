@@ -417,6 +417,7 @@ dependencies = [
  "cintx-ops",
  "cintx-rs",
  "cintx-runtime",
+ "num-complex",
  "serde_json",
 ]
 
