@@ -24,6 +24,12 @@ pub mod one_electron;
 // spin-included transform `cart_to_spinor_si_2d` reads in order; rank-
 // parameterized so int1e_sigma (rank 3) and the Phase-29 σ-group reuse it.
 pub mod sigma_p;
+// Phase 29 Wave 1 (REL-01/02): 1e Group-4 relativistic σ families. sigma_1e
+// owns the overlap-engine families (sigma/sr/srsr/spsp) + the unified per-family
+// launcher; sigma_1e_nuc owns the Rys nuclear-engine families
+// (spnucsp/srnucsr/sprinvsp).
+pub mod sigma_1e;
+pub mod sigma_1e_nuc;
 pub mod two_electron;
 #[cfg(feature = "unstable-source-api")]
 pub mod unstable;

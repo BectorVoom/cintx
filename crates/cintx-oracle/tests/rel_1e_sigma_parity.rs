@@ -53,6 +53,18 @@ const REL_1E_FAMILIES: &[&str] = &[
     "int1e_sigma_spinor",
 ];
 
+/// Per-family component_rank (output spinor-matrix count). All Group-4 1e
+/// families fold the σ-axis INTO the transform (rank 1) EXCEPT `int1e_sigma`,
+/// whose driver loops the c2s transform ncomp_tensor=3 times → 3 stacked
+/// σ-matrices (empirically measured in `test_sigma_rank_measured`).
+#[allow(dead_code)]
+fn family_component_rank(family: &str) -> usize {
+    match family {
+        "int1e_sigma_spinor" => 3,
+        _ => 1,
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // spinor_len — kappa≠0 GT/LT sizing (libcint _len_spinor, cart2sph.c:3537).
 //   kappa == 0 → 4l+2  (both blocks)
@@ -150,21 +162,100 @@ fn assert_any_nonzero(matrix: &[f64], label: &str) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// cintx collectors — RED STUBS (Plan 29-01). The int1e_<op> Spinor launcher arms
-// land in Plan 29-02 (one_electron.rs); until then these `unimplemented!`. Keep the
-// signatures + the per-family transform note so 29-02 only fills in the body.
+// cintx collectors — Plan 29-02. Drive the per-family int1e_<op> Spinor launcher
+// (kernels::sigma_1e::launch_int1e_<op>_spinor_pair) for the single shell pair
+// (0, 1). Returns the flat interleaved-complex spinor block, column-major
+// bra-fastest: out[(j*ni_sp + i)*2 + {0:re,1:im}].
 // ─────────────────────────────────────────────────────────────────────────────
 #[cfg(feature = "cpu")]
 #[allow(dead_code)]
-fn collect_cintx_rel_1e(_family: &str, _atm: &[i32], _bas: &[i32], _env: &[f64]) -> Vec<f64> {
-    // TODO(29-02): wire the int1e_{spsp,spnucsp,sprinvsp,srsr,srnucsr,sr,sigma}_spinor
-    // Spinor launcher arms in one_electron.rs (σ·p assembler → cart_to_spinor_si_2d /
-    // cart_to_spinor_sf_2d / cart_to_spinor_si_2di per the transform map), then replace
-    // this stub with the real per-family launch + scatter and flip oracle_covered.
-    unimplemented!(
-        "RED scaffold (Plan 29-01): cintx 1e Group-4 σ launcher arm for {_family} \
-         is wired in Plan 29-02"
+fn collect_cintx_rel_1e(family: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+    use cintx_cubecl::ResolvedBackend;
+    use cintx_cubecl::kernels::sigma_1e::launch_int1e_sigma_family_spinor_pair;
+    use cintx_runtime::{BackendIntent, BackendKind};
+
+    let si = extract_shell(0, atm, bas, env);
+    let sj = extract_shell(1, atm, bas, env);
+
+    let di = spinor_len(si.l as i32, si.kappa as i32);
+    let dj = spinor_len(sj.l as i32, sj.kappa as i32);
+    let ni_sp = si.nctr * di;
+    let nj_sp = sj.nctr * dj;
+
+    let backend = ResolvedBackend::from_intent(&BackendIntent {
+        backend: BackendKind::Cpu,
+        selector: "auto".to_owned(),
+    })
+    .expect("CPU backend must initialise");
+
+    // op name without the int1e_ prefix and _spinor suffix.
+    let op = family
+        .strip_prefix("int1e_")
+        .and_then(|s| s.strip_suffix("_spinor"))
+        .unwrap_or(family);
+
+    // Precompute nuclear origins + charges for the nuclear-engine families (the
+    // cubecl crate has no raw atm/bas/env slot constants). spnucsp/srnucsr =
+    // atom-sum charge −Z (point nuc); sprinvsp = single PTR_RINV_ORIG center +1.
+    let (origin_coords, origin_charges) = nuclear_origins(op, atm, env);
+
+    let mut staging = vec![0.0_f64; ni_sp * nj_sp * 2 * family_component_rank(family)];
+    launch_int1e_sigma_family_spinor_pair::<f64>(
+        &backend,
+        op,
+        si.l,
+        si.kappa,
+        sj.l,
+        sj.kappa,
+        si.nprim,
+        sj.nprim,
+        si.nctr,
+        sj.nctr,
+        si.coord,
+        sj.coord,
+        &si.exps,
+        &sj.exps,
+        &si.coeff_row_major,
+        &sj.coeff_row_major,
+        &origin_coords,
+        &origin_charges,
+        &mut staging,
     )
+    .unwrap_or_else(|e| panic!("int1e_{op} spinor launch must succeed: {e:?}"));
+    staging
+}
+
+/// Build (origin_coords, origin_charges) for the nuclear-engine families.
+/// Non-nuclear families return empty slices (the overlap kernel ignores them).
+#[cfg(feature = "cpu")]
+#[allow(dead_code)]
+fn nuclear_origins(op: &str, atm: &[i32], env: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    use cintx_compat::raw::{CHARGE_OF, PTR_RINV_ORIG};
+    match op {
+        "sprinvsp" => {
+            // type-1 rinv: single center at PTR_RINV_ORIG, charge +1.
+            (
+                vec![env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]],
+                vec![1.0],
+            )
+        }
+        "spnucsp" | "srnucsr" => {
+            // type-2 nuclear attraction: sum over atoms, charge −Z (point nuc).
+            let natm = atm.len() / ATM_SLOTS;
+            let mut coords = Vec::with_capacity(natm * 3);
+            let mut charges = Vec::with_capacity(natm);
+            for a in 0..natm {
+                let z = atm[a * ATM_SLOTS + CHARGE_OF];
+                let ptr = atm[a * ATM_SLOTS + cintx_compat::raw::PTR_COORD] as usize;
+                coords.push(env[ptr]);
+                coords.push(env[ptr + 1]);
+                coords.push(env[ptr + 2]);
+                charges.push(-(z as f64));
+            }
+            (coords, charges)
+        }
+        _ => (Vec::new(), Vec::new()),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,7 +277,7 @@ fn collect_vendor_rel_1e(family: &str, atm: &[i32], bas: &[i32], env: &[f64]) ->
     let nj_sp = vendor_CINTcgto_spinor(1, bas) as usize;
     let shls: [i32; 2] = [0, 1];
 
-    let mut out = vec![0.0_f64; ni_sp * nj_sp * 2];
+    let mut out = vec![0.0_f64; ni_sp * nj_sp * 2 * family_component_rank(family)];
     match family {
         "int1e_spsp_spinor" => {
             vendor_int1e_spsp_spinor(&mut out, &shls, atm, natm, bas, nbas, env)
@@ -235,17 +326,69 @@ fn test_kappa_sizing_non_4l_plus_2() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Task 1 (29-02): EMPIRICALLY resolve int1e_sigma's output rank — the 29-01
+// strong prior ("rank 1") is DISPROVEN here. CINT1e_spinor_drv loops the c2s
+// transform `ncomp_tensor` times (cint1e.c:269), and int1e_sigma carries
+// ng[7]=3 (intor3.c:58), so the driver calls c2s_si_1ei THREE times, writing
+// `3 * di*dj` complex slots (the three Pauli σ-matrices σ_x/σ_y/σ_z stacked).
+// This test MEASURES that: the vendor writes 3*di*dj*2 f64, NOT di*dj*2. The
+// oversized NaN-filled buffer pinpoints the exact written extent without heap
+// corruption. component_rank for int1e_sigma is therefore "3" (locked from this
+// measurement, not from the 29-01 assumption).
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(has_vendor_libcint)]
+#[cfg(feature = "cpu")]
+#[test]
+fn test_sigma_rank_measured() {
+    use cintx_oracle::vendor_ffi::{vendor_CINTcgto_spinor, vendor_int1e_sigma_spinor};
+
+    let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_fixture();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // CINTcgto_spinor INCLUDES the contraction count: ni_sp = nctr*spinor_len.
+    let ni_sp = vendor_CINTcgto_spinor(0, &bas) as usize;
+    let nj_sp = vendor_CINTcgto_spinor(1, &bas) as usize;
+    // shell 0 = p kappa=+1 LT nctr=2 → 2*2 = 4; shell 1 = d kappa=−1 GT nctr=1 → 6.
+    assert_eq!(ni_sp, 4, "p kappa=+1 LT nctr=2 → ni_sp = 4");
+    assert_eq!(nj_sp, 6, "d kappa=−1 GT nctr=1 → nj_sp = 6");
+    let rank1_len = ni_sp * nj_sp * 2;
+
+    // Oversized NaN buffer with rank-4 headroom — measure the written extent.
+    let mut out = vec![f64::NAN; 4 * rank1_len];
+    let shls: [i32; 2] = [0, 1];
+    vendor_int1e_sigma_spinor(&mut out, &shls, &atm, natm, &bas, nbas, &env);
+
+    // Find the highest written (non-NaN) index → the empirical output length.
+    let written = out.iter().rposition(|v| v.is_finite()).map(|p| p + 1).unwrap_or(0);
+    eprintln!(
+        "MEASURED int1e_sigma vendor output length = {written} (ni_sp={ni_sp} nj_sp={nj_sp}, \
+         ni_sp*nj_sp*2 = {rank1_len}, ratio = {})",
+        written / rank1_len
+    );
+
+    // Empirically: 3 stacked σ-matrices → 3*di*dj*2. component_rank = "3".
+    assert_eq!(
+        written,
+        3 * rank1_len,
+        "int1e_sigma writes 3*di*dj*2 = {} (three Pauli σ-matrices) → component_rank=3, \
+         NOT the 29-01-assumed rank 1 ({rank1_len})",
+        3 * rank1_len
+    );
+    // First three blocks all written; tail (block 4) untouched.
+    assert!(out[..3 * rank1_len].iter().all(|v| v.is_finite()));
+    assert!(out[3 * rank1_len..].iter().all(|v| v.is_nan()));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PRIMARY GATES — per-family vendor byte-identity at atol=1e-12 on the kappa
-// fixture. `#[ignore]` until Plan 29-02 wires the cintx launcher arms (the
-// collect_cintx_rel_1e stub `unimplemented!`s today). Run with `--ignored`
-// after 29-02 to drive the byte-identity comparison.
+// fixture. Plan 29-02 wires the cintx launcher arms; the gates are now LIVE.
 // ─────────────────────────────────────────────────────────────────────────────
 macro_rules! rel_1e_byte_identity_gate {
     ($test_name:ident, $family:literal) => {
         #[cfg(has_vendor_libcint)]
         #[cfg(feature = "cpu")]
         #[test]
-        #[ignore = "RED until Plan 29-02 wires the cintx int1e σ launcher arms"]
         fn $test_name() {
             let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_fixture();
 
@@ -339,7 +482,12 @@ fn test_rel_1e_rows_registered_without_vendor() {
             .iter()
             .find(|e| e.symbol_name == family)
             .unwrap_or_else(|| panic!("{family} missing from MANIFEST_ENTRIES (Plan 29-01 row)"));
-        assert_eq!(entry.component_rank, "1", "{family} must be component_rank=1");
+        let expected_rank = if family == "int1e_sigma_spinor" { "3" } else { "1" };
+        assert_eq!(
+            entry.component_rank, expected_rank,
+            "{family} must be component_rank={expected_rank} (sigma=3 stacked σ-matrices, \
+             measured in test_sigma_rank_measured)"
+        );
         assert_eq!(entry.forms, &["spinor"], "{family} must be spinor-only");
         assert!(!entry.oracle_covered, "{family} must stay oracle_covered=false in 29-01");
     }
