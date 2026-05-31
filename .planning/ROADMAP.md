@@ -618,7 +618,7 @@ Gap-Wave 1 (parallel, no file overlap):
 - [x] 26-07-PLAN.md — WR-03 + IN-01: dedup `giao_2e_parity.rs` onto shared `moment_common` helpers; self-document/assert the cross-center quartet AM.
 
 Gap-Wave 2 (after 26-04):
-- [ ] 26-05-PLAN.md — a01gp kernel correctness fix (attempt): root-cause the rank-9 ket-derivative ~2× double-count; on parity pass remove guard + un-ignore test + flip `oracle_covered=true`, else keep the guard with a tracked follow-up.
+- [x] 26-05-PLAN.md — a01gp kernel correctness fix (attempt): root-cause the rank-9 ket-derivative ~2× double-count; on parity pass remove guard + un-ignore test + flip `oracle_covered=true`, else keep the guard with a tracked follow-up.
 
 Gap-Wave 3 (after 26-05):
 - [ ] 26-08-PLAN.md — WR-04/WR-05/IN-02/IN-03: imaginary-half `not0` (both kernel files); explicit `is_rinv_center` dispatch property; remove/annotate inert comptime hint; hoist GIAO headroom into shared `const fn`s.
