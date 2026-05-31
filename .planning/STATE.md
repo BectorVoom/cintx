@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 27 (spinor-derivative-transform-gap-b1) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 27
+Phase: 27 (spinor-derivative-transform-gap-b1) — PAUSED (waves 1-3 done; wave 4 blocked pending re-plan)
+Plan: 4 of 6 complete (27-01, 27-02, 27-02a, 27-03, 27-04 landed; 27-05 needs re-plan)
+Status: Phase 27 PAUSED — 2 decision checkpoints resolved as "pause & re-plan"
 Resume file: .planning/phases/27-spinor-derivative-transform-gap-b1/27-CONTEXT.md
 Re-plan reconciliation checklist — ALL RESOLVED:
 
@@ -38,8 +38,16 @@ Re-plan reconciliation checklist — ALL RESOLVED:
   5. [x] Plans 02-05 success criteria → k-axis = nsph(lk); 720→360: revised.
   6. [n/a] draft/27-02-c2spinor-wrappers-draft.patch + reverted commit 0922c82 — reference only.
 
-Plan commit: 3969234 (PLAN files). Next: /gsd:execute-phase 27 (wave 2 = 27-02 + 27-02a in parallel).
-Last activity: 2026-05-31 -- Phase 27 execution started
+Waves 1-3 executed. Wave 3 surfaced an upstream-gap blocker resolved by user as PAUSE & RE-PLAN:
+  - int2c2e_ip1/ip2_spinor: libcint 6.1.3 stub returns 0 (autocode/int3c2e.c:384,462) — no vendor reference.
+  - int3c1e_ip1/iprinv_spinor: libcint CINT3c1e_spinor_drv exit(1)s (cint3c1e.c:450) — crashes harness.
+  The 4 launcher arms are wired correctly (committed); their 3 vendor parity tests are #[ignore]'d with
+  documented reasons. Achievable families GREEN: 1e ranks 3/9/81 + int3c2e_ip1 byte-identical (6 passed,
+  0 failed, 3 ignored under the vendor gate).
+Next: RE-PLAN phase 27 remainder — (a) re-scope 27-05 so oracle_covered stays false for the 4 deferred
+  arms (flip only 1e ranks + int3c2e_ip1); (b) add FD-reference verification plan(s) for the 4 deferred
+  arms (FD of cintx gradient, origk-ip1 r6 precedent). Run: /gsd:plan-phase 27  (or /gsd:discuss-phase 27).
+Last activity: 2026-05-31 -- Phase 27 waves 1-3 executed; PAUSED at wave 4 pending re-plan (upstream vendor stubs)
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
