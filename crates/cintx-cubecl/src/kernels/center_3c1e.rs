@@ -49,6 +49,7 @@ use crate::backend::ResolvedBackend;
 use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_3c1e, ncart, nsph};
+use crate::transform::c2spinor::cart_to_spinor_sf_derivative_3c1e;
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -1003,11 +1004,9 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
     plan: &ExecutionPlan<'_>,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    if plan.representation == Representation::Spinor {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int3c1e_ip1 gradient".to_owned(),
-        });
-    }
+    // Phase 27 (27-04, spike D3): spinor gradient now evaluates via the dedicated
+    // THIN SIBLING cart_to_spinor_sf_derivative_3c1e (SPHERICAL aux-k) applied to the
+    // host-side cartesian out_buf below. The early reject is removed.
 
     let shells = plan.shells.as_slice();
     let shell_i = &shells[0];
@@ -1109,11 +1108,86 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
         }
     }
 
+    if plan.representation == Representation::Spinor {
+        // 27-04 (spike D3): fold the host-side cartesian out_buf to spinor via the
+        // THIN SIBLING. Aux-k is SPHERICAL nsph(lk); only bra i / ket j are
+        // spinor-sized (4l+2). The sibling owns the cart→sph(k) + KET→BRA + sf_2d
+        // fold per (comp,k); no transpose lives here.
+        let blocked = relayout_3c1e_grad_to_blocked(
+            &out_buf, li, lj, lk, n_ctr_i, n_ctr_j, n_ctr_k,
+        )?;
+        cart_to_spinor_sf_derivative_3c1e::<F>(
+            staging, &blocked, 3, li, shell_i.kappa, lj, shell_j.kappa, lk, n_ctr_i, n_ctr_j,
+        )?;
+        return Ok(grad_stats::<F>(plan, staging));
+    }
+
     let copy_len = staging.len().min(out_buf.len());
     for (dst, &src) in staging[..copy_len].iter_mut().zip(out_buf[..copy_len].iter()) {
         *dst = F::from_f64_lossy(src);
     }
     Ok(grad_stats::<F>(plan, staging))
+}
+
+/// Re-lay a host-side CARTESIAN component-leading `int3c1e` derivative `out_buf`
+/// (`scatter_3c1e_grad_block` layout: contraction-interleaved
+/// `out[comp*comp_stride + (k_global*nj_full + j_global)*ni_full + i_global]`,
+/// `nblk = (nci,ncj,nck)`) into the per-`(ci,cj)`-blocked cart buffer
+/// `[(ci*nctr_j+cj)][comp][k][j][i]` that the THIN SIBLING
+/// `cart_to_spinor_sf_derivative_3c1e` expects (the same layout the 3c2e device
+/// kernel emits).
+///
+/// Aux-k stays a single SPHERICAL axis inside the sibling, so `n_ctr_k > 1` is
+/// rejected here (a contracted aux-k axis is outside the single-spherical-axis
+/// contract). Returns the blocked cart buffer; the caller invokes the sibling so
+/// both ip1 and iprinv dispatch to it directly (D3).
+fn relayout_3c1e_grad_to_blocked(
+    out_buf: &[f64],
+    li: u8,
+    lj: u8,
+    lk: u8,
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    n_ctr_k: usize,
+) -> Result<Vec<f64>, cintxRsError> {
+    if n_ctr_k > 1 {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "spinor int3c1e gradient with general-contracted aux-k (nctr_k>1)"
+                .to_owned(),
+        });
+    }
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let kblock = nck * ncj * nci;
+    let ncomp = 3usize;
+    // Contraction-interleaved cartesian source axes (out_buf layout).
+    let ni_full = n_ctr_i * nci;
+    let nj_full = n_ctr_j * ncj;
+    let comp_stride = ni_full * nj_full * nck; // nk_full = nck (n_ctr_k == 1)
+
+    let mut blocked = vec![0.0_f64; n_ctr_i * n_ctr_j * ncomp * kblock];
+    for ci in 0..n_ctr_i {
+        for cj in 0..n_ctr_j {
+            let dst_base = (ci * n_ctr_j + cj) * ncomp * kblock;
+            for comp in 0..ncomp {
+                let comp_base = comp * comp_stride;
+                for k in 0..nck {
+                    for j in 0..ncj {
+                        let j_global = cj * ncj + j;
+                        for i in 0..nci {
+                            let i_global = ci * nci + i;
+                            let src =
+                                comp_base + (k * nj_full + j_global) * ni_full + i_global;
+                            let dst = dst_base + comp * kblock + (k * ncj + j) * nci + i;
+                            blocked[dst] = out_buf[src];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(blocked)
 }
 
 /// `int3c1e_iprinv` — ∇ on bra i of the 3-center rinv-COULOMB (DRV1-03, half 2).
@@ -1127,11 +1201,10 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
     plan: &ExecutionPlan<'_>,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    if plan.representation == Representation::Spinor {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int3c1e_iprinv gradient".to_owned(),
-        });
-    }
+    // Phase 27 (27-04, spike D3): spinor gradient now evaluates via the THIN SIBLING
+    // cart_to_spinor_sf_derivative_3c1e (SPHERICAL aux-k) applied to the host-side
+    // cartesian out_buf below. The non-zero rinv origin (cr) is still read and used,
+    // so the rinv-center path is exercised (T-27-04). The early reject is removed.
 
     let shells = plan.shells.as_slice();
     let shell_i = &shells[0];
@@ -1265,6 +1338,19 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
                 );
             }
         }
+    }
+
+    if plan.representation == Representation::Spinor {
+        // 27-04 (spike D3): fold the host-side cartesian out_buf (Rys-driven nuclear
+        // base, non-zero rinv origin already applied above) to spinor via the THIN
+        // SIBLING. Aux-k SPHERICAL nsph(lk); only bra i / ket j spinor-sized.
+        let blocked = relayout_3c1e_grad_to_blocked(
+            &out_buf, li, lj, lk, n_ctr_i, n_ctr_j, n_ctr_k,
+        )?;
+        cart_to_spinor_sf_derivative_3c1e::<F>(
+            staging, &blocked, 3, li, shell_i.kappa, lj, shell_j.kappa, lk, n_ctr_i, n_ctr_j,
+        )?;
+        return Ok(grad_stats::<F>(plan, staging));
     }
 
     let copy_len = staging.len().min(out_buf.len());
