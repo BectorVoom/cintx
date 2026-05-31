@@ -4123,6 +4123,44 @@ pub fn vendor_int1e_ovlp_spinor(
     }
 }
 
+/// Evaluate int1e_sp_spinor (σ·p on the bra) for a single shell pair using
+/// vendored libcint. This is the Phase-28 Gap B2 byte-identity reference for
+/// the spin-included `c2s_si_1e` transform driven through the σ·p assembler.
+///
+/// `int1e_sp_spinor` is a tensor-rank-1 spinor family (libcint ng[7]=1): the
+/// four `gc_x/gc_y/gc_z/gc_1` cart blocks are `ncomp_e1`, folded into a single
+/// `di*dj` complex output by `c2s_si_1e`. So `out` is sized `ni_sp * nj_sp * 2`
+/// f64 (interleaved real/imaginary), exactly like int1e_ovlp_spinor — NOT
+/// 3-component like the ipovlp gradient block. ni_sp = CINTcgto_spinor(shls[0]),
+/// nj_sp = CINTcgto_spinor(shls[1]) (use `vendor_CINTcgto_spinor` for sizing;
+/// kappa≠0 → 2l or 2l+2, never a hardcoded 4l+2).
+///
+/// Returns the libcint status (1 for non-zero, 0 for zero by symmetry).
+pub fn vendor_int1e_sp_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_sp_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means use default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL
+            ptr::null_mut(), // cache = NULL (let libcint allocate)
+        )
+    }
+}
+
 /// Evaluate int1e_kin_spinor for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with `ni_sp * nj_sp * 2` f64 elements.

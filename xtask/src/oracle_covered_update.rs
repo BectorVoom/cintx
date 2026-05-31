@@ -47,6 +47,17 @@ pub fn run_oracle_covered_update() -> Result<()> {
             // D-04 int1e_ecp_iprinv_spinor family also remain intentionally
             // skipped/deferred. The `skipped` guard below is what keeps every such
             // deferred family from ever being stamped covered.
+            //
+            // Phase 28 (Gap B2, D-01/SC#4, 2026-05-31): the σ-coupling foundation lands the
+            // si_2d transform + σ·p assembler + kappa fixture and proves FND-05 via the
+            // DEDICATED transform-level byte-identity test (si_transform_parity.rs) — NOT by
+            // flipping any manifest flag. EVERY σ family stays UnsupportedApi
+            // (oracle_covered=false) this phase, including the `int1e_sp_spinor` vehicle;
+            // ALL σ flips (int1e_sp/spsp/spnucsp/sprinvsp/sigma + 2e spsp1/ssp*/…) happen in
+            // Phase 29. `int1e_sp_spinor` is registered as a parity fixture but is recorded
+            // `skipped` (compare::is_skipped_spinor_fixture) precisely so this guard refuses
+            // to stamp it covered — that is the SC#4 mechanism: oracle-covered-update cannot
+            // flip a σ family whose only generic-matrix fixture was skipped.
             if fixture.skipped {
                 continue;
             }

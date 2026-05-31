@@ -291,6 +291,27 @@ fn assert_flat_buffer_contract(fixture: &OracleFixture, values: &[f64]) -> bool 
     true
 }
 
+/// Spinor fixtures that have no generic raw-eval-matrix parity obligation and must be
+/// recorded as `skipped` (NOT evaluated, NOT stamped oracle_covered).
+///
+/// Two classes (see the call site in `build_profile_parity_report` for the full rationale):
+///   1. Spinor GRADIENTS (`component_count == 3`, spinor) — UnsupportedApi by design (R5/D-03).
+///   2. Phase-28 σ INFRASTRUCTURE-ONLY families (`int1e_sp_spinor`) — registered for the Gap-B2
+///      vendor reference but proven by the dedicated `si_transform_parity.rs` transform test;
+///      the oracle_covered flip is deferred to Phase 29 (D-01/SC#4). This is the mechanism that
+///      keeps the σ family out of `oracle-covered-update`'s covered set.
+fn is_skipped_spinor_fixture(fixture: &OracleFixture) -> bool {
+    if fixture.representation != "spinor" {
+        return false;
+    }
+    if fixture.component_count == 3 {
+        return true;
+    }
+    // Phase-28 σ infrastructure-only families: no RawApiId, proven via dedicated transform
+    // test, oracle_covered flip deferred to Phase 29 (D-01).
+    matches!(fixture.symbol.as_str(), "int1e_sp_spinor")
+}
+
 fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
     match symbol {
         "int1e_ovlp_cart" => Some(RawApiId::INT1E_OVLP_CART),
@@ -1102,12 +1123,25 @@ fn build_profile_parity_report(
 
         let tolerance = tolerance_for_family(&fixture.family);
 
-        // Spinor gradients (component_count == 3, spinor representation) are registered for
-        // surface completeness but their cart->spinor gradient transform is intentionally
-        // UnsupportedApi (Phase 21 R5/D-03, "registered-but-unimplemented"). They carry no
-        // numeric oracle-parity obligation, so record a passing (skipped) fixture result
-        // rather than evaluating — keeps fixture_count == fixtures.len() without a mismatch.
-        if fixture.component_count == 3 && fixture.representation == "spinor" {
+        // Spinor families that carry NO generic-matrix numeric parity obligation are
+        // recorded as passing (skipped) rather than evaluated — keeps
+        // fixture_count == fixtures.len() without a mismatch, and (critically for SC#4)
+        // keeps them OUT of `oracle-covered-update`'s `covered_symbols` set so they can
+        // never be stamped oracle_covered=true from the generic matrix:
+        //
+        //   1. Spinor GRADIENTS (component_count == 3, spinor): their cart->spinor
+        //      gradient transform is intentionally UnsupportedApi (Phase 21 R5/D-03,
+        //      "registered-but-unimplemented").
+        //
+        //   2. Phase-28 σ INFRASTRUCTURE-ONLY families (Gap B2, D-01): `int1e_sp_spinor`
+        //      is registered to give Plan 04 a manifest row + vendor reference, but it
+        //      STAYS UnsupportedApi this phase. Its FND-05 byte-identity proof is the
+        //      DEDICATED transform/component-level test (si_transform_parity.rs), NOT the
+        //      generic raw-eval matrix — so it has no RawApiId and must be skipped here.
+        //      Per D-01/SC#4 every σ family (incl. int1e_sp_spinor) stays UnsupportedApi
+        //      until Phase 29 flips the whole σ-group; the skipped fixture is what enforces
+        //      that no σ family is stamped covered before then.
+        if is_skipped_spinor_fixture(fixture) {
             let noop_diff = DiffSummary {
                 max_abs_error: 0.0,
                 max_rel_error: 0.0,
@@ -1123,11 +1157,17 @@ fn build_profile_parity_report(
                 layout_ok: true,
                 skipped: true,
             });
+            let skip_reason = if fixture.symbol == "int1e_sp_spinor" {
+                "Phase-28 σ infrastructure-only family; proven by si_transform_parity.rs, \
+                 oracle_covered flip deferred to Phase 29 (D-01/SC#4)"
+            } else {
+                "spinor gradient transform unsupported by design (R5/D-03)"
+            };
             report_rows.push(json!({
                 "symbol": fixture.symbol,
                 "family": fixture.family,
                 "representation": fixture.representation,
-                "skipped": "spinor gradient transform unsupported by design (R5/D-03)",
+                "skipped": skip_reason,
                 "tolerance": {
                     "family": tolerance.family,
                     "atol": tolerance.atol,
@@ -1620,6 +1660,46 @@ mod tests {
     fn helper_coverage_matches_manifest() {
         let inputs = OracleRawInputs::sample();
         verify_helper_surface_coverage(&inputs).expect("helper parity");
+    }
+
+    // Phase 28 Gap B2 (D-01 / SC#4): int1e_sp_spinor is registered for the σ-coupling
+    // infrastructure but STAYS UnsupportedApi (oracle_covered=false) this phase. It must be
+    // recorded as a SKIPPED parity fixture so oracle-covered-update never stamps it covered
+    // from the generic matrix (the FND-05 proof is the dedicated si_transform_parity test).
+    #[test]
+    fn sc4_int1e_sp_spinor_is_skipped_not_covered() {
+        let sp = OracleFixture {
+            family: "1e".to_string(),
+            symbol: "int1e_sp_spinor".to_string(),
+            representation: "spinor".to_string(),
+            arity: 2,
+            dims: vec![2, 6],
+            component_count: 1, // tensor rank 1 — NOT the 3-component gradient skip path
+            complex_interleaved: true,
+        };
+        assert!(
+            is_skipped_spinor_fixture(&sp),
+            "SC#4: int1e_sp_spinor must be a skipped spinor fixture so oracle-covered-update \
+             refuses to flip it (D-01: σ flips deferred to Phase 29)"
+        );
+        // It has NO RawApiId — confirms the infrastructure-only contract (no kernel wired,
+        // proven via the dedicated transform test rather than the generic raw-eval matrix).
+        assert!(
+            raw_api_for_symbol("int1e_sp_spinor").is_none(),
+            "int1e_sp_spinor must not have a RawApiId this phase (infrastructure-only, D-01)"
+        );
+
+        // Guard against over-broad skipping: a tensor-rank-1 NON-σ spinor base family
+        // (e.g. int1e_ovlp_spinor) must still be evaluated, not skipped.
+        let ovlp = OracleFixture {
+            symbol: "int1e_ovlp_spinor".to_string(),
+            component_count: 1,
+            ..sp.clone()
+        };
+        assert!(
+            !is_skipped_spinor_fixture(&ovlp),
+            "rank-1 non-σ spinor base families must NOT be skipped"
+        );
     }
 
     // FND-03 (D-04): assert_flat_buffer_contract is always-on fail-closed gated
