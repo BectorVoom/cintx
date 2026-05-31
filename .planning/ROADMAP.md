@@ -67,7 +67,7 @@
 | Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 6/6 | Complete | 2026-05-31 |
 | Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 4/4 | Complete | 2026-05-31 |
 | Phase 29: Group 4 — Relativistic Spin-Operator Integrals | v1.4 | 6/6 | Complete | 2026-06-01 |
-| Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals | v1.4 | 0/0 | Not started | - |
+| Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals | v1.4 | 0/3 | Planned | - |
 | Phase 31: Group 6 — Gauge/Breit–Gaunt 2e + Full-Parity Verification | v1.4 | 0/0 | Not started | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
@@ -694,7 +694,10 @@ Gap-Wave 3 (after 26-05):
   1. The GIAO×σ family set (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) matches vendored libcint at atol=1e-12 (spinor) via the Gap B2 σ path and the complex-interleaved output (GIAO-03).
   2. Every family is gated on BOTH the non-zero gauge-origin fixture AND the kappa-bearing relativistic fixture, has a dedicated `vendor_*` test executing under both flags (non-skipped), and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 30-00-PLAN.md — Wave 0: combined gauge∧kappa 1e fixture + gauge x1i-with-origin device fold in sigma_p.rs + gauge-gout byte-identity micro-test (D-03 de-risk)
+- [ ] 30-01-PLAN.md — Wave 1: all 9 1e GIAO×σ families (spgsp/spgnucsp/spgsa01 + cg/giao_sa10{sp,nucsp,sa01}) registered + vendor byte-identical spinor, oracle_covered spinor-only
+- [ ] 30-02-PLAN.md — Wave 2: all 6 2e GIAO×σ families (spgsp1(spsp2) + cg/giao_sa10sp1(spsp2)) on 4-shell fixture + full 15-family suite + manifest-audit gate
 
 ### Phase 31: Group 6 — Gauge / Breit–Gaunt 2e + Full-Parity Verification (apex)
 
