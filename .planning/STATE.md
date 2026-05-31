@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: milestone
 status: executing
-stopped_at: Phase 28 context gathered
-last_updated: "2026-05-31T11:06:04.319Z"
-last_activity: 2026-05-31 -- Phase 28 planning complete
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-05-31T11:29:34.979Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 28
   completed_phases: 27
   total_plans: 142
-  completed_plans: 139
-  percent: 98
+  completed_plans: 140
+  percent: 99
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 27 COMPLETE — next up Phase 28 (Gap B2 c2s_si + σ·p)
+**Current focus:** Phase 28 — spin-included-c2s-si-transform-p-module-gap-b2
 
 ## Current Position
 
-Phase: 28
-Plan: Not started
+Phase: 28 (spin-included-c2s-si-transform-p-module-gap-b2) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Resume file: .planning/phases/28-spin-included-c2s-si-transform-p-module-gap-b2/28-CONTEXT.md
+Resume file: None
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 
@@ -46,7 +46,7 @@ Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 Deferred follow-up: finite-difference verification of the 4 D-12 vendor-stub arms (FD of cintx scalar
   int2c2e_spinor / int3c1e_spinor), then flip under an FD-tolerance gate. D-03 needs an sf_4d derivative
   wrapper; D-04 belongs to the relativistic/ECP-spinor track.
-Last activity: 2026-05-31 -- Phase 28 planning complete
+Last activity: 2026-05-31
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -161,6 +161,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 26 P01 | 12 | 3 tasks | 9 files |
 | Phase 26 P02 | 95min | 3 tasks | 9 files |
 | Phase 26 P03 | 70 | 3 tasks | 8 files |
+| Phase 28 P01 | 12 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -353,6 +354,8 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: [Phase 26-02]: complex_output families emit REAL device output materialized host-side as [re=0, im=value]; vendor parity extracts imaginary half, asserts real==0 (D-07/D-15).
 - [Phase ?]: [Phase 26-03 GIAO-02]: int2e_g1g2 component_rank derived from intor2.c ng[7]=9 (D-16, not guessed); rank-9 both-electron gauge family byte-identical first try.
 - [Phase ?]: [Phase 26-03 GIAO-02]: 2e GIAO families host-routed via fill_g_tensor_2e (Hess2e analog) with new r0i_2e/r0k_2e position operators in f12.rs; complex-interleaved [re=0,im=value] 4-shell staging.
+- [Phase ?]: [Phase 28-01]: si 2D bra step (cart_to_spinor_si_2d) uses a_bra_cart2spinor_si signs (+ca_i*vz/-cb_r*vy/+cb_i*vx), NOT apply_si_block's CINTc2s_ket_spinor_si1 convention; apply_si_block left untouched for the single-block helper surface.
+- [Phase ?]: [Phase 28-01]: cart_to_spinor_si_2d owns the KET->BRA transpose internally per gc block (Phase-27 D-06), reuses ordinary apply_ket_transform verbatim, sizes all buffers via spinor_len (never hardcoded 4l+2), and fail-closes before any write.
 
 ### Roadmap Evolution
 
@@ -399,6 +402,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T10:33:15.774Z
-Stopped at: Phase 28 context gathered
+Last session: 2026-05-31T11:29:29.326Z
+Stopped at: Completed 28-01-PLAN.md
 Resume file: None
