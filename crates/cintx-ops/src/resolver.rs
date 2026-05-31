@@ -104,6 +104,7 @@ pub struct ManifestEntry {
     pub arity: u8,
     pub forms: &'static [&'static str],
     pub component_rank: &'static str,
+    pub complex_output: bool,
     pub feature_flag: FeatureFlag,
     pub stability: Stability,
     pub declared_in: &'static str,
@@ -559,18 +560,26 @@ mod tests {
     // (2×ncomp) staging from manifest data, not the representation string.
     #[test]
     fn spinor_rows_have_complex_output_true() {
+        // Operator rows whose canonical representation is spinor (symbol ends in
+        // `_spinor`) must carry complex_output=true so the manifest-driven planner
+        // SET (Task 2) preserves their 2× complex staging. Length/offset HELPER
+        // rows (CINTlen_spinor, CINTcgto_spinor, …) are metadata, not complex
+        // integral output, so they are excluded.
         let spinor_rows: Vec<&ManifestEntry> = MANIFEST_ENTRIES
             .iter()
-            .filter(|entry| entry.representation.spinor)
+            .filter(|entry| {
+                matches!(entry.helper_kind, HelperKind::Operator)
+                    && entry.symbol_name.ends_with("_spinor")
+            })
             .collect();
         assert!(
             !spinor_rows.is_empty(),
-            "expected at least one spinor-supporting manifest row"
+            "expected at least one spinor operator manifest row"
         );
         for entry in spinor_rows {
             assert!(
                 entry.complex_output,
-                "spinor row {} must be backfilled complex_output=true",
+                "spinor operator row {} must be backfilled complex_output=true",
                 entry.symbol_name
             );
         }
