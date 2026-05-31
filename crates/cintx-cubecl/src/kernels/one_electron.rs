@@ -8785,21 +8785,10 @@ fn launch_one_electron_typed<F: CintFloat>(
             });
         }
 
-        // CR-01 / 26-04: fail-closed until kernel parity (26-05) lands.
-        // int1e_a01gp is registered/dispatchable (descriptor must still resolve)
-        // but its rank-9 27-s table double-counts a subset of ket-derivative
-        // components 1..8 (~2x). Refuse to return non-parity numbers BEFORE any
-        // compute or write_giao_complex_staging; Plan 26-05 removes this guard
-        // once the corrected kernel passes vendor byte-identity.
-        if op_name == "a01gp" {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!(
-                    "int1e_a01gp is registered but not yet correct (rank-9 ket-derivative \
-                     double-count; tracked, oracle_covered=false) — refusing to return \
-                     non-parity output for {op_name}"
-                ),
-            });
-        }
+        // 26-05: the 26-04 fail-closed a01gp guard was REMOVED here once the
+        // corrected kernel (restored 0.5 common factor, intor1.c:551/572) passed
+        // vendor byte-identity at atol=1e-12 (cart+sph) on the non-zero-gauge
+        // non-square block. a01gp now rides the normal nuclear-engine path.
 
         // Rys nroots fail-closed guard (D-13). Internal ceiling nmax = li+lj+5
         // (the a01gp bra+3/ket+2 headroom); nroots = nmax/2 + 1.
