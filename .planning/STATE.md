@@ -4,7 +4,7 @@ milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
 stopped_at: Completed 29-03-PLAN.md
-last_updated: "2026-05-31T14:51:22.185Z"
+last_updated: "2026-05-31T15:05:24.903Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 21
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 29 (group-4-relativistic-spin-operator-integrals-spinor) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Resume file: None
 
@@ -168,6 +168,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 28 P04 | 42min | 2 tasks | 3 files |
 | Phase 29 P02 | 100min | 3 tasks | 8 files |
 | Phase 29 P03 | 35min | 3 tasks | 2 files |
+| Phase 29 P04 | 55min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -370,6 +371,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase 29-03]: Built the 2e cart→spinor transform suite as 6 composable per-electron fns (electron-1 producing opij, electron-2 consuming it) matching libcint's c2s_si_2e1/2e2 driver split, so Wave-3 launchers can pair electron-1×electron-2 transforms per family
 - [Phase 29-03]: apply_2d_spinor_zi transcribes the 2×2 Pauli σ·n expansion verbatim from cart2sph.c:4118-4186; the σ-mix is bra1-only so the ket1 step reuses apply_ket1_block_all_kappa unchanged
 - [Phase 29-03]: build_kappa_spinor_2e_fixture is a 4-shell non-square (2,6,2,4) GT/LT-mix nctr>1 quartet (D-02); 29-03 delivers compiling structural code only — 2e byte-identity is the 29-04 [BLOCKING] micro-test
+- [Phase ?]: [Phase 29-04]: int2e_spsp1 reuses the ipvip1 (nabla_i nabla_j) s[0..8] triple-product tensor; its sigma-p1 gout (gc_x=s5-s7, gc_y=s6-s2, gc_z=s1-s3, gc_1=s0+s4+s8) is a different linear fold of the SAME tensor + headroom (i+1,j+1), proven byte-identical to vendored libcint at atol=1e-12. The D-03 BLOCKING gate is GREEN; Wave 3 unblocked.
 
 ### Roadmap Evolution
 
@@ -416,6 +418,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T14:51:22.181Z
+Last session: 2026-05-31T15:04:59.685Z
 Stopped at: Completed 29-03-PLAN.md
 Resume file: None
