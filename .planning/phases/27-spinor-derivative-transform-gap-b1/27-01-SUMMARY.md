@@ -113,6 +113,12 @@ None. The `ffi::int*_spinor` extern decls for the 6 new symbols are bindgen-gene
 - Plan 04 owns `center_3c1e.rs` (int3c1e_ip1/iprinv THIN SIBLING fold; iprinv tests require the non-zero rinv origin the fixture sets).
 - Plan 05 flips the manifest lock and wires the `oracle_covered=true` half of `test_no_silent_skip`.
 
+## Self-Check: PASSED
+
+- Files exist: `spinor_deriv_parity.rs`, `27-01-SUMMARY.md`, `27-SPIKE-FINDINGS.md`
+- Commits exist: `bfb2048` (Task 1 spike), `96e3a87` (Task 2), `5ad6f54` (plan metadata)
+- No STATE.md/ROADMAP.md modifications in this executor's commits (orchestrator owns those)
+
 ---
 *Phase: 27-spinor-derivative-transform-gap-b1*
 *Completed: 2026-05-31*
