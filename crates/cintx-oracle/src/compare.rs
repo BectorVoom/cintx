@@ -328,6 +328,14 @@ fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
         "int3c2e_ip1_cart" => Some(RawApiId::INT3C2E_IP1_CART),
         "int3c2e_ip1_sph" => Some(RawApiId::INT3C2E_IP1_SPH),
         "int3c2e_ip1_spinor" => Some(RawApiId::INT3C2E_IP1_SPINOR),
+        // Phase 27 spinor derivative families (D-09): the symbol→RawApiId map
+        // stays complete so the parity harness resolves these at dispatch. They
+        // remain RED (UnsupportedApi) until Plans 02/03/04 wire the launchers.
+        "int1e_ipovlpip_spinor" => Some(RawApiId::INT1E_IPOVLPIP_SPINOR),
+        "int1e_ipipipiprinv_spinor" => Some(RawApiId::INT1E_IPIPIPIPRINV_SPINOR),
+        "int2c2e_ip1_spinor" => Some(RawApiId::INT2C2E_IP1_SPINOR),
+        "int3c1e_ip1_spinor" => Some(RawApiId::INT3C1E_IP1_SPINOR),
+        "int3c1e_iprinv_spinor" => Some(RawApiId::INT3C1E_IPRINV_SPINOR),
         // Coulomb-gradient families (Phase 21) — registered in the base profile by 21-02
         // alongside int3c2e_ip1; their raw-api mappings belong here for the same reason.
         // (Spinor gradients are excluded from the parity matrix in fixtures.rs per R5/D-03,

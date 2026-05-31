@@ -4440,6 +4440,196 @@ pub fn vendor_int3c2e_spinor(
     }
 }
 
+// ---- Phase 27: spinor DERIVATIVE integral vendor FFI wrappers (D-09) ----
+//
+// Six new spinor-gradient operators that complete the spinor derivative parity
+// matrix beyond the four existing rank-3 1e ip-spinor wrappers (ipovlp/ipkin/
+// ipnuc/iprinv above). Each writes a component-leading, interleaved-complex
+// buffer:
+//   1e / 2c2e:  out[comp * ni_sp * nj_sp * 2 + (j*ni_sp + i)*2 + {0:re,1:im}]
+//   3c2e / 3c1e: out[comp * ni_sp * nj_sp * nk_sp * 2 + ...]
+// where nX_sp = CINTcgto_spinor(shls[X]). IMPORTANT (27-SPIKE-FINDINGS D2/D3):
+// the auxiliary-k axis of the arity-3 families is SPINOR-sized
+// (CINTcgto_spinor(k) = 4l+2 = 2 at kappa=0), NOT nsph(lk) — the caller must
+// size the out buffer with vendor_CINTcgto_spinor for ALL THREE shell axes
+// (i, j, AND aux k), or libcint under-writes and trips BufferTooSmall.
+
+/// Evaluate int1e_ipovlpip_spinor (rank-9 both-side 1e gradient) for a shell pair.
+///
+/// `out` must be pre-allocated with `9 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_ipovlpip_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipovlpip_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ipipipiprinv_spinor (rank-81 1e rinv gradient) for a shell pair.
+///
+/// The rinv origin must be set in `env[PTR_RINV_ORIG..+3]` by the caller.
+/// `out` must be pre-allocated with `81 * ni_sp * nj_sp * 2` f64 elements.
+pub fn vendor_int1e_ipipipiprinv_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ipipipiprinv_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int2c2e_ip1_spinor (rank-3 2-center 2e gradient) for a shell pair.
+///
+/// `shls` is `[i, k]`. `out` must be pre-allocated with `3 * ni_sp * nk_sp * 2`
+/// f64 elements (both axes spinor-sized via CINTcgto_spinor).
+pub fn vendor_int2c2e_ip1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2c2e_ip1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c2e_ip1_spinor (rank-3 3-center 2e gradient on bra i) for a triple.
+///
+/// `shls` is `[i, j, k]`. `out` must be pre-allocated with
+/// `3 * ni_sp * nj_sp * nk_sp * 2` f64 elements. The aux-k axis is SPINOR-sized
+/// (CINTcgto_spinor(k) = 4lk+2), NOT nsph(lk) (27-SPIKE-FINDINGS D2).
+pub fn vendor_int3c2e_ip1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_ip1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_ip1_spinor (rank-3 3-center 1e overlap gradient on bra i).
+///
+/// `shls` is `[i, j, k]`. `out` must be pre-allocated with
+/// `3 * ni_sp * nj_sp * nk_sp * 2` f64 elements (aux-k axis SPINOR-sized).
+pub fn vendor_int3c1e_ip1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int3c1e_iprinv_spinor (rank-3 3-center 1e rinv-Coulomb gradient on i).
+///
+/// The rinv origin must be set in `env[PTR_RINV_ORIG..+3]` by the caller (a
+/// zero origin trivially passes — use a displaced origin). `shls` is `[i, j, k]`.
+/// `out` must be pre-allocated with `3 * ni_sp * nj_sp * nk_sp * 2` f64 elements
+/// (aux-k axis SPINOR-sized).
+pub fn vendor_int3c1e_iprinv_spinor(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_iprinv_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 // -------------------------------------------------------------------------
 // Phase 14 unstable-source family vendor FFI wrappers
 // -------------------------------------------------------------------------

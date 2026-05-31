@@ -170,6 +170,136 @@ pub fn build_h2o_sto3g_common_orig_at(origin: [f64; 3]) -> (Vec<i32>, Vec<i32>, 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// D-08 ADVERSARIAL spinor-derivative fixture (Phase 27 Plan 01 Task 2).
+//
+// A single fixture that simultaneously trips the four distinct silent-false-pass
+// landmines for spinor derivative parity (see 27-SPIKE-FINDINGS.md / threat
+// register T-27-02):
+//
+//   1. NON-SQUARE bra/ket (p × d): di != dj, so an i/j-transposed misread of the
+//      derivative cart block can no longer pass (the square-block H2O test was
+//      orientation-blind).
+//   2. nctr>1 on the bra (p, nctr=2): forces the general-contraction composition
+//      `i_global = ci*di + ic` and the COLUMN-major env coeff (env[ci*nprim+ip])
+//      → ROW-major Shell transpose. A dropped contraction column or a transposed
+//      coeff layout diverges.
+//   3. kappa=0 on EVERY bas row: both the j=l+1/2 (GT) and j=l-1/2 (LT) spinor
+//      blocks fire and the spinor axis length is `CINTcgto_spinor = 4l+2`. A
+//      half-block (single-j) sizing diverges.
+//   4. NON-ZERO rinv origin (env[PTR_RINV_ORIG..+3]): the int3c1e_iprinv /
+//      int1e_*rinv paths read the rinv center; a zero-origin shortcut would
+//      trivially pass, so the origin is displaced (Phase 24/25 landmine).
+//
+// Shell triple (the third k shell is the auxiliary center for the arity-3
+// int3c1e/int3c2e families):
+//   shell 0: bra i  = p-shell (l=1), 3 primitives, nctr_i = 2  (gc, two columns)
+//   shell 1: ket j  = d-shell (l=2), 3 primitives, nctr_j = 1
+//   shell 2: aux k  = s-shell (l=0), 3 primitives, nctr_k = 1
+//
+// Modeled VERBATIM on `int3c1e_genctr_parity.rs::build_genctr_fixture`, with the
+// added kappa=0 spinor setup (KAPPA_OF=0 on every row) from
+// `one_electron_grad_spinor_parity.rs::build_h2o_sto3g_spinor`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Build the D-08 adversarial spinor-derivative fixture (atm, bas, env).
+///
+/// Non-square (p × d) + nctr>1 (p has nctr=2) + kappa=0 (every bas row) +
+/// non-zero rinv origin (env[PTR_RINV_ORIG..+3]). Exposes a third aux-k (s) shell
+/// for the arity-3 int3c1e/int3c2e spinor derivative families.
+pub fn build_adversarial_spinor_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    use cintx_compat::raw::{KAPPA_OF, PTR_RINV_ORIG};
+
+    let i_coord = [0.0_f64, 0.0, 0.0];
+    let j_coord = [0.0_f64, 1.3, 0.7];
+    let k_coord = [0.9_f64, -0.4, 0.2];
+
+    // p-shell (bra i) — 3 primitives, two general-contraction columns.
+    // The libcint env coefficient block is COLUMN-MAJOR: env[ci*nprim + ip]
+    // (CINTprim_to_ctr_0 in g1e.c). cintx transposes it to row-major internally.
+    //   column 0 = (0.70, 0.30, 0.15) , column 1 = (0.20, 0.55, 0.80)
+    // → env layout [c0_p0, c0_p1, c0_p2, c1_p0, c1_p1, c1_p2].
+    let p_exp = [3.4252509_f64, 0.6239137, 0.1688554];
+    let p_coeff = [0.70_f64, 0.30, 0.15, 0.20, 0.55, 0.80];
+
+    // d-shell (ket j) — 3 primitives, single contraction.
+    let d_exp = [5.0331513_f64, 1.1695961, 0.3803890];
+    let d_coeff = [0.15591627_f64, 0.60768372, 0.39195739];
+
+    // s-shell (aux k) — 3 primitives, single contraction.
+    let s_exp = [130.7093200_f64, 23.8088610, 6.4436083];
+    let s_coeff = [0.15432897_f64, 0.53532814, 0.44463454];
+
+    // Reserve the libcint global-parameter region; rinv origin lives in
+    // env[PTR_RINV_ORIG..+3]. Use a PTR_ENV_START-aligned reserve so 2e-family
+    // global slots are never clobbered.
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+    // NON-ZERO rinv origin — exercises the iprinv center path (T-27-04).
+    env[PTR_RINV_ORIG] = 0.30;
+    env[PTR_RINV_ORIG + 1] = -0.45;
+    env[PTR_RINV_ORIG + 2] = 0.60;
+
+    let i_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&i_coord);
+    let j_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&j_coord);
+    let k_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&k_coord);
+    let zeta_ptr = env.len() as i32;
+    env.push(0.0);
+
+    let p_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&p_exp);
+    let p_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&p_coeff);
+
+    let d_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&d_exp);
+    let d_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&d_coeff);
+
+    let s_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&s_exp);
+    let s_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&s_coeff);
+
+    let mut atm = vec![0_i32; 3 * ATM_SLOTS];
+    for (n, &ptr) in [i_coord_ptr, j_coord_ptr, k_coord_ptr].iter().enumerate() {
+        atm[n * ATM_SLOTS + CHARGE_OF] = 1;
+        atm[n * ATM_SLOTS + PTR_COORD] = ptr;
+        atm[n * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+        atm[n * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+    }
+
+    let mut bas = vec![0_i32; 3 * BAS_SLOTS];
+    // shell 0: p, nctr=2 (general contraction), spinor (kappa=0)
+    bas[ATOM_OF] = 0;
+    bas[ANG_OF] = 1;
+    bas[NPRIM_OF] = 3;
+    bas[NCTR_OF] = 2;
+    bas[KAPPA_OF] = 0;
+    bas[PTR_EXP] = p_exp_ptr;
+    bas[PTR_COEFF] = p_coeff_ptr;
+    // shell 1: d, nctr=1, spinor (kappa=0)
+    bas[BAS_SLOTS + ATOM_OF] = 1;
+    bas[BAS_SLOTS + ANG_OF] = 2;
+    bas[BAS_SLOTS + NPRIM_OF] = 3;
+    bas[BAS_SLOTS + NCTR_OF] = 1;
+    bas[BAS_SLOTS + KAPPA_OF] = 0;
+    bas[BAS_SLOTS + PTR_EXP] = d_exp_ptr;
+    bas[BAS_SLOTS + PTR_COEFF] = d_coeff_ptr;
+    // shell 2: s (aux k), nctr=1, spinor (kappa=0)
+    bas[2 * BAS_SLOTS + ATOM_OF] = 2;
+    bas[2 * BAS_SLOTS + ANG_OF] = 0;
+    bas[2 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[2 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[2 * BAS_SLOTS + KAPPA_OF] = 0;
+    bas[2 * BAS_SLOTS + PTR_EXP] = s_exp_ptr;
+    bas[2 * BAS_SLOTS + PTR_COEFF] = s_coeff_ptr;
+
+    (atm, bas, env)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Cu/LANL2DZ molecular fixture (Phase 19 Plan 01 Wave 0 scaffold).
 //
 // Source: basissetexchange.org "LANL2DZ" element 29 (Cu); see
