@@ -290,6 +290,11 @@ fn test_int3c2e_ip1_spinor_adversarial_parity() {
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
+#[ignore = "DEFERRED (phase 27, 2026-05-31 user decision: pause & re-plan): libcint 6.1.3 \
+ships int2c2e_ip1/ip2_spinor as unimplemented stubs (autocode/int3c2e.c:384,462 — \
+`return 0`, all-zero output), so there is NO vendor byte-identity reference. cintx \
+produces correct nonzero output. Re-plan will replace this vendor compare with a \
+finite-difference reference (FD of cintx scalar int2c2e_spinor). oracle_covered stays false."]
 fn test_int2c2e_ip1_spinor_adversarial_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_adversarial_spinor_fixture();
@@ -309,6 +314,11 @@ fn test_int2c2e_ip1_spinor_adversarial_parity() {
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
+#[ignore = "DEFERRED (phase 27, 2026-05-31 user decision: pause & re-plan): libcint 6.1.3's \
+CINT3c1e_spinor_drv is an unimplemented stub that `exit(1)`s (cint3c1e.c:450) — calling \
+vendor_int3c1e_ip1_spinor ABORTS the whole test harness. cintx output is correct; the shared \
+wrapper/transpose math is vendor-validated via int3c2e_ip1. Re-plan will use an FD reference. \
+oracle_covered stays false. DO NOT run with --include-ignored against a vendor build."]
 fn test_int3c1e_ip1_spinor_adversarial_parity() {
     use cintx_oracle::vendor_ffi;
     // D-02 arity-3 family. The int3c1e launchers are host-side (center_3c1e.rs);
@@ -330,6 +340,10 @@ fn test_int3c1e_ip1_spinor_adversarial_parity() {
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
+#[ignore = "DEFERRED (phase 27, 2026-05-31 user decision: pause & re-plan): same upstream gap as \
+test_int3c1e_ip1_spinor_adversarial_parity — CINT3c1e_spinor_drv `exit(1)`s (cint3c1e.c:450), \
+ABORTING the harness. cintx output correct; re-plan will use an FD reference; oracle_covered stays \
+false. DO NOT run with --include-ignored against a vendor build."]
 fn test_int3c1e_iprinv_spinor_adversarial_parity() {
     use cintx_oracle::vendor_ffi;
     // D-02 arity-3 family, Rys-driven. MUST use a NON-ZERO rinv origin — the
