@@ -1773,4 +1773,183 @@ mod tests {
         let nonzero = staging_f32.iter().filter(|&&v| v.abs() > 1e-5f32).count();
         assert!(nonzero > 0, "f32 2d spinor sf s-s should produce non-zero output");
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  cart_to_spinor_sf_derivative_2d tests (Task 1)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// Build a deterministic KET-major derivative cart buffer `[comp][ket][bra]`
+    /// for nctr=1: cart[comp*block_len + jc*nci + ic].
+    fn make_deriv_cart_nctr1(ncomp: usize, nci: usize, ncj: usize) -> Vec<f64> {
+        let block_len = nci * ncj;
+        let mut cart = vec![0.0f64; ncomp * block_len];
+        for comp in 0..ncomp {
+            for jc in 0..ncj {
+                for ic in 0..nci {
+                    // distinct, non-zero per (comp,ic,jc)
+                    cart[comp * block_len + jc * nci + ic] =
+                        1.0 + comp as f64 + 0.5 * ic as f64 + 0.25 * jc as f64;
+                }
+            }
+        }
+        cart
+    }
+
+    /// (a) ncomp=3, nctr=1, NON-SQUARE p×d, kappa=0: wrapper output must equal a manual
+    /// replay of the inline rank-3 transform (one_electron.rs L9937-9965) byte-for-byte.
+    #[test]
+    fn derivative_2d_rank3_matches_inline() {
+        let (li, lj): (u8, u8) = (1, 2); // p × d (NON-SQUARE)
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li); // 3
+        let ncj = ncart(lj); // 6
+        let block_len = nci * ncj; // 18
+        let di = spinor_len(li, ki as i32); // 6
+        let dj = spinor_len(lj, kj as i32); // 10
+        let spinor_block = di * dj * 2;
+        let ncomp = 3usize;
+
+        let cart = make_deriv_cart_nctr1(ncomp, nci, ncj);
+
+        // Manual replay of the inline rank-3 transform.
+        let mut expected = vec![0.0f64; ncomp * spinor_block];
+        for comp in 0..ncomp {
+            let block = &cart[comp * block_len..comp * block_len + block_len];
+            let mut block_bra_major = vec![0.0f64; block_len];
+            for ic in 0..nci {
+                for jc in 0..ncj {
+                    block_bra_major[ic * ncj + jc] = block[jc * nci + ic];
+                }
+            }
+            cart_to_spinor_sf_2d::<f64>(
+                &mut expected[comp * spinor_block..comp * spinor_block + spinor_block],
+                &block_bra_major,
+                li, ki, lj, kj,
+            ).unwrap();
+        }
+
+        let mut got = vec![0.0f64; ncomp * spinor_block];
+        cart_to_spinor_sf_derivative_2d::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, 1, 1,
+        ).expect("derivative_2d rank3 should succeed");
+
+        for (idx, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            check_close(*g, *e, &format!("derivative_2d_rank3[{idx}]"));
+        }
+    }
+
+    /// (b) ncomp=9: output splits into exactly 9 non-overlapping all-nonzero di*dj*2 slices
+    /// (component-truncation guard — no trailing zero slice).
+    #[test]
+    fn derivative_2d_rank9_no_trailing_zero() {
+        let (li, lj): (u8, u8) = (1, 2);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let di = spinor_len(li, ki as i32);
+        let dj = spinor_len(lj, kj as i32);
+        let spinor_block = di * dj * 2;
+        let ncomp = 9usize;
+
+        let cart = make_deriv_cart_nctr1(ncomp, nci, ncj);
+        let mut got = vec![0.0f64; ncomp * spinor_block];
+        cart_to_spinor_sf_derivative_2d::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, 1, 1,
+        ).expect("derivative_2d rank9 should succeed");
+
+        for comp in 0..ncomp {
+            let slice = &got[comp * spinor_block..comp * spinor_block + spinor_block];
+            let nonzero = slice.iter().filter(|&&v| v.abs() > 1e-15).count();
+            assert!(nonzero > 0, "component {comp} slice is all-zero (truncation landmine)");
+        }
+    }
+
+    /// (c) nctr_i=2: output length is ncomp*(nctr_i*di)*(nctr_j*dj)*2 and contraction-major
+    /// composition places ci=1 at i_global = di..2*di (no coefficient transpose leaks).
+    #[test]
+    fn derivative_2d_nctr2_sizing() {
+        let (li, lj): (u8, u8) = (1, 2);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let block_len = nci * ncj;
+        let di = spinor_len(li, ki as i32);
+        let dj = spinor_len(lj, kj as i32);
+        let ncomp = 3usize;
+        let nctr_i = 2usize;
+        let nctr_j = 1usize;
+        let ni_full = nctr_i * di;
+        let nj_full = nctr_j * dj;
+        let spinor_block = ni_full * nj_full * 2;
+        let total_len = ncomp * block_len;
+
+        // KET-major cart with contraction sub-blocks: base = (ci*nctr_j+cj)*total_len + comp*block_len.
+        let mut cart = vec![0.0f64; nctr_i * nctr_j * total_len];
+        for ci in 0..nctr_i {
+            for cj in 0..nctr_j {
+                for comp in 0..ncomp {
+                    let base = (ci * nctr_j + cj) * total_len + comp * block_len;
+                    for jc in 0..ncj {
+                        for ic in 0..nci {
+                            // ci=0 sub-block deliberately ZERO; ci=1 non-zero so we can locate it.
+                            cart[base + jc * nci + ic] = if ci == 0 {
+                                0.0
+                            } else {
+                                1.0 + comp as f64 + 0.5 * ic as f64 + 0.25 * jc as f64
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut got = vec![0.0f64; ncomp * spinor_block];
+        cart_to_spinor_sf_derivative_2d::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, nctr_i, nctr_j,
+        ).expect("derivative_2d nctr2 should succeed");
+
+        assert_eq!(got.len(), ncomp * spinor_block, "nctr2 output length mismatch");
+
+        // ci=0 region (i_global in 0..di) must be all-zero; ci=1 region (di..2di) non-zero.
+        let comp = 0usize;
+        let mut ci0_nonzero = 0usize;
+        let mut ci1_nonzero = 0usize;
+        for jg in 0..nj_full {
+            for ig in 0..ni_full {
+                let v = got[comp * spinor_block + (jg * ni_full + ig) * 2];
+                let im = got[comp * spinor_block + (jg * ni_full + ig) * 2 + 1];
+                let mag = v.abs() + im.abs();
+                if ig < di {
+                    if mag > 1e-15 { ci0_nonzero += 1; }
+                } else if mag > 1e-15 {
+                    ci1_nonzero += 1;
+                }
+            }
+        }
+        assert_eq!(ci0_nonzero, 0, "ci=0 (zero cart sub-block) should map to zero output");
+        assert!(ci1_nonzero > 0, "ci=1 sub-block should populate i_global in di..2*di");
+    }
+
+    /// (d) staging too small: returns BufferTooSmall BEFORE any write (sentinel survives).
+    #[test]
+    fn derivative_2d_staging_too_small_fails_closed() {
+        let (li, lj): (u8, u8) = (1, 2);
+        let (ki, kj): (i16, i16) = (0, 0);
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let ncomp = 3usize;
+        let cart = make_deriv_cart_nctr1(ncomp, nci, ncj);
+
+        // Deliberately undersized staging with a sentinel at [0].
+        let mut staging = vec![0.0f64; 4];
+        staging[0] = 12345.0;
+        let res = cart_to_spinor_sf_derivative_2d::<f64>(
+            &mut staging, &cart, ncomp, li, ki, lj, kj, 1, 1,
+        );
+        assert!(
+            matches!(res, Err(cintxRsError::BufferTooSmall { .. })),
+            "undersized staging must return BufferTooSmall, got {res:?}"
+        );
+        assert_eq!(staging[0], 12345.0, "sentinel overwritten — wrote before size check");
+    }
 }
