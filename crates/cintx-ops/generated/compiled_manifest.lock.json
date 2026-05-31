@@ -9741,7 +9741,7 @@
         "representation": "cart",
         "symbol": "int1e_a01gp_cart"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -9774,7 +9774,7 @@
         "representation": "sph",
         "symbol": "int1e_a01gp_sph"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
