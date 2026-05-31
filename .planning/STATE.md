@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: verifying
-stopped_at: Completed 29-06-PLAN.md — Phase 29 complete (Group 4)
-last_updated: "2026-06-01T00:00:00.000Z"
-last_activity: 2026-06-01
+stopped_at: Completed 29-05-PLAN.md
+last_updated: "2026-05-31T18:18:56.018Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 21
   completed_phases: 19
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 29 (group-4-relativistic-spin-operator-integrals-spinor) — EXECUTING
-Plan: 6 of 6
+Phase: 30
+Plan: Not started
 Status: Phase complete — ready for verification
 Resume file: None
 
@@ -62,7 +62,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 **Velocity:**
 
-- Total plans completed: 54
+- Total plans completed: 60
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -80,6 +80,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | 26 | 8 | - | - |
 | 27 | 6 | - | - |
 | 28 | 4 | - | - |
+| 29 | 6 | - | - |
 
 **Recent Trend:**
 
