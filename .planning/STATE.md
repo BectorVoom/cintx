@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Phase 30 Wave 1 paused — re-plan into engine-class sub-waves
-last_updated: "2026-05-31T22:57:50.401Z"
-last_activity: 2026-05-31
+stopped_at: Phase 30 Wave 1 re-planned (30-01a/b/c/d) — ready to execute
+last_updated: "2026-06-01T00:00:00.000Z"
+last_activity: 2026-06-01
 progress:
   total_phases: 21
   completed_phases: 19
@@ -25,10 +25,18 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING (Wave 1 paused, re-plan pending)
-Plan: 30-00 complete; 30-01 paused at decision checkpoint; 30-02 not started
-Status: Awaiting Wave 1 re-plan
-Resume file: .planning/notes/phase-30-wave1-engine-class-split-PLAN.md
+Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING (Wave 1 re-planned, ready to execute)
+Plan: 30-00 complete; Wave 1 split into 30-01a/b/c/d (sequential a→b→c→d, each its own vendor gate); 30-02 not started
+Status: Ready to execute — next is 30-01a (NEW 8-G-tensor London overlap engine: int1e_spgsp)
+Seed/design: .planning/notes/phase-30-wave1-engine-class-split-PLAN.md (engine-class sub-wave breakdown)
+
+Phase 30 Wave 1 re-plan COMPLETE (2026-06-01):
+
+  - Monolithic 30-01-PLAN.md removed; replaced by 4 engine-class sub-wave plans, all wave:1, depends
+    a→b→c→d (all on 00), GIAO-03 in each. Plan-checker: 4 Wave-1 plans internally sound; 2 blockers
+    were dangling 30-02 handoff refs (depends_on:[01], 30-01-SUMMARY.md) — both re-pointed to 01d.
+    30-01a spgsp (rank3); 30-01b cg/giao_sa10nucsp (rank3); 30-01c cg/giao_sa10sa01 (rank9, REAL
+    c2s_si_1e); 30-01d spgnucsp+spgsa01 → closes full 9-family 1e gate. Reuses 3b68ff1 scaffolding.
 
 Phase 30 Wave 1 pause (2026-06-01):
 
