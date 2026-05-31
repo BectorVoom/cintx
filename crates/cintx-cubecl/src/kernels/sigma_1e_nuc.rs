@@ -485,9 +485,19 @@ pub(crate) fn run_sigma_nuc_on_backend(
     origin_charges: &[f64],
 ) -> Result<Vec<f64>, cintxRsError> {
     // nroots = (li+lj+2)/2 + 1 (standard 1e nuclear rule for the composed +1/+1
-    // double-derivative order li+lj+2), clamped to the device cap.
+    // double-derivative order li+lj+2). `run_sigma_nuc_device` only emits comptime
+    // root counts 1..=5, so fail closed for higher l rather than silently truncating
+    // — matching the sibling kernels' fail-closed contract (center_2c2e.rs:1025,
+    // two_electron.rs). nroots>5 requires l_i+l_j>=8 (g×g), unreachable by the d×p
+    // test fixture, so this guard was previously a latent silent-wrong-result path.
+    const MAX_DEVICE_NROOTS: u32 = 5;
     let order = li as usize + lj as usize + 2;
-    let nroots = ((order / 2 + 1) as u32).clamp(1, 5);
+    let nroots = (order / 2 + 1) as u32;
+    if nroots > MAX_DEVICE_NROOTS {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{nroots}"),
+        });
+    }
 
     let use_r = if op == "srnucsr" { 1u32 } else { 0u32 };
     let coords = origin_coords;
