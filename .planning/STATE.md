@@ -4,14 +4,14 @@ milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
 stopped_at: Phase 27 context gathered
-last_updated: "2026-05-31T08:17:28.243Z"
-last_activity: 2026-05-31 -- Phase 27 execution started
+last_updated: "2026-05-31T09:35:23.196Z"
+last_activity: 2026-05-31 -- Phase 27 planning complete
 progress:
   total_phases: 21
   completed_phases: 16
   total_plans: 91
-  completed_plans: 86
-  percent: 95
+  completed_plans: 90
+  percent: 99
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 Phase: 27 (spinor-derivative-transform-gap-b1) — PAUSED (waves 1-3 done; wave 4 blocked pending re-plan)
 Plan: 4 of 6 complete (27-01, 27-02, 27-02a, 27-03, 27-04 landed; 27-05 needs re-plan)
-Status: Phase 27 PAUSED — 2 decision checkpoints resolved as "pause & re-plan"
+Status: Ready to execute
 Resume file: .planning/phases/27-spinor-derivative-transform-gap-b1/27-CONTEXT.md
 Re-plan reconciliation checklist — ALL RESOLVED:
 
@@ -39,6 +39,7 @@ Re-plan reconciliation checklist — ALL RESOLVED:
   6. [n/a] draft/27-02-c2spinor-wrappers-draft.patch + reverted commit 0922c82 — reference only.
 
 Waves 1-3 executed. Wave 3 surfaced an upstream-gap blocker resolved by user as PAUSE & RE-PLAN:
+
   - int2c2e_ip1/ip2_spinor: libcint 6.1.3 stub returns 0 (autocode/int3c2e.c:384,462) — no vendor reference.
   - int3c1e_ip1/iprinv_spinor: libcint CINT3c1e_spinor_drv exit(1)s (cint3c1e.c:450) — crashes harness.
   The 4 launcher arms are wired correctly (committed); their 3 vendor parity tests are #[ignore]'d with
@@ -47,7 +48,7 @@ Waves 1-3 executed. Wave 3 surfaced an upstream-gap blocker resolved by user as 
 Next: RE-PLAN phase 27 remainder — (a) re-scope 27-05 so oracle_covered stays false for the 4 deferred
   arms (flip only 1e ranks + int3c2e_ip1); (b) add FD-reference verification plan(s) for the 4 deferred
   arms (FD of cintx gradient, origk-ip1 r6 precedent). Run: /gsd:plan-phase 27  (or /gsd:discuss-phase 27).
-Last activity: 2026-05-31 -- Phase 27 waves 1-3 executed; PAUSED at wave 4 pending re-plan (upstream vendor stubs)
+Last activity: 2026-05-31 -- Phase 27 planning complete
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
