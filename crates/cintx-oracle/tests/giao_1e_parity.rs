@@ -287,3 +287,66 @@ mod parity {
         );
     }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 26-04 / CR-01: fail-closed contract for int1e_a01gp.
+//
+// Unlike the `parity` module above, this module is NOT vendor-gated — it runs on
+// the DEFAULT (non-vendor) test profile so the fail-closed contract is ALWAYS
+// covered (no `CINTX_ORACLE_BUILD_VENDOR=1` required). The a01gp raw path is
+// registered/dispatchable but the rank-9 kernel is known-wrong (~2x on ket-varying
+// components 1..8); the public `eval_raw` path MUST fail closed with
+// `UnsupportedApi` until Plan 26-05 lands vendor parity and removes the guard.
+// ──────────────────────────────────────────────────────────────────────────────
+#[cfg(feature = "cpu")]
+mod fail_closed {
+    use super::moment_common::{cross_center_non_square_shell_pair, ncart, nsph};
+    use cintx_compat::raw::{ANG_OF, BAS_SLOTS, RawApiId, eval_raw};
+    use cintx_core::cintxRsError;
+    use cintx_oracle::fixtures::build_h2o_sto3g_common_orig;
+
+    /// Drive the a01gp raw path through `eval_raw` for ONE non-square shell pair
+    /// and return the `Result`. The buffer is sized `2*rank*ni*nj` (complex_output)
+    /// so an undersized-output error cannot masquerade as the fail-closed outcome.
+    fn try_eval_a01gp(
+        api_id: RawApiId,
+        nf: impl Fn(i32) -> usize,
+    ) -> Result<(), cintxRsError> {
+        let (atm, bas, env) = build_h2o_sto3g_common_orig();
+        let (si, sj) = cross_center_non_square_shell_pair();
+        let li = bas[si * BAS_SLOTS + ANG_OF];
+        let lj = bas[sj * BAS_SLOTS + ANG_OF];
+        let n = 9 * nf(li) * nf(lj); // a01gp rank = 9
+        let shls = [si as i32, sj as i32];
+        let mut out = vec![0.0_f64; 2 * n];
+
+        // SAFETY: atm/bas/env well-formed; shls valid for the H2O/STO-3G corpus.
+        unsafe {
+            eval_raw(api_id, Some(&mut out), None, &shls, &atm, &bas, &env, None, None)
+        }
+        .map(|_| ())
+    }
+
+    /// 26-04 / CR-01: a01gp is registered but the kernel is known-wrong; the public
+    /// raw path MUST fail closed with UnsupportedApi until 26-05 lands parity.
+    #[test]
+    fn test_int1e_a01gp_is_fail_closed() {
+        for api in [RawApiId::INT1E_A01GP_CART, RawApiId::INT1E_A01GP_SPH] {
+            let nf: fn(i32) -> usize = if api == RawApiId::INT1E_A01GP_CART {
+                ncart
+            } else {
+                nsph
+            };
+            match try_eval_a01gp(api, nf) {
+                Err(cintxRsError::UnsupportedApi { .. }) => { /* fail-closed: OK */ }
+                Err(other) => panic!(
+                    "expected UnsupportedApi for {api:?}, got a different error: {other:?}"
+                ),
+                Ok(()) => panic!(
+                    "{api:?} returned Ok — int1e_a01gp must fail closed with UnsupportedApi \
+                     (known-wrong rank-9 kernel; no silently-wrong buffer permitted)"
+                ),
+            }
+        }
+    }
+}
