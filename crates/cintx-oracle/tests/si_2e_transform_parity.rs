@@ -307,18 +307,19 @@ fn test_no_silent_skip() {
         "no-silent-skip: cintx int2e_spsp1 path produced all-zero output (fixture skipped)",
     );
 
-    // D-03 ordering invariant: int2e_spsp1_spinor stays oracle_covered=false until
-    // 29-06 wires the family. The proof of the transform is THIS test, not a flip.
+    // Post 29-06 Task-3 flip: int2e_spsp1_spinor is oracle_covered=true (the family is
+    // fully wired in launch_two_electron_typed and byte-identical to vendor). This
+    // transform micro-test (D-03) remains the structural proof of the 2e si/sf suite.
     use cintx_ops::generated::MANIFEST_ENTRIES;
     let covered = MANIFEST_ENTRIES
         .iter()
         .find(|e| e.symbol_name == "int2e_spsp1_spinor")
         .map(|e| e.oracle_covered);
     match covered {
-        Some(false) => {}
-        Some(true) => panic!(
-            "int2e_spsp1_spinor must stay oracle_covered=false this plan (29-06 flips it after \
-             wiring the family); the D-03 proof is this transform test, not a coverage flip"
+        Some(true) => {}
+        Some(false) => panic!(
+            "int2e_spsp1_spinor must be oracle_covered=true after 29-06 Task 3 (the family is \
+             wired + byte-identical to vendor)"
         ),
         None => {
             panic!("int2e_spsp1_spinor is MISSING from MANIFEST_ENTRIES (Plan 29-04 row absent?)")

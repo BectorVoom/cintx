@@ -300,8 +300,8 @@ fn test_kappa_sizing_2e_non_4l_plus_2() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ALWAYS-ON: all 15 remaining 2e Group-4 rows are registered spinor-only,
-// component_rank=1, oracle_covered=false (the 29-06 pre-flip state). Guards the
-// component_rank-truncation landmine and the SC#5 spinor-only invariant.
+// component_rank=1, and (post Task-3 flip) oracle_covered=true SPINOR-ONLY. Guards
+// the component_rank-truncation landmine and the SC#5 spinor-only invariant.
 // ─────────────────────────────────────────────────────────────────────────────
 #[cfg(feature = "cpu")]
 #[test]
@@ -325,8 +325,8 @@ fn test_all_rel_2e_rows_registered() {
             "{sym}: forms must be [spinor] only (no cart/sph over-claim, SC#5)"
         );
         assert!(
-            !entry.oracle_covered,
-            "{sym}: oracle_covered must stay false this plan (29-06 flips it after parity green)"
+            entry.oracle_covered,
+            "{sym}: oracle_covered must be true spinor-only (29-06 Task 3 flip after parity green)"
         );
     }
 }
@@ -359,8 +359,8 @@ fn test_no_silent_skip() {
             ),
         );
 
-        // 29-06 ordering invariant: stays oracle_covered=false until its launcher
-        // is wired and its byte-identity gate flips green.
+        // Post Task-3 flip: each family is oracle_covered=true (its byte-identity gate
+        // is green AND the vendor arm ran non-skipped — proven right here).
         use cintx_ops::generated::MANIFEST_ENTRIES;
         let covered = MANIFEST_ENTRIES
             .iter()
@@ -368,8 +368,8 @@ fn test_no_silent_skip() {
             .map(|e| e.oracle_covered);
         assert_eq!(
             covered,
-            Some(false),
-            "{sym}: must stay oracle_covered=false this plan (29-06 flips after wiring)"
+            Some(true),
+            "{sym}: must be oracle_covered=true (29-06 Task 3 flip after wiring + parity green)"
         );
     }
 }
