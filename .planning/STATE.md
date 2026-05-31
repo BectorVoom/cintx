@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.4
-milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: planning
+milestone_name: milestone
+status: executing
 stopped_at: Phase 28 context gathered
-last_updated: "2026-05-31T10:33:15.783Z"
-last_activity: 2026-05-31
+last_updated: "2026-05-31T11:06:04.319Z"
+last_activity: 2026-05-31 -- Phase 28 planning complete
 progress:
-  total_phases: 21
-  completed_phases: 17
-  total_plans: 91
-  completed_plans: 91
-  percent: 100
+  total_phases: 28
+  completed_phases: 27
+  total_plans: 142
+  completed_plans: 139
+  percent: 98
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 Phase: 28
 Plan: Not started
-Status: Phase 27 done; ready to plan/execute Phase 28
+Status: Ready to execute
 Resume file: .planning/phases/28-spin-included-c2s-si-transform-p-module-gap-b2/28-CONTEXT.md
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
@@ -46,7 +46,7 @@ Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 Deferred follow-up: finite-difference verification of the 4 D-12 vendor-stub arms (FD of cintx scalar
   int2c2e_spinor / int3c1e_spinor), then flip under an FD-tolerance gate. D-03 needs an sf_4d derivative
   wrapper; D-04 belongs to the relativistic/ECP-spinor track.
-Last activity: 2026-05-31
+Last activity: 2026-05-31 -- Phase 28 planning complete
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →

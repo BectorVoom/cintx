@@ -455,9 +455,11 @@ static FINT _len_spinor(FINT kappa, FINT l) {     // cart2sph.c:3537
 | A2 | `int1e_spsp` uses `c2s_sf_1e` (not `c2s_si_1e`) as its c2s in libcint 6.1.3, so the Phase-29 spsp ket-side σ·p is folded into the gout, not the transform. | Open Questions | Verified at `intor3.c:411` (`&c2s_sf_1e`). If the planner assumes spsp also uses si_2d, the Phase-29 reuse story changes. MEDIUM risk for Phase 29 planning (not Phase 28). |
 | A3 | The heavy-atom realism fixture (D-05 secondary) can be built with a small synthetic Dirac-style 2c basis without needing an external basis-set file; exact element/exponents are Claude's discretion. | Fixtures | If a real published basis is required for "realism", more sourcing work. LOW risk (D-05 says "small real heavy-atom case"; a representative single-atom spinor basis suffices as a blind-spot cross-check). |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Where does cintx perform the gout-interleaved → gc-blocked transpose?**
+> All three carry resolution paths into the Phase 28 plans: Q1 → Plan 28-02 (emit pre-blocked on-device); Q2 → out of Phase 28 scope, flagged for Phase 29 reuse; Q3 → Plan 28-03 (verify against the existing lock row convention before stamping). None block execution.
+
+1. **Where does cintx perform the gout-interleaved → gc-blocked transpose?** [RESOLVED → Plan 28-02]
    - What we know: libcint does it in `CINT1e_loop` via `CINTdmat_transpose` (`cint1e.c:157`); cintx has `write_component_leading_staging` that produces component-leading blocks directly.
    - What's unclear: whether the σ·p `#[cube]` assembler should write pre-blocked (`comp*block+n`) on-device, or emit interleaved + transpose host-side.
    - Recommendation: emit pre-blocked on-device (follow `write_component_leading_staging` layout); avoids a host transpose and matches the existing component-leading staging convention. Confirm during plan task 1.
