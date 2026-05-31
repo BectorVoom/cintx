@@ -50,7 +50,7 @@ use crate::kernels::f12::{Nabla1Center, gout_ipip1, gout_ipn};
 use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, cart_to_sph_2c2e, ncart, nsph};
-use crate::transform::c2spinor::cart_to_spinor_sf_2d;
+use crate::transform::c2spinor::{cart_to_spinor_sf_2d, cart_to_spinor_sf_derivative_2d};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -625,12 +625,10 @@ fn launch_center_2c2e_grad<F: CintFloat>(
     center: Nabla1Center,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    // Spinor gradient: not supported (D-06). Reject before any compute.
-    if plan.representation == Representation::Spinor {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int2c2e gradient".to_owned(),
-        });
-    }
+    // 27-03 (FND-04): int2c2e_ip1/ip2 spinor gradients now fold via the
+    // centralized derivative wrapper (ncomp=3). 2c2e folds through the sf_2d
+    // path — there is NO aux-k axis, so the aux-k SPHERICAL correction does not
+    // apply here. The wrapper owns the KET→BRA transpose (D-06).
 
     let shells = plan.shells.as_slice();
     let shell_i = &shells[0];
@@ -770,7 +768,17 @@ fn launch_center_2c2e_grad<F: CintFloat>(
                 }
             }
         }
-        Representation::Spinor => unreachable!("spinor int2c2e gradient rejected above"),
+        // 27-03 (FND-04): fold via the centralized derivative wrapper. 2c2e's two
+        // centers are i and k (j,l are phantom s), so the wrapper's (i,j) roles map
+        // to (i,k) here. ncomp=3 (lock component_rank for int2c2e_ip1/ip2_spinor).
+        // cart_blocks is already KET-major bra-fastest contraction-major — exactly
+        // the wrapper's expected device-native layout. No aux-k axis (D-06).
+        Representation::Spinor => {
+            cart_to_spinor_sf_derivative_2d::<F>(
+                staging, &cart_blocks, 3, li, shell_i.kappa, lk, shell_k.kappa, n_ctr_i,
+                n_ctr_k,
+            )?;
+        }
     }
 
     let nonzero_threshold =
@@ -927,7 +935,17 @@ fn launch_center_2c2e_hess1<F: CintFloat>(
                 }
             }
         }
-        Representation::Spinor => unreachable!("spinor int2c2e_ipip1 rejected above"),
+        // 27-03: int2c2e_ipip1_spinor is NOT registered in the manifest lock (no
+        // spinor form), so the early guard above still rejects it with
+        // UnsupportedApi — this arm is defensively wired to the centralized
+        // derivative wrapper (ncomp=NCOMP=9, KET-major bra-fastest cart_blocks,
+        // no aux-k) so that a future registration folds correctly without a panic.
+        Representation::Spinor => {
+            cart_to_spinor_sf_derivative_2d::<F>(
+                staging, &cart_blocks, NCOMP, li, shell_i.kappa, lk, shell_k.kappa, n_ctr_i,
+                n_ctr_k,
+            )?;
+        }
     }
 
     let nonzero_threshold =
@@ -1543,8 +1561,11 @@ mod tests {
         assert!(res.is_ok(), "(f,f) int2c2e_ip1 (nroots=4) must be allowed: {:?}", res.err());
     }
 
+    // 27-03 (FND-04): int2c2e_ip1/ip2 spinor gradients now EVALUATE via the
+    // centralized derivative wrapper (was UnsupportedApi). The wrapper owns the
+    // KET→BRA transpose (D-06) and there is no aux-k axis for 2c2e.
     #[test]
-    fn test_int2c2e_grad_spinor_unsupported() {
+    fn test_int2c2e_grad_spinor_evaluates() {
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
         use crate::specialization::SpecializationKey;
         use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
@@ -1558,12 +1579,18 @@ mod tests {
         let spec = SpecializationKey::from_plan(&plan);
         let cpu_client = resolve_cpu_client().unwrap();
         let backend = ResolvedBackend::Cpu(cpu_client);
-        let mut staging = vec![0.0_f64; 9];
+        // (p,s) kappa=0: di=spinor_len(1,0)=4*1+2=6, dk=spinor_len(0,0)=2,
+        // spinor_block=6*2*2=24, ncomp=3 → required = 72.
+        let mut staging = vec![0.0_f64; 72];
         let result = launch_center_2c2e_typed::<f64>(&backend, &plan, &spec, &mut staging);
         assert!(
-            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor int2c2e gradient should return UnsupportedApi, got: {:?}",
+            result.is_ok(),
+            "spinor int2c2e gradient should now evaluate (FND-04), got: {:?}",
             result
+        );
+        assert!(
+            staging.iter().any(|v| v.abs() > 1e-14),
+            "spinor int2c2e gradient staging is all-zero"
         );
     }
 }

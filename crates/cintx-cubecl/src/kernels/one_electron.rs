@@ -21,7 +21,7 @@ use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
-use crate::transform::c2spinor::{cart_to_spinor_sf_2d, spinor_len};
+use crate::transform::c2spinor::{cart_to_spinor_sf_2d, cart_to_spinor_sf_derivative_2d};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -9295,13 +9295,8 @@ fn launch_one_electron_typed<F: CintFloat>(
     // — 9-component output
     // ─────────────────────────────────────────────────────────────────────────
     if is_rank9_both {
-        // Spinor reps for the rank-9 both-side family are registered but not
-        // implemented (Phase 23 D-06 / Phase 21 D-03): fail typed, never partial.
-        if plan.representation == Representation::Spinor {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!("spinor int1e_{op_name} gradient"),
-            });
-        }
+        // 27-03 (FND-04): the rank-9 both-side ip-family spinor rep now folds
+        // via the centralized derivative wrapper (D-06 transpose owned inside it).
 
         let n_prim_i = shell_i.nprim as usize;
         let n_prim_j = shell_j.nprim as usize;
@@ -9413,7 +9408,15 @@ fn launch_one_electron_typed<F: CintFloat>(
                     }
                 }
             }
-            Representation::Spinor => unreachable!("spinor rejected above"),
+            // 27-03 (FND-04): fold via the centralized derivative wrapper
+            // (ncomp=9, lock component_rank for ipovlpip/ipkinip/ipnucip).
+            // The wrapper owns the KET→BRA transpose (D-06).
+            Representation::Spinor => {
+                cart_to_spinor_sf_derivative_2d::<F>(
+                    staging, &cart_9comp, 9, li, shell_i.kappa, lj, shell_j.kappa, n_ctr_i,
+                    n_ctr_j,
+                )?;
+            }
         }
 
         let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
@@ -9449,12 +9452,8 @@ fn launch_one_electron_typed<F: CintFloat>(
     if is_deriv34 {
         use crate::kernels::deriv34::{contract_deriv34_block, deriv34_rank, nuclear_origins};
 
-        // Spinor reps are registered but not implemented (D-11): fail typed.
-        if plan.representation == Representation::Spinor {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!("spinor int1e_{op_name} (3rd/4th-order)"),
-            });
-        }
+        // 27-03 (FND-04): the rank-27/81 deriv3/deriv4 ip-family spinor rep now
+        // folds via the centralized derivative wrapper (ncomp = lock rank).
 
         let rank = deriv34_rank(op_name);
 
@@ -9561,7 +9560,14 @@ fn launch_one_electron_typed<F: CintFloat>(
                     }
                 }
             }
-            Representation::Spinor => unreachable!("spinor rejected above"),
+            // 27-03 (FND-04): fold via the centralized derivative wrapper
+            // (ncomp = deriv34 lock rank 27/81). Wrapper owns KET→BRA (D-06).
+            Representation::Spinor => {
+                cart_to_spinor_sf_derivative_2d::<F>(
+                    staging, &cart, rank, li, shell_i.kappa, lj, shell_j.kappa, n_ctr_i,
+                    n_ctr_j,
+                )?;
+            }
         }
 
         let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
@@ -9588,12 +9594,8 @@ fn launch_one_electron_typed<F: CintFloat>(
     // ipiprinv) — 9-component output, ng={2,0,...} (ipipkin {2,2,...}).
     // ─────────────────────────────────────────────────────────────────────────
     if is_rank9_bra {
-        // Spinor reps are registered but not implemented (D-11): fail typed.
-        if plan.representation == Representation::Spinor {
-            return Err(cintxRsError::UnsupportedApi {
-                requested: format!("spinor int1e_{op_name} Hessian"),
-            });
-        }
+        // 27-03 (FND-04): the rank-9 bra-only Hessian ip-family spinor rep now
+        // folds via the centralized derivative wrapper (ncomp=9, D-06 transpose).
 
         // iprinv: resolve the single rinv origin (validator should have rejected
         // a None origin; fail typed rather than read garbage).
@@ -9729,7 +9731,14 @@ fn launch_one_electron_typed<F: CintFloat>(
                     }
                 }
             }
-            Representation::Spinor => unreachable!("spinor rejected above"),
+            // 27-03 (FND-04): fold via the centralized derivative wrapper
+            // (ncomp=9, lock rank for ipipovlp/ipipnuc/ipipkin/ipiprinv).
+            Representation::Spinor => {
+                cart_to_spinor_sf_derivative_2d::<F>(
+                    staging, &cart_9comp, 9, li, shell_i.kappa, lj, shell_j.kappa, n_ctr_i,
+                    n_ctr_j,
+                )?;
+            }
         }
 
         let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
@@ -9916,53 +9925,16 @@ fn launch_one_electron_typed<F: CintFloat>(
                     }
                 }
             }
+            // 27-03 (FND-04 / D-06 / D-08): the rank-3 ip-gradient spinor fold is
+            // now a single call into the centralized derivative wrapper. The
+            // wrapper owns the KET→BRA transpose (no launcher-owned transpose
+            // remains) AND supports general contraction (nctr>1) contraction-major,
+            // so the previous nctr>1 rejection is dropped.
             Representation::Spinor => {
-                // Spin-free cart→spinor transform applied PER COMPONENT, mirroring the
-                // SCALAR spinor 1e path (one_electron.rs ~line 2857). The 3-component
-                // Cartesian gradient is already on-device; the c2s_sf_1e analogue stays
-                // host-side per project convention. General contraction (nctr>1) is not
-                // wired for the spinor transform — same guard as the scalar spinor path.
-                if n_ctr_i != 1 || n_ctr_j != 1 {
-                    return Err(cintxRsError::UnsupportedApi {
-                        requested: "spinor 1e gradient with general contraction (nctr>1)"
-                            .to_owned(),
-                    });
-                }
-                // di/dj are the spinor component counts; each spinor block is
-                // di*dj*2 interleaved-complex F elements (the per-component staging stride).
-                let di = spinor_len(li, shell_i.kappa as i32);
-                let dj = spinor_len(lj, shell_j.kappa as i32);
-                let spinor_block = di * dj * 2;
-                // nctr=1 → cart pair base is 0, total_len = 3 * block_len.
-                for comp in 0..3usize {
-                    let src_base = comp * block_len;
-                    let block = &cart_3comp[src_base..src_base + block_len];
-                    let staging_comp_base = comp * spinor_block;
-                    // The device gradient kernels emit each per-component Cartesian
-                    // block ket-major / bra-fastest (`block[cj_idx*nci + ci_idx]`),
-                    // but `cart_to_spinor_sf_2d` expects its `cart` argument
-                    // bra-major / ket-fastest (`cart[bra*ncj + ket]`, see
-                    // c2spinor.rs apply_bra_block: `cart[n*ncj + j]`). Transpose each
-                    // per-component block into bra-major before the spin-free
-                    // cart→spinor transform so the bra/ket coefficient roles line up
-                    // with libcint c2s_sf_1e. (For square symmetric blocks this is a
-                    // no-op, which is why the asymmetric nuclear-gradient operators
-                    // ipnuc/iprinv are the ones that surface the orientation.)
-                    let mut block_bra_major = vec![0.0f64; block_len];
-                    for ic in 0..nci {
-                        for jc in 0..ncj {
-                            block_bra_major[ic * ncj + jc] = block[jc * nci + ic];
-                        }
-                    }
-                    cart_to_spinor_sf_2d::<F>(
-                        &mut staging[staging_comp_base..staging_comp_base + spinor_block],
-                        &block_bra_major,
-                        li,
-                        shell_i.kappa,
-                        lj,
-                        shell_j.kappa,
-                    )?;
-                }
+                cart_to_spinor_sf_derivative_2d::<F>(
+                    staging, &cart_3comp, 3, li, shell_i.kappa, lj, shell_j.kappa, n_ctr_i,
+                    n_ctr_j,
+                )?;
             }
         }
 
@@ -12155,16 +12127,21 @@ mod tests {
 
     // ─────────────────────────────────────────────────────────────────────────
     // Test GRAD-04b: ipovlp spinor gradient with general contraction (nctr>1)
-    // still returns UnsupportedApi (guard preserved).
+    // now EVALUATES via the centralized derivative wrapper (27-03 / D-08). The
+    // prior UnsupportedApi rejection is gone: nctr>1 composes contraction-major
+    // inside cart_to_spinor_sf_derivative_2d.
     // ─────────────────────────────────────────────────────────────────────────
     #[cfg(feature = "cpu")]
     #[test]
-    fn test_ipovlp_spinor_grad_nctr_gt1_returns_unsupported() {
-        // Oversize staging so the nctr>1 guard (not a bounds issue) is what fires.
+    fn test_ipovlp_spinor_grad_nctr_gt1_evaluates() {
+        // l=0, nctr=2: di=dj=spinor_len(0,0)=2, ni_full=nj_full=2*2=4,
+        // spinor_block=4*4*2=32, ncomp=3 → required staging = 96 (256 is ample).
         let result = run_forced_spinor_grad("int1e_ipovlp_sph", 0, 2, None, 256);
+        let staging =
+            result.expect("spinor ipovlp gradient with nctr>1 should now evaluate (D-08)");
         assert!(
-            matches!(result, Err(cintxRsError::UnsupportedApi { .. })),
-            "spinor ipovlp gradient with nctr>1 should return UnsupportedApi, got: {result:?}"
+            staging.iter().any(|v| v.abs() > 1e-14),
+            "spinor ipovlp gradient (nctr>1) staging is all-zero"
         );
     }
 
