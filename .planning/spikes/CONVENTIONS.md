@@ -37,6 +37,13 @@ unless the question requires otherwise.
   interpretation fails (`mm(vendor, j-fastest) > 0`; `cintx != to_j_fastest(cintx)`).
 - **Probe ladder.** `int1e_r / rr / rrr / rrrr` is the canonical uniform family spanning
   rank 3/9/27/81 with cart+sph `RawApiId` consts and `vendor_ffi::vendor_int1e_r{,r,rr,rrr}`.
+- **Order-pinning by permutation-disagreement.** To prove an axis ordering is the one libcint
+  uses (not a symmetric-block coincidence), reindex the buffer under every non-identity
+  permutation and assert each diverges from vendor while the claimed order matches. The
+  N-axis generalization of spike 003's `to_j_fastest` is `reindex(buf, rank, extents, perm)`
+  with `extents` in fastest→slowest order (spike 004). Specializations: i-axis
+  contraction-minor reinterpretation (spike 005), complex de-interleave + i/j transpose
+  (spike 006).
 
 ## Tools & Libraries
 
@@ -55,3 +62,13 @@ unless the question requires otherwise.
   fixtures cannot exercise a "legitimately-zero component correctly skipped" path.
 - **`int1e_r` reads the gauge origin** (`drj = rj - env[PTR_COMMON_ORIG]`); set it to 0 for
   a clean `R_c·S` hand-check.
+- **Multi-index tuples need EVERY axis >1.** A 3-/4-index layout test with any unit axis
+  hides an adjacent-axis swap (the multi-index analog of the orientation-blind s×p block).
+  Pick a quartet/triple like `(0,p)(0,d)(1,p)(1,d)` → extents `[3,6,3,6]` (spike 004).
+- **nctr>1 tests must also span rank tiers.** The existing `moment_genctr` only covers
+  rank-9; the contraction-major composition is rank-independent but should be probed across
+  3/9/27/81 (spike 005). Contraction is the MAJOR within-axis index (`i_global = ci*di+ic`).
+- **Spinor layout DIVERGES** — it is interleaved-complex, not real component-leading. Size
+  buffers `rank*ni_sp*nj_sp*2` with `ni_sp = CINTcgto_spinor = 4l+2` (kappa=0); re/im is the
+  fastest axis. Component-leading + ket-major i-fastest still hold *around* the interleave
+  (spike 006). Set `KAPPA_OF` on spinor shells.
