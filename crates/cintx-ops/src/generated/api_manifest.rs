@@ -6253,6 +6253,24 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
     },
+    ManifestEntry {
+        family_name: "1e",
+        operator_name: "sp",
+        symbol_name: "int1e_sp_spinor",
+        category: "1e",
+        arity: 2,
+        forms: &["spinor"],
+        component_rank: "1",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "unknown",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: false,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "1e",
+        representation: RepresentationSupport::new(false, false, true),
+    },
 ];
 pub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &[
     OperatorDescriptor {
@@ -7642,5 +7660,9 @@ pub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &[
     OperatorDescriptor {
         id: OperatorId::new(346),
         entry: &MANIFEST_ENTRIES[346],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(347),
+        entry: &MANIFEST_ENTRIES[347],
     },
 ];

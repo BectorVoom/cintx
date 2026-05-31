@@ -346,3 +346,4 @@ family_name,operator_name,symbol_name,category,arity,forms,component_rank,comple
 "2e","g1g2","int2e_g1g2_cart","2e",4,"cart","9",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","2e"
 "2e","g1g2","int2e_g1g2_sph","2e",4,"sph","9",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","2e"
 "2e","g1g2","int2e_g1g2_spinor","2e",4,"spinor","9",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","2e"
+"1e","sp","int1e_sp_spinor","1e",2,"spinor","1",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","1e"
