@@ -554,4 +554,37 @@ mod tests {
             .id;
         assert_eq!(int4c1e_cart_id, OperatorId::new(24));
     }
+
+    // FND-03: the per-family `complex_output` manifest flag drives complex
+    // (2×ncomp) staging from manifest data, not the representation string.
+    #[test]
+    fn spinor_rows_have_complex_output_true() {
+        let spinor_rows: Vec<&ManifestEntry> = MANIFEST_ENTRIES
+            .iter()
+            .filter(|entry| entry.representation.spinor)
+            .collect();
+        assert!(
+            !spinor_rows.is_empty(),
+            "expected at least one spinor-supporting manifest row"
+        );
+        for entry in spinor_rows {
+            assert!(
+                entry.complex_output,
+                "spinor row {} must be backfilled complex_output=true",
+                entry.symbol_name
+            );
+        }
+    }
+
+    #[test]
+    fn real_cart_family_has_complex_output_false() {
+        let entry = MANIFEST_ENTRIES
+            .iter()
+            .find(|entry| entry.symbol_name == "int1e_ovlp_cart")
+            .expect("int1e_ovlp_cart missing");
+        assert!(
+            !entry.complex_output,
+            "real cart family int1e_ovlp_cart must have complex_output=false"
+        );
+    }
 }
