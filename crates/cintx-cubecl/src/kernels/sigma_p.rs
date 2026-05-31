@@ -1186,9 +1186,13 @@ fn sigma_p_spgsp_kernel<F: Float + CubeElement>(
     nctr_j: u32,
 ) {
     if UNIT_POS == 0u32 {
-        // Headroom: +2 in bra (D_J reads i+2 of g0; x1i reads i+1; D_I reads ±1),
-        // +1 in ket (D_J reads j+1). Matches sigma_p_cg_sa10sp_kernel.
-        let nmax = li + lj + 2u32;
+        // Headroom for the 8-G chain g7 = D_I(R0I(D_J(g0))): the deepest read is
+        // D_I at bra i (reads i+1) of R0I (reads another +1) of D_J — so the base
+        // G-tensor must be valid up to bra index li+2 at ket jx+1. HRR fills
+        // g[j*dj+i] only for i <= nmax-j, so nmax must satisfy (li+2) <= nmax-(lj+1)
+        // ⇒ nmax = li+lj+3 (ONE more bra level than the cg kernel's li+lj+2).
+        // lj_ext = lj+1 (D_J reads j+1).
+        let nmax = li + lj + 3u32;
         let lj_ext = lj + 1u32;
         let dj = nmax + 1u32;
         let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
@@ -1530,7 +1534,7 @@ fn run_sigma_p_spgsp_device<R: Runtime>(
 ) -> Vec<f64> {
     let li_u = li as usize;
     let lj_u = lj as usize;
-    let nmax_u = li_u + lj_u + 2;
+    let nmax_u = li_u + lj_u + 3;
     let lj_ext_u = lj_u + 1;
     let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
     let total_g = 3 * g_per_axis;

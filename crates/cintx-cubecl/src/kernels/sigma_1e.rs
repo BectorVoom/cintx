@@ -608,7 +608,7 @@ fn run_sigma_ov_on_backend(
 
 /// Transform selector per family (RESEARCH §Per-Family Map).
 #[derive(Clone, Copy, PartialEq)]
-enum TransformKind {
+pub(crate) enum TransformKind {
     /// spsp → c2s_sf_1e (scalar, reads gc_1 only).
     Sf,
     /// spnucsp/sprinvsp/srsr/srnucsr → c2s_si_1e (real bra-σ-mix).
