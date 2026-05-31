@@ -29,7 +29,13 @@ Phase: 27 (spinor-derivative-transform-gap-b1) — PAUSED (re-plan pending)
 Plan: 27-01 complete; 27-02 paused before any commit
 Status: Paused at Plan 02 decision — spike finding D2 (3c2e aux-k = spinor 4lk+2) DISPROVEN against libcint 6.1.3 source (int3c2e_*_spinor emits SPHERICAL aux-k = 2lk+1, verified cint3c2e.c:631-636, cart2sph.c:6014, autocode/int3c2e.c:94/175). User chose Option 3: re-spike/re-plan to reconcile spike + RED test k-sizing + compat-dims over-sizing before resuming Plan 02.
 Resume file: .planning/phases/27-spinor-derivative-transform-gap-b1/27-CONTEXT.md
-Re-plan inputs: 27-SPIKE-FINDINGS.md (D2 needs correction), spinor_deriv_parity.rs (RED test k-sizing), fixtures.rs ao_count_for_rep (compat-dims over-sizing root cause), draft/27-02-c2spinor-wrappers-draft.patch (paused executor's uncommitted draft)
+Re-plan reconciliation checklist (aux-k of int3c2e/int3c1e spinor families must be SPHERICAL 2lk+1, NOT 4lk+2; i/j axes stay spinor 4l+2):
+  1. 27-SPIKE-FINDINGS.md D2/D3 — correct aux-k to spherical 2lk+1.
+  2. crates/cintx-oracle/tests/spinor_deriv_parity.rs — shell_nsp_full / collect_*_3c aux-k (SK) sizing: nsph(lk), not nctr*(4l+2). (27-01 committed, encodes wrong contract.)
+  3. crates/cintx-oracle/src/vendor_ffi.rs — 3c2e/3c1e wrapper out-buffer aux-k: nsph(lk)*nctr_k, not vendor_CINTcgto_spinor. (27-01 committed, encodes wrong contract.)
+  4. crates/cintx-oracle/src/fixtures.rs ao_count_for_rep — compat-dims over-sizing (root cause of spike's 720); aux-k of 3c-spinor reps should be nsph(lk).
+  5. Plan 02-05 success criteria — k-axis = nsph(lk). cart_to_spinor_sf_3c2e (nsk=nsph(lk)) is ALREADY correct; the derivative wrapper just loops it ncomp times.
+  6. draft/27-02-c2spinor-wrappers-draft.patch + reverted commit 0922c82 (git show) — paused executor's uncommitted wrapper draft + RED-test draft, for reference.
 Last activity: 2026-05-31 -- Phase 27 paused: 27-01 done, 27-02 blocked on 3c2e k-axis re-plan
 
 **v1.4 phase sequence (dependency-ordered):**
