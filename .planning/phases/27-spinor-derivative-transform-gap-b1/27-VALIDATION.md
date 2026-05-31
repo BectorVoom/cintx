@@ -48,6 +48,8 @@ created: 2026-05-31
 | sf_2d highest-rank (27/81 `ipip*`) axis-fold | — | integration | `... test_int1e_ipip<X>_spinor_adversarial_parity` | ❌ W0 | ⬜ pending |
 | sf_3c2e rank-3 axis-fold (`int3c2e_ip1_spinor`) | — | integration | `... test_int3c2e_ip1_spinor_adversarial_parity` | ❌ W0 | ⬜ pending |
 | 2c2e via sf_2d (`int2c2e_ip1_spinor`) | — | integration | `... test_int2c2e_ip1_spinor_adversarial_parity` | ❌ W0 | ⬜ pending |
+| sf_3c2e-path int3c1e_ip1 spinor (D-02 arity-3; launcher center_3c1e.rs) | — | integration (vendor parity) | `CINTX_ORACLE_BUILD_VENDOR=1 ... --test spinor_deriv_parity test_int3c1e_ip1_spinor_adversarial_parity` | ❌ W0 | ⬜ pending |
+| sf_3c2e-path int3c1e_iprinv spinor (D-02 arity-3; NON-ZERO rinv origin) | — | integration (vendor parity) | `CINTX_ORACLE_BUILD_VENDOR=1 ... --test spinor_deriv_parity test_int3c1e_iprinv_spinor_adversarial_parity` | ❌ W0 | ⬜ pending |
 | nctr>1 spinor general contraction (D-08) | — | integration | covered by adversarial fixture in every test above | ❌ W0 | ⬜ pending |
 | No-silent-skip coverage assertion (D-10) | — | integration | `... test_no_silent_skip` (asserts `N>0` ran + flipped families `oracle_covered=true`) | ❌ W0 | ⬜ pending |
 | Manifest audit green after flip | — | xtask | `cargo run -p xtask -- manifest-audit` | ✓ | ⬜ pending |
@@ -55,10 +57,13 @@ created: 2026-05-31
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
+> **Nyquist Dimension 8 (oracle coverage):** the two int3c1e behaviors above are the D-02 arity-3 families whose `oracle_covered=true` flip (Plan 05) MUST be backed by a real vendor byte-identity parity test (Plan 01 creates RED; Plan 04 turns GREEN under both gate flags). The D-10 `oracle_covered` assertion does NOT substitute for these byte-identity comparisons.
+
 ### Observable Signals (what proves the axis-fold is correct)
 - **Per rank tier (3/9/27/81):** a `ncomp*di*dj*2` buffer splits into exactly `ncomp` non-overlapping, all-nonzero component slices (no trailing-zero, no truncation — component_rank-truncation landmine).
 - **Orientation:** vendor byte-identity on a NON-SQUARE p×d block at atol=1e-12; a j-fastest reindex negative control must diverge (`mismatches>0`).
-- **Both paths:** `sf_2d` (1e + 2c2e) and `sf_3c2e` (3c2e) each have ≥1 passing parity test.
+- **Both paths:** `sf_2d` (1e + 2c2e) and `sf_3c2e` (3c2e + int3c1e) each have ≥1 passing parity test.
+- **int3c1e arity-3:** both `int3c1e_ip1_spinor` and `int3c1e_iprinv_spinor` byte-identical at atol=1e-12 under both flags; iprinv exercises a NON-ZERO rinv origin (not a trivially-passing zero-origin shortcut).
 - **nctr>1:** the general-contraction fixture produces vendor-identical output with contraction-major composition (no coefficient transpose).
 - **No-silent-skip:** parity binary reports `running N>0 tests` under both flags; flipped families read `oracle_covered=true`; `manifest-audit` green.
 
@@ -66,9 +71,9 @@ created: 2026-05-31
 
 ## Wave 0 Requirements
 
-- [ ] `crates/cintx-oracle/tests/spinor_deriv_parity.rs` — D-09 per-path×per-rank parity tests + D-10 no-silent-skip assertion (new file)
-- [ ] `crates/cintx-oracle/src/fixtures.rs` — D-08 adversarial fixture builder (non-square p×d + nctr>1 + kappa=0); model on `int3c1e_genctr_parity.rs::build_genctr_fixture`
-- [ ] `crates/cintx-oracle/src/vendor_ffi.rs` — extern decls + wrappers for rank-9/27/81 1e ip-spinor, `int3c2e_ip1/ip2_spinor`, `int2c2e_ip1/ip2_spinor`, `int3c1e_ip1/iprinv_spinor` (only the four rank-3 1e exist today)
+- [ ] `crates/cintx-oracle/tests/spinor_deriv_parity.rs` — D-09 per-path×per-rank parity tests (incl. test_int3c1e_ip1/iprinv_spinor_adversarial_parity) + orientation negative control + D-10 no-silent-skip assertion (new file)
+- [ ] `crates/cintx-oracle/src/fixtures.rs` — D-08 adversarial fixture builder (non-square p×d + nctr>1 + kappa=0 + NON-ZERO rinv origin); model on `int3c1e_genctr_parity.rs::build_genctr_fixture`
+- [ ] `crates/cintx-oracle/src/vendor_ffi.rs` — extern decls + wrappers for rank-9/27/81 1e ip-spinor, `int3c2e_ip1/ip2_spinor`, `int2c2e_ip1/ip2_spinor`, `int3c1e_ip1/iprinv_spinor` (only the four rank-3 1e exist today — Plan 01 adds 6 new wrappers)
 - [ ] `crates/cintx-cubecl/src/transform/c2spinor.rs` — `#[test]` unit coverage for the new wrappers (stride/transpose)
 - [ ] Framework install: none — built-in `cargo test`; `nextest` optional
 
@@ -78,7 +83,7 @@ created: 2026-05-31
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| D-11 design spike: confirm device-emitted derivative cart block layout (`[comp][ket][bra]` component-outer) and 3c2e transpose granularity | FND-04 | Empirical layout discovery against hand-checked vendor values; precedes finalizing the `_3c2e` wrapper and nctr>1 composition | Run `/gsd:spike` exercising the full per-component axis-fold across all rank tiers and both transform paths before plan tasks (a) and the 3c2e portion are finalized |
+| D-11 design spike: confirm device-emitted derivative cart block layout (`[comp][ket][bra]` component-outer), 3c2e transpose granularity, and the int3c1e launcher file path | FND-04 | Empirical layout discovery against hand-checked vendor values; precedes finalizing the `_3c2e` wrapper and nctr>1 composition | Run `/gsd:spike` exercising the full per-component axis-fold across all rank tiers and both transform paths before plan tasks (a) and the 3c2e portion are finalized |
 
 *All shipped behaviors have automated verification; the spike above is a pre-implementation design probe, not a shippable behavior.*
 
@@ -94,3 +99,4 @@ created: 2026-05-31
 - [ ] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
+</content>

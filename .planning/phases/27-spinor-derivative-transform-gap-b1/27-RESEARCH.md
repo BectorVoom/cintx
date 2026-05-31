@@ -304,21 +304,23 @@ fn test_int1e_ipovlp_spinor_adversarial_parity() {
 | A4 | Flipping `oracle_covered` in the lock auto-syncs the audit with no separate fixtures list to edit. | Runtime State Inventory | Low — stated in CONTEXT.md code_context and consistent with prior phases (MEMORY: ipovlpip rank-9). Confirm `manifest-audit` green after the flip. |
 | A5 | `component_rank` values for all flipped families are already correct in the lock (no truncation latent). | Pitfall 2 | Medium — verify each rank value matches its tier before relying on `ncomp` from the manifest. |
 
-## Open Questions
+## Open Questions (RESOLVED via Plan 01 spike hard-gate)
 
-1. **3c2e derivative transpose granularity (the D-11 spike's core target).**
+> All MEDIUM-confidence unknowns below are resolved by the D-11 design spike (Plan 27-01 Task 1, a blocking checkpoint), whose findings (`27-SPIKE-FINDINGS.md`) are AUTHORITATIVE for Plans 02/04. Q3 is Claude's discretion within D-09. This is a doc annotation; the spike itself is run in Plan 01, not here.
+
+1. **3c2e derivative transpose granularity (the D-11 spike's core target). (RESOLVED via Plan 01 spike hard-gate.)**
    - What we know: `cart_to_spinor_sf_3c2e` (L1281) takes a `[k][j][i]`-ordered cart buffer, folds k cart→sph, then applies `sf_2d` per k-slice. The 1e KET→BRA transpose rule is `block_bra_major[ic*ncj+jc] = src[jc*nci+ic]`.
    - What's unclear: For the derivative form, is the device buffer `[comp][k][ket][bra]` (transpose per (comp,k) sub-block) or `[comp][k][bra][ket]`? And does `int3c2e_ip2` (derivative on the ket/aux center) differ from `ip1`?
-   - Recommendation: Resolve empirically in the D-11 spike against hand-checked vendor values on a non-square + nctr>1 block (D-08). Do not finalize the `_3c2e` wrapper signature/transpose until then.
+   - **Resolution mechanism:** Plan 27-01 Task 1 (D-11 spike, blocking checkpoint) dumps the `int3c2e_ip1_spinor` derivative buffer and compares element-by-element to hand-checked vendor values on a NON-SQUARE + nctr>1 block (D-08), settling the transpose granularity and the ip1-vs-ip2 ordering. Plan 02's `cart_to_spinor_sf_derivative_3c2e` signature is finalized only after the checkpoint approves the findings. Verified GREEN by `test_int3c2e_ip1_spinor_adversarial_parity` (Plan 04).
 
-2. **nctr>1 spinor block sizing and coefficient ordering.**
+2. **nctr>1 spinor block sizing and coefficient ordering. (RESOLVED via Plan 01 spike hard-gate.)**
    - What we know: inner `sf_2d` has no nctr param; vendor `CINTcgto_spinor` includes nctr; env coeff is column-major, Shell row-major (spike 005).
    - What's unclear: exact loop nesting (contraction-major outer vs interleaved) and where the row/column-major transpose must happen for the spinor path specifically.
-   - Recommendation: Mirror the `int3c1e_genctr_parity.rs` gc builder and spike 005's `i_global = ci*di + ic`; verify on the D-08 fixture. Treat as a distinct plan task (largest blast radius).
+   - **Resolution mechanism:** Plan 27-01 Task 1 confirms `i_global = ci*di + ic`, `ni_full = nctr_i*di`, and the column->row coeff transpose location against vendor on the D-08 nctr>1 fixture (mirroring `int3c1e_genctr_parity.rs`). Recorded in `27-SPIKE-FINDINGS.md`; consumed by Plan 02's wrapper nctr loop nesting.
 
-3. **Which exact highest-rank family for the D-09 27/81 test.**
+3. **Which exact highest-rank family for the D-09 27/81 test. (RESOLVED — Claude's discretion within D-09.)**
    - What we know: rank-27 = `ipipipnuc/ipipiprinv/ipipnucip/ipiprinvip`; rank-81 = `ipipipiprinv/ipiprinvipip/ipipiprinvip`.
-   - Recommendation: Pick one rank-81 `int1e_ipip*` spinor family with existing scalar coverage; add its vendor FFI. (Claude's discretion within D-09.)
+   - **Resolution mechanism:** Claude's discretion within D-09. Plan 27-01 picks `int1e_ipipipiprinv_spinor` (rank-81) with existing scalar coverage and adds its vendor FFI; verified by `test_int1e_ipipipiprinv_spinor_adversarial_parity`.
 
 ## Environment Availability
 
