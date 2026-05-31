@@ -84,7 +84,39 @@ assert!(mismatches(&cintx, &cintx_jf) > 0);            // negative control: orie
 - `int1e_r`-family reads the gauge origin (`drj = rj - env[PTR_COMMON_ORIG]`); set it to 0
   for the clean `R_c·S` hand-check.
 
+## Multi-index families (3-/4-index) — spike 004
+
+The component-leading formula generalizes; the inner block is **i (bra1) fastest**:
+
+```
+2e   : out[comp*(ni*nj*nk*nl) + (((l*nk+k)*nj+j)*ni+i)]
+3c2e : out[comp*(ni*nj*nk)    + ((k*nj+j)*ni+i)]
+```
+
+Pin the ordering with the N-axis generalization of the i/j transpose test —
+`reindex(buf, rank, extents, perm)` with `extents` in fastest→slowest order. Assert
+`mm(vendor,cintx)==0` and that **every** non-identity axis permutation diverges. Verified
+byte-identical for `int2e_ip1` (4-index) and `int3c2e_ip2` (3-index), cart+sph.
+
+**Critical:** pick a tuple where EVERY axis >1 (e.g. `(0,p)(0,d)(1,p)(1,d)` → `[3,6,3,6]`).
+A unit axis hides an adjacent-axis swap, exactly like the orientation-blind s×p block.
+
+## General contraction (nctr>1) — spike 005
+
+Contraction is the **MAJOR** within-axis index; it composes with component-leading folding:
+
+```
+i_global = ci*di + ic        (ci = contraction 0..nctr_i, ic = angular 0..di)
+out[comp*(ni_full*nj_full) + (j_global*ni_full + i_global)]      ni_full = nctr_i*di
+```
+
+The env coefficient block is COLUMN-major (`env[ci*nprim+ip]`); cintx transposes to
+row-major internally — the historical nctr-transpose bug class. Verified vendor-identical
+across rank 3/9/27/81 (bra p nctr=2 × ket d). Negative control: reinterpreting the i-axis as
+contraction-MINOR (`i_alt = ic*nctr_i + ci`) diverges from vendor. Probe nctr>1 **across all
+rank tiers**, not just rank-9 (which is all the existing `moment_genctr` test covers).
+
 ## Origin
 
-Synthesized from spikes: 001, 003
-Source files available in: sources/001-axis-fold-stride-probe/, sources/003-hand-checked-vendor-stride/
+Synthesized from spikes: 001, 003, 004, 005
+Source files available in: sources/001-axis-fold-stride-probe/, sources/003-hand-checked-vendor-stride/, sources/004-multi-index-block-ordering/, sources/005-nctr-axisfold-composition/
