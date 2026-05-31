@@ -20,8 +20,8 @@ discuss all four.
 - **Options:**
   - Flip only the 1 vehicle *(Recommended)* — flip the single validation-vehicle σ family; all others → Phase 29.
   - Infrastructure-only (flip 0) — transform/component-level test only; all σ families flip in Phase 29.
-- **Selected:** Flip only the 1 vehicle.
-- **Notes:** Gives FND-05 a real registered byte-identity oracle anchor without over-claiming coverage for families whose kernels land in Phase 29. → CONTEXT D-01.
+- **Selected:** Infrastructure-only (flip 0).
+- **Notes:** Phase 28 flips no σ family. FND-05 is proven by a dedicated transform/component-level byte-identity test driving the `int1e_sp` path vs libcint `c2s_si_1e` at atol=1e-12 — not a manifest coverage flip. ALL σ flips (incl. the `int1e_sp` vehicle) → Phase 29. Strictly honors SC#4. → CONTEXT D-01.
 
 ## Area 2 — Validation Vehicle
 
@@ -49,8 +49,8 @@ discuss all four.
   - D-08 geometry + kappa≠0 *(Recommended)* — reuse Phase 27's non-square + nctr>1 geometry but with genuine kappa≠0 (GT/LT-only sizing).
   - Real heavy-atom basis — relativistic 2c basis on a heavy element; larger, slower, less surgical.
   - Both: adversarial + 1 heavy — strongest coverage, more fixture work.
-- **Selected:** D-08 geometry + kappa≠0.
-- **Notes:** Adds the `di = 2l`/`2l+2` GT/LT-only sizing path that B1's kappa=0 fixture structurally could not test, while keeping every prior landmine. Sibling `build_kappa_spinor_fixture` in `fixtures.rs`. → CONTEXT D-05.
+- **Selected:** Both: adversarial + 1 heavy.
+- **Notes:** Primary gate = D-08 adversarial geometry (non-square p×d + nctr>1) with genuine kappa≠0 (`di = 2l`/`2l+2` GT/LT-only sizing path that B1's kappa=0 fixture structurally could not test); PLUS one small real heavy-atom relativistic 2c-basis case as a physical-realism cross-check against synthetic-fixture blind spots. Sibling `build_kappa_spinor_fixture` + a heavy-atom fixture in `fixtures.rs`. → CONTEXT D-05.
 
 ## Carried-Forward Conventions (not re-asked)
 
