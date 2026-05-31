@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: executing
-stopped_at: Completed 27-05-PLAN.md (Phase 27 complete)
-last_updated: "2026-05-31T10:30:00.000Z"
-last_activity: 2026-05-31 -- Phase 27 complete (27-05 coverage flip + D-10 assertion)
+status: planning
+stopped_at: Phase 27 context gathered
+last_updated: "2026-05-31T10:04:12.878Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 21
   completed_phases: 17
@@ -25,25 +25,28 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 27 (spinor-derivative-transform-gap-b1) — COMPLETE (all 6 plans landed)
-Plan: 6 of 6 complete (27-01, 27-02, 27-02a, 27-03, 27-04, 27-05 landed)
+Phase: 28
+Plan: Not started
 Status: Phase 27 done; ready to plan/execute Phase 28
 Resume file: None
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
+
   - 27-05 flipped oracle_covered=true for the 20 vendor-backed sf-derivative spinor families
     (18 arity-2 1e sf_2d ranks 3/9/27/81 + int3c2e_ip1/ip2 sf_3c2e rank-3); component_rank
     verified against the rank-tier table before each flip (no rank edits).
+
   - 4 D-12 vendor-stub arms (int2c2e_ip1/ip2_spinor + int3c1e_ip1/iprinv_spinor) stay
     oracle_covered=false — libcint 6.1.3 ships them as return-0 / exit(1) stubs (no byte-identity
     reference). 6 D-03 arity-4 int2e_ip* + 1 D-04 int1e_ecp_iprinv_spinor also stay false.
+
   - D-10 no-silent-skip assertion completed (test_no_silent_skip reads MANIFEST_ENTRIES at runtime,
     asserts the FLIPPED=true / DEFERRED=false split); manifest-audit green; full vendor parity suite
     green under both gate flags (6 passed, 0 failed, 3 ignored). No capi/legacy surface added.
 Deferred follow-up: finite-difference verification of the 4 D-12 vendor-stub arms (FD of cintx scalar
   int2c2e_spinor / int3c1e_spinor), then flip under an FD-tolerance gate. D-03 needs an sf_4d derivative
   wrapper; D-04 belongs to the relativistic/ECP-spinor track.
-Last activity: 2026-05-31 -- Phase 27 complete (27-05 coverage flip + D-10 assertion)
+Last activity: 2026-05-31
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -59,7 +62,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 **Velocity:**
 
-- Total plans completed: 44
+- Total plans completed: 50
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -75,6 +78,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | 23 | 5 | - | - |
 | 24 | 5 | - | - |
 | 26 | 8 | - | - |
+| 27 | 6 | - | - |
 
 **Recent Trend:**
 
