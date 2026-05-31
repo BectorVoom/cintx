@@ -611,6 +611,125 @@ pub fn cart_to_spinor_sf_2d<F: CintFloat>(
     Ok(())
 }
 
+/// Host-side spin-included (si) 2D cart→spinor transform — libcint `c2s_si_1e`.
+///
+/// This is the σ-coupled bra+ket driver matching libcint `c2s_si_1e` (`cart2sph.c:4947`):
+/// a Pauli-σ mix on the bra (`a_bra_cart2spinor_si`, via [`apply_bra_si_block`]) and the
+/// ORDINARY ket transform (`a_ket_cart2spinor`, via [`apply_ket_transform`] reused
+/// verbatim — `c2s_si_1e`'s ket is identical to `c2s_sf_1e`'s; the ket is NOT symmetrized).
+///
+/// It is the structural analog of [`cart_to_spinor_sf_2d`] with ONLY the bra step swapped
+/// for the four-cart-input σ-mix. It consumes the four Cartesian G-tensor blocks
+/// `gc_x/gc_y/gc_z` (Pauli-σ components) + `gc_1` (scalar) the σ·p assembler emits.
+///
+/// # Buffer sizing (Spike Target D)
+/// All spinor sizing comes from [`spinor_len`] (kappa==0→4l+2, kappa<0→2l+2 GT,
+/// kappa>0→2l LT) — never a hardcoded `4l+2`. Output is interleaved complex
+/// `[re,im,…]`, column-major (ket-spinor outer, bra-spinor inner), length `di*dj*2`.
+///
+/// # Orientation (Pitfall 4 / Phase-27 D-06)
+/// The transform OWNS the KET→BRA transpose: device cart blocks arrive KET-major
+/// (`block[j*nci+i]`); the bra step reads BRA-major (`block[i*ncj+j]`). Each of the four
+/// `gc_*` blocks is transposed independently before the bra fold.
+///
+/// # Errors
+/// Validates buffer sizes BEFORE any write (OOM-safe stop, no partial writes):
+/// undersized `gc_*` → [`cintxRsError::ChunkPlanFailed`]; undersized `staging` →
+/// [`cintxRsError::BufferTooSmall`].
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_si_2d<F: CintFloat>(
+    staging: &mut [F],
+    gc_x: &[f64],
+    gc_y: &[f64],
+    gc_z: &[f64],
+    gc_1: &[f64],
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+
+    // ── Buffer guards (no writes before these pass) ────────────────────────────
+    let need = nci * ncj;
+    for (name, block) in [
+        ("gc_x", gc_x), ("gc_y", gc_y), ("gc_z", gc_z), ("gc_1", gc_1),
+    ] {
+        if block.len() < need {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "c2spinor_si_2d",
+                detail: format!(
+                    "{} block length {} < nci*ncj = {}*{} = {}",
+                    name, block.len(), nci, ncj, need
+                ),
+            });
+        }
+    }
+    let required = di * dj * 2;
+    if staging.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Stage 0: KET→BRA transpose for each of the four gc blocks ──────────────
+    // Device cart blocks are KET-major block[j*nci+i]; the bra step reads BRA-major
+    // block[i*ncj+j]. Latent on square blocks (nci==ncj); the kappa fixture is
+    // non-square (p×d) precisely to surface this.
+    let transpose_ket_to_bra = |src: &[f64]| -> Vec<f64> {
+        let mut dst = vec![0.0f64; nci * ncj];
+        for i in 0..nci {
+            for j in 0..ncj {
+                dst[i * ncj + j] = src[j * nci + i];
+            }
+        }
+        dst
+    };
+    let bm_x = transpose_ket_to_bra(gc_x);
+    let bm_y = transpose_ket_to_bra(gc_y);
+    let bm_z = transpose_ket_to_bra(gc_z);
+    let bm_1 = transpose_ket_to_bra(gc_1);
+
+    // ── Stage 1: Bra σ-mix (a_bra_cart2spinor_si) ──────────────────────────────
+    let mut tmp_alpha_r = vec![0.0f64; di * ncj];
+    let mut tmp_alpha_i = vec![0.0f64; di * ncj];
+    let mut tmp_beta_r = vec![0.0f64; di * ncj];
+    let mut tmp_beta_i = vec![0.0f64; di * ncj];
+
+    apply_bra_si_block(
+        &mut tmp_alpha_r, &mut tmp_alpha_i,
+        &mut tmp_beta_r, &mut tmp_beta_i,
+        &bm_x, &bm_y, &bm_z, &bm_1,
+        nci, ncj, di, li, kappa_i as i32,
+    );
+
+    // ── Stage 2: Ordinary ket transform (REUSE verbatim — c2s_si_1e ket == sf) ──
+    let mut out_r = vec![0.0f64; di * dj];
+    let mut out_i = vec![0.0f64; di * dj];
+
+    apply_ket_transform(
+        &mut out_r, &mut out_i,
+        &tmp_alpha_r, &tmp_alpha_i,
+        &tmp_beta_r, &tmp_beta_i,
+        di, ncj, dj, lj, kappa_j as i32,
+    );
+
+    // ── Stage 3: Column-major interleaved zcopy to staging ─────────────────────
+    for j in 0..dj {
+        for i in 0..di {
+            let out_idx = j * di + i;
+            staging[out_idx * 2] = F::from_f64_lossy(out_r[j * di + i]);
+            staging[out_idx * 2 + 1] = F::from_f64_lossy(out_i[j * di + i]);
+        }
+    }
+
+    Ok(())
+}
+
 /// Bra step of the 2D c2spinor_sf transform for all kappa cases.
 ///
 /// Matches `a_bra_cart2spinor_sf` in libcint `cart2sph.c`.
@@ -1876,6 +1995,94 @@ mod tests {
             any_diff,
             "apply_bra_si_block must NOT match apply_si_block's (wrong) sign convention"
         );
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  cart_to_spinor_si_2d: sizing, fail-closed guards, non-square round-trip
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// kappa≠0 sizing the si_2d transform must honor (Spike Target D).
+    #[test]
+    fn si_2d_spinor_len_kappa_nonzero() {
+        assert_eq!(spinor_len(1, 1), 2); // p LT (j=1/2) → 2*l
+        assert_eq!(spinor_len(2, -1), 6); // d GT (j=5/2) → 2*l+2
+    }
+
+    /// Undersized staging → BufferTooSmall with required == di*dj*2; no partial writes.
+    #[test]
+    fn si_2d_undersized_staging_fails_closed() {
+        // p(kappa=-1, di=4) × d(kappa=-1, dj=6): required = 4*6*2 = 48.
+        let li = 1u8;
+        let lj = 2u8;
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let gc = vec![1.0f64; nci * ncj];
+        let mut staging = vec![f64::NAN; 10]; // too small
+        let sentinel = staging.clone();
+        let err = cart_to_spinor_si_2d::<f64>(
+            &mut staging, &gc, &gc, &gc, &gc, li, -1, lj, -1,
+        )
+        .unwrap_err();
+        match err {
+            cintxRsError::BufferTooSmall { required, provided } => {
+                assert_eq!(required, 4 * 6 * 2);
+                assert_eq!(provided, 10);
+            }
+            other => panic!("expected BufferTooSmall, got {other:?}"),
+        }
+        // No partial writes: staging untouched.
+        for (a, b) in staging.iter().zip(sentinel.iter()) {
+            assert!(a.is_nan() && b.is_nan());
+        }
+    }
+
+    /// Undersized cart block → ChunkPlanFailed; no partial writes.
+    #[test]
+    fn si_2d_undersized_cart_fails_closed() {
+        let li = 1u8;
+        let lj = 2u8;
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let full = vec![1.0f64; nci * ncj];
+        let short = vec![1.0f64; nci * ncj - 1]; // gc_y too small
+        let di = spinor_len(li, -1);
+        let dj = spinor_len(lj, -1);
+        let mut staging = vec![f64::NAN; di * dj * 2];
+        let err = cart_to_spinor_si_2d::<f64>(
+            &mut staging, &full, &short, &full, &full, li, -1, lj, -1,
+        )
+        .unwrap_err();
+        assert!(matches!(err, cintxRsError::ChunkPlanFailed { from: "c2spinor_si_2d", .. }));
+        // No partial writes.
+        assert!(staging.iter().all(|v| v.is_nan()));
+    }
+
+    /// Non-square p(kappa=-1)×d(kappa=-1) round-trip: finite output, length di*dj*2.
+    #[test]
+    fn si_2d_nonsquare_pd_roundtrip_finite() {
+        let li = 1u8;
+        let lj = 2u8;
+        let nci = ncart(li); // 3
+        let ncj = ncart(lj); // 6
+        let di = spinor_len(li, -1); // 4
+        let dj = spinor_len(lj, -1); // 6
+        // Distinct, non-symmetric ket-major cart blocks to exercise the transpose.
+        let mk = |seed: f64| -> Vec<f64> {
+            (0..nci * ncj).map(|n| seed + n as f64 * 0.137).collect()
+        };
+        let gc_x = mk(0.3);
+        let gc_y = mk(-0.7);
+        let gc_z = mk(1.1);
+        let gc_1 = vec![0.0f64; nci * ncj]; // int1e_sp scalar slot is zero
+        let mut staging = vec![0.0f64; di * dj * 2];
+        cart_to_spinor_si_2d::<f64>(
+            &mut staging, &gc_x, &gc_y, &gc_z, &gc_1, li, -1, lj, -1,
+        )
+        .expect("si_2d should succeed on well-sized buffers");
+        assert_eq!(staging.len(), di * dj * 2);
+        assert!(staging.iter().all(|v| v.is_finite()));
+        // Output must be non-trivial (σ-mix of non-zero Pauli blocks).
+        assert!(staging.iter().any(|&v| v.abs() > 1e-9));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
