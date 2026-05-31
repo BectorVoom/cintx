@@ -10547,6 +10547,18 @@ fn launch_one_electron_typed<F: CintFloat>(
         let ni_sp = n_ctr_i * di;
         let nj_sp = n_ctr_j * dj;
 
+        // Fail-closed staging guard (T-28-01-01, OOM-safe stop contract): refuse
+        // before any write if the caller workspace cannot hold the full spinor
+        // block, mirroring launch_int1e_sp_spinor_pair. Prevents a panic mid-
+        // scatter from leaving a partial write in `staging`.
+        let staging_required = ni_sp * nj_sp * 2;
+        if staging.len() < staging_required {
+            return Err(cintxRsError::BufferTooSmall {
+                required: staging_required,
+                provided: staging.len(),
+            });
+        }
+
         // Fold + scatter per (ci,cj). cart_to_spinor_si_2d OWNS the KET→BRA
         // transpose, so the gc blocks are passed as the assembler emits them
         // (KET-major) — no launcher transpose (do NOT copy the sf_2d single-block
