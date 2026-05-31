@@ -4,14 +4,14 @@ milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
 stopped_at: Phase 30 context gathered
-last_updated: "2026-05-31T22:41:13.590Z"
-last_activity: 2026-05-31 -- Phase 30 planning complete
+last_updated: "2026-05-31T22:57:50.401Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 21
   completed_phases: 19
   total_plans: 104
-  completed_plans: 101
-  percent: 97
+  completed_plans: 102
+  percent: 98
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 29 — group-4-relativistic-spin-operator-integrals-spinor
+**Current focus:** Phase 30 — group-5-giao-slice-spin-giao-integrals-spinor
 
 ## Current Position
 
-Phase: 30
-Plan: Not started
+Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING
+Plan: 3 of 3
 Status: Ready to execute
-Resume file: .planning/phases/30-group-5-giao-slice-spin-giao-integrals-spinor/30-CONTEXT.md
+Resume file: None
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 
@@ -46,7 +46,7 @@ Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 Deferred follow-up: finite-difference verification of the 4 D-12 vendor-stub arms (FD of cintx scalar
   int2c2e_spinor / int3c1e_spinor), then flip under an FD-tolerance gate. D-03 needs an sf_4d derivative
   wrapper; D-04 belongs to the relativistic/ECP-spinor track.
-Last activity: 2026-05-31 -- Phase 30 planning complete
+Last activity: 2026-05-31
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -173,6 +173,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 29 P05 | 7 | 3 tasks | 6 files |
 | Phase 29 P06 | 95min | 3 tasks | 7 files |
 | Phase 29 P6 | 95min | 3 tasks | 7 files |
+| Phase 30 P00 | 35 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -380,6 +381,7 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: [Phase 29-05]: inserted 15 remaining 2e Group-4 manifest rows after the spsp1 row (index >=349), past every hardcoded OperatorId const (<=106) — no positional drift; all component_rank=1 (σ fold internal to c2s), spinor-only, oracle_covered=false until 29-06.
 - [Phase ?]: [Phase 29-05]: rel_2e_sigma_parity.rs is a RED scaffold (cintx launchers land in 29-06: cintx collector is a panic-stub, 15 byte-identity gates #[ignore]'d); the always-on no-silent-skip sweep runs all 15 vendor arms NON-SKIPPED, proving the gaunt1.c/dkb.c build wiring linked a real driver per family.
 - [Phase ?]: 29-06: all 16 2e Group-4 σ families byte-identical to libcint 6.1.3 (atol 1e-12); oracle_covered=true spinor-only; 24/24 Group-4 covered. Group 4 complete. Key: 2-sided σ⊗σ headroom {1,1,1,1}.
+- [Phase ?]: [Phase 30-00]: Gauge fold ported as CINTx1i_1e recurrence f[i]=g[i+1]+origin*g[i] in a separate sigma_p_cg_sa10sp_kernel; int1e_sp path byte-identical; proven via int1e_cg_sa10sp vendor byte-identity at atol=1e-12 + cg->giao collapse at common_orig=[0,0,0].
 
 ### Roadmap Evolution
 
@@ -426,6 +428,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-31T21:44:16.940Z
+Last session: 2026-05-31T22:57:26.415Z
 Stopped at: Phase 30 context gathered
 Resume file: None

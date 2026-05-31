@@ -695,7 +695,7 @@ Gap-Wave 3 (after 26-05):
   2. Every family is gated on BOTH the non-zero gauge-origin fixture AND the kappa-bearing relativistic fixture, has a dedicated `vendor_*` test executing under both flags (non-skipped), and is flipped `oracle_covered=true`; `manifest-audit` is green. No capi/legacy-wrapper surface is added.
 
 **Plans**: 3 plans
-- [ ] 30-00-PLAN.md — Wave 0: combined gauge∧kappa 1e fixture + gauge x1i-with-origin device fold in sigma_p.rs + gauge-gout byte-identity micro-test (D-03 de-risk)
+- [x] 30-00-PLAN.md — Wave 0: combined gauge∧kappa 1e fixture + gauge x1i-with-origin device fold in sigma_p.rs + gauge-gout byte-identity micro-test (D-03 de-risk)
 - [ ] 30-01-PLAN.md — Wave 1: all 9 1e GIAO×σ families (spgsp/spgnucsp/spgsa01 + cg/giao_sa10{sp,nucsp,sa01}) registered + vendor byte-identical spinor, oracle_covered spinor-only
 - [ ] 30-02-PLAN.md — Wave 2: all 6 2e GIAO×σ families (spgsp1(spsp2) + cg/giao_sa10sp1(spsp2)) on 4-shell fixture + full 15-family suite + manifest-audit gate
 
