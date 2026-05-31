@@ -4,6 +4,10 @@
 **Reviewed:** 2026-05-31 — re-discussed all four decision clusters (FND-03 routing,
 safe-API/vendor binding, proof/fixture, sequencing/kernel); all 14 decisions
 (D-01–D-14) reaffirmed unchanged. Manifest complex-flag shape stays implementer's call (D-01).
+**Plan-time reconciliation:** 2026-05-31 — RESEARCH findings A1/A2 surfaced to the user at
+plan-phase; resolved as **D-15** (A1: vendor symbols are real `double *out`, not complex) and
+**D-16** (A2: `int2e_g1g2` IN scope). These SUPERSEDE the mechanical D-05 binding shape and
+extend the GIAO-02 roster — see the "Plan-time reconciliations" subsection below.
 **Status:** Ready for planning
 
 <domain>
@@ -140,6 +144,27 @@ the new `complex_output` manifest flag, dispatched through `eval_raw`, with a de
 - **D-14 (verification gate):** per-family byte-identity at **atol=1e-12** vs vendored libcint
   6.1.3, cart + sph, every component, in `vendor_*` parity tests double-gated on `--features cpu`
   + `CINTX_ORACLE_BUILD_VENDOR=1` (without both, parity silently skips).
+
+### Plan-time reconciliations (2026-05-31 — RESEARCH A1/A2, user-confirmed at plan-phase)
+- **D-15 (A1 — vendor symbols are real `double *out`, SUPERSEDES the mechanical D-05 binding
+  shape):** libcint 6.1.3's in-scope cart/sph GIAO symbols are real `double *out` (1×), NOT
+  `double complex` (2×) — `[VERIFIED: include/cint_funcs.h:14 CINTIntegralFunction typedef;
+  src/cart2sph.c:5820 c2s_cart_1e real-double copy]`. The `*mut f64` len-2N reinterpretation in
+  D-05 applies only to `_spinor` symbols (out of scope). **Resolution:** the vendor FFI wrappers
+  bind a plain real `double *out` of length `nao_i × nao_j × component_rank` (identical to every
+  existing moment/derivative wrapper); the parity comparison is **real-vs-real** at atol=1e-12.
+  The `Complex<f64>` safe-API view (D-03) is materialized **cintx-side** (re=0, im=value) AFTER
+  the device kernel writes real components; D-07 (imag non-zero, real exactly zero) is asserted on
+  that cintx safe-API view, NOT on a 2×-interleaved vendor buffer. **All other FND-03 intent
+  (D-01/D-02/D-03/D-04 manifest-driven complex routing + comptime kernel hint + fail-closed
+  contract, D-06 non-zero-gauge gate, D-07 proof) is PRESERVED unchanged.** Only D-05's vendor-
+  binding shape changes. Do NOT bind cart/sph GIAO as len-2N or pass a 2× buffer to libcint.
+- **D-16 (A2 — `int2e_g1g2` IN scope):** GIAO-02's spin-free 2e roster is exactly
+  **`{int2e_g1, int2e_ig1, int2e_gg1, int2e_g1g2}`** (4 families). `int2e_g1g2`
+  (2nd-gauge-on-both-electrons, no spin block) is registered + kernel-ported + vendor-parity-
+  tested in Cluster B alongside the other three. Its `component_rank` and gout component order are
+  **derived from `src/autocode/intor2.c` `ng[]` / gout** (do not guess, per D-13). Spin-carrying
+  `int2e_giao_sa10*` / `int2e_g1spsp2` remain DEFERRED to Phase 30.
 
 ### Claude's Discretion
 - The **exact enumerated roster** of `int1e_giao_*` / `int1e_cg_*` / `int2e_giao_*` wildcard
