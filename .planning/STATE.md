@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
-stopped_at: Phase 30 context gathered
+stopped_at: Phase 30 Wave 1 paused — re-plan into engine-class sub-waves
 last_updated: "2026-05-31T22:57:50.401Z"
 last_activity: 2026-05-31
 progress:
@@ -25,10 +25,27 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
-Resume file: None
+Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING (Wave 1 paused, re-plan pending)
+Plan: 30-00 complete; 30-01 paused at decision checkpoint; 30-02 not started
+Status: Awaiting Wave 1 re-plan
+Resume file: .planning/notes/phase-30-wave1-engine-class-split-PLAN.md
+
+Phase 30 Wave 1 pause (2026-06-01):
+
+  - 30-00 COMPLETE: gauge x1i-with-origin fold + int1e_cg_sa10sp rank-3 gout variant in sigma_p.rs,
+    combined gauge∧kappa spinor fixture, giao_sigma_1e_parity micro-test (byte-identity + cg→giao
+    collapse). De-risk gate green.
+
+  - 30-01 PAUSED at decision checkpoint (commit 3b68ff1 = safe registration scaffolding only).
+    Executor verified vs libcint source that Wave 1 is NOT a transcription: only cg_sa10sp/giao_sa10sp
+    (2 of 9) are proven; the other 7 need ~6 net-new device kernels (Rys+gauge + 8-G London engine
+    classes, rank-9 36-comp gouts). All 9 manifest rows registered oracle_covered=false; bindgen
+    allowlist + 7 vendor shims added; compiles. STATE/ROADMAP NOT advanced for 30-01.
+
+  - DECISION (user, 2026-06-01): re-plan Wave 1 into engine-class sub-waves (30-01a overlap spgsp;
+    30-01b Rys-gauge sp/nucsp; 30-01c Rys-gauge sa01 rank-9; 30-01d spg-Rys/London), each with its
+    own vendor gate. See .planning/notes/phase-30-wave1-engine-class-split-PLAN.md. Reuse 3b68ff1
+    scaffolding as-is. GIAO-03 still closes at end of Wave 2.
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 
