@@ -431,6 +431,61 @@ fn test_orientation_negative_control() {
 // assert the fixture is NOT skipped and the real vendor link is live.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// The 20 vendor-backed sf-derivative spinor families flipped to oracle_covered=true
+/// in Plan 05 Task 1 (D-01 sf_2d ranks 3/9/27/81 + revised D-02 int3c2e_ip1/ip2 sf_3c2e
+/// rank-3). Each is backed by a real libcint 6.1.3 vendor byte-identity parity test per
+/// transform-path × rank-tier (Plans 03/04).
+const FLIPPED: &[&str] = &[
+    // sf_2d / 1e rank-3
+    "int1e_ipovlp_spinor",
+    "int1e_ipkin_spinor",
+    "int1e_ipnuc_spinor",
+    "int1e_iprinv_spinor",
+    // sf_2d / 1e rank-9
+    "int1e_ipovlpip_spinor",
+    "int1e_ipkinip_spinor",
+    "int1e_ipnucip_spinor",
+    "int1e_ipipovlp_spinor",
+    "int1e_ipipnuc_spinor",
+    "int1e_ipipkin_spinor",
+    "int1e_ipiprinv_spinor",
+    // sf_2d / 1e rank-27
+    "int1e_ipipnucip_spinor",
+    "int1e_ipiprinvip_spinor",
+    "int1e_ipipipnuc_spinor",
+    "int1e_ipipiprinv_spinor",
+    // sf_2d / 1e rank-81
+    "int1e_ipipipiprinv_spinor",
+    "int1e_ipiprinvipip_spinor",
+    "int1e_ipipiprinvip_spinor",
+    // sf_3c2e rank-3
+    "int3c2e_ip1_spinor",
+    "int3c2e_ip2_spinor",
+];
+
+/// The 11 families that MUST stay oracle_covered=false:
+///   - 4 D-12 vendor-stub arms: libcint 6.1.3 ships int2c2e_ip1/ip2_spinor as `return 0`
+///     stubs and CINT3c1e_spinor_drv as an `exit(1)` stub — NO byte-identity reference is
+///     achievable, so they are NOT covered (their parity tests stay #[ignore]'d).
+///   - 6 D-03 arity-4 int2e_ip* families: deferred (need a sf_4d derivative wrapper).
+///   - 1 D-04 ECP family: not pure spin-free, belongs to the relativistic track.
+const DEFERRED: &[&str] = &[
+    // D-12 vendor-stub arms (4)
+    "int2c2e_ip1_spinor",
+    "int2c2e_ip2_spinor",
+    "int3c1e_ip1_spinor",
+    "int3c1e_iprinv_spinor",
+    // D-03 arity-4 int2e (6)
+    "int2e_ip1_spinor",
+    "int2e_ip2_spinor",
+    "int2e_ipip1_spinor",
+    "int2e_ipvip1_spinor",
+    "int2e_ip1ip2_spinor",
+    "int2e_ipip1ipip2_spinor",
+    // D-04 ECP (1)
+    "int1e_ecp_iprinv_spinor",
+];
+
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
@@ -452,6 +507,49 @@ fn test_no_silent_skip() {
         &cintx,
         "no-silent-skip: cintx arm produced all-zero output (fixture skipped)",
     );
+
+    // D-10 runtime manifest-coverage assertion (T-27-13 / T-27-14): the oracle_covered
+    // flag IS the verification claim. Read the runtime MANIFEST_ENTRIES (regenerated from
+    // compiled_manifest.lock.json by cintx-ops/build.rs) and assert the EXACT flipped /
+    // deferred split. Gated under the vendor-cpu cfg so the coverage claim is tied to a
+    // live vendor run — if the vendor arm compiled out or the fixture is skipped, the
+    // nonzero-output asserts above already fail before we reach here, so this assertion
+    // can never silently pass on a determinism-only build.
+    use cintx_ops::generated::MANIFEST_ENTRIES;
+
+    let covered = |symbol: &str| -> Option<bool> {
+        MANIFEST_ENTRIES
+            .iter()
+            .find(|e| e.symbol_name == symbol)
+            .map(|e| e.oracle_covered)
+    };
+
+    for symbol in FLIPPED {
+        match covered(symbol) {
+            Some(true) => {}
+            Some(false) => panic!(
+                "no-silent-skip: flipped family `{symbol}` reads oracle_covered=false in \
+                 MANIFEST_ENTRIES — the Plan-05 flip did not propagate (rebuild cintx-ops?)"
+            ),
+            None => panic!(
+                "no-silent-skip: flipped family `{symbol}` is MISSING from MANIFEST_ENTRIES"
+            ),
+        }
+    }
+
+    for symbol in DEFERRED {
+        match covered(symbol) {
+            Some(false) => {}
+            Some(true) => panic!(
+                "no-silent-skip: deferred family `{symbol}` reads oracle_covered=true in \
+                 MANIFEST_ENTRIES — a deferred family was incorrectly stamped covered \
+                 (vendor-stub / D-03 / D-04 families have NO byte-identity reference)"
+            ),
+            None => panic!(
+                "no-silent-skip: deferred family `{symbol}` is MISSING from MANIFEST_ENTRIES"
+            ),
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
