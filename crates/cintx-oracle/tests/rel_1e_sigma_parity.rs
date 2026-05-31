@@ -423,9 +423,10 @@ rel_1e_byte_identity_gate!(test_sigma_kappa_byte_identity, "int1e_sigma_spinor")
 // output for every family — fail (not skip) if it compiled out or returned
 // all-zero. This guards verification integrity even while the cintx side is RED.
 //
-// The Wave-1 manifest-coverage contract is also asserted: every REL-1e family is
-// registered in MANIFEST_ENTRIES and STAYS oracle_covered=false this plan (29-02
-// flips each only after its byte-identity gate is green).
+// The post-flip manifest-coverage contract is also asserted: every REL-1e family
+// is registered in MANIFEST_ENTRIES, spinor-only, and reads oracle_covered=TRUE
+// (29-02 Task 3 flips each AFTER its byte-identity gate is green). A family whose
+// vendor or cintx arm produced all-zero (i.e. was silently skipped) FAILS here.
 // ─────────────────────────────────────────────────────────────────────────────
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
@@ -436,7 +437,9 @@ fn test_no_silent_skip() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_fixture();
 
     for &family in REL_1E_FAMILIES {
-        // The vendor arm MUST run and produce nonzero output for the kappa fixture.
+        // Both the vendor AND cintx arms MUST run and produce nonzero output for
+        // the kappa fixture — a flipped oracle_covered row must have a live,
+        // non-skipped, byte-identical comparison behind it (T-29-04 / SC#4).
         let vendor = collect_vendor_rel_1e(family, &atm, &bas, &env);
         assert_any_nonzero(
             &vendor,
@@ -445,21 +448,31 @@ fn test_no_silent_skip() {
                  (fixture skipped / vendor compiled out)"
             ),
         );
+        let cintx = collect_cintx_rel_1e(family, &atm, &bas, &env);
+        assert_any_nonzero(
+            &cintx,
+            &format!("no-silent-skip: cintx {family} produced all-zero output (launcher skipped)"),
+        );
+        assert_eq!(
+            count_mismatches(&vendor, &cintx, ATOL, RTOL),
+            0,
+            "no-silent-skip: {family} flipped oracle_covered=true must hold byte-identity",
+        );
 
-        // Wave-1 coverage contract: the row exists and stays oracle_covered=false
-        // (29-02 flips it after the byte-identity gate is green).
-        let covered = MANIFEST_ENTRIES
+        // Post-flip coverage contract: the row exists, is spinor-only, and reads
+        // oracle_covered=true.
+        let entry = MANIFEST_ENTRIES
             .iter()
             .find(|e| e.symbol_name == family)
-            .map(|e| e.oracle_covered);
-        match covered {
-            Some(false) => {}
-            Some(true) => panic!(
-                "Wave-1 contract violated: {family} reads oracle_covered=true in MANIFEST_ENTRIES \
-                 — 29-01 registers spinor-only rows oracle_covered=false; the flip is 29-02"
-            ),
-            None => panic!("{family} is MISSING from MANIFEST_ENTRIES (Plan 29-01 row absent?)"),
-        }
+            .unwrap_or_else(|| panic!("{family} is MISSING from MANIFEST_ENTRIES"));
+        assert!(
+            entry.oracle_covered,
+            "29-02 Task 3 must flip {family} oracle_covered=true after its gate is green"
+        );
+        assert_eq!(
+            entry.forms, &["spinor"],
+            "{family} must stay spinor-only (SC#5: do not over-claim cart/sph σ intermediates)"
+        );
     }
 }
 
@@ -489,6 +502,7 @@ fn test_rel_1e_rows_registered_without_vendor() {
              measured in test_sigma_rank_measured)"
         );
         assert_eq!(entry.forms, &["spinor"], "{family} must be spinor-only");
-        assert!(!entry.oracle_covered, "{family} must stay oracle_covered=false in 29-01");
+        // Post-29-02 flip: every gated family reads oracle_covered=true.
+        assert!(entry.oracle_covered, "{family} must read oracle_covered=true after 29-02 Task 3");
     }
 }

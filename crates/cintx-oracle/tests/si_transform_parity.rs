@@ -345,18 +345,19 @@ fn test_no_silent_skip() {
         "no-silent-skip: cintx int1e_sp path produced all-zero output (fixture skipped)",
     );
 
-    // D-01: int1e_sp_spinor stays oracle_covered=false — FND-05 is proven by THIS
-    // transform test, never by flipping a manifest coverage flag this phase.
+    // Phase 29-02 (REL-02): int1e_sp_spinor is now oracle_covered=true — its
+    // byte-identity vendor parity (this transform test + rel_1e_sigma_parity)
+    // is green, so 29-02 Task 3 flips the manifest flag. (Phase 28 deferred the
+    // flip; Phase 29 owns it.)
     use cintx_ops::generated::MANIFEST_ENTRIES;
     let covered = MANIFEST_ENTRIES
         .iter()
         .find(|e| e.symbol_name == "int1e_sp_spinor")
         .map(|e| e.oracle_covered);
     match covered {
-        Some(false) => {}
-        Some(true) => panic!(
-            "D-01 violated: int1e_sp_spinor reads oracle_covered=true in MANIFEST_ENTRIES — \
-             Phase 28 must NOT flip any σ family (all flips → Phase 29)"
+        Some(true) => {}
+        Some(false) => panic!(
+            "29-02 Task 3 must flip int1e_sp_spinor oracle_covered=true (REL-02, byte-identity green)"
         ),
         None => panic!("int1e_sp_spinor is MISSING from MANIFEST_ENTRIES (Plan 28-03 row absent?)"),
     }

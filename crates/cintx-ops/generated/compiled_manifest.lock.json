@@ -10731,7 +10731,7 @@
         "representation": "spinor",
         "symbol": "int1e_sp_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10764,7 +10764,7 @@
         "representation": "spinor",
         "symbol": "int1e_spsp_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10797,7 +10797,7 @@
         "representation": "spinor",
         "symbol": "int1e_spnucsp_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10830,7 +10830,7 @@
         "representation": "spinor",
         "symbol": "int1e_sprinvsp_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10863,7 +10863,7 @@
         "representation": "spinor",
         "symbol": "int1e_srsr_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10896,7 +10896,7 @@
         "representation": "spinor",
         "symbol": "int1e_srnucsr_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10929,7 +10929,7 @@
         "representation": "spinor",
         "symbol": "int1e_sr_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -10962,7 +10962,7 @@
         "representation": "spinor",
         "symbol": "int1e_sigma_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
