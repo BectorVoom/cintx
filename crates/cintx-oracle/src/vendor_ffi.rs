@@ -4161,6 +4161,43 @@ pub fn vendor_int1e_sp_spinor(
     }
 }
 
+/// Evaluate `int2e_spsp1_spinor` (REL-03, the thinnest 2e σ family) for a single
+/// shell quartet using vendored libcint. This is the Phase-29 Wave-2 D-03 BLOCKING
+/// byte-identity reference for the brand-new 2e si/sf transform suite
+/// (`c2s_si_2e1` + `c2s_sf_2e2`, intor4.c:85).
+///
+/// `int2e_spsp1_spinor` is component_rank=1: the σ·p₁ G-tensor's four cart blocks
+/// (`gc_x/gc_y/gc_z/gc_1`) are folded into a single `ni*nj*nk*nl` complex output by
+/// the `c2s_si_2e1`+`c2s_sf_2e2` driver. So `out` is sized `ni_sp*nj_sp*nk_sp*nl_sp*2`
+/// f64 (interleaved real/imaginary), with each spinor extent from
+/// `vendor_CINTcgto_spinor` (kappa≠0 → 2l or 2l+2, never a hardcoded 4l+2).
+///
+/// `shls` is `&[i32; 4]` (the four shell indices). Returns the libcint status.
+pub fn vendor_int2e_spsp1_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_spsp1_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(), // dims = NULL means use default
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(), // opt = NULL
+            ptr::null_mut(), // cache = NULL (let libcint allocate)
+        )
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 29 Wave 1 — 1e Group-4 relativistic σ spinor families (REL-01/02).
 // Each is a verbatim clone of `vendor_int1e_sp_spinor` with only the

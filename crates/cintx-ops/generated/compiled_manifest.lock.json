@@ -10741,6 +10741,39 @@
       "stability": "stable"
     },
     {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "spsp1",
+        "representation": "spinor",
+        "symbol": "int2e_spsp1_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
       "arity": 2,
       "canonical_family": "1e",
       "category": "1e",
