@@ -212,6 +212,55 @@ impl RawApiId {
     pub const INT1E_IRP_SPH: Self = Self::Symbol("int1e_irp_sph");
     pub const INT1E_IRP_SPINOR: Self = Self::Symbol("int1e_irp_spinor");
 
+    // Phase 26 GIAO-01: spin-free 1e GIAO/CG magnetic-property families (complex
+    // output, FND-03). cart/sph emit the real magnitude of the purely-imaginary
+    // integral (D-15); the safe-API Complex<f64> view materializes re=0/im=value.
+    // Spinor reps are registered for surface completeness but return UnsupportedApi
+    // (D-11). Symbol strings MUST match the manifest lock symbol_name exactly.
+    pub const INT1E_GOVLP_CART: Self = Self::Symbol("int1e_govlp_cart");
+    pub const INT1E_GOVLP_SPH: Self = Self::Symbol("int1e_govlp_sph");
+    pub const INT1E_GOVLP_SPINOR: Self = Self::Symbol("int1e_govlp_spinor");
+
+    pub const INT1E_GNUC_CART: Self = Self::Symbol("int1e_gnuc_cart");
+    pub const INT1E_GNUC_SPH: Self = Self::Symbol("int1e_gnuc_sph");
+    pub const INT1E_GNUC_SPINOR: Self = Self::Symbol("int1e_gnuc_spinor");
+
+    pub const INT1E_IGOVLP_CART: Self = Self::Symbol("int1e_igovlp_cart");
+    pub const INT1E_IGOVLP_SPH: Self = Self::Symbol("int1e_igovlp_sph");
+    pub const INT1E_IGOVLP_SPINOR: Self = Self::Symbol("int1e_igovlp_spinor");
+
+    pub const INT1E_IGNUC_CART: Self = Self::Symbol("int1e_ignuc_cart");
+    pub const INT1E_IGNUC_SPH: Self = Self::Symbol("int1e_ignuc_sph");
+    pub const INT1E_IGNUC_SPINOR: Self = Self::Symbol("int1e_ignuc_spinor");
+
+    pub const INT1E_IGKIN_CART: Self = Self::Symbol("int1e_igkin_cart");
+    pub const INT1E_IGKIN_SPH: Self = Self::Symbol("int1e_igkin_sph");
+    pub const INT1E_IGKIN_SPINOR: Self = Self::Symbol("int1e_igkin_spinor");
+
+    pub const INT1E_A01GP_CART: Self = Self::Symbol("int1e_a01gp_cart");
+    pub const INT1E_A01GP_SPH: Self = Self::Symbol("int1e_a01gp_sph");
+    pub const INT1E_A01GP_SPINOR: Self = Self::Symbol("int1e_a01gp_spinor");
+
+    pub const INT1E_IA01P_CART: Self = Self::Symbol("int1e_ia01p_cart");
+    pub const INT1E_IA01P_SPH: Self = Self::Symbol("int1e_ia01p_sph");
+    pub const INT1E_IA01P_SPINOR: Self = Self::Symbol("int1e_ia01p_spinor");
+
+    pub const INT1E_CG_IRXP_CART: Self = Self::Symbol("int1e_cg_irxp_cart");
+    pub const INT1E_CG_IRXP_SPH: Self = Self::Symbol("int1e_cg_irxp_sph");
+    pub const INT1E_CG_IRXP_SPINOR: Self = Self::Symbol("int1e_cg_irxp_spinor");
+
+    pub const INT1E_GIAO_IRJXP_CART: Self = Self::Symbol("int1e_giao_irjxp_cart");
+    pub const INT1E_GIAO_IRJXP_SPH: Self = Self::Symbol("int1e_giao_irjxp_sph");
+    pub const INT1E_GIAO_IRJXP_SPINOR: Self = Self::Symbol("int1e_giao_irjxp_spinor");
+
+    pub const INT1E_CG_A11PART_CART: Self = Self::Symbol("int1e_cg_a11part_cart");
+    pub const INT1E_CG_A11PART_SPH: Self = Self::Symbol("int1e_cg_a11part_sph");
+    pub const INT1E_CG_A11PART_SPINOR: Self = Self::Symbol("int1e_cg_a11part_spinor");
+
+    pub const INT1E_GIAO_A11PART_CART: Self = Self::Symbol("int1e_giao_a11part_cart");
+    pub const INT1E_GIAO_A11PART_SPH: Self = Self::Symbol("int1e_giao_a11part_sph");
+    pub const INT1E_GIAO_A11PART_SPINOR: Self = Self::Symbol("int1e_giao_a11part_spinor");
+
     // Phase 24 Cluster A (MOM-01/02/03): overlap-derived position-tensor moment
     // families. Each `_origj` variant is its OWN operator/symbol (D-02): the shared
     // moment kernel branches on origin-source (env[PTR_COMMON_ORIG] for the base

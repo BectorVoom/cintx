@@ -4576,6 +4576,694 @@ pub fn vendor_ECPscalar_iprinv_cart(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 26 GIAO-01: spin-free 1e GIAO/CG magnetic-property vendor wrappers.
+// 22 real `double *out` wrappers (11 families x {cart, sph}). D-15: cart/sph
+// GIAO symbols are real doubles, so these clone vendor_int1e_r_* verbatim.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Evaluate int1e_govlp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_govlp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_govlp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_govlp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_govlp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_govlp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_gnuc_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_gnuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_gnuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_gnuc_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_gnuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_gnuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_igovlp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_igovlp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_igovlp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_igovlp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_igovlp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_igovlp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ignuc_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_ignuc_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ignuc_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ignuc_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_ignuc_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ignuc_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_igkin_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_igkin_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_igkin_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_igkin_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_igkin_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_igkin_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_a01gp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_a01gp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_a01gp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_a01gp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_a01gp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_a01gp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ia01p_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_ia01p_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ia01p_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_ia01p_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_ia01p_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_ia01p_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_cg_irxp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_cg_irxp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_irxp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_cg_irxp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_cg_irxp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_irxp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_irjxp_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_giao_irjxp_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_irjxp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_irjxp_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 3 * ni * nj elements (component_rank=3).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..3.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_giao_irjxp_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_irjxp_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_cg_a11part_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_cg_a11part_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_a11part_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_cg_a11part_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_cg_a11part_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_a11part_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_a11part_sph for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_giao_a11part_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_a11part_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_a11part_cart for a single shell pair using vendored libcint 6.1.3.
+///
+/// `out` must be pre-allocated with 9 * ni * nj elements (component_rank=9).
+/// Layout: component-leading — out[comp * ni * nj + n] for comp in 0..9.
+/// D-15: the cart/sph GIAO symbol is a REAL `double *out` (the magnitude of the
+/// purely-imaginary integral), so this is an ordinary real wrapper, NOT len-2N.
+pub fn vendor_int1e_giao_a11part_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_a11part_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FFI ABI smoke test — catches symbol/ABI mismatches between cintx-oracle's
 // bindgen output and the vendored PySCF nr_ecp shared object before parity
 // tests run.
