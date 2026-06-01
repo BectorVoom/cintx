@@ -506,13 +506,194 @@ fn giao_sigma_1e_sa10sa01_cg_giao_collapse() {
     );
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Sub-wave 1b (Plan 30-01b): the rank-3 Rys+gauge NUCLEAR sa10nucsp gates.
+//
+// int1e_cg_sa10nucsp / int1e_giao_sa10nucsp — component_rank 3, imaginary
+// c2s_si_1ei. The NEW Rys+gauge nuclear engine: the gauge x1i-with-origin fold is
+// applied INSIDE the Rys root loop against the nuclear-attraction G2E_* tensor.
+// Drives the unified dispatcher on the NON-SQUARE p×d combined gauge∧kappa
+// fixture; asserts byte-identity vs vendor at atol=1e-12 + all-3-non-zero +
+// the cg→giao collapse witness.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Build (origin_coords, origin_charges) for the nuclear-attraction engine:
+/// sum over atoms, charge −Z at PTR_COORD (point nucleus, libcint int1e_type 2).
+/// Cloned from rel_1e_sigma_parity::nuclear_origins (spnucsp arm).
+#[cfg(feature = "cpu")]
+#[allow(dead_code)]
+fn nucsp_nuclear_origins(atm: &[i32], env: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    use cintx_compat::raw::CHARGE_OF;
+    let natm = atm.len() / ATM_SLOTS;
+    let mut coords = Vec::with_capacity(natm * 3);
+    let mut charges = Vec::with_capacity(natm);
+    for a in 0..natm {
+        let z = atm[a * ATM_SLOTS + CHARGE_OF];
+        let ptr = atm[a * ATM_SLOTS + PTR_COORD] as usize;
+        coords.push(env[ptr]);
+        coords.push(env[ptr + 1]);
+        coords.push(env[ptr + 2]);
+        charges.push(-(z as f64));
+    }
+    (coords, charges)
+}
+
+/// Drive the rank-3 nucsp dispatcher for the shell pair (0,1). `op` is
+/// `cg_sa10nucsp` or `giao_sa10nucsp`. Returns the flat interleaved-complex rank-3
+/// spinor block (3*ni_sp*nj_sp*2). common_orig is read from env (the dispatcher
+/// forms dri=ri−common_orig for cg; giao uses origin=[0,0,0] internally).
+#[cfg(feature = "cpu")]
+#[allow(dead_code)]
+fn collect_cintx_sa10nucsp(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+    use cintx_cubecl::ResolvedBackend;
+    use cintx_cubecl::kernels::sigma_1e::launch_int1e_giao_sigma_family_spinor_pair;
+    use cintx_runtime::{BackendIntent, BackendKind};
+
+    let si = extract_shell(0, atm, bas, env);
+    let sj = extract_shell(1, atm, bas, env);
+
+    let di = spinor_len(si.l as i32, si.kappa as i32);
+    let dj = spinor_len(sj.l as i32, sj.kappa as i32);
+    let ni_sp = si.nctr * di;
+    let nj_sp = sj.nctr * dj;
+    // NON-SQUARE block (Pitfall 6 / T-30-01b-05): p(LT,nctr=2)×d(GT).
+    assert_ne!(ni_sp, nj_sp, "nucsp gate requires a NON-SQUARE spinor block");
+
+    let backend = ResolvedBackend::from_intent(&BackendIntent {
+        backend: BackendKind::Cpu,
+        selector: "auto".to_owned(),
+    })
+    .expect("CPU backend must initialise");
+
+    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    let (origin_coords, origin_charges) = nucsp_nuclear_origins(atm, env);
+
+    let mut staging = vec![0.0_f64; ni_sp * nj_sp * 2 * 3];
+    launch_int1e_giao_sigma_family_spinor_pair::<f64>(
+        &backend,
+        op,
+        si.l,
+        si.kappa,
+        sj.l,
+        sj.kappa,
+        si.nprim,
+        sj.nprim,
+        si.nctr,
+        sj.nctr,
+        si.coord,
+        sj.coord,
+        common_orig,
+        &si.exps,
+        &sj.exps,
+        &si.coeff_row_major,
+        &sj.coeff_row_major,
+        &origin_coords,
+        &origin_charges,
+        &mut staging,
+    )
+    .unwrap_or_else(|e| panic!("{op} rank-3 nucsp spinor launch must succeed: {e:?}"));
+    staging
+}
+
+/// Vendor rank-3 nucsp collector (REAL FFI shim). out sized 3*ni_sp*nj_sp*2.
+#[cfg(has_vendor_libcint)]
+fn collect_vendor_sa10nucsp(family: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+    use cintx_oracle::vendor_ffi::{
+        vendor_CINTcgto_spinor, vendor_int1e_cg_sa10nucsp_spinor,
+        vendor_int1e_giao_sa10nucsp_spinor,
+    };
+
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let ni_sp = vendor_CINTcgto_spinor(0, bas) as usize;
+    let nj_sp = vendor_CINTcgto_spinor(1, bas) as usize;
+    let shls: [i32; 2] = [0, 1];
+
+    let mut out = vec![0.0_f64; ni_sp * nj_sp * 2 * family_component_rank(family)];
+    match family {
+        "int1e_cg_sa10nucsp_spinor" => {
+            vendor_int1e_cg_sa10nucsp_spinor(&mut out, &shls, atm, natm, bas, nbas, env)
+        }
+        "int1e_giao_sa10nucsp_spinor" => {
+            vendor_int1e_giao_sa10nucsp_spinor(&mut out, &shls, atm, natm, bas, nbas, env)
+        }
+        other => panic!("Sub-wave 1b only drives cg/giao_sa10nucsp; got {other}"),
+    };
+    out
+}
+
+/// cg_sa10nucsp byte-identity vs vendor at atol=1e-12 on the non-square block.
+#[cfg(has_vendor_libcint)]
+#[cfg(feature = "cpu")]
+#[test]
+fn giao_sigma_1e_cg_sa10nucsp() {
+    let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
+    let vendor = collect_vendor_sa10nucsp("int1e_cg_sa10nucsp_spinor", &atm, &bas, &env);
+    let cintx = collect_cintx_sa10nucsp("cg_sa10nucsp", &atm, &bas, &env);
+    assert_eq!(cintx.len(), vendor.len(), "cg_sa10nucsp length (rank 3)");
+    assert_all_components_nonzero(&cintx, 3, "cg_sa10nucsp cintx");
+    assert_all_components_nonzero(&vendor, 3, "cg_sa10nucsp vendor");
+    assert_eq!(
+        count_mismatches(&vendor, &cintx, ATOL, RTOL),
+        0,
+        "int1e_cg_sa10nucsp: mismatches vs vendored libcint at atol={ATOL} (rank 3)"
+    );
+}
+
+/// giao_sa10nucsp byte-identity vs vendor at atol=1e-12 on the non-square block.
+/// Same gout body as cg; only the gauge builder origin differs ([0,0,0]).
+#[cfg(has_vendor_libcint)]
+#[cfg(feature = "cpu")]
+#[test]
+fn giao_sigma_1e_giao_sa10nucsp() {
+    let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
+    let vendor = collect_vendor_sa10nucsp("int1e_giao_sa10nucsp_spinor", &atm, &bas, &env);
+    let cintx = collect_cintx_sa10nucsp("giao_sa10nucsp", &atm, &bas, &env);
+    assert_eq!(cintx.len(), vendor.len(), "giao_sa10nucsp length (rank 3)");
+    assert_all_components_nonzero(&cintx, 3, "giao_sa10nucsp cintx");
+    assert_all_components_nonzero(&vendor, 3, "giao_sa10nucsp vendor");
+    assert_eq!(
+        count_mismatches(&vendor, &cintx, ATOL, RTOL),
+        0,
+        "int1e_giao_sa10nucsp: mismatches vs vendored libcint at atol={ATOL} (rank 3)"
+    );
+}
+
+/// cg→giao differential witness: at common_orig=[0,0,0] with the bra (i) shell at
+/// the coordinate origin, dri = ri − 0 = ri = the giao natural center, so
+/// cg_sa10nucsp MUST collapse to vendor int1e_giao_sa10nucsp — proving the gauge
+/// term is live, not silently zeroed.
+#[cfg(has_vendor_libcint)]
+#[cfg(feature = "cpu")]
+#[test]
+fn giao_sigma_1e_sa10nucsp_cg_giao_collapse() {
+    let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
+    let si = extract_shell(0, &atm, &bas, &env);
+    assert_eq!(si.coord, [0.0, 0.0, 0.0], "collapse witness requires bra at origin");
+
+    let mut env0 = env.clone();
+    env0[PTR_COMMON_ORIG] = 0.0;
+    env0[PTR_COMMON_ORIG + 1] = 0.0;
+    env0[PTR_COMMON_ORIG + 2] = 0.0;
+    let cintx_collapse = collect_cintx_sa10nucsp("cg_sa10nucsp", &atm, &bas, &env0);
+    let vendor_giao = collect_vendor_sa10nucsp("int1e_giao_sa10nucsp_spinor", &atm, &bas, &env);
+    assert_all_components_nonzero(&cintx_collapse, 3, "cg→giao nucsp collapse cintx");
+    assert_eq!(
+        count_mismatches(&vendor_giao, &cintx_collapse, ATOL, RTOL),
+        0,
+        "cg_sa10nucsp at common_orig=[0,0,0] MUST collapse to int1e_giao_sa10nucsp \
+         (proves the gauge term is live, not silently zeroed)"
+    );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// No-silent-skip integrity (Sub-wave 1c scope). The two rank-9 sa01 families
-// MUST be oracle_covered=true AND component_rank==9 in the manifest; the two
-// remaining deferred 1c-adjacent rows (spgsa01, spgnucsp) stay false. This test
-// is gated under `has_vendor_libcint` so it FAILS (compiles out → absent) rather
-// than silently passing without CINTX_ORACLE_BUILD_VENDOR=1 (T-30-01c-05): the
-// manifest invariants are meaningless unless the vendor arms above actually ran.
+// No-silent-skip integrity (Sub-wave 1b + 1c scope). The two rank-3 nucsp families
+// MUST be oracle_covered=true AND component_rank==3 (Sub-wave 1b, this plan). The
+// two rank-9 sa01 families stay oracle_covered=false (30-01c WIP, NOT this plan's
+// scope) but MUST carry component_rank==9; the deferred spgsa01/spgnucsp rows stay
+// false. This test is gated under `has_vendor_libcint` so it FAILS (compiles out →
+// absent) rather than silently passing without CINTX_ORACLE_BUILD_VENDOR=1
+// (T-30-01b-04): the manifest invariants are meaningless unless the vendor arms ran.
 // ─────────────────────────────────────────────────────────────────────────────
 /// Read (oracle_covered, component_rank) for a symbol from the committed manifest
 /// lock JSON (the source of truth; the `MANIFEST_ENTRIES`/api_manifest mirror is
@@ -524,13 +705,19 @@ fn manifest_lock_entry(symbol: &str) -> (bool, Option<u32>) {
         env!("CARGO_MANIFEST_DIR"),
         "/../cintx-ops/generated/compiled_manifest.lock.json"
     ));
-    // Entries serialize fields BEFORE the trailing `"symbol": "<sym>"`. Find the
-    // entry's symbol marker, then scan backwards to its oracle_covered/component_rank.
+    // Per entry, `"component_rank"` precedes the nested `id` object (which holds the
+    // `"symbol"` marker) and `"oracle_covered"` follows it. A naive `rfind('{')` lands
+    // on the `id` sub-object and misses BOTH fields (the pre-existing 30-01c parser
+    // bug that left this test RED). Anchor the entry window on `"arity":` — the FIRST
+    // field serialized in every entry — from this entry's arity to the next entry's
+    // arity (or file end). That window holds exactly this entry's component_rank and
+    // its single oracle_covered.
     let needle = format!("\"symbol\": \"{symbol}\"");
     let sym_pos = lock.find(&needle).unwrap_or_else(|| panic!("{symbol} not in lock"));
-    // The entry block is delimited by the preceding `{`; search the window before sym_pos.
-    let block_start = lock[..sym_pos].rfind('{').unwrap_or(0);
-    let block = &lock[block_start..sym_pos];
+    let lo = lock[..sym_pos].rfind("\"arity\":").unwrap_or(0);
+    let after = sym_pos + needle.len();
+    let hi = lock[after..].find("\"arity\":").map(|p| after + p).unwrap_or(lock.len());
+    let block = &lock[lo..hi];
     let covered = block.contains("\"oracle_covered\": true");
     let rank = if let Some(p) = block.find("\"component_rank\": \"") {
         let rest = &block[p + "\"component_rank\": \"".len()..];
@@ -552,9 +739,29 @@ fn manifest_lock_entry(symbol: &str) -> (bool, Option<u32>) {
 #[cfg(feature = "cpu")]
 #[test]
 fn test_no_silent_skip() {
-    // (A) Both rank-9 sa01 families RUN under the double gate (no silent skip) and
-    //     produce all-9 non-zero components (Pitfall 3 — no rank-3 truncation).
     let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
+
+    // (A) Sub-wave 1b: both rank-3 nucsp families RUN under the double gate (no
+    //     silent skip), produce all-3 non-zero components, AND are byte-identical.
+    for (op, sym) in [
+        ("cg_sa10nucsp", "int1e_cg_sa10nucsp_spinor"),
+        ("giao_sa10nucsp", "int1e_giao_sa10nucsp_spinor"),
+    ] {
+        let vendor = collect_vendor_sa10nucsp(sym, &atm, &bas, &env);
+        let cintx = collect_cintx_sa10nucsp(op, &atm, &bas, &env);
+        assert_eq!(cintx.len(), vendor.len(), "{sym} rank-3 length");
+        assert_all_components_nonzero(&cintx, 3, sym);
+        assert_all_components_nonzero(&vendor, 3, sym);
+        assert_eq!(
+            count_mismatches(&vendor, &cintx, ATOL, RTOL),
+            0,
+            "{sym}: must be byte-identical to vendor at atol={ATOL} (rank 3)"
+        );
+    }
+
+    // (B) Sub-wave 1c: both rank-9 sa01 families RUN (no silent skip) and produce
+    //     all-9 non-zero components (Pitfall 3 — no rank-3 truncation). They are
+    //     NOT asserted byte-identical here (30-01c WIP, Open Q1).
     for (op, sym) in [
         ("cg_sa10sa01", "int1e_cg_sa10sa01_spinor"),
         ("giao_sa10sa01", "int1e_giao_sa10sa01_spinor"),
@@ -566,9 +773,20 @@ fn test_no_silent_skip() {
         assert_all_components_nonzero(&vendor, 9, sym);
     }
 
-    // (B) Manifest: the 2 sa01 rows carry component_rank 9 but stay oracle_covered
-    //     FALSE — byte-identity is NOT yet achieved (gout layout WIP, Open Q1). The
-    //     coverage flip is intentionally withheld until the ignored gates are green.
+    // (C) Manifest: the 2 nucsp rows (Sub-wave 1b, THIS plan) are oracle_covered
+    //     TRUE at component_rank 3.
+    for sym in ["int1e_cg_sa10nucsp_spinor", "int1e_giao_sa10nucsp_spinor"] {
+        let (covered, rank) = manifest_lock_entry(sym);
+        assert_eq!(rank, Some(3), "{sym} must carry component_rank 3");
+        assert!(
+            covered,
+            "{sym} must be oracle_covered=true (Sub-wave 1b byte-identity green)"
+        );
+    }
+
+    // (D) Manifest: the 2 sa01 rows carry component_rank 9 but stay oracle_covered
+    //     FALSE — byte-identity NOT yet achieved (30-01c WIP, Open Q1). NOT this
+    //     plan's scope; the flip is withheld until the ignored gates are green.
     for sym in ["int1e_cg_sa10sa01_spinor", "int1e_giao_sa10sa01_spinor"] {
         let (covered, rank) = manifest_lock_entry(sym);
         assert_eq!(rank, Some(9), "{sym} must carry component_rank 9 (Pitfall 3 truncation guard)");
@@ -579,7 +797,7 @@ fn test_no_silent_skip() {
         );
     }
 
-    // (C) The remaining 1c-adjacent deferred rows also stay oracle_covered=false.
+    // (E) The remaining deferred rows stay oracle_covered=false.
     for sym in ["int1e_spgsa01_spinor", "int1e_spgnucsp_spinor"] {
         let (covered, _rank) = manifest_lock_entry(sym);
         assert!(

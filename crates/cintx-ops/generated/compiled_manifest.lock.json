@@ -11655,7 +11655,7 @@
         "representation": "spinor",
         "symbol": "int1e_cg_sa10nucsp_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
@@ -11754,7 +11754,7 @@
         "representation": "spinor",
         "symbol": "int1e_giao_sa10nucsp_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
