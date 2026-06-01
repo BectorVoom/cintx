@@ -1,5 +1,13 @@
 # Deferred / out-of-scope items — quick task 260601-aty
 
+> **RESOLVED 2026-06-01 by quick task 260601-d7e** (both items below). The 3c2e gate
+> was stale (the family is byte-identical to vendor — proven by the pre-existing
+> `test_int3c2e_ip1_spinor_adversarial_parity`); the gate was reconciled to real vendor
+> parity. The global-AO-ordering question was settled: cintx is libcint-faithful (0
+> mismatches on a segmented `[s,p,s,p]` basis), so the pyscf-rs permutation is a PySCF
+> `ao_loc_2c` convention concern owned by pyscf-rs — see
+> `.planning/quick/260601-d7e-spinor-3c2e-gate-and-global-ao-order/CONCLUSION-ao_loc_2c.md`.
+
 ## Pre-existing failure (NOT a regression from this task)
 
 **`oracle_gate_3c2e_spinor`** (crates/cintx-oracle/tests/oracle_gate_closure.rs:~1050)
