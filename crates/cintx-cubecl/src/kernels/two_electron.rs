@@ -3600,26 +3600,82 @@ fn launch_two_electron_typed<F: CintFloat>(
             }
         }
         Representation::Spinor => {
-            // Single-contraction spinor preserves the exact prior behavior. General
-            // contraction (nctr>1) is not wired for the 4D spinor transform (and is
-            // not exercised by the non-relativistic callers); return an explicit
-            // error rather than silently truncating to the (0,0,0,0) block.
-            if n_ctr_i != 1 || n_ctr_j != 1 || n_ctr_k != 1 || n_ctr_l != 1 {
-                return Err(cintxRsError::UnsupportedApi {
-                    requested: "spinor 2e with general contraction (nctr>1)".to_owned(),
-                });
-            }
-            // cart_blocks is exactly one nfi*nfj*nfk*nfl block here — identical to
-            // the old cart_buf.
+            // General-contraction (nctr>1) spin-free 2e cart→spinor (260601-aty).
+            // The device scalar kernel already accumulated every (ci,cj,ck,cl) block
+            // with ITS OWN per-column coefficients (out_len = nctr_i*…*nctr_l*block_len),
+            // exactly as the Spheric/Cart arms above consume. This arm therefore only
+            // transforms + scatters the already-contracted per-quad blocks — it does
+            // NOT re-apply coefficients.
+            //
+            // cart_to_spinor_sf_4d reads i-fastest cart[((l*nck+k)*ncj+j)*nci+i]; the
+            // device 4D block is emitted i-fastest block[ic + nfi*(jc + nfj*(kc +
+            // nfk*lc))] (see the Cart arm below, which scatters it with NO transpose),
+            // so the per-quad sub-block feeds sf_4d directly with NO transpose — only a
+            // per-quad contraction-major scatter into the dense n2c^4 output.
             let kappa_i = shell_i.kappa;
             let kappa_j = shell_j.kappa;
             let kappa_k = shell_k.kappa;
             let kappa_l = shell_l.kappa;
-            cart_to_spinor_sf_4d::<F>(
-                staging, &cart_blocks,
-                li, kappa_i, lj, kappa_j,
-                lk, kappa_k, ll, kappa_l,
-            )?;
+            let di = spinor_len(li, kappa_i as i32);
+            let dj = spinor_len(lj, kappa_j as i32);
+            let dk = spinor_len(lk, kappa_k as i32);
+            let dl = spinor_len(ll, kappa_l as i32);
+            let n2c_i = n_ctr_i * di; // dense bra1 spinor dim (contraction-major)
+            let n2c_j = n_ctr_j * dj;
+            let n2c_k = n_ctr_k * dk;
+            let n2c_l = n_ctr_l * dl;
+
+            // Fail-closed staging guard (T-aty-03, OOM-safe stop contract): refuse
+            // before any write if the caller workspace cannot hold the full dense
+            // interleaved-complex 4D spinor block. Prevents a partial write on nctr>1.
+            let staging_required = n2c_i * n2c_j * n2c_k * n2c_l * 2;
+            if staging.len() < staging_required {
+                return Err(cintxRsError::BufferTooSmall {
+                    required: staging_required,
+                    provided: staging.len(),
+                });
+            }
+
+            let mut tmp = vec![F::from_f64_lossy(0.0); di * dj * dk * dl * 2];
+            for ci in 0..n_ctr_i {
+                for cj in 0..n_ctr_j {
+                    for ck in 0..n_ctr_k {
+                        for cl in 0..n_ctr_l {
+                            let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                * block_len;
+                            cart_to_spinor_sf_4d::<F>(
+                                &mut tmp,
+                                &cart_blocks[base..base + block_len],
+                                li, kappa_i, lj, kappa_j,
+                                lk, kappa_k, ll, kappa_l,
+                            )?;
+                            // tmp: staging[(((l_sp*dk+k_sp)*dj+j_sp)*di+i_sp)*2 +{re,im}].
+                            // Scatter contraction-major in all four indices.
+                            for l_sp in 0..dl {
+                                let lidx = cl * dl + l_sp;
+                                for k_sp in 0..dk {
+                                    let kidx = ck * dk + k_sp;
+                                    for j_sp in 0..dj {
+                                        let jidx = cj * dj + j_sp;
+                                        for i_sp in 0..di {
+                                            let iidx = ci * di + i_sp;
+                                            let src = (((l_sp * dk + k_sp) * dj + j_sp) * di
+                                                + i_sp)
+                                                * 2;
+                                            let dst = (((lidx * n2c_k + kidx) * n2c_j + jidx)
+                                                * n2c_i
+                                                + iidx)
+                                                * 2;
+                                            staging[dst] = tmp[src];
+                                            staging[dst + 1] = tmp[src + 1];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         Representation::Cart => {
             // Each contraction block is i-fastest [nfl][nfk][nfj][nfi]; scatter it
