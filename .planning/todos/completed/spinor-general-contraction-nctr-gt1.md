@@ -6,7 +6,17 @@ created: {
 source: pyscf-rs F-03 (spinor-integrals) audit-fix — downstream consumer
 severity: warning
 resolves_phase: null
-resolved: null
+resolved: 2026-06-01
+resolved_by: quick-260601-aty (commits 8d6ebbc, 89fff71, 69798aa; merge af63c1b)
+resolution: >
+  1e + 2e spinor arms now do per-(ci,cj[,ck,cl]) contraction-major scatter; both
+  UnsupportedApi nctr>1 guards removed. int1e_{ovlp,kin,nuc}_spinor, int2e_spinor, and
+  the int1e_ipovlp_spinor gradient byte-match vendored libcint 6.1.3 at atol=1e-12 on
+  NON-SQUARE nctr=2 fixtures (double-gated cpu + CINTX_ORACLE_BUILD_VENDOR=1). Verifier 7/7.
+  Spun-off follow-ups (NOT part of this item's acceptance): (a) oracle_gate_3c2e_spinor
+  pre-existing failure (old must-reject contract, untouched center_3c2e.rs); (b) the
+  segmented multi-shell-same-l global AO permutation vs PySCF (distinct ao_loc_2c concern).
+  See quick/260601-aty-.../deferred-items.md.
 ---
 
 # Spinor cart→spinor transform fails closed for general contraction (nctr>1)
