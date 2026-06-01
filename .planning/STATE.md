@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING (Wave 1 re-planned, ready to execute)
-Plan: 30-00 complete; Wave 1 split into 30-01a/b/c/d (sequential a→b→c→d, each its own vendor gate); 30-02 not started
-Status: Ready to execute — next is 30-01a (NEW 8-G-tensor London overlap engine: int1e_spgsp)
+Plan: 30-00 + 30-01a complete; 30-01c engine built (783d392/a39f9f7) but BLOCKED on vendor byte-identity (rank-9 gout->gc-block layout, RESEARCH Open Q1) — oracle_covered NOT flipped, gates RED/#[ignore]d; 30-01b (cg/giao_sa10nucsp) NEVER executed (no SUMMARY, no code); 30-01d + 30-02 not started
+Status: BLOCKED — 30-01c rank-9 sa01 engine compiles + runs (all 9 components non-zero) but is NOT byte-identical to vendor; needs gout-layout reverse-engineering before flip. 30-01b is also still pending. See 30-01c-SUMMARY.md.
 Seed/design: .planning/notes/phase-30-wave1-engine-class-split-PLAN.md (engine-class sub-wave breakdown)
 
 Phase 30 Wave 1 re-plan COMPLETE (2026-06-01):
