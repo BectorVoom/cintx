@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING (Wave 1 re-planned, ready to execute)
-Plan: 30-00 + 30-01a complete; 30-01c engine built (783d392/a39f9f7) but BLOCKED on vendor byte-identity (rank-9 gout->gc-block layout, RESEARCH Open Q1) — oracle_covered NOT flipped, gates RED/#[ignore]d; 30-01b (cg/giao_sa10nucsp) NEVER executed (no SUMMARY, no code); 30-01d + 30-02 not started
-Status: BLOCKED — 30-01c rank-9 sa01 engine compiles + runs (all 9 components non-zero) but is NOT byte-identical to vendor; needs gout-layout reverse-engineering before flip. 30-01b is also still pending. See 30-01c-SUMMARY.md.
+Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING (Wave 1 in progress)
+Plan: 30-00 + 30-01a + 30-01b COMPLETE (30-01b: cg/giao_sa10nucsp Rys+gauge nuclear engine byte-identical at atol=1e-12, oracle_covered flipped, f7c879c/93e7109); 30-01c engine built (783d392) but BLOCKED on vendor byte-identity (rank-9 gout->gc-block layout, RESEARCH Open Q1) — oracle_covered NOT flipped, gates RED/#[ignore]d; 30-01d + 30-02 not started
+Status: EXECUTING — 30-01b green (5 of 9 1e families now oracle_covered=true: spgsp/cg_sa10sp/giao_sa10sp/cg_sa10nucsp/giao_sa10nucsp). 30-01c rank-9 sa01 still BLOCKED (compiles + runs all-9-non-zero but NOT byte-identical; needs gout-layout reverse-engineering before flip). 30-01d (spgnucsp+spgsa01) + Wave 2 (6×2e) pending. Phase NOT complete; GIAO-03 NOT closed. See 30-01b-SUMMARY.md / 30-01c-SUMMARY.md.
 Seed/design: .planning/notes/phase-30-wave1-engine-class-split-PLAN.md (engine-class sub-wave breakdown)
 
 Phase 30 Wave 1 re-plan COMPLETE (2026-06-01):
