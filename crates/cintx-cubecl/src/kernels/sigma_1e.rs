@@ -847,6 +847,9 @@ pub(crate) fn giao_family_id(op: &str) -> Option<u32> {
         // Sub-wave 1c: the rank-9 Rys+gauge sa01 families.
         "cg_sa10sa01" => Some(3),
         "giao_sa10sa01" => Some(4),
+        // Sub-wave 1b: the rank-3 Rys+gauge nuclear families.
+        "cg_sa10nucsp" => Some(5),
+        "giao_sa10nucsp" => Some(6),
         _ => None,
     }
 }
@@ -859,6 +862,7 @@ pub(crate) fn giao_family_id(op: &str) -> Option<u32> {
 pub(crate) fn giao_family_rank(op: &str) -> usize {
     match op {
         "spgsp" | "cg_sa10sp" | "giao_sa10sp" => 3,
+        "cg_sa10nucsp" | "giao_sa10nucsp" => 3,
         "cg_sa10sa01" | "giao_sa10sa01" => 9,
         _ => 0,
     }
@@ -913,11 +917,14 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
     exps_j: &[f64],
     coeff_i: &[f64],
     coeff_j: &[f64],
+    origin_coords: &[f64],
+    origin_charges: &[f64],
     staging: &mut [F],
 ) -> Result<(), cintxRsError> {
     use crate::kernels::sigma_p::{
         launch_int1e_cg_sa10sp_spinor_pair, launch_int1e_giao_sa10sp_spinor_pair,
-        launch_int1e_sa10sa01_spinor_pair, launch_int1e_spgsp_spinor_pair,
+        launch_int1e_sa10nucsp_spinor_pair, launch_int1e_sa10sa01_spinor_pair,
+        launch_int1e_spgsp_spinor_pair,
     };
 
     let rank = giao_family_rank(op);
@@ -988,6 +995,29 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
             launch_int1e_sa10sa01_spinor_pair::<F>(
                 backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
                 [0.0, 0.0, 0.0], ri, exps_i, exps_j, coeff_i, coeff_j, staging,
+            )
+        }
+        "cg_sa10nucsp" => {
+            // Rank-3 Rys+gauge nuclear. cg gauge shift dri = ri − common_orig
+            // (G2E_RCI). The launcher carries its OWN ×3 staging guard; the
+            // fail-closed nroots guard is inside run_sigma_nuc_gauge_on_backend.
+            let dri = [
+                ri[0] - common_orig[0],
+                ri[1] - common_orig[1],
+                ri[2] - common_orig[2],
+            ];
+            launch_int1e_sa10nucsp_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, dri,
+                exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges, staging,
+            )
+        }
+        "giao_sa10nucsp" => {
+            // Rank-3 Rys+gauge nuclear. giao natural bra center: x1i origin =
+            // [0,0,0] (G2E_R_I, no gauge shift).
+            launch_int1e_sa10nucsp_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
+                [0.0, 0.0, 0.0], exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+                staging,
             )
         }
         other => Err(cintxRsError::UnsupportedApi {

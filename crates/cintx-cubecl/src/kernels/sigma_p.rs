@@ -1108,6 +1108,123 @@ pub fn launch_int1e_giao_sa10sp_spinor_pair<F: CintFloat>(
     )
 }
 
+/// Live `int1e_cg_sa10nucsp` / `int1e_giao_sa10nucsp` Spinor launcher (Sub-wave 1b)
+/// — the NEW Rys+gauge **nuclear** engine, rank 3, c2s_si_1ei (imaginary ket).
+///
+/// Same shell-pair contract as `launch_int1e_cg_sa10sp_spinor_pair`, but the cart
+/// blocks come from the Rys nuclear G-tensor with the gauge `x1i`-with-origin fold
+/// applied INSIDE the Rys root loop (`super::sigma_1e_nuc::run_sigma_nuc_gauge_on_backend`).
+/// `gauge` is `dri = ri − common_orig` (cg) or `[0,0,0]` (giao natural center).
+/// `origin_coords`/`origin_charges` are the nuclear-attraction centers (charge `−Z`
+/// per atom). The 12-component (3 tensor × gc 4-block) gout is byte-identical to the
+/// cg/giao nucsp body (intor3.c:1230 / :1547); only the builder origin differs.
+///
+/// Output layout: 3 stacked spinor matrices, column-major (ket outer, bra inner),
+/// interleaved complex, contraction-major:
+/// `out[grp*(ni_sp*nj_sp*2) + (j_global*ni_sp + i_global)*2 + {0:re,1:im}]`.
+///
+/// Carries its OWN fail-closed full-block staging guard (`ni_sp*nj_sp*2*3`) before
+/// any write; the Rys nroots fail-closed guard lives in `run_sigma_nuc_gauge_on_backend`
+/// (never clamped — CR-01 / T-30-01b-03).
+#[allow(clippy::too_many_arguments)]
+pub fn launch_int1e_sa10nucsp_spinor_pair<F: CintFloat>(
+    backend: &ResolvedBackend,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    gauge: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    origin_coords: &[f64],
+    origin_charges: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    const RANK: usize = 3;
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let block_len = nci * ncj;
+    let total_len = RANK * (N_GC as usize) * block_len;
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_sp = nctr_i * di;
+    let nj_sp = nctr_j * dj;
+
+    // Fail-closed full-block staging guard BEFORE any write (Phase-28 CR-01,
+    // T-30-01b-02). No partial guards.
+    let staging_required = ni_sp * nj_sp * 2 * RANK;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // Rys+gauge nuclear cart gc blocks. The fail-closed nroots guard (never clamp,
+    // T-30-01b-03) is inside run_sigma_nuc_gauge_on_backend.
+    let mut gc = super::sigma_1e_nuc::run_sigma_nuc_gauge_on_backend(
+        backend, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, gauge, exps_i, exps_j, coeff_i,
+        coeff_j, origin_coords, origin_charges,
+    )?;
+
+    // s/p normalization × the cg/giao nucsp common_factor (0.5, intor3.c:1239).
+    let sp_scale = common_fac_sp(li) * common_fac_sp(lj) * 0.5;
+    for v in gc.iter_mut() {
+        *v *= sp_scale;
+    }
+
+    let group_out = ni_sp * nj_sp * 2;
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+    for ci in 0..nctr_i {
+        for cj in 0..nctr_j {
+            let base = (ci * nctr_j + cj) * total_len;
+            for grp in 0..RANK {
+                let gbase = base + grp * (N_GC as usize) * block_len;
+                let gc_x = &gc[gbase..gbase + block_len];
+                let gc_y = &gc[gbase + block_len..gbase + 2 * block_len];
+                let gc_z = &gc[gbase + 2 * block_len..gbase + 3 * block_len];
+                let gc_1 = &gc[gbase + 3 * block_len..gbase + 4 * block_len];
+
+                // c2s_si_1ei owns the KET→BRA transpose (imaginary-ket arm).
+                cart_to_spinor_si_2di::<F>(
+                    &mut scratch,
+                    gc_x,
+                    gc_y,
+                    gc_z,
+                    gc_1,
+                    li,
+                    kappa_i,
+                    lj,
+                    kappa_j,
+                )?;
+
+                let grp_off = grp * group_out;
+                for j in 0..dj {
+                    let j_global = cj * dj + j;
+                    for i in 0..di {
+                        let i_global = ci * di + i;
+                        let src = (j * di + i) * 2;
+                        let dst = grp_off + (j_global * ni_sp + i_global) * 2;
+                        staging[dst] = scratch[src];
+                        staging[dst + 1] = scratch[src + 1];
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  Phase 30 (GIAO-03 / Sub-wave 1a): int1e_spgsp 8-G-tensor London overlap.
 //

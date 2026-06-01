@@ -379,6 +379,9 @@ fn collect_cintx_sa10sa01(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Ve
         &sj.exps,
         &si.coeff_row_major,
         &sj.coeff_row_major,
+        // sa01 is rinv (single center, plumbed internally) → no nuclear centers.
+        &[],
+        &[],
         &mut staging,
     )
     .unwrap_or_else(|e| panic!("{op} rank-9 spinor launch must succeed: {e:?}"));
