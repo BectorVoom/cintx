@@ -844,27 +844,38 @@ pub(crate) fn giao_family_id(op: &str) -> Option<u32> {
         "spgsp" => Some(0),
         "cg_sa10sp" => Some(1),
         "giao_sa10sp" => Some(2),
+        // Sub-wave 1c: the rank-9 Rys+gauge sa01 families.
+        "cg_sa10sa01" => Some(3),
+        "giao_sa10sa01" => Some(4),
         _ => None,
     }
 }
 
-/// Component_rank for the Sub-wave-1a GIAO×σ 1e families (all rank 3 = ng[7]).
+/// Component_rank for the GIAO×σ 1e families. Sub-wave-1a families are rank 3
+/// (ng[7]); the Sub-wave-1c sa01 families are **rank 9** (ng[7]=9 — the GIAO
+/// g-factor raises the rank; registering at rank 3 truncates 6 of 9 tensor
+/// components, Pitfall 3).
 #[allow(dead_code)]
 pub(crate) fn giao_family_rank(op: &str) -> usize {
     match op {
         "spgsp" | "cg_sa10sp" | "giao_sa10sp" => 3,
+        "cg_sa10sa01" | "giao_sa10sa01" => 9,
         _ => 0,
     }
 }
 
-/// Transform selector for the Sub-wave-1a GIAO×σ 1e families (all SiI =
-/// `cart_to_spinor_si_2di`, imaginary-ket — RESEARCH per-family map).
+/// Transform selector for the GIAO×σ 1e families. The Sub-wave-1a sp families use
+/// the imaginary-ket SiI (`cart_to_spinor_si_2di`); the Sub-wave-1c **sa01**
+/// families use the REAL `Si` (`cart_to_spinor_si_2d` / c2s_si_1e) — the spin
+/// operator sits on the ket-side angular operator, not as an imaginary ∇ phase
+/// (Pitfall 2).
 #[allow(dead_code)]
 pub(crate) fn giao_family_transform(op: &str) -> TransformKind {
     let _ = TransformKind::Sf; // keep the variant referenced for non-spgsp arms
-    let _ = TransformKind::Si;
     match op {
-        // All three Sub-wave-1a families are imaginary-ket (c2s_si_1ei).
+        // The rank-9 sa01 families route through the REAL si transform.
+        "cg_sa10sa01" | "giao_sa10sa01" => TransformKind::Si,
+        // The Sub-wave-1a sp families are imaginary-ket (c2s_si_1ei).
         _ => TransformKind::SiI,
     }
 }
@@ -906,7 +917,7 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
 ) -> Result<(), cintxRsError> {
     use crate::kernels::sigma_p::{
         launch_int1e_cg_sa10sp_spinor_pair, launch_int1e_giao_sa10sp_spinor_pair,
-        launch_int1e_spgsp_spinor_pair,
+        launch_int1e_sa10sa01_spinor_pair, launch_int1e_spgsp_spinor_pair,
     };
 
     let rank = giao_family_rank(op);
@@ -958,8 +969,29 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
                 exps_i, exps_j, coeff_i, coeff_j, staging,
             )
         }
+        "cg_sa10sa01" => {
+            // Rank-9 Rys+gauge. cg gauge shift dri = ri − common_orig (G2E_RCI).
+            // rinv center = PTR_RINV_ORIG default [0,0,0]. The launcher carries its
+            // OWN ×9 staging + fail-closed nroots guards.
+            let dri = [
+                ri[0] - common_orig[0],
+                ri[1] - common_orig[1],
+                ri[2] - common_orig[2],
+            ];
+            launch_int1e_sa10sa01_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
+                [0.0, 0.0, 0.0], dri, exps_i, exps_j, coeff_i, coeff_j, staging,
+            )
+        }
+        "giao_sa10sa01" => {
+            // Rank-9 Rys+gauge. giao natural bra center: x1i origin = ri (G2E_R_I).
+            launch_int1e_sa10sa01_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
+                [0.0, 0.0, 0.0], ri, exps_i, exps_j, coeff_i, coeff_j, staging,
+            )
+        }
         other => Err(cintxRsError::UnsupportedApi {
-            requested: format!("int1e_{other}_spinor is not a Sub-wave-1a GIAO×σ 1e family"),
+            requested: format!("int1e_{other}_spinor is not a GIAO×σ 1e family"),
         }),
     }
 }
