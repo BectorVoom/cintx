@@ -675,3 +675,69 @@ fn test_int1e_nuc_spinor_nctr2_parity() {
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 3 (ACCEPT-4): spinor GRADIENT under nctr>1 — confirm + COVER with vendor.
+//
+// The gradient nctr>1 path already EVALUATES (no UnsupportedApi guard): the
+// one_electron.rs Representation::Spinor gradient arms route through
+// cart_to_spinor_sf_derivative_2d, which takes n_ctr_i/n_ctr_j and composes
+// contraction-major internally (27-03 / D-08; smoke test
+// test_ipovlp_spinor_grad_nctr_gt1_evaluates in one_electron.rs).
+//
+// vendor_int1e_ipovlp_spinor is a REAL libcint driver (NOT a return-0/exit(1) stub
+// — contrast int2c2e_ip1/ip2_spinor and CINT3c1e_spinor which ARE stubs), so we add
+// a genuine byte-identity vendor parity gate on the SAME NON-SQUARE p(nctr=2)×d(nctr=2)
+// cross block, single shell-pair, component-leading interleaved-complex layout:
+//   out[comp * ni_sp*nj_sp*2 + (j*ni_sp + i)*2 + {re,im}], ncomp=3.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(has_vendor_libcint)]
+#[cfg(feature = "cpu")]
+#[test]
+fn test_int1e_ipovlp_spinor_grad_nctr2_parity() {
+    use cintx_oracle::vendor_ffi;
+    const NCOMP: usize = 3;
+
+    let (atm, bas, env) = build_two_p_spinor_nctr2();
+    assert_fixture_nctr_gt1(&bas);
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Single NON-SQUARE shell pair (0=p nctr2 → 12, 1=d nctr2 → 20).
+    let (si, sj) = (0usize, 1usize);
+    let ni_sp = shell_nsp_nctr(&bas, si);
+    let nj_sp = shell_nsp_nctr(&bas, sj);
+    let nelems = NCOMP * ni_sp * nj_sp * 2;
+    let shls = [si as i32, sj as i32];
+
+    let mut vendor = vec![0.0f64; nelems];
+    vendor_ffi::vendor_int1e_ipovlp_spinor(&mut vendor, &shls, &atm, natm, &bas, nbas, &env);
+
+    let mut cintx = vec![0.0f64; nelems];
+    // SAFETY: atm/bas/env well-formed; shls valid.
+    unsafe {
+        eval_raw(
+            RawApiId::INT1E_IPOVLP_SPINOR,
+            Some(&mut cintx),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+        .expect("eval_raw INT1E_IPOVLP_SPINOR nctr2 must evaluate (no UnsupportedApi)");
+    }
+
+    assert_any_nonzero(&cintx, "int1e_ipovlp_spinor grad nctr2 cintx");
+    assert_any_nonzero(&vendor, "int1e_ipovlp_spinor grad nctr2 vendor");
+
+    let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
+    assert_eq!(
+        mismatches, 0,
+        "int1e_ipovlp_spinor grad nctr2: {mismatches} mismatches vs vendored libcint \
+         at atol={ATOL}"
+    );
+}
+
