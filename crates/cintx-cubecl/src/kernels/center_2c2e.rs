@@ -305,8 +305,9 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                                             let s0_k0 = g[(base + i_off) as usize];
                                             let prev_i_k0 =
                                                 g[(base + irys + (n - 1u32) * dn) as usize];
-                                            // k=1
-                                            let mut s1 = c0pa * s0_k0 + b00 * prev_i_k0;
+                                            // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
+                                            let mut s1 =
+                                                c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
                                             g[(base + i_off + dm) as usize] = s1;
                                             let mut s_prev = s0_k0;
                                             let mut m = 1u32;
@@ -318,7 +319,7 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                                                     as usize];
                                                 let s2 = c0pa * s1
                                                     + F::cast_from(m) * b01 * s_prev
-                                                    + b00 * prev_i_km;
+                                                    + F::cast_from(n) * b00 * prev_i_km;
                                                 g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
                                                 s_prev = s1;
                                                 s1 = s2;
@@ -580,12 +581,12 @@ fn fill_g_tensor_2c2e(
                         let i_off = irys + n * dn;
                         let s0_k0 = g[base + i_off];
                         let prev_i_k0 = g[base + irys + (n - 1) * dn];
-                        let mut s1 = c * s0_k0 + b00 * prev_i_k0;
+                        let mut s1 = c * s0_k0 + n as f64 * b00 * prev_i_k0;
                         g[base + i_off + dm] = s1;
                         let mut s_prev = s0_k0;
                         for m in 1..mmax {
                             let prev_i_km = g[base + irys + (n - 1) * dn + m * dm];
-                            let s2 = c * s1 + m as f64 * b01 * s_prev + b00 * prev_i_km;
+                            let s2 = c * s1 + m as f64 * b01 * s_prev + n as f64 * b00 * prev_i_km;
                             g[base + i_off + (m + 1) * dm] = s2;
                             s_prev = s1;
                             s1 = s2;
@@ -1291,6 +1292,73 @@ mod tests {
                 "device/host mismatch li={li} lk={lk} idx={idx}: host={h:.15e} dev={d:.15e} diff={diff:.3e}"
             );
         }
+    }
+
+
+
+
+    // ── libcint byte-parity harness (DF-01 regression) ───────────────────────
+    // Reference values are upstream PySCF `auxmol.intor('int2c2e_cart')`
+    // (= libcint), normalized by the (xy|xy) [d] / [1][1] [f] element, at a
+    // NON-ORIGIN geometry (exps 0.6/0.9, sep 1.7 bohr) so the c00/c0p-coupled
+    // recurrence is exercised. Guards the n*b00 mixed-recurrence factor: a
+    // regression there shifts the diagonal-cartesian d+ terms (n>=2). cart_comps
+    // order matches libcint (xx,xy,xz,yy,yz,zz / xxx,xxy,...,zzz).
+    fn parity_norm_matrix(li: u8, ai: f64, ak: f64) -> (Vec<f64>, usize) {
+        let cf = (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(li);
+        let out = host_cart_2c2e(ai, ak, [0.0, 0.0, 0.0], [0.0, 0.0, 1.7], li, li, cf, 1.0, 1.0);
+        let nc = ncart(li);
+        // ref element = position [1][1] (the second cart comp self-term) = out[1 + 1*nc]
+        let refv = out[1 + 1 * nc];
+        (out.iter().map(|&v| v / refv).collect(), nc)
+    }
+
+    #[test]
+    fn libcint_parity_2c2e_dd_nonorigin() {
+        let (m, nc) = parity_norm_matrix(2, 0.6, 0.9);
+        // upstream (i|k) normalized matrix, xx,xy,xz,yy,yz,zz order:
+        let up: [[f64; 6]; 6] = [
+            [26.638237, 0.0, 0.0, 24.638237, 0.0, 26.725773],
+            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, -0.380464, 0.0, 0.0, 0.0],
+            [24.638237, 0.0, 0.0, 26.638237, 0.0, 26.725773],
+            [0.0, 0.0, 0.0, 0.0, -0.380464, 0.0],
+            [28.459773, 0.0, 0.0, 28.459773, 0.0, 29.157171],
+        ];
+        for i in 0..nc {
+            for k in 0..nc {
+                let got = m[i + k * nc]; // (i|k)
+                let want = up[i][k];
+                assert!(
+                    (got - want).abs() < 1e-5,
+                    "d-d (i={i}|k={k}): got {got:.6} want {want:.6} (libcint parity; check n*b00)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn libcint_parity_2c2e_ff_diag_nonorigin() {
+        let (m, nc) = parity_norm_matrix(3, 0.6, 0.9);
+        // upstream f-f cartesian self-diagonal (cart_comps order), normalized by [1][1]:
+        let up_diag: [f64; 10] = [
+            7.613222, 1.0, -0.043674, 1.0, -0.062891, 1.225374, 7.613222, -0.043674, 1.225374,
+            3.290372,
+        ];
+        for i in 0..nc {
+            let got = m[i + i * nc];
+            assert!(
+                (got - up_diag[i]).abs() < 1e-5,
+                "f-f diag i={i}: got {got:.6} want {:.6} (libcint parity)",
+                up_diag[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_device_kernel_matches_host_ff() {
+        // Lock the device f-f path to the host (nroots=4 — exercises deeper VRR).
+        assert_device_matches_host(3, 3, 0.6, 0.9);
     }
 
     #[test]
