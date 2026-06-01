@@ -11013,35 +11013,77 @@ fn launch_one_electron_typed<F: CintFloat>(
             }
         }
         Representation::Spinor => {
-            // Single-contraction spinor preserves the exact prior behavior.
-            // General contraction (nctr>1) is not wired for the spinor transform
-            // (and is not exercised by the non-relativistic callers); return an
-            // explicit error rather than silently truncating to the (0,0) block.
-            if n_ctr_i != 1 || n_ctr_j != 1 {
-                return Err(cintxRsError::UnsupportedApi {
-                    requested: "spinor 1e with general contraction (nctr>1)".to_owned(),
-                });
-            }
-            // cart_blocks is exactly one nci*ncj block here (nctr=1 enforced above).
-            // The device scalar kernel emits it ket-major / bra-fastest
+            // General-contraction (nctr>1) spin-free 1e cart→spinor (260601-aty).
+            // The device scalar kernel already accumulated every (ci,cj) block with
+            // ITS OWN per-column coefficients (out_total = nctr_i*nctr_j*block_len),
+            // exactly as the Spheric/Cart arms above consume. This arm therefore only
+            // transforms + scatters the already-contracted per-column blocks — it does
+            // NOT re-apply coefficients. We mirror the Spheric arm's per-(ci,cj) loop
+            // and the proven σ·p (si) nctr>1 contraction-major spinor scatter
+            // (dst = (j_global*ni_sp + i_global)*2, ni_sp = n_ctr_i*di), the only
+            // difference being that cart_to_spinor_sf_2d does NOT own the ket→bra
+            // transpose (unlike cart_to_spinor_si_2d), so we keep the per-sub-block
+            // ket-major→bra-major transpose the single-block arm carried (260529-jtd/kke).
+            //
+            // The device scalar kernel emits each (ci,cj) block ket-major / bra-fastest
             // (block[cj*nci + ci]), but cart_to_spinor_sf_2d reads bra-major /
-            // ket-fastest (cart[bra*ncj + ket], see c2spinor.rs apply_bra_block:
-            // cart[n*ncj + j]). Transpose to bra-major before the spin-free
-            // cart→spinor transform so the bra/ket coefficient roles line up with
-            // libcint c2s_sf_1e — identical to the GRADIENT arm fix (260529-jtd).
-            // For square symmetric blocks (an s side, or the intrinsically
-            // transpose-symmetric overlap p×p block) this is a no-op, which is why a
-            // NON-SQUARE asymmetric p×d cross block is the configuration that surfaces
-            // the orientation.
+            // ket-fastest (cart[bra*ncj + ket]). For square symmetric blocks (an s side,
+            // or an intrinsically transpose-symmetric overlap p×p block) the transpose
+            // is a no-op — which is why a NON-SQUARE asymmetric p×d cross block is the
+            // configuration that surfaces the orientation, and the nctr>1 fixture is
+            // built that way.
             let kappa_i = shell_i.kappa;
             let kappa_j = shell_j.kappa;
+            let di = spinor_len(li, kappa_i as i32);
+            let dj = spinor_len(lj, kappa_j as i32);
+            let ni_sp = n_ctr_i * di; // dense bra spinor dim (contraction-major)
+            let nj_sp = n_ctr_j * dj; // dense ket spinor dim
+
+            // Fail-closed staging guard (T-aty-03, OOM-safe stop contract): refuse
+            // before any write if the caller workspace cannot hold the full dense
+            // interleaved-complex spinor block. Prevents a partial write on nctr>1.
+            let staging_required = ni_sp * nj_sp * 2;
+            if staging.len() < staging_required {
+                return Err(cintxRsError::BufferTooSmall {
+                    required: staging_required,
+                    provided: staging.len(),
+                });
+            }
+
             let mut cart_bra_major = vec![0.0f64; nci * ncj];
-            for ic in 0..nci {
-                for jc in 0..ncj {
-                    cart_bra_major[ic * ncj + jc] = cart_blocks[jc * nci + ic];
+            let mut tmp = vec![F::from_f64_lossy(0.0); di * dj * 2];
+            for ci in 0..n_ctr_i {
+                for cj in 0..n_ctr_j {
+                    let base = (ci * n_ctr_j + cj) * block_len;
+                    let block = &cart_blocks[base..base + block_len];
+                    // ket-major (block[jc*nci + ic]) → bra-major (cart[ic*ncj + jc]).
+                    for ic in 0..nci {
+                        for jc in 0..ncj {
+                            cart_bra_major[ic * ncj + jc] = block[jc * nci + ic];
+                        }
+                    }
+                    cart_to_spinor_sf_2d::<F>(
+                        &mut tmp,
+                        &cart_bra_major,
+                        li,
+                        kappa_i,
+                        lj,
+                        kappa_j,
+                    )?;
+                    // tmp is column-major interleaved: tmp[(j_sp*di + i_sp)*2 + {re,im}].
+                    // Scatter contraction-major into the dense spinor AO grid.
+                    for j_sp in 0..dj {
+                        let j_global = cj * dj + j_sp;
+                        for i_sp in 0..di {
+                            let i_global = ci * di + i_sp;
+                            let src = (j_sp * di + i_sp) * 2;
+                            let dst = (j_global * ni_sp + i_global) * 2;
+                            staging[dst] = tmp[src];
+                            staging[dst + 1] = tmp[src + 1];
+                        }
+                    }
                 }
             }
-            cart_to_spinor_sf_2d::<F>(staging, &cart_bra_major, li, kappa_i, lj, kappa_j)?;
         }
         Representation::Cart => {
             // Each contraction block is column-major [nci, ncj] (bra fastest:
