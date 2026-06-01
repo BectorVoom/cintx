@@ -850,6 +850,9 @@ pub(crate) fn giao_family_id(op: &str) -> Option<u32> {
         // Sub-wave 1b: the rank-3 Rys+gauge nuclear families.
         "cg_sa10nucsp" => Some(5),
         "giao_sa10nucsp" => Some(6),
+        // Sub-wave 1d: the spg-Rys/London families (nuclear rank 3 / rinv rank 9).
+        "spgnucsp" => Some(7),
+        "spgsa01" => Some(8),
         _ => None,
     }
 }
@@ -864,6 +867,11 @@ pub(crate) fn giao_family_rank(op: &str) -> usize {
         "spgsp" | "cg_sa10sp" | "giao_sa10sp" => 3,
         "cg_sa10nucsp" | "giao_sa10nucsp" => 3,
         "cg_sa10sa01" | "giao_sa10sa01" => 9,
+        // Sub-wave 1d spg-Rys/London: spgnucsp rank 3 (ng[7]=3), spgsa01 rank 9
+        // (ng[7]=9 — the GIAO g-factor raises the rank; truncating to 3 drops 6 of
+        // 9 tensor components, Pitfall 3 / T-30-01d-02).
+        "spgnucsp" => 3,
+        "spgsa01" => 9,
         _ => 0,
     }
 }
@@ -877,9 +885,10 @@ pub(crate) fn giao_family_rank(op: &str) -> usize {
 pub(crate) fn giao_family_transform(op: &str) -> TransformKind {
     let _ = TransformKind::Sf; // keep the variant referenced for non-spgsp arms
     match op {
-        // The rank-9 sa01 families route through the REAL si transform.
-        "cg_sa10sa01" | "giao_sa10sa01" => TransformKind::Si,
-        // The Sub-wave-1a sp families are imaginary-ket (c2s_si_1ei).
+        // The rank-9 sa01 families route through the REAL si transform (incl. the
+        // Sub-wave-1d spg-Rys/London spgsa01).
+        "cg_sa10sa01" | "giao_sa10sa01" | "spgsa01" => TransformKind::Si,
+        // The sp/nucsp arms (incl. spgnucsp) are imaginary-ket (c2s_si_1ei).
         _ => TransformKind::SiI,
     }
 }
@@ -925,6 +934,7 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
     use crate::kernels::sigma_p::{
         launch_int1e_cg_sa10sp_spinor_pair, launch_int1e_giao_sa10sp_spinor_pair,
         launch_int1e_sa10nucsp_spinor_pair, launch_int1e_sa10sa01_spinor_pair,
+        launch_int1e_spgnucsp_spinor_pair, launch_int1e_spgsa01_spinor_pair,
         launch_int1e_spgsp_spinor_pair,
     };
 
@@ -1022,6 +1032,27 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
                 backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
                 [0.0, 0.0, 0.0], exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
                 staging,
+            )
+        }
+        "spgnucsp" => {
+            // Sub-wave 1d: NUCLEAR Rys + 8-G London. London x1i origin = ri (G2E_R0I),
+            // London phase = ri − rj; does NOT read PTR_COMMON_ORIG. Nuclear centers
+            // are the atom-summed origin_coords/origin_charges (int1e_type 2). rank 3,
+            // SiI. The launcher carries its OWN ×3 staging + nroots guards.
+            launch_int1e_spgnucsp_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
+                exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges, staging,
+            )
+        }
+        "spgsa01" => {
+            // Sub-wave 1d: RINV Rys + 8-G London (both-side g1). London x1i origin =
+            // ri (G2E_R0I), London phase = ri − rj; does NOT read PTR_COMMON_ORIG.
+            // rinv center = env[PTR_RINV_ORIG] (single center, charge +1, int1e_type
+            // 1) — threaded via `rinv_orig`, NOT a hardcoded [0,0,0] (the 30-01c root
+            // cause). rank 9, REAL Si. Own ×9 staging + nroots guards.
+            launch_int1e_spgsa01_spinor_pair::<F>(
+                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
+                rinv_orig, exps_i, exps_j, coeff_i, coeff_j, staging,
             )
         }
         other => Err(cintxRsError::UnsupportedApi {

@@ -2893,6 +2893,1578 @@ pub fn launch_int1e_sa10sa01_spinor_pair<F: CintFloat>(
     Ok(())
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  Phase 30 (GIAO-03 / Sub-wave 1d): the spg-Rys/London engine class.
+//
+//  int1e_spgnucsp / int1e_spgsa01 COMBINE the 30-01a spgsp 8-G London structure
+//  (G2E_R0I origin=ri + the rirj=ri−rj London post-multiply in the gout; NEITHER
+//  reads PTR_COMMON_ORIG) with a Rys root loop (the 30-01b/c Rys+gauge engines):
+//
+//   - spgnucsp: NUCLEAR Rys base (atom-sum, charge −Z, int1e_type 2), g1 = D_J(g0),
+//     27-product s[], 12-component London mix (intor3.c:1939-1951), rank 3, SiI.
+//   - spgsa01:  RINV Rys base (single center charge +1, int1e_type 1), g1 = D_J(g0)
+//     + D_I(g0) (both-side), 27-product s[], 36-component London mix
+//     (intor3.c:2099-2135), rank 9, REAL Si.
+//
+//  Both reuse the spgsp 8-G chain helpers (sigma_p_nabla_j / x1i / x1i_of_j /
+//  nabla_i_combine) + the sa01 both-side helpers, the sa01 nuclear/rinv VRR base
+//  (sa01_nuc_vrr_axis), and the overlap HRR (sigma_p_hrr_axis). Headroom is
+//  nmax = li+lj+3 (the D_I(R0I(D_J)) chain reaches bra li+2), one more level than
+//  the sa01 kernel's li+lj+2. Rys roots are device-side; nroots is comptime and
+//  the launchers fail closed (no clamp). The int1e_sp / cg / giao / spgsp paths
+//  are untouched.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// Device kernel — the rank-3 spg-Rys/London `int1e_spgnucsp` assembler (NUCLEAR
+/// Rys base, atom-sum). The 8-G London chain (g0..g7 with g1=D_J) feeds the
+/// 12-component London `c[]·s[]` mix (intor3.c:1939-1951). `c = ri − rj` is the
+/// London phase; the x1i origin is `ri` (G2E_R0I). nroots is comptime.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn spgnucsp_rys_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    origin_coords: &Array<F>,
+    origin_charges: &Array<F>,
+    g: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    gc_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    pie4: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    norig: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let nrys = nroots;
+        // 8-G chain headroom: D_I(R0I(D_J)) reaches bra li+2 → nmax = li+lj+3.
+        let nmax = li + lj + 3u32;
+        let lj_ext = lj + 1u32;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let rank = 3u32;
+        let total_len = rank * N_GC * block_len;
+        let out_total = nctr_i * nctr_j * total_len;
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            gc_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        // London phase c = ri − rj (NOT common_orig).
+        let cx = rix - rjx;
+        let cy = riy - rjy;
+        let cz = riz - rjz;
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                let aj2 = F::new(-2.0) * aj;
+                let ai2 = F::new(-2.0) * ai;
+
+                let mut orig = 0u32;
+                while orig < norig {
+                    let charge_factor = origin_charges[orig as usize];
+                    let rcx = origin_coords[(orig * 3u32) as usize];
+                    let rcy = origin_coords[(orig * 3u32 + 1u32) as usize];
+                    let rcz = origin_coords[(orig * 3u32 + 2u32) as usize];
+
+                    let crijx = rcx - px;
+                    let crijy = rcy - py;
+                    let crijz = rcz - pz;
+                    let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
+
+                    if comptime!(nroots == 1u32) {
+                        rys_root1::<F>(x_boys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 2u32) {
+                        rys_root2::<F>(x_boys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 3u32) {
+                        rys_root3::<F>(x_boys, urys, wrys, pie4);
+                    } else if comptime!(nroots == 4u32) {
+                        rys_root4::<F>(x_boys, urys, wrys, pie4);
+                    } else {
+                        rys_root5::<F>(x_boys, urys, wrys, pie4);
+                    }
+
+                    let fac1 = F::new(2.0) * pi_const * charge_factor * fac / zeta;
+
+                    let mut irys: u32 = 0u32;
+                    while irys < nrys {
+                        let u_n = urys[irys as usize];
+                        let w_n = wrys[irys as usize];
+                        let tau = u_n / (F::new(1.0) + u_n);
+                        let rt = aij2 * (F::new(1.0) - tau);
+
+                        let c00x = (px - rix) + tau * crijx;
+                        let c00y = (py - riy) + tau * crijy;
+                        let c00z = (pz - riz) + tau * crijz;
+
+                        let mut gi = 0u32;
+                        while gi < total_g {
+                            g[gi as usize] = F::new(0.0);
+                            gi += 1u32;
+                        }
+                        g[gx as usize] = F::new(1.0);
+                        g[gy as usize] = F::new(1.0);
+                        g[gz as usize] = fac1 * w_n;
+
+                        sa01_nuc_vrr_axis::<F>(g, gx, c00x, rt, nmax);
+                        sa01_nuc_vrr_axis::<F>(g, gy, c00y, rt, nmax);
+                        sa01_nuc_vrr_axis::<F>(g, gz, c00z, rt, nmax);
+                        if lj_ext >= 1u32 {
+                            sigma_p_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                            sigma_p_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                            sigma_p_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                        }
+
+                        let mut ci = 0u32;
+                        while ci < nctr_i {
+                            let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                            let mut cj = 0u32;
+                            while cj < nctr_j {
+                                let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                                let weight = coeff_i_val * coeff_j_val;
+                                let base = (ci * nctr_j + cj) * total_len;
+
+                                let mut cj_idx = 0u32;
+                                let mut ja = 0u32;
+                                while ja <= lj {
+                                    let jx = lj - ja;
+                                    let lj_minus_jx = lj - jx;
+                                    let mut jb = 0u32;
+                                    while jb <= lj_minus_jx {
+                                        let jy = lj_minus_jx - jb;
+                                        let jz = lj - jx - jy;
+
+                                        let mut ci_idx = 0u32;
+                                        let mut ia = 0u32;
+                                        while ia <= li {
+                                            let ix = li - ia;
+                                            let li_minus_ix = li - ix;
+                                            let mut ib = 0u32;
+                                            while ib <= li_minus_ix {
+                                                let iy = li_minus_ix - ib;
+                                                let iz = li - ix - iy;
+
+                                                let bx = gx + jx * dj + ix;
+                                                let by = gy + jy * dj + iy;
+                                                let bz = gz + jz * dj + iz;
+
+                                                // ── 8-G chain (g1 = D_J only). ──
+                                                // X axis.
+                                                let g0xm = if ix == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    g[(bx - 1u32) as usize]
+                                                };
+                                                let g0x = g[bx as usize];
+                                                let g0xp = g[(bx + 1u32) as usize];
+                                                let g1xm = if ix == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_nabla_j::<F>(g, bx - 1u32, dj, aj2, jx)
+                                                };
+                                                let g1x = sigma_p_nabla_j::<F>(g, bx, dj, aj2, jx);
+                                                let g1xp =
+                                                    sigma_p_nabla_j::<F>(g, bx + 1u32, dj, aj2, jx);
+                                                let g2xm = if ix == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_x1i::<F>(g, bx - 1u32, rix)
+                                                };
+                                                let g2x = sigma_p_x1i::<F>(g, bx, rix);
+                                                let g2xp = sigma_p_x1i::<F>(g, bx + 1u32, rix);
+                                                let g3xm = if ix == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_x1i_of_j::<F>(
+                                                        g,
+                                                        bx - 1u32,
+                                                        dj,
+                                                        aj2,
+                                                        jx,
+                                                        rix,
+                                                    )
+                                                };
+                                                let g3x = sigma_p_x1i_of_j::<F>(
+                                                    g, bx, dj, aj2, jx, rix,
+                                                );
+                                                let g3xp = sigma_p_x1i_of_j::<F>(
+                                                    g,
+                                                    bx + 1u32,
+                                                    dj,
+                                                    aj2,
+                                                    jx,
+                                                    rix,
+                                                );
+                                                let g4x = sigma_p_nabla_i_combine::<F>(
+                                                    g0xm, g0xp, ai2, ix,
+                                                );
+                                                let g5x = sigma_p_nabla_i_combine::<F>(
+                                                    g1xm, g1xp, ai2, ix,
+                                                );
+                                                let g6x = sigma_p_nabla_i_combine::<F>(
+                                                    g2xm, g2xp, ai2, ix,
+                                                );
+                                                let g7x = sigma_p_nabla_i_combine::<F>(
+                                                    g3xm, g3xp, ai2, ix,
+                                                );
+
+                                                // Y axis.
+                                                let g0ym = if iy == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    g[(by - 1u32) as usize]
+                                                };
+                                                let g0y = g[by as usize];
+                                                let g0yp = g[(by + 1u32) as usize];
+                                                let g1ym = if iy == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_nabla_j::<F>(g, by - 1u32, dj, aj2, jy)
+                                                };
+                                                let g1y = sigma_p_nabla_j::<F>(g, by, dj, aj2, jy);
+                                                let g1yp =
+                                                    sigma_p_nabla_j::<F>(g, by + 1u32, dj, aj2, jy);
+                                                let g2ym = if iy == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_x1i::<F>(g, by - 1u32, riy)
+                                                };
+                                                let g2y = sigma_p_x1i::<F>(g, by, riy);
+                                                let g2yp = sigma_p_x1i::<F>(g, by + 1u32, riy);
+                                                let g3ym = if iy == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_x1i_of_j::<F>(
+                                                        g,
+                                                        by - 1u32,
+                                                        dj,
+                                                        aj2,
+                                                        jy,
+                                                        riy,
+                                                    )
+                                                };
+                                                let g3y = sigma_p_x1i_of_j::<F>(
+                                                    g, by, dj, aj2, jy, riy,
+                                                );
+                                                let g3yp = sigma_p_x1i_of_j::<F>(
+                                                    g,
+                                                    by + 1u32,
+                                                    dj,
+                                                    aj2,
+                                                    jy,
+                                                    riy,
+                                                );
+                                                let g4y = sigma_p_nabla_i_combine::<F>(
+                                                    g0ym, g0yp, ai2, iy,
+                                                );
+                                                let g5y = sigma_p_nabla_i_combine::<F>(
+                                                    g1ym, g1yp, ai2, iy,
+                                                );
+                                                let g6y = sigma_p_nabla_i_combine::<F>(
+                                                    g2ym, g2yp, ai2, iy,
+                                                );
+                                                let g7y = sigma_p_nabla_i_combine::<F>(
+                                                    g3ym, g3yp, ai2, iy,
+                                                );
+
+                                                // Z axis.
+                                                let g0zm = if iz == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    g[(bz - 1u32) as usize]
+                                                };
+                                                let g0z = g[bz as usize];
+                                                let g0zp = g[(bz + 1u32) as usize];
+                                                let g1zm = if iz == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_nabla_j::<F>(g, bz - 1u32, dj, aj2, jz)
+                                                };
+                                                let g1z = sigma_p_nabla_j::<F>(g, bz, dj, aj2, jz);
+                                                let g1zp =
+                                                    sigma_p_nabla_j::<F>(g, bz + 1u32, dj, aj2, jz);
+                                                let g2zm = if iz == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_x1i::<F>(g, bz - 1u32, riz)
+                                                };
+                                                let g2z = sigma_p_x1i::<F>(g, bz, riz);
+                                                let g2zp = sigma_p_x1i::<F>(g, bz + 1u32, riz);
+                                                let g3zm = if iz == 0u32 {
+                                                    F::new(0.0)
+                                                } else {
+                                                    sigma_p_x1i_of_j::<F>(
+                                                        g,
+                                                        bz - 1u32,
+                                                        dj,
+                                                        aj2,
+                                                        jz,
+                                                        riz,
+                                                    )
+                                                };
+                                                let g3z = sigma_p_x1i_of_j::<F>(
+                                                    g, bz, dj, aj2, jz, riz,
+                                                );
+                                                let g3zp = sigma_p_x1i_of_j::<F>(
+                                                    g,
+                                                    bz + 1u32,
+                                                    dj,
+                                                    aj2,
+                                                    jz,
+                                                    riz,
+                                                );
+                                                let g4z = sigma_p_nabla_i_combine::<F>(
+                                                    g0zm, g0zp, ai2, iz,
+                                                );
+                                                let g5z = sigma_p_nabla_i_combine::<F>(
+                                                    g1zm, g1zp, ai2, iz,
+                                                );
+                                                let g6z = sigma_p_nabla_i_combine::<F>(
+                                                    g2zm, g2zp, ai2, iz,
+                                                );
+                                                let g7z = sigma_p_nabla_i_combine::<F>(
+                                                    g3zm, g3zp, ai2, iz,
+                                                );
+
+                                                // 27 cart products (intor3.c:1911-1937).
+                                                let s0 = g7x * g0y * g0z;
+                                                let s1 = g6x * g1y * g0z;
+                                                let s2 = g6x * g0y * g1z;
+                                                let s3 = g5x * g2y * g0z;
+                                                let s4 = g4x * g3y * g0z;
+                                                let s5 = g4x * g2y * g1z;
+                                                let s6 = g5x * g0y * g2z;
+                                                let s7 = g4x * g1y * g2z;
+                                                let s8 = g4x * g0y * g3z;
+                                                let s9 = g3x * g4y * g0z;
+                                                let s10 = g2x * g5y * g0z;
+                                                let s11 = g2x * g4y * g1z;
+                                                let s12 = g1x * g6y * g0z;
+                                                let s13 = g0x * g7y * g0z;
+                                                let s14 = g0x * g6y * g1z;
+                                                let s15 = g1x * g4y * g2z;
+                                                let s16 = g0x * g5y * g2z;
+                                                let s17 = g0x * g4y * g3z;
+                                                let s18 = g3x * g0y * g4z;
+                                                let s19 = g2x * g1y * g4z;
+                                                let s20 = g2x * g0y * g5z;
+                                                let s21 = g1x * g2y * g4z;
+                                                let s22 = g0x * g3y * g4z;
+                                                let s23 = g0x * g2y * g5z;
+                                                let s24 = g1x * g0y * g6z;
+                                                let s25 = g0x * g1y * g6z;
+                                                let s26 = g0x * g0y * g7z;
+
+                                                let elem = cj_idx * nci + ci_idx;
+                                                // 12-comp spgnucsp London mix
+                                                // (intor3.c:1953-1964) → 3 groups × gc 4.
+                                                let gp0 = base;
+                                                gc_out[(gp0 + elem) as usize] += weight
+                                                    * (cy * s17 - cz * s14 - cy * s25 + cz * s22);
+                                                gc_out[(gp0 + block_len + elem) as usize] += weight
+                                                    * (cy * s24 - cz * s21 - cy * s8 + cz * s5);
+                                                gc_out[(gp0 + 2u32 * block_len + elem) as usize] +=
+                                                    weight
+                                                        * (cy * s7 - cz * s4 - cy * s15 + cz * s12);
+                                                gc_out[(gp0 + 3u32 * block_len + elem) as usize] +=
+                                                    weight
+                                                        * (cy * s6 - cz * s3 + cy * s16 - cz * s13
+                                                            + cy * s26
+                                                            - cz * s23);
+
+                                                let gp1 = base + N_GC * block_len;
+                                                gc_out[(gp1 + elem) as usize] += weight
+                                                    * (cz * s11 - cx * s17 - cz * s19 + cx * s25);
+                                                gc_out[(gp1 + block_len + elem) as usize] += weight
+                                                    * (cz * s18 - cx * s24 - cz * s2 + cx * s8);
+                                                gc_out[(gp1 + 2u32 * block_len + elem) as usize] +=
+                                                    weight
+                                                        * (cz * s1 - cx * s7 - cz * s9 + cx * s15);
+                                                gc_out[(gp1 + 3u32 * block_len + elem) as usize] +=
+                                                    weight
+                                                        * (cz * s0 - cx * s6 + cz * s10 - cx * s16
+                                                            + cz * s20
+                                                            - cx * s26);
+
+                                                let gp2 = base + 2u32 * N_GC * block_len;
+                                                gc_out[(gp2 + elem) as usize] += weight
+                                                    * (cx * s14 - cy * s11 - cx * s22 + cy * s19);
+                                                gc_out[(gp2 + block_len + elem) as usize] += weight
+                                                    * (cx * s21 - cy * s18 - cx * s5 + cy * s2);
+                                                gc_out[(gp2 + 2u32 * block_len + elem) as usize] +=
+                                                    weight
+                                                        * (cx * s4 - cy * s1 - cx * s12 + cy * s9);
+                                                gc_out[(gp2 + 3u32 * block_len + elem) as usize] +=
+                                                    weight
+                                                        * (cx * s3 - cy * s0 + cx * s13 - cy * s10
+                                                            + cx * s23
+                                                            - cy * s20);
+
+                                                ci_idx += 1u32;
+                                                ib += 1u32;
+                                            }
+                                            ia += 1u32;
+                                        }
+                                        cj_idx += 1u32;
+                                        jb += 1u32;
+                                    }
+                                    ja += 1u32;
+                                }
+                                cj += 1u32;
+                            }
+                            ci += 1u32;
+                        }
+                        irys += 1u32;
+                    }
+                    orig += 1u32;
+                }
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`spgnucsp_rys_kernel`] at f64 on a backend client. Returns the rank-3
+/// spgnucsp cart gc blocks (3 groups × 4 gc × block_len per (ci,cj)).
+#[allow(clippy::too_many_arguments)]
+fn run_spgnucsp_rys_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    origin_coords: &[f64],
+    origin_charges: &[f64],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + lj_u + 3;
+    let lj_ext_u = lj_u + 1;
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * 3 * (N_GC as usize) * nci * ncj;
+    let nroots_u = nroots as usize;
+    let norig = (origin_charges.len()) as u32;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+    let oc_h = client.create_from_slice(f64::as_bytes(origin_coords));
+    let och_h = client.create_from_slice(f64::as_bytes(origin_charges));
+    let g_zero = vec![0.0_f64; total_g];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let rys_zero = vec![0.0_f64; nroots_u];
+    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    macro_rules! launch_with {
+        ($nr:expr) => {
+            spgnucsp_rys_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(oc_h.clone(), origin_coords.len()) },
+                unsafe { ArrayArg::from_raw_parts(och_h.clone(), origin_charges.len()) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                SA01_PIE4,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                norig,
+                $nr,
+            )
+        };
+    }
+
+    match nroots {
+        1 => launch_with!(1u32),
+        2 => launch_with!(2u32),
+        3 => launch_with!(3u32),
+        4 => launch_with!(4u32),
+        _ => launch_with!(5u32),
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_spgnucsp_rys_device`].
+#[allow(clippy::too_many_arguments)]
+fn run_spgnucsp_rys_on_backend(
+    backend: &ResolvedBackend,
+    nroots: u32,
+    li: u8,
+    lj: u8,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    origin_coords: &[f64],
+    origin_charges: &[f64],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Result<Vec<f64>, cintxRsError> {
+    let out = match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_spgnucsp_rys_device::<cubecl::cpu::CpuRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_spgnucsp_rys_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_spgnucsp_rys_device::<cubecl_cuda::CudaRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_spgnucsp_rys_device::<cubecl_hip::HipRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_spgnucsp_rys_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+    };
+    Ok(out)
+}
+
+/// Live `int1e_spgnucsp` Spinor launcher (rank 3, NUCLEAR Rys + 8-G London).
+///
+/// Builds the spg-Rys/London cart gc blocks (3 groups × 4 gc), applies the s/p
+/// normalization × the spgnucsp common_factor (0.5, intor3.c:1976), folds each of
+/// the 3 σ-groups through the imaginary-ket `cart_to_spinor_si_2di` (c2s_si_1ei),
+/// and scatters into the contraction-major spinor grid.
+///
+/// The x1i origin is `ri` (G2E_R0I) and the London phase is `ri − rj`; spgnucsp
+/// does NOT read PTR_COMMON_ORIG. `origin_coords`/`origin_charges` are the
+/// atom-summed nuclear centers (int1e_type 2). Carries its OWN fail-closed
+/// full-block (×3) staging guard + a fail-closed `nroots > MAX_DEVICE_NROOTS →
+/// UnsupportedApi` guard (no clamp).
+#[allow(clippy::too_many_arguments)]
+pub fn launch_int1e_spgnucsp_spinor_pair<F: CintFloat>(
+    backend: &ResolvedBackend,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    origin_coords: &[f64],
+    origin_charges: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    const RANK: usize = 3;
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let block_len = nci * ncj;
+    let total_len = RANK * (N_GC as usize) * block_len;
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_sp = nctr_i * di;
+    let nj_sp = nctr_j * dj;
+
+    // Fail-closed full-block (×3) staging guard BEFORE any write (Phase-28 CR-01,
+    // T-30-01d-04). No partial guards.
+    let staging_required = ni_sp * nj_sp * 2 * RANK;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // Fail-closed Rys-nroots guard (T-30-01d-05): never clamp.
+    let order = li as usize + lj as usize + 2;
+    let nroots = (order / 2 + 1) as u32;
+    if nroots > SA01_MAX_DEVICE_NROOTS {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{nroots}"),
+        });
+    }
+
+    let mut gc = run_spgnucsp_rys_on_backend(
+        backend, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, origin_coords,
+        origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+    )?;
+
+    // s/p normalization × spgnucsp common_factor (0.5, intor3.c:1976).
+    let sp_scale = common_fac_sp(li) * common_fac_sp(lj) * 0.5;
+    for v in gc.iter_mut() {
+        *v *= sp_scale;
+    }
+
+    let group_out = ni_sp * nj_sp * 2;
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+    for ci in 0..nctr_i {
+        for cj in 0..nctr_j {
+            let base = (ci * nctr_j + cj) * total_len;
+            for grp in 0..RANK {
+                let gbase = base + grp * (N_GC as usize) * block_len;
+                let gc_x = &gc[gbase..gbase + block_len];
+                let gc_y = &gc[gbase + block_len..gbase + 2 * block_len];
+                let gc_z = &gc[gbase + 2 * block_len..gbase + 3 * block_len];
+                let gc_1 = &gc[gbase + 3 * block_len..gbase + 4 * block_len];
+
+                // Imaginary-ket si transform (c2s_si_1ei) (Pitfall 2: sp/nucsp).
+                cart_to_spinor_si_2di::<F>(
+                    &mut scratch,
+                    gc_x,
+                    gc_y,
+                    gc_z,
+                    gc_1,
+                    li,
+                    kappa_i,
+                    lj,
+                    kappa_j,
+                )?;
+
+                let grp_off = grp * group_out;
+                for j in 0..dj {
+                    let j_global = cj * dj + j;
+                    for i in 0..di {
+                        let i_global = ci * di + i;
+                        let src = (j * di + i) * 2;
+                        let dst = grp_off + (j_global * ni_sp + i_global) * 2;
+                        staging[dst] = scratch[src];
+                        staging[dst + 1] = scratch[src + 1];
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Device kernel — the rank-9 spg-Rys/London `int1e_spgsa01` assembler (RINV Rys
+/// base, single center charge +1). The 8-G London chain with the BOTH-SIDE g1 =
+/// D_J(g0) + D_I(g0) feeds the 36-component London `c[]·s[]` mix
+/// (intor3.c:2099-2135). `c = ri − rj` is the London phase; the x1i origin is `ri`
+/// (G2E_R0I). nroots is comptime.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn spgsa01_rys_kernel<F: Float + CubeElement>(
+    exps_i: &Array<F>,
+    exps_j: &Array<F>,
+    coeff_i: &Array<F>,
+    coeff_j: &Array<F>,
+    g: &mut Array<F>,
+    urys: &mut Array<F>,
+    wrys: &mut Array<F>,
+    gc_out: &mut Array<F>,
+    rix: F,
+    riy: F,
+    riz: F,
+    rjx: F,
+    rjy: F,
+    rjz: F,
+    rcx: F,
+    rcy: F,
+    rcz: F,
+    pie4: F,
+    pi_const: F,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    #[comptime] nroots: u32,
+) {
+    if UNIT_POS == 0u32 {
+        let nrys = nroots;
+        let nmax = li + lj + 3u32;
+        let lj_ext = lj + 1u32;
+        let dj = nmax + 1u32;
+        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let total_g = 3u32 * g_per_axis;
+        let gx = 0u32;
+        let gy = g_per_axis;
+        let gz = 2u32 * g_per_axis;
+
+        let nci = (li + 1u32) * (li + 2u32) / 2u32;
+        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+        let block_len = nci * ncj;
+        let rank = 9u32;
+        let total_len = rank * N_GC * block_len;
+        let out_total = nctr_i * nctr_j * total_len;
+
+        let mut oi = 0u32;
+        while oi < out_total {
+            gc_out[oi as usize] = F::new(0.0);
+            oi += 1u32;
+        }
+
+        // London phase c = ri − rj (NOT common_orig).
+        let cx = rix - rjx;
+        let cy = riy - rjy;
+        let cz = riz - rjz;
+
+        let mut pi = 0u32;
+        while pi < nprim_i {
+            let ai = exps_i[pi as usize];
+            let mut pj = 0u32;
+            while pj < nprim_j {
+                let aj = exps_j[pj as usize];
+
+                let zeta = ai + aj;
+                let aij2 = F::new(0.5) / zeta;
+                let rirjx = rix - rjx;
+                let rirjy = riy - rjy;
+                let rirjz = riz - rjz;
+                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                let fac = F::exp(-ai * aj / zeta * rr);
+                let px = (ai * rix + aj * rjx) / zeta;
+                let py = (ai * riy + aj * rjy) / zeta;
+                let pz = (ai * riz + aj * rjz) / zeta;
+
+                let ai2 = F::new(-2.0) * ai;
+                let aj2 = F::new(-2.0) * aj;
+
+                // Single rinv center (charge +1).
+                let crijx = rcx - px;
+                let crijy = rcy - py;
+                let crijz = rcz - pz;
+                let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
+
+                if comptime!(nroots == 1u32) {
+                    rys_root1::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 2u32) {
+                    rys_root2::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 3u32) {
+                    rys_root3::<F>(x_boys, urys, wrys, pie4);
+                } else if comptime!(nroots == 4u32) {
+                    rys_root4::<F>(x_boys, urys, wrys, pie4);
+                } else {
+                    rys_root5::<F>(x_boys, urys, wrys, pie4);
+                }
+
+                let fac1 = F::new(2.0) * pi_const * fac / zeta;
+
+                let mut irys: u32 = 0u32;
+                while irys < nrys {
+                    let u_n = urys[irys as usize];
+                    let w_n = wrys[irys as usize];
+                    let tau = u_n / (F::new(1.0) + u_n);
+                    let rt = aij2 * (F::new(1.0) - tau);
+
+                    let c00x = (px - rix) + tau * crijx;
+                    let c00y = (py - riy) + tau * crijy;
+                    let c00z = (pz - riz) + tau * crijz;
+
+                    let mut gi = 0u32;
+                    while gi < total_g {
+                        g[gi as usize] = F::new(0.0);
+                        gi += 1u32;
+                    }
+                    g[gx as usize] = F::new(1.0);
+                    g[gy as usize] = F::new(1.0);
+                    g[gz as usize] = fac1 * w_n;
+
+                    sa01_nuc_vrr_axis::<F>(g, gx, c00x, rt, nmax);
+                    sa01_nuc_vrr_axis::<F>(g, gy, c00y, rt, nmax);
+                    sa01_nuc_vrr_axis::<F>(g, gz, c00z, rt, nmax);
+                    if lj_ext >= 1u32 {
+                        sigma_p_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                        sigma_p_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                        sigma_p_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                    }
+
+                    let mut ci = 0u32;
+                    while ci < nctr_i {
+                        let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                        let mut cj = 0u32;
+                        while cj < nctr_j {
+                            let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                            let weight = coeff_i_val * coeff_j_val;
+                            let base = (ci * nctr_j + cj) * total_len;
+
+                            let mut cj_idx = 0u32;
+                            let mut ja = 0u32;
+                            while ja <= lj {
+                                let jx = lj - ja;
+                                let lj_minus_jx = lj - jx;
+                                let mut jb = 0u32;
+                                while jb <= lj_minus_jx {
+                                    let jy = lj_minus_jx - jb;
+                                    let jz = lj - jx - jy;
+
+                                    let mut ci_idx = 0u32;
+                                    let mut ia = 0u32;
+                                    while ia <= li {
+                                        let ix = li - ia;
+                                        let li_minus_ix = li - ix;
+                                        let mut ib = 0u32;
+                                        while ib <= li_minus_ix {
+                                            let iy = li_minus_ix - ib;
+                                            let iz = li - ix - iy;
+
+                                            let bx = gx + jx * dj + ix;
+                                            let by = gy + jy * dj + iy;
+                                            let bz = gz + jz * dj + iz;
+
+                                            // ── 8-G chain (g1 = D_J + D_I both-side). ──
+                                            // X axis.
+                                            let g0xm = if ix == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                g[(bx - 1u32) as usize]
+                                            };
+                                            let g0x = g[bx as usize];
+                                            let g0xp = g[(bx + 1u32) as usize];
+                                            let g1xm = if ix == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sa01_g1_bothside::<F>(
+                                                    g,
+                                                    bx - 1u32,
+                                                    dj,
+                                                    ai2,
+                                                    aj2,
+                                                    ix - 1u32,
+                                                    jx,
+                                                )
+                                            };
+                                            let g1x = sa01_g1_bothside::<F>(
+                                                g, bx, dj, ai2, aj2, ix, jx,
+                                            );
+                                            let g1xp = sa01_g1_bothside::<F>(
+                                                g,
+                                                bx + 1u32,
+                                                dj,
+                                                ai2,
+                                                aj2,
+                                                ix + 1u32,
+                                                jx,
+                                            );
+                                            let g2xm = if ix == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sigma_p_x1i::<F>(g, bx - 1u32, rix)
+                                            };
+                                            let g2x = sigma_p_x1i::<F>(g, bx, rix);
+                                            let g2xp = sigma_p_x1i::<F>(g, bx + 1u32, rix);
+                                            let g3xm = if ix == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sa01_x1i_of_g1::<F>(
+                                                    g,
+                                                    bx - 1u32,
+                                                    dj,
+                                                    ai2,
+                                                    aj2,
+                                                    ix - 1u32,
+                                                    jx,
+                                                    rix,
+                                                )
+                                            };
+                                            let g3x = sa01_x1i_of_g1::<F>(
+                                                g, bx, dj, ai2, aj2, ix, jx, rix,
+                                            );
+                                            let g3xp = sa01_x1i_of_g1::<F>(
+                                                g,
+                                                bx + 1u32,
+                                                dj,
+                                                ai2,
+                                                aj2,
+                                                ix + 1u32,
+                                                jx,
+                                                rix,
+                                            );
+                                            let g4x = sigma_p_nabla_i_combine::<F>(
+                                                g0xm, g0xp, ai2, ix,
+                                            );
+                                            let g5x = sigma_p_nabla_i_combine::<F>(
+                                                g1xm, g1xp, ai2, ix,
+                                            );
+                                            let g6x = sigma_p_nabla_i_combine::<F>(
+                                                g2xm, g2xp, ai2, ix,
+                                            );
+                                            let g7x = sigma_p_nabla_i_combine::<F>(
+                                                g3xm, g3xp, ai2, ix,
+                                            );
+
+                                            // Y axis.
+                                            let g0ym = if iy == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                g[(by - 1u32) as usize]
+                                            };
+                                            let g0y = g[by as usize];
+                                            let g0yp = g[(by + 1u32) as usize];
+                                            let g1ym = if iy == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sa01_g1_bothside::<F>(
+                                                    g,
+                                                    by - 1u32,
+                                                    dj,
+                                                    ai2,
+                                                    aj2,
+                                                    iy - 1u32,
+                                                    jy,
+                                                )
+                                            };
+                                            let g1y = sa01_g1_bothside::<F>(
+                                                g, by, dj, ai2, aj2, iy, jy,
+                                            );
+                                            let g1yp = sa01_g1_bothside::<F>(
+                                                g,
+                                                by + 1u32,
+                                                dj,
+                                                ai2,
+                                                aj2,
+                                                iy + 1u32,
+                                                jy,
+                                            );
+                                            let g2ym = if iy == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sigma_p_x1i::<F>(g, by - 1u32, riy)
+                                            };
+                                            let g2y = sigma_p_x1i::<F>(g, by, riy);
+                                            let g2yp = sigma_p_x1i::<F>(g, by + 1u32, riy);
+                                            let g3ym = if iy == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sa01_x1i_of_g1::<F>(
+                                                    g,
+                                                    by - 1u32,
+                                                    dj,
+                                                    ai2,
+                                                    aj2,
+                                                    iy - 1u32,
+                                                    jy,
+                                                    riy,
+                                                )
+                                            };
+                                            let g3y = sa01_x1i_of_g1::<F>(
+                                                g, by, dj, ai2, aj2, iy, jy, riy,
+                                            );
+                                            let g3yp = sa01_x1i_of_g1::<F>(
+                                                g,
+                                                by + 1u32,
+                                                dj,
+                                                ai2,
+                                                aj2,
+                                                iy + 1u32,
+                                                jy,
+                                                riy,
+                                            );
+                                            let g4y = sigma_p_nabla_i_combine::<F>(
+                                                g0ym, g0yp, ai2, iy,
+                                            );
+                                            let g5y = sigma_p_nabla_i_combine::<F>(
+                                                g1ym, g1yp, ai2, iy,
+                                            );
+                                            let g6y = sigma_p_nabla_i_combine::<F>(
+                                                g2ym, g2yp, ai2, iy,
+                                            );
+                                            let g7y = sigma_p_nabla_i_combine::<F>(
+                                                g3ym, g3yp, ai2, iy,
+                                            );
+
+                                            // Z axis.
+                                            let g0zm = if iz == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                g[(bz - 1u32) as usize]
+                                            };
+                                            let g0z = g[bz as usize];
+                                            let g0zp = g[(bz + 1u32) as usize];
+                                            let g1zm = if iz == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sa01_g1_bothside::<F>(
+                                                    g,
+                                                    bz - 1u32,
+                                                    dj,
+                                                    ai2,
+                                                    aj2,
+                                                    iz - 1u32,
+                                                    jz,
+                                                )
+                                            };
+                                            let g1z = sa01_g1_bothside::<F>(
+                                                g, bz, dj, ai2, aj2, iz, jz,
+                                            );
+                                            let g1zp = sa01_g1_bothside::<F>(
+                                                g,
+                                                bz + 1u32,
+                                                dj,
+                                                ai2,
+                                                aj2,
+                                                iz + 1u32,
+                                                jz,
+                                            );
+                                            let g2zm = if iz == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sigma_p_x1i::<F>(g, bz - 1u32, riz)
+                                            };
+                                            let g2z = sigma_p_x1i::<F>(g, bz, riz);
+                                            let g2zp = sigma_p_x1i::<F>(g, bz + 1u32, riz);
+                                            let g3zm = if iz == 0u32 {
+                                                F::new(0.0)
+                                            } else {
+                                                sa01_x1i_of_g1::<F>(
+                                                    g,
+                                                    bz - 1u32,
+                                                    dj,
+                                                    ai2,
+                                                    aj2,
+                                                    iz - 1u32,
+                                                    jz,
+                                                    riz,
+                                                )
+                                            };
+                                            let g3z = sa01_x1i_of_g1::<F>(
+                                                g, bz, dj, ai2, aj2, iz, jz, riz,
+                                            );
+                                            let g3zp = sa01_x1i_of_g1::<F>(
+                                                g,
+                                                bz + 1u32,
+                                                dj,
+                                                ai2,
+                                                aj2,
+                                                iz + 1u32,
+                                                jz,
+                                                riz,
+                                            );
+                                            let g4z = sigma_p_nabla_i_combine::<F>(
+                                                g0zm, g0zp, ai2, iz,
+                                            );
+                                            let g5z = sigma_p_nabla_i_combine::<F>(
+                                                g1zm, g1zp, ai2, iz,
+                                            );
+                                            let g6z = sigma_p_nabla_i_combine::<F>(
+                                                g2zm, g2zp, ai2, iz,
+                                            );
+                                            let g7z = sigma_p_nabla_i_combine::<F>(
+                                                g3zm, g3zp, ai2, iz,
+                                            );
+
+                                            // 27 cart products (intor3.c:2071-2097).
+                                            let s0 = g7x * g0y * g0z;
+                                            let s1 = g6x * g1y * g0z;
+                                            let s2 = g6x * g0y * g1z;
+                                            let s3 = g5x * g2y * g0z;
+                                            let s4 = g4x * g3y * g0z;
+                                            let s5 = g4x * g2y * g1z;
+                                            let s6 = g5x * g0y * g2z;
+                                            let s7 = g4x * g1y * g2z;
+                                            let s8 = g4x * g0y * g3z;
+                                            let s9 = g3x * g4y * g0z;
+                                            let s10 = g2x * g5y * g0z;
+                                            let s11 = g2x * g4y * g1z;
+                                            let s12 = g1x * g6y * g0z;
+                                            let s13 = g0x * g7y * g0z;
+                                            let s14 = g0x * g6y * g1z;
+                                            let s15 = g1x * g4y * g2z;
+                                            let s16 = g0x * g5y * g2z;
+                                            let s17 = g0x * g4y * g3z;
+                                            let s18 = g3x * g0y * g4z;
+                                            let s19 = g2x * g1y * g4z;
+                                            let s20 = g2x * g0y * g5z;
+                                            let s21 = g1x * g2y * g4z;
+                                            let s22 = g0x * g3y * g4z;
+                                            let s23 = g0x * g2y * g5z;
+                                            let s24 = g1x * g0y * g6z;
+                                            let s25 = g0x * g1y * g6z;
+                                            let s26 = g0x * g0y * g7z;
+
+                                            let elem = cj_idx * nci + ci_idx;
+                                            let nb = N_GC * block_len;
+                                            // 36-comp spgsa01 London mix
+                                            // (intor3.c:2100-2135) → 9 groups × gc 4.
+                                            // group 0: gout 0..3
+                                            gc_out[(base + 0u32 * nb + 0u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cy * s16 + cz * s13 - cy * s26 + cz * s23);
+                                            gc_out[(base + 0u32 * nb + 1u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cy * s7 - cz * s4);
+                                            gc_out[(base + 0u32 * nb + 2u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cy * s8 - cz * s5);
+                                            gc_out[(base + 0u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (cy * s17 - cz * s14 - cy * s25 + cz * s22);
+                                            // group 1: gout 4..7
+                                            gc_out[(base + 1u32 * nb + 0u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cy * s15 - cz * s12);
+                                            gc_out[(base + 1u32 * nb + 1u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cy * s26 + cz * s23 - cy * s6 + cz * s3);
+                                            gc_out[(base + 1u32 * nb + 2u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cy * s17 - cz * s14);
+                                            gc_out[(base + 1u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cy * s8 + cz * s5 + cy * s24 - cz * s21);
+                                            // group 2: gout 8..11
+                                            gc_out[(base + 2u32 * nb + 0u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cy * s24 - cz * s21);
+                                            gc_out[(base + 2u32 * nb + 1u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cy * s25 - cz * s22);
+                                            gc_out[(base + 2u32 * nb + 2u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cy * s6 + cz * s3 - cy * s16 + cz * s13);
+                                            gc_out[(base + 2u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (cy * s7 - cz * s4 - cy * s15 + cz * s12);
+                                            // group 3: gout 12..15
+                                            gc_out[(base + 3u32 * nb + 0u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cz * s10 + cx * s16 - cz * s20 + cx * s26);
+                                            gc_out[(base + 3u32 * nb + 1u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cz * s1 - cx * s7);
+                                            gc_out[(base + 3u32 * nb + 2u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cz * s2 - cx * s8);
+                                            gc_out[(base + 3u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (cz * s11 - cx * s17 - cz * s19 + cx * s25);
+                                            // group 4: gout 16..19
+                                            gc_out[(base + 4u32 * nb + 0u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cz * s9 - cx * s15);
+                                            gc_out[(base + 4u32 * nb + 1u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cz * s20 + cx * s26 - cz * s0 + cx * s6);
+                                            gc_out[(base + 4u32 * nb + 2u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cz * s11 - cx * s17);
+                                            gc_out[(base + 4u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cz * s2 + cx * s8 + cz * s18 - cx * s24);
+                                            // group 5: gout 20..23
+                                            gc_out[(base + 5u32 * nb + 0u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cz * s18 - cx * s24);
+                                            gc_out[(base + 5u32 * nb + 1u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cz * s19 - cx * s25);
+                                            gc_out[(base + 5u32 * nb + 2u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cz * s0 + cx * s6 - cz * s10 + cx * s16);
+                                            gc_out[(base + 5u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (cz * s1 - cx * s7 - cz * s9 + cx * s15);
+                                            // group 6: gout 24..27
+                                            gc_out[(base + 6u32 * nb + 0u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cx * s13 + cy * s10 - cx * s23 + cy * s20);
+                                            gc_out[(base + 6u32 * nb + 1u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cx * s4 - cy * s1);
+                                            gc_out[(base + 6u32 * nb + 2u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cx * s5 - cy * s2);
+                                            gc_out[(base + 6u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (cx * s14 - cy * s11 - cx * s22 + cy * s19);
+                                            // group 7: gout 28..31
+                                            gc_out[(base + 7u32 * nb + 0u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cx * s12 - cy * s9);
+                                            gc_out[(base + 7u32 * nb + 1u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cx * s23 + cy * s20 - cx * s3 + cy * s0);
+                                            gc_out[(base + 7u32 * nb + 2u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cx * s14 - cy * s11);
+                                            gc_out[(base + 7u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cx * s5 + cy * s2 + cx * s21 - cy * s18);
+                                            // group 8: gout 32..35
+                                            gc_out[(base + 8u32 * nb + 0u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cx * s21 - cy * s18);
+                                            gc_out[(base + 8u32 * nb + 1u32 * block_len + elem)
+                                                as usize] +=
+                                                weight * (cx * s22 - cy * s19);
+                                            gc_out[(base + 8u32 * nb + 2u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (-cx * s3 + cy * s0 - cx * s13 + cy * s10);
+                                            gc_out[(base + 8u32 * nb + 3u32 * block_len + elem)
+                                                as usize] += weight
+                                                * (cx * s4 - cy * s1 - cx * s12 + cy * s9);
+
+                                            ci_idx += 1u32;
+                                            ib += 1u32;
+                                        }
+                                        ia += 1u32;
+                                    }
+                                    cj_idx += 1u32;
+                                    jb += 1u32;
+                                }
+                                ja += 1u32;
+                            }
+                            cj += 1u32;
+                        }
+                        ci += 1u32;
+                    }
+                    irys += 1u32;
+                }
+                pj += 1u32;
+            }
+            pi += 1u32;
+        }
+    }
+}
+
+/// Dispatch [`spgsa01_rys_kernel`] at f64 on a backend client. Returns the rank-9
+/// spgsa01 cart gc blocks (9 groups × 4 gc × block_len per (ci,cj)).
+#[allow(clippy::too_many_arguments)]
+fn run_spgsa01_rys_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    nroots: u32,
+    li: u32,
+    lj: u32,
+    nprim_i: u32,
+    nprim_j: u32,
+    nctr_i: u32,
+    nctr_j: u32,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rinv: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Vec<f64> {
+    let li_u = li as usize;
+    let lj_u = lj as usize;
+    let nmax_u = li_u + lj_u + 3;
+    let lj_ext_u = lj_u + 1;
+    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
+    let total_g = 3 * g_per_axis;
+    let nci = (li_u + 1) * (li_u + 2) / 2;
+    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * 9 * (N_GC as usize) * nci * ncj;
+    let nroots_u = nroots as usize;
+
+    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
+    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
+    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
+    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
+    let g_zero = vec![0.0_f64; total_g];
+    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
+    let rys_zero = vec![0.0_f64; nroots_u];
+    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
+    let out_zero = vec![0.0_f64; out_len];
+    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+
+    macro_rules! launch_with {
+        ($nr:expr) => {
+            spgsa01_rys_kernel::launch::<f64, R>(
+                client,
+                CubeCount::Static(1, 1, 1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
+                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
+                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
+                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                rinv[0],
+                rinv[1],
+                rinv[2],
+                SA01_PIE4,
+                std::f64::consts::PI,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                $nr,
+            )
+        };
+    }
+
+    match nroots {
+        1 => launch_with!(1u32),
+        2 => launch_with!(2u32),
+        3 => launch_with!(3u32),
+        4 => launch_with!(4u32),
+        _ => launch_with!(5u32),
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..out_len].to_vec()
+}
+
+/// 5-arm backend dispatch for [`run_spgsa01_rys_device`].
+#[allow(clippy::too_many_arguments)]
+fn run_spgsa01_rys_on_backend(
+    backend: &ResolvedBackend,
+    nroots: u32,
+    li: u8,
+    lj: u8,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rinv: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Result<Vec<f64>, cintxRsError> {
+    let out = match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_spgsa01_rys_device::<cubecl::cpu::CpuRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_spgsa01_rys_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_spgsa01_rys_device::<cubecl_cuda::CudaRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_spgsa01_rys_device::<cubecl_hip::HipRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_spgsa01_rys_device::<cubecl_wgpu::WgpuRuntime>(
+            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
+            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+        ),
+    };
+    Ok(out)
+}
+
+/// Live `int1e_spgsa01` Spinor launcher (rank 9, RINV Rys + 8-G London).
+///
+/// Builds the rank-9 spg-Rys/London cart gc blocks (9 groups × 4 gc), applies the
+/// s/p normalization × the spgsa01 common_factor (0.5, intor3.c:2184), folds each
+/// of the 9 σ-groups through the REAL `cart_to_spinor_si_2d` (c2s_si_1e — NOT the
+/// imaginary si_2di), and scatters into the contraction-major spinor grid.
+///
+/// The x1i origin is `ri` (G2E_R0I) and the London phase is `ri − rj`; spgsa01
+/// does NOT read PTR_COMMON_ORIG. `rinv` is the single rinv center
+/// (env[PTR_RINV_ORIG], charge +1, int1e_type 1). Carries its OWN fail-closed
+/// full-block (×9) staging guard + a fail-closed `nroots > MAX_DEVICE_NROOTS →
+/// UnsupportedApi` guard (no clamp).
+#[allow(clippy::too_many_arguments)]
+pub fn launch_int1e_spgsa01_spinor_pair<F: CintFloat>(
+    backend: &ResolvedBackend,
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rinv: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    staging: &mut [F],
+) -> Result<(), cintxRsError> {
+    const RANK: usize = 9;
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let block_len = nci * ncj;
+    let total_len = RANK * (N_GC as usize) * block_len;
+
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let ni_sp = nctr_i * di;
+    let nj_sp = nctr_j * dj;
+
+    // Fail-closed full-block (×9) staging guard BEFORE any write (Phase-28 CR-01,
+    // T-30-01d-04). No partial guards.
+    let staging_required = ni_sp * nj_sp * 2 * RANK;
+    if staging.len() < staging_required {
+        return Err(cintxRsError::BufferTooSmall {
+            required: staging_required,
+            provided: staging.len(),
+        });
+    }
+
+    // Fail-closed Rys-nroots guard (T-30-01d-05): never clamp.
+    let order = li as usize + lj as usize + 2;
+    let nroots = (order / 2 + 1) as u32;
+    if nroots > SA01_MAX_DEVICE_NROOTS {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{nroots}"),
+        });
+    }
+
+    let mut gc = run_spgsa01_rys_on_backend(
+        backend, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rinv, exps_i, exps_j,
+        coeff_i, coeff_j,
+    )?;
+
+    // s/p normalization × spgsa01 common_factor (0.5, intor3.c:2184).
+    let sp_scale = common_fac_sp(li) * common_fac_sp(lj) * 0.5;
+    for v in gc.iter_mut() {
+        *v *= sp_scale;
+    }
+
+    let group_out = ni_sp * nj_sp * 2;
+    let mut scratch = vec![F::from_f64_lossy(0.0); di * dj * 2];
+    for ci in 0..nctr_i {
+        for cj in 0..nctr_j {
+            let base = (ci * nctr_j + cj) * total_len;
+            for grp in 0..RANK {
+                let gbase = base + grp * (N_GC as usize) * block_len;
+                let gc_x = &gc[gbase..gbase + block_len];
+                let gc_y = &gc[gbase + block_len..gbase + 2 * block_len];
+                let gc_z = &gc[gbase + 2 * block_len..gbase + 3 * block_len];
+                let gc_1 = &gc[gbase + 3 * block_len..gbase + 4 * block_len];
+
+                // REAL si transform (c2s_si_1e), NOT imaginary si_2di (Pitfall 2).
+                cart_to_spinor_si_2d::<F>(
+                    &mut scratch,
+                    gc_x,
+                    gc_y,
+                    gc_z,
+                    gc_1,
+                    li,
+                    kappa_i,
+                    lj,
+                    kappa_j,
+                )?;
+
+                let grp_off = grp * group_out;
+                for j in 0..dj {
+                    let j_global = cj * dj + j;
+                    for i in 0..di {
+                        let i_global = ci * di + i;
+                        let src = (j * di + i) * 2;
+                        let dst = grp_off + (j_global * ni_sp + i_global) * 2;
+                        staging[dst] = scratch[src];
+                        staging[dst + 1] = scratch[src + 1];
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(all(test, feature = "cpu"))]
 mod tests {
     use super::*;
