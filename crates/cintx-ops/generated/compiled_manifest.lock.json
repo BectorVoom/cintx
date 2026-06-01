@@ -11556,7 +11556,7 @@
         "representation": "spinor",
         "symbol": "int1e_spgnucsp_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",

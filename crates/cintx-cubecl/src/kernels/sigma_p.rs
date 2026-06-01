@@ -3664,7 +3664,10 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
 ) {
     if UNIT_POS == 0u32 {
         let nrys = nroots;
-        let nmax = li + lj + 3u32;
+        // spgsa01 8-G chain has a BOTH-SIDE g1 = D_J(g0) + D_I(g0); the D_I term
+        // raises the bra reach, so g7 = D_I(R0I(g1)) reaches bra li+3 (one deeper
+        // than spgnucsp's li+2 where g1 = D_J only). Headroom nmax = li+lj+4.
+        let nmax = li + lj + 4u32;
         let lj_ext = lj + 1u32;
         let dj = nmax + 1u32;
         let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
@@ -4231,7 +4234,7 @@ fn run_spgsa01_rys_device<R: Runtime>(
 ) -> Vec<f64> {
     let li_u = li as usize;
     let lj_u = lj as usize;
-    let nmax_u = li_u + lj_u + 3;
+    let nmax_u = li_u + lj_u + 4;
     let lj_ext_u = lj_u + 1;
     let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
     let total_g = 3 * g_per_axis;
