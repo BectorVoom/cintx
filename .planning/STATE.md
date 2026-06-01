@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: BLOCKED — 30-01c rank-9 sa01 engine compiles + runs (all 9 components non-zero) but is NOT byte-identical to vendor; needs gout-layout reverse-engineering before flip. 30-01b is also still pending. See 30-01c-SUMMARY.md.
+status: executing
 stopped_at: Phase 30 context gathered
-last_updated: "2026-06-01T00:46:37.924Z"
-last_activity: 2026-06-01
+last_updated: "2026-05-31T23:59:17.336Z"
+last_activity: 2026-05-31
 progress:
   total_phases: 21
   completed_phases: 19
   total_plans: 107
-  completed_plans: 104
-  percent: 97
+  completed_plans: 103
+  percent: 96
 ---
 
 # Project State
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 31
-Plan: Not started
+Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING (Wave 1 re-planned, ready to execute)
+Plan: 30-00 + 30-01a complete; 30-01c engine built (783d392/a39f9f7) but BLOCKED on vendor byte-identity (rank-9 gout->gc-block layout, RESEARCH Open Q1) — oracle_covered NOT flipped, gates RED/#[ignore]d; 30-01b (cg/giao_sa10nucsp) NEVER executed (no SUMMARY, no code); 30-01d + 30-02 not started
 Status: BLOCKED — 30-01c rank-9 sa01 engine compiles + runs (all 9 components non-zero) but is NOT byte-identical to vendor; needs gout-layout reverse-engineering before flip. 30-01b is also still pending. See 30-01c-SUMMARY.md.
 Seed/design: .planning/notes/phase-30-wave1-engine-class-split-PLAN.md (engine-class sub-wave breakdown)
 
@@ -71,7 +71,7 @@ Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 Deferred follow-up: finite-difference verification of the 4 D-12 vendor-stub arms (FD of cintx scalar
   int2c2e_spinor / int3c1e_spinor), then flip under an FD-tolerance gate. D-03 needs an sf_4d derivative
   wrapper; D-04 belongs to the relativistic/ECP-spinor track.
-Last activity: 2026-06-01
+Last activity: 2026-05-31
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -87,7 +87,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 **Velocity:**
 
-- Total plans completed: 63
+- Total plans completed: 60
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -106,7 +106,6 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | 27 | 6 | - | - |
 | 28 | 4 | - | - |
 | 29 | 6 | - | - |
-| 30 | 3 | - | - |
 
 **Recent Trend:**
 

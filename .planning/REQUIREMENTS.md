@@ -115,7 +115,7 @@
 
 - [x] **GIAO-01**: Spin-free 1e GIAO/CG families (`int1e_giao_*`, `int1e_cg_*`, `int1e_govlp/gnuc/gkin`, `int1e_ig*`, `int1e_a01gp`, `int1e_ia01p`) — purely imaginary — match at atol=1e-12 (cart+sph) via FND-03.
 - [x] **GIAO-02**: 2e GIAO families (`int2e_g1`, `int2e_gg1`, `int2e_ig1`, `int2e_giao_*`) match at atol=1e-12.
-- [x] **GIAO-03**: GIAO×σ slice (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) match at atol=1e-12 (spinor) via FND-05.
+- [ ] **GIAO-03**: GIAO×σ slice (`int1e_spg*`, `int1e_spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) match at atol=1e-12 (spinor) via FND-05.
 
 ### Group 6 — Gauge / Breit–Gaunt 2e (apex)
 
@@ -216,7 +216,7 @@
 | REL-02 | Phase 29 | Complete |
 | REL-03 | Phase 29 | Complete |
 | REL-04 | Phase 29 | Complete |
-| GIAO-03 | Phase 30 | Complete |
+| GIAO-03 | Phase 30 | Pending |
 | BREIT-01 | Phase 31 | Pending |
 | BREIT-02 | Phase 31 | Pending |
 | BREIT-03 | Phase 31 | Pending |
