@@ -1325,35 +1325,51 @@ fn vendor_ffi_3c2e_spinor_nonzero() {
     println!("vendor_ffi_3c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 3c2e spinor output");
 }
 
-/// R5 contract gate for 3c2e_ip1 spinor (Phase 21-06 / GRAD-08 / Risk R5).
+/// Vendor byte-identity gate for `int3c2e_ip1_spinor` (quick task 260601-d7e, Sub-problem A).
 ///
-/// Before Phase 21-06, `INT3C2E_IP1_SPINOR` reached the operator-blind scalar 3c2e
-/// stub, which routed spinor through `cart_to_spinor_sf_3c2e` and (mis)matched plain
-/// `vendor_int3c2e_spinor`. Phase 21-06 ships the REAL int3c2e_ip1 derivative kernel,
-/// which REJECTS the spinor representation with `UnsupportedApi` (R5 / D-03 — gradient
-/// spinor transforms are out of scope). There is no dispatchable plain `int3c2e_spinor`
-/// manifest symbol, so plain 3c2e spinor coverage remains the vendor-side sanity check
-/// `vendor_ffi_3c2e_spinor_nonzero`. This gate now asserts the R5 fail-closed contract.
+/// HISTORY: this gate previously encoded the obsolete Phase-21-06 R5 "must-reject"
+/// contract — it asserted `INT3C2E_IP1_SPINOR` returns `UnsupportedApi` (gradient spinor
+/// transforms were out of scope at the time). The family has since started evaluating and
+/// is byte-identical to vendored libcint 6.1.3, so the must-reject framing is STALE and has
+/// been dropped (would otherwise CONTRADICT the passing adversarial parity below).
+///
+/// PRIMARY byte-identity coverage for this family is the adversarial (non-square p×d×s,
+/// nctr_bra=2) parity test `test_int3c2e_ip1_spinor_adversarial_parity` in
+/// `tests/spinor_deriv_parity.rs` — NOT `#[ignore]`d, asserts `count_mismatches == 0`.
+/// This gate is a SECONDARY sanity on the H2O STO-3G triple (3,4,0).
+///
+/// CRITICAL aux-k sizing (memory: libcint_3c_spinor_auxk_spherical): for arity-3 spinor
+/// families libcint `CINT3c2e_spinor_drv` runs `is_ssc=0` (cint3c2e.c:631-636), so bra i
+/// and ket j are SPINOR-sized (`vendor_CINTcgto_spinor` = nctr·(4l+2)) but the auxiliary-k
+/// axis is SPHERICAL (`vendor_CINTcgto_spheric` = nctr·(2lk+1)). The buffer length is
+/// `3 · ni_sp · nj_sp · nk_sph · 2`. We assert the cintx/vendor buffer lengths are EQUAL
+/// before comparing values (latent aux-k mis-sizing guard, T-d7e-01).
 #[test]
 #[cfg(has_vendor_libcint)]
-fn oracle_gate_3c2e_spinor() {
+fn oracle_gate_3c2e_ip1_spinor_vendor_parity() {
     use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
 
     // Shells (3,4,0): H1-1s, H2-1s, O-1s — three different centers.
     let (si, sj, sk) = (3i32, 4i32, 0i32);
     let shls = [si, sj, sk];
 
+    // bra i / ket j: SPINOR-sized (nctr·(4l+2)); aux-k: SPHERICAL (nctr·(2lk+1)).
     let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
     let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
-    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
-    // Allocate the full planner-sized buffer (3 gradient components × complex×2) so
-    // the dispatch reaches the kernel's R5 spinor guard rather than tripping the
-    // earlier planner BufferTooSmall check; the kernel must then return UnsupportedApi.
-    let nelems = 3 * ni_sp * nj_sp * nk_sp * 2;
-    let mut cintx_out = vec![0.0f64; nelems];
+    let nk_sph = vendor_ffi::vendor_CINTcgto_spheric(sk, &bas) as usize;
+    // 3 gradient components × complex (×2), aux-k SPHERICAL.
+    let nelems = 3 * ni_sp * nj_sp * nk_sph * 2;
 
+    // Vendor reference.
+    let mut vendor_out = vec![0.0f64; nelems];
+    vendor_ffi::vendor_int3c2e_ip1_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    // cintx, sized with the SAME aux-k SPHERICAL rule.
+    let mut cintx_out = vec![0.0f64; nelems];
     let eval_result = unsafe {
         eval_raw(
             RawApiId::INT3C2E_IP1_SPINOR,
@@ -1367,14 +1383,60 @@ fn oracle_gate_3c2e_spinor() {
             None,
         )
     };
+    eval_result.unwrap_or_else(|e| {
+        panic!(
+            "oracle_gate_3c2e_ip1_spinor_vendor_parity: cintx eval_raw(INT3C2E_IP1_SPINOR) \
+             failed (stale must-reject expectation is gone — family now evaluates): {e:?}"
+        )
+    });
 
-    assert!(
-        matches!(eval_result, Err(cintx_core::cintxRsError::UnsupportedApi { .. })),
-        "oracle_gate_3c2e_spinor (R5): int3c2e_ip1 spinor must return UnsupportedApi, \
-         got: {eval_result:?}"
+    // Latent aux-k mis-sizing guard (T-d7e-01): buffers MUST be the same length.
+    assert_eq!(
+        vendor_out.len(),
+        cintx_out.len(),
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: cintx/vendor buffer length mismatch \
+         (aux-k sizing divergence — must both be SPHERICAL 2lk+1)"
     );
 
-    println!("oracle_gate_3c2e_spinor: PASS — int3c2e_ip1 spinor correctly rejected (R5)");
+    // Both sides must be physically nonzero (no silent zero-fill / skip).
+    let vendor_nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    let cintx_nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    assert!(
+        vendor_nonzero > 0,
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: vendor output all-zero (skip regression)"
+    );
+    assert!(
+        cintx_nonzero > 0,
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: cintx output all-zero (skip regression)"
+    );
+
+    // Byte-identity (atol=1e-12, rtol=0).
+    let mut mismatches = 0usize;
+    for (i, (&vr, &cx)) in vendor_out.iter().zip(cintx_out.iter()).enumerate() {
+        if (vr - cx).abs() > 1e-12 {
+            mismatches += 1;
+            if mismatches <= 10 {
+                eprintln!(
+                    "  MISMATCH at {i}: vendor={vr:.15e}, cintx={cx:.15e}, diff={:.3e}",
+                    (vr - cx).abs()
+                );
+            }
+        }
+    }
+    assert_eq!(
+        mismatches, 0,
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: int3c2e_ip1 spinor diverges from vendored \
+         libcint on H2O STO-3G (3,4,0) (aux-k SPHERICAL). See also \
+         test_int3c2e_ip1_spinor_adversarial_parity (spinor_deriv_parity.rs) for the \
+         non-square p×d×s nctr=2 primary coverage."
+    );
+
+    println!(
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: PASS — int3c2e_ip1 spinor byte-identical \
+         to vendor on (3,4,0); mismatches=0, vendor_nonzero={vendor_nonzero}/{nelems}, \
+         cintx_nonzero={cintx_nonzero}/{nelems} (aux-k SPHERICAL). Primary/adversarial \
+         coverage: test_int3c2e_ip1_spinor_adversarial_parity."
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
