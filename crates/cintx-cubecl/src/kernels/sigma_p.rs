@@ -2726,6 +2726,53 @@ fn run_sa01_rys_on_backend(
     Ok(out)
 }
 
+/// 30-01c-DEBUG cart-path discriminator: return the PRE-TRANSFORM cart `gc`
+/// buffer (the `run_sa01_rys_on_backend` output × the s/p × 0.5 common_factor
+/// scale), exactly what `launch_int1e_sa10sa01_spinor_pair` feeds into
+/// `cart_to_spinor_si_2d`. Bypasses the c2s_si transform so a vendor cart
+/// comparison isolates the g-tensor assembly from the spinor transform.
+///
+/// Layout (per (ci,cj) contraction block, then 9 groups × 4 gc-blocks (x,y,z,1)
+/// × `ncart_i*ncart_j`): identical to the `gc` consumed at sigma_p.rs:2810-2816.
+/// `origin` is the x1i gauge shift (dri for cg, ri for giao); `rinv` is the rinv
+/// center. NOT a production path — debugging instrument only.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn sa01_cart_gc_for_test(
+    backend: &ResolvedBackend,
+    li: u8,
+    lj: u8,
+    nprim_i: usize,
+    nprim_j: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rinv: [f64; 3],
+    origin: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+) -> Result<Vec<f64>, cintxRsError> {
+    let order = li as usize + lj as usize + 2;
+    let nroots = (order / 2 + 1) as u32;
+    if nroots > SA01_MAX_DEVICE_NROOTS {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!("unsupported_nrys_roots:{nroots}"),
+        });
+    }
+    let mut gc = run_sa01_rys_on_backend(
+        backend, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, rinv, origin, exps_i,
+        exps_j, coeff_i, coeff_j,
+    )?;
+    let sp_scale = common_fac_sp(li) * common_fac_sp(lj) * 0.5;
+    for v in gc.iter_mut() {
+        *v *= sp_scale;
+    }
+    Ok(gc)
+}
+
 /// Live `int1e_cg_sa10sa01` / `int1e_giao_sa10sa01` Spinor launcher (rank 9).
 ///
 /// Builds the rank-9 Rys+gauge cart gc blocks (9 groups x 4 gc), applies the s/p

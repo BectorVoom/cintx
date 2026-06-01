@@ -403,6 +403,66 @@ pub fn vendor_int1e_nuc_cart(
     }
 }
 
+/// Evaluate int1e_cg_sa10sa01_cart for a single shell pair using vendored libcint
+/// (30-01c-DEBUG cart-path discriminator). CART path bypasses the c2s_si spinor
+/// transform entirely, so the output is the raw 36-component cart tensor —
+/// `out[comp * (ncart_j * ncart_i) + (j * ncart_i + i)]`, comp in 0..36, where the
+/// 36 = 9 sigma-groups × 4 gc-blocks (x,y,z,1) in `gout[grp*4+block]` order.
+///
+/// `out` must be pre-allocated with 36 * ncart_i * ncart_j elements.
+pub fn vendor_int1e_cg_sa10sa01_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_cg_sa10sa01_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
+/// Evaluate int1e_giao_sa10sa01_cart for a single shell pair using vendored libcint
+/// (30-01c-DEBUG cart-path discriminator). Same 36-component cart layout as
+/// [`vendor_int1e_cg_sa10sa01_cart`]; differs only in the gauge origin ([0,0,0]).
+pub fn vendor_int1e_giao_sa10sa01_cart(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_giao_sa10sa01_cart(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Evaluate int1e_ipovlp_sph for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).
