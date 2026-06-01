@@ -22,7 +22,7 @@
 
 use cintx_compat::raw::{
     ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, KAPPA_OF, NCTR_OF, NPRIM_OF, PTR_COEFF, PTR_COMMON_ORIG,
-    PTR_COORD, PTR_EXP,
+    PTR_COORD, PTR_EXP, PTR_RINV_ORIG,
 };
 
 #[allow(dead_code)]
@@ -359,6 +359,9 @@ fn collect_cintx_sa10sa01(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Ve
     .expect("CPU backend must initialise");
 
     let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    // 30-01c root cause: sa01 evaluates at the SINGLE rinv center env[PTR_RINV_ORIG]
+    // (intor3.c int1e_type=1, charge +1) — must be threaded, not assumed [0,0,0].
+    let rinv_orig = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
 
     let mut staging = vec![0.0_f64; ni_sp * nj_sp * 2 * 9];
     launch_int1e_giao_sigma_family_spinor_pair::<f64>(
@@ -375,11 +378,12 @@ fn collect_cintx_sa10sa01(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Ve
         si.coord,
         sj.coord,
         common_orig,
+        rinv_orig,
         &si.exps,
         &sj.exps,
         &si.coeff_row_major,
         &sj.coeff_row_major,
-        // sa01 is rinv (single center, plumbed internally) → no nuclear centers.
+        // sa01 is rinv (single center, threaded via rinv_orig) → no nuclear centers.
         &[],
         &[],
         &mut staging,
@@ -433,17 +437,16 @@ fn assert_all_components_nonzero(matrix: &[f64], rank: usize, label: &str) {
 
 /// cg_sa10sa01 byte-identity vs vendor at atol=1e-12 on the non-square block.
 ///
-/// WIP / RED (Sub-wave 1c): the rank-9 Rys+gauge engine builds and is structurally
-/// complete (all 9 components non-zero, both arms run), but the 36-component
-/// gout -> 9x4 gc-block layout that `cart_to_spinor_si_2d` consumes is not yet a
-/// byte match to vendor. The mismatch pattern (vendor non-zero where cintx is 0 at
-/// component slots 1/2/5/6/8/11/...) indicates a within-group gc-block ordering /
-/// gout-axis-fold mismatch (RESEARCH Open Q1, flagged MEDIUM confidence). Ignored
-/// so the suite stays green; oracle_covered stays FALSE until this is byte-identical.
+/// GREEN (30-01c root cause fixed): the SUMMARY/RESEARCH "gout→gc-block layout"
+/// hypothesis was wrong. The cart-path discriminator (sa01_cart_discriminator.rs)
+/// proved the g-tensor AND the c2s_si_1e transform both byte-correct. The real bug
+/// was the `cg/giao_sa10sa01` dispatch arms hardcoding the rinv center as [0,0,0]
+/// instead of `env[PTR_RINV_ORIG]` (now threaded via `rinv_orig`). The mismatch only
+/// surfaced on the non-zero-rinv fixture; controlled fixtures with PTR_RINV_ORIG=0
+/// matched all along.
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
-#[ignore = "30-01c WIP: rank-9 sa01 gout->gc-block layout not yet byte-identical (RESEARCH Open Q1)"]
 fn giao_sigma_1e_cg_sa10sa01() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
     let vendor = collect_vendor_sa10sa01("int1e_cg_sa10sa01_spinor", &atm, &bas, &env);
@@ -459,11 +462,10 @@ fn giao_sigma_1e_cg_sa10sa01() {
 }
 
 /// giao_sa10sa01 byte-identity vs vendor at atol=1e-12 on the non-square block.
-/// WIP / RED — see `giao_sigma_1e_cg_sa10sa01` (shared gout layout gap).
+/// GREEN (30-01c root cause fixed) — see `giao_sigma_1e_cg_sa10sa01` (shared rinv fix).
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
-#[ignore = "30-01c WIP: rank-9 sa01 gout->gc-block layout not yet byte-identical (RESEARCH Open Q1)"]
 fn giao_sigma_1e_giao_sa10sa01() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
     let vendor = collect_vendor_sa10sa01("int1e_giao_sa10sa01_spinor", &atm, &bas, &env);
@@ -485,7 +487,6 @@ fn giao_sigma_1e_giao_sa10sa01() {
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
-#[ignore = "30-01c WIP: rank-9 sa01 gout->gc-block layout not yet byte-identical (RESEARCH Open Q1)"]
 fn giao_sigma_1e_sa10sa01_cg_giao_collapse() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
     let si = extract_shell(0, &atm, &bas, &env);
@@ -566,6 +567,10 @@ fn collect_cintx_sa10nucsp(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> V
     .expect("CPU backend must initialise");
 
     let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    // nucsp uses atom-summed nuclear origins (origin_coords/charges), not the single
+    // rinv center; pass env[PTR_RINV_ORIG] for signature consistency (ignored by the
+    // nucsp arms).
+    let rinv_orig = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
     let (origin_coords, origin_charges) = nucsp_nuclear_origins(atm, env);
 
     let mut staging = vec![0.0_f64; ni_sp * nj_sp * 2 * 3];
@@ -583,6 +588,7 @@ fn collect_cintx_sa10nucsp(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> V
         si.coord,
         sj.coord,
         common_orig,
+        rinv_orig,
         &si.exps,
         &sj.exps,
         &si.coeff_row_major,
@@ -759,9 +765,9 @@ fn test_no_silent_skip() {
         );
     }
 
-    // (B) Sub-wave 1c: both rank-9 sa01 families RUN (no silent skip) and produce
-    //     all-9 non-zero components (Pitfall 3 — no rank-3 truncation). They are
-    //     NOT asserted byte-identical here (30-01c WIP, Open Q1).
+    // (B) Sub-wave 1c (30-01c root cause fixed): both rank-9 sa01 families RUN (no
+    //     silent skip), produce all-9 non-zero components (Pitfall 3 — no rank-3
+    //     truncation), AND are byte-identical to vendor (the rinv-center fix).
     for (op, sym) in [
         ("cg_sa10sa01", "int1e_cg_sa10sa01_spinor"),
         ("giao_sa10sa01", "int1e_giao_sa10sa01_spinor"),
@@ -771,6 +777,11 @@ fn test_no_silent_skip() {
         assert_eq!(cintx.len(), vendor.len(), "{sym} rank-9 length");
         assert_all_components_nonzero(&cintx, 9, sym);
         assert_all_components_nonzero(&vendor, 9, sym);
+        assert_eq!(
+            count_mismatches(&vendor, &cintx, ATOL, RTOL),
+            0,
+            "{sym}: must be byte-identical to vendor at atol={ATOL} (rank 9, rinv-center fix)"
+        );
     }
 
     // (C) Manifest: the 2 nucsp rows (Sub-wave 1b, THIS plan) are oracle_covered
@@ -784,16 +795,14 @@ fn test_no_silent_skip() {
         );
     }
 
-    // (D) Manifest: the 2 sa01 rows carry component_rank 9 but stay oracle_covered
-    //     FALSE — byte-identity NOT yet achieved (30-01c WIP, Open Q1). NOT this
-    //     plan's scope; the flip is withheld until the ignored gates are green.
+    // (D) Manifest: the 2 sa01 rows carry component_rank 9 AND are now oracle_covered
+    //     TRUE — byte-identity achieved via the 30-01c rinv-center fix.
     for sym in ["int1e_cg_sa10sa01_spinor", "int1e_giao_sa10sa01_spinor"] {
         let (covered, rank) = manifest_lock_entry(sym);
         assert_eq!(rank, Some(9), "{sym} must carry component_rank 9 (Pitfall 3 truncation guard)");
         assert!(
-            !covered,
-            "{sym} must stay oracle_covered=false until the rank-9 byte-identity gate is green \
-             (30-01c WIP — no coverage flip on a non-byte-identical family)"
+            covered,
+            "{sym} must be oracle_covered=true (30-01c rank-9 byte-identity gate is green)"
         );
     }
 

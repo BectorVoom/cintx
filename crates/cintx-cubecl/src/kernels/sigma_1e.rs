@@ -913,6 +913,7 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
     ri: [f64; 3],
     rj: [f64; 3],
     common_orig: [f64; 3],
+    rinv_orig: [f64; 3],
     exps_i: &[f64],
     exps_j: &[f64],
     coeff_i: &[f64],
@@ -978,8 +979,10 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
         }
         "cg_sa10sa01" => {
             // Rank-9 Rys+gauge. cg gauge shift dri = ri − common_orig (G2E_RCI).
-            // rinv center = PTR_RINV_ORIG default [0,0,0]. The launcher carries its
-            // OWN ×9 staging + fail-closed nroots guards.
+            // rinv center = env[PTR_RINV_ORIG] (single rinv, charge +1; intor3.c
+            // int1e_type=1) — threaded through `rinv_orig`, NOT a hardcoded [0,0,0]
+            // (30-01c root cause: vendor reads PTR_RINV_ORIG; a non-zero center must
+            // be honored). The launcher carries its OWN ×9 staging + nroots guards.
             let dri = [
                 ri[0] - common_orig[0],
                 ri[1] - common_orig[1],
@@ -987,14 +990,15 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
             ];
             launch_int1e_sa10sa01_spinor_pair::<F>(
                 backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
-                [0.0, 0.0, 0.0], dri, exps_i, exps_j, coeff_i, coeff_j, staging,
+                rinv_orig, dri, exps_i, exps_j, coeff_i, coeff_j, staging,
             )
         }
         "giao_sa10sa01" => {
             // Rank-9 Rys+gauge. giao natural bra center: x1i origin = ri (G2E_R_I).
+            // rinv center = env[PTR_RINV_ORIG] (same single-center rinv as cg).
             launch_int1e_sa10sa01_spinor_pair::<F>(
                 backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
-                [0.0, 0.0, 0.0], ri, exps_i, exps_j, coeff_i, coeff_j, staging,
+                rinv_orig, ri, exps_i, exps_j, coeff_i, coeff_j, staging,
             )
         }
         "cg_sa10nucsp" => {
