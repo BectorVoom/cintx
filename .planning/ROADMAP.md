@@ -31,7 +31,7 @@
 - [x] **Phase 27: Spinor-Derivative Transform (Gap B1)** - `cart_to_spinor_sf_derivative_*` so `ip`-decorated spinor families move from `UnsupportedApi` to byte-identity, closing the Phase-21 R5/D-03 deferral. (v1.4)
 - [x] **Phase 28: Spin-Included `c2s_si` Transform + σ·p Module (Gap B2)** - The 4-block (`gc_x/y/z/1`) spin-included spinor transform plus the σ·p G-tensor assembler, validated against a kappa-bearing relativistic fixture — the prerequisite for all σ-operator families. (v1.4) (completed 2026-05-31)
 - [x] **Phase 29: Group 4 — Relativistic Spin-Operator Integrals (spinor)** - The relativistic σ-operator families (`spsp`, `spnucsp`, `sprinvsp`, `srsr`, `sigma`, `sp`, 2e `spsp1/srsr1/ssp*/sps*/vsp*`) at spinor byte-identity via the Gap B2 `c2s_si` path. (v1.4) (completed 2026-05-31)
-- [ ] **Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals (spinor)** - The relativistic-NMR GIAO×σ slice (`int1e_spg*`, `spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) at spinor byte-identity, completing the magnetic-property suite. (v1.4)
+- [x] **Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals (spinor)** - The relativistic-NMR GIAO×σ slice (`int1e_spg*`, `spgnucsp`, `*_sa10*`, `int2e_cg_sa10*`/`giao_sa10*`) at spinor byte-identity, completing the magnetic-property suite. (v1.4) (completed 2026-06-01)
 - [ ] **Phase 31: Group 6 — Gauge / Breit–Gaunt 2e + Full-Parity Verification (apex)** - The Dirac–Coulomb–Breit 2e set (`int2e_gauge_r1/r2_*`, Gaunt `ssp/sps`) at spinor byte-identity AND the milestone-closing full-parity gate: every libcint 6.1.3 family `oracle_covered=true` with an empty unsupported-families list. (v1.4)
 
 ## Progress
@@ -698,7 +698,7 @@ Gap-Wave 3 (after 26-05):
 - [x] 30-00-PLAN.md — Wave 0: combined gauge∧kappa 1e fixture + gauge x1i-with-origin device fold in sigma_p.rs + gauge-gout byte-identity micro-test (D-03 de-risk)
 - [x] 30-01a-PLAN.md — Wave 1: NEW 8-G-tensor London overlap engine — int1e_spgsp (G1E_R0I origin=ri + rirj=ri-rj, 27→12 gout, rank 3, c2s_si_1ei) byte-identical spinor; also dispatches + gates the 30-00-proven cg_sa10sp/giao_sa10sp
 - [ ] 30-01b-PLAN.md — Wave 1: NEW Rys+gauge nuclear engine — int1e_cg_sa10nucsp/giao_sa10nucsp (x1i-with-origin inside the Rys loop, 12-comp gout, rank 3, c2s_si_1ei) byte-identical spinor
-- [ ] 30-01c-PLAN.md — Wave 1: NEW Rys+gauge rank-9 rinv engine — int1e_cg_sa10sa01/giao_sa10sa01 (g1=∇_j(g0)+∇_i(g0)+x1i, 36-comp gout, rank 9, REAL c2s_si_1e) byte-identical spinor
+- [x] 30-01c-PLAN.md — Wave 1: NEW Rys+gauge rank-9 rinv engine — int1e_cg_sa10sa01/giao_sa10sa01 (g1=∇_j(g0)+∇_i(g0)+x1i, 36-comp gout, rank 9, REAL c2s_si_1e) byte-identical spinor
 - [ ] 30-01d-PLAN.md — Wave 1: NEW spg-Rys/London engine — int1e_spgnucsp (12-comp rank 3, c2s_si_1ei) + int1e_spgsa01 (36-comp rank 9, REAL c2s_si_1e) byte-identical spinor; closes the full 9-family 1e Wave-1 gate
 - [ ] 30-02-PLAN.md — Wave 2: all 6 2e GIAO×σ families (spgsp1(spsp2) + cg/giao_sa10sp1(spsp2)) on 4-shell fixture + full 15-family suite + manifest-audit gate
 
