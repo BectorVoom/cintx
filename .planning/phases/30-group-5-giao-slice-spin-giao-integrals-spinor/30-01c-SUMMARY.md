@@ -2,7 +2,7 @@
 phase: 30-group-5-giao-slice-spin-giao-integrals-spinor
 plan: 01c
 subsystem: cubecl
-tags: [cubecl, spinor, giao, sa01, rys, gauge, rank-9, vendor-parity, libcint, blocked]
+tags: [cubecl, spinor, giao, sa01, rys, gauge, rank-9, vendor-parity, libcint, resolved]
 
 # Dependency graph
 requires:
@@ -44,10 +44,31 @@ decisions:
 # Metrics
 duration: 95min
 completed: 2026-06-01
-status: BLOCKED (engine built green; vendor byte-identity NOT achieved)
+status: RESOLVED (root cause = hardcoded rinv center; byte-identity achieved 2026-06-01)
 ---
 
-# Phase 30 Plan 01c: GIAO×σ Sub-wave 1c — rank-9 Rys+gauge sa01 engine (BLOCKED on gout layout)
+> ## ⚠️ RESOLUTION (2026-06-01) — the BLOCKED diagnosis below was WRONG
+>
+> The "gout → gc-block layout" hypothesis in this SUMMARY was **disproven**. The
+> cart-path discriminator (`crates/cintx-oracle/tests/sa01_cart_discriminator.rs`)
+> proved the g-tensor AND the `cart_to_spinor_si_2d` transform both **byte-correct**.
+>
+> **Actual root cause:** the `cg_sa10sa01` / `giao_sa10sa01` dispatch arms in
+> `sigma_1e.rs` hardcoded the rinv center as `[0,0,0]` instead of reading
+> `env[PTR_RINV_ORIG]` (which the Phase-30 fixture sets to `[0.30,-0.45,0.60]`).
+> Vendor evaluates at that env center; cintx used `[0,0,0]` → wrong values. The
+> "structural zeros" were the symmetric-center artifact.
+>
+> **Fix:** threaded `rinv_orig` through `launch_int1e_giao_sigma_family_spinor_pair`
+> + the sa01 arms; added the sa01 symbols to `is_giao_rinv_center_symbol` (raw.rs).
+> The 3 byte-identity gates are now GREEN, `test_no_silent_skip` asserts byte-identity,
+> and `oracle_covered=true` for both sa01 rows. **Sub-wave 1c is now gated green.**
+>
+> Full evidence chain + the cart-discriminator harness are documented in
+> `30-01c-DEBUG.md` (status: root-caused-and-fixed). Everything below this banner is
+> the original (incorrect-conclusion) execution record, preserved for history.
+
+# Phase 30 Plan 01c: GIAO×σ Sub-wave 1c — rank-9 Rys+gauge sa01 engine (originally BLOCKED — see RESOLUTION above)
 
 **The net-new rank-9 Rys+gauge `int1e_cg_sa10sa01` / `int1e_giao_sa10sa01` engine (rinv nuclear base, `g1 = ∇_j(g0)+∇_i(g0)` both-side nabla, `x1i`-with-origin gauge fold, 36-component 9×4 gout, REAL `c2s_si_1e`) is implemented and BUILDS GREEN with all guards in place, but is NOT yet byte-identical to vendored libcint — the 36-gout → 9×4 gc-block layout consumed by the c2s transform is mismatched. The byte-identity gates are RED/#[ignore]d and `oracle_covered` is NOT flipped. Sub-wave 1c is NOT gated green.**
 
