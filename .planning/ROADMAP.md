@@ -67,7 +67,7 @@
 | Phase 27: Spinor-Derivative Transform (Gap B1) | v1.4 | 6/6 | Complete | 2026-05-31 |
 | Phase 28: Spin-Included c2s_si Transform + σ·p Module (Gap B2) | v1.4 | 4/4 | Complete | 2026-05-31 |
 | Phase 29: Group 4 — Relativistic Spin-Operator Integrals | v1.4 | 6/6 | Complete | 2026-06-01 |
-| Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals | v1.4 | 3/6 | In Progress | 30-01c rank-9 sa01 BLOCKED (vendor byte-identity, Open Q1); 30-01d + Wave 2 pending |
+| Phase 30: Group 5 (GIAO×σ slice) — Spin-GIAO Integrals | v1.4 | 3/6 | In Progress | 30-01a/b/c green (30-01c RESOLVED: rinv-center fix); 30-01d PARTIAL (spgnucsp green, spgsa01 ~0.5% both-side-g1 residual, oracle_covered=false); 8/9 1e families covered; spgsa01 fix + Wave 2 pending |
 | Phase 31: Group 6 — Gauge/Breit–Gaunt 2e + Full-Parity Verification | v1.4 | 0/0 | Not started | - |
 
 ## v1.2 Milestone: Full API Parity & Unified Oracle Gate
@@ -698,8 +698,8 @@ Gap-Wave 3 (after 26-05):
 - [x] 30-00-PLAN.md — Wave 0: combined gauge∧kappa 1e fixture + gauge x1i-with-origin device fold in sigma_p.rs + gauge-gout byte-identity micro-test (D-03 de-risk)
 - [x] 30-01a-PLAN.md — Wave 1: NEW 8-G-tensor London overlap engine — int1e_spgsp (G1E_R0I origin=ri + rirj=ri-rj, 27→12 gout, rank 3, c2s_si_1ei) byte-identical spinor; also dispatches + gates the 30-00-proven cg_sa10sp/giao_sa10sp
 - [x] 30-01b-PLAN.md — Wave 1: NEW Rys+gauge nuclear engine — int1e_cg_sa10nucsp/giao_sa10nucsp (x1i-with-origin inside the Rys loop, 12-comp gout, rank 3, c2s_si_1ei) byte-identical spinor
-- [ ] 30-01c-PLAN.md — Wave 1: NEW Rys+gauge rank-9 rinv engine — int1e_cg_sa10sa01/giao_sa10sa01 (g1=∇_j(g0)+∇_i(g0)+x1i, 36-comp gout, rank 9, REAL c2s_si_1e) byte-identical spinor [BLOCKED: engine built (783d392) but NOT byte-identical; rank-9 gout→gc-block layout, RESEARCH Open Q1; gates #[ignore]d, oracle_covered NOT flipped]
-- [ ] 30-01d-PLAN.md — Wave 1: NEW spg-Rys/London engine — int1e_spgnucsp (12-comp rank 3, c2s_si_1ei) + int1e_spgsa01 (36-comp rank 9, REAL c2s_si_1e) byte-identical spinor; closes the full 9-family 1e Wave-1 gate
+- [x] 30-01c-PLAN.md — Wave 1: NEW Rys+gauge rank-9 rinv engine — int1e_cg_sa10sa01/giao_sa10sa01 (g1=∇_j(g0)+∇_i(g0)+x1i, 36-comp gout, rank 9, REAL c2s_si_1e) byte-identical spinor [RESOLVED 2026-06-01: root cause was the hardcoded rinv center [0,0,0] vs env[PTR_RINV_ORIG], NOT the gout→gc-block layout; both gates green, oracle_covered=true]
+- [ ] 30-01d-PLAN.md — Wave 1: NEW spg-Rys/London engine — int1e_spgnucsp (12-comp rank 3, c2s_si_1ei) + int1e_spgsa01 (36-comp rank 9, REAL c2s_si_1e) byte-identical spinor [PARTIAL 2026-06-01: spgnucsp byte-identical + oracle_covered=true; spgsa01 builds+runs all-9-non-zero but ~0.5% UNIFORM residual in the both-side-g1 (D_J+D_I) → g3 → g7 chain, oracle_covered=false, gate #[ignore]d — needs cart-discriminator dual-verification. 8/9 1e families covered; 1e half of GIAO-03 NOT fully closed]
 - [ ] 30-02-PLAN.md — Wave 2: all 6 2e GIAO×σ families (spgsp1(spsp2) + cg/giao_sa10sp1(spsp2)) on 4-shell fixture + full 15-family suite + manifest-audit gate
 
 ### Phase 31: Group 6 — Gauge / Breit–Gaunt 2e + Full-Parity Verification (apex)

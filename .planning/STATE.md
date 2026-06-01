@@ -4,14 +4,14 @@ milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
 status: executing
 stopped_at: Phase 30 context gathered
-last_updated: "2026-05-31T23:59:17.336Z"
-last_activity: 2026-05-31
+last_updated: "2026-06-01T06:32:27.190Z"
+last_activity: 2026-06-01 -- Phase 30 execution started
 progress:
   total_phases: 21
   completed_phases: 19
   total_plans: 107
-  completed_plans: 103
-  percent: 96
+  completed_plans: 105
+  percent: 98
 ---
 
 # Project State
@@ -25,10 +25,22 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 ## Current Position
 
-Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING (Wave 1 in progress)
-Plan: 30-00 + 30-01a + 30-01b COMPLETE (30-01b: cg/giao_sa10nucsp Rys+gauge nuclear engine byte-identical at atol=1e-12, oracle_covered flipped, f7c879c/93e7109); 30-01c engine built (783d392) but BLOCKED on vendor byte-identity (rank-9 gout->gc-block layout, RESEARCH Open Q1) — oracle_covered NOT flipped, gates RED/#[ignore]d; 30-01d + 30-02 not started
-Status: EXECUTING — 30-01b green (5 of 9 1e families now oracle_covered=true: spgsp/cg_sa10sp/giao_sa10sp/cg_sa10nucsp/giao_sa10nucsp). 30-01c rank-9 sa01 still BLOCKED (compiles + runs all-9-non-zero but NOT byte-identical; needs gout-layout reverse-engineering before flip). 30-01d (spgnucsp+spgsa01) + Wave 2 (6×2e) pending. Phase NOT complete; GIAO-03 NOT closed. See 30-01b-SUMMARY.md / 30-01c-SUMMARY.md.
+Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING
+Plan: 2 of 6 (Wave 1 sub-waves 30-01a/b/c done; 30-01d PARTIAL → next Wave 2 / spgsa01 fix)
+Status: Executing Phase 30
 Seed/design: .planning/notes/phase-30-wave1-engine-class-split-PLAN.md (engine-class sub-wave breakdown)
+
+Phase 30 Wave 1 sub-wave 30-01d outcome (2026-06-01) — PARTIAL:
+
+  - spg-Rys/London engine (30-01a spgsp 8-G London chain + Rys root loop): int1e_spgnucsp
+    (rank 3, NUCLEAR Rys, g1=D_J, 12-comp, SiI) BYTE-IDENTICAL at atol=1e-12, oracle_covered=true.
+  - int1e_spgsa01 (rank 9, RINV Rys, BOTH-SIDE g1=D_J+D_I, 36-comp, REAL Si) builds + runs all-9
+    non-zero but NOT byte-identical: ~0.5% UNIFORM residual in the D_I-in-g1 → g3 → g7 chain (the
+    only family reading g0 at bra li+3). Isolated (D_J-only→1.2e-2; full→6e-5; headroom ruled out;
+    transcription verified vs g2e.c). oracle_covered=false; gate #[ignore]d (T-30-01d-06 no over-claim).
+  - 8 of 9 1e GIAO×σ families now oracle_covered=true; the 1e half of GIAO-03 is NOT fully closed.
+    spgsa01 needs the cart-discriminator dual-verification (the 30-01c method) before its gate flips.
+  - 30-01c is RESOLVED (cg/giao_sa10sa01 byte-identical; rinv-center fix) — ROADMAP corrected.
 
 Phase 30 Wave 1 re-plan COMPLETE (2026-06-01):
 
@@ -71,7 +83,7 @@ Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 Deferred follow-up: finite-difference verification of the 4 D-12 vendor-stub arms (FD of cintx scalar
   int2c2e_spinor / int3c1e_spinor), then flip under an FD-tolerance gate. D-03 needs an sf_4d derivative
   wrapper; D-04 belongs to the relativistic/ECP-spinor track.
-Last activity: 2026-05-31
+Last activity: 2026-06-01 -- Phase 30 execution started
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -199,6 +211,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 29 P06 | 95min | 3 tasks | 7 files |
 | Phase 29 P6 | 95min | 3 tasks | 7 files |
 | Phase 30 P00 | 35 | 3 tasks | 4 files |
+| Phase 30 P01d | 110min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
