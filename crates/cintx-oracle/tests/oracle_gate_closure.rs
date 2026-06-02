@@ -1325,35 +1325,51 @@ fn vendor_ffi_3c2e_spinor_nonzero() {
     println!("vendor_ffi_3c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 3c2e spinor output");
 }
 
-/// R5 contract gate for 3c2e_ip1 spinor (Phase 21-06 / GRAD-08 / Risk R5).
+/// Vendor byte-identity gate for `int3c2e_ip1_spinor` (quick task 260601-d7e, Sub-problem A).
 ///
-/// Before Phase 21-06, `INT3C2E_IP1_SPINOR` reached the operator-blind scalar 3c2e
-/// stub, which routed spinor through `cart_to_spinor_sf_3c2e` and (mis)matched plain
-/// `vendor_int3c2e_spinor`. Phase 21-06 ships the REAL int3c2e_ip1 derivative kernel,
-/// which REJECTS the spinor representation with `UnsupportedApi` (R5 / D-03 — gradient
-/// spinor transforms are out of scope). There is no dispatchable plain `int3c2e_spinor`
-/// manifest symbol, so plain 3c2e spinor coverage remains the vendor-side sanity check
-/// `vendor_ffi_3c2e_spinor_nonzero`. This gate now asserts the R5 fail-closed contract.
+/// HISTORY: this gate previously encoded the obsolete Phase-21-06 R5 "must-reject"
+/// contract — it asserted `INT3C2E_IP1_SPINOR` returns `UnsupportedApi` (gradient spinor
+/// transforms were out of scope at the time). The family has since started evaluating and
+/// is byte-identical to vendored libcint 6.1.3, so the must-reject framing is STALE and has
+/// been dropped (would otherwise CONTRADICT the passing adversarial parity below).
+///
+/// PRIMARY byte-identity coverage for this family is the adversarial (non-square p×d×s,
+/// nctr_bra=2) parity test `test_int3c2e_ip1_spinor_adversarial_parity` in
+/// `tests/spinor_deriv_parity.rs` — NOT `#[ignore]`d, asserts `count_mismatches == 0`.
+/// This gate is a SECONDARY sanity on the H2O STO-3G triple (3,4,0).
+///
+/// CRITICAL aux-k sizing (memory: libcint_3c_spinor_auxk_spherical): for arity-3 spinor
+/// families libcint `CINT3c2e_spinor_drv` runs `is_ssc=0` (cint3c2e.c:631-636), so bra i
+/// and ket j are SPINOR-sized (`vendor_CINTcgto_spinor` = nctr·(4l+2)) but the auxiliary-k
+/// axis is SPHERICAL (`vendor_CINTcgto_spheric` = nctr·(2lk+1)). The buffer length is
+/// `3 · ni_sp · nj_sp · nk_sph · 2`. We assert the cintx/vendor buffer lengths are EQUAL
+/// before comparing values (latent aux-k mis-sizing guard, T-d7e-01).
 #[test]
 #[cfg(has_vendor_libcint)]
-fn oracle_gate_3c2e_spinor() {
+fn oracle_gate_3c2e_ip1_spinor_vendor_parity() {
     use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_h2o_sto3g();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
 
     // Shells (3,4,0): H1-1s, H2-1s, O-1s — three different centers.
     let (si, sj, sk) = (3i32, 4i32, 0i32);
     let shls = [si, sj, sk];
 
+    // bra i / ket j: SPINOR-sized (nctr·(4l+2)); aux-k: SPHERICAL (nctr·(2lk+1)).
     let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
     let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
-    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
-    // Allocate the full planner-sized buffer (3 gradient components × complex×2) so
-    // the dispatch reaches the kernel's R5 spinor guard rather than tripping the
-    // earlier planner BufferTooSmall check; the kernel must then return UnsupportedApi.
-    let nelems = 3 * ni_sp * nj_sp * nk_sp * 2;
-    let mut cintx_out = vec![0.0f64; nelems];
+    let nk_sph = vendor_ffi::vendor_CINTcgto_spheric(sk, &bas) as usize;
+    // 3 gradient components × complex (×2), aux-k SPHERICAL.
+    let nelems = 3 * ni_sp * nj_sp * nk_sph * 2;
 
+    // Vendor reference.
+    let mut vendor_out = vec![0.0f64; nelems];
+    vendor_ffi::vendor_int3c2e_ip1_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    // cintx, sized with the SAME aux-k SPHERICAL rule.
+    let mut cintx_out = vec![0.0f64; nelems];
     let eval_result = unsafe {
         eval_raw(
             RawApiId::INT3C2E_IP1_SPINOR,
@@ -1367,12 +1383,267 @@ fn oracle_gate_3c2e_spinor() {
             None,
         )
     };
+    eval_result.unwrap_or_else(|e| {
+        panic!(
+            "oracle_gate_3c2e_ip1_spinor_vendor_parity: cintx eval_raw(INT3C2E_IP1_SPINOR) \
+             failed (stale must-reject expectation is gone — family now evaluates): {e:?}"
+        )
+    });
 
-    assert!(
-        matches!(eval_result, Err(cintx_core::cintxRsError::UnsupportedApi { .. })),
-        "oracle_gate_3c2e_spinor (R5): int3c2e_ip1 spinor must return UnsupportedApi, \
-         got: {eval_result:?}"
+    // Latent aux-k mis-sizing guard (T-d7e-01): buffers MUST be the same length.
+    assert_eq!(
+        vendor_out.len(),
+        cintx_out.len(),
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: cintx/vendor buffer length mismatch \
+         (aux-k sizing divergence — must both be SPHERICAL 2lk+1)"
     );
 
-    println!("oracle_gate_3c2e_spinor: PASS — int3c2e_ip1 spinor correctly rejected (R5)");
+    // Both sides must be physically nonzero (no silent zero-fill / skip).
+    let vendor_nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    let cintx_nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+    assert!(
+        vendor_nonzero > 0,
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: vendor output all-zero (skip regression)"
+    );
+    assert!(
+        cintx_nonzero > 0,
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: cintx output all-zero (skip regression)"
+    );
+
+    // Byte-identity (atol=1e-12, rtol=0).
+    let mut mismatches = 0usize;
+    for (i, (&vr, &cx)) in vendor_out.iter().zip(cintx_out.iter()).enumerate() {
+        if (vr - cx).abs() > 1e-12 {
+            mismatches += 1;
+            if mismatches <= 10 {
+                eprintln!(
+                    "  MISMATCH at {i}: vendor={vr:.15e}, cintx={cx:.15e}, diff={:.3e}",
+                    (vr - cx).abs()
+                );
+            }
+        }
+    }
+    assert_eq!(
+        mismatches, 0,
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: int3c2e_ip1 spinor diverges from vendored \
+         libcint on H2O STO-3G (3,4,0) (aux-k SPHERICAL). See also \
+         test_int3c2e_ip1_spinor_adversarial_parity (spinor_deriv_parity.rs) for the \
+         non-square p×d×s nctr=2 primary coverage."
+    );
+
+    println!(
+        "oracle_gate_3c2e_ip1_spinor_vendor_parity: PASS — int3c2e_ip1 spinor byte-identical \
+         to vendor on (3,4,0); mismatches=0, vendor_nonzero={vendor_nonzero}/{nelems}, \
+         cintx_nonzero={cintx_nonzero}/{nelems} (aux-k SPHERICAL). Primary/adversarial \
+         coverage: test_int3c2e_ip1_spinor_adversarial_parity."
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// nctr>1 (general-contraction) int2e_spinor parity gate — quick task 260601-aty.
+//
+// build_two_center_spinor_nctr2 produces a 4-shell s/p/p/d basis on two centers
+// where EVERY shell is general-contracted (NCTR_OF=2, 3 primitives, distinct
+// per-column coeffs). The quartet (0,1,2,3) = s × p × p × d carries NON-SQUARE
+// angular pairs in BOTH the (i,j) and (k,l) transforms sf_4d performs, so a
+// transposed or contraction-minor scatter is a guaranteed mismatch (D-07: orientation
+// needs ni>1 AND nj>1). l-sum = 0+1+1+2 = 4 → nroots = 3 (≤5, device-supported).
+//
+// vendor_CINTcgto_spinor is nctr-aware (returns nctr*(4l+2)), so vendor and cintx
+// agree on the dense contraction-major spinor block sizing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(has_vendor_libcint)]
+fn build_two_center_spinor_nctr2() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    let a_coord = [0.0_f64, 0.0, 0.0];
+    let b_coord = [0.7531_f64, 1.4307, 1.1078];
+
+    // Three shared primitive exponents; two contraction columns each (COLUMN-major
+    // env coeff block: env[ci*nprim + ip]).
+    let exp_set = [3.4252509_f64, 0.6239137, 0.1688554];
+    // Distinct per-shell, per-column coefficient blocks (column 0 then column 1).
+    let s_coeff = [
+        0.15432897_f64, 0.53532814, 0.44463454, // col 0
+        0.41098730, 0.22072503, 0.81763176, // col 1
+    ];
+    let p_coeff = [
+        0.15591627_f64, 0.60768372, 0.39195739, // col 0
+        0.70211493, 0.39850911, 0.12300719, // col 1
+    ];
+    let q_coeff = [
+        0.09996723_f64, 0.39951283, 0.70011547, // col 0
+        0.31093210, 0.51220034, 0.27718845, // col 1
+    ];
+    let d_coeff = [
+        0.21956727_f64, 0.48030318, 0.38128727, // col 0
+        0.60331847, 0.18887512, 0.44102906, // col 1
+    ];
+
+    let mut env = vec![0.0_f64; PTR_ENV_START];
+    let a_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&a_coord);
+    let b_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&b_coord);
+    let zeta_ptr = env.len() as i32;
+    env.push(0.0);
+
+    let exp_ptr = env.len() as i32;
+    env.extend_from_slice(&exp_set);
+    let s_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&s_coeff);
+    let p_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&p_coeff);
+    let q_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&q_coeff);
+    let d_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&d_coeff);
+
+    let mut atm = vec![0_i32; 2 * ATM_SLOTS];
+    atm[0 * ATM_SLOTS + CHARGE_OF] = 8;
+    atm[0 * ATM_SLOTS + PTR_COORD] = a_coord_ptr;
+    atm[0 * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+    atm[0 * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+    atm[1 * ATM_SLOTS + CHARGE_OF] = 1;
+    atm[1 * ATM_SLOTS + PTR_COORD] = b_coord_ptr;
+    atm[1 * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+    atm[1 * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
+
+    // Shells: 0=s(atom0), 1=p(atom1), 2=p(atom0), 3=d(atom1). Every shell nctr=2.
+    let shells: [(i32, i32, i32); 4] = [
+        (0, 0, s_coeff_ptr), // s
+        (1, 1, p_coeff_ptr), // p
+        (0, 1, q_coeff_ptr), // p (distinct coeffs/atom from shell 1)
+        (1, 2, d_coeff_ptr), // d
+    ];
+    let mut bas = vec![0_i32; 4 * BAS_SLOTS];
+    for (s, &(atom, l, coeff_ptr)) in shells.iter().enumerate() {
+        bas[s * BAS_SLOTS + ATOM_OF] = atom;
+        bas[s * BAS_SLOTS + ANG_OF] = l;
+        bas[s * BAS_SLOTS + NPRIM_OF] = 3;
+        bas[s * BAS_SLOTS + NCTR_OF] = 2;
+        bas[s * BAS_SLOTS + PTR_EXP] = exp_ptr;
+        bas[s * BAS_SLOTS + PTR_COEFF] = coeff_ptr;
+    }
+
+    (atm, bas, env)
+}
+
+/// Oracle parity gate for nctr>1 int2e_spinor (4-center) vs vendored libcint.
+///
+/// Double-gated: #[cfg(has_vendor_libcint)] + run under `--features cpu` with
+/// `CINTX_ORACLE_BUILD_VENDOR=1`. Without both, this test is cfg'd out (no silent
+/// skip — its absence from the run list is visible, and the smoke gate
+/// oracle_gate_2e_spinor_nctr2_evaluates still runs unconditionally below).
+#[test]
+#[cfg(has_vendor_libcint)]
+fn oracle_gate_2e_spinor_nctr2() {
+    use cintx_oracle::vendor_ffi;
+
+    let (atm, bas, env) = build_two_center_spinor_nctr2();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+    // Guard: every shell must be general-contracted, and the quartet must carry a
+    // NON-SQUARE angular pair so orientation is observable.
+    for s in 0..4 {
+        assert_eq!(
+            bas[s * BAS_SLOTS + NCTR_OF],
+            2,
+            "shell {s} must be general-contracted (nctr==2)"
+        );
+    }
+    let lk = bas[2 * BAS_SLOTS + ANG_OF];
+    let ll = bas[3 * BAS_SLOTS + ANG_OF];
+    assert_ne!(lk, ll, "the (k,l) angular pair must be NON-SQUARE (p != d)");
+
+    let (si, sj, sk, sl) = (0i32, 1i32, 2i32, 3i32);
+    let shls = [si, sj, sk, sl];
+
+    let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
+    let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
+    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
+    let nl_sp = vendor_ffi::vendor_CINTcgto_spinor(sl, &bas) as usize;
+    let nelems = ni_sp * nj_sp * nk_sp * nl_sp * 2;
+
+    let mut vendor_out = vec![0.0f64; nelems];
+    vendor_ffi::vendor_int2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+
+    let mut cintx_out = vec![0.0f64; nelems];
+    let summary = unsafe {
+        eval_raw(
+            RawApiId::INT2E_SPINOR,
+            Some(&mut cintx_out),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+    }
+    .unwrap_or_else(|e| panic!("eval_raw INT2E_SPINOR (nctr2) failed: {e:?}"));
+
+    let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
+    let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+
+    assert!(nonzero > 0, "cintx int2e_spinor nctr2 output is all zeros");
+    assert_eq!(
+        mc, 0,
+        "oracle_gate_2e_spinor_nctr2: {mc} mismatches at atol=1e-12, not0={}",
+        summary.not0
+    );
+
+    println!(
+        "oracle_gate_2e_spinor_nctr2: PASS — mismatch_count=0, nonzero={nonzero}/{nelems}, \
+         not0={}",
+        summary.not0
+    );
+}
+
+/// Always-on smoke gate: int2e_spinor evaluates on the nctr>1 basis (no UnsupportedApi).
+/// Runs under `--features cpu` regardless of vendor build, so its presence is visible
+/// even when the vendor parity gate is cfg'd out.
+#[test]
+fn oracle_gate_2e_spinor_nctr2_evaluates() {
+    #[cfg(has_vendor_libcint)]
+    {
+        let (atm, bas, env) = build_two_center_spinor_nctr2();
+        let (si, sj, sk, sl) = (0i32, 1i32, 2i32, 3i32);
+        let shls = [si, sj, sk, sl];
+        // Size from the contraction-major spinor dims: nctr*(4l+2).
+        let nsp = |s: usize| {
+            let l = bas[s * BAS_SLOTS + ANG_OF];
+            let nctr = bas[s * BAS_SLOTS + NCTR_OF] as usize;
+            nctr * (4 * l as usize + 2)
+        };
+        let nelems = nsp(0) * nsp(1) * nsp(2) * nsp(3) * 2;
+        let mut cintx_out = vec![0.0f64; nelems];
+        let summary = unsafe {
+            eval_raw(
+                RawApiId::INT2E_SPINOR,
+                Some(&mut cintx_out),
+                None,
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                None,
+                None,
+            )
+        }
+        .expect("eval_raw INT2E_SPINOR nctr2 must evaluate (no UnsupportedApi)");
+        let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
+        assert!(nonzero > 0, "int2e_spinor nctr2 output all zeros");
+        println!(
+            "oracle_gate_2e_spinor_nctr2_evaluates: PASS — nonzero={nonzero}/{nelems}, not0={}",
+            summary.not0
+        );
+    }
+    #[cfg(not(has_vendor_libcint))]
+    {
+        // The nctr2 builder is only compiled under has_vendor_libcint (it is unused
+        // otherwise). Nothing to evaluate here without it.
+        println!("oracle_gate_2e_spinor_nctr2_evaluates: SKIPPED (no vendor build)");
+    }
 }

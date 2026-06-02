@@ -1141,6 +1141,12 @@ fn is_giao_rinv_center_symbol(symbol: &str) -> bool {
         || symbol.starts_with("int1e_a01gp_")
         || symbol.starts_with("int1e_cg_a11part_")
         || symbol.starts_with("int1e_giao_a11part_")
+        // Phase 30 GIAO-03 (30-01c root cause): the rank-9 sa01 σ families are also
+        // evaluated at the SINGLE rinv center env[PTR_RINV_ORIG] (intor3.c int1e_type=1,
+        // charge +1). Without this, rinv_orig stays None and the rank-9 dispatch arm
+        // would fall back to [0,0,0], diverging from vendor whenever the center ≠ 0.
+        || symbol.starts_with("int1e_cg_sa10sa01_")
+        || symbol.starts_with("int1e_giao_sa10sa01_")
 }
 
 /// Phase 21-01: identifies iprinv-family operator symbols.

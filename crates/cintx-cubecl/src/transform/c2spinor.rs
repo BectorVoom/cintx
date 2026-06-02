@@ -730,6 +730,124 @@ pub fn cart_to_spinor_si_2d<F: CintFloat>(
     Ok(())
 }
 
+/// Host-side spin-included IMAGINARY-KET (si) 2D cart→spinor transform — libcint `c2s_si_1ei`.
+///
+/// This is the imaginary-ket sibling of [`cart_to_spinor_si_2d`]. `c2s_si_1ei` differs from
+/// `c2s_si_1e` in EXACTLY ONE way: the Stage-2 ket transform uses `a_iket_cart2spinor`
+/// (multiply-by-i) instead of the ordinary `a_ket_cart2spinor`. Multiply-by-i on the
+/// interleaved-complex output is `(re, im) → (-im, re)` — identical to the relationship
+/// between [`cart_to_spinor_iket_si`] and [`cart_to_spinor_si`] (see [`apply_iket_si_block`]
+/// vs [`apply_si_block`], which differ only by this i-rotation).
+///
+/// Used by `int1e_sr` and `int1e_sigma` (the `c2s_si_1ei` driver path in intor3.c).
+///
+/// Everything else is IDENTICAL to [`cart_to_spinor_si_2d`]:
+/// - Buffer guards: `need = nci*ncj` per gc block → [`cintxRsError::ChunkPlanFailed`];
+///   `required = di*dj*2` → [`cintxRsError::BufferTooSmall`]. No writes before guards pass.
+/// - The transform OWNS the KET→BRA transpose (`dst[i*ncj+j] = src[j*nci+i]`) for each of
+///   the four `gc_x/gc_y/gc_z/gc_1` device-KET-major blocks.
+/// - Stage-1 bra σ-mix ([`apply_bra_si_block`]) is unchanged.
+/// - Stage-3 interleaved column-major zcopy `staging[(j*di+i)*2] = re, +1 = im`.
+///
+/// All `di`/`dj` come from [`spinor_len`] — never a hardcoded `4l+2`.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_si_2di<F: CintFloat>(
+    staging: &mut [F],
+    gc_x: &[f64],
+    gc_y: &[f64],
+    gc_z: &[f64],
+    gc_1: &[f64],
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+
+    // ── Buffer guards (no writes before these pass) ────────────────────────────
+    let need = nci * ncj;
+    for (name, block) in [
+        ("gc_x", gc_x), ("gc_y", gc_y), ("gc_z", gc_z), ("gc_1", gc_1),
+    ] {
+        if block.len() < need {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "c2spinor_si_2di",
+                detail: format!(
+                    "{} block length {} < nci*ncj = {}*{} = {}",
+                    name, block.len(), nci, ncj, need
+                ),
+            });
+        }
+    }
+    let required = di * dj * 2;
+    if staging.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Stage 0: KET→BRA transpose for each of the four gc blocks ──────────────
+    // Device cart blocks are KET-major block[j*nci+i]; the bra step reads BRA-major
+    // block[i*ncj+j]. Latent on square blocks (nci==ncj); the kappa fixture is
+    // non-square (p×d) precisely to surface this.
+    let transpose_ket_to_bra = |src: &[f64]| -> Vec<f64> {
+        let mut dst = vec![0.0f64; nci * ncj];
+        for i in 0..nci {
+            for j in 0..ncj {
+                dst[i * ncj + j] = src[j * nci + i];
+            }
+        }
+        dst
+    };
+    let bm_x = transpose_ket_to_bra(gc_x);
+    let bm_y = transpose_ket_to_bra(gc_y);
+    let bm_z = transpose_ket_to_bra(gc_z);
+    let bm_1 = transpose_ket_to_bra(gc_1);
+
+    // ── Stage 1: Bra σ-mix (a_bra_cart2spinor_si) ──────────────────────────────
+    let mut tmp_alpha_r = vec![0.0f64; di * ncj];
+    let mut tmp_alpha_i = vec![0.0f64; di * ncj];
+    let mut tmp_beta_r = vec![0.0f64; di * ncj];
+    let mut tmp_beta_i = vec![0.0f64; di * ncj];
+
+    apply_bra_si_block(
+        &mut tmp_alpha_r, &mut tmp_alpha_i,
+        &mut tmp_beta_r, &mut tmp_beta_i,
+        &bm_x, &bm_y, &bm_z, &bm_1,
+        nci, ncj, di, li, kappa_i as i32,
+    );
+
+    // ── Stage 2: Ordinary ket transform, then multiply by i (the ONLY change) ──
+    // c2s_si_1ei == c2s_si_1e with a_iket_cart2spinor in place of a_ket_cart2spinor.
+    // The iket variant is exactly multiply-by-i of the ordinary ket output:
+    // (re, im) → (-im, re). Compute the ordinary ket transform, then rotate.
+    let mut out_r = vec![0.0f64; di * dj];
+    let mut out_i = vec![0.0f64; di * dj];
+
+    apply_ket_transform(
+        &mut out_r, &mut out_i,
+        &tmp_alpha_r, &tmp_alpha_i,
+        &tmp_beta_r, &tmp_beta_i,
+        di, ncj, dj, lj, kappa_j as i32,
+    );
+
+    // ── Stage 3: Column-major interleaved zcopy to staging, multiplied by i ─────
+    // (re, im) → (-im, re): staging[..*2] = -out_i, staging[..*2+1] = out_r.
+    for j in 0..dj {
+        for i in 0..di {
+            let out_idx = j * di + i;
+            staging[out_idx * 2] = F::from_f64_lossy(-out_i[j * di + i]);
+            staging[out_idx * 2 + 1] = F::from_f64_lossy(out_r[j * di + i]);
+        }
+    }
+
+    Ok(())
+}
+
 /// Bra step of the 2D c2spinor_sf transform for all kappa cases.
 ///
 /// Matches `a_bra_cart2spinor_sf` in libcint `cart2sph.c`.
@@ -1236,6 +1354,337 @@ pub fn cart_to_spinor_sf_4d<F: CintFloat>(
     Ok(())
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  2e cart→spinor si/sf transform SUITE (Phase 29 Wave-2 — D-01)
+//
+//  Six per-electron transforms mirroring libcint cart2sph.c verbatim:
+//    electron 1 (cart → opij <ik|lj>):  c2s_si_2e1 / c2s_si_2e1i / c2s_sf_2e1
+//    electron 2 (opij → fijkl):          c2s_si_2e2 / c2s_si_2e2i / c2s_sf_2e2
+//
+//  These clone the existing `cart_to_spinor_sf_4d` two-stage skeleton, split into
+//  reusable per-electron fns. The genuinely-novel piece is the electron-2 si σ-mix
+//  (`apply_2d_spinor_zi`, transcribed above). ALL sizing is via `spinor_len` — never
+//  a hardcoded 4l+2. The KET→BRA transpose is owned by the 1e 2D transforms each
+//  electron-1 fn calls per (k,l) slice. component_rank is 1 for every Group-4 family.
+//
+//  opij index (electron-1 output / electron-2 input):
+//    opij[((l_cart*nck + k_cart) * dj*di + j_sp*di + i_sp) * 2]  (+0 re, +1 im)
+//  staging index (electron-2 output, zcopy_iklj):
+//    staging[(((l_sp*dk + k_sp) * dj + j_sp) * di + i_sp) * 2]
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Electron-2 store: `zcopy_iklj` — write the (dk×dl) complex block for one (i_sp,j_sp)
+/// pair into the interleaved staging buffer at the `<i k l j>`-ordered offset.
+#[inline]
+fn store_2e2_block<F: CintFloat>(
+    staging: &mut [F],
+    out_r: &[f64], out_i: &[f64],
+    i_sp: usize, j_sp: usize,
+    di: usize, dj: usize, dk: usize, dl: usize,
+    imaginary_ket: bool,
+) {
+    for l_sp in 0..dl {
+        for k_sp in 0..dk {
+            let dst_idx = (((l_sp * dk + k_sp) * dj + j_sp) * di + i_sp) * 2;
+            let re = out_r[l_sp * dk + k_sp];
+            let im = out_i[l_sp * dk + k_sp];
+            if imaginary_ket {
+                // a_iket1_cart2spinor == multiply-by-i: (re,im) → (-im,re)
+                staging[dst_idx] = F::from_f64_lossy(-im);
+                staging[dst_idx + 1] = F::from_f64_lossy(re);
+            } else {
+                staging[dst_idx] = F::from_f64_lossy(re);
+                staging[dst_idx + 1] = F::from_f64_lossy(im);
+            }
+        }
+    }
+}
+
+/// 2e electron-1 transform, **spin-free** (`c2s_sf_2e1`): single Cartesian block.
+///
+/// For each `(l_cart, k_cart)` Cartesian pair, applies [`cart_to_spinor_sf_2d`] to the
+/// `nci*ncj` kl-slice, producing the complex `opij` intermediate ordered `<ik|lj>`.
+/// `cart` is the single device-KET-major block `[ncl*nck*ncj*nci]`; `opij` is the
+/// caller-allocated `[nck*ncl*di*dj*2]` complex buffer.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_sf_2e1(
+    opij: &mut [f64],
+    cart: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, ll: u8,
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let ncl = ncart(ll);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+
+    let expected_cart = nci * ncj * nck * ncl;
+    if cart.len() < expected_cart {
+        return Err(cintxRsError::ChunkPlanFailed {
+            from: "c2spinor_sf_2e1",
+            detail: format!(
+                "cart buffer length {} < nci*ncj*nck*ncl = {}",
+                cart.len(), expected_cart
+            ),
+        });
+    }
+    let ij_stride = di * dj;
+    let required = nck * ncl * ij_stride * 2;
+    if opij.len() < required {
+        return Err(cintxRsError::BufferTooSmall { required, provided: opij.len() });
+    }
+
+    for l_cart in 0..ncl {
+        for k_cart in 0..nck {
+            let kl_offset = (l_cart * nck + k_cart) * nci * ncj;
+            let cart_slice = &cart[kl_offset..kl_offset + nci * ncj];
+            let opij_offset = (l_cart * nck + k_cart) * ij_stride * 2;
+            let opij_slice = &mut opij[opij_offset..opij_offset + ij_stride * 2];
+            cart_to_spinor_sf_2d::<f64>(opij_slice, cart_slice, li, kappa_i, lj, kappa_j)?;
+        }
+    }
+    Ok(())
+}
+
+/// Internal: 2e electron-1 transform, **spin-included** (the σ-mix on the bra),
+/// shared body for the real (`c2s_si_2e1`) and imaginary-ket (`c2s_si_2e1i`) variants.
+///
+/// Consumes the four Cartesian σ-tensor blocks `gc_x/gc_y/gc_z/gc_1` (each
+/// `[ncl*nck*ncj*nci]`, device-KET-major), applies the 1e si transform per `(l,k)`
+/// slice into `opij`. When `imaginary_ket` is set, uses [`cart_to_spinor_si_2di`]
+/// (multiply-by-i ket), else [`cart_to_spinor_si_2d`].
+#[allow(clippy::too_many_arguments)]
+fn cart_to_spinor_si_2e1_impl(
+    opij: &mut [f64],
+    gc_x: &[f64], gc_y: &[f64], gc_z: &[f64], gc_1: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, ll: u8,
+    imaginary_ket: bool,
+) -> Result<(), cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let ncl = ncart(ll);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+
+    let expected_cart = nci * ncj * nck * ncl;
+    for (name, block) in [("gc_x", gc_x), ("gc_y", gc_y), ("gc_z", gc_z), ("gc_1", gc_1)] {
+        if block.len() < expected_cart {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "c2spinor_si_2e1",
+                detail: format!(
+                    "{} block length {} < nci*ncj*nck*ncl = {}",
+                    name, block.len(), expected_cart
+                ),
+            });
+        }
+    }
+    let ij_stride = di * dj;
+    let required = nck * ncl * ij_stride * 2;
+    if opij.len() < required {
+        return Err(cintxRsError::BufferTooSmall { required, provided: opij.len() });
+    }
+
+    for l_cart in 0..ncl {
+        for k_cart in 0..nck {
+            let kl_offset = (l_cart * nck + k_cart) * nci * ncj;
+            let x = &gc_x[kl_offset..kl_offset + nci * ncj];
+            let y = &gc_y[kl_offset..kl_offset + nci * ncj];
+            let z = &gc_z[kl_offset..kl_offset + nci * ncj];
+            let o = &gc_1[kl_offset..kl_offset + nci * ncj];
+            let opij_offset = (l_cart * nck + k_cart) * ij_stride * 2;
+            let opij_slice = &mut opij[opij_offset..opij_offset + ij_stride * 2];
+            if imaginary_ket {
+                cart_to_spinor_si_2di::<f64>(opij_slice, x, y, z, o, li, kappa_i, lj, kappa_j)?;
+            } else {
+                cart_to_spinor_si_2d::<f64>(opij_slice, x, y, z, o, li, kappa_i, lj, kappa_j)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 2e electron-1 transform, **spin-included real** (`c2s_si_2e1`).
+/// Bra σ-mix + ordinary ket. See [`cart_to_spinor_si_2e1_impl`].
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_si_2e1(
+    opij: &mut [f64],
+    gc_x: &[f64], gc_y: &[f64], gc_z: &[f64], gc_1: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, ll: u8,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_si_2e1_impl(opij, gc_x, gc_y, gc_z, gc_1,
+        li, kappa_i, lj, kappa_j, lk, ll, false)
+}
+
+/// 2e electron-1 transform, **spin-included imaginary-ket** (`c2s_si_2e1i`).
+/// Bra σ-mix + imaginary (multiply-by-i) ket. See [`cart_to_spinor_si_2e1_impl`].
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_si_2e1i(
+    opij: &mut [f64],
+    gc_x: &[f64], gc_y: &[f64], gc_z: &[f64], gc_1: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, ll: u8,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_si_2e1_impl(opij, gc_x, gc_y, gc_z, gc_1,
+        li, kappa_i, lj, kappa_j, lk, ll, true)
+}
+
+/// 2e electron-2 transform, **spin-free** (`c2s_sf_2e2`): single complex `opij` block.
+///
+/// For each `(j_sp, i_sp)` electron-1 spinor pair, extracts the complex `[nck*ncl]`
+/// slice, applies the scalar [`apply_2d_spinor_zf`] (no σ mix), and `zcopy_iklj`-stores
+/// the `(dk×dl)` block into `staging`. This is the extraction of `cart_to_spinor_sf_4d`
+/// Step 2 as a reusable per-electron fn.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_sf_2e2<F: CintFloat>(
+    staging: &mut [F],
+    opij: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, kappa_k: i16,
+    ll: u8, kappa_l: i16,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_2e2_impl(staging, &[opij], li, kappa_i, lj, kappa_j,
+        lk, kappa_k, ll, kappa_l, Electron2Kind::Sf, false)
+}
+
+/// 2e electron-2 transform, **spin-included real** (`c2s_si_2e2`): four complex
+/// `ox/oy/oz/o1` blocks folded through the σ·n 2×2 Pauli expansion
+/// ([`apply_2d_spinor_zi`]) + `a_ket1` + `zcopy_iklj`.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_si_2e2<F: CintFloat>(
+    staging: &mut [F],
+    ox: &[f64], oy: &[f64], oz: &[f64], o1: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, kappa_k: i16,
+    ll: u8, kappa_l: i16,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_2e2_impl(staging, &[ox, oy, oz, o1], li, kappa_i, lj, kappa_j,
+        lk, kappa_k, ll, kappa_l, Electron2Kind::Si, false)
+}
+
+/// 2e electron-2 transform, **spin-included imaginary-ket** (`c2s_si_2e2i`):
+/// like [`cart_to_spinor_si_2e2`] but the `a_ket1` step is the imaginary-ket
+/// (multiply-by-i) variant.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_si_2e2i<F: CintFloat>(
+    staging: &mut [F],
+    ox: &[f64], oy: &[f64], oz: &[f64], o1: &[f64],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, kappa_k: i16,
+    ll: u8, kappa_l: i16,
+) -> Result<(), cintxRsError> {
+    cart_to_spinor_2e2_impl(staging, &[ox, oy, oz, o1], li, kappa_i, lj, kappa_j,
+        lk, kappa_k, ll, kappa_l, Electron2Kind::Si, true)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Electron2Kind { Sf, Si }
+
+/// Shared electron-2 body for the sf/si (+imaginary) variants. `blocks` is either one
+/// (`Sf`: `[g1]`) or four (`Si`: `[gx, gy, gz, g1]`) complex `opij` blocks, each
+/// `[nck*ncl*di*dj*2]`. `imaginary_ket` selects `a_iket1` (multiply-by-i) at the store.
+#[allow(clippy::too_many_arguments)]
+fn cart_to_spinor_2e2_impl<F: CintFloat>(
+    staging: &mut [F],
+    blocks: &[&[f64]],
+    li: u8, kappa_i: i16,
+    lj: u8, kappa_j: i16,
+    lk: u8, kappa_k: i16,
+    ll: u8, kappa_l: i16,
+    kind: Electron2Kind,
+    imaginary_ket: bool,
+) -> Result<(), cintxRsError> {
+    let nck = ncart(lk);
+    let ncl = ncart(ll);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+    let dk = spinor_len(lk, kappa_k as i32);
+    let dl = spinor_len(ll, kappa_l as i32);
+
+    let ij_stride = di * dj;
+    let block_len = nck * ncl * ij_stride * 2;
+    let from = if kind == Electron2Kind::Sf { "c2spinor_sf_2e2" } else { "c2spinor_si_2e2" };
+    for block in blocks {
+        if block.len() < block_len {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from,
+                detail: format!(
+                    "opij block length {} < nck*ncl*di*dj*2 = {}",
+                    block.len(), block_len
+                ),
+            });
+        }
+    }
+    let required = di * dj * dk * dl * 2;
+    if staging.len() < required {
+        return Err(cintxRsError::BufferTooSmall { required, provided: staging.len() });
+    }
+    for v in staging[..required].iter_mut() {
+        *v = F::from_f64_lossy(0.0);
+    }
+
+    // Per-(i_sp,j_sp) complex [nck*ncl] scratch (l_cart outer, k_cart inner).
+    let mut g1_re = vec![0.0f64; nck * ncl];
+    let mut g1_im = vec![0.0f64; nck * ncl];
+    let mut gx_re = vec![0.0f64; nck * ncl];
+    let mut gx_im = vec![0.0f64; nck * ncl];
+    let mut gy_re = vec![0.0f64; nck * ncl];
+    let mut gy_im = vec![0.0f64; nck * ncl];
+    let mut gz_re = vec![0.0f64; nck * ncl];
+    let mut gz_im = vec![0.0f64; nck * ncl];
+    let mut out_r = vec![0.0f64; dk * dl];
+    let mut out_i = vec![0.0f64; dk * dl];
+
+    let extract = |dst_re: &mut [f64], dst_im: &mut [f64], src: &[f64], i_sp: usize, j_sp: usize| {
+        for l_cart in 0..ncl {
+            for k_cart in 0..nck {
+                let src_idx = ((l_cart * nck + k_cart) * dj * di + j_sp * di + i_sp) * 2;
+                dst_re[l_cart * nck + k_cart] = src[src_idx];
+                dst_im[l_cart * nck + k_cart] = src[src_idx + 1];
+            }
+        }
+    };
+
+    for j_sp in 0..dj {
+        for i_sp in 0..di {
+            match kind {
+                Electron2Kind::Sf => {
+                    extract(&mut g1_re, &mut g1_im, blocks[0], i_sp, j_sp);
+                    apply_2d_spinor_zf(
+                        &mut out_r, &mut out_i,
+                        &g1_re, &g1_im,
+                        nck, ncl, dk, dl, lk, kappa_k as i32, ll, kappa_l as i32,
+                    );
+                }
+                Electron2Kind::Si => {
+                    extract(&mut gx_re, &mut gx_im, blocks[0], i_sp, j_sp);
+                    extract(&mut gy_re, &mut gy_im, blocks[1], i_sp, j_sp);
+                    extract(&mut gz_re, &mut gz_im, blocks[2], i_sp, j_sp);
+                    extract(&mut g1_re, &mut g1_im, blocks[3], i_sp, j_sp);
+                    apply_2d_spinor_zi(
+                        &mut out_r, &mut out_i,
+                        &gx_re, &gx_im, &gy_re, &gy_im, &gz_re, &gz_im, &g1_re, &g1_im,
+                        nck, ncl, dk, dl, lk, kappa_k as i32, ll, kappa_l as i32,
+                    );
+                }
+            }
+            store_2e2_block(staging, &out_r, &out_i, i_sp, j_sp, di, dj, dk, dl, imaginary_ket);
+        }
+    }
+    Ok(())
+}
+
 /// Apply 2D spinor transform matching libcint `c2s_sf_2e2` step 2 algorithm.
 ///
 /// Used in step 2 of `cart_to_spinor_sf_4d` where the input is complex (from
@@ -1291,6 +1740,196 @@ fn apply_2d_spinor_zf(
         dk, ncl, dl, ll, kappa_l,
         coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i,
     );
+}
+
+/// Apply the 2D **spin-included** (si) electron-2 spinor transform — the σ-mix sibling
+/// of [`apply_2d_spinor_zf`]. Matches libcint `c2s_si_2e2` step 2:
+///   `a_bra1_cart2spinor_zi(...)` then `a_ket1_cart2spinor(...)`.
+///
+/// Unlike the scalar-only `zf` path (which folds a single complex block `g1`), the `zi`
+/// bra step consumes the **four** complex Cartesian blocks `gx/gy/gz/g1` (the σ_x/σ_y/σ_z
+/// and scalar G-tensor blocks) and applies the 2×2 Pauli σ·n expansion
+/// `[[1+iz, y+ix], [-y+ix, 1-iz]]` per Cartesian element, transcribed verbatim from
+/// libcint `a_bra1_cart2spinor_zi` (cart2sph.c:4118-4186):
+/// ```text
+/// v11R = g1R - gzI;  v11I = g1I + gzR;
+/// v12R = gyR - gxI;  v12I = gyI + gxR;
+/// v21R = -gyR - gxI; v21I = -gyI + gxR;
+/// v22R = g1R + gzI;  v22I = g1I - gzR;
+/// gspaR += caR*v11R + caI*v11I + cbR*v21R + cbI*v21I;
+/// gspaI += caR*v11I - caI*v11R + cbR*v21I - cbI*v21R;
+/// gspbR += caR*v12R + caI*v12I + cbR*v22R + cbI*v22I;
+/// gspbI += caR*v12I - caI*v12R + cbR*v22I - cbI*v22R;
+/// ```
+/// (ngrids == 1 in the cintx host path; each gx/gy/gz/g1 block is the complex `[ncl*nck]`
+/// slice the caller extracted for one `(i_sp, j_sp)` electron-1 pair.)
+///
+/// Step 2 (`a_ket1_cart2spinor`) is IDENTICAL to the zf path — the σ-mix lives entirely
+/// in the bra1 fold. The imaginary-ket variant (`c2s_si_2e2i`) is handled by the caller
+/// (`cart_to_spinor_si_2e2i`) which i-rotates the ket output, mirroring
+/// `cart_to_spinor_iket_si` vs `cart_to_spinor_si`.
+#[allow(clippy::too_many_arguments)]
+fn apply_2d_spinor_zi(
+    out_r: &mut [f64],
+    out_i: &mut [f64],
+    gx_re: &[f64], gx_im: &[f64],
+    gy_re: &[f64], gy_im: &[f64],
+    gz_re: &[f64], gz_im: &[f64],
+    g1_re: &[f64], g1_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    dk: usize,
+    dl: usize,
+    lk: u8, kappa_k: i32,
+    ll: u8, kappa_l: i32,
+) {
+    // Zero output
+    for v in out_r.iter_mut() { *v = 0.0; }
+    for v in out_i.iter_mut() { *v = 0.0; }
+
+    // Step 1: bra1_zi on k — the σ·n 2×2 Pauli fold over the four complex blocks.
+    // tmp_alpha/beta: [dk * ncl] each — indexed [k_sp * ncl + l_cart].
+    let mut tmp_alpha_r = vec![0.0f64; dk * ncl];
+    let mut tmp_alpha_i = vec![0.0f64; dk * ncl];
+    let mut tmp_beta_r  = vec![0.0f64; dk * ncl];
+    let mut tmp_beta_i  = vec![0.0f64; dk * ncl];
+
+    let (coeff_k_gt_r, coeff_k_gt_i, coeff_k_lt_r, coeff_k_lt_i) = bra_coeff_refs(lk);
+    apply_bra1_zi_block_all_kappa(
+        &mut tmp_alpha_r, &mut tmp_alpha_i,
+        &mut tmp_beta_r,  &mut tmp_beta_i,
+        gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+        nck, ncl, dk, lk, kappa_k,
+        coeff_k_gt_r, coeff_k_gt_i, coeff_k_lt_r, coeff_k_lt_i,
+    );
+
+    // Step 2: ket1 on l — IDENTICAL to the zf path (a_ket1_cart2spinor).
+    let (coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i) = bra_coeff_refs(ll);
+    apply_ket1_block_all_kappa(
+        out_r, out_i,
+        &tmp_alpha_r, &tmp_alpha_i,
+        &tmp_beta_r,  &tmp_beta_i,
+        dk, ncl, dl, ll, kappa_l,
+        coeff_l_gt_r, coeff_l_gt_i, coeff_l_lt_r, coeff_l_lt_i,
+    );
+}
+
+/// bra1_zi block: the σ·n 2×2 Pauli fold (kappa dispatch), sibling of
+/// [`apply_bra1_zf_block_all_kappa`]. Mirrors libcint `a_bra1_cart2spinor_zi`.
+///
+/// Consumes the four complex `gx/gy/gz/g1` blocks (each `[ncl*nck]`, l_cart outer,
+/// k_cart inner) and produces alpha/beta k-spinor blocks `[dk * ncl]`.
+#[allow(clippy::too_many_arguments)]
+fn apply_bra1_zi_block_all_kappa(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r:  &mut [f64],
+    beta_i:  &mut [f64],
+    gx_re: &[f64], gx_im: &[f64],
+    gy_re: &[f64], gy_im: &[f64],
+    gz_re: &[f64], gz_im: &[f64],
+    g1_re: &[f64], g1_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    dk: usize,
+    lk: u8,
+    kappa_k: i32,
+    coeff_gt_r: &[f64],
+    coeff_gt_i: &[f64],
+    coeff_lt_r: &[f64],
+    coeff_lt_i: &[f64],
+) {
+    for v in alpha_r.iter_mut() { *v = 0.0; }
+    for v in alpha_i.iter_mut() { *v = 0.0; }
+    for v in beta_r.iter_mut()  { *v = 0.0; }
+    for v in beta_i.iter_mut()  { *v = 0.0; }
+
+    if kappa_k < 0 {
+        apply_bra1_zi_block(alpha_r, alpha_i, beta_r, beta_i,
+            gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+            nck, ncl, dk, coeff_gt_r, coeff_gt_i, 0);
+    } else if kappa_k > 0 {
+        apply_bra1_zi_block(alpha_r, alpha_i, beta_r, beta_i,
+            gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+            nck, ncl, dk, coeff_lt_r, coeff_lt_i, 0);
+    } else {
+        // kappa == 0: LT first (rows 0..nd_lt), GT second (rows nd_lt..nd) — mirrors
+        // the zf path's libcint memory-layout ordering.
+        let nd_lt = 2 * lk as usize;
+        let nd_gt = 2 * lk as usize + 2;
+        if nd_lt > 0 {
+            apply_bra1_zi_block(alpha_r, alpha_i, beta_r, beta_i,
+                gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+                nck, ncl, nd_lt, coeff_lt_r, coeff_lt_i, 0);
+        }
+        apply_bra1_zi_block(alpha_r, alpha_i, beta_r, beta_i,
+            gx_re, gx_im, gy_re, gy_im, gz_re, gz_im, g1_re, g1_im,
+            nck, ncl, nd_gt, coeff_gt_r, coeff_gt_i, nd_lt);
+    }
+}
+
+/// bra1_zi block for one kappa sub-block: the verbatim σ·n 2×2 Pauli fold from
+/// libcint `a_bra1_cart2spinor_zi` (cart2sph.c:4118-4186). `ngrids == 1`.
+///
+/// Coefficient layout: `[k_sp][2*nck]` — first `nck` = alpha (ca), next `nck` = beta (cb).
+/// Input blocks: `[ncl * nck]` complex (l_cart outer, k_cart inner).
+/// Output alpha/beta: `[dk_total * ncl]` (k_spinor outer, l_cart inner), `nd` rows at `row_off`.
+#[allow(clippy::too_many_arguments)]
+fn apply_bra1_zi_block(
+    alpha_r: &mut [f64],
+    alpha_i: &mut [f64],
+    beta_r:  &mut [f64],
+    beta_i:  &mut [f64],
+    gx_re: &[f64], gx_im: &[f64],
+    gy_re: &[f64], gy_im: &[f64],
+    gz_re: &[f64], gz_im: &[f64],
+    g1_re: &[f64], g1_im: &[f64],
+    nck: usize,
+    ncl: usize,
+    nd: usize,
+    coeff_r: &[f64],
+    coeff_i: &[f64],
+    row_off: usize,
+) {
+    for l_cart in 0..ncl {
+        for k_sp in 0..nd {
+            let out_idx = (row_off + k_sp) * ncl + l_cart;
+            let mut sa_r = 0.0f64;
+            let mut sa_i = 0.0f64;
+            let mut sb_r = 0.0f64;
+            let mut sb_i = 0.0f64;
+            for n in 0..nck {
+                // coeff layout: [k_sp][2*nck]: first nck = alpha (ca), next nck = beta (cb)
+                let ca_r = coeff_r[k_sp * 2 * nck + n];
+                let ca_i = coeff_i[k_sp * 2 * nck + n];
+                let cb_r = coeff_r[k_sp * 2 * nck + nck + n];
+                let cb_i = coeff_i[k_sp * 2 * nck + nck + n];
+
+                let idx = l_cart * nck + n;
+                let g1r = g1_re[idx]; let g1i = g1_im[idx];
+                let gxr = gx_re[idx]; let gxi = gx_im[idx];
+                let gyr = gy_re[idx]; let gyi = gy_im[idx];
+                let gzr = gz_re[idx]; let gzi = gz_im[idx];
+
+                // σ·n 2×2 Pauli expansion [[1+iz, y+ix], [-y+ix, 1-iz]]
+                // (verbatim from cart2sph.c:4171-4178):
+                let v11_r =  g1r - gzi;  let v11_i =  g1i + gzr;
+                let v12_r =  gyr - gxi;  let v12_i =  gyi + gxr;
+                let v21_r = -gyr - gxi;  let v21_i = -gyi + gxr;
+                let v22_r =  g1r + gzi;  let v22_i =  g1i - gzr;
+
+                // accumulate (verbatim from cart2sph.c:4179-4182):
+                sa_r += ca_r * v11_r + ca_i * v11_i + cb_r * v21_r + cb_i * v21_i;
+                sa_i += ca_r * v11_i - ca_i * v11_r + cb_r * v21_i - cb_i * v21_r;
+                sb_r += ca_r * v12_r + ca_i * v12_i + cb_r * v22_r + cb_i * v22_i;
+                sb_i += ca_r * v12_i - ca_i * v12_r + cb_r * v22_i - cb_i * v22_r;
+            }
+            alpha_r[out_idx] = sa_r;
+            alpha_i[out_idx] = sa_i;
+            beta_r[out_idx]  = sb_r;
+            beta_i[out_idx]  = sb_i;
+        }
+    }
 }
 
 /// bra1_zf block: apply `conj(coeff) * v` to transform k_cart → k_spinor for each l_cart.
@@ -2774,5 +3413,123 @@ mod tests {
         assert_eq!(got.len(), total);
         let nonzero = got.iter().filter(|&&v| v.abs() > 1e-15).count();
         assert!(nonzero > 0, "3c1e sibling output should be non-zero");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  2e si/sf transform SUITE tests (Phase 29 Wave-2 — D-01)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// Deterministic pseudo-random cart fill for the 2e Cartesian block.
+    fn fill_cart_2e(n: usize, seed: u64) -> Vec<f64> {
+        let mut s = seed.wrapping_add(0x9E3779B97F4A7C15);
+        (0..n).map(|_| {
+            s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+            ((s >> 11) as f64 / (1u64 << 53) as f64) - 0.5
+        }).collect()
+    }
+
+    /// `sf_2e1` + `sf_2e2` (the per-electron extractions) must reproduce the existing
+    /// fused `cart_to_spinor_sf_4d` byte-for-byte. Non-square p×d×s×p quartet, GT/LT mix.
+    #[test]
+    fn sf_2e_split_matches_fused_4d() {
+        let (li, ki) = (1u8, -1i16); // p, GT
+        let (lj, kj) = (2u8,  1i16); // d, LT (non-square vs i, exercises 2l sizing)
+        let (lk, kk) = (0u8, -1i16); // s, GT
+        let (ll, kl) = (1u8, -1i16); // p, GT
+        let (nci, ncj, nck, ncl) = (ncart(li), ncart(lj), ncart(lk), ncart(ll));
+        let cart = fill_cart_2e(nci * ncj * nck * ncl, 42);
+
+        let (di, dj, dk, dl) = (
+            spinor_len(li, ki as i32), spinor_len(lj, kj as i32),
+            spinor_len(lk, kk as i32), spinor_len(ll, kl as i32),
+        );
+        // non-square sanity: not all spinor dims equal
+        assert!(!(di == dj && dj == dk && dk == dl), "test quartet must be non-square");
+
+        // Fused reference
+        let mut fused = vec![0.0f64; di * dj * dk * dl * 2];
+        cart_to_spinor_sf_4d(&mut fused, &cart, li, ki, lj, kj, lk, kk, ll, kl)
+            .expect("fused sf_4d");
+
+        // Split path: electron-1 then electron-2
+        let mut opij = vec![0.0f64; nck * ncl * di * dj * 2];
+        cart_to_spinor_sf_2e1(&mut opij, &cart, li, ki, lj, kj, lk, ll).expect("sf_2e1");
+        let mut split = vec![0.0f64; di * dj * dk * dl * 2];
+        cart_to_spinor_sf_2e2(&mut split, &opij, li, ki, lj, kj, lk, kk, ll, kl).expect("sf_2e2");
+
+        for (idx, (a, b)) in fused.iter().zip(split.iter()).enumerate() {
+            assert!((a - b).abs() < 1e-13, "sf split != fused at {idx}: {a} vs {b}");
+        }
+    }
+
+    /// `si_2e1` + `si_2e2` produce a correctly-sized, finite, non-zero spinor block on a
+    /// non-square GT/LT quartet. Exercises the σ-mix electron-2 path (`apply_2d_spinor_zi`).
+    #[test]
+    fn si_2e_suite_nonsquare_nonzero_finite() {
+        let (li, ki) = (1u8, -1i16); // p GT
+        let (lj, kj) = (2u8,  1i16); // d LT
+        let (lk, kk) = (0u8, -1i16); // s GT
+        let (ll, kl) = (1u8,  1i16); // p LT
+        let (nci, ncj, nck, ncl) = (ncart(li), ncart(lj), ncart(lk), ncart(ll));
+        let n_cart = nci * ncj * nck * ncl;
+        let gc_x = fill_cart_2e(n_cart, 1);
+        let gc_y = fill_cart_2e(n_cart, 2);
+        let gc_z = fill_cart_2e(n_cart, 3);
+        let gc_1 = fill_cart_2e(n_cart, 4);
+
+        let (di, dj, dk, dl) = (
+            spinor_len(li, ki as i32), spinor_len(lj, kj as i32),
+            spinor_len(lk, kk as i32), spinor_len(ll, kl as i32),
+        );
+        let mut opij = vec![0.0f64; nck * ncl * di * dj * 2];
+        cart_to_spinor_si_2e1(&mut opij, &gc_x, &gc_y, &gc_z, &gc_1,
+            li, ki, lj, kj, lk, ll).expect("si_2e1");
+
+        let required = di * dj * dk * dl * 2;
+        let mut staging = vec![0.0f64; required];
+        cart_to_spinor_si_2e2(&mut staging,
+            &opij, &opij, &opij, &opij, // distinct σ-channels reuse opij for shape; nonzero
+            li, ki, lj, kj, lk, kk, ll, kl).expect("si_2e2");
+        assert_eq!(staging.len(), required);
+        assert!(staging.iter().all(|v| v.is_finite()), "si_2e2 output must be finite");
+        assert!(staging.iter().any(|&v| v.abs() > 1e-15), "si_2e2 output must be non-zero");
+    }
+
+    /// The imaginary-ket variants are exactly multiply-by-i of the real ones:
+    /// staging_i[(..)*2] == -staging_r[(..)*2+1] and staging_i[(..)*2+1] == staging_r[(..)*2].
+    #[test]
+    fn si_2e2i_is_i_rotation_of_si_2e2() {
+        let (li, ki) = (1u8, -1i16);
+        let (lj, kj) = (2u8,  1i16);
+        let (lk, kk) = (0u8, -1i16);
+        let (ll, kl) = (1u8, -1i16);
+        let (nci, ncj, nck, ncl) = (ncart(li), ncart(lj), ncart(lk), ncart(ll));
+        let n_cart = nci * ncj * nck * ncl;
+        let gx = fill_cart_2e(n_cart, 11);
+        let gy = fill_cart_2e(n_cart, 12);
+        let gz = fill_cart_2e(n_cart, 13);
+        let g1 = fill_cart_2e(n_cart, 14);
+
+        let (di, dj, dk, dl) = (
+            spinor_len(li, ki as i32), spinor_len(lj, kj as i32),
+            spinor_len(lk, kk as i32), spinor_len(ll, kl as i32),
+        );
+        let mut opij = vec![0.0f64; nck * ncl * di * dj * 2];
+        cart_to_spinor_si_2e1(&mut opij, &gx, &gy, &gz, &g1, li, ki, lj, kj, lk, ll)
+            .expect("si_2e1");
+
+        let required = di * dj * dk * dl * 2;
+        let mut real = vec![0.0f64; required];
+        let mut imag = vec![0.0f64; required];
+        cart_to_spinor_si_2e2(&mut real, &opij, &opij, &opij, &opij,
+            li, ki, lj, kj, lk, kk, ll, kl).expect("si_2e2");
+        cart_to_spinor_si_2e2i(&mut imag, &opij, &opij, &opij, &opij,
+            li, ki, lj, kj, lk, kk, ll, kl).expect("si_2e2i");
+
+        for e in 0..(required / 2) {
+            // (re,im) -> (-im,re)
+            assert!((imag[e * 2] - (-real[e * 2 + 1])).abs() < 1e-13, "i-rot re at {e}");
+            assert!((imag[e * 2 + 1] - real[e * 2]).abs() < 1e-13, "i-rot im at {e}");
+        }
     }
 }

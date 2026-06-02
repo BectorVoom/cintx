@@ -188,17 +188,22 @@ fn fill_g_tensor_3c2e(
                 }
 
                 // n>0 ladders over m with b00 cross term.
+                // g(n,m+1) = c0p*g(n,m) + m*b01*g(n,m-1) + n*b00*g(n-1,m): the b00
+                // cross term carries the n (combined-ij) index factor (libcint
+                // g2e.c CINTg0_2e). Omitting it under-counts d+ terms (n>=2) — the
+                // int3c2e analog of the int2c2e d-shell bug; s/p (n<=1) unaffected.
                 if nmax > 0 {
                     for n in 1..=nmax {
                         let i_off = irys + n * dn;
                         let s0_k0 = g[axis_off + i_off];
                         let prev_i_k0 = g[axis_off + irys + (n - 1) * dn];
-                        let mut s1 = c0p_axis * s0_k0 + b00 * prev_i_k0;
+                        let mut s1 = c0p_axis * s0_k0 + n as f64 * b00 * prev_i_k0;
                         g[axis_off + i_off + dm] = s1;
                         let mut s_prev = s0_k0;
                         for m in 1..mmax {
                             let prev_i_km = g[axis_off + irys + (n - 1) * dn + m * dm];
-                            let s2 = c0p_axis * s1 + m as f64 * b01 * s_prev + b00 * prev_i_km;
+                            let s2 =
+                                c0p_axis * s1 + m as f64 * b01 * s_prev + n as f64 * b00 * prev_i_km;
                             g[axis_off + i_off + (m + 1) * dm] = s2;
                             s_prev = s1;
                             s1 = s2;
@@ -570,7 +575,12 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                         let s0_k0 = g[(base + i_off) as usize];
                                         let prev_i_k0 =
                                             g[(base + irys + (n - 1u32) * dn) as usize];
-                                        let mut s1 = c0pa * s0_k0 + b00 * prev_i_k0;
+                                        // b00 cross term carries the n (combined-ij)
+                                        // index factor (libcint g2e.c); omitting it
+                                        // under-counts d+ (n>=2). Matches the host
+                                        // fill_g_tensor_3c2e + the 2c2e fix.
+                                        let mut s1 =
+                                            c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
                                         g[(base + i_off + dm) as usize] = s1;
                                         let mut s_prev = s0_k0;
                                         let mut m = 1u32;
@@ -582,7 +592,7 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                                 as usize];
                                             let s2 = c0pa * s1
                                                 + F::cast_from(m) * b01 * s_prev
-                                                + b00 * prev_i_km;
+                                                + F::cast_from(n) * b00 * prev_i_km;
                                             g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
                                             s_prev = s1;
                                             s1 = s2;

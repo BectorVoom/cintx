@@ -1623,6 +1623,954 @@ pub(crate) fn gout_ipvip1(
     out
 }
 
+/// Compute the σ·p₁ G-tensor for `int2e_spsp1` (component_rank=1 → 4 cart blocks).
+///
+/// Matches `CINTgout2e_int2e_spsp1` in autocode/intor4.c:19-58 VERBATIM. The σ·p₁
+/// operator `(σ·∇_i)(σ·∇_j)` on electron 1 (bra i, ket j) uses the IDENTICAL `s[0..8]`
+/// triple-product tensor as `gout_ipvip1` (∇_i∇_j: `g1=nabla1j(g,li+1)`,
+/// `g2=nabla1i(g)`, `g3=nabla1i(g1)`), then folds it into the four σ-tensor cart
+/// blocks the `c2s_si_2e1` transform consumes (gc_x, gc_y, gc_z, gc_1):
+///
+/// ```text
+/// gc_x = + s[5] - s[7]   (σ_x)
+/// gc_y = + s[6] - s[2]   (σ_y)
+/// gc_z = + s[1] - s[3]   (σ_z)
+/// gc_1 = + s[0] + s[4] + s[8]   (scalar)
+/// ```
+///
+/// Returns interleaved `out[n*4 + comp]` (`comp` in {x,y,z,1}); `n` walks `[cl,ck,cj,ci]`
+/// i-fastest. The hess2e-style launcher TRANSPOSES this into the four contiguous
+/// component-leading cart blocks `cart[comp*block + n]` that `cart_to_spinor_si_2e1`
+/// reads as gc_x/gc_y/gc_z/gc_1.
+///
+/// Headroom matches `Hess2eKind::Ipvip1` = `(i_inc, j_inc, k_inc) = (1, 1, 0)`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_spsp1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let mut g1 = vec![0.0_f64; 3 * g_size];
+    let mut g2 = vec![0.0_f64; 3 * g_size];
+    let mut g3 = vec![0.0_f64; 3 * g_size];
+    // Identical derivative setup to gout_ipvip1 (= libcint spsp1 g1/g2/g3):
+    //   g1 = G2E_D_J(g0, i_l+1)  → nabla1j at (li+1, lj+0)
+    //   g2 = G2E_D_I(g0)         → nabla1i at (li+0)
+    //   g3 = G2E_D_I(g1)         → nabla1i(g1) (mixed i,j second derivative)
+    nabla1j_2e(&mut g1, g, li + 1, lj, lk, ll, aj, shape);
+    nabla1i_2e(&mut g2, g, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g3, &g1, li, lj, lk, ll, ai, shape);
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 4 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for irys in 0..shape.nroots {
+                        let r = irys;
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g1[gx_off + ix_base + r];
+                        let g1y = g1[gy_off + iy_base + r];
+                        let g1z = g1[gz_off + iz_base + r];
+                        let g2x = g2[gx_off + ix_base + r];
+                        let g2y = g2[gy_off + iy_base + r];
+                        let g2z = g2[gz_off + iz_base + r];
+                        let g3x = g3[gx_off + ix_base + r];
+                        let g3y = g3[gy_off + iy_base + r];
+                        let g3z = g3[gz_off + iz_base + r];
+                        // Identical s[] triple products to CINTgout2e_int2e_spsp1.
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    // σ·p₁ fold (intor4.c:49-52). gc order = (x, y, z, scalar).
+                    out[n * 4 + 0] = s[5] - s[7];
+                    out[n * 4 + 1] = s[6] - s[2];
+                    out[n * 4 + 2] = s[1] - s[3];
+                    out[n * 4 + 3] = s[0] + s[4] + s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Compute the σ·r₁ G-tensor for `int2e_srsr1` (component_rank=1 → 4 cart blocks).
+///
+/// Matches `CINTgout2e_int2e_srsr1` (autocode/intor4.c:283-322) VERBATIM. The σ·r₁
+/// operator on electron 1 uses the IDENTICAL `s[0..8]` triple-product tensor and the
+/// IDENTICAL σ fold as [`gout_spsp1`] — the ONLY difference is the derivative setup:
+/// libcint `G2E_R_J`/`G2E_R_I` are pure G-tensor POINTER SHIFTS by `g_stride_j`/`g_stride_i`
+/// (g2e.h:104-107: `f = g + envs->g_stride_*`), NOT nabla derivatives. In cintx terms
+/// `g_stride_i == shape.di`, `g_stride_j == shape.dj`, so:
+/// ```text
+/// g1 = G2E_R_J(g0)        → g1[idx] = g0[idx + dj]   (index-shift in j)
+/// g2 = G2E_R_I(g0)        → g2[idx] = g0[idx + di]   (index-shift in i)
+/// g3 = G2E_R_I(g1)        → g3[idx] = g0[idx + di + dj]
+/// ```
+/// The G-tensor MUST be built with `(li+1, lj+1)` headroom (same as spsp1) so the
+/// `+di`/`+dj` reads land in valid storage. Returns interleaved `out[n*4 + comp]`
+/// (`comp` in {x,y,z,1}); `n` walks `[cl,ck,cj,ci]` i-fastest.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_srsr1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+    let di = shape.di;
+    let dj = shape.dj;
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+
+    let mut out = vec![0.0_f64; 4 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 9];
+                    for r in 0..shape.nroots {
+                        // R-shifts: g1=+dj, g2=+di, g3=+di+dj (per-axis bases).
+                        let g0x = g[gx_off + ix_base + r];
+                        let g0y = g[gy_off + iy_base + r];
+                        let g0z = g[gz_off + iz_base + r];
+                        let g1x = g[gx_off + ix_base + dj + r];
+                        let g1y = g[gy_off + iy_base + dj + r];
+                        let g1z = g[gz_off + iz_base + dj + r];
+                        let g2x = g[gx_off + ix_base + di + r];
+                        let g2y = g[gy_off + iy_base + di + r];
+                        let g2z = g[gz_off + iz_base + di + r];
+                        let g3x = g[gx_off + ix_base + di + dj + r];
+                        let g3y = g[gy_off + iy_base + di + dj + r];
+                        let g3z = g[gz_off + iz_base + di + dj + r];
+                        s[0] += g3x * g0y * g0z;
+                        s[1] += g2x * g1y * g0z;
+                        s[2] += g2x * g0y * g1z;
+                        s[3] += g1x * g2y * g0z;
+                        s[4] += g0x * g3y * g0z;
+                        s[5] += g0x * g2y * g1z;
+                        s[6] += g1x * g0y * g2z;
+                        s[7] += g0x * g1y * g2z;
+                        s[8] += g0x * g0y * g3z;
+                    }
+                    out[n * 4 + 0] = s[5] - s[7];
+                    out[n * 4 + 1] = s[6] - s[2];
+                    out[n * 4 + 2] = s[1] - s[3];
+                    out[n * 4 + 3] = s[0] + s[4] + s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Shared rank-16 fold for the 2-sided σ families (`spsp1spsp2`, `srsr1srsr2`).
+///
+/// `g0..g15` are the 16 derivative/shift compositions (built by the caller per
+/// family). For each cartesian quad index `n` the 81-term `s[]` triple-product
+/// tensor and the 16-component σ⊗σ fold are transcribed VERBATIM from
+/// `CINTgout2e_int2e_spsp1spsp2` (intor4.c:127-250) — identical to
+/// `srsr1srsr2` (intor4.c:391-514).
+///
+/// gout layout: `out[n*16 + comp]`, `comp = e2_sigma*4 + e1_sigma` with e1∈{x,y,z,1}
+/// fastest, e2∈{x,y,z,1} slowest — exactly what `c2s_si_2e1` (consumes the inner 4)
+/// then `c2s_si_2e2` (consumes the outer 4) expect. `n` walks `[cl,ck,cj,ci]`.
+#[allow(clippy::too_many_arguments)]
+fn fold_2sided_sigma16(
+    g_blocks: &[&[f64]; 16],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+) -> Vec<f64> {
+    let nfi = ncart(li as u8);
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let nf = nfi * nfj * nfk * nfl;
+    let g_size = shape.g_size;
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+
+    let gx_off = 0usize;
+    let gy_off = g_size;
+    let gz_off = 2 * g_size;
+    let gb = g_blocks;
+
+    let mut out = vec![0.0_f64; 16 * nf];
+
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+
+                    let mut s = [0.0_f64; 81];
+                    for r in 0..shape.nroots {
+                        // Per-axis accessors into g0..g15 (x, y, z slices).
+                        let gx = |m: usize| gb[m][gx_off + ix_base + r];
+                        let gy = |m: usize| gb[m][gy_off + iy_base + r];
+                        let gz = |m: usize| gb[m][gz_off + iz_base + r];
+                        s[0] += gx(15) * gy(0) * gz(0);
+                        s[1] += gx(14) * gy(1) * gz(0);
+                        s[2] += gx(14) * gy(0) * gz(1);
+                        s[3] += gx(13) * gy(2) * gz(0);
+                        s[4] += gx(12) * gy(3) * gz(0);
+                        s[5] += gx(12) * gy(2) * gz(1);
+                        s[6] += gx(13) * gy(0) * gz(2);
+                        s[7] += gx(12) * gy(1) * gz(2);
+                        s[8] += gx(12) * gy(0) * gz(3);
+                        s[9] += gx(11) * gy(4) * gz(0);
+                        s[10] += gx(10) * gy(5) * gz(0);
+                        s[11] += gx(10) * gy(4) * gz(1);
+                        s[12] += gx(9) * gy(6) * gz(0);
+                        s[13] += gx(8) * gy(7) * gz(0);
+                        s[14] += gx(8) * gy(6) * gz(1);
+                        s[15] += gx(9) * gy(4) * gz(2);
+                        s[16] += gx(8) * gy(5) * gz(2);
+                        s[17] += gx(8) * gy(4) * gz(3);
+                        s[18] += gx(11) * gy(0) * gz(4);
+                        s[19] += gx(10) * gy(1) * gz(4);
+                        s[20] += gx(10) * gy(0) * gz(5);
+                        s[21] += gx(9) * gy(2) * gz(4);
+                        s[22] += gx(8) * gy(3) * gz(4);
+                        s[23] += gx(8) * gy(2) * gz(5);
+                        s[24] += gx(9) * gy(0) * gz(6);
+                        s[25] += gx(8) * gy(1) * gz(6);
+                        s[26] += gx(8) * gy(0) * gz(7);
+                        s[27] += gx(7) * gy(8) * gz(0);
+                        s[28] += gx(6) * gy(9) * gz(0);
+                        s[29] += gx(6) * gy(8) * gz(1);
+                        s[30] += gx(5) * gy(10) * gz(0);
+                        s[31] += gx(4) * gy(11) * gz(0);
+                        s[32] += gx(4) * gy(10) * gz(1);
+                        s[33] += gx(5) * gy(8) * gz(2);
+                        s[34] += gx(4) * gy(9) * gz(2);
+                        s[35] += gx(4) * gy(8) * gz(3);
+                        s[36] += gx(3) * gy(12) * gz(0);
+                        s[37] += gx(2) * gy(13) * gz(0);
+                        s[38] += gx(2) * gy(12) * gz(1);
+                        s[39] += gx(1) * gy(14) * gz(0);
+                        s[40] += gx(0) * gy(15) * gz(0);
+                        s[41] += gx(0) * gy(14) * gz(1);
+                        s[42] += gx(1) * gy(12) * gz(2);
+                        s[43] += gx(0) * gy(13) * gz(2);
+                        s[44] += gx(0) * gy(12) * gz(3);
+                        s[45] += gx(3) * gy(8) * gz(4);
+                        s[46] += gx(2) * gy(9) * gz(4);
+                        s[47] += gx(2) * gy(8) * gz(5);
+                        s[48] += gx(1) * gy(10) * gz(4);
+                        s[49] += gx(0) * gy(11) * gz(4);
+                        s[50] += gx(0) * gy(10) * gz(5);
+                        s[51] += gx(1) * gy(8) * gz(6);
+                        s[52] += gx(0) * gy(9) * gz(6);
+                        s[53] += gx(0) * gy(8) * gz(7);
+                        s[54] += gx(7) * gy(0) * gz(8);
+                        s[55] += gx(6) * gy(1) * gz(8);
+                        s[56] += gx(6) * gy(0) * gz(9);
+                        s[57] += gx(5) * gy(2) * gz(8);
+                        s[58] += gx(4) * gy(3) * gz(8);
+                        s[59] += gx(4) * gy(2) * gz(9);
+                        s[60] += gx(5) * gy(0) * gz(10);
+                        s[61] += gx(4) * gy(1) * gz(10);
+                        s[62] += gx(4) * gy(0) * gz(11);
+                        s[63] += gx(3) * gy(4) * gz(8);
+                        s[64] += gx(2) * gy(5) * gz(8);
+                        s[65] += gx(2) * gy(4) * gz(9);
+                        s[66] += gx(1) * gy(6) * gz(8);
+                        s[67] += gx(0) * gy(7) * gz(8);
+                        s[68] += gx(0) * gy(6) * gz(9);
+                        s[69] += gx(1) * gy(4) * gz(10);
+                        s[70] += gx(0) * gy(5) * gz(10);
+                        s[71] += gx(0) * gy(4) * gz(11);
+                        s[72] += gx(3) * gy(0) * gz(12);
+                        s[73] += gx(2) * gy(1) * gz(12);
+                        s[74] += gx(2) * gy(0) * gz(13);
+                        s[75] += gx(1) * gy(2) * gz(12);
+                        s[76] += gx(0) * gy(3) * gz(12);
+                        s[77] += gx(0) * gy(2) * gz(13);
+                        s[78] += gx(1) * gy(0) * gz(14);
+                        s[79] += gx(0) * gy(1) * gz(14);
+                        s[80] += gx(0) * gy(0) * gz(15);
+                    }
+                    // 16-component σ⊗σ fold (intor4.c:216-232) — comp = e2*4 + e1.
+                    out[n * 16 + 0] = s[50] - s[68] - s[52] + s[70];
+                    out[n * 16 + 1] = s[59] - s[23] - s[61] + s[25];
+                    out[n * 16 + 2] = s[14] - s[32] - s[16] + s[34];
+                    out[n * 16 + 3] = s[5] + s[41] + s[77] - s[7] - s[43] - s[79];
+                    out[n * 16 + 4] = s[51] - s[69] - s[47] + s[65];
+                    out[n * 16 + 5] = s[60] - s[24] - s[56] + s[20];
+                    out[n * 16 + 6] = s[15] - s[33] - s[11] + s[29];
+                    out[n * 16 + 7] = s[6] + s[42] + s[78] - s[2] - s[38] - s[74];
+                    out[n * 16 + 8] = s[46] - s[64] - s[48] + s[66];
+                    out[n * 16 + 9] = s[55] - s[19] - s[57] + s[21];
+                    out[n * 16 + 10] = s[10] - s[28] - s[12] + s[30];
+                    out[n * 16 + 11] = s[1] + s[37] + s[73] - s[3] - s[39] - s[75];
+                    out[n * 16 + 12] = s[45] - s[63] + s[49] - s[67] + s[53] - s[71];
+                    out[n * 16 + 13] = s[54] - s[18] + s[58] - s[22] + s[62] - s[26];
+                    out[n * 16 + 14] = s[9] - s[27] + s[13] - s[31] + s[17] - s[35];
+                    out[n * 16 + 15] = s[0] + s[36] + s[72] + s[4] + s[40] + s[76] + s[8] + s[44] + s[80];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Compute the (σ·p₁)(σ·p₂) G-tensor for `int2e_spsp1spsp2` (rank-16 gout).
+///
+/// Matches `CINTgout2e_int2e_spsp1spsp2` (intor4.c:91-250) VERBATIM. Builds the 16
+/// nabla compositions `g1..g15` (the D_L/D_K/D_J/D_I cascade, lines 112-126) on a
+/// `(li+1, lj+1, lk+1, ll+0)` headroom G-tensor, then folds via [`fold_2sided_sigma16`].
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_spsp1spsp2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
+    let g_size = shape.g_size;
+    let mut gv: Vec<Vec<f64>> = (0..16).map(|_| vec![0.0_f64; 3 * g_size]).collect();
+    // g0 = identity (the base G-tensor).
+    gv[0].copy_from_slice(&g[..3 * g_size]);
+    // Build g1..g15 via the D_L/D_K/D_J/D_I cascade (intor4.c:112-126). Each is a
+    // nabla on the lower-index intermediate; the elevated `(i+1,j+1,k+1)` headroom
+    // lets each composition read the raised indices.
+    //
+    // (dst, src, op, l-bounds, exponent) — op selects the nabla axis. The cascade
+    // is strictly increasing in dst and reads only already-built lower-index src,
+    // so we compute each into a scratch then move it into gv[dst].
+    #[derive(Clone, Copy)]
+    enum Op { L, K, J, I }
+    let plan: [(usize, usize, Op, usize, usize, usize, usize, f64); 15] = [
+        (1, 0, Op::L, li + 1, lj + 1, lk + 1, ll, al),
+        (2, 0, Op::K, li + 1, lj + 1, lk, ll, ak),
+        (3, 1, Op::K, li + 1, lj + 1, lk, ll, ak),
+        (4, 0, Op::J, li + 1, lj, lk, ll, aj),
+        (5, 1, Op::J, li + 1, lj, lk, ll, aj),
+        (6, 2, Op::J, li + 1, lj, lk, ll, aj),
+        (7, 3, Op::J, li + 1, lj, lk, ll, aj),
+        (8, 0, Op::I, li, lj, lk, ll, ai),
+        (9, 1, Op::I, li, lj, lk, ll, ai),
+        (10, 2, Op::I, li, lj, lk, ll, ai),
+        (11, 3, Op::I, li, lj, lk, ll, ai),
+        (12, 4, Op::I, li, lj, lk, ll, ai),
+        (13, 5, Op::I, li, lj, lk, ll, ai),
+        (14, 6, Op::I, li, lj, lk, ll, ai),
+        (15, 7, Op::I, li, lj, lk, ll, ai),
+    ];
+    let mut scratch = vec![0.0_f64; 3 * g_size];
+    for &(dst, src, op, pli, plj, plk, pll, a) in &plan {
+        for v in scratch.iter_mut() {
+            *v = 0.0;
+        }
+        match op {
+            Op::L => nabla1l_2e(&mut scratch, &gv[src], pli, plj, plk, pll, a, shape),
+            Op::K => nabla1k_2e(&mut scratch, &gv[src], pli, plj, plk, pll, a, shape),
+            Op::J => nabla1j_2e(&mut scratch, &gv[src], pli, plj, plk, pll, a, shape),
+            Op::I => nabla1i_2e(&mut scratch, &gv[src], pli, plj, plk, pll, a, shape),
+        }
+        gv[dst].copy_from_slice(&scratch);
+    }
+
+    let blocks: [&[f64]; 16] = std::array::from_fn(|m| gv[m].as_slice());
+    fold_2sided_sigma16(&blocks, shape, li, lj, lk, ll)
+}
+
+/// Compute the (σ·r₁)(σ·r₂) G-tensor for `int2e_srsr1srsr2` (rank-16 gout).
+///
+/// Matches `CINTgout2e_int2e_srsr1srsr2` (intor4.c:355-514) VERBATIM. The `g1..g15`
+/// compositions are pure G-tensor POINTER SHIFTS (`G2E_R_L/R_K/R_J/R_I` = `+g_stride_*`,
+/// g2e.h:104-107), NOT nablas — the 81-term `s[]` and 16-component fold are byte-identical
+/// to `spsp1spsp2`. Built on a `(li+1, lj+1, lk+1, ll+0)` headroom G-tensor so the
+/// shifted reads land in valid storage.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_srsr1srsr2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+) -> Vec<f64> {
+    let g_size = shape.g_size;
+    let di = shape.di;
+    let dj = shape.dj;
+    let dk = shape.dk;
+    let dl = shape.dl;
+    // R-shift offsets for the D_L/D_K/D_J/D_I cascade structure (intor4.c:376-390):
+    //   g1 = R_L(g0)        = +dl
+    //   g2 = R_K(g0)        = +dk
+    //   g3 = R_K(g1)        = +dk+dl
+    //   g4 = R_J(g0)        = +dj
+    //   g5 = R_J(g1)        = +dj+dl
+    //   g6 = R_J(g2)        = +dj+dk
+    //   g7 = R_J(g3)        = +dj+dk+dl
+    //   g8 = R_I(g0)        = +di
+    //   g9 = R_I(g1)        = +di+dl
+    //   g10 = R_I(g2)       = +di+dk
+    //   g11 = R_I(g3)       = +di+dk+dl
+    //   g12 = R_I(g4)       = +di+dj
+    //   g13 = R_I(g5)       = +di+dj+dl
+    //   g14 = R_I(g6)       = +di+dj+dk
+    //   g15 = R_I(g7)       = +di+dj+dk+dl
+    let shifts: [usize; 16] = [
+        0,
+        dl,
+        dk,
+        dk + dl,
+        dj,
+        dj + dl,
+        dj + dk,
+        dj + dk + dl,
+        di,
+        di + dl,
+        di + dk,
+        di + dk + dl,
+        di + dj,
+        di + dj + dl,
+        di + dj + dk,
+        di + dj + dk + dl,
+    ];
+    // Materialize each shifted block (3 axes × g_size) so fold_2sided_sigma16 can read
+    // the same per-axis ix_base+r offsets as the nabla path.
+    let mut gv: Vec<Vec<f64>> = Vec::with_capacity(16);
+    for &sh in &shifts {
+        let mut blk = vec![0.0_f64; 3 * g_size];
+        for axis in 0..3 {
+            let off = axis * g_size;
+            for idx in 0..g_size {
+                let src = off + idx + sh;
+                blk[off + idx] = if src < off + g_size { g[src] } else { 0.0 };
+            }
+        }
+        gv.push(blk);
+    }
+    let blocks: [&[f64]; 16] = std::array::from_fn(|m| gv[m].as_slice());
+    fold_2sided_sigma16(&blocks, shape, li, lj, lk, ll)
+}
+
+/// A single nabla step in a 2e σ derivative cascade: build `g[dst]` by applying the
+/// `op` nabla (with `l`-bounds `bounds` and the `exp` selector) to `g[src]`.
+#[derive(Clone, Copy)]
+pub(crate) struct Rel2eStep {
+    pub dst: usize,
+    pub src: usize,
+    pub op: Rel2eOp,
+    /// l-bounds (li, lj, lk, ll) passed to the nabla (the C `i_l+a, j_l+b, ...`).
+    pub bounds: (usize, usize, usize, usize),
+    pub exp: Rel2eExp,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Rel2eOp {
+    I,
+    J,
+    K,
+    L,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Rel2eExp {
+    Ai,
+    Aj,
+    Ak,
+    Al,
+}
+
+/// Build the `g0..gN` block cascade for a REL-04 σ family. `g[0]` is the base G-tensor;
+/// each step computes one nabla composition. Returns the `(ngk)` blocks (each `3*g_size`).
+/// The cascade order is strictly increasing in `dst` reading only lower-index `src`.
+pub(crate) fn build_rel2e_cascade(
+    g: &[f64],
+    shape: &F12Shape,
+    nblocks: usize,
+    steps: &[Rel2eStep],
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<Vec<f64>> {
+    let g_size = shape.g_size;
+    let mut gv: Vec<Vec<f64>> = (0..nblocks).map(|_| vec![0.0_f64; 3 * g_size]).collect();
+    gv[0].copy_from_slice(&g[..3 * g_size]);
+    let mut scratch = vec![0.0_f64; 3 * g_size];
+    for st in steps {
+        for v in scratch.iter_mut() {
+            *v = 0.0;
+        }
+        let (bi, bj, bk, bl) = st.bounds;
+        let a = match st.exp {
+            Rel2eExp::Ai => ai,
+            Rel2eExp::Aj => aj,
+            Rel2eExp::Ak => ak,
+            Rel2eExp::Al => al,
+        };
+        match st.op {
+            Rel2eOp::I => nabla1i_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, a, shape),
+            Rel2eOp::J => nabla1j_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, a, shape),
+            Rel2eOp::K => nabla1k_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, a, shape),
+            Rel2eOp::L => nabla1l_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, a, shape),
+        }
+        gv[st.dst].copy_from_slice(&scratch);
+    }
+    gv
+}
+
+/// Compute the rank-9 `s[0..8]` triple-product tensor from g0..g3 (the standard
+/// σ-on-one-electron pattern shared by spsp1/srsr1/the gaunt+dkb rank-9 families).
+#[inline]
+fn s9_products(gx: &dyn Fn(usize) -> f64, gy: &dyn Fn(usize) -> f64, gz: &dyn Fn(usize) -> f64) -> [f64; 9] {
+    [
+        gx(3) * gy(0) * gz(0),
+        gx(2) * gy(1) * gz(0),
+        gx(2) * gy(0) * gz(1),
+        gx(1) * gy(2) * gz(0),
+        gx(0) * gy(3) * gz(0),
+        gx(0) * gy(2) * gz(1),
+        gx(1) * gy(0) * gz(2),
+        gx(0) * gy(1) * gz(2),
+        gx(0) * gy(0) * gz(3),
+    ]
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+/// Generic rank-9 REL-04 σ gout: builds the g0..g3 cascade, accumulates the rank-9
+/// `s[]` per cart-quad index, and applies the family `fold` (s[0..8] → NCOMP outputs).
+/// Returns interleaved `out[n*NCOMP + comp]`, `n` walking `[cl,ck,cj,ci]` i-fastest.
+fn gout_rel2e_rank9<const NCOMP: usize>(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize, lj: usize, lk: usize, ll: usize,
+    steps: &[Rel2eStep],
+    ai: f64, aj: f64, ak: f64, al: f64,
+    fold: impl Fn(&[f64; 9]) -> [f64; NCOMP],
+) -> Vec<f64> {
+    let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
+    let g_size = shape.g_size;
+    let gv = build_rel2e_cascade(g, shape, 4, steps, ai, aj, ak, al);
+    let blocks: [&[f64]; 4] = std::array::from_fn(|m| gv[m].as_slice());
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+    let (gx_off, gy_off, gz_off) = (0usize, g_size, 2 * g_size);
+
+    let mut out = vec![0.0_f64; NCOMP * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let mut s = [0.0_f64; 9];
+                    for r in 0..shape.nroots {
+                        let gx = |m: usize| blocks[m][gx_off + ix_base + r];
+                        let gy = |m: usize| blocks[m][gy_off + iy_base + r];
+                        let gz = |m: usize| blocks[m][gz_off + iz_base + r];
+                        let s9 = s9_products(&gx, &gy, &gz);
+                        for i in 0..9 { s[i] += s9[i]; }
+                    }
+                    let o = fold(&s);
+                    for c in 0..NCOMP { out[n * NCOMP + c] = o[c]; }
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+/// Generic rank-3 REL-04 σ gout (the single-σ·p dkb spv1/vsp1, ncomp=4): one nabla
+/// block g1, s[0..2] = (g1·g0·g0, g0·g1·g0, g0·g0·g1), folded to 4 components.
+fn gout_rel2e_rank3(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize, lj: usize, lk: usize, ll: usize,
+    steps: &[Rel2eStep],
+    ai: f64, aj: f64, ak: f64, al: f64,
+    fold: impl Fn(&[f64; 3]) -> [f64; 4],
+) -> Vec<f64> {
+    let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
+    let g_size = shape.g_size;
+    let gv = build_rel2e_cascade(g, shape, 2, steps, ai, aj, ak, al);
+    let blocks: [&[f64]; 2] = std::array::from_fn(|m| gv[m].as_slice());
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+    let (gx_off, gy_off, gz_off) = (0usize, g_size, 2 * g_size);
+
+    let mut out = vec![0.0_f64; 4 * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let mut s = [0.0_f64; 3];
+                    for r in 0..shape.nroots {
+                        let gx = |m: usize| blocks[m][gx_off + ix_base + r];
+                        let gy = |m: usize| blocks[m][gy_off + iy_base + r];
+                        let gz = |m: usize| blocks[m][gz_off + iz_base + r];
+                        s[0] += gx(1) * gy(0) * gz(0);
+                        s[1] += gx(0) * gy(1) * gz(0);
+                        s[2] += gx(0) * gy(0) * gz(1);
+                    }
+                    let o = fold(&s);
+                    for c in 0..4 { out[n * 4 + c] = o[c]; }
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+/// Generic rank-27 REL-04 σ gout (dkb spv1spsp2/vsp1spsp2, ncomp=16): g0..g7 cascade,
+/// 27-term `s[]`, folded to 16 components.
+fn gout_rel2e_rank27(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize, lj: usize, lk: usize, ll: usize,
+    steps: &[Rel2eStep],
+    ai: f64, aj: f64, ak: f64, al: f64,
+    fold: impl Fn(&[f64; 27]) -> [f64; 16],
+) -> Vec<f64> {
+    let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
+    let g_size = shape.g_size;
+    let gv = build_rel2e_cascade(g, shape, 8, steps, ai, aj, ak, al);
+    let blocks: [&[f64]; 8] = std::array::from_fn(|m| gv[m].as_slice());
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+    let (gx_off, gy_off, gz_off) = (0usize, g_size, 2 * g_size);
+
+    let mut out = vec![0.0_f64; 16 * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let mut s = [0.0_f64; 27];
+                    for r in 0..shape.nroots {
+                        let gx = |m: usize| blocks[m][gx_off + ix_base + r];
+                        let gy = |m: usize| blocks[m][gy_off + iy_base + r];
+                        let gz = |m: usize| blocks[m][gz_off + iz_base + r];
+                        s[0] += gx(7) * gy(0) * gz(0);
+                        s[1] += gx(6) * gy(1) * gz(0);
+                        s[2] += gx(6) * gy(0) * gz(1);
+                        s[3] += gx(5) * gy(2) * gz(0);
+                        s[4] += gx(4) * gy(3) * gz(0);
+                        s[5] += gx(4) * gy(2) * gz(1);
+                        s[6] += gx(5) * gy(0) * gz(2);
+                        s[7] += gx(4) * gy(1) * gz(2);
+                        s[8] += gx(4) * gy(0) * gz(3);
+                        s[9] += gx(3) * gy(4) * gz(0);
+                        s[10] += gx(2) * gy(5) * gz(0);
+                        s[11] += gx(2) * gy(4) * gz(1);
+                        s[12] += gx(1) * gy(6) * gz(0);
+                        s[13] += gx(0) * gy(7) * gz(0);
+                        s[14] += gx(0) * gy(6) * gz(1);
+                        s[15] += gx(1) * gy(4) * gz(2);
+                        s[16] += gx(0) * gy(5) * gz(2);
+                        s[17] += gx(0) * gy(4) * gz(3);
+                        s[18] += gx(3) * gy(0) * gz(4);
+                        s[19] += gx(2) * gy(1) * gz(4);
+                        s[20] += gx(2) * gy(0) * gz(5);
+                        s[21] += gx(1) * gy(2) * gz(4);
+                        s[22] += gx(0) * gy(3) * gz(4);
+                        s[23] += gx(0) * gy(2) * gz(5);
+                        s[24] += gx(1) * gy(0) * gz(6);
+                        s[25] += gx(0) * gy(1) * gz(6);
+                        s[26] += gx(0) * gy(0) * gz(7);
+                    }
+                    let o = fold(&s);
+                    for c in 0..16 { out[n * 16 + c] = o[c]; }
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REL-04 per-family gouts (gaunt1.c + dkb.c), all transcribed VERBATIM. Each pairs
+// its cascade (Rel2eStep[]) + fold (s[] → ncomp) + headroom; the launcher selects
+// the transform pair (gaunt ssp/sps → si_2e1i+si_2e2i; dkb vsp/spv → si_2e1[+i]).
+// ─────────────────────────────────────────────────────────────────────────────
+use Rel2eExp::{Ai, Aj, Ak, Al};
+use Rel2eOp::{I as OpI, J as OpJ, K as OpK, L as OpL};
+
+/// int2e_ssp1ssp2 (gaunt1.c:19): σ·p on j(e1) + l(e2). c2s_si_2e1i+si_2e2i, headroom (0,1,0,1).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ssp1ssp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li, lj + 1, lk, ll), exp: Al },
+        Rel2eStep { dst: 2, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep { dst: 3, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+    ];
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        s[8] + s[4], -s[1], -s[2], s[5] - s[7],
+        -s[3], s[8] + s[0], -s[5], -s[2] + s[6],
+        -s[6], -s[7], s[4] + s[0], s[1] - s[3],
+        s[7] - s[5], -s[6] + s[2], s[3] - s[1], s[0] + s[4] + s[8],
+    ])
+}
+
+/// int2e_ssp1sps2 (gaunt1.c:117): σ·p on j(e1) + k(e2). headroom (0,1,1,0).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ssp1sps2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpK, bounds: (li, lj + 1, lk, ll), exp: Ak },
+        Rel2eStep { dst: 2, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep { dst: 3, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+    ];
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        s[8] + s[4], -s[1], -s[2], s[5] - s[7],
+        -s[3], s[8] + s[0], -s[5], -s[2] + s[6],
+        -s[6], -s[7], s[4] + s[0], s[1] - s[3],
+        -s[7] + s[5], s[6] - s[2], -s[3] + s[1], -s[0] - s[4] - s[8],
+    ])
+}
+
+/// int2e_sps1ssp2 (gaunt1.c:215): σ·p on i(e1) + l(e2). headroom (1,0,0,1).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_sps1ssp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li + 1, lj, lk, ll), exp: Al },
+        Rel2eStep { dst: 2, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep { dst: 3, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+    ];
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        s[8] + s[4], -s[1], -s[2], -s[5] + s[7],
+        -s[3], s[8] + s[0], -s[5], s[2] - s[6],
+        -s[6], -s[7], s[4] + s[0], -s[1] + s[3],
+        s[7] - s[5], -s[6] + s[2], s[3] - s[1], -s[0] - s[4] - s[8],
+    ])
+}
+
+/// int2e_sps1sps2 (gaunt1.c:313): σ·p on i(e1) + k(e2). headroom (1,0,1,0).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_sps1sps2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpK, bounds: (li + 1, lj, lk, ll), exp: Ak },
+        Rel2eStep { dst: 2, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep { dst: 3, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+    ];
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        s[8] + s[4], -s[1], -s[2], -s[5] + s[7],
+        -s[3], s[8] + s[0], -s[5], s[2] - s[6],
+        -s[6], -s[7], s[4] + s[0], -s[1] + s[3],
+        -s[7] + s[5], s[6] - s[2], -s[3] + s[1], s[0] + s[4] + s[8],
+    ])
+}
+
+/// int2e_spv1 (dkb.c:171): σ·∇ on i(e1), 3 components → (s0,s1,s2,0). si_2e1+sf_2e2, headroom (1,0,0,0).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_spv1(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [Rel2eStep { dst: 1, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai }];
+    gout_rel2e_rank3(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [s[0], s[1], s[2], 0.0])
+}
+
+/// int2e_vsp1 (dkb.c:255): σ·∇ on j(e1) → (-s0,-s1,-s2,0). si_2e1+sf_2e2, headroom (0,1,0,0).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_vsp1(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [Rel2eStep { dst: 1, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj }];
+    gout_rel2e_rank3(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [-s[0], -s[1], -s[2], 0.0])
+}
+
+/// int2e_spv1spv2 (dkb.c): σ·∇ on i(e1) + k(e2). si_2e1+si_2e2, headroom (1,0,1,0).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_spv1spv2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpK, bounds: (li + 1, lj, lk, ll), exp: Ak },
+        Rel2eStep { dst: 2, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep { dst: 3, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+    ];
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        s[0], s[3], s[6], 0.0,
+        s[1], s[4], s[7], 0.0,
+        s[2], s[5], s[8], 0.0,
+        0.0, 0.0, 0.0, 0.0,
+    ])
+}
+
+/// int2e_vsp1spv2 (dkb.c): σ·∇ on j(e1) + k(e2). si_2e1+si_2e2, headroom (0,1,1,0).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_vsp1spv2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpK, bounds: (li, lj + 1, lk, ll), exp: Ak },
+        Rel2eStep { dst: 2, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep { dst: 3, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+    ];
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        -s[0], -s[3], -s[6], 0.0,
+        -s[1], -s[4], -s[7], 0.0,
+        -s[2], -s[5], -s[8], 0.0,
+        0.0, 0.0, 0.0, 0.0,
+    ])
+}
+
+/// int2e_spv1vsp2 (dkb.c): σ·∇ on i(e1) + l(e2). si_2e1+si_2e2, headroom (1,0,0,1).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_spv1vsp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li + 1, lj, lk, ll), exp: Al },
+        Rel2eStep { dst: 2, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep { dst: 3, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+    ];
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        -s[0], -s[3], -s[6], 0.0,
+        -s[1], -s[4], -s[7], 0.0,
+        -s[2], -s[5], -s[8], 0.0,
+        0.0, 0.0, 0.0, 0.0,
+    ])
+}
+
+/// int2e_vsp1vsp2 (dkb.c): σ·∇ on j(e1) + l(e2). si_2e1+si_2e2, headroom (0,1,0,1).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_vsp1vsp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li, lj + 1, lk, ll), exp: Al },
+        Rel2eStep { dst: 2, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep { dst: 3, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+    ];
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        s[0], s[3], s[6], 0.0,
+        s[1], s[4], s[7], 0.0,
+        s[2], s[5], s[8], 0.0,
+        0.0, 0.0, 0.0, 0.0,
+    ])
+}
+
+/// int2e_spv1spsp2 (dkb.c): σ·∇ on i(e1) + σ·p² on (k,l)(e2). si_2e1+si_2e2, headroom (1,0,1,1).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_spv1spsp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li + 1, lj, lk + 1, ll), exp: Al },
+        Rel2eStep { dst: 2, src: 0, op: OpK, bounds: (li + 1, lj, lk, ll), exp: Ak },
+        Rel2eStep { dst: 3, src: 1, op: OpK, bounds: (li + 1, lj, lk, ll), exp: Ak },
+        Rel2eStep { dst: 4, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep { dst: 5, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep { dst: 6, src: 2, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep { dst: 7, src: 3, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+    ];
+    gout_rel2e_rank27(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        s[5] - s[7], s[14] - s[16], s[23] - s[25], 0.0,
+        s[6] - s[2], s[15] - s[11], s[24] - s[20], 0.0,
+        s[1] - s[3], s[10] - s[12], s[19] - s[21], 0.0,
+        s[0] + s[4] + s[8], s[9] + s[13] + s[17], s[18] + s[22] + s[26], 0.0,
+    ])
+}
+
+/// int2e_vsp1spsp2 (dkb.c): σ·∇ on j(e1) + σ·p² on (k,l)(e2). si_2e1+si_2e2, headroom (0,1,1,1).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_vsp1spsp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+    let steps = [
+        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li, lj + 1, lk + 1, ll), exp: Al },
+        Rel2eStep { dst: 2, src: 0, op: OpK, bounds: (li, lj + 1, lk, ll), exp: Ak },
+        Rel2eStep { dst: 3, src: 1, op: OpK, bounds: (li, lj + 1, lk, ll), exp: Ak },
+        Rel2eStep { dst: 4, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep { dst: 5, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep { dst: 6, src: 2, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep { dst: 7, src: 3, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+    ];
+    gout_rel2e_rank27(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
+        -s[5] + s[7], -s[14] + s[16], -s[23] + s[25], 0.0,
+        -s[6] + s[2], -s[15] + s[11], -s[24] + s[20], 0.0,
+        -s[1] + s[3], -s[10] + s[12], -s[19] + s[21], 0.0,
+        -s[0] - s[4] - s[8], -s[9] - s[13] - s[17], -s[18] - s[22] - s[26], 0.0,
+    ])
+}
+
 /// Compute gout for the ip1ip2 variant (ncomp=9): `\nabla_i` on e1 and `\nabla_k` on e2.
 ///
 /// Matches `CINTgout2e_int2e_ip1ip2` in autocode/hess.c.

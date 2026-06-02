@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: "Milestone: Full libcint 6.1.3 Family Parity"
-status: verifying
-stopped_at: Phase 29 context gathered
-last_updated: "2026-05-31T12:59:49.082Z"
-last_activity: 2026-05-31
+status: executing
+stopped_at: Phase 30 context gathered
+last_updated: "2026-06-01T06:32:27.190Z"
+last_activity: 2026-06-01 -- Phase 30 execution started
 progress:
   total_phases: 21
-  completed_phases: 18
-  total_plans: 95
-  completed_plans: 95
-  percent: 100
+  completed_phases: 19
+  total_plans: 107
+  completed_plans: 105
+  percent: 98
 ---
 
 # Project State
@@ -21,14 +21,51 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Deliver libcint-compatible results through a Rust-native API surface that stays type-safe, verifiable, and safe under memory pressure.  
-**Current focus:** Phase 28 — spin-included-c2s-si-transform-p-module-gap-b2
+**Current focus:** Phase 30 — group-5-giao-slice-spin-giao-integrals-spinor
 
 ## Current Position
 
-Phase: 28
-Plan: Not started
-Status: Phase complete — ready for verification
-Resume file: .planning/phases/29-group-4-relativistic-spin-operator-integrals-spinor/29-CONTEXT.md
+Phase: 30 (group-5-giao-slice-spin-giao-integrals-spinor) — EXECUTING
+Plan: 2 of 6 (Wave 1 sub-waves 30-01a/b/c done; 30-01d PARTIAL → next Wave 2 / spgsa01 fix)
+Status: Executing Phase 30
+Seed/design: .planning/notes/phase-30-wave1-engine-class-split-PLAN.md (engine-class sub-wave breakdown)
+
+Phase 30 Wave 1 sub-wave 30-01d outcome (2026-06-01) — PARTIAL:
+
+  - spg-Rys/London engine (30-01a spgsp 8-G London chain + Rys root loop): int1e_spgnucsp
+    (rank 3, NUCLEAR Rys, g1=D_J, 12-comp, SiI) BYTE-IDENTICAL at atol=1e-12, oracle_covered=true.
+  - int1e_spgsa01 (rank 9, RINV Rys, BOTH-SIDE g1=D_J+D_I, 36-comp, REAL Si) builds + runs all-9
+    non-zero but NOT byte-identical: ~0.5% UNIFORM residual in the D_I-in-g1 → g3 → g7 chain (the
+    only family reading g0 at bra li+3). Isolated (D_J-only→1.2e-2; full→6e-5; headroom ruled out;
+    transcription verified vs g2e.c). oracle_covered=false; gate #[ignore]d (T-30-01d-06 no over-claim).
+  - 8 of 9 1e GIAO×σ families now oracle_covered=true; the 1e half of GIAO-03 is NOT fully closed.
+    spgsa01 needs the cart-discriminator dual-verification (the 30-01c method) before its gate flips.
+  - 30-01c is RESOLVED (cg/giao_sa10sa01 byte-identical; rinv-center fix) — ROADMAP corrected.
+
+Phase 30 Wave 1 re-plan COMPLETE (2026-06-01):
+
+  - Monolithic 30-01-PLAN.md removed; replaced by 4 engine-class sub-wave plans, all wave:1, depends
+    a→b→c→d (all on 00), GIAO-03 in each. Plan-checker: 4 Wave-1 plans internally sound; 2 blockers
+    were dangling 30-02 handoff refs (depends_on:[01], 30-01-SUMMARY.md) — both re-pointed to 01d.
+    30-01a spgsp (rank3); 30-01b cg/giao_sa10nucsp (rank3); 30-01c cg/giao_sa10sa01 (rank9, REAL
+    c2s_si_1e); 30-01d spgnucsp+spgsa01 → closes full 9-family 1e gate. Reuses 3b68ff1 scaffolding.
+
+Phase 30 Wave 1 pause (2026-06-01):
+
+  - 30-00 COMPLETE: gauge x1i-with-origin fold + int1e_cg_sa10sp rank-3 gout variant in sigma_p.rs,
+    combined gauge∧kappa spinor fixture, giao_sigma_1e_parity micro-test (byte-identity + cg→giao
+    collapse). De-risk gate green.
+
+  - 30-01 PAUSED at decision checkpoint (commit 3b68ff1 = safe registration scaffolding only).
+    Executor verified vs libcint source that Wave 1 is NOT a transcription: only cg_sa10sp/giao_sa10sp
+    (2 of 9) are proven; the other 7 need ~6 net-new device kernels (Rys+gauge + 8-G London engine
+    classes, rank-9 36-comp gouts). All 9 manifest rows registered oracle_covered=false; bindgen
+    allowlist + 7 vendor shims added; compiles. STATE/ROADMAP NOT advanced for 30-01.
+
+  - DECISION (user, 2026-06-01): re-plan Wave 1 into engine-class sub-waves (30-01a overlap spgsp;
+    30-01b Rys-gauge sp/nucsp; 30-01c Rys-gauge sa01 rank-9; 30-01d spg-Rys/London), each with its
+    own vendor gate. See .planning/notes/phase-30-wave1-engine-class-split-PLAN.md. Reuse 3b68ff1
+    scaffolding as-is. GIAO-03 still closes at end of Wave 2.
 
 Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 
@@ -46,7 +83,7 @@ Phase 27 outcome (FND-04 / Gap B1, sf-derivative spinor transform):
 Deferred follow-up: finite-difference verification of the 4 D-12 vendor-stub arms (FD of cintx scalar
   int2c2e_spinor / int3c1e_spinor), then flip under an FD-tolerance gate. D-03 needs an sf_4d derivative
   wrapper; D-04 belongs to the relativistic/ECP-spinor track.
-Last activity: 2026-05-31
+Last activity: 2026-06-01 -- Completed quick task 260601-d7e: 3c2e spinor gate + global AO ordering
 
 **v1.4 phase sequence (dependency-ordered):**
 22 Gap A (FND-01) → 23 Group 1 1st-deriv (DRV1) → 24 Group 3 moments (MOM) →
@@ -62,7 +99,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 
 **Velocity:**
 
-- Total plans completed: 54
+- Total plans completed: 60
 - Average duration: 15.6 min
 - Total execution time: 1.3 hours
 
@@ -80,6 +117,7 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | 26 | 8 | - | - |
 | 27 | 6 | - | - |
 | 28 | 4 | - | - |
+| 29 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -166,6 +204,14 @@ Phases 23 and 24 can run in parallel after 22; phase 27 can parallel 26.
 | Phase 28 P02 | 9 | 1 tasks | 2 files |
 | Phase 28 P03 | 38 | 2 tasks | 8 files |
 | Phase 28 P04 | 42min | 2 tasks | 3 files |
+| Phase 29 P02 | 100min | 3 tasks | 8 files |
+| Phase 29 P03 | 35min | 3 tasks | 2 files |
+| Phase 29 P04 | 55min | 3 tasks | 6 files |
+| Phase 29 P05 | 7 | 3 tasks | 6 files |
+| Phase 29 P06 | 95min | 3 tasks | 7 files |
+| Phase 29 P6 | 95min | 3 tasks | 7 files |
+| Phase 30 P00 | 35 | 3 tasks | 4 files |
+| Phase 30 P01d | 110min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -363,6 +409,17 @@ Decisions are logged in PROJECT.md and summarized here for continuity.
 - [Phase ?]: [Phase 28]: σ·p assembler emits PRE-BLOCKED component-leading gc[comp*block_len+n] on-device (not interleaved gout[n*4+comp]) so cart_to_spinor_si_2d reads gc_x=block0..gc_1=block3 with no host transpose; rank-parameterized via #[comptime] tensor_rank for int1e_sigma reuse (D-03)
 - [Phase ?]: Phase 28-03: int1e_sp_spinor registered infrastructure-only (oracle_covered=false, appended last so OperatorId 347, no positional shift); SC#4 enforced via is_skipped_spinor_fixture so oracle-covered-update refuses to flip it; vendor_int1e_sp_spinor FFI shim + bindgen allowlist added; D-01 honored (σ flips deferred to Phase 29).
 - [Phase ?]: FND-05 proven byte-identical: int1e_sp σ·p assembler → cart_to_spinor_si_2d vs vendor int1e_sp_spinor at atol=1e-12 (no manifest flip, D-01)
+- [Phase ?]: int1e_sigma is component_rank=3 (3 stacked Pauli σ-matrices), empirically measured — 29-01 rank-1 prior disproven
+- [Phase ?]: 29-02: 7 1e Group-4 σ families byte-identical to libcint at atol=1e-12 via overlap+Rys nuclear #[cube] engines; 8 rows oracle_covered=true spinor-only
+- [Phase 29-03]: Built the 2e cart→spinor transform suite as 6 composable per-electron fns (electron-1 producing opij, electron-2 consuming it) matching libcint's c2s_si_2e1/2e2 driver split, so Wave-3 launchers can pair electron-1×electron-2 transforms per family
+- [Phase 29-03]: apply_2d_spinor_zi transcribes the 2×2 Pauli σ·n expansion verbatim from cart2sph.c:4118-4186; the σ-mix is bra1-only so the ket1 step reuses apply_ket1_block_all_kappa unchanged
+- [Phase 29-03]: build_kappa_spinor_2e_fixture is a 4-shell non-square (2,6,2,4) GT/LT-mix nctr>1 quartet (D-02); 29-03 delivers compiling structural code only — 2e byte-identity is the 29-04 [BLOCKING] micro-test
+- [Phase ?]: [Phase 29-04]: int2e_spsp1 reuses the ipvip1 (nabla_i nabla_j) s[0..8] triple-product tensor; its sigma-p1 gout (gc_x=s5-s7, gc_y=s6-s2, gc_z=s1-s3, gc_1=s0+s4+s8) is a different linear fold of the SAME tensor + headroom (i+1,j+1), proven byte-identical to vendored libcint at atol=1e-12. The D-03 BLOCKING gate is GREEN; Wave 3 unblocked.
+- [Phase ?]: [Phase 29-05]: REL-04 ssp/sps drivers live in gaunt1.c and vsp/spv in dkb.c — NEITHER was in oracle build.rs; added both .file() entries (corrects CONTEXT.md, trusts RESEARCH Pitfall 1). Without them REL-04 vendor shims have no symbol to link.
+- [Phase ?]: [Phase 29-05]: inserted 15 remaining 2e Group-4 manifest rows after the spsp1 row (index >=349), past every hardcoded OperatorId const (<=106) — no positional drift; all component_rank=1 (σ fold internal to c2s), spinor-only, oracle_covered=false until 29-06.
+- [Phase ?]: [Phase 29-05]: rel_2e_sigma_parity.rs is a RED scaffold (cintx launchers land in 29-06: cintx collector is a panic-stub, 15 byte-identity gates #[ignore]'d); the always-on no-silent-skip sweep runs all 15 vendor arms NON-SKIPPED, proving the gaunt1.c/dkb.c build wiring linked a real driver per family.
+- [Phase ?]: 29-06: all 16 2e Group-4 σ families byte-identical to libcint 6.1.3 (atol 1e-12); oracle_covered=true spinor-only; 24/24 Group-4 covered. Group 4 complete. Key: 2-sided σ⊗σ headroom {1,1,1,1}.
+- [Phase ?]: [Phase 30-00]: Gauge fold ported as CINTx1i_1e recurrence f[i]=g[i+1]+origin*g[i] in a separate sigma_p_cg_sa10sp_kernel; int1e_sp path byte-identical; proven via int1e_cg_sa10sp vendor byte-identity at atol=1e-12 + cg->giao collapse at common_orig=[0,0,0].
 
 ### Roadmap Evolution
 
@@ -406,9 +463,11 @@ None yet.
 | 260530-j62 | fix CR-01: make the unstable-source profile-membership check in raw.rs validate_profile_and_source_gate REACHABLE. Two is_source_only() blocks collapsed to one — the first returned Ok() early, making the second's is_compiled_in_profile check dead code (a source-only op in no available profile was silently accepted). The code-review's literal suggestion (check only "unstable-source") was WRONG: active_manifest_profile() never returns "unstable-source" and two source-only int2e symbols ship in BASE profiles, so the correct rule is accept iff compiled in the active profile OR unstable-source, else reject. Verified: compat 43, cubecl --lib 280, unstable_source_parity 23/23 (--features cpu,unstable-source-api + vendor) — no source family falsely rejected. | 2026-05-30 | 108dfe2 | [260530-j62-fix-cr-01-unreachable-unstable-source-pr](./quick/260530-j62-fix-cr-01-unreachable-unstable-source-pr/) |
 | 260530-k0s | fix the pre-existing grids derivative host-fallback Rys-root undersize bug (surfaced by the ROCm device oracle). grids_contract_{nuclear_like,ip,ipip,ipvip} computed nrys_roots up to 5 but fetched only 2 roots (rys_root1/2_host), so the device->host fallback for nroots>2 panicked 'index out of bounds: len 2 index 2'. Replaced with rys_roots_host(nrys_roots) (byte-identical for nroots<=2, correct 3..=5); spvsp delegates to ipvip (covered). Verified: grids_random_rocm_parity now passes on gfx1152 (was panicking); unstable_source_parity 23/23; cubecl --lib 280. | 2026-05-30 | 1395aae | [260530-k0s-fix-grids-ipvip-rys-root-array-undersize](./quick/260530-k0s-fix-grids-ipvip-rys-root-array-undersize/) |
 | 260531-aw1 | force-port the remaining host-side math (eigh.rs symmetric-tridiagonal eigensolver + rys_wheeler.rs long-double Rys nroots>=6 engine, previously host-by-design per FND-02) to CubeCL #[cube] CPU kernels. eigh `cint_diagonalize` now a #[cube] kernel (bit-identical to host MRRR/QL+Rayleigh+Sturm ref, MAXDIFF=0 over 2000 random tridiagonals). FMA fidelity probe verdict FUSED (CubeCL 0.10.0 CpuRuntime lowers fma() bit-for-bit = host mul_add) → double-double two_prod uses the device fma intrinsic, no Dekker-split fallback. Rys nroots 8..12 (double-double Jacobi/Laguerre/Schmidt via a DdDev CubeType) ported fully ON-DEVICE, byte-identical to host dd path + vendor at the documented split. New in-crate vendor reference-table test rys_roots_host_nroots6to12_matches_libcint (gold from libcint harness). **Vendor parity preserved: 29/29 family suite byte-identical (center_2c2e 2, center_3c1e 2, deriv34 14, hess1e_ipip 8, hess2e 2, hess_multicenter_ipip 2, int2c2e_ip 4) + rys_nroots_sweep GREEN; NO tolerance loosened, NO reference value edited** (orchestrator-run vendor gate, --features cpu + CINTX_ORACLE_BUILD_VENDOR=1). DEVIATION (parity-honest escape hatch, plan-sanctioned): Rys nroots **6,7** production dispatch kept HOST — the f64 device kernels are bit-identical in isolation but a CubeCL CpuRuntime launch in the family hot path perturbs subsequent HOST g-tensor accumulation ~1e-11 (FP-environment side effect), tripping the flat-1e-12 family gate; device kernels retained in-module. Follow-up: root-cause the CubeCL launch FP-environment side effect to land 6,7 on-device too. Diff confined to crates/cintx-cubecl/src/math/. | 2026-05-31 | 93b7840 | [260531-aw1-port-host-eigh-and-rys-wheeler-to-cubecl](./quick/260531-aw1-port-host-eigh-and-rys-wheeler-to-cubecl/) |
+| 260601-aty | spinor cart→spinor general contraction (nctr>1): wire per-(ci,cj[,ck,cl]) contraction-major scatter (i_global=ci*di+i_sp) into the 1e + 2e `Representation::Spinor` arms (both `UnsupportedApi` nctr>1 guards removed), mirroring the proven WR-03 scalar/sph template; 1e keeps the per-sub-block ket→bra transpose, 2e needs none. `int1e_{ovlp,kin,nuc}_spinor` + `int2e_spinor` + `int1e_ipovlp_spinor` gradient now byte-identical to vendored libcint 6.1.3 at atol=1e-12 on NON-SQUARE nctr=2 fixtures (0 mismatches; double-gated `--features cpu` + `CINTX_ORACLE_BUILD_VENDOR=1`; 2e nonzero=17980/23040 confirms parity ran). **Validate pipeline: plan-checker PASSED, verifier 7/7 must-haves VERIFIED.** Pre-existing `oracle_gate_3c2e_spinor` failure (encodes the OLD must-reject contract at base; untouched center_3c2e.rs) deferred → deferred-items.md. Scope-note: segmented multi-shell-same-l global AO permutation vs PySCF is a distinct ao_loc_2c concern, separate follow-up. | 2026-06-01 | af63c1b | [260601-aty-spinor-general-contraction-nctr-gt1](./quick/260601-aty-spinor-general-contraction-nctr-gt1/) |
+| 260601-d7e | resolve the two 260601-aty follow-ups vs vendored libcint. (A) STALE GATE: `oracle_gate_3c2e_spinor` asserted the obsolete Phase-21-06 R5 must-reject contract (`UnsupportedApi`) but `int3c2e_ip1_spinor` is a REAL libcint driver (`CINT3c2e_spinor_drv`) and already byte-identical via pre-existing `test_int3c2e_ip1_spinor_adversarial_parity` → replaced with real vendor parity gate `oracle_gate_3c2e_ip1_spinor_vendor_parity` (aux-k SPHERICAL 2lk+1 not spinor, length-equality guard, 0 mismatches, nonzero=4/24), R5 framing dropped, gates cross-referenced. (B) AO ORDERING: added `spinor_global_ao_order_parity.rs` — a ≥3-shell segmented same-l `[s,p,s,p]` (l=0,1,0,1, nctr==1) GLOBAL-assembly vendor parity test → **0 mismatches** (n_sp=16, 512 elems), proving cintx's shell-order global spinor AO offsets are libcint-faithful (mirror `CINTshells_spinor_offset`/libcint `shells_cgto_offset`). CONCLUSION: the pyscf-rs eigenvalue-identical-but-permuted observation is a PySCF `ao_loc_2c` CONVENTION difference owned by pyscf-rs, NOT a cintx defect; cintx ordering unchanged, **NO PySCF-compat mode added** (locked decision, protects libcint-compat core) → CONCLUSION-ao_loc_2c.md. **Validate pipeline: plan-checker PASSED (1 revision — surfaced the pre-existing adversarial test), verifier 5/5 VERIFIED.** Touched oracle tests only; nctr>1 paths + helpers.rs untouched. | 2026-06-01 | d7b4345 | [260601-d7e-spinor-3c2e-gate-and-global-ao-order](./quick/260601-d7e-spinor-3c2e-gate-and-global-ao-order/) |
 
 ## Session Continuity
 
-Last session: 2026-05-31T12:59:49.077Z
-Stopped at: Phase 29 context gathered
+Last session: 2026-05-31T23:59:17.332Z
+Stopped at: Phase 30 context gathered
 Resume file: None
