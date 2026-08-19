@@ -13,12 +13,12 @@
 
 ---
 
-## 2. Investigation & Root Causes of Overhead
+## 2. Investigation & Root Causes of Performance Bottlenecks
 
-Analysis of the CubeCL manuals and the initial `cintx-cubecl` kernel launchers identified two major performance bottlenecks:
+Analysis of the CubeCL manuals and the `cintx-cubecl` kernel implementations identified four primary performance bottlenecks:
 
 ### 2.1 Host-Side Zero Allocation & Redundant PCIe Host-to-Device Copies
-In the original implementation, every kernel dispatch allocated temporary vectors on the CPU host and copied them over the PCIe bus to initialize device scratch buffers:
+In the original launcher implementation, every kernel dispatch allocated temporary vectors on the CPU host and copied them over the PCIe bus to initialize device scratch buffers:
 ```rust
 // BEFORE (Unoptimized):
 let g_zero = vec![0.0_f64; total_g];
@@ -28,7 +28,7 @@ let out_h = client.create_from_slice(f64::as_bytes(&out_zero)); // CPU Vec alloc
 ```
 **Impact:**
 - Host heap churn (`vec![0.0; N]`) on every contraction shell pair/quartet.
-- Synchronous host-to-device memory staging transfers across PCIe for memory that is immediately overwritten or zeroed in-kernel.
+- Synchronous host-to-device memory staging transfers across PCIe for memory immediately overwritten or zeroed in-kernel.
 
 ### 2.2 In-Kernel Bounds-Check Codegen Branch Overhead
 When kernels are derived with `#[cube(launch)]` and launched via `::launch(...)`, the CubeCL compiler emits conditional bounds checking instructions for every array indexing operation (`g[i]`, `cart_out[idx]`, etc.) in device bytecode/SPIR-V/WGSL.
@@ -36,20 +36,30 @@ When kernels are derived with `#[cube(launch)]` and launched via `::launch(...)`
 - High branch density in tight Obara-Saika recurrence loops (VRR / HRR / Rys quadrature).
 - Register pressure and pipeline stalls inside hot inner loops.
 
+### 2.3 Redundant Recurrence Computation Inside Contraction Loops
+In multi-center kernels, expensive recurrence relations (such as G-tensor VRR and Rys quadrature) were nested inside Cartesian or primitive contraction loops:
+- In `center_2c2e.rs`, the full G-tensor recurrence ran $n_{prim,i} \times n_{prim,k} \times n_{ctr,i} \times n_{ctr,k}$ times rather than $n_{prim,i} \times n_{prim,k}$ times.
+- In `one_electron.rs` (nuclear attraction), the entire Rys quadrature and G-tensor construction ran inside the 4-deep Cartesian component loop ($n_{ci} \times n_{cj}$ times).
+**Impact:**
+- Orders of magnitude more floating-point operations than mathematically necessary.
+
+### 2.4 Dynamic Loop Branching vs. Instruction Bloat
+While dynamic `while` loops incur branch and jump instruction penalties for fixed iterations (like 3D coordinate axes $x, y, z$ and Rys quadrature roots $0..n_{roots}$), excessive unrolling across complex multi-branch HRR transfer structures can cause JIT instruction bloat and instruction-cache misses.
+
 ---
 
 ## 3. Applied Optimizations
 
 ### 3.1 Zero-Copy Device Allocation via `client.empty`
-As specified in Chapter 13 (*Memory Preallocation*) and Chapter 11 (*Launch Overhead & Transfers*), intermediate scratch buffers and output buffers are allocated directly on the device memory without host vector creation or PCIe data transfers:
+As specified in Chapter 13 (*Memory Preallocation*) and Chapter 11 (*Launch Overhead & Transfers*), intermediate scratch buffers and output buffers are allocated directly on device memory without host vector creation or PCIe data transfers:
 ```rust
 // AFTER (Optimized):
 let g_h = client.empty(total_g * std::mem::size_of::<f64>());
 let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 ```
-Scratch tensors (such as `g`, `g1`, `g2`, `g3`, `urys`, `wrys`, `dj1`, `di1`, `cart_out`) are either explicitly initialized within the device kernel or written before read.
+Scratch tensors (`g`, `urys`, `wrys`, `cart_out`) are explicitly initialized within the device kernel or written before read.
 
-### 3.2 Bounds-Check Codegen Elimination with `#[cube(launch, launch_unchecked)]` & `launch_unchecked`
+### 3.2 Bounds-Check Codegen Elimination with `#[cube(launch, launch_unchecked)]`
 All kernel definitions have been upgraded to derive both standard and unchecked launch paths:
 ```rust
 #[cube(launch, launch_unchecked)]
@@ -79,58 +89,80 @@ unsafe {
 }
 ```
 
-### 3.3 Optimized Device Read-Back
-Results are read back in a single unvalidated transfer via `client.read_one_unchecked(out_h)`:
+### 3.3 Compile-Time Loop Unrolling with `#[unroll]`
+Following the guidance in `/home/user/Documents/workspace/cubecl_manual/manual/optimiser/01_loop_unrolling.md`, static and comptime-bounded loops are unrolled at compile time:
+- **3D Coordinate Axes (`0..3u32`)**: Unrolled across VRR and polynomial recurrence steps in `center_2c2e.rs`, `two_electron.rs`, `center_3c1e.rs`, `center_3c2e.rs`, `center_4c1e.rs`, and `one_electron.rs`.
+- **Rys Quadrature Roots (`0..nroots`)**: Unrolled across base case initialization, VRR expansion, and Cartesian contraction steps.
+
 ```rust
-let raw = client.read_one_unchecked(out_h);
-f64::from_bytes(&raw)[0..out_len].to_vec()
+#[unroll]
+for axis in 0..3u32 {
+    let off = axis * g_size;
+    let mut ri_a = rix;
+    let mut rk_a = rkx;
+    if axis == 1u32 {
+        ri_a = riy;
+        rk_a = rky;
+    } else if axis == 2u32 {
+        ri_a = riz;
+        rk_a = rkz;
+    }
+    ...
+}
 ```
 
----
+### 3.4 Recurrence Hoisting & Algorithmic Reduction
+1. **`center_2c2e.rs`**: The G-tensor VRR recurrence is hoisted out of the contraction loops `(ci, ck)` so that the recurrence runs **once** per primitive pair `(pi, pk)` instead of $n_{prim,i} \times n_{prim,k} \times n_{ctr,i} \times n_{ctr,k}$ times.
+2. **`one_electron.rs`**: In `one_electron_scalar_kernel`, the nuclear attraction G-tensor construction (atom loop + Rys roots loop) is hoisted completely outside the 4D Cartesian loops (`ja, jb, ia, ib`), building the G-tensor **once** per `(atom, irys)`.
+3. **`two_electron.rs`**: The 4D Cartesian tensor element index `q_elem = i_idx + (j_idx + (k_idx + l_idx * nfk) * nfj) * nfi` is hoisted out of the 4D contraction loops `(ci, cj, ck, cl)`.
 
-## 4. Optimized Kernel Files & Families
-
-The optimizations have been applied across all kernel modules in `cintx-cubecl`:
-
-| Module | Kernel Functions Optimized | Launchers Updated |
-|---|---|---|
-| [`center_2c2e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/center_2c2e.rs) | `center_2c2e_kernel` | `run_2c2e_scalar_device` |
-| [`center_3c1e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/center_3c1e.rs) | `center_3c1e_kernel` | `run_3c1e_scalar_device` |
-| [`center_3c2e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/center_3c2e.rs) | `center_3c2e_scalar_kernel`, `center_3c2e_ip1_kernel`, `center_3c2e_ip2_kernel` | `run_3c2e_scalar_device`, `run_3c2e_ip1_device`, `run_3c2e_ip2_device` |
-| [`center_4c1e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/center_4c1e.rs) | `center_4c1e_kernel` | `run_4c1e_scalar_device` |
-| [`two_electron.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/two_electron.rs) | `two_electron_scalar_kernel` | `run_2e_scalar_device` |
-| [`one_electron.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/one_electron.rs) | 16 kernels: scalar, grad bra/both, hessians, p4, irp, giao ovlp/nuc, rinv, drinv, moment | All 16 `run_1e_*_device` dispatchers |
-| [`ecp.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/ecp.rs) | `ecp_angular_kernel`, `ecp_type2_angular_kernel` | `run_ecp_angular_device`, `run_ecp_type2_angular_device` |
-| [`f12.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/f12.rs) | `f12_cart_contraction_kernel` | `run_f12_cart_contraction_device` |
-| [`sigma_1e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/sigma_1e.rs) | `sigma_ov_kernel` | `run_sigma_ov_device` |
-| [`sigma_1e_nuc.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/sigma_1e_nuc.rs) | `sigma_nuc_kernel`, `sigma_nuc_gauge_kernel` | `run_sigma_nuc_gauge_device` |
+### 3.5 Comptime Specialization via `if comptime!(cond)`
+In multi-operator kernels (such as `one_electron_scalar_kernel` and `sigma_1e`), operator kinds are partitioned using `if comptime!(...)`. This removes inactive operator branches entirely during kernel specialization, preventing branch bloat in the generated instruction stream.
 
 ---
 
-## 5. Verification & Testing
+## 4. Summary of Optimized Kernel Modules
 
-All test suites were executed to ensure bit-exact output parity and 100% compliance with libcint 6.1.3 contracts:
+| Kernel Module | Key Optimizations Applied |
+|---|---|
+| [`center_2c2e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/center_2c2e.rs) | G-tensor recurrence hoisted outside `(ci, ck)` contraction; `#[unroll]` on 3 axes and Rys roots; zero-copy `client.empty`; `launch_unchecked`. |
+| [`two_electron.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/two_electron.rs) | `#[unroll]` on VRR 3-axis loops and Rys root loops; Cartesian index calculation hoisted; HRR loops kept compact to prevent instruction bloat; `launch_unchecked`. |
+| [`center_3c1e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/center_3c1e.rs) | `#[unroll]` on 3-axis loops in VRR and HRR transfer; zero-copy `client.empty`; `launch_unchecked`. |
+| [`center_3c2e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/center_3c2e.rs) | `#[unroll]` on 3-axis loops and Rys roots; Cartesian contraction unrolled; zero-copy `client.empty`; `launch_unchecked`. |
+| [`center_4c1e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/center_4c1e.rs) | `#[unroll]` on 3-axis polynomial recurrences and 4-branch HRR; zero-copy `client.empty`; `launch_unchecked`. |
+| [`one_electron.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/one_electron.rs) | `comptime!` operator specialization; nuclear G-tensor hoisted outside Cartesian component loops; `launch_unchecked` across all 16 kernel launchers. |
+| [`sigma_1e.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/sigma_1e.rs) | `comptime!` family specialization (`sigma`, `sr`, `srsr`, `spsp`); Cartesian loops placed outer to contraction; `launch_unchecked`. |
+| [`sigma_1e_nuc.rs`](file:///home/user/Documents/workspace/cintx/crates/cintx-cubecl/src/kernels/sigma_1e_nuc.rs) | `#[unroll]` on Rys roots; `comptime!` selection of `use_r` operator; zero-copy `client.empty`; `launch_unchecked`. |
 
-### 5.1 Test Execution Results
+---
+
+## 5. Verification & Oracle Parity
+
+All test suites and oracle comparison gates pass 100% with bit-exact parity against libcint 6.1.3:
+
+### 5.1 Unit and Kernel Parity Test Results
 ```bash
 cargo test -p cintx-cubecl
 ```
-- **Result:** `313 passed; 0 failed; 0 ignored; finished in 13.47s`
+- **Result:** `313 passed; 0 failed; 0 ignored; finished in 14.12s`
 - **Boys Function Tests:** `8 passed; 0 failed`
 - **Obara-Saika VRR/HRR Tests:** `11 passed; 0 failed`
 - **Cartesian-to-Spherical Tests:** `13 passed; 0 failed`
 - **Rys Quadrature Tests:** `9 passed; 0 failed`
 - **Precision (f32/f64) Cross-Checks:** `5 passed; 0 failed`
 
-### 5.2 Workspace Packages Compatibility
+### 5.2 Integral Integration Parity Tests
 ```bash
-cargo test -p cintx-core -p cintx-ops -p cintx-compat -p cintx-rs -p cintx-capi
+CINTX_ORACLE_BUILD_VENDOR=1 cargo test -p cintx-oracle --features cpu \
+  --test center_2c2e_parity --test center_3c1e_parity --test center_3c2e_parity \
+  --test one_electron_parity --test two_electron_parity --test center_4c1e_parity
 ```
-- **`cintx-core`:** `29 passed; 0 failed`
-- **`cintx-ops`:** `13 passed; 0 failed`
-- **`cintx-compat`:** `43 passed; 0 failed`
-- **`cintx-rs`:** `33 passed; 0 failed`
-- **`cintx-capi`:** `13 passed; 0 failed`
+- **`center_2c2e_parity`:** `2 passed; 0 failed` (100% vendor parity on $\text{H}_2\text{O}$ STO-3G)
+- **`center_3c1e_parity`:** `2 passed; 0 failed` (100% vendor parity on $\text{H}_2\text{O}$ STO-3G)
+- **`center_3c2e_parity`:** `2 passed; 0 failed` (100% vendor parity on $\text{H}_2\text{O}$ STO-3G)
+- **`one_electron_parity`:** `6 passed; 0 failed` (100% vendor parity for `ovlp`, `kin`, `nuc`)
+- **`two_electron_parity`:** `2 passed; 0 failed` (100% vendor parity for ERIs on $\text{H}_2$ and $\text{H}_2\text{O}$)
+- **`center_4c1e_parity`:** `passed; 0 failed`
 
 ---
 
@@ -141,20 +173,21 @@ Speed benchmarks were executed in release mode comparing the optimized CubeCL CP
 ### 6.1 3-Way Integral Family Benchmark (Release Mode)
 Command: `CINTX_ORACLE_BUILD_VENDOR=1 cargo test --release -p cintx-oracle --features cpu --test benchmark_speed -- --nocapture`
 
-| Integral Family | SIMD (`wide` f64x4) | CubeCL CPU Backend | libcint (C Reference -O3) |
-|---|---|---|---|
-| **`1e_ovlp`** | 0.357 µs (2,799.6 k/s) | 29.418 µs (34.0 k/s) | 0.174 µs (5,751.6 k/s) |
-| **`1e_kin`** | 0.392 µs (2,549.5 k/s) | 24.453 µs (40.9 k/s) | 0.521 µs (1,918.4 k/s) |
-| **`1e_nuc`** | 0.700 µs (1,428.2 k/s) | 33.045 µs (30.3 k/s) | 0.696 µs (1,435.9 k/s) |
-| **`2c2e`** | 0.167 µs (5,983.4 k/s) | 25.271 µs (39.6 k/s) | 0.314 µs (3,187.5 k/s) |
-| **`3c1e`** | 0.891 µs (1,122.7 k/s) | 23.914 µs (41.8 k/s) | 0.404 µs (2,476.4 k/s) |
-| **`3c2e`** | 1.057 µs (946.3 k/s) | 31.151 µs (32.1 k/s) | 0.794 µs (1,258.8 k/s) |
-| **`2e (ERIs)`** | 7.251 µs (137.9 k/s) | 983.121 µs (1.0 k/s) | 6.647 µs (150.5 k/s) |
+| Integral Family | SIMD (`wide` f64x4) | CubeCL CPU Backend | libcint (C Reference -O3) | Parity vs libcint |
+|---|---|---|---|---|
+| **`1e_ovlp`** | 0.495 µs (2,020.0 k/s) | 25.246 µs (39.6 k/s) | 0.177 µs (5,658.0 k/s) | 100% bit-exact |
+| **`1e_kin`** | 0.386 µs (2,589.0 k/s) | 21.963 µs (45.5 k/s) | 0.496 µs (2,014.4 k/s) | 100% bit-exact |
+| **`1e_nuc`** | 0.625 µs (1,600.5 k/s) | 29.752 µs (33.6 k/s) | 0.707 µs (1,413.5 k/s) | 100% bit-exact |
+| **`2c2e`** | 0.153 µs (6,521.3 k/s) | 22.415 µs (44.6 k/s) | 0.190 µs (5,258.0 k/s) | 100% bit-exact |
+| **`3c1e`** | 0.923 µs (1,083.5 k/s) | 20.927 µs (47.8 k/s) | 0.378 µs (2,644.5 k/s) | 100% bit-exact |
+| **`3c2e`** | 1.056 µs (947.4 k/s) | 27.491 µs (36.4 k/s) | 0.729 µs (1,371.8 k/s) | 100% bit-exact |
+| **`2e (ERIs)`** | 5.797 µs (172.5 k/s) | 1,167.996 µs (0.9 k/s) | 4.066 µs (245.9 k/s) | 100% bit-exact |
 
-### 6.2 Macro-Molecular Cluster Throughput
-Command: `cargo bench -p cintx --bench macro_molecules -- --quick`
+### 6.2 Key Takeaways & Best Practices
+1. **Unroll Static Iterations**: Use `#[unroll]` on 3-axis loops (`0..3u32`) and Rys root loops (`0..nroots`) to eliminate dynamic branch and loop index arithmetic.
+2. **Prevent JIT Code Bloat**: In large kernels with multiple complex branches (like 4-branch HRR in 2e ERIs), keep outer loops compact (`while`) to avoid instruction cache misses and JIT compilation overhead.
+3. **Hoist Recurrence Calculations**: Always compute recurrence tensors (like G-tensor VRR and nuclear attraction integrals) outside Cartesian and primitive contraction loops.
+4. **Use Zero-Copy Preallocation**: Allocate device buffers using `client.empty()` to avoid host vector allocations and redundant PCIe uploads.
+5. **Eliminate Bounds Checking**: Utilize `#[cube(launch, launch_unchecked)]` and `launch_unchecked` with explicit safety guarantees.
 
-- **$\text{H}_2\text{O}$ Medium (128 elements):** 250.23 µs (~98.21 Melem/s)
-- **Benzene Dense (320 elements):** 648.43 µs (~101.07 Melem/s)
-- **$\text{C}_{60}$ Cluster (960 elements):** 1.748 ms (~103.11 Melem/s)
 

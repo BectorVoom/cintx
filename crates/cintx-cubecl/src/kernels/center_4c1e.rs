@@ -281,8 +281,8 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                         let sqrt_aijkl = F::sqrt(aijkl);
 
                         // ── Fill the polynomial G-tensor per axis ───────────
-                        let mut axis = 0u32;
-                        while axis < 3u32 {
+                        #[unroll]
+                        for axis in 0..3u32 {
                             let off = axis * g_size;
 
                             // Per-axis coordinates.
@@ -299,8 +299,7 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                 rl_a = rly;
                                 rij_a = rijy;
                                 rkl_a = rkly;
-                            }
-                            if axis == 2u32 {
+                            } else if axis == 2u32 {
                                 ri_a = riz;
                                 rj_a = rjz;
                                 rk_a = rkz;
@@ -413,8 +412,6 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                     n += 1u32;
                                 }
                             }
-
-                            axis += 1u32;
                         }
 
                         // ── 4-branch HRR (selected by kbase/ibase) ──────────
@@ -428,16 +425,15 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                         // Inlined per-axis HRR for each branch. nroots = 1, so
                         // the host `for r in 0..nroots` loops become direct
                         // single writes (offset 0).
-                        let mut haxis = 0u32;
-                        while haxis < 3u32 {
+                        #[unroll]
+                        for haxis in 0..3u32 {
                             let off = haxis * g_size;
                             let mut rirj_d = rirjx;
                             let mut rkrl_d = rkrlx;
                             if haxis == 1u32 {
                                 rirj_d = rirjy;
                                 rkrl_d = rkrly;
-                            }
-                            if haxis == 2u32 {
+                            } else if haxis == 2u32 {
                                 rirj_d = rirjz;
                                 rkrl_d = rkrlz;
                             }
@@ -629,8 +625,6 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                     }
                                 }
                             }
-
-                            haxis += 1u32;
                         }
 
                         // ── Contract [gx|gy|gz] into cart_out ───────────────

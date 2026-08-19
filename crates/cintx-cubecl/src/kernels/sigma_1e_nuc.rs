@@ -268,8 +268,8 @@ fn sigma_nuc_kernel<F: Float + CubeElement>(
 
                     let fac1 = F::new(2.0) * pi_const * charge_factor * fac / zeta;
 
-                    let mut irys: u32 = 0u32;
-                    while irys < nrys {
+                    #[unroll]
+                    for irys in 0..nroots {
                         let u_n = urys[irys as usize];
                         let w_n = wrys[irys as usize];
                         let tau = u_n / (F::new(1.0) + u_n);
@@ -280,7 +280,7 @@ fn sigma_nuc_kernel<F: Float + CubeElement>(
                         let c00z = (pz - riz) + tau * crijz;
 
                         let mut gi = 0u32;
-                        while gi < total_g {
+                        while gi < 3u32 * (nmax + 1u32) * (lj_ext + 1u32) {
                             g[gi as usize] = F::new(0.0);
                             gi += 1u32;
                         }
@@ -297,7 +297,6 @@ fn sigma_nuc_kernel<F: Float + CubeElement>(
                             nuc_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
                         }
 
-                        // Accumulate this root's rank-4 σ·G gout into every (ci,cj).
                         let mut ci = 0u32;
                         while ci < nctr_i {
                             let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
@@ -382,7 +381,6 @@ fn sigma_nuc_kernel<F: Float + CubeElement>(
                             }
                             ci += 1u32;
                         }
-                        irys += 1u32;
                     }
                     orig += 1u32;
                 }

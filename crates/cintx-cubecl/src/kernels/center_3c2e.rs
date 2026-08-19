@@ -505,8 +505,8 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                         gi += 1u32;
                     }
 
-                    let mut irys = 0u32;
-                    while irys < nrys {
+                    #[unroll]
+                    for irys in 0..nroots {
                         let u2 = a0 * urys[irys as usize];
                         let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
                         let tmp5 = u2 * tmp4;
@@ -521,8 +521,8 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                         g[(g_size + irys) as usize] = F::new(1.0);
                         g[(2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
 
-                        let mut axis = 0u32;
-                        while axis < 3u32 {
+                        #[unroll]
+                        for axis in 0..3u32 {
                             let base = axis * g_size;
                             // Per-axis displacement components.
                             let mut d = xij_kl;
@@ -530,8 +530,7 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                             if axis == 1u32 {
                                 d = yij_kl;
                                 rx = rijrx_y;
-                            }
-                            if axis == 2u32 {
+                            } else if axis == 2u32 {
                                 d = zij_kl;
                                 rx = rijrx_z;
                             }
@@ -575,10 +574,6 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                         let s0_k0 = g[(base + i_off) as usize];
                                         let prev_i_k0 =
                                             g[(base + irys + (n - 1u32) * dn) as usize];
-                                        // b00 cross term carries the n (combined-ij)
-                                        // index factor (libcint g2e.c); omitting it
-                                        // under-counts d+ (n>=2). Matches the host
-                                        // fill_g_tensor_3c2e + the 2c2e fix.
                                         let mut s1 =
                                             c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
                                         g[(base + i_off + dm) as usize] = s1;
@@ -602,11 +597,7 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                     }
                                 }
                             }
-
-                            axis += 1u32;
                         }
-
-                        irys += 1u32;
                     }
 
                     // ── split_ij_hrr: recover (i,j) channels via j-HRR ─────────
@@ -616,22 +607,21 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                         gsi += 1u32;
                     }
 
-                    let mut axis2 = 0u32;
-                    while axis2 < 3u32 {
+                    #[unroll]
+                    for axis2 in 0..3u32 {
                         let axis_in_off = axis2 * g_size;
                         let axis_out_off = axis2 * split_size;
                         let mut rirj = rirj_x;
                         if axis2 == 1u32 {
                             rirj = rirj_y;
-                        }
-                        if axis2 == 2u32 {
+                        } else if axis2 == 2u32 {
                             rirj = rirj_z;
                         }
 
                         let mut k = 0u32;
                         while k <= mmax {
-                            let mut root = 0u32;
-                            while root < nrys {
+                            #[unroll]
+                            for root in 0..nroots {
                                 // Load the i-base ladder into `work` (rows = j, cols = i-base).
                                 let mut i = 0u32;
                                 while i <= nmax {
@@ -668,12 +658,9 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                     }
                                     jj += 1u32;
                                 }
-
-                                root += 1u32;
                             }
                             k += 1u32;
                         }
-                        axis2 += 1u32;
                     }
 
                     // ── contract_3c2e: triple cart_comps contraction ───────────
@@ -728,8 +715,8 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                                         let iz = li - ix - iy;
 
                                                         let mut val = F::new(0.0);
-                                                        let mut root2 = 0u32;
-                                                        while root2 < nrys {
+                                                        #[unroll]
+                                                        for root2 in 0..nroots {
                                                             let idx_x = ((root2 * nk + kx) * nj
                                                                 + jx)
                                                                 * ni
@@ -748,7 +735,6 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                                                     [(gy_off + idx_y) as usize]
                                                                 * g_split
                                                                     [(gz_off + idx_z) as usize];
-                                                            root2 += 1u32;
                                                         }
                                                         let out_idx =
                                                             (k_idx * ncj + j_idx) * nci + i_idx;

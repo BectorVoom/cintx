@@ -836,16 +836,15 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             g[gi as usize] = F::new(0.0);
                             gi += 1u32;
                         }
-                        let mut irys = 0u32;
-                        while irys < nrys {
+                        #[unroll]
+                        for irys in 0..nroots {
                             g[irys as usize] = F::new(1.0);
                             g[(gy_off + irys) as usize] = F::new(1.0);
                             g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
-                            irys += 1u32;
                         }
 
-                        let mut irys2 = 0u32;
-                        while irys2 < nrys {
+                        #[unroll]
+                        for irys2 in 0..nroots {
                             let u2 = a0 * urys[irys2 as usize];
                             let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
                             let tmp5 = u2 * tmp4;
@@ -857,8 +856,8 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             let b01 = tmp5 + tmp4 * aij;
 
                             // Per-axis c00/c0p then inline vrr_fill_axis.
-                            let mut axis = 0u32;
-                            while axis < 3u32 {
+                            #[unroll]
+                            for axis in 0..3u32 {
                                 let off = axis * g_size;
                                 let mut xkl = xij_kl;
                                 let mut rijrx = rijrxx;
@@ -867,8 +866,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                     xkl = yij_kl;
                                     rijrx = rijrxy;
                                     rklrx = rklrxy;
-                                }
-                                if axis == 2u32 {
+                                } else if axis == 2u32 {
                                     xkl = zij_kl;
                                     rijrx = rijrxz;
                                     rklrx = rklrxz;
@@ -948,10 +946,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                         m3 += 1u32;
                                     }
                                 }
-
-                                axis += 1u32;
                             }
-                            irys2 += 1u32;
                         }
 
                         // ── HRR transfer (branch by kbase/ibase) ──────────────
@@ -964,8 +959,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                             if axis2 == 1u32 {
                                 rirj = rirjy;
                                 rkrl = rkrly;
-                            }
-                            if axis2 == 2u32 {
+                            } else if axis2 == 2u32 {
                                 rirj = rirjz;
                                 rkrl = rkrlz;
                             }
@@ -982,7 +976,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                             while i <= nmax {
                                                 let ptr = l * dl + k * dk + i * di;
                                                 let mut r = 0u32;
-                                                while r < nrys {
+                                                while r < nroots {
                                                     let idx = ptr + r;
                                                     g[(off + idx) as usize] = rkrl
                                                         * g[(off + idx - dl) as usize]
@@ -1006,7 +1000,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                 while i2 <= (nmax - j) {
                                                     let pbase = ptr + i2 * di;
                                                     let mut r = 0u32;
-                                                    while r < nrys {
+                                                    while r < nroots {
                                                         let idx = pbase + r;
                                                         g[(off + idx) as usize] = rirj
                                                             * g[(off + idx - dj) as usize]
@@ -1031,7 +1025,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                             while k <= mmax {
                                                 let ptr = j * dj + k * dk + i * di;
                                                 let mut r = 0u32;
-                                                while r < nrys {
+                                                while r < nroots {
                                                     let idx = ptr + r;
                                                     g[(off + idx) as usize] = rirj
                                                         * g[(off + idx - di) as usize]
@@ -1076,7 +1070,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                         while i <= nmax {
                                             let ptr = l * dl + k * dk + i * di;
                                             let mut r = 0u32;
-                                            while r < nrys {
+                                            while r < nroots {
                                                 let idx = ptr + r;
                                                 g[(off + idx) as usize] = rkrl
                                                     * g[(off + idx - dk) as usize]
@@ -1100,7 +1094,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                             while i2 <= (nmax - j) {
                                                 let pbase = ptr + i2 * di;
                                                 let mut r = 0u32;
-                                                while r < nrys {
+                                                while r < nroots {
                                                     let idx = pbase + r;
                                                     g[(off + idx) as usize] = rirj
                                                         * g[(off + idx - dj) as usize]
@@ -1125,7 +1119,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                         while l <= mmax {
                                             let ptr = j * dj + l * dl + i * di;
                                             let mut r = 0u32;
-                                            while r < nrys {
+                                            while r < nroots {
                                                 let idx = ptr + r;
                                                 g[(off + idx) as usize] = rirj
                                                     * g[(off + idx - di) as usize]
@@ -1207,8 +1201,8 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                         let iz = li - ix - iy;
 
                                                         let mut sum = F::new(0.0);
-                                                        let mut r = 0u32;
-                                                        while r < nrys {
+                                                        #[unroll]
+                                                        for r in 0..nroots {
                                                             let xi = r
                                                                 + ix * di
                                                                 + kx * dk
@@ -1227,8 +1221,12 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                             sum += g[xi as usize]
                                                                 * g[(gy_off + yi) as usize]
                                                                 * g[(gz_off + zi) as usize];
-                                                            r += 1u32;
                                                         }
+
+                                                        let q_elem = i_idx
+                                                            + (j_idx
+                                                                + (k_idx + l_idx * nfk) * nfj)
+                                                                * nfi;
 
                                                         // Accumulate into every
                                                         // contraction quad block.
@@ -1262,14 +1260,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                                             * nctr_l
                                                                             + cl)
                                                                             * block_len;
-                                                                        let oidx = qbase
-                                                                            + i_idx
-                                                                            + j_idx * nfi
-                                                                            + k_idx * nfi * nfj
-                                                                            + l_idx
-                                                                                * nfi
-                                                                                * nfj
-                                                                                * nfk;
+                                                                        let oidx = qbase + q_elem;
                                                                         cart_out[oidx as usize] +=
                                                                             weight * sum;
                                                                         cl += 1u32;

@@ -285,32 +285,29 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                         let rjrijkz = rjz - gz_w;
 
                         // VRR + i-HRR + k-separation HRR per axis.
-                        let mut axis = 0u32;
-                        while axis < 3u32 {
+                        #[unroll]
+                        for axis in 0..3u32 {
                             let off = axis * g_alloc;
 
                             // Axis displacement disp = -rjrijk[axis].
                             let mut disp = -rjrijkx;
                             if axis == 1u32 {
                                 disp = -rjrijky;
-                            }
-                            if axis == 2u32 {
+                            } else if axis == 2u32 {
                                 disp = -rjrijkz;
                             }
                             // Axis i-HRR shift rirj[axis].
                             let mut rirj_d = rirjx;
                             if axis == 1u32 {
                                 rirj_d = rirjy;
-                            }
-                            if axis == 2u32 {
+                            } else if axis == 2u32 {
                                 rirj_d = rirjz;
                             }
                             // Axis k-separation HRR shift rjrk[axis].
                             let mut rjrk_d = rjrkx;
                             if axis == 1u32 {
                                 rjrk_d = rjrky;
-                            }
-                            if axis == 2u32 {
+                            } else if axis == 2u32 {
                                 rjrk_d = rjrkz;
                             }
 
@@ -375,8 +372,6 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                                     k += 1u32;
                                 }
                             }
-
-                            axis += 1u32;
                         }
 
                         let gx = 0u32;

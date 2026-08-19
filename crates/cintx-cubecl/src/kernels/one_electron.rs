@@ -361,174 +361,208 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                 }
                 // (Nuclear builds its G-tensor per-root inside the contraction below.)
 
-                // ── Contract into every (ci,cj) contraction block ────────────
-                let mut ci = 0u32;
-                while ci < nctr_i {
-                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
-                    let mut cj = 0u32;
-                    while cj < nctr_j {
-                        let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
-                        let weight = coeff_i_val * coeff_j_val;
-                        let base = (ci * nctr_j + cj) * block_len;
+                if comptime!(op_kind == 0u32 || op_kind == 1u32) {
+                    // ── Contract into every (ci,cj) contraction block ────────────
+                    let mut cj_idx = 0u32;
+                    let mut ja = 0u32;
+                    while ja <= lj {
+                        let jx = lj - ja;
+                        let lj_minus_jx = lj - jx;
+                        let mut jb = 0u32;
+                        while jb <= lj_minus_jx {
+                            let jy = lj_minus_jx - jb;
+                            let jz = lj - jx - jy;
 
-                        // Iterate Cartesian component triples (cj outer, ci inner),
-                        // matching the host cart_comps ordering (lx descending).
-                        let mut cj_idx = 0u32;
-                        let mut ja = 0u32;
-                        while ja <= lj {
-                            let jx = lj - ja;
-                            let lj_minus_jx = lj - jx;
-                            let mut jb = 0u32;
-                            while jb <= lj_minus_jx {
-                                let jy = lj_minus_jx - jb;
-                                let jz = lj - jx - jy;
+                            let mut ci_idx = 0u32;
+                            let mut ia = 0u32;
+                            while ia <= li {
+                                let ix = li - ia;
+                                let li_minus_ix = li - ix;
+                                let mut ib = 0u32;
+                                while ib <= li_minus_ix {
+                                    let iy = li_minus_ix - ib;
+                                    let iz = li - ix - iy;
 
-                                let mut ci_idx = 0u32;
-                                let mut ia = 0u32;
-                                while ia <= li {
-                                    let ix = li - ia;
-                                    let li_minus_ix = li - ix;
-                                    let mut ib = 0u32;
-                                    while ib <= li_minus_ix {
-                                        let iy = li_minus_ix - ib;
-                                        let iz = li - ix - iy;
+                                    let mut val = F::new(0.0);
+                                    if comptime!(op_kind == 0u32) {
+                                        // Overlap: vx*vy*vz from shared g.
+                                        let vx = g[(gx + jx * dj + ix) as usize];
+                                        let vy = g[(gy + jy * dj + iy) as usize];
+                                        let vz = g[(gz + jz * dj + iz) as usize];
+                                        val = vx * vy * vz;
+                                    } else {
+                                        // Kinetic: T = -0.5*(g3x*g0y*g0z + ...)
+                                        let nx = jx * dj + ix;
+                                        let ny = jy * dj + iy;
+                                        let nz = jz * dj + iz;
+                                        let vx0 = g[(gx + nx) as usize];
+                                        let vy0 = g[(gy + ny) as usize];
+                                        let vz0 = g[(gz + nz) as usize];
 
-                                        let mut val = F::new(0.0);
+                                        let g3x =
+                                            one_electron_kin_d2::<F>(g, gx, nx, dj, jx, aj);
+                                        let g3y =
+                                            one_electron_kin_d2::<F>(g, gy, ny, dj, jy, aj);
+                                        let g3z =
+                                            one_electron_kin_d2::<F>(g, gz, nz, dj, jz, aj);
+                                        val = F::new(-0.5)
+                                            * (g3x * vy0 * vz0
+                                                + vx0 * g3y * vz0
+                                                + vx0 * vy0 * g3z);
+                                    }
 
-                                        if comptime!(op_kind == 0u32) {
-                                            // Overlap: vx*vy*vz from shared g.
+                                    let mut ci = 0u32;
+                                    while ci < nctr_i {
+                                        let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                                        let mut cj = 0u32;
+                                        while cj < nctr_j {
+                                            let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                                            let base = (ci * nctr_j + cj) * block_len;
+                                            cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
+                                                coeff_i_val * coeff_j_val * val;
+                                            cj += 1u32;
+                                        }
+                                        ci += 1u32;
+                                    }
+
+                                    ci_idx += 1u32;
+                                    ib += 1u32;
+                                }
+                                ia += 1u32;
+                            }
+
+                            cj_idx += 1u32;
+                            jb += 1u32;
+                        }
+                        ja += 1u32;
+                    }
+                } else {
+                    // Nuclear: sum over atoms and Rys roots FIRST, building G-tensor once per (atom, root)
+                    let mut atom = 0u32;
+                    while atom < natm {
+                        let z_c = atom_charges[atom as usize];
+                        let rcx = atom_coords[(atom * 3u32) as usize];
+                        let rcy = atom_coords[(atom * 3u32 + 1u32) as usize];
+                        let rcz = atom_coords[(atom * 3u32 + 2u32) as usize];
+
+                        // crij = C - P
+                        let crijx = rcx - px;
+                        let crijy = rcy - py;
+                        let crijz = rcz - pz;
+                        let x_boys = zeta
+                            * (crijx * crijx
+                                + crijy * crijy
+                                + crijz * crijz);
+
+                        // Rys roots/weights (comptime nroots).
+                        if comptime!(nroots == 1u32) {
+                            rys_root1::<F>(x_boys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 2u32) {
+                            rys_root2::<F>(x_boys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 3u32) {
+                            rys_root3::<F>(x_boys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 4u32) {
+                            rys_root4::<F>(x_boys, urys, wrys, pie4);
+                        } else {
+                            rys_root5::<F>(x_boys, urys, wrys, pie4);
+                        }
+
+                        // fac1 = 2*PI*(-Z_C)*fac/zeta
+                        let neg_z = F::new(0.0) - z_c;
+                        let fac1 =
+                            F::new(2.0) * pi_const * neg_z * fac / zeta;
+
+                        #[unroll]
+                        for irys in 0..nroots {
+                            let u_n = urys[irys as usize];
+                            let w_n = wrys[irys as usize];
+                            let tau = u_n / (F::new(1.0) + u_n);
+                            let rt = aij2 * (F::new(1.0) - tau);
+
+                            let c00x = (px - rix) + tau * crijx;
+                            let c00y = (py - riy) + tau * crijy;
+                            let c00z = (pz - riz) + tau * crijz;
+
+                            // Base case: gx=1, gy=1, gz=fac1*w_n
+                            g[gx as usize] = F::new(1.0);
+                            g[gy as usize] = F::new(1.0);
+                            g[gz as usize] = fac1 * w_n;
+
+                            one_electron_vrr2e_axis::<F>(
+                                g, gx, c00x, rt, nmax,
+                            );
+                            one_electron_vrr2e_axis::<F>(
+                                g, gy, c00y, rt, nmax,
+                            );
+                            one_electron_vrr2e_axis::<F>(
+                                g, gz, c00z, rt, nmax,
+                            );
+                            if lj >= 1u32 {
+                                one_electron_hrr_axis::<F>(
+                                    g, gx, rirjx, dj, nmax, lj,
+                                );
+                                one_electron_hrr_axis::<F>(
+                                    g, gy, rirjy, dj, nmax, lj,
+                                );
+                                one_electron_hrr_axis::<F>(
+                                    g, gz, rirjz, dj, nmax, lj,
+                                );
+                            }
+
+                            // Accumulate over Cartesian triples and contractions
+                            let mut cj_idx = 0u32;
+                            let mut ja = 0u32;
+                            while ja <= lj {
+                                let jx = lj - ja;
+                                let lj_minus_jx = lj - jx;
+                                let mut jb = 0u32;
+                                while jb <= lj_minus_jx {
+                                    let jy = lj_minus_jx - jb;
+                                    let jz = lj - jx - jy;
+
+                                    let mut ci_idx = 0u32;
+                                    let mut ia = 0u32;
+                                    while ia <= li {
+                                        let ix = li - ia;
+                                        let li_minus_ix = li - ix;
+                                        let mut ib = 0u32;
+                                        while ib <= li_minus_ix {
+                                            let iy = li_minus_ix - ib;
+                                            let iz = li - ix - iy;
+
                                             let vx = g[(gx + jx * dj + ix) as usize];
                                             let vy = g[(gy + jy * dj + iy) as usize];
                                             let vz = g[(gz + jz * dj + iz) as usize];
-                                            val = vx * vy * vz;
-                                        } else if comptime!(op_kind == 1u32) {
-                                            // Kinetic: T = -0.5*(g3x*g0y*g0z + ...)
-                                            let nx = jx * dj + ix;
-                                            let ny = jy * dj + iy;
-                                            let nz = jz * dj + iz;
-                                            let vx0 = g[(gx + nx) as usize];
-                                            let vy0 = g[(gy + ny) as usize];
-                                            let vz0 = g[(gz + nz) as usize];
+                                            let val = vx * vy * vz;
 
-                                            let g3x =
-                                                one_electron_kin_d2::<F>(g, gx, nx, dj, jx, aj);
-                                            let g3y =
-                                                one_electron_kin_d2::<F>(g, gy, ny, dj, jy, aj);
-                                            let g3z =
-                                                one_electron_kin_d2::<F>(g, gz, nz, dj, jz, aj);
-                                            val = F::new(-0.5)
-                                                * (g3x * vy0 * vz0
-                                                    + vx0 * g3y * vz0
-                                                    + vx0 * vy0 * g3z);
-                                        } else {
-                                            // Nuclear: sum over atoms and Rys roots.
-                                            let mut atom = 0u32;
-                                            while atom < natm {
-                                                let z_c = atom_charges[atom as usize];
-                                                let rcx = atom_coords[(atom * 3u32) as usize];
-                                                let rcy =
-                                                    atom_coords[(atom * 3u32 + 1u32) as usize];
-                                                let rcz =
-                                                    atom_coords[(atom * 3u32 + 2u32) as usize];
-
-                                                // crij = C - P
-                                                let crijx = rcx - px;
-                                                let crijy = rcy - py;
-                                                let crijz = rcz - pz;
-                                                let x_boys = zeta
-                                                    * (crijx * crijx
-                                                        + crijy * crijy
-                                                        + crijz * crijz);
-
-                                                // Rys roots/weights (comptime nroots).
-                                                if comptime!(nroots == 1u32) {
-                                                    rys_root1::<F>(x_boys, urys, wrys, pie4);
-                                                } else if comptime!(nroots == 2u32) {
-                                                    rys_root2::<F>(x_boys, urys, wrys, pie4);
-                                                } else if comptime!(nroots == 3u32) {
-                                                    rys_root3::<F>(x_boys, urys, wrys, pie4);
-                                                } else if comptime!(nroots == 4u32) {
-                                                    rys_root4::<F>(x_boys, urys, wrys, pie4);
-                                                } else {
-                                                    rys_root5::<F>(x_boys, urys, wrys, pie4);
+                                            let mut ci = 0u32;
+                                            while ci < nctr_i {
+                                                let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                                                let mut cj = 0u32;
+                                                while cj < nctr_j {
+                                                    let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                                                    let base = (ci * nctr_j + cj) * block_len;
+                                                    cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
+                                                        coeff_i_val * coeff_j_val * val;
+                                                    cj += 1u32;
                                                 }
-
-                                                // fac1 = 2*PI*(-Z_C)*fac/zeta
-                                                let neg_z = F::new(0.0) - z_c;
-                                                let fac1 =
-                                                    F::new(2.0) * pi_const * neg_z * fac / zeta;
-
-                                                let mut irys: u32 = 0u32;
-                                                while irys < nrys {
-                                                    let u_n = urys[irys as usize];
-                                                    let w_n = wrys[irys as usize];
-                                                    let tau = u_n / (F::new(1.0) + u_n);
-                                                    let rt = aij2 * (F::new(1.0) - tau);
-
-                                                    let c00x = (px - rix) + tau * crijx;
-                                                    let c00y = (py - riy) + tau * crijy;
-                                                    let c00z = (pz - riz) + tau * crijz;
-
-                                                    // Build per-root G-tensor in `g`.
-                                                    let mut gi2 = 0u32;
-                                                    while gi2 < total_g {
-                                                        g[gi2 as usize] = F::new(0.0);
-                                                        gi2 += 1u32;
-                                                    }
-                                                    g[gx as usize] = F::new(1.0);
-                                                    g[gy as usize] = F::new(1.0);
-                                                    g[gz as usize] = fac1 * w_n;
-
-                                                    one_electron_vrr2e_axis::<F>(
-                                                        g, gx, c00x, rt, nmax,
-                                                    );
-                                                    one_electron_vrr2e_axis::<F>(
-                                                        g, gy, c00y, rt, nmax,
-                                                    );
-                                                    one_electron_vrr2e_axis::<F>(
-                                                        g, gz, c00z, rt, nmax,
-                                                    );
-                                                    if lj >= 1u32 {
-                                                        one_electron_hrr_axis::<F>(
-                                                            g, gx, rirjx, dj, nmax, lj,
-                                                        );
-                                                        one_electron_hrr_axis::<F>(
-                                                            g, gy, rirjy, dj, nmax, lj,
-                                                        );
-                                                        one_electron_hrr_axis::<F>(
-                                                            g, gz, rirjz, dj, nmax, lj,
-                                                        );
-                                                    }
-
-                                                    let vx = g[(gx + jx * dj + ix) as usize];
-                                                    let vy = g[(gy + jy * dj + iy) as usize];
-                                                    let vz = g[(gz + jz * dj + iz) as usize];
-                                                    val += vx * vy * vz;
-
-                                                    irys += 1u32;
-                                                }
-                                                atom += 1u32;
+                                                ci += 1u32;
                                             }
+
+                                            ci_idx += 1u32;
+                                            ib += 1u32;
                                         }
-
-                                        cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
-                                            weight * val;
-
-                                        ci_idx += 1u32;
-                                        ib += 1u32;
+                                        ia += 1u32;
                                     }
-                                    ia += 1u32;
+
+                                    cj_idx += 1u32;
+                                    jb += 1u32;
                                 }
-
-                                cj_idx += 1u32;
-                                jb += 1u32;
+                                ja += 1u32;
                             }
-                            ja += 1u32;
                         }
-
-                        cj += 1u32;
+                        atom += 1u32;
                     }
-                    ci += 1u32;
                 }
 
                 pj += 1u32;

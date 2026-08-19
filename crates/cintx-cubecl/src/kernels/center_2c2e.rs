@@ -215,181 +215,165 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                     rys_root5::<F>(x_rys, urys, wrys, pie4);
                 }
 
-                let mut ci = 0u32;
-                while ci < nctr_i {
-                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
-                    let mut ck = 0u32;
-                    while ck < nctr_k {
-                        let coeff_k_val = coeff_k[(pk * nctr_k + ck) as usize];
+                let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor;
 
-                        // fac_env = common_factor * ci * ck (no exponential term).
-                        let fac_env = common_factor * coeff_i_val * coeff_k_val;
-                        // fac1 = sqrt(a0 / a1^3) * fac_env  (g2e.c CINTg0_2e line 4441)
-                        let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * fac_env;
+                // ── Fill the G-tensor (VRR) ──────────
+                #[unroll]
+                for irys in 0..nroots {
+                    let u2 = a0 * urys[irys as usize];
+                    let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
+                    let tmp5 = u2 * tmp4;
+                    let b00 = tmp5;
+                    let b10 = tmp5 + tmp4 * akl;
+                    let b01 = tmp5 + tmp4 * aij;
+                    let tmp2 = F::new(2.0) * tmp5 * akl;
+                    let tmp3 = F::new(2.0) * tmp5 * aij;
 
-                        // ── Fill the G-tensor (zero, base case, VRR) ──────────
-                        let mut gi = 0u32;
-                        while gi < total_g {
-                            g[gi as usize] = F::new(0.0);
-                            gi += 1u32;
+                    // Base case: gx=gy=1, gz=w*fac1 (g2e.c lines 4517-4521).
+                    g[irys as usize] = F::new(1.0);
+                    g[(g_size + irys) as usize] = F::new(1.0);
+                    g[(2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
+
+                    #[unroll]
+                    for axis in 0..3u32 {
+                        let base = axis * g_size;
+                        // Displacement component for this axis.
+                        let mut d = xij;
+                        if axis == 1u32 {
+                            d = yij;
+                        } else if axis == 2u32 {
+                            d = zij;
+                        }
+                        let c00a = -tmp2 * d;
+                        let c0pa = tmp3 * d;
+
+                        // i-VRR (nmax = li): g[n+1] = c00*g[n] + n*b10*g[n-1]
+                        if li >= 1u32 {
+                            let mut s_prev = g[(base + irys) as usize];
+                            let mut s1 = c00a * s_prev;
+                            g[(base + irys + dn) as usize] = s1;
+                            let mut n = 1u32;
+                            while n < li {
+                                let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
+                                g[(base + irys + (n + 1u32) * dn) as usize] = s2;
+                                s_prev = s1;
+                                s1 = s2;
+                                n += 1u32;
+                            }
                         }
 
-                        let mut irys = 0u32;
-                        while irys < nrys {
-                            let u2 = a0 * urys[irys as usize];
-                            let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
-                            let tmp5 = u2 * tmp4;
-                            let b00 = tmp5;
-                            let b10 = tmp5 + tmp4 * akl;
-                            let b01 = tmp5 + tmp4 * aij;
-                            let tmp2 = F::new(2.0) * tmp5 * akl;
-                            let tmp3 = F::new(2.0) * tmp5 * aij;
+                        // k-VRR pure (i=0, mmax = lk):
+                        // g[k+1] = c0p*g[k] + k*b01*g[k-1]
+                        if lk >= 1u32 {
+                            let mut s_prev = g[(base + irys) as usize];
+                            let mut s1 = c0pa * s_prev;
+                            g[(base + irys + dm) as usize] = s1;
+                            let mut m = 1u32;
+                            while m < lk {
+                                let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
+                                g[(base + irys + (m + 1u32) * dm) as usize] = s2;
+                                s_prev = s1;
+                                s1 = s2;
+                                m += 1u32;
+                            }
+                        }
 
-                            // Base case: gx=gy=1, gz=w*fac1 (g2e.c lines 4517-4521).
-                            g[irys as usize] = F::new(1.0);
-                            g[(g_size + irys) as usize] = F::new(1.0);
-                            g[(2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
-
-                            let mut axis = 0u32;
-                            while axis < 3u32 {
-                                let base = axis * g_size;
-                                // Displacement component for this axis.
-                                let mut d = xij;
-                                if axis == 1u32 {
-                                    d = yij;
-                                }
-                                if axis == 2u32 {
-                                    d = zij;
-                                }
-                                let c00a = -tmp2 * d;
-                                let c0pa = tmp3 * d;
-
-                                // i-VRR (nmax = li): g[n+1] = c00*g[n] + n*b10*g[n-1]
-                                if li >= 1u32 {
-                                    let mut s_prev = g[(base + irys) as usize];
-                                    let mut s1 = c00a * s_prev;
-                                    g[(base + irys + dn) as usize] = s1;
-                                    let mut n = 1u32;
-                                    while n < li {
-                                        let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
-                                        g[(base + irys + (n + 1u32) * dn) as usize] = s2;
-                                        s_prev = s1;
-                                        s1 = s2;
-                                        n += 1u32;
-                                    }
-                                }
-
-                                // k-VRR pure (i=0, mmax = lk):
-                                // g[k+1] = c0p*g[k] + k*b01*g[k-1]
-                                if lk >= 1u32 {
-                                    let mut s_prev = g[(base + irys) as usize];
-                                    let mut s1 = c0pa * s_prev;
-                                    g[(base + irys + dm) as usize] = s1;
+                        // Mixed i+k recurrence for i>0 (g2e.c lines 362-391):
+                        // g[i,k+1] = c0p*g[i,k] + k*b01*g[i,k-1] + b00*g[i-1,k]
+                        if lk >= 1u32 {
+                            if li >= 1u32 {
+                                let mut n = 1u32;
+                                while n <= li {
+                                    let i_off = irys + n * dn;
+                                    let s0_k0 = g[(base + i_off) as usize];
+                                    let prev_i_k0 =
+                                        g[(base + irys + (n - 1u32) * dn) as usize];
+                                    // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
+                                    let mut s1 =
+                                        c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
+                                    g[(base + i_off + dm) as usize] = s1;
+                                    let mut s_prev = s0_k0;
                                     let mut m = 1u32;
                                     while m < lk {
-                                        let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
-                                        g[(base + irys + (m + 1u32) * dm) as usize] = s2;
+                                        let prev_i_km = g[(base
+                                            + irys
+                                            + (n - 1u32) * dn
+                                            + m * dm)
+                                            as usize];
+                                        let s2 = c0pa * s1
+                                            + F::cast_from(m) * b01 * s_prev
+                                            + F::cast_from(n) * b00 * prev_i_km;
+                                        g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
                                         s_prev = s1;
                                         s1 = s2;
                                         m += 1u32;
                                     }
+                                    n += 1u32;
                                 }
-
-                                // Mixed i+k recurrence for i>0 (g2e.c lines 362-391):
-                                // g[i,k+1] = c0p*g[i,k] + k*b01*g[i,k-1] + b00*g[i-1,k]
-                                if lk >= 1u32 {
-                                    if li >= 1u32 {
-                                        let mut n = 1u32;
-                                        while n <= li {
-                                            let i_off = irys + n * dn;
-                                            let s0_k0 = g[(base + i_off) as usize];
-                                            let prev_i_k0 =
-                                                g[(base + irys + (n - 1u32) * dn) as usize];
-                                            // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
-                                            let mut s1 =
-                                                c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
-                                            g[(base + i_off + dm) as usize] = s1;
-                                            let mut s_prev = s0_k0;
-                                            let mut m = 1u32;
-                                            while m < lk {
-                                                let prev_i_km = g[(base
-                                                    + irys
-                                                    + (n - 1u32) * dn
-                                                    + m * dm)
-                                                    as usize];
-                                                let s2 = c0pa * s1
-                                                    + F::cast_from(m) * b01 * s_prev
-                                                    + F::cast_from(n) * b00 * prev_i_km;
-                                                g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
-                                                s_prev = s1;
-                                                s1 = s2;
-                                                m += 1u32;
-                                            }
-                                            n += 1u32;
-                                        }
-                                    }
-                                }
-
-                                axis += 1u32;
                             }
-
-                            irys += 1u32;
                         }
-
-                        // ── Contract over Rys roots and Cartesian triples ─────
-                        // Output: i fastest (innermost), k slowest (outermost):
-                        // cart_out[ci_idx + ck_idx*nci]
-                        let mut ck_idx = 0u32;
-                        let mut ka = 0u32;
-                        while ka <= lk {
-                            let kx = lk - ka; // kx: lk..0 (descending)
-                            let lk_minus_kx = lk - kx;
-                            let mut kb = 0u32;
-                            while kb <= lk_minus_kx {
-                                let ky = lk_minus_kx - kb; // ky descending
-                                let kz = lk - kx - ky;
-
-                                let mut ci_idx = 0u32;
-                                let mut ia = 0u32;
-                                while ia <= li {
-                                    let ix = li - ia;
-                                    let li_minus_ix = li - ix;
-                                    let mut ib = 0u32;
-                                    while ib <= li_minus_ix {
-                                        let iy = li_minus_ix - ib;
-                                        let iz = li - ix - iy;
-
-                                        let mut val = F::new(0.0);
-                                        let mut irys2 = 0u32;
-                                        while irys2 < nrys {
-                                            let vx = g[(kx * dm + ix * dn + irys2) as usize];
-                                            let vy =
-                                                g[(g_size + ky * dm + iy * dn + irys2) as usize];
-                                            let vz = g[(2u32 * g_size
-                                                + kz * dm
-                                                + iz * dn
-                                                + irys2)
-                                                as usize];
-                                            val += vx * vy * vz;
-                                            irys2 += 1u32;
-                                        }
-                                        cart_out[(ci_idx + ck_idx * nci) as usize] += val;
-
-                                        ci_idx += 1u32;
-                                        ib += 1u32;
-                                    }
-                                    ia += 1u32;
-                                }
-
-                                ck_idx += 1u32;
-                                kb += 1u32;
-                            }
-                            ka += 1u32;
-                        }
-
-                        ck += 1u32;
                     }
-                    ci += 1u32;
+                }
+
+                // ── Contract over Rys roots and Cartesian triples ─────
+                // Output: i fastest (innermost), k slowest (outermost):
+                // cart_out[ci_idx + ck_idx*nci]
+                let mut ck_idx = 0u32;
+                let mut ka = 0u32;
+                while ka <= lk {
+                    let kx = lk - ka; // kx: lk..0 (descending)
+                    let lk_minus_kx = lk - kx;
+                    let mut kb = 0u32;
+                    while kb <= lk_minus_kx {
+                        let ky = lk_minus_kx - kb; // ky descending
+                        let kz = lk - kx - ky;
+
+                        let mut ci_idx = 0u32;
+                        let mut ia = 0u32;
+                        while ia <= li {
+                            let ix = li - ia;
+                            let li_minus_ix = li - ix;
+                            let mut ib = 0u32;
+                            while ib <= li_minus_ix {
+                                let iy = li_minus_ix - ib;
+                                let iz = li - ix - iy;
+
+                                let mut val = F::new(0.0);
+                                #[unroll]
+                                for irys2 in 0..nroots {
+                                    let vx = g[(kx * dm + ix * dn + irys2) as usize];
+                                    let vy =
+                                        g[(g_size + ky * dm + iy * dn + irys2) as usize];
+                                    let vz = g[(2u32 * g_size
+                                        + kz * dm
+                                        + iz * dn
+                                        + irys2)
+                                        as usize];
+                                    val += vx * vy * vz;
+                                }
+
+                                let mut ci = 0u32;
+                                while ci < nctr_i {
+                                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                                    let mut ck = 0u32;
+                                    while ck < nctr_k {
+                                        let coeff_k_val = coeff_k[(pk * nctr_k + ck) as usize];
+                                        cart_out[(ci_idx + ck_idx * nci) as usize] += val * coeff_i_val * coeff_k_val;
+                                        ck += 1u32;
+                                    }
+                                    ci += 1u32;
+                                }
+
+                                ci_idx += 1u32;
+                                ib += 1u32;
+                            }
+                            ia += 1u32;
+                        }
+
+                        ck_idx += 1u32;
+                        kb += 1u32;
+                    }
+                    ka += 1u32;
                 }
 
                 pk += 1u32;
