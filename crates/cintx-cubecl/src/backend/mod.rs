@@ -40,7 +40,10 @@ pub enum ResolvedBackend {
     /// wgpu GPU backend client, paired with the adapter's feature names for
     /// capability checks (e.g. SHADER_F64 gating).
     #[cfg(feature = "wgpu")]
-    Wgpu(cubecl::client::ComputeClient<cubecl_wgpu::WgpuRuntime>, Vec<String>),
+    Wgpu(
+        cubecl::client::ComputeClient<cubecl_wgpu::WgpuRuntime>,
+        Vec<String>,
+    ),
     /// CUDA backend client. Compile-only this phase — see
     /// `.planning/notes/cuda-metal-verification-gap.md`.
     #[cfg(feature = "cuda")]
@@ -51,7 +54,10 @@ pub enum ResolvedBackend {
     /// Metal — M1 alias: dispatches through `cubecl_wgpu::WgpuRuntime` on
     /// Apple targets. See `.planning/notes/cuda-metal-verification-gap.md`.
     #[cfg(feature = "metal")]
-    Metal(cubecl::client::ComputeClient<cubecl_wgpu::WgpuRuntime>, Vec<String>),
+    Metal(
+        cubecl::client::ComputeClient<cubecl_wgpu::WgpuRuntime>,
+        Vec<String>,
+    ),
 }
 
 impl ResolvedBackend {
@@ -190,15 +196,13 @@ pub fn resolve_backend_kind() -> Result<BackendKind, cintxRsError> {
         #[cfg(feature = "metal")]
         Ok("metal") => Ok(BackendKind::Metal),
         // Compiled-out backends — D-01 hard error.
-        Ok(name) if KNOWN_BACKEND_NAMES.contains(&name) => {
-            Err(cintxRsError::BackendNotCompiled {
-                requested: name.to_owned(),
-                compiled_in: COMPILED_IN_BACKENDS
-                    .iter()
-                    .map(|s| (*s).to_owned())
-                    .collect(),
-            })
-        }
+        Ok(name) if KNOWN_BACKEND_NAMES.contains(&name) => Err(cintxRsError::BackendNotCompiled {
+            requested: name.to_owned(),
+            compiled_in: COMPILED_IN_BACKENDS
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+        }),
         // Unrecognized — D-02 error.
         Ok(other) => Err(cintxRsError::InvalidEnvParam {
             param: "CINTX_BACKEND",
@@ -235,7 +239,10 @@ mod tests {
             selector: "auto".to_owned(),
         };
         let backend = ResolvedBackend::from_intent(&intent);
-        assert!(backend.is_ok(), "CPU backend should initialise successfully");
+        assert!(
+            backend.is_ok(),
+            "CPU backend should initialise successfully"
+        );
         assert!(matches!(backend.unwrap(), ResolvedBackend::Cpu(_)));
     }
 

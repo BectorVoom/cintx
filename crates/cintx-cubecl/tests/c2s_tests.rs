@@ -4,8 +4,7 @@
 //! and verifies transform correctness for key shell pairs.
 
 use cintx_cubecl::transform::c2s::{
-    cart_to_sph_1e, cart_to_spheric_staging, ncart, nsph, C2S_L0, C2S_L1, C2S_L2, C2S_L3,
-    C2S_L4,
+    C2S_L0, C2S_L1, C2S_L2, C2S_L3, C2S_L4, cart_to_sph_1e, cart_to_spheric_staging, ncart, nsph,
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -168,7 +167,10 @@ fn test_c2s_pp_transform() {
     // Output shape is 3x3 (nsph(1)=3 for both i and j)
     // Verify it's not all zeros
     let nonzero_count = sph_buf.iter().filter(|&&x| x.abs() > 1e-15).count();
-    assert!(nonzero_count > 0, "pp transform should produce non-zero output");
+    assert!(
+        nonzero_count > 0,
+        "pp transform should produce non-zero output"
+    );
 
     // For identity cart input, C2S_L1 is itself a permutation matrix,
     // so the output should also be a permutation matrix (each row has exactly one 1.0)
@@ -178,8 +180,16 @@ fn test_c2s_pp_transform() {
         let row = &sph_buf[row_start..row_start + 3];
         let ones: Vec<_> = row.iter().filter(|&&x| (x - 1.0).abs() < 1e-15).collect();
         let zeros: Vec<_> = row.iter().filter(|&&x| x.abs() < 1e-15).collect();
-        assert_eq!(ones.len(), 1, "pp output row {mi} should have exactly one 1.0");
-        assert_eq!(zeros.len(), 2, "pp output row {mi} should have exactly two 0.0s");
+        assert_eq!(
+            ones.len(),
+            1,
+            "pp output row {mi} should have exactly one 1.0"
+        );
+        assert_eq!(
+            zeros.len(),
+            2,
+            "pp output row {mi} should have exactly two 0.0s"
+        );
     }
 }
 
@@ -234,7 +244,10 @@ fn test_cart_to_spheric_staging_noop() {
     let mut data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
     let original = data.clone();
     cart_to_spheric_staging(&mut data).expect("staging no-op should not fail");
-    assert_eq!(data, original, "cart_to_spheric_staging must not modify data");
+    assert_eq!(
+        data, original,
+        "cart_to_spheric_staging must not modify data"
+    );
 }
 
 #[test]

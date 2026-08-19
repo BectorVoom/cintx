@@ -24,11 +24,11 @@ mod tests {
             let (_r1, w1) = rys_root1_scalar(x);
             let ([_r0, _r1], [w0, w1_r2]) = rys_root2_scalar(x);
 
-            // Analytical Boys function F_0(x) = sqrt(pi / (4x)) * erf(sqrt(x)) using rmath::erf
+            // Analytical Boys function F_0(x) = sqrt(pi / (4x)) * erf(sqrt(x)) using rmath::fast::erf
             let f0 = if x < 1e-6 {
                 1.0 - x / 3.0
             } else {
-                (PI / (4.0 * x)).sqrt() * rmath::erf(x.sqrt())
+                (PI / (4.0 * x)).sqrt() * rmath::fast::erf(x.sqrt())
             };
 
             assert_relative_eq!(w1, f0, epsilon = 1e-7);
@@ -530,8 +530,8 @@ mod tests {
             assert_relative_eq!(cos_v64[i], x.cos(), epsilon = 1e-14);
             assert_relative_eq!(pow_v64[i], x.powi(2), epsilon = 1e-13);
             assert!(lgamma_v64[i].is_finite());
-            assert_relative_eq!(rmath::j0(x), rmath::j0(x), epsilon = 1e-14);
-            assert_relative_eq!(rmath::exp10(x), 10.0_f64.powf(x), epsilon = 1e-12);
+            assert_relative_eq!(rmath::fast::j0(x), rmath::fast::j0(x), epsilon = 1e-14);
+            assert_relative_eq!(rmath::fast::exp10(x), 10.0_f64.powf(x), epsilon = 1e-12);
         }
 
         // Test f32x4
@@ -636,7 +636,7 @@ mod tests {
         let djk = (rj[0] - rk[0]).powi(2) + (rj[1] - rk[1]).powi(2) + (rj[2] - rk[2]).powi(2);
 
         let zeta = ai + aj + ak;
-        let exp_term = rmath::exp(-(ai * aj * dij + ai * ak * dik + aj * ak * djk) / zeta);
+        let exp_term = rmath::fast::exp(-(ai * aj * dij + ai * ak * dik + aj * ak * djk) / zeta);
         let s0 = (PI / zeta).powf(1.5) * exp_term;
         let expected = s0 * common_fac_sp(0).powi(3) * ci * cj * ck;
 
@@ -692,7 +692,7 @@ mod tests {
             + aj * ak * djk
             + aj * al * djl
             + ak * al * dkl;
-        let s0 = (PI / zeta).powf(1.5) * rmath::exp(-exp_sum / zeta);
+        let s0 = (PI / zeta).powf(1.5) * rmath::fast::exp(-exp_sum / zeta);
         let expected = s0 * common_fac_sp(0).powi(4);
 
         let input = Center4c1eInput {

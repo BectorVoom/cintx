@@ -22,7 +22,8 @@ pub fn apply_representation_transform(
             let _ = staging;
             Err(cintxRsError::UnsupportedApi {
                 requested: "apply_representation_transform does not support Spinor — \
-                            use explicit cart_to_spinor_sf_2d/4d in kernel launchers".to_owned(),
+                            use explicit cart_to_spinor_sf_2d/4d in kernel launchers"
+                    .to_owned(),
             })
         }
     }

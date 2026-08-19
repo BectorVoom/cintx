@@ -31,9 +31,7 @@ use crate::capability::{CapabilityReason, WgpuCapabilitySnapshot, WgpuPreflightR
 /// when:
 /// - The selector is invalid or unrecognized.
 /// - No adapter matching the selector is available.
-pub fn bootstrap_wgpu_runtime(
-    intent: &BackendIntent,
-) -> Result<WgpuPreflightReport, cintxRsError> {
+pub fn bootstrap_wgpu_runtime(intent: &BackendIntent) -> Result<WgpuPreflightReport, cintxRsError> {
     let selector = parse_selector(&intent.selector)?;
     bootstrap_with_selector(selector)
 }
@@ -91,9 +89,7 @@ fn capability_error(reason: CapabilityReason) -> cintxRsError {
 /// On non-wasm platforms this performs synchronous adapter enumeration and
 /// capability snapshot collection.  The result is a [`WgpuPreflightReport`]
 /// that the executor uses to populate [`BackendCapabilityToken`] fields.
-fn bootstrap_with_selector(
-    selector: AdapterSelector,
-) -> Result<WgpuPreflightReport, cintxRsError> {
+fn bootstrap_with_selector(selector: AdapterSelector) -> Result<WgpuPreflightReport, cintxRsError> {
     #[cfg(target_family = "wasm")]
     {
         // WASM requires async init; return unsupported with a clear reason.
@@ -122,8 +118,7 @@ fn bootstrap_with_selector(
         }
 
         // Non-default selectors are not cached (rare, and device index varies).
-        do_bootstrap::<AutoGraphicsApi>(selector)
-            .map_err(|reason| capability_error(reason))
+        do_bootstrap::<AutoGraphicsApi>(selector).map_err(|reason| capability_error(reason))
     }
 }
 
@@ -205,10 +200,7 @@ fn collect_feature_names(adapter: &wgpu::Adapter) -> Vec<String> {
             wgpu::Features::TEXTURE_BINDING_ARRAY,
             "TEXTURE_BINDING_ARRAY",
         ),
-        (
-            wgpu::Features::BUFFER_BINDING_ARRAY,
-            "BUFFER_BINDING_ARRAY",
-        ),
+        (wgpu::Features::BUFFER_BINDING_ARRAY, "BUFFER_BINDING_ARRAY"),
         (
             wgpu::Features::STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING,
             "STORAGE_TEXTURE_ARRAY_NON_UNIFORM_INDEXING",

@@ -154,43 +154,178 @@ pub fn launch_ssc(
     let cart_buf: Vec<f64> = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_ssc_scalar_device::<cubecl::cpu::CpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, dn as u32, dm as u32,
-            g_size as u32, nmax as u32, mmax as u32, ni as u32, nj as u32, nk as u32,
-            axis_size as u32, nrys_roots as u32, ri, rj, rk, rirj, common_factor, &exps_i, &exps_j,
-            &exps_k, &coeff_i, &coeff_j, &coeff_k, out_len,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            dn as u32,
+            dm as u32,
+            g_size as u32,
+            nmax as u32,
+            mmax as u32,
+            ni as u32,
+            nj as u32,
+            nk as u32,
+            axis_size as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            rirj,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
+            out_len,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_ssc_scalar_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, dn as u32, dm as u32,
-            g_size as u32, nmax as u32, mmax as u32, ni as u32, nj as u32, nk as u32,
-            axis_size as u32, nrys_roots as u32, ri, rj, rk, rirj, common_factor, &exps_i, &exps_j,
-            &exps_k, &coeff_i, &coeff_j, &coeff_k, out_len,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            dn as u32,
+            dm as u32,
+            g_size as u32,
+            nmax as u32,
+            mmax as u32,
+            ni as u32,
+            nj as u32,
+            nk as u32,
+            axis_size as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            rirj,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
+            out_len,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_ssc_scalar_device::<cubecl_cuda::CudaRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, dn as u32, dm as u32,
-            g_size as u32, nmax as u32, mmax as u32, ni as u32, nj as u32, nk as u32,
-            axis_size as u32, nrys_roots as u32, ri, rj, rk, rirj, common_factor, &exps_i, &exps_j,
-            &exps_k, &coeff_i, &coeff_j, &coeff_k, out_len,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            dn as u32,
+            dm as u32,
+            g_size as u32,
+            nmax as u32,
+            mmax as u32,
+            ni as u32,
+            nj as u32,
+            nk as u32,
+            axis_size as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            rirj,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
+            out_len,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_ssc_scalar_device::<cubecl_hip::HipRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, dn as u32, dm as u32,
-            g_size as u32, nmax as u32, mmax as u32, ni as u32, nj as u32, nk as u32,
-            axis_size as u32, nrys_roots as u32, ri, rj, rk, rirj, common_factor, &exps_i, &exps_j,
-            &exps_k, &coeff_i, &coeff_j, &coeff_k, out_len,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            dn as u32,
+            dm as u32,
+            g_size as u32,
+            nmax as u32,
+            mmax as u32,
+            ni as u32,
+            nj as u32,
+            nk as u32,
+            axis_size as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            rirj,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
+            out_len,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_ssc_scalar_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, dn as u32, dm as u32,
-            g_size as u32, nmax as u32, mmax as u32, ni as u32, nj as u32, nk as u32,
-            axis_size as u32, nrys_roots as u32, ri, rj, rk, rirj, common_factor, &exps_i, &exps_j,
-            &exps_k, &coeff_i, &coeff_j, &coeff_k, out_len,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            dn as u32,
+            dm as u32,
+            g_size as u32,
+            nmax as u32,
+            mmax as u32,
+            ni as u32,
+            nj as u32,
+            nk as u32,
+            axis_size as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            rirj,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
+            out_len,
         ),
     };
 
@@ -706,11 +841,9 @@ fn ssc_scalar_kernel<F: Float + CubeElement>(
                                         let mut s_prevc = s0_k0;
                                         let mut m2 = 1u32;
                                         while m2 < mmax {
-                                            let prev_i_km = g[(axis_off
-                                                + irys
-                                                + (n2 - 1u32) * dn
-                                                + m2 * dm)
-                                                as usize];
+                                            let prev_i_km =
+                                                g[(axis_off + irys + (n2 - 1u32) * dn + m2 * dm)
+                                                    as usize];
                                             let s2c = c0p_axis * s1c
                                                 + F::cast_from(m2) * b01 * s_prevc
                                                 + b00 * prev_i_km;
@@ -760,8 +893,8 @@ fn ssc_scalar_kernel<F: Float + CubeElement>(
                                 }
                                 let mut iw = 0u32;
                                 while iw <= nmax {
-                                    work[iw as usize] = g[(axis_in_off + root + iw * dn + k * dm)
-                                        as usize];
+                                    work[iw as usize] =
+                                        g[(axis_in_off + root + iw * dn + k * dm) as usize];
                                     iw += 1u32;
                                 }
 
@@ -773,8 +906,7 @@ fn ssc_scalar_kernel<F: Float + CubeElement>(
                                     let i_max = nmax - j;
                                     let mut i = 0u32;
                                     while i <= i_max {
-                                        work[(cur + i) as usize] = rirj
-                                            * work[(prev + i) as usize]
+                                        work[(cur + i) as usize] = rirj * work[(prev + i) as usize]
                                             + work[(prev + i + 1u32) as usize];
                                         i += 1u32;
                                     }
@@ -843,12 +975,9 @@ fn ssc_scalar_kernel<F: Float + CubeElement>(
                                             let mut val = F::new(0.0);
                                             let mut root = 0u32;
                                             while root < nrys {
-                                                let idx_x =
-                                                    ((root * nk + kx) * nj + jx) * ni + ix;
-                                                let idx_y =
-                                                    ((root * nk + ky) * nj + jy) * ni + iy;
-                                                let idx_z =
-                                                    ((root * nk + kz) * nj + jz) * ni + iz;
+                                                let idx_x = ((root * nk + kx) * nj + jx) * ni + ix;
+                                                let idx_y = ((root * nk + ky) * nj + jy) * ni + iy;
+                                                let idx_z = ((root * nk + kz) * nj + jz) * ni + iz;
                                                 val += gsplit[idx_x as usize]
                                                     * gsplit[(gy_off + idx_y) as usize]
                                                     * gsplit[(gz_off + idx_z) as usize];
@@ -860,16 +989,14 @@ fn ssc_scalar_kernel<F: Float + CubeElement>(
                                             let mut wsum = F::new(0.0);
                                             let mut ci = 0u32;
                                             while ci < nctr_i {
-                                                let cvi =
-                                                    coeff_i[(ip * nctr_i + ci) as usize];
+                                                let cvi = coeff_i[(ip * nctr_i + ci) as usize];
                                                 let mut cj = 0u32;
                                                 while cj < nctr_j {
-                                                    let cvj =
-                                                        coeff_j[(jp * nctr_j + cj) as usize];
+                                                    let cvj = coeff_j[(jp * nctr_j + cj) as usize];
                                                     let mut ck = 0u32;
                                                     while ck < nctr_k {
-                                                        let cvk = coeff_k
-                                                            [(kp * nctr_k + ck) as usize];
+                                                        let cvk =
+                                                            coeff_k[(kp * nctr_k + ck) as usize];
                                                         wsum += cvi * cvj * cvk;
                                                         ck += 1u32;
                                                     }
@@ -878,8 +1005,7 @@ fn ssc_scalar_kernel<F: Float + CubeElement>(
                                                 ci += 1u32;
                                             }
 
-                                            let oidx =
-                                                (k_idx * nfj + j_idx) * nfi + i_idx;
+                                            let oidx = (k_idx * nfj + j_idx) * nfi + i_idx;
                                             cart_out[oidx as usize] += wsum * val;
 
                                             i_idx += 1u32;
@@ -1085,8 +1211,10 @@ mod device_tests {
         let ci = 0.9_f64;
         let cj = 1.1_f64;
         let ck = 0.8_f64;
-        let common_factor =
-            (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+        let common_factor = (PI * PI * PI) * 2.0 / SQRTPI
+            * common_fac_sp(li)
+            * common_fac_sp(lj)
+            * common_fac_sp(lk);
 
         let nrys_roots = (li as usize + lj as usize + lk as usize) / 2 + 1;
         let nmax = li as usize + lj as usize;
@@ -1105,7 +1233,21 @@ mod device_tests {
         let out_len = nci * ncj * nck;
         let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
 
-        let host = host_cart_ssc(li, lj, lk, ai, aj, ak, ri, rj, rk, common_factor, ci, cj, ck);
+        let host = host_cart_ssc(
+            li,
+            lj,
+            lk,
+            ai,
+            aj,
+            ak,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            ci,
+            cj,
+            ck,
+        );
         let dev = run_ssc_scalar_device::<cubecl::cpu::CpuRuntime>(
             &cpu_client(),
             li as u32,
@@ -1141,7 +1283,11 @@ mod device_tests {
             out_len,
         );
 
-        assert_eq!(host.len(), dev.len(), "length mismatch for ({li},{lj},{lk})");
+        assert_eq!(
+            host.len(),
+            dev.len(),
+            "length mismatch for ({li},{lj},{lk})"
+        );
         for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
             let diff = (h - d).abs();
             let thr = 1e-12 + 1e-10 * h.abs();
@@ -1230,9 +1376,10 @@ mod device_tests {
         let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
         let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
 
-        let common_factor =
-            ((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0) * common_fac_sp(0))
-                as f32;
+        let common_factor = ((PI * PI * PI) * 2.0 / SQRTPI
+            * common_fac_sp(0)
+            * common_fac_sp(0)
+            * common_fac_sp(0)) as f32;
 
         ssc_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
@@ -1287,6 +1434,9 @@ mod device_tests {
 
         let raw = client.read_one_unchecked(out_h);
         let out = f32::from_bytes(&raw)[0];
-        assert!(out.is_finite(), "f32 scalar ssc kernel result must be finite");
+        assert!(
+            out.is_finite(),
+            "f32 scalar ssc kernel result must be finite"
+        );
     }
 }

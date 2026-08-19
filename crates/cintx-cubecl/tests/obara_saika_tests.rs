@@ -36,7 +36,10 @@ fn os_vrr_step_host_generic_f32_smoke() {
     assert!(g[1] != 0.0_f32, "f32 vrr_step g[1] must be non-zero");
     // Sanity: close to f64 value
     let rel_err = (g[1] as f64 - 0.5_f64).abs() / 0.5_f64;
-    assert!(rel_err < 1e-5, "f32 vrr_step g[1] rel error too large: {rel_err:.2e}");
+    assert!(
+        rel_err < 1e-5,
+        "f32 vrr_step g[1] rel error too large: {rel_err:.2e}"
+    );
 }
 
 /// vrr_2e_step_host::<f64> — byte-identity with baseline (c00=0.3, b10=0.2, nmax=2).

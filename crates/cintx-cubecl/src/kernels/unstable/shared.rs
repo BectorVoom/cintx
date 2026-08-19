@@ -79,14 +79,7 @@ fn nabla_i_host(
 /// For j=0: `D_j = -2*aj * g[1, i]`.
 ///
 /// The derivative requires the source G-tensor to have one extra ket level (lj+1).
-fn nabla_j_host(
-    df: &mut [f64],
-    g: &[f64],
-    aj: f64,
-    li: u32,
-    lj: u32,
-    nmax: u32,
-) {
+fn nabla_j_host(df: &mut [f64], g: &[f64], aj: f64, li: u32, lj: u32, nmax: u32) {
     let aj2 = -2.0 * aj;
     let dj_stride = (nmax + 1) as usize;
 
@@ -117,9 +110,33 @@ pub(crate) fn apply_nabla_i_3axis(
     g_per_axis: usize,
 ) -> Vec<f64> {
     let mut df = vec![0.0_f64; 3 * g_per_axis];
-    nabla_i_host(&mut df[0..g_per_axis], &g[0..g_per_axis], ai, li, lj, nmax, g_per_axis);
-    nabla_i_host(&mut df[g_per_axis..2*g_per_axis], &g[g_per_axis..2*g_per_axis], ai, li, lj, nmax, g_per_axis);
-    nabla_i_host(&mut df[2*g_per_axis..3*g_per_axis], &g[2*g_per_axis..3*g_per_axis], ai, li, lj, nmax, g_per_axis);
+    nabla_i_host(
+        &mut df[0..g_per_axis],
+        &g[0..g_per_axis],
+        ai,
+        li,
+        lj,
+        nmax,
+        g_per_axis,
+    );
+    nabla_i_host(
+        &mut df[g_per_axis..2 * g_per_axis],
+        &g[g_per_axis..2 * g_per_axis],
+        ai,
+        li,
+        lj,
+        nmax,
+        g_per_axis,
+    );
+    nabla_i_host(
+        &mut df[2 * g_per_axis..3 * g_per_axis],
+        &g[2 * g_per_axis..3 * g_per_axis],
+        ai,
+        li,
+        lj,
+        nmax,
+        g_per_axis,
+    );
     df
 }
 
@@ -133,8 +150,22 @@ pub(crate) fn apply_nabla_j_3axis(
 ) -> Vec<f64> {
     let mut df = vec![0.0_f64; 3 * g_per_axis];
     nabla_j_host(&mut df[0..g_per_axis], &g[0..g_per_axis], aj, li, lj, nmax);
-    nabla_j_host(&mut df[g_per_axis..2*g_per_axis], &g[g_per_axis..2*g_per_axis], aj, li, lj, nmax);
-    nabla_j_host(&mut df[2*g_per_axis..3*g_per_axis], &g[2*g_per_axis..3*g_per_axis], aj, li, lj, nmax);
+    nabla_j_host(
+        &mut df[g_per_axis..2 * g_per_axis],
+        &g[g_per_axis..2 * g_per_axis],
+        aj,
+        li,
+        lj,
+        nmax,
+    );
+    nabla_j_host(
+        &mut df[2 * g_per_axis..3 * g_per_axis],
+        &g[2 * g_per_axis..3 * g_per_axis],
+        aj,
+        li,
+        lj,
+        nmax,
+    );
     df
 }
 

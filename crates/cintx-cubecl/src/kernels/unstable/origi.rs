@@ -62,10 +62,26 @@ struct OrigiVariant {
 
 fn origi_variant(op_name: &str) -> Result<OrigiVariant, cintxRsError> {
     match op_name {
-        "r2_origi" => Ok(OrigiVariant { i_inc: 2, j_inc: 0, ncomp: 1 }),
-        "r4_origi" => Ok(OrigiVariant { i_inc: 4, j_inc: 0, ncomp: 1 }),
-        "r2_origi_ip2" => Ok(OrigiVariant { i_inc: 2, j_inc: 1, ncomp: 3 }),
-        "r4_origi_ip2" => Ok(OrigiVariant { i_inc: 4, j_inc: 1, ncomp: 3 }),
+        "r2_origi" => Ok(OrigiVariant {
+            i_inc: 2,
+            j_inc: 0,
+            ncomp: 1,
+        }),
+        "r4_origi" => Ok(OrigiVariant {
+            i_inc: 4,
+            j_inc: 0,
+            ncomp: 1,
+        }),
+        "r2_origi_ip2" => Ok(OrigiVariant {
+            i_inc: 2,
+            j_inc: 1,
+            ncomp: 3,
+        }),
+        "r4_origi_ip2" => Ok(OrigiVariant {
+            i_inc: 4,
+            j_inc: 1,
+            ncomp: 3,
+        }),
         _ => Err(cintxRsError::UnsupportedApi {
             requested: format!("origi variant '{}' not supported", op_name),
         }),
@@ -97,7 +113,15 @@ fn g1e_r_i(g: &[f64], g_size: usize) -> Vec<f64> {
 /// live ip2 path now runs on-device, so this is retained as the device-vs-host
 /// oracle.
 #[allow(dead_code)]
-fn g1e_d_j(g: &[f64], g_size: usize, li: usize, lj: usize, _lk: usize, dj: usize, aj: f64) -> Vec<f64> {
+fn g1e_d_j(
+    g: &[f64],
+    g_size: usize,
+    li: usize,
+    lj: usize,
+    _lk: usize,
+    dj: usize,
+    aj: f64,
+) -> Vec<f64> {
     let mut f = vec![0.0_f64; 3 * g_size];
     let aj2 = -2.0 * aj;
     for axis in 0..3 {
@@ -139,8 +163,8 @@ fn contract_origi_r2(g0: &[f64], g_size: usize, li: u8, lj: u8, dj: usize) -> Ve
 
             // g3[ix] = g0[ix+2], g0[iy] = g0[iy], g0[iz] = g0[iz]
             let s = g0[0 * g_size + base_x + 2] * g0[1 * g_size + base_y] * g0[2 * g_size + base_z]
-                  + g0[0 * g_size + base_x] * g0[1 * g_size + base_y + 2] * g0[2 * g_size + base_z]
-                  + g0[0 * g_size + base_x] * g0[1 * g_size + base_y] * g0[2 * g_size + base_z + 2];
+                + g0[0 * g_size + base_x] * g0[1 * g_size + base_y + 2] * g0[2 * g_size + base_z]
+                + g0[0 * g_size + base_x] * g0[1 * g_size + base_y] * g0[2 * g_size + base_z + 2];
             out[ci_idx * ncj + cj_idx] += s;
         }
     }
@@ -262,10 +286,18 @@ fn contract_origi_r2_ip2(
             let n = ci_idx * ncj + cj_idx;
 
             // g6 = g0[..+2], g7 = g1[..+2], g1 = D_J(g0)
-            let g0x = g0[gx + bx]; let g0y = g0[gy + by]; let g0z = g0[gz + bz];
-            let g1x = g1[gx + bx]; let g1y = g1[gy + by]; let g1z = g1[gz + bz];
-            let g6x = g0[gx + bx + 2]; let g6y = g0[gy + by + 2]; let g6z = g0[gz + bz + 2];
-            let g7x = g1[gx + bx + 2]; let g7y = g1[gy + by + 2]; let g7z = g1[gz + bz + 2];
+            let g0x = g0[gx + bx];
+            let g0y = g0[gy + by];
+            let g0z = g0[gz + bz];
+            let g1x = g1[gx + bx];
+            let g1y = g1[gy + by];
+            let g1z = g1[gz + bz];
+            let g6x = g0[gx + bx + 2];
+            let g6y = g0[gy + by + 2];
+            let g6z = g0[gz + bz + 2];
+            let g7x = g1[gx + bx + 2];
+            let g7y = g1[gy + by + 2];
+            let g7z = g1[gz + bz + 2];
 
             let cart_size = nci * ncj;
             out[0 * cart_size + n] += g7x * g0y * g0z + g1x * g6y * g0z + g1x * g0y * g6z;
@@ -522,7 +554,12 @@ pub fn launch_origi(
                     let cart_slice = &cart_buf[comp * cart_size..(comp + 1) * cart_size];
                     let sph_off = comp * sph_size;
                     if sph_off + sph_size <= staging.len() {
-                        cart_to_sph_1e(cart_slice, &mut staging[sph_off..sph_off + sph_size], li, lj);
+                        cart_to_sph_1e(
+                            cart_slice,
+                            &mut staging[sph_off..sph_off + sph_size],
+                            li,
+                            lj,
+                        );
                     }
                 }
             }
@@ -538,13 +575,7 @@ pub fn launch_origi(
 
 /// Fill G-tensor for origi (standard 1e overlap with elevated ceiling angular momentum).
 /// Identical to one_electron::fill_g_tensor_overlap.
-fn fill_g_tensor_origi(
-    pd: &PairData,
-    ri: [f64; 3],
-    rj: [f64; 3],
-    nmax: u32,
-    lj: u32,
-) -> Vec<f64> {
+fn fill_g_tensor_origi(pd: &PairData, ri: [f64; 3], rj: [f64; 3], nmax: u32, lj: u32) -> Vec<f64> {
     let g_per_axis = ((nmax + 1) * (lj + 1)) as usize;
     let mut g = vec![0.0_f64; 3 * g_per_axis];
 
@@ -768,9 +799,8 @@ fn origi_scalar_kernel<F: Float + CubeElement>(
                                         let mut val = F::new(0.0);
                                         if comptime!(r_power == 2u32) {
                                             // r^2: g2x*g0y*g0z + g0x*g2y*g0z + g0x*g0y*g2z
-                                            val = g2x * g0y * g0z
-                                                + g0x * g2y * g0z
-                                                + g0x * g0y * g2z;
+                                            val =
+                                                g2x * g0y * g0z + g0x * g2y * g0z + g0x * g0y * g2z;
                                         } else {
                                             // r^4: g4x*g0y*g0z + 2*g2x*g2y*g0z
                                             //    + 2*g2x*g0y*g2z + g0x*g4y*g0z
@@ -1214,8 +1244,7 @@ fn origi_ip2_kernel<F: Float + CubeElement>(
                                         let blk = ci_idx * ncj + cj_idx;
                                         cart_out[blk as usize] += weight * s0;
                                         cart_out[(block_len + blk) as usize] += weight * s1;
-                                        cart_out[(2u32 * block_len + blk) as usize] +=
-                                            weight * s2;
+                                        cart_out[(2u32 * block_len + blk) as usize] += weight * s2;
 
                                         cj_idx += 1u32;
                                         jb += 1u32;
@@ -1561,7 +1590,10 @@ mod tests {
         let raw = client.read_one_unchecked(out_h);
         let out = f32::from_bytes(&raw)[0];
         assert!(out.is_finite(), "f32 origi r2 kernel result must be finite");
-        assert!(out > 0.0, "s-s origi r2 f32 result should be positive: {out}");
+        assert!(
+            out > 0.0,
+            "s-s origi r2 f32 result should be positive: {out}"
+        );
     }
 
     // ── ip2 device-vs-host ────────────────────────────────────────────────
@@ -1619,7 +1651,11 @@ mod tests {
                     &[1.0],
                     &[1.0],
                 );
-                assert_close(&host, &dev, &format!("origi-ip2 r{r_power} li={li} lj={lj}"));
+                assert_close(
+                    &host,
+                    &dev,
+                    &format!("origi-ip2 r{r_power} li={li} lj={lj}"),
+                );
             }
         }
     }
@@ -1678,7 +1714,11 @@ mod tests {
                     &coeff_i,
                     &coeff_j,
                 );
-                assert_close(&host, &dev, &format!("origi-ip2-mp r{r_power} li={li} lj={lj}"));
+                assert_close(
+                    &host,
+                    &dev,
+                    &format!("origi-ip2-mp r{r_power} li={li} lj={lj}"),
+                );
             }
         }
     }

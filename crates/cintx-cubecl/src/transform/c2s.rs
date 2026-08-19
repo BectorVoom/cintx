@@ -7,7 +7,7 @@
 //!
 //! Reference: H. B. Schlegel and M. J. Frisch, Int. J. Quant. Chem., 54(1995), 83-87.
 
-use cintx_core::{cintxRsError, CintFloat};
+use cintx_core::{CintFloat, cintxRsError};
 
 // ──────────────────────────────────────────────────────────────────────────
 //  Helper dimension functions
@@ -60,11 +60,25 @@ pub const C2S_L2: [[f64; 6]; 5] = [
     // m=-1: dyz
     [0.0, 0.0, 0.0, 0.0, 1.092548430592079070, 0.0],
     // m= 0: dz2
-    [-0.315391565252520002, 0.0, 0.0, -0.315391565252520002, 0.0, 0.630783130505040012],
+    [
+        -0.315391565252520002,
+        0.0,
+        0.0,
+        -0.315391565252520002,
+        0.0,
+        0.630783130505040012,
+    ],
     // m=+1: dxz
     [0.0, 0.0, 1.092548430592079070, 0.0, 0.0, 0.0],
     // m=+2: dx2-y2
-    [0.546274215296039535, 0.0, 0.0, -0.546274215296039535, 0.0, 0.0],
+    [
+        0.546274215296039535,
+        0.0,
+        0.0,
+        -0.546274215296039535,
+        0.0,
+        0.0,
+    ],
 ];
 
 /// f-shell (l=3): 7 sph x 10 cart.
@@ -73,19 +87,96 @@ pub const C2S_L2: [[f64; 6]; 5] = [
 /// Cols: cartesian (xxx, xxy, xxz, xyy, xyz, xzz, yyy, yyz, yzz, zzz)
 pub const C2S_L3: [[f64; 10]; 7] = [
     // m=-3: fyx2 (f-3)
-    [0.0, 1.770130769779930531, 0.0, 0.0, 0.0, 0.0, -0.590043589926643510, 0.0, 0.0, 0.0],
+    [
+        0.0,
+        1.770130769779930531,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.590043589926643510,
+        0.0,
+        0.0,
+        0.0,
+    ],
     // m=-2: fxyz (f-2)
-    [0.0, 0.0, 0.0, 0.0, 2.890611442640554055, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        2.890611442640554055,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ],
     // m=-1: fyz2 (f-1)
-    [0.0, -0.457045799464465739, 0.0, 0.0, 0.0, 0.0, -0.457045799464465739, 0.0, 1.828183197857862944, 0.0],
+    [
+        0.0,
+        -0.457045799464465739,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.457045799464465739,
+        0.0,
+        1.828183197857862944,
+        0.0,
+    ],
     // m= 0: fz3 (f0)
-    [0.0, 0.0, -1.119528997770346170, 0.0, 0.0, 0.0, 0.0, -1.119528997770346170, 0.0, 0.746352665180230782],
+    [
+        0.0,
+        0.0,
+        -1.119528997770346170,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.119528997770346170,
+        0.0,
+        0.746352665180230782,
+    ],
     // m=+1: fxz2 (f1)
-    [-0.457045799464465739, 0.0, 0.0, -0.457045799464465739, 0.0, 1.828183197857862944, 0.0, 0.0, 0.0, 0.0],
+    [
+        -0.457045799464465739,
+        0.0,
+        0.0,
+        -0.457045799464465739,
+        0.0,
+        1.828183197857862944,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ],
     // m=+2: fzx2 (f2)
-    [0.0, 0.0, 1.445305721320277020, 0.0, 0.0, 0.0, 0.0, -1.445305721320277020, 0.0, 0.0],
+    [
+        0.0,
+        0.0,
+        1.445305721320277020,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.445305721320277020,
+        0.0,
+        0.0,
+    ],
     // m=+3: fx3 (f3)
-    [0.590043589926643510, 0.0, 0.0, -1.770130769779930530, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [
+        0.590043589926643510,
+        0.0,
+        0.0,
+        -1.770130769779930530,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ],
 ];
 
 /// g-shell (l=4): 9 sph x 15 cart.
@@ -94,23 +185,167 @@ pub const C2S_L3: [[f64; 10]; 7] = [
 /// Cols: cartesian (xxxx, xxxy, xxxz, xxyy, xxyz, xxzz, xyyy, xyyz, xyzz, xzzz, yyyy, yyyz, yyzz, yzzz, zzzz)
 pub const C2S_L4: [[f64; 15]; 9] = [
     // m=-4: gyx3 (g-4)
-    [0.0, 2.503342941796704538, 0.0, 0.0, 0.0, 0.0, -2.503342941796704530, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [
+        0.0,
+        2.503342941796704538,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.503342941796704530,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ],
     // m=-3: gx2yz (g-3)
-    [0.0, 0.0, 0.0, 0.0, 5.310392309339791593, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.770130769779930530, 0.0, 0.0, 0.0],
+    [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        5.310392309339791593,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -1.770130769779930530,
+        0.0,
+        0.0,
+        0.0,
+    ],
     // m=-2: gxyz2 (g-2)
-    [0.0, -0.946174695757560014, 0.0, 0.0, 0.0, 0.0, -0.946174695757560014, 0.0, 5.677048174545360108, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [
+        0.0,
+        -0.946174695757560014,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.946174695757560014,
+        0.0,
+        5.677048174545360108,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ],
     // m=-1: gyz3 (g-1)
-    [0.0, 0.0, 0.0, 0.0, -2.007139630671867500, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.007139630671867500, 0.0, 2.676186174229156671, 0.0],
+    [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.007139630671867500,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.007139630671867500,
+        0.0,
+        2.676186174229156671,
+        0.0,
+    ],
     // m= 0: gz4 (g0)
-    [0.317356640745612911, 0.0, 0.0, 0.634713281491225822, 0.0, -2.538853125964903290, 0.0, 0.0, 0.0, 0.0, 0.317356640745612911, 0.0, -2.538853125964903290, 0.0, 0.846284375321634430],
+    [
+        0.317356640745612911,
+        0.0,
+        0.0,
+        0.634713281491225822,
+        0.0,
+        -2.538853125964903290,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.317356640745612911,
+        0.0,
+        -2.538853125964903290,
+        0.0,
+        0.846284375321634430,
+    ],
     // m=+1: gxz3 (g1)
-    [0.0, 0.0, -2.007139630671867500, 0.0, 0.0, 0.0, 0.0, -2.007139630671867500, 0.0, 2.676186174229156671, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [
+        0.0,
+        0.0,
+        -2.007139630671867500,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -2.007139630671867500,
+        0.0,
+        2.676186174229156671,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ],
     // m=+2: gx2z2 (g2)
-    [-0.473087347878780002, 0.0, 0.0, 0.0, 0.0, 2.838524087272680054, 0.0, 0.0, 0.0, 0.0, 0.473087347878780009, 0.0, -2.838524087272680050, 0.0, 0.0],
+    [
+        -0.473087347878780002,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        2.838524087272680054,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.473087347878780009,
+        0.0,
+        -2.838524087272680050,
+        0.0,
+        0.0,
+    ],
     // m=+3: gzx3 (g3)
-    [0.0, 0.0, 1.770130769779930531, 0.0, 0.0, 0.0, 0.0, -5.310392309339791590, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [
+        0.0,
+        0.0,
+        1.770130769779930531,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -5.310392309339791590,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ],
     // m=+4: gy4 (g4)
-    [0.625835735449176134, 0.0, 0.0, -3.755014412695056800, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.625835735449176134, 0.0, 0.0, 0.0, 0.0],
+    [
+        0.625835735449176134,
+        0.0,
+        0.0,
+        -3.755014412695056800,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.625835735449176134,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ],
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -270,7 +505,8 @@ pub fn cart_to_sph_3c1e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec
             for mi in 0..nsi {
                 let mut sum = F::zero();
                 for ci in 0..nci {
-                    sum = sum + F::from_f64_lossy(c2s_coeff(li, mi, ci)) * cart[(k * ncj + j) * nci + ci];
+                    sum = sum
+                        + F::from_f64_lossy(c2s_coeff(li, mi, ci)) * cart[(k * ncj + j) * nci + ci];
                 }
                 tmp1[(k * ncj + j) * nsi + mi] = sum;
             }
@@ -284,7 +520,9 @@ pub fn cart_to_sph_3c1e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec
             for mi in 0..nsi {
                 let mut sum = F::zero();
                 for cj in 0..ncj {
-                    sum = sum + F::from_f64_lossy(c2s_coeff(lj, mj, cj)) * tmp1[(k * ncj + cj) * nsi + mi];
+                    sum = sum
+                        + F::from_f64_lossy(c2s_coeff(lj, mj, cj))
+                            * tmp1[(k * ncj + cj) * nsi + mi];
                 }
                 tmp2[(k * nsj + mj) * nsi + mi] = sum;
             }
@@ -298,7 +536,9 @@ pub fn cart_to_sph_3c1e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec
             for mi in 0..nsi {
                 let mut sum = F::zero();
                 for ck in 0..nck {
-                    sum = sum + F::from_f64_lossy(c2s_coeff(lk, mk, ck)) * tmp2[(ck * nsj + mj) * nsi + mi];
+                    sum = sum
+                        + F::from_f64_lossy(c2s_coeff(lk, mk, ck))
+                            * tmp2[(ck * nsj + mj) * nsi + mi];
                 }
                 sph[(mk * nsj + mj) * nsi + mi] = sum;
             }
@@ -353,8 +593,9 @@ pub fn cart_to_sph_2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8, ll: u8) 
                 for mi in 0..nsi {
                     let mut sum = F::zero();
                     for ci in 0..nci {
-                        sum = sum + F::from_f64_lossy(c2s_coeff(li, mi, ci))
-                            * cart[((l * nck + k) * ncj + j) * nci + ci];
+                        sum = sum
+                            + F::from_f64_lossy(c2s_coeff(li, mi, ci))
+                                * cart[((l * nck + k) * ncj + j) * nci + ci];
                     }
                     tmp1[((l * nck + k) * ncj + j) * nsi + mi] = sum;
                 }
@@ -370,8 +611,9 @@ pub fn cart_to_sph_2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8, ll: u8) 
                 for mi in 0..nsi {
                     let mut sum = F::zero();
                     for cj in 0..ncj {
-                        sum = sum + F::from_f64_lossy(c2s_coeff(lj, mj, cj))
-                            * tmp1[((l * nck + k) * ncj + cj) * nsi + mi];
+                        sum = sum
+                            + F::from_f64_lossy(c2s_coeff(lj, mj, cj))
+                                * tmp1[((l * nck + k) * ncj + cj) * nsi + mi];
                     }
                     tmp2[((l * nck + k) * nsj + mj) * nsi + mi] = sum;
                 }
@@ -387,8 +629,9 @@ pub fn cart_to_sph_2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8, ll: u8) 
                 for mi in 0..nsi {
                     let mut sum = F::zero();
                     for ck in 0..nck {
-                        sum = sum + F::from_f64_lossy(c2s_coeff(lk, mk, ck))
-                            * tmp2[((l * nck + ck) * nsj + mj) * nsi + mi];
+                        sum = sum
+                            + F::from_f64_lossy(c2s_coeff(lk, mk, ck))
+                                * tmp2[((l * nck + ck) * nsj + mj) * nsi + mi];
                     }
                     tmp3[((l * nsk + mk) * nsj + mj) * nsi + mi] = sum;
                 }
@@ -404,8 +647,9 @@ pub fn cart_to_sph_2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8, ll: u8) 
                 for mi in 0..nsi {
                     let mut sum = F::zero();
                     for cl in 0..ncl {
-                        sum = sum + F::from_f64_lossy(c2s_coeff(ll, ml, cl))
-                            * tmp3[((cl * nsk + mk) * nsj + mj) * nsi + mi];
+                        sum = sum
+                            + F::from_f64_lossy(c2s_coeff(ll, ml, cl))
+                                * tmp3[((cl * nsk + mk) * nsj + mj) * nsi + mi];
                     }
                     sph[((ml * nsk + mk) * nsj + mj) * nsi + mi] = sum;
                 }
@@ -576,7 +820,10 @@ mod tests {
         let cart: Vec<f64> = (0..n).map(|i| (i as f64) * 0.1 + 1.0).collect();
         let sph_3c1e = cart_to_sph_3c1e(&cart, li, lj, lk);
         let sph_3c2e = cart_to_sph_3c2e(&cart, li, lj, lk);
-        assert_eq!(sph_3c1e, sph_3c2e, "3c1e and 3c2e must produce identical output");
+        assert_eq!(
+            sph_3c1e, sph_3c2e,
+            "3c1e and 3c2e must produce identical output"
+        );
     }
 }
 
@@ -616,7 +863,11 @@ mod tests_c2s_generic {
     fn cart_to_sph_2c2e_f64_ss_identity() {
         let cart = vec![1.0_f64];
         let sph = cart_to_sph_2c2e::<f64>(&cart, 0, 0);
-        assert_eq!(sph, vec![1.0_f64], "cart_to_sph_2c2e::<f64> ss identity failed");
+        assert_eq!(
+            sph,
+            vec![1.0_f64],
+            "cart_to_sph_2c2e::<f64> ss identity failed"
+        );
     }
 
     /// f32 path: cart_to_sph_2c2e ss returns [1.0_f32].
@@ -624,7 +875,11 @@ mod tests_c2s_generic {
     fn cart_to_sph_2c2e_f32_ss_identity() {
         let cart = vec![1.0_f32];
         let sph = cart_to_sph_2c2e::<f32>(&cart, 0, 0);
-        assert_eq!(sph, vec![1.0_f32], "cart_to_sph_2c2e::<f32> ss identity failed");
+        assert_eq!(
+            sph,
+            vec![1.0_f32],
+            "cart_to_sph_2c2e::<f32> ss identity failed"
+        );
     }
 
     /// f64 path: d-shell 2c2e output length is nsph(2)^2 = 25.
@@ -632,16 +887,25 @@ mod tests_c2s_generic {
     fn cart_to_sph_2c2e_f64_dd_length() {
         let cart = vec![0.0_f64; ncart(2) * ncart(2)];
         let sph = cart_to_sph_2c2e::<f64>(&cart, 2, 2);
-        assert_eq!(sph.len(), nsph(2) * nsph(2), "cart_to_sph_2c2e::<f64> dd length wrong");
+        assert_eq!(
+            sph.len(),
+            nsph(2) * nsph(2),
+            "cart_to_sph_2c2e::<f64> dd length wrong"
+        );
     }
 
     /// f32 path: pp 2c2e returns finite values.
     #[test]
     fn cart_to_sph_2c2e_f32_pp_finite() {
-        let cart: Vec<f32> = (0..(ncart(1) * ncart(1))).map(|i| (i + 1) as f32 * 0.1).collect();
+        let cart: Vec<f32> = (0..(ncart(1) * ncart(1)))
+            .map(|i| (i + 1) as f32 * 0.1)
+            .collect();
         let sph = cart_to_sph_2c2e::<f32>(&cart, 1, 1);
         for &v in &sph {
-            assert!(v.is_finite(), "cart_to_sph_2c2e::<f32> produced non-finite value: {v}");
+            assert!(
+                v.is_finite(),
+                "cart_to_sph_2c2e::<f32> produced non-finite value: {v}"
+            );
         }
     }
 
@@ -650,7 +914,11 @@ mod tests_c2s_generic {
     fn cart_to_sph_3c1e_f64_sss_identity() {
         let cart = vec![1.0_f64];
         let sph = cart_to_sph_3c1e::<f64>(&cart, 0, 0, 0);
-        assert_eq!(sph, vec![1.0_f64], "cart_to_sph_3c1e::<f64> sss identity failed");
+        assert_eq!(
+            sph,
+            vec![1.0_f64],
+            "cart_to_sph_3c1e::<f64> sss identity failed"
+        );
     }
 
     /// f32 path: cart_to_sph_3c1e sss identity.
@@ -658,7 +926,11 @@ mod tests_c2s_generic {
     fn cart_to_sph_3c1e_f32_sss_identity() {
         let cart = vec![1.0_f32];
         let sph = cart_to_sph_3c1e::<f32>(&cart, 0, 0, 0);
-        assert_eq!(sph, vec![1.0_f32], "cart_to_sph_3c1e::<f32> sss identity failed");
+        assert_eq!(
+            sph,
+            vec![1.0_f32],
+            "cart_to_sph_3c1e::<f32> sss identity failed"
+        );
     }
 
     /// f64 path: cart_to_sph_3c2e sss identity.
@@ -666,7 +938,11 @@ mod tests_c2s_generic {
     fn cart_to_sph_3c2e_f64_sss_identity() {
         let cart = vec![1.0_f64];
         let sph = cart_to_sph_3c2e::<f64>(&cart, 0, 0, 0);
-        assert_eq!(sph, vec![1.0_f64], "cart_to_sph_3c2e::<f64> sss identity failed");
+        assert_eq!(
+            sph,
+            vec![1.0_f64],
+            "cart_to_sph_3c2e::<f64> sss identity failed"
+        );
     }
 
     /// f32 path: cart_to_sph_3c2e sss identity.
@@ -674,7 +950,11 @@ mod tests_c2s_generic {
     fn cart_to_sph_3c2e_f32_sss_identity() {
         let cart = vec![1.0_f32];
         let sph = cart_to_sph_3c2e::<f32>(&cart, 0, 0, 0);
-        assert_eq!(sph, vec![1.0_f32], "cart_to_sph_3c2e::<f32> sss identity failed");
+        assert_eq!(
+            sph,
+            vec![1.0_f32],
+            "cart_to_sph_3c2e::<f32> sss identity failed"
+        );
     }
 
     /// f64 path: cart_to_sph_2e ssss identity.
@@ -682,7 +962,11 @@ mod tests_c2s_generic {
     fn cart_to_sph_2e_f64_ssss_identity() {
         let cart = vec![1.0_f64];
         let sph = cart_to_sph_2e::<f64>(&cart, 0, 0, 0, 0);
-        assert_eq!(sph, vec![1.0_f64], "cart_to_sph_2e::<f64> ssss identity failed");
+        assert_eq!(
+            sph,
+            vec![1.0_f64],
+            "cart_to_sph_2e::<f64> ssss identity failed"
+        );
     }
 
     /// f32 path: cart_to_sph_2e ssss identity.
@@ -690,7 +974,11 @@ mod tests_c2s_generic {
     fn cart_to_sph_2e_f32_ssss_identity() {
         let cart = vec![1.0_f32];
         let sph = cart_to_sph_2e::<f32>(&cart, 0, 0, 0, 0);
-        assert_eq!(sph, vec![1.0_f32], "cart_to_sph_2e::<f32> ssss identity failed");
+        assert_eq!(
+            sph,
+            vec![1.0_f32],
+            "cart_to_sph_2e::<f32> ssss identity failed"
+        );
     }
 
     /// f32 path: d-shell 2e returns finite values.
@@ -701,7 +989,10 @@ mod tests_c2s_generic {
             .collect();
         let sph = cart_to_sph_2e::<f32>(&cart, 2, 2, 2, 2);
         for &v in &sph {
-            assert!(v.is_finite(), "cart_to_sph_2e::<f32> produced non-finite value: {v}");
+            assert!(
+                v.is_finite(),
+                "cart_to_sph_2e::<f32> produced non-finite value: {v}"
+            );
         }
     }
 }

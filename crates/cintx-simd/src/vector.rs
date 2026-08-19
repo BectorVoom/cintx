@@ -103,47 +103,47 @@ impl SimdFloat for f64x4 {
 
     #[inline(always)]
     fn sqrt(self) -> Self {
-        rmath::sqrt(self)
+        rmath::fast::sqrt(self)
     }
 
     #[inline(always)]
     fn exp(self) -> Self {
-        rmath::exp(self)
+        rmath::fast::exp(self)
     }
 
     #[inline(always)]
     fn ln(self) -> Self {
-        rmath::ln(self)
+        rmath::fast::ln(self)
     }
 
     #[inline(always)]
     fn erf(self) -> Self {
-        rmath::erf(self)
+        rmath::fast::erf(self)
     }
 
     #[inline(always)]
     fn erfc(self) -> Self {
-        rmath::erfc(self)
+        rmath::fast::erfc(self)
     }
 
     #[inline(always)]
     fn sin(self) -> Self {
-        rmath::sin(self)
+        rmath::fast::sin(self)
     }
 
     #[inline(always)]
     fn cos(self) -> Self {
-        rmath::cos(self)
+        rmath::fast::cos(self)
     }
 
     #[inline(always)]
     fn lgamma(self) -> Self {
-        rmath::lgamma(self)
+        rmath::fast::lgamma(self)
     }
 
     #[inline(always)]
     fn pow(self, y: Self) -> Self {
-        rmath::pow(self, y)
+        rmath::fast::pow(self, y)
     }
 
     #[inline(always)]
@@ -200,47 +200,47 @@ impl SimdFloat for f64x2 {
 
     #[inline(always)]
     fn sqrt(self) -> Self {
-        rmath::sqrt(self)
+        rmath::fast::sqrt(self)
     }
 
     #[inline(always)]
     fn exp(self) -> Self {
-        rmath::exp(self)
+        rmath::fast::exp(self)
     }
 
     #[inline(always)]
     fn ln(self) -> Self {
-        rmath::ln(self)
+        rmath::fast::ln(self)
     }
 
     #[inline(always)]
     fn erf(self) -> Self {
-        rmath::erf(self)
+        rmath::fast::erf(self)
     }
 
     #[inline(always)]
     fn erfc(self) -> Self {
-        rmath::erfc(self)
+        rmath::fast::erfc(self)
     }
 
     #[inline(always)]
     fn sin(self) -> Self {
-        rmath::sin(self)
+        rmath::fast::sin(self)
     }
 
     #[inline(always)]
     fn cos(self) -> Self {
-        rmath::cos(self)
+        rmath::fast::cos(self)
     }
 
     #[inline(always)]
     fn lgamma(self) -> Self {
-        rmath::lgamma(self)
+        rmath::fast::lgamma(self)
     }
 
     #[inline(always)]
     fn pow(self, y: Self) -> Self {
-        rmath::pow(self, y)
+        rmath::fast::pow(self, y)
     }
 
     #[inline(always)]
@@ -305,47 +305,47 @@ impl SimdFloat for f32x4 {
 
     #[inline(always)]
     fn sqrt(self) -> Self {
-        rmath::sqrt(self)
+        rmath::fast::sqrt(self)
     }
 
     #[inline(always)]
     fn exp(self) -> Self {
-        rmath::exp(self)
+        rmath::fast::exp(self)
     }
 
     #[inline(always)]
     fn ln(self) -> Self {
-        rmath::ln(self)
+        rmath::fast::ln(self)
     }
 
     #[inline(always)]
     fn erf(self) -> Self {
-        rmath::erf(self)
+        rmath::fast::erf(self)
     }
 
     #[inline(always)]
     fn erfc(self) -> Self {
-        rmath::erfc(self)
+        rmath::fast::erfc(self)
     }
 
     #[inline(always)]
     fn sin(self) -> Self {
-        rmath::sin(self)
+        rmath::fast::sin(self)
     }
 
     #[inline(always)]
     fn cos(self) -> Self {
-        rmath::cos(self)
+        rmath::fast::cos(self)
     }
 
     #[inline(always)]
     fn lgamma(self) -> Self {
-        rmath::lgamma(self)
+        rmath::fast::lgamma(self)
     }
 
     #[inline(always)]
     fn pow(self, y: Self) -> Self {
-        rmath::pow(self, y)
+        rmath::fast::pow(self, y)
     }
 
     #[inline(always)]
@@ -404,47 +404,47 @@ impl SimdFloat for f32x8 {
 
     #[inline(always)]
     fn sqrt(self) -> Self {
-        rmath::sqrt(self)
+        rmath::fast::sqrt(self)
     }
 
     #[inline(always)]
     fn exp(self) -> Self {
-        rmath::exp(self)
+        rmath::fast::exp(self)
     }
 
     #[inline(always)]
     fn ln(self) -> Self {
-        rmath::ln(self)
+        rmath::fast::ln(self)
     }
 
     #[inline(always)]
     fn erf(self) -> Self {
-        rmath::erf(self)
+        rmath::fast::erf(self)
     }
 
     #[inline(always)]
     fn erfc(self) -> Self {
-        rmath::erfc(self)
+        rmath::fast::erfc(self)
     }
 
     #[inline(always)]
     fn sin(self) -> Self {
-        rmath::sin(self)
+        rmath::fast::sin(self)
     }
 
     #[inline(always)]
     fn cos(self) -> Self {
-        rmath::cos(self)
+        rmath::fast::cos(self)
     }
 
     #[inline(always)]
     fn lgamma(self) -> Self {
-        rmath::lgamma(self)
+        rmath::fast::lgamma(self)
     }
 
     #[inline(always)]
     fn pow(self, y: Self) -> Self {
-        rmath::pow(self, y)
+        rmath::fast::pow(self, y)
     }
 
     #[inline(always)]
@@ -514,47 +514,47 @@ impl SimdFloat for f64 {
 
     #[inline(always)]
     fn sqrt(self) -> Self {
-        rmath::sqrt(self)
+        rmath::fast::sqrt(self)
     }
 
     #[inline(always)]
     fn exp(self) -> Self {
-        rmath::exp(self)
+        rmath::fast::exp(self)
     }
 
     #[inline(always)]
     fn ln(self) -> Self {
-        rmath::ln(self)
+        rmath::fast::ln(self)
     }
 
     #[inline(always)]
     fn erf(self) -> Self {
-        rmath::erf(self)
+        rmath::fast::erf(self)
     }
 
     #[inline(always)]
     fn erfc(self) -> Self {
-        rmath::erfc(self)
+        rmath::fast::erfc(self)
     }
 
     #[inline(always)]
     fn sin(self) -> Self {
-        rmath::sin(self)
+        rmath::fast::sin(self)
     }
 
     #[inline(always)]
     fn cos(self) -> Self {
-        rmath::cos(self)
+        rmath::fast::cos(self)
     }
 
     #[inline(always)]
     fn lgamma(self) -> Self {
-        rmath::lgamma(self)
+        rmath::fast::lgamma(self)
     }
 
     #[inline(always)]
     fn pow(self, y: Self) -> Self {
-        rmath::pow(self, y)
+        rmath::fast::pow(self, y)
     }
 
     #[inline(always)]
@@ -610,47 +610,47 @@ impl SimdFloat for f32 {
 
     #[inline(always)]
     fn sqrt(self) -> Self {
-        rmath::sqrt(self)
+        rmath::fast::sqrt(self)
     }
 
     #[inline(always)]
     fn exp(self) -> Self {
-        rmath::exp(self)
+        rmath::fast::exp(self)
     }
 
     #[inline(always)]
     fn ln(self) -> Self {
-        rmath::ln(self)
+        rmath::fast::ln(self)
     }
 
     #[inline(always)]
     fn erf(self) -> Self {
-        rmath::erf(self)
+        rmath::fast::erf(self)
     }
 
     #[inline(always)]
     fn erfc(self) -> Self {
-        rmath::erfc(self)
+        rmath::fast::erfc(self)
     }
 
     #[inline(always)]
     fn sin(self) -> Self {
-        rmath::sin(self)
+        rmath::fast::sin(self)
     }
 
     #[inline(always)]
     fn cos(self) -> Self {
-        rmath::cos(self)
+        rmath::fast::cos(self)
     }
 
     #[inline(always)]
     fn lgamma(self) -> Self {
-        rmath::lgamma(self)
+        rmath::fast::lgamma(self)
     }
 
     #[inline(always)]
     fn pow(self, y: Self) -> Self {
-        rmath::pow(self, y)
+        rmath::fast::pow(self, y)
     }
 
     #[inline(always)]

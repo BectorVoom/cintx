@@ -349,7 +349,9 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                             }
                             let mut ii = 1u32;
                             while ii < nmax + mmax {
-                                let term = F::new(0.5) * F::cast_from(ii) * inv_aijkl
+                                let term = F::new(0.5)
+                                    * F::cast_from(ii)
+                                    * inv_aijkl
                                     * buf[(ii - 1u32) as usize]
                                     - r1r12 * buf[ii as usize];
                                 buf[(ii + 1u32) as usize] = term;
@@ -675,18 +677,12 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                                         let iy = li_minus_ix - ib;
                                                         let iz = li - ix - iy;
 
-                                                        let x_idx = ix * di
-                                                            + kx * dk
-                                                            + lx * dl
-                                                            + jx * dj;
-                                                        let y_idx = iy * di
-                                                            + ky * dk
-                                                            + ly * dl
-                                                            + jy * dj;
-                                                        let z_idx = iz * di
-                                                            + kz * dk
-                                                            + lz * dl
-                                                            + jz * dj;
+                                                        let x_idx =
+                                                            ix * di + kx * dk + lx * dl + jx * dj;
+                                                        let y_idx =
+                                                            iy * di + ky * dk + ly * dl + jy * dj;
+                                                        let z_idx =
+                                                            iz * di + kz * dk + lz * dl + jz * dj;
                                                         let vx = g[(gx + x_idx) as usize];
                                                         let vy = g[(gy + y_idx) as usize];
                                                         let vz = g[(gz + z_idx) as usize];
@@ -874,7 +870,9 @@ fn ensure_validated_4c1e(
 ) -> Result<(), cintxRsError> {
     // D-05: Spinor rejection FIRST — before feature gate or any other check.
     if matches!(plan.representation, Representation::Spinor) {
-        return Err(validated_4c1e_error("spinor representation not supported for 4c1e"));
+        return Err(validated_4c1e_error(
+            "spinor representation not supported for 4c1e",
+        ));
     }
 
     if specialization.canonical_family() != "4c1e" {
@@ -1012,43 +1010,133 @@ fn launch_center_4c1e_typed<F: CintFloat>(
                     let prim_buf: Vec<f64> = match backend {
                         #[cfg(feature = "cpu")]
                         ResolvedBackend::Cpu(client) => run_4c1e_device::<cubecl::cpu::CpuRuntime>(
-                            client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32,
-                            n_prim_j as u32, n_prim_k as u32, n_prim_l as u32, ri, rj, rk, rl,
-                            common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
-                            &coeff_k, &coeff_l,
+                            client,
+                            li as u32,
+                            lj as u32,
+                            lk as u32,
+                            ll as u32,
+                            n_prim_i as u32,
+                            n_prim_j as u32,
+                            n_prim_k as u32,
+                            n_prim_l as u32,
+                            ri,
+                            rj,
+                            rk,
+                            rl,
+                            common_factor,
+                            &exps_i,
+                            &exps_j,
+                            &exps_k,
+                            &exps_l,
+                            &coeff_i,
+                            &coeff_j,
+                            &coeff_k,
+                            &coeff_l,
                         ),
                         #[cfg(feature = "wgpu")]
                         ResolvedBackend::Wgpu(client, _) => {
                             run_4c1e_device::<cubecl_wgpu::WgpuRuntime>(
-                                client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32,
-                                n_prim_j as u32, n_prim_k as u32, n_prim_l as u32, ri, rj, rk, rl,
-                                common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i,
-                                &coeff_j, &coeff_k, &coeff_l,
+                                client,
+                                li as u32,
+                                lj as u32,
+                                lk as u32,
+                                ll as u32,
+                                n_prim_i as u32,
+                                n_prim_j as u32,
+                                n_prim_k as u32,
+                                n_prim_l as u32,
+                                ri,
+                                rj,
+                                rk,
+                                rl,
+                                common_factor,
+                                &exps_i,
+                                &exps_j,
+                                &exps_k,
+                                &exps_l,
+                                &coeff_i,
+                                &coeff_j,
+                                &coeff_k,
+                                &coeff_l,
                             )
                         }
                         #[cfg(feature = "cuda")]
                         ResolvedBackend::Cuda(client) => {
                             run_4c1e_device::<cubecl_cuda::CudaRuntime>(
-                                client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32,
-                                n_prim_j as u32, n_prim_k as u32, n_prim_l as u32, ri, rj, rk, rl,
-                                common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i,
-                                &coeff_j, &coeff_k, &coeff_l,
+                                client,
+                                li as u32,
+                                lj as u32,
+                                lk as u32,
+                                ll as u32,
+                                n_prim_i as u32,
+                                n_prim_j as u32,
+                                n_prim_k as u32,
+                                n_prim_l as u32,
+                                ri,
+                                rj,
+                                rk,
+                                rl,
+                                common_factor,
+                                &exps_i,
+                                &exps_j,
+                                &exps_k,
+                                &exps_l,
+                                &coeff_i,
+                                &coeff_j,
+                                &coeff_k,
+                                &coeff_l,
                             )
                         }
                         #[cfg(feature = "rocm")]
                         ResolvedBackend::Rocm(client) => run_4c1e_device::<cubecl_hip::HipRuntime>(
-                            client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32,
-                            n_prim_j as u32, n_prim_k as u32, n_prim_l as u32, ri, rj, rk, rl,
-                            common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
-                            &coeff_k, &coeff_l,
+                            client,
+                            li as u32,
+                            lj as u32,
+                            lk as u32,
+                            ll as u32,
+                            n_prim_i as u32,
+                            n_prim_j as u32,
+                            n_prim_k as u32,
+                            n_prim_l as u32,
+                            ri,
+                            rj,
+                            rk,
+                            rl,
+                            common_factor,
+                            &exps_i,
+                            &exps_j,
+                            &exps_k,
+                            &exps_l,
+                            &coeff_i,
+                            &coeff_j,
+                            &coeff_k,
+                            &coeff_l,
                         ),
                         #[cfg(feature = "metal")]
                         ResolvedBackend::Metal(client, _) => {
                             run_4c1e_device::<cubecl_wgpu::WgpuRuntime>(
-                                client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32,
-                                n_prim_j as u32, n_prim_k as u32, n_prim_l as u32, ri, rj, rk, rl,
-                                common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i,
-                                &coeff_j, &coeff_k, &coeff_l,
+                                client,
+                                li as u32,
+                                lj as u32,
+                                lk as u32,
+                                ll as u32,
+                                n_prim_i as u32,
+                                n_prim_j as u32,
+                                n_prim_k as u32,
+                                n_prim_l as u32,
+                                ri,
+                                rj,
+                                rk,
+                                rl,
+                                common_factor,
+                                &exps_i,
+                                &exps_j,
+                                &exps_k,
+                                &exps_l,
+                                &coeff_i,
+                                &coeff_j,
+                                &coeff_k,
+                                &coeff_l,
                             )
                         }
                     };
@@ -1073,7 +1161,10 @@ fn launch_center_4c1e_typed<F: CintFloat>(
         }
         _ => {
             let copy_len = staging.len().min(cart_buf.len());
-            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
+            for (dst, &src) in staging[..copy_len]
+                .iter_mut()
+                .zip(cart_buf[..copy_len].iter())
+            {
                 *dst = F::from_f64_lossy(src);
             }
         }
@@ -1083,7 +1174,11 @@ fn launch_center_4c1e_typed<F: CintFloat>(
     // WR-06: precision-aware sentinel so f32 stale lanes (< f32 noise floor ~1e-7)
     // are not counted. The outer F32 arm already bounds staging to out_elems, so this
     // scan cannot touch stale upper-half lanes.
-    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -1133,7 +1228,12 @@ pub fn launch_center_4c1e(
                     provided: staging_f32.len(),
                 });
             }
-            launch_center_4c1e_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
+            launch_center_4c1e_typed::<f32>(
+                backend,
+                plan,
+                specialization,
+                &mut staging_f32[..out_elems],
+            )
         }
     }
 }
@@ -1503,8 +1603,7 @@ fn contract_4c1e_cart(g: &[f64], shape: &Shape4c1e, li: u8, lj: u8, lk: u8, ll: 
                         + lz as usize * shape.dl
                         + jz as usize * shape.dj;
                     let val = g[gx_off + x_idx] * g[gy_off + y_idx] * g[gz_off + z_idx];
-                    let out_idx =
-                        i_idx + j_idx * nfi + k_idx * nfi * nfj + l_idx * nfi * nfj * nfk;
+                    let out_idx = i_idx + j_idx * nfi + k_idx * nfi * nfj + l_idx * nfi * nfj * nfk;
                     out[out_idx] += val;
                 }
             }
@@ -1524,35 +1623,58 @@ mod tests {
     #[cfg(feature = "with-4c1e")]
     #[test]
     fn test_center_4c1e_parity_f64() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Cart,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a0 = make_s_shell(0);
         let shell_a1 = make_s_shell(0);
         let shell_b0 = make_s_shell(1);
         let shell_b1 = make_s_shell(1);
-        let all_shells = Arc::from(vec![shell_a0.clone(), shell_a1.clone(), shell_b0.clone(), shell_b1.clone()].into_boxed_slice());
+        let all_shells = Arc::from(
+            vec![
+                shell_a0.clone(),
+                shell_a1.clone(),
+                shell_b0.clone(),
+                shell_b1.clone(),
+            ]
+            .into_boxed_slice(),
+        );
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
-        let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
+        let shells =
+            cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1])
+                .unwrap();
 
         use cintx_ops::resolver::Resolver;
         let desc = Resolver::descriptor_by_symbol("int4c1e_cart").expect("int4c1e_cart must exist");
         let op_id = desc.id;
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
+        let query =
+            query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F64;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -1563,13 +1685,27 @@ mod tests {
         let mut staging_typed = vec![0.0_f64; 1];
 
         let result_outer = launch_center_4c1e(&backend, &plan, &spec, &mut staging_outer);
-        assert!(result_outer.is_ok(), "outer f64 4c1e should succeed: {:?}", result_outer);
+        assert!(
+            result_outer.is_ok(),
+            "outer f64 4c1e should succeed: {:?}",
+            result_outer
+        );
 
-        let result_typed = launch_center_4c1e_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
-        assert!(result_typed.is_ok(), "typed f64 4c1e should succeed: {:?}", result_typed);
+        let result_typed =
+            launch_center_4c1e_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
+        assert!(
+            result_typed.is_ok(),
+            "typed f64 4c1e should succeed: {:?}",
+            result_typed
+        );
 
-        assert_eq!(staging_outer[0].to_bits(), staging_typed[0].to_bits(),
-            "f64 outer and typed 4c1e should be byte-identical: outer={} typed={}", staging_outer[0], staging_typed[0]);
+        assert_eq!(
+            staging_outer[0].to_bits(),
+            staging_typed[0].to_bits(),
+            "f64 outer and typed 4c1e should be byte-identical: outer={} typed={}",
+            staging_outer[0],
+            staging_typed[0]
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1578,35 +1714,58 @@ mod tests {
     #[cfg(feature = "with-4c1e")]
     #[test]
     fn test_center_4c1e_f32_smoke() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell};
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Cart,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a0 = make_s_shell(0);
         let shell_a1 = make_s_shell(0);
         let shell_b0 = make_s_shell(1);
         let shell_b1 = make_s_shell(1);
-        let all_shells = Arc::from(vec![shell_a0.clone(), shell_a1.clone(), shell_b0.clone(), shell_b1.clone()].into_boxed_slice());
+        let all_shells = Arc::from(
+            vec![
+                shell_a0.clone(),
+                shell_a1.clone(),
+                shell_b0.clone(),
+                shell_b1.clone(),
+            ]
+            .into_boxed_slice(),
+        );
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
-        let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
+        let shells =
+            cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1])
+                .unwrap();
 
         use cintx_ops::resolver::Resolver;
         let desc = Resolver::descriptor_by_symbol("int4c1e_cart").expect("int4c1e_cart must exist");
         let op_id = desc.id;
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
+        let query =
+            query_workspace(op_id, Representation::Cart, &basis, shells.clone(), &opts).unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_id, Representation::Cart, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F32;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -1618,7 +1777,11 @@ mod tests {
         assert!(result.is_ok(), "F32 4c1e should succeed: {:?}", result);
 
         let staging_f32 = bytemuck::cast_slice::<f64, f32>(&staging);
-        assert!(staging_f32[0].is_finite(), "F32 4c1e result should be finite: {}", staging_f32[0]);
+        assert!(
+            staging_f32[0].is_finite(),
+            "F32 4c1e result should be finite: {}",
+            staging_f32[0]
+        );
     }
 
     #[test]
@@ -1643,8 +1806,16 @@ mod tests {
 
         let aijkl = aij + akl;
         let expected_gz = fac / (aijkl * aijkl.sqrt());
-        assert!((g[0] - 1.0).abs() < 1e-14, "gx[0] should be 1.0, got {}", g[0]);
-        assert!((g[1] - 1.0).abs() < 1e-14, "gy[0] should be 1.0, got {}", g[1]);
+        assert!(
+            (g[0] - 1.0).abs() < 1e-14,
+            "gx[0] should be 1.0, got {}",
+            g[0]
+        );
+        assert!(
+            (g[1] - 1.0).abs() < 1e-14,
+            "gy[0] should be 1.0, got {}",
+            g[1]
+        );
         assert!(
             (g[2] - expected_gz).abs() < 1e-14,
             "gz[0] should be {expected_gz}, got {}",
@@ -1755,7 +1926,17 @@ mod tests {
 
             let mut g = vec![0.0_f64; 3 * shape.g_size];
             fill_4c1e_g_tensor(
-                &mut g, &shape, ri, rj, rk, rl, rij, rkl, aij, akl, quartet_fac,
+                &mut g,
+                &shape,
+                ri,
+                rj,
+                rk,
+                rl,
+                rij,
+                rkl,
+                aij,
+                akl,
+                quartet_fac,
             );
 
             let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
@@ -1801,7 +1982,19 @@ mod tests {
                 * common_fac_sp(ll);
 
             let host = host_cart_4c1e(
-                li, lj, lk, ll, ai, aj, ak, al, ri, rj, rk, rl, common_factor,
+                li,
+                lj,
+                lk,
+                ll,
+                ai,
+                aj,
+                ak,
+                al,
+                ri,
+                rj,
+                rk,
+                rl,
+                common_factor,
             );
             let dev = run_4c1e_device::<cubecl::cpu::CpuRuntime>(
                 &cpu_client(),
@@ -1964,8 +2157,14 @@ mod tests {
 
             let raw = client.read_one_unchecked(out_h);
             let out = f32::from_bytes(&raw)[0];
-            assert!(out.is_finite(), "f32 4c1e kernel result must be finite: {out}");
-            assert!(out > 0.0, "s-s-s-s 4c1e f32 result should be positive: {out}");
+            assert!(
+                out.is_finite(),
+                "f32 4c1e kernel result must be finite: {out}"
+            );
+            assert!(
+                out > 0.0,
+                "s-s-s-s 4c1e f32 result should be positive: {out}"
+            );
         }
     }
 }

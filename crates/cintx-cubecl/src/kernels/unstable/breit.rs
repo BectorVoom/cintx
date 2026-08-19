@@ -461,9 +461,45 @@ fn fill_g_tensor_breit(
 
         let (gx, rest) = g.split_at_mut(shape.g_size);
         let (gy, gz) = rest.split_at_mut(shape.g_size);
-        vrr_fill_axis_breit(gx, irys, shape.nmax, shape.mmax, shape.g2d_ijmax, shape.g2d_klmax, c00[0], c0p[0], b10, b01, b00);
-        vrr_fill_axis_breit(gy, irys, shape.nmax, shape.mmax, shape.g2d_ijmax, shape.g2d_klmax, c00[1], c0p[1], b10, b01, b00);
-        vrr_fill_axis_breit(gz, irys, shape.nmax, shape.mmax, shape.g2d_ijmax, shape.g2d_klmax, c00[2], c0p[2], b10, b01, b00);
+        vrr_fill_axis_breit(
+            gx,
+            irys,
+            shape.nmax,
+            shape.mmax,
+            shape.g2d_ijmax,
+            shape.g2d_klmax,
+            c00[0],
+            c0p[0],
+            b10,
+            b01,
+            b00,
+        );
+        vrr_fill_axis_breit(
+            gy,
+            irys,
+            shape.nmax,
+            shape.mmax,
+            shape.g2d_ijmax,
+            shape.g2d_klmax,
+            c00[1],
+            c0p[1],
+            b10,
+            b01,
+            b00,
+        );
+        vrr_fill_axis_breit(
+            gz,
+            irys,
+            shape.nmax,
+            shape.mmax,
+            shape.g2d_ijmax,
+            shape.g2d_klmax,
+            c00[2],
+            c0p[2],
+            b10,
+            b01,
+            b00,
+        );
     }
 
     if shape.kbase {
@@ -1059,38 +1095,148 @@ fn run_breit_g_on_backend(
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_breit_g_device::<cubecl::cpu::CpuRuntime>(
-            client, li_e, lj_e, lk_e, ll_e, shape.di as u32, shape.dk as u32, shape.dl as u32,
-            shape.dj as u32, shape.g_size as u32, shape.nmax as u32, shape.mmax as u32,
-            shape.g2d_ijmax as u32, shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32,
-            shape.nroots as u32, ai, aj, ak, al, ri, rj, rk, rl, fac_env,
+            client,
+            li_e,
+            lj_e,
+            lk_e,
+            ll_e,
+            shape.di as u32,
+            shape.dk as u32,
+            shape.dl as u32,
+            shape.dj as u32,
+            shape.g_size as u32,
+            shape.nmax as u32,
+            shape.mmax as u32,
+            shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32,
+            shape.ibase as u32,
+            shape.kbase as u32,
+            shape.nroots as u32,
+            ai,
+            aj,
+            ak,
+            al,
+            ri,
+            rj,
+            rk,
+            rl,
+            fac_env,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_breit_g_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li_e, lj_e, lk_e, ll_e, shape.di as u32, shape.dk as u32, shape.dl as u32,
-            shape.dj as u32, shape.g_size as u32, shape.nmax as u32, shape.mmax as u32,
-            shape.g2d_ijmax as u32, shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32,
-            shape.nroots as u32, ai, aj, ak, al, ri, rj, rk, rl, fac_env,
+            client,
+            li_e,
+            lj_e,
+            lk_e,
+            ll_e,
+            shape.di as u32,
+            shape.dk as u32,
+            shape.dl as u32,
+            shape.dj as u32,
+            shape.g_size as u32,
+            shape.nmax as u32,
+            shape.mmax as u32,
+            shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32,
+            shape.ibase as u32,
+            shape.kbase as u32,
+            shape.nroots as u32,
+            ai,
+            aj,
+            ak,
+            al,
+            ri,
+            rj,
+            rk,
+            rl,
+            fac_env,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_breit_g_device::<cubecl_cuda::CudaRuntime>(
-            client, li_e, lj_e, lk_e, ll_e, shape.di as u32, shape.dk as u32, shape.dl as u32,
-            shape.dj as u32, shape.g_size as u32, shape.nmax as u32, shape.mmax as u32,
-            shape.g2d_ijmax as u32, shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32,
-            shape.nroots as u32, ai, aj, ak, al, ri, rj, rk, rl, fac_env,
+            client,
+            li_e,
+            lj_e,
+            lk_e,
+            ll_e,
+            shape.di as u32,
+            shape.dk as u32,
+            shape.dl as u32,
+            shape.dj as u32,
+            shape.g_size as u32,
+            shape.nmax as u32,
+            shape.mmax as u32,
+            shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32,
+            shape.ibase as u32,
+            shape.kbase as u32,
+            shape.nroots as u32,
+            ai,
+            aj,
+            ak,
+            al,
+            ri,
+            rj,
+            rk,
+            rl,
+            fac_env,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_breit_g_device::<cubecl_hip::HipRuntime>(
-            client, li_e, lj_e, lk_e, ll_e, shape.di as u32, shape.dk as u32, shape.dl as u32,
-            shape.dj as u32, shape.g_size as u32, shape.nmax as u32, shape.mmax as u32,
-            shape.g2d_ijmax as u32, shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32,
-            shape.nroots as u32, ai, aj, ak, al, ri, rj, rk, rl, fac_env,
+            client,
+            li_e,
+            lj_e,
+            lk_e,
+            ll_e,
+            shape.di as u32,
+            shape.dk as u32,
+            shape.dl as u32,
+            shape.dj as u32,
+            shape.g_size as u32,
+            shape.nmax as u32,
+            shape.mmax as u32,
+            shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32,
+            shape.ibase as u32,
+            shape.kbase as u32,
+            shape.nroots as u32,
+            ai,
+            aj,
+            ak,
+            al,
+            ri,
+            rj,
+            rk,
+            rl,
+            fac_env,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_breit_g_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li_e, lj_e, lk_e, ll_e, shape.di as u32, shape.dk as u32, shape.dl as u32,
-            shape.dj as u32, shape.g_size as u32, shape.nmax as u32, shape.mmax as u32,
-            shape.g2d_ijmax as u32, shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32,
-            shape.nroots as u32, ai, aj, ak, al, ri, rj, rk, rl, fac_env,
+            client,
+            li_e,
+            lj_e,
+            lk_e,
+            ll_e,
+            shape.di as u32,
+            shape.dk as u32,
+            shape.dl as u32,
+            shape.dj as u32,
+            shape.g_size as u32,
+            shape.nmax as u32,
+            shape.mmax as u32,
+            shape.g2d_ijmax as u32,
+            shape.g2d_klmax as u32,
+            shape.ibase as u32,
+            shape.kbase as u32,
+            shape.nroots as u32,
+            ai,
+            aj,
+            ak,
+            al,
+            ri,
+            rj,
+            rk,
+            rl,
+            fac_env,
         ),
     }
 }
@@ -1429,22 +1575,49 @@ fn gout_breit_r1p2(
         for (k_idx, &(kx, ky, kz)) in ck_comps.iter().enumerate() {
             for (j_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
                 for (i_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
-                    let x_idx = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let y_idx = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let z_idx = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let x_idx = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let y_idx = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let z_idx = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = 0.0_f64;
                     for irys in 0..nroots {
                         // 9-term contraction per breit.c CINTgout2e_int2e_breit_r1p2
-                        s += g15[gx_off + x_idx + irys] * g[gy_off + y_idx + irys] * g[gz_off + z_idx + irys];
-                        s += g12[gx_off + x_idx + irys] * g3[gy_off + y_idx + irys] * g[gz_off + z_idx + irys];
-                        s += g12[gx_off + x_idx + irys] * g[gy_off + y_idx + irys] * g3[gz_off + z_idx + irys];
-                        s += g3[gx_off + x_idx + irys] * g12[gy_off + y_idx + irys] * g[gz_off + z_idx + irys];
-                        s += g[gx_off + x_idx + irys] * g15[gy_off + y_idx + irys] * g[gz_off + z_idx + irys];
-                        s += g[gx_off + x_idx + irys] * g12[gy_off + y_idx + irys] * g3[gz_off + z_idx + irys];
-                        s += g3[gx_off + x_idx + irys] * g[gy_off + y_idx + irys] * g12[gz_off + z_idx + irys];
-                        s += g[gx_off + x_idx + irys] * g3[gy_off + y_idx + irys] * g12[gz_off + z_idx + irys];
-                        s += g[gx_off + x_idx + irys] * g[gy_off + y_idx + irys] * g15[gz_off + z_idx + irys];
+                        s += g15[gx_off + x_idx + irys]
+                            * g[gy_off + y_idx + irys]
+                            * g[gz_off + z_idx + irys];
+                        s += g12[gx_off + x_idx + irys]
+                            * g3[gy_off + y_idx + irys]
+                            * g[gz_off + z_idx + irys];
+                        s += g12[gx_off + x_idx + irys]
+                            * g[gy_off + y_idx + irys]
+                            * g3[gz_off + z_idx + irys];
+                        s += g3[gx_off + x_idx + irys]
+                            * g12[gy_off + y_idx + irys]
+                            * g[gz_off + z_idx + irys];
+                        s += g[gx_off + x_idx + irys]
+                            * g15[gy_off + y_idx + irys]
+                            * g[gz_off + z_idx + irys];
+                        s += g[gx_off + x_idx + irys]
+                            * g12[gy_off + y_idx + irys]
+                            * g3[gz_off + z_idx + irys];
+                        s += g3[gx_off + x_idx + irys]
+                            * g[gy_off + y_idx + irys]
+                            * g12[gz_off + z_idx + irys];
+                        s += g[gx_off + x_idx + irys]
+                            * g3[gy_off + y_idx + irys]
+                            * g12[gz_off + z_idx + irys];
+                        s += g[gx_off + x_idx + irys]
+                            * g[gy_off + y_idx + irys]
+                            * g15[gz_off + z_idx + irys];
                     }
                     let out_idx = i_idx + j_idx * nfi + k_idx * nfi * nfj + l_idx * nfi * nfj * nfk;
                     out[out_idx] = s;
@@ -1542,22 +1715,49 @@ fn gout_breit_r2p2(
         for (k_idx, &(kx, ky, kz)) in ck_comps.iter().enumerate() {
             for (j_idx, &(jx, jy, jz)) in cj_comps.iter().enumerate() {
                 for (i_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
-                    let x_idx = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let y_idx = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let z_idx = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let x_idx = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let y_idx = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let z_idx = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = 0.0_f64;
                     for irys in 0..nroots {
                         // Same 9-term contraction as r1p2 (same pattern, different g3/g12/g15)
-                        s += g15[gx_off + x_idx + irys] * g[gy_off + y_idx + irys] * g[gz_off + z_idx + irys];
-                        s += g12[gx_off + x_idx + irys] * g3[gy_off + y_idx + irys] * g[gz_off + z_idx + irys];
-                        s += g12[gx_off + x_idx + irys] * g[gy_off + y_idx + irys] * g3[gz_off + z_idx + irys];
-                        s += g3[gx_off + x_idx + irys] * g12[gy_off + y_idx + irys] * g[gz_off + z_idx + irys];
-                        s += g[gx_off + x_idx + irys] * g15[gy_off + y_idx + irys] * g[gz_off + z_idx + irys];
-                        s += g[gx_off + x_idx + irys] * g12[gy_off + y_idx + irys] * g3[gz_off + z_idx + irys];
-                        s += g3[gx_off + x_idx + irys] * g[gy_off + y_idx + irys] * g12[gz_off + z_idx + irys];
-                        s += g[gx_off + x_idx + irys] * g3[gy_off + y_idx + irys] * g12[gz_off + z_idx + irys];
-                        s += g[gx_off + x_idx + irys] * g[gy_off + y_idx + irys] * g15[gz_off + z_idx + irys];
+                        s += g15[gx_off + x_idx + irys]
+                            * g[gy_off + y_idx + irys]
+                            * g[gz_off + z_idx + irys];
+                        s += g12[gx_off + x_idx + irys]
+                            * g3[gy_off + y_idx + irys]
+                            * g[gz_off + z_idx + irys];
+                        s += g12[gx_off + x_idx + irys]
+                            * g[gy_off + y_idx + irys]
+                            * g3[gz_off + z_idx + irys];
+                        s += g3[gx_off + x_idx + irys]
+                            * g12[gy_off + y_idx + irys]
+                            * g[gz_off + z_idx + irys];
+                        s += g[gx_off + x_idx + irys]
+                            * g15[gy_off + y_idx + irys]
+                            * g[gz_off + z_idx + irys];
+                        s += g[gx_off + x_idx + irys]
+                            * g12[gy_off + y_idx + irys]
+                            * g3[gz_off + z_idx + irys];
+                        s += g3[gx_off + x_idx + irys]
+                            * g[gy_off + y_idx + irys]
+                            * g12[gz_off + z_idx + irys];
+                        s += g[gx_off + x_idx + irys]
+                            * g3[gy_off + y_idx + irys]
+                            * g12[gz_off + z_idx + irys];
+                        s += g[gx_off + x_idx + irys]
+                            * g[gy_off + y_idx + irys]
+                            * g15[gz_off + z_idx + irys];
                     }
                     let out_idx = i_idx + j_idx * nfi + k_idx * nfi * nfj + l_idx * nfi * nfj * nfk;
                     out[out_idx] = s;
@@ -1660,7 +1860,10 @@ pub fn launch_breit(
     let mut cart_buf = vec![0.0_f64; nfi * nfj * nfk * nfl];
 
     // Common factor: same as 2e (Pitfall 2: all four sp factors required)
-    let sp_factor = common_fac_sp(li as u8) * common_fac_sp(lj as u8) * common_fac_sp(lk as u8) * common_fac_sp(ll as u8);
+    let sp_factor = common_fac_sp(li as u8)
+        * common_fac_sp(lj as u8)
+        * common_fac_sp(lk as u8)
+        * common_fac_sp(ll as u8);
     let common_factor = (PI * PI * PI) * 2.0 / SQRTPI * sp_factor;
 
     let n_prim_i = shell_i.nprim as usize;
@@ -1677,9 +1880,8 @@ pub fn launch_breit(
         let ai = shell_i.exponents[pi];
         for pj in 0..n_prim_j {
             let aj = shell_j.exponents[pj];
-            let pdata_ij = compute_pdata_host(
-                ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-            );
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
             for pk in 0..n_prim_k {
                 let ak = shell_k.exponents[pk];
                 for pl in 0..n_prim_l {
@@ -1692,7 +1894,17 @@ pub fn launch_breit(
                     // Build g-tensor with elevated angular momenta for derivative
                     // headroom — ON DEVICE (CubeCL breit_g_kernel, generic over F).
                     let g = run_breit_g_on_backend(
-                        backend, shape, ai, aj, ak, al, ri, rj, rk, rl, quartet_fac,
+                        backend,
+                        shape,
+                        ai,
+                        aj,
+                        ak,
+                        al,
+                        ri,
+                        rj,
+                        rk,
+                        rl,
+                        quartet_fac,
                     );
 
                     // Apply the Breit-specific gout contraction
@@ -1748,10 +1960,7 @@ pub fn launch_breit(
         *v = -*v;
     }
 
-    let not0 = staging
-        .iter()
-        .filter(|&&v| v.abs() > 1e-18)
-        .count() as i32;
+    let not0 = staging.iter().filter(|&&v| v.abs() > 1e-18).count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<f64>();
     Ok(ExecutionStats {
@@ -1869,11 +2078,22 @@ mod tests {
             unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_size_u) },
             unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
             unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
-            0.9_f32, 1.3_f32, 0.7_f32, 1.1_f32,
-            0.0_f32, 0.0_f32, 0.0_f32,
-            0.6_f32, 0.5_f32, 0.7_f32,
-            0.2_f32, 0.8_f32, 0.3_f32,
-            0.4_f32, 0.1_f32, 0.9_f32,
+            0.9_f32,
+            1.3_f32,
+            0.7_f32,
+            1.1_f32,
+            0.0_f32,
+            0.0_f32,
+            0.0_f32,
+            0.6_f32,
+            0.5_f32,
+            0.7_f32,
+            0.2_f32,
+            0.8_f32,
+            0.3_f32,
+            0.4_f32,
+            0.1_f32,
+            0.9_f32,
             1.0_f32,
             PIE4 as f32,
             shape.li_elev as u32,

@@ -163,7 +163,11 @@ fn sigma_ov_kernel<F: Float + CubeElement>(
         let nci = (li + 1u32) * (li + 2u32) / 2u32;
         let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
         let block_len = nci * ncj;
-        let rank = if comptime!(family == 0u32) { 3u32 } else { 1u32 };
+        let rank = if comptime!(family == 0u32) {
+            3u32
+        } else {
+            1u32
+        };
         let total_len = rank * N_GC * block_len;
         let out_total = nctr_i * nctr_j * total_len;
 
@@ -266,7 +270,8 @@ fn sigma_ov_kernel<F: Float + CubeElement>(
                                             gc_out[(g1base + block_len + elem) as usize] += v;
                                             // group 2 (σ_z): gc_z = -s0
                                             let g2base = base + 2u32 * N_GC * block_len;
-                                            gc_out[(g2base + 2u32 * block_len + elem) as usize] += v;
+                                            gc_out[(g2base + 2u32 * block_len + elem) as usize] +=
+                                                v;
                                         } else if comptime!(family == 1u32) {
                                             // sr: g1 = R_I(g0) → read at i+1.
                                             let g1x = g[(gx + bx + 1u32) as usize];
@@ -300,8 +305,23 @@ fn sigma_ov_kernel<F: Float + CubeElement>(
                                             // spsp: g1=D_J(g0), g2=D_I(g0), g3=D_I(g1).
                                             // gout scalar s0+s4+s8 → gc_1 (block 3).
                                             sigma_spsp_accum::<F>(
-                                                g, gc_out, base, block_len, elem, weight, dj, ai2,
-                                                aj2, gx + bx, gy + by, gz + bz, ix, iy, iz, jx, jy,
+                                                g,
+                                                gc_out,
+                                                base,
+                                                block_len,
+                                                elem,
+                                                weight,
+                                                dj,
+                                                ai2,
+                                                aj2,
+                                                gx + bx,
+                                                gy + by,
+                                                gz + bz,
+                                                ix,
+                                                iy,
+                                                iz,
+                                                jx,
+                                                jy,
                                                 jz,
                                             );
                                         }
@@ -723,8 +743,22 @@ pub fn launch_int1e_sigma_family_spinor_pair<F: CintFloat>(
 
     // ── Build the family cart gc blocks (rank*N_GC blocks per (ci,cj)). ──
     let mut gc = build_sigma_cart(
-        op, backend, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
-        coeff_j, origin_coords, origin_charges,
+        op,
+        backend,
+        li,
+        lj,
+        nprim_i,
+        nprim_j,
+        nctr_i,
+        nctr_j,
+        ri,
+        rj,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+        origin_coords,
+        origin_charges,
     )?;
 
     // s/p normalization scale (matches the scalar/gradient 1e arms).
@@ -750,7 +784,16 @@ pub fn launch_int1e_sigma_family_spinor_pair<F: CintFloat>(
                 let gc_1 = &gc[gbase + 3 * block_len..gbase + 4 * block_len];
 
                 fold_group::<F>(
-                    transform, &mut scratch, gc_x, gc_y, gc_z, gc_1, li, kappa_i, lj, kappa_j,
+                    transform,
+                    &mut scratch,
+                    gc_x,
+                    gc_y,
+                    gc_z,
+                    gc_1,
+                    li,
+                    kappa_i,
+                    lj,
+                    kappa_j,
                 )?;
 
                 // Scatter the di*dj*2 spinor sub-block into the contraction-major
@@ -818,8 +861,22 @@ fn build_sigma_cart(
     } else {
         // Nuclear engine (spnucsp/srnucsr/sprinvsp) — implemented in sigma_1e_nuc.
         super::sigma_1e_nuc::run_sigma_nuc_on_backend(
-            op, backend, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j, coeff_i,
-            coeff_j, origin_coords, origin_charges,
+            op,
+            backend,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
+            origin_charges,
         )
     }
 }
@@ -1024,16 +1081,49 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
                 ri[2] - common_orig[2],
             ];
             launch_int1e_sa10nucsp_spinor_pair::<F>(
-                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, dri,
-                exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges, staging,
+                backend,
+                li,
+                kappa_i,
+                lj,
+                kappa_j,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                ri,
+                rj,
+                dri,
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
+                staging,
             )
         }
         "giao_sa10nucsp" => {
             // Rank-3 Rys+gauge nuclear. giao natural bra center: x1i origin =
             // [0,0,0] (G2E_R_I, no gauge shift).
             launch_int1e_sa10nucsp_spinor_pair::<F>(
-                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
-                [0.0, 0.0, 0.0], exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges,
+                backend,
+                li,
+                kappa_i,
+                lj,
+                kappa_j,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                ri,
+                rj,
+                [0.0, 0.0, 0.0],
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
                 staging,
             )
         }
@@ -1043,8 +1133,24 @@ pub fn launch_int1e_giao_sigma_family_spinor_pair<F: CintFloat>(
             // are the atom-summed origin_coords/origin_charges (int1e_type 2). rank 3,
             // SiI. The launcher carries its OWN ×3 staging + nroots guards.
             launch_int1e_spgnucsp_spinor_pair::<F>(
-                backend, li, kappa_i, lj, kappa_j, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj,
-                exps_i, exps_j, coeff_i, coeff_j, origin_coords, origin_charges, staging,
+                backend,
+                li,
+                kappa_i,
+                lj,
+                kappa_j,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                ri,
+                rj,
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
+                staging,
             )
         }
         "spgsa01" => {

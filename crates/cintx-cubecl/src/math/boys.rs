@@ -22,8 +22,8 @@
 //! they are injected as `F` at the host/launcher boundary via `F::from_f64_lossy`.
 //! Never use `F::new(f64_literal)` for precision-critical constants (Pitfall 5).
 
-use cubecl::prelude::*;
 use cintx_core::CintFloat;
+use cubecl::prelude::*;
 
 /// Maximum Boys function order supported (last non-zero TURNOVER_POINT index).
 /// Matches practical upper bound for 2e integrals with ANG_MAX=15:
@@ -208,13 +208,7 @@ pub fn erf_host(x: f64) -> f64 {
 /// - u32 loop counters with `as usize` for Array indexing
 /// - F::exp, F::sqrt used (not method syntax) — Phase 19 D-02: natural log is F::ln not F::log
 #[cube]
-pub fn boys_gamma_inc<F: Float>(
-    f: &mut Array<F>,
-    t: F,
-    m: u32,
-    turnover: F,
-    sqrtpie4: F,
-) {
+pub fn boys_gamma_inc<F: Float>(f: &mut Array<F>, t: F, m: u32, turnover: F, sqrtpie4: F) {
     // Branch 1: t == 0 — F_m(0) = 1/(2m+1), fmt.c lines 208-212
     if t == F::new(0.0) {
         f[0usize] = F::new(1.0);

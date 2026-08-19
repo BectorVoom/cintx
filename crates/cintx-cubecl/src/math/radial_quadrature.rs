@@ -119,11 +119,7 @@ const GAUSS_HERMITE_TABLE: &[(&[f64], &[f64])] = &[
     // n = 3
     (
         &[-1.2247448713915890, 0.0, 1.2247448713915890],
-        &[
-            0.2954089751509193,
-            1.1816359006036775,
-            0.2954089751509193,
-        ],
+        &[0.2954089751509193, 1.1816359006036775, 0.2954089751509193],
     ),
     // n = 4
     (
@@ -273,8 +269,8 @@ pub fn gauss_chebyshev_fill_host(rs: &mut [f64], ws: &mut [f64], n: u32) {
         let x2 = f64::sin(x1);
         let x3 = f64::sin(x1 * 2.0);
         let x4 = x2 * x2;
-        let xi = ((n as f64) - (i as f64) * 2.0 - 1.0) * step
-            + m_1_pi * (1.0 + (2.0 / 3.0) * x4) * x3;
+        let xi =
+            ((n as f64) - (i as f64) * 2.0 - 1.0) * step + m_1_pi * (1.0 + (2.0 / 3.0) * x4) * x3;
         rs[i as usize] = 1.0 - f64::ln(1.0 + xi) * m_log2e;
         ws[i as usize] = fac * x4 * x4 * m_log2e / (1.0 + xi);
         i += 1;
@@ -304,8 +300,8 @@ pub fn gauss_chebyshev_nodes_weights(x: &mut Array<f64>, w: &mut Array<f64>, lev
         let x2 = f64::sin(x1);
         let x3 = f64::sin(x1 * 2.0f64);
         let x4 = x2 * x2;
-        let xi =
-            (n_f - (i as f64) * 2.0f64 - 1.0f64) * step + one_over_pi * (1.0f64 + (2.0f64 / 3.0f64) * x4) * x3;
+        let xi = (n_f - (i as f64) * 2.0f64 - 1.0f64) * step
+            + one_over_pi * (1.0f64 + (2.0f64 / 3.0f64) * x4) * x3;
         x[i as usize] = 1.0f64 - f64::ln(1.0f64 + xi) * log2_e;
         w[i as usize] = fac * x4 * x4 * log2_e / (1.0f64 + xi);
         i += 1u32;
@@ -470,10 +466,18 @@ mod tests {
         // PySCF's reflected radial map: the first node lies near r = 0, last
         // near r → ∞.
         for r in &rs {
-            assert!(r.is_finite() && *r > 0.0, "node r = {} should be positive", r);
+            assert!(
+                r.is_finite() && *r > 0.0,
+                "node r = {} should be positive",
+                r
+            );
         }
         for w in &ws {
-            assert!(w.is_finite() && *w > 0.0, "weight w = {} should be positive", w);
+            assert!(
+                w.is_finite() && *w > 0.0,
+                "weight w = {} should be positive",
+                w
+            );
         }
     }
 
@@ -491,7 +495,11 @@ mod tests {
     #[test]
     fn gauss_chebyshev_integral_identity_level0() {
         let (rs, ws) = gauss_chebyshev_nodes_weights_host(LEVEL0);
-        let val: f64 = rs.iter().zip(ws.iter()).map(|(r, w)| w * f64::exp(-r)).sum();
+        let val: f64 = rs
+            .iter()
+            .zip(ws.iter())
+            .map(|(r, w)| w * f64::exp(-r))
+            .sum();
         // Independent Python verification:
         //   sum(w * exp(-r)) at LEVEL0 = 1.0000000000378693 (rel ~3.8e-11)
         assert_close(val, 1.0, 1e-9, 0.0, "∫_0^∞ e^{-r} dr @ LEVEL0");
@@ -515,7 +523,11 @@ mod tests {
     #[test]
     fn gauss_chebyshev_integral_identity_level_max() {
         let (rs, ws) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
-        let val: f64 = rs.iter().zip(ws.iter()).map(|(r, w)| w * f64::exp(-r)).sum();
+        let val: f64 = rs
+            .iter()
+            .zip(ws.iter())
+            .map(|(r, w)| w * f64::exp(-r))
+            .sum();
         assert_close(val, 1.0, 1e-12, 0.0, "∫_0^∞ e^{-r} dr @ LEVEL_MAX");
     }
 
@@ -527,13 +539,7 @@ mod tests {
     fn gauss_hermite_weight_sum_n8() {
         let (_xs, ws) = gauss_hermite_nodes_weights_host(8);
         let sum: f64 = ws.iter().sum();
-        assert_close(
-            sum,
-            std::f64::consts::PI.sqrt(),
-            1e-12,
-            0.0,
-            "∑ w_i (n=8)",
-        );
+        assert_close(sum, std::f64::consts::PI.sqrt(), 1e-12, 0.0, "∑ w_i (n=8)");
     }
 
     /// Test 6 (Gauss-Hermite consistency): $\int_{-\infty}^{\infty} x^2 e^{-x^2}\,dx
@@ -629,7 +635,11 @@ mod tests {
             let (rs, ws) = gauss_chebyshev_nodes_weights_host(level);
             let expected_n = (1u32 << level) - 1;
             assert_eq!(rs.len(), expected_n as usize);
-            let val: f64 = rs.iter().zip(ws.iter()).map(|(r, w)| w * f64::exp(-r)).sum();
+            let val: f64 = rs
+                .iter()
+                .zip(ws.iter())
+                .map(|(r, w)| w * f64::exp(-r))
+                .sum();
             assert!(
                 val.is_finite() && (val - 1.0).abs() < 1e-6,
                 "∫ e^{{-r}} at level {} = {} (expect ~1.0)",

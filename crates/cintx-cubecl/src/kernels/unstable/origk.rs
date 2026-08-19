@@ -56,12 +56,36 @@ struct OrigkVariant {
 
 fn origk_variant(op_name: &str) -> Result<OrigkVariant, cintxRsError> {
     match op_name {
-        "r2_origk" => Ok(OrigkVariant { k_inc: 2, i_inc: 0, ncomp: 1 }),
-        "r4_origk" => Ok(OrigkVariant { k_inc: 4, i_inc: 0, ncomp: 1 }),
-        "r6_origk" => Ok(OrigkVariant { k_inc: 6, i_inc: 0, ncomp: 1 }),
-        "ip1_r2_origk" => Ok(OrigkVariant { k_inc: 2, i_inc: 1, ncomp: 3 }),
-        "ip1_r4_origk" => Ok(OrigkVariant { k_inc: 4, i_inc: 1, ncomp: 3 }),
-        "ip1_r6_origk" => Ok(OrigkVariant { k_inc: 6, i_inc: 1, ncomp: 3 }),
+        "r2_origk" => Ok(OrigkVariant {
+            k_inc: 2,
+            i_inc: 0,
+            ncomp: 1,
+        }),
+        "r4_origk" => Ok(OrigkVariant {
+            k_inc: 4,
+            i_inc: 0,
+            ncomp: 1,
+        }),
+        "r6_origk" => Ok(OrigkVariant {
+            k_inc: 6,
+            i_inc: 0,
+            ncomp: 1,
+        }),
+        "ip1_r2_origk" => Ok(OrigkVariant {
+            k_inc: 2,
+            i_inc: 1,
+            ncomp: 3,
+        }),
+        "ip1_r4_origk" => Ok(OrigkVariant {
+            k_inc: 4,
+            i_inc: 1,
+            ncomp: 3,
+        }),
+        "ip1_r6_origk" => Ok(OrigkVariant {
+            k_inc: 6,
+            i_inc: 1,
+            ncomp: 3,
+        }),
         _ => Err(cintxRsError::UnsupportedApi {
             requested: format!("origk variant '{}' not supported", op_name),
         }),
@@ -96,7 +120,8 @@ fn g1e_d_i_3c1e(
                 f[off + ptr] = ai2 * g[off + ptr + 1];
                 // i>0
                 for i in 1..=li {
-                    f[off + ptr + i] = (i as f64) * g[off + ptr + i - 1] + ai2 * g[off + ptr + i + 1];
+                    f[off + ptr + i] =
+                        (i as f64) * g[off + ptr + i - 1] + ai2 * g[off + ptr + i + 1];
                 }
             }
         }
@@ -171,7 +196,10 @@ fn contract_origk(
                             + 3.0 * g0[gx + bx + 4 * dk] * g0[gy + by + 2 * dk] * g0[gz + bz]
                             + 3.0 * g0[gx + bx + 4 * dk] * g0[gy + by] * g0[gz + bz + 2 * dk]
                             + 3.0 * g0[gx + bx + 2 * dk] * g0[gy + by + 4 * dk] * g0[gz + bz]
-                            + 6.0 * g0[gx + bx + 2 * dk] * g0[gy + by + 2 * dk] * g0[gz + bz + 2 * dk]
+                            + 6.0
+                                * g0[gx + bx + 2 * dk]
+                                * g0[gy + by + 2 * dk]
+                                * g0[gz + bz + 2 * dk]
                             + 3.0 * g0[gx + bx + 2 * dk] * g0[gy + by] * g0[gz + bz + 4 * dk]
                             + g0[gx + bx] * g0[gy + by + 6 * dk] * g0[gz + bz]
                             + 3.0 * g0[gx + bx] * g0[gy + by + 4 * dk] * g0[gz + bz + 2 * dk]
@@ -223,7 +251,16 @@ fn contract_origk_ip1(
     let mut out = vec![0.0_f64; nci * ncj * nck * ncomp];
 
     // Build D_I(g0): nabla in i-direction on the full g0 tensor (including elevated k)
-    let g_di = g1e_d_i_3c1e(g0, g_alloc, li as usize, lj as usize, (lk as usize) + (r_power as usize), dj, dk, ai);
+    let g_di = g1e_d_i_3c1e(
+        g0,
+        g_alloc,
+        li as usize,
+        lj as usize,
+        (lk as usize) + (r_power as usize),
+        dj,
+        dk,
+        ai,
+    );
 
     let cart_size = nci * ncj * nck;
 
@@ -237,8 +274,12 @@ fn contract_origk_ip1(
                 let n = (k_idx * ncj + j_idx) * nci + i_idx;
 
                 // Helper closures for readability
-                let g = |axis: usize, base: usize, k_shift: usize| g0[axis * g_alloc + base + k_shift * dk];
-                let di = |axis: usize, base: usize, k_shift: usize| g_di[axis * g_alloc + base + k_shift * dk];
+                let g = |axis: usize, base: usize, k_shift: usize| {
+                    g0[axis * g_alloc + base + k_shift * dk]
+                };
+                let di = |axis: usize, base: usize, k_shift: usize| {
+                    g_di[axis * g_alloc + base + k_shift * dk]
+                };
 
                 let (s0, s1, s2) = match r_power {
                     2 => {
@@ -598,33 +639,114 @@ fn origk_scalar_kernel<F: Float + CubeElement>(
 
                                                             let mut s = F::new(0.0);
                                                             if comptime!(r_power == 2u32) {
-                                                                s = g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize];
+                                                                s = g[(gx + bx + 2u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize];
                                                             } else if comptime!(r_power == 4u32) {
-                                                                s = g[(gx + bx + 4u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by + 4u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by) as usize] * g[(gz + bz + 4u32 * dk) as usize];
+                                                                s = g[(gx + bx + 4u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize];
                                                             } else {
                                                                 // r_power == 6
-                                                                s = g[(gx + bx + 6u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 4u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 4u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 4u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(6.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz + 4u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by + 6u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx) as usize] * g[(gy + by + 4u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 4u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by) as usize] * g[(gz + bz + 6u32 * dk) as usize];
+                                                                s = g[(gx + bx + 6u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(6.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 6u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 6u32 * dk)
+                                                                            as usize];
                                                             }
 
-                                                            let out_idx = base + (k_idx * ncj + j_idx) * nci + i_idx;
-                                                            cart_out[out_idx as usize] =
-                                                                cart_out[out_idx as usize] + weight * s;
+                                                            let out_idx = base
+                                                                + (k_idx * ncj + j_idx) * nci
+                                                                + i_idx;
+                                                            cart_out[out_idx as usize] = cart_out
+                                                                [out_idx as usize]
+                                                                + weight * s;
 
                                                             i_idx += 1u32;
                                                             ib += 1u32;
@@ -697,8 +819,8 @@ fn origk_di_axis<F: Float>(
             // i > 0
             let mut i = 1u32;
             while i <= li {
-                g_di[(ptr + i) as usize] =
-                    F::cast_from(i) * g[(ptr + i - 1u32) as usize] + ai2 * g[(ptr + i + 1u32) as usize];
+                g_di[(ptr + i) as usize] = F::cast_from(i) * g[(ptr + i - 1u32) as usize]
+                    + ai2 * g[(ptr + i + 1u32) as usize];
                 i += 1u32;
             }
             j += 1u32;
@@ -930,75 +1052,316 @@ fn origk_ip1_kernel<F: Float + CubeElement>(
 
                                                             if comptime!(r_power == 2u32) {
                                                                 // ip1_r2
-                                                                s0 = g_di[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + g_di[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + g_di[(gx + bx) as usize] * g[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize];
-                                                                s1 = g[(gx + bx + 2u32 * dk) as usize] * g_di[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + g[(gx + bx) as usize] * g_di[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + g[(gx + bx) as usize] * g_di[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize];
-                                                                s2 = g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g_di[(gz + bz) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g_di[(gz + bz) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by) as usize] * g_di[(gz + bz + 2u32 * dk) as usize];
+                                                                s0 = g_di[(gx + bx + 2u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize];
+                                                                s1 = g[(gx + bx + 2u32 * dk)
+                                                                    as usize]
+                                                                    * g_di[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize];
+                                                                s2 = g[(gx + bx + 2u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g_di[(gz + bz) as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz) as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g_di[(gz + bz + 2u32 * dk)
+                                                                            as usize];
                                                             } else if comptime!(r_power == 4u32) {
                                                                 // ip1_r4
-                                                                s0 = g_di[(gx + bx + 4u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g_di[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g_di[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + g_di[(gx + bx) as usize] * g[(gy + by + 4u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g_di[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + g_di[(gx + bx) as usize] * g[(gy + by) as usize] * g[(gz + bz + 4u32 * dk) as usize];
-                                                                s1 = g[(gx + bx + 4u32 * dk) as usize] * g_di[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx + 2u32 * dk) as usize] * g_di[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx + 2u32 * dk) as usize] * g_di[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g_di[(gy + by + 4u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx) as usize] * g_di[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g_di[(gy + by) as usize] * g[(gz + bz + 4u32 * dk) as usize];
-                                                                s2 = g[(gx + bx + 4u32 * dk) as usize] * g[(gy + by) as usize] * g_di[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g_di[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g_di[(gz + bz + 2u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by + 4u32 * dk) as usize] * g_di[(gz + bz) as usize]
-                                                                    + F::new(2.0) * g[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g_di[(gz + bz + 2u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by) as usize] * g_di[(gz + bz + 4u32 * dk) as usize];
+                                                                s0 = g_di[(gx + bx + 4u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g_di[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g_di[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize];
+                                                                s1 = g[(gx + bx + 4u32 * dk)
+                                                                    as usize]
+                                                                    * g_di[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by) as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize];
+                                                                s2 = g[(gx + bx + 4u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g_di[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g_di[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz) as usize]
+                                                                    + F::new(2.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g_di[(gz + bz + 4u32 * dk)
+                                                                            as usize];
                                                             } else {
                                                                 // ip1_r6
-                                                                s0 = g_di[(gx + bx + 6u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g_di[(gx + bx + 4u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g_di[(gx + bx + 4u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g_di[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 4u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(6.0) * g_di[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g_di[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g[(gz + bz + 4u32 * dk) as usize]
-                                                                    + g_di[(gx + bx) as usize] * g[(gy + by + 6u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g_di[(gx + bx) as usize] * g[(gy + by + 4u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g_di[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 4u32 * dk) as usize]
-                                                                    + g_di[(gx + bx) as usize] * g[(gy + by) as usize] * g[(gz + bz + 6u32 * dk) as usize];
-                                                                s1 = g[(gx + bx + 6u32 * dk) as usize] * g_di[(gy + by) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 4u32 * dk) as usize] * g_di[(gy + by + 2u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 4u32 * dk) as usize] * g_di[(gy + by) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 2u32 * dk) as usize] * g_di[(gy + by + 4u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(6.0) * g[(gx + bx + 2u32 * dk) as usize] * g_di[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 2u32 * dk) as usize] * g_di[(gy + by) as usize] * g[(gz + bz + 4u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g_di[(gy + by + 6u32 * dk) as usize] * g[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx) as usize] * g_di[(gy + by + 4u32 * dk) as usize] * g[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx) as usize] * g_di[(gy + by + 2u32 * dk) as usize] * g[(gz + bz + 4u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g_di[(gy + by) as usize] * g[(gz + bz + 6u32 * dk) as usize];
-                                                                s2 = g[(gx + bx + 6u32 * dk) as usize] * g[(gy + by) as usize] * g_di[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 4u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g_di[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 4u32 * dk) as usize] * g[(gy + by) as usize] * g_di[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 4u32 * dk) as usize] * g_di[(gz + bz) as usize]
-                                                                    + F::new(6.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by + 2u32 * dk) as usize] * g_di[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx + 2u32 * dk) as usize] * g[(gy + by) as usize] * g_di[(gz + bz + 4u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by + 6u32 * dk) as usize] * g_di[(gz + bz) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx) as usize] * g[(gy + by + 4u32 * dk) as usize] * g_di[(gz + bz + 2u32 * dk) as usize]
-                                                                    + F::new(3.0) * g[(gx + bx) as usize] * g[(gy + by + 2u32 * dk) as usize] * g_di[(gz + bz + 4u32 * dk) as usize]
-                                                                    + g[(gx + bx) as usize] * g[(gy + by) as usize] * g_di[(gz + bz + 6u32 * dk) as usize];
+                                                                s0 = g_di[(gx + bx + 6u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g_di[(gx + bx + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g_di[(gx + bx + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g_di[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(6.0)
+                                                                        * g_di[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g_di[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize]
+                                                                    + g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by + 6u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize]
+                                                                    + g_di[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g[(gz + bz + 6u32 * dk)
+                                                                            as usize];
+                                                                s1 = g[(gx + bx + 6u32 * dk)
+                                                                    as usize]
+                                                                    * g_di[(gy + by) as usize]
+                                                                    * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gy + by) as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(6.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gy + by) as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by + 6u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gz + bz + 4u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g_di[(gy + by) as usize]
+                                                                        * g[(gz + bz + 6u32 * dk)
+                                                                            as usize];
+                                                                s2 = g[(gx + bx + 6u32 * dk)
+                                                                    as usize]
+                                                                    * g[(gy + by) as usize]
+                                                                    * g_di[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g_di[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz) as usize]
+                                                                    + F::new(6.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g_di[(gz + bz + 4u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 6u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz) as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 4u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz + 2u32 * dk)
+                                                                            as usize]
+                                                                    + F::new(3.0)
+                                                                        * g[(gx + bx) as usize]
+                                                                        * g[(gy + by + 2u32 * dk)
+                                                                            as usize]
+                                                                        * g_di[(gz + bz + 4u32 * dk)
+                                                                            as usize]
+                                                                    + g[(gx + bx) as usize]
+                                                                        * g[(gy + by) as usize]
+                                                                        * g_di[(gz + bz + 6u32 * dk)
+                                                                            as usize];
                                                             }
 
-                                                            let n = base + (k_idx * ncj + j_idx) * nci + i_idx;
-                                                            cart_out[n as usize] = cart_out[n as usize] + weight * s0;
+                                                            let n = base
+                                                                + (k_idx * ncj + j_idx) * nci
+                                                                + i_idx;
+                                                            cart_out[n as usize] =
+                                                                cart_out[n as usize] + weight * s0;
                                                             cart_out[(comp_span + n) as usize] =
-                                                                cart_out[(comp_span + n) as usize] + weight * s1;
-                                                            cart_out[(2u32 * comp_span + n) as usize] =
-                                                                cart_out[(2u32 * comp_span + n) as usize] + weight * s2;
+                                                                cart_out[(comp_span + n) as usize]
+                                                                    + weight * s1;
+                                                            cart_out
+                                                                [(2u32 * comp_span + n) as usize] =
+                                                                cart_out[(2u32 * comp_span + n)
+                                                                    as usize]
+                                                                    + weight * s2;
 
                                                             i_idx += 1u32;
                                                             ib += 1u32;
@@ -1068,8 +1431,7 @@ fn run_origk_ip1_device<R: Runtime>(
     let nci = ((li + 1) * (li + 2) / 2) as usize;
     let ncj = ((lj + 1) * (lj + 2) / 2) as usize;
     let nck = ((lk + 1) * (lk + 2) / 2) as usize;
-    let out_len =
-        3 * (nctr_i as usize) * (nctr_j as usize) * (nctr_k as usize) * nci * ncj * nck;
+    let out_len = 3 * (nctr_i as usize) * (nctr_j as usize) * (nctr_k as usize) * nci * ncj * nck;
     let g_total = 3 * (g_alloc as usize);
 
     let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
@@ -1175,33 +1537,153 @@ fn run_origk_ip1_on_backend(
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_origk_ip1_device::<cubecl::cpu::CpuRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_origk_ip1_device::<cubecl_wgpu::WgpuRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_origk_ip1_device::<cubecl_cuda::CudaRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_origk_ip1_device::<cubecl_hip::HipRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_origk_ip1_device::<cubecl_wgpu::WgpuRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
     }
 }
@@ -1347,33 +1829,153 @@ fn run_origk_scalar_on_backend(
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_origk_scalar_device::<cubecl::cpu::CpuRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_origk_scalar_device::<cubecl_wgpu::WgpuRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_origk_scalar_device::<cubecl_cuda::CudaRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_origk_scalar_device::<cubecl_hip::HipRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_origk_scalar_device::<cubecl_wgpu::WgpuRuntime>(
-            client, r_power, nroots, li, lj, lk, li_ceil, lk_ceil, nprim_i, nprim_j, nprim_k,
-            nctr_i, nctr_j, nctr_k, dli, dlj, g_alloc, common_factor, ri, rj, rk, exps_i, exps_j,
-            exps_k, coeff_i, coeff_j, coeff_k,
+            client,
+            r_power,
+            nroots,
+            li,
+            lj,
+            lk,
+            li_ceil,
+            lk_ceil,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            dli,
+            dlj,
+            g_alloc,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            exps_i,
+            exps_j,
+            exps_k,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         ),
     }
 }
@@ -1565,7 +2167,11 @@ pub fn launch_origk(
                     let cart_slice = &cart_buf[comp * cart_size..(comp + 1) * cart_size];
                     let sph = cart_to_sph_3c1e(cart_slice, li, lj, lk);
                     let sph_off = comp * sph_size;
-                    let copy_len = staging.len().saturating_sub(sph_off).min(sph.len()).min(sph_size);
+                    let copy_len = staging
+                        .len()
+                        .saturating_sub(sph_off)
+                        .min(sph.len())
+                        .min(sph_size);
                     if copy_len > 0 {
                         staging[sph_off..sph_off + copy_len].copy_from_slice(&sph[..copy_len]);
                     }
@@ -1720,8 +2326,7 @@ mod tests {
         let rr_ik = rirk[0] * rirk[0] + rirk[1] * rirk[1] + rirk[2] * rirk[2];
         let rr_jk = rjrk[0] * rjrk[0] + rjrk[1] * rjrk[1] + rjrk[2] * rjrk[2];
 
-        let common_factor =
-            SQRTPI * PI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+        let common_factor = SQRTPI * PI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
 
         let aijk = ai + aj + ak;
         let eijk = (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
@@ -1755,13 +2360,7 @@ mod tests {
         let aj = 1.3_f64;
         let ak = 0.7_f64;
 
-        for &(li, lj, lk) in &[
-            (0u8, 0u8, 0u8),
-            (1, 0, 0),
-            (0, 1, 0),
-            (0, 0, 1),
-            (1, 1, 0),
-        ] {
+        for &(li, lj, lk) in &[(0u8, 0u8, 0u8), (1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0)] {
             for &r_power in &[2u8, 4u8, 6u8] {
                 let host = host_origk_block(r_power, ai, aj, ak, ri, rj, rk, li, lj, lk);
 
@@ -1804,7 +2403,11 @@ mod tests {
                     &[1.0],
                     &[1.0],
                 );
-                assert_close(&host, &dev, &format!("origk r{r_power} li={li} lj={lj} lk={lk}"));
+                assert_close(
+                    &host,
+                    &dev,
+                    &format!("origk r{r_power} li={li} lj={lj} lk={lk}"),
+                );
             }
         }
     }
@@ -1840,8 +2443,7 @@ mod tests {
         let rr_ik = rirk[0] * rirk[0] + rirk[1] * rirk[1] + rirk[2] * rirk[2];
         let rr_jk = rjrk[0] * rjrk[0] + rjrk[1] * rjrk[1] + rjrk[2] * rjrk[2];
 
-        let common_factor =
-            SQRTPI * PI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+        let common_factor = SQRTPI * PI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
 
         let aijk = ai + aj + ak;
         let eijk = (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
@@ -1868,13 +2470,7 @@ mod tests {
         let aj = 1.3_f64;
         let ak = 0.7_f64;
 
-        for &(li, lj, lk) in &[
-            (0u8, 0u8, 0u8),
-            (1, 0, 0),
-            (0, 1, 0),
-            (0, 0, 1),
-            (1, 1, 0),
-        ] {
+        for &(li, lj, lk) in &[(0u8, 0u8, 0u8), (1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0)] {
             for &r_power in &[2u8, 4u8, 6u8] {
                 let host = host_origk_ip1_block(r_power, ai, aj, ak, ri, rj, rk, li, lj, lk);
 
@@ -2006,7 +2602,10 @@ mod tests {
         let raw = client.read_one_unchecked(out_h);
         let out = f32::from_bytes(&raw)[0..out_len].to_vec();
         for (c, &v) in out.iter().enumerate() {
-            assert!(v.is_finite(), "f32 origk ip1 r2 s-s-s comp {c} must be finite: {v}");
+            assert!(
+                v.is_finite(),
+                "f32 origk ip1 r2 s-s-s comp {c} must be finite: {v}"
+            );
         }
     }
 
@@ -2042,7 +2641,8 @@ mod tests {
         let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
         let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
 
-        let common_factor = (SQRTPI * PI * common_fac_sp(0) * common_fac_sp(0) * common_fac_sp(0)) as f32;
+        let common_factor =
+            (SQRTPI * PI * common_fac_sp(0) * common_fac_sp(0) * common_fac_sp(0)) as f32;
 
         origk_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
@@ -2086,6 +2686,9 @@ mod tests {
 
         let raw = client.read_one_unchecked(out_h);
         let out = f32::from_bytes(&raw)[0];
-        assert!(out.is_finite(), "f32 origk r2 s-s-s result must be finite: {out}");
+        assert!(
+            out.is_finite(),
+            "f32 origk r2 s-s-s result must be finite: {out}"
+        );
     }
 }

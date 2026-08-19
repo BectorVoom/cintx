@@ -73,11 +73,41 @@ struct F12Variant {
     ncomp: usize,
 }
 
-const F12_BASE: F12Variant = F12Variant { i_inc: 0, j_inc: 0, k_inc: 0, l_inc: 0, ncomp: 1 };
-const F12_IP1: F12Variant = F12Variant { i_inc: 1, j_inc: 0, k_inc: 0, l_inc: 0, ncomp: 3 };
-const F12_IPIP1: F12Variant = F12Variant { i_inc: 2, j_inc: 0, k_inc: 0, l_inc: 0, ncomp: 9 };
-const F12_IPVIP1: F12Variant = F12Variant { i_inc: 1, j_inc: 1, k_inc: 0, l_inc: 0, ncomp: 9 };
-const F12_IP1IP2: F12Variant = F12Variant { i_inc: 1, j_inc: 0, k_inc: 1, l_inc: 0, ncomp: 9 };
+const F12_BASE: F12Variant = F12Variant {
+    i_inc: 0,
+    j_inc: 0,
+    k_inc: 0,
+    l_inc: 0,
+    ncomp: 1,
+};
+const F12_IP1: F12Variant = F12Variant {
+    i_inc: 1,
+    j_inc: 0,
+    k_inc: 0,
+    l_inc: 0,
+    ncomp: 3,
+};
+const F12_IPIP1: F12Variant = F12Variant {
+    i_inc: 2,
+    j_inc: 0,
+    k_inc: 0,
+    l_inc: 0,
+    ncomp: 9,
+};
+const F12_IPVIP1: F12Variant = F12Variant {
+    i_inc: 1,
+    j_inc: 1,
+    k_inc: 0,
+    l_inc: 0,
+    ncomp: 9,
+};
+const F12_IP1IP2: F12Variant = F12Variant {
+    i_inc: 1,
+    j_inc: 0,
+    k_inc: 1,
+    l_inc: 0,
+    ncomp: 9,
+};
 
 /// Stride/layout metadata for F12 (identical structure to two_electron's TwoEShape).
 ///
@@ -464,7 +494,10 @@ fn fill_g_tensor_f12(
             *w *= fac1;
         }
 
-        fill_g_tensor_inner(shape, &u_roots, &w_weights, ri, rj, rk, rl, rij, rkl, xij_kl, yij_kl, zij_kl, a0, a1, aij, akl)
+        fill_g_tensor_inner(
+            shape, &u_roots, &w_weights, ri, rj, rk, rl, rij, rkl, xij_kl, yij_kl, zij_kl, a0, a1,
+            aij, akl,
+        )
     } else {
         // YP weight post-processing (g2e_f12.c lines 197-200):
         //   w[irys] *= u[irys];
@@ -481,7 +514,10 @@ fn fill_g_tensor_f12(
             *w *= fac1;
         }
 
-        fill_g_tensor_inner(shape, &u_roots, &w_weights, ri, rj, rk, rl, rij, rkl, xij_kl, yij_kl, zij_kl, a0, a1, aij, akl)
+        fill_g_tensor_inner(
+            shape, &u_roots, &w_weights, ri, rj, rk, rl, rij, rkl, xij_kl, yij_kl, zij_kl, a0, a1,
+            aij, akl,
+        )
     }
 }
 
@@ -563,9 +599,45 @@ fn fill_g_tensor_inner(
 
         let (gx, rest) = g.split_at_mut(shape.g_size);
         let (gy, gz) = rest.split_at_mut(shape.g_size);
-        vrr_fill_axis_f12(gx, irys, shape.nmax, shape.mmax, shape.g2d_ijmax, shape.g2d_klmax, c00[0], c0p[0], b10, b01, b00);
-        vrr_fill_axis_f12(gy, irys, shape.nmax, shape.mmax, shape.g2d_ijmax, shape.g2d_klmax, c00[1], c0p[1], b10, b01, b00);
-        vrr_fill_axis_f12(gz, irys, shape.nmax, shape.mmax, shape.g2d_ijmax, shape.g2d_klmax, c00[2], c0p[2], b10, b01, b00);
+        vrr_fill_axis_f12(
+            gx,
+            irys,
+            shape.nmax,
+            shape.mmax,
+            shape.g2d_ijmax,
+            shape.g2d_klmax,
+            c00[0],
+            c0p[0],
+            b10,
+            b01,
+            b00,
+        );
+        vrr_fill_axis_f12(
+            gy,
+            irys,
+            shape.nmax,
+            shape.mmax,
+            shape.g2d_ijmax,
+            shape.g2d_klmax,
+            c00[1],
+            c0p[1],
+            b10,
+            b01,
+            b00,
+        );
+        vrr_fill_axis_f12(
+            gz,
+            irys,
+            shape.nmax,
+            shape.mmax,
+            shape.g2d_ijmax,
+            shape.g2d_klmax,
+            c00[2],
+            c0p[2],
+            b10,
+            b01,
+            b00,
+        );
     }
 
     // HRR transfer
@@ -599,7 +671,16 @@ fn fill_g_tensor_inner(
 /// Formula (per axis):
 ///   f[n @ i=0] = -2*ai * g[n+di]
 ///   f[n @ i>=1] = i * g[n-di] + (-2*ai) * g[n+di]
-pub(crate) fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ai: f64, shape: &F12Shape) {
+pub(crate) fn nabla1i_2e(
+    f: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    shape: &F12Shape,
+) {
     let ai2 = -2.0 * ai;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -642,7 +723,16 @@ pub(crate) fn nabla1i_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usi
 /// `pub(crate)` (Phase 23 plan 01): shared with sibling kernel launchers
 /// (`two_electron.rs`, `center_2c2e.rs`, `center_3c2e.rs`) for ket/remaining-center
 /// derivative families (int2e_ip2, int2c2e_ip1/ip2). The math is F12-free.
-pub(crate) fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, aj: f64, shape: &F12Shape) {
+pub(crate) fn nabla1j_2e(
+    f: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    aj: f64,
+    shape: &F12Shape,
+) {
     let aj2 = -2.0 * aj;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -693,7 +783,16 @@ pub(crate) fn nabla1j_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usi
 /// `pub(crate)` (Phase 23 plan 01): shared with sibling kernel launchers
 /// (`two_electron.rs`, `center_2c2e.rs`, `center_3c2e.rs`) for remaining-center
 /// derivative families. The math is F12-free.
-pub(crate) fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, ak: f64, shape: &F12Shape) {
+pub(crate) fn nabla1k_2e(
+    f: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ak: f64,
+    shape: &F12Shape,
+) {
     let ak2 = -2.0 * ak;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -743,7 +842,16 @@ pub(crate) fn nabla1k_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usi
 /// Formula (per axis):
 ///   f[n @ l=0] = -2*al * g[n+dl]
 ///   f[n @ l>=1] = l * g[n-dl] + (-2*al) * g[n+dl]
-pub(crate) fn nabla1l_2e(f: &mut [f64], g: &[f64], li: usize, lj: usize, lk: usize, ll: usize, al: f64, shape: &F12Shape) {
+pub(crate) fn nabla1l_2e(
+    f: &mut [f64],
+    g: &[f64],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    al: f64,
+    shape: &F12Shape,
+) {
     let al2 = -2.0 * al;
     let g_size = shape.g_size;
     let nroots = shape.nroots;
@@ -955,9 +1063,18 @@ fn gout_g1_signed(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 3];
                     for r in 0..shape.nroots {
@@ -1009,9 +1126,15 @@ pub(crate) fn gout_gg1(
 
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
     let c = [
-        rirj[0] * rirj[0], rirj[0] * rirj[1], rirj[0] * rirj[2],
-        rirj[1] * rirj[0], rirj[1] * rirj[1], rirj[1] * rirj[2],
-        rirj[2] * rirj[0], rirj[2] * rirj[1], rirj[2] * rirj[2],
+        rirj[0] * rirj[0],
+        rirj[0] * rirj[1],
+        rirj[0] * rirj[2],
+        rirj[1] * rirj[0],
+        rirj[1] * rirj[1],
+        rirj[1] * rirj[2],
+        rirj[2] * rirj[0],
+        rirj[2] * rirj[1],
+        rirj[2] * rirj[2],
     ];
 
     let mut g1 = vec![0.0_f64; 3 * g_size];
@@ -1037,9 +1160,18 @@ pub(crate) fn gout_gg1(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 9];
                     for r in 0..shape.nroots {
@@ -1111,9 +1243,15 @@ pub(crate) fn gout_g1g2(
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
     let rkrl = [rk[0] - rl[0], rk[1] - rl[1], rk[2] - rl[2]];
     let c = [
-        rirj[0] * rkrl[0], rirj[0] * rkrl[1], rirj[0] * rkrl[2],
-        rirj[1] * rkrl[0], rirj[1] * rkrl[1], rirj[1] * rkrl[2],
-        rirj[2] * rkrl[0], rirj[2] * rkrl[1], rirj[2] * rkrl[2],
+        rirj[0] * rkrl[0],
+        rirj[0] * rkrl[1],
+        rirj[0] * rkrl[2],
+        rirj[1] * rkrl[0],
+        rirj[1] * rkrl[1],
+        rirj[1] * rkrl[2],
+        rirj[2] * rkrl[0],
+        rirj[2] * rkrl[1],
+        rirj[2] * rkrl[2],
     ];
 
     let mut g1 = vec![0.0_f64; 3 * g_size];
@@ -1139,9 +1277,18 @@ pub(crate) fn gout_g1g2(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 9];
                     for r in 0..shape.nroots {
@@ -1279,18 +1426,33 @@ pub(crate) fn gout_ipn(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 3];
                     for irys in 0..shape.nroots {
                         // s[0] = g1x * g0y * g0z
-                        s[0] += g1[gx_off + ix_base + irys] * g[gy_off + iy_base + irys] * g[gz_off + iz_base + irys];
+                        s[0] += g1[gx_off + ix_base + irys]
+                            * g[gy_off + iy_base + irys]
+                            * g[gz_off + iz_base + irys];
                         // s[1] = g0x * g1y * g0z
-                        s[1] += g[gx_off + ix_base + irys] * g1[gy_off + iy_base + irys] * g[gz_off + iz_base + irys];
+                        s[1] += g[gx_off + ix_base + irys]
+                            * g1[gy_off + iy_base + irys]
+                            * g[gz_off + iz_base + irys];
                         // s[2] = g0x * g0y * g1z
-                        s[2] += g[gx_off + ix_base + irys] * g[gy_off + iy_base + irys] * g1[gz_off + iz_base + irys];
+                        s[2] += g[gx_off + ix_base + irys]
+                            * g[gy_off + iy_base + irys]
+                            * g1[gz_off + iz_base + irys];
                     }
                     out[n * 3 + 0] = s[0];
                     out[n * 3 + 1] = s[1];
@@ -1378,9 +1540,18 @@ pub(crate) fn gout_ipip1(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 9];
                     for irys in 0..shape.nroots {
@@ -1479,9 +1650,18 @@ pub(crate) fn gout_ipip2_l(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 9];
                     for irys in 0..shape.nroots {
@@ -1576,9 +1756,18 @@ pub(crate) fn gout_ipvip1(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 9];
                     for irys in 0..shape.nroots {
@@ -1689,9 +1878,18 @@ pub(crate) fn gout_spsp1(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 9];
                     for irys in 0..shape.nroots {
@@ -1782,9 +1980,18 @@ pub(crate) fn gout_srsr1(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 9];
                     for r in 0..shape.nroots {
@@ -1867,9 +2074,18 @@ fn fold_2sided_sigma16(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 81];
                     for r in 0..shape.nroots {
@@ -1975,7 +2191,8 @@ fn fold_2sided_sigma16(
                     out[n * 16 + 12] = s[45] - s[63] + s[49] - s[67] + s[53] - s[71];
                     out[n * 16 + 13] = s[54] - s[18] + s[58] - s[22] + s[62] - s[26];
                     out[n * 16 + 14] = s[9] - s[27] + s[13] - s[31] + s[17] - s[35];
-                    out[n * 16 + 15] = s[0] + s[36] + s[72] + s[4] + s[40] + s[76] + s[8] + s[44] + s[80];
+                    out[n * 16 + 15] =
+                        s[0] + s[36] + s[72] + s[4] + s[40] + s[76] + s[8] + s[44] + s[80];
                     n += 1;
                 }
             }
@@ -2014,7 +2231,12 @@ pub(crate) fn gout_spsp1spsp2(
     // is strictly increasing in dst and reads only already-built lower-index src,
     // so we compute each into a scratch then move it into gv[dst].
     #[derive(Clone, Copy)]
-    enum Op { L, K, J, I }
+    enum Op {
+        L,
+        K,
+        J,
+        I,
+    }
     let plan: [(usize, usize, Op, usize, usize, usize, usize, f64); 15] = [
         (1, 0, Op::L, li + 1, lj + 1, lk + 1, ll, al),
         (2, 0, Op::K, li + 1, lj + 1, lk, ll, ak),
@@ -2193,7 +2415,11 @@ pub(crate) fn build_rel2e_cascade(
 /// Compute the rank-9 `s[0..8]` triple-product tensor from g0..g3 (the standard
 /// σ-on-one-electron pattern shared by spsp1/srsr1/the gaunt+dkb rank-9 families).
 #[inline]
-fn s9_products(gx: &dyn Fn(usize) -> f64, gy: &dyn Fn(usize) -> f64, gz: &dyn Fn(usize) -> f64) -> [f64; 9] {
+fn s9_products(
+    gx: &dyn Fn(usize) -> f64,
+    gy: &dyn Fn(usize) -> f64,
+    gz: &dyn Fn(usize) -> f64,
+) -> [f64; 9] {
     [
         gx(3) * gy(0) * gz(0),
         gx(2) * gy(1) * gz(0),
@@ -2214,9 +2440,15 @@ fn s9_products(gx: &dyn Fn(usize) -> f64, gy: &dyn Fn(usize) -> f64, gz: &dyn Fn
 fn gout_rel2e_rank9<const NCOMP: usize>(
     g: &[f64],
     shape: &F12Shape,
-    li: usize, lj: usize, lk: usize, ll: usize,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
     steps: &[Rel2eStep],
-    ai: f64, aj: f64, ak: f64, al: f64,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
     fold: impl Fn(&[f64; 9]) -> [f64; NCOMP],
 ) -> Vec<f64> {
     let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
@@ -2236,19 +2468,32 @@ fn gout_rel2e_rank9<const NCOMP: usize>(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
                     let mut s = [0.0_f64; 9];
                     for r in 0..shape.nroots {
                         let gx = |m: usize| blocks[m][gx_off + ix_base + r];
                         let gy = |m: usize| blocks[m][gy_off + iy_base + r];
                         let gz = |m: usize| blocks[m][gz_off + iz_base + r];
                         let s9 = s9_products(&gx, &gy, &gz);
-                        for i in 0..9 { s[i] += s9[i]; }
+                        for i in 0..9 {
+                            s[i] += s9[i];
+                        }
                     }
                     let o = fold(&s);
-                    for c in 0..NCOMP { out[n * NCOMP + c] = o[c]; }
+                    for c in 0..NCOMP {
+                        out[n * NCOMP + c] = o[c];
+                    }
                     n += 1;
                 }
             }
@@ -2263,9 +2508,15 @@ fn gout_rel2e_rank9<const NCOMP: usize>(
 fn gout_rel2e_rank3(
     g: &[f64],
     shape: &F12Shape,
-    li: usize, lj: usize, lk: usize, ll: usize,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
     steps: &[Rel2eStep],
-    ai: f64, aj: f64, ak: f64, al: f64,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
     fold: impl Fn(&[f64; 3]) -> [f64; 4],
 ) -> Vec<f64> {
     let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
@@ -2285,9 +2536,18 @@ fn gout_rel2e_rank3(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
                     let mut s = [0.0_f64; 3];
                     for r in 0..shape.nroots {
                         let gx = |m: usize| blocks[m][gx_off + ix_base + r];
@@ -2298,7 +2558,9 @@ fn gout_rel2e_rank3(
                         s[2] += gx(0) * gy(0) * gz(1);
                     }
                     let o = fold(&s);
-                    for c in 0..4 { out[n * 4 + c] = o[c]; }
+                    for c in 0..4 {
+                        out[n * 4 + c] = o[c];
+                    }
                     n += 1;
                 }
             }
@@ -2313,9 +2575,15 @@ fn gout_rel2e_rank3(
 fn gout_rel2e_rank27(
     g: &[f64],
     shape: &F12Shape,
-    li: usize, lj: usize, lk: usize, ll: usize,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
     steps: &[Rel2eStep],
-    ai: f64, aj: f64, ak: f64, al: f64,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
     fold: impl Fn(&[f64; 27]) -> [f64; 16],
 ) -> Vec<f64> {
     let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
@@ -2335,9 +2603,18 @@ fn gout_rel2e_rank27(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
                     let mut s = [0.0_f64; 27];
                     for r in 0..shape.nroots {
                         let gx = |m: usize| blocks[m][gx_off + ix_base + r];
@@ -2372,7 +2649,9 @@ fn gout_rel2e_rank27(
                         s[26] += gx(0) * gy(0) * gz(7);
                     }
                     let o = fold(&s);
-                    for c in 0..16 { out[n * 16 + c] = o[c]; }
+                    for c in 0..16 {
+                        out[n * 16 + c] = o[c];
+                    }
                     n += 1;
                 }
             }
@@ -2391,184 +2670,642 @@ use Rel2eOp::{I as OpI, J as OpJ, K as OpK, L as OpL};
 
 /// int2e_ssp1ssp2 (gaunt1.c:19): σ·p on j(e1) + l(e2). c2s_si_2e1i+si_2e2i, headroom (0,1,0,1).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_ssp1ssp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_ssp1ssp2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li, lj + 1, lk, ll), exp: Al },
-        Rel2eStep { dst: 2, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
-        Rel2eStep { dst: 3, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpL,
+            bounds: (li, lj + 1, lk, ll),
+            exp: Al,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
     ];
-    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        s[8] + s[4], -s[1], -s[2], s[5] - s[7],
-        -s[3], s[8] + s[0], -s[5], -s[2] + s[6],
-        -s[6], -s[7], s[4] + s[0], s[1] - s[3],
-        s[7] - s[5], -s[6] + s[2], s[3] - s[1], s[0] + s[4] + s[8],
-    ])
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            s[8] + s[4],
+            -s[1],
+            -s[2],
+            s[5] - s[7],
+            -s[3],
+            s[8] + s[0],
+            -s[5],
+            -s[2] + s[6],
+            -s[6],
+            -s[7],
+            s[4] + s[0],
+            s[1] - s[3],
+            s[7] - s[5],
+            -s[6] + s[2],
+            s[3] - s[1],
+            s[0] + s[4] + s[8],
+        ]
+    })
 }
 
 /// int2e_ssp1sps2 (gaunt1.c:117): σ·p on j(e1) + k(e2). headroom (0,1,1,0).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_ssp1sps2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_ssp1sps2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpK, bounds: (li, lj + 1, lk, ll), exp: Ak },
-        Rel2eStep { dst: 2, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
-        Rel2eStep { dst: 3, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpK,
+            bounds: (li, lj + 1, lk, ll),
+            exp: Ak,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
     ];
-    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        s[8] + s[4], -s[1], -s[2], s[5] - s[7],
-        -s[3], s[8] + s[0], -s[5], -s[2] + s[6],
-        -s[6], -s[7], s[4] + s[0], s[1] - s[3],
-        -s[7] + s[5], s[6] - s[2], -s[3] + s[1], -s[0] - s[4] - s[8],
-    ])
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            s[8] + s[4],
+            -s[1],
+            -s[2],
+            s[5] - s[7],
+            -s[3],
+            s[8] + s[0],
+            -s[5],
+            -s[2] + s[6],
+            -s[6],
+            -s[7],
+            s[4] + s[0],
+            s[1] - s[3],
+            -s[7] + s[5],
+            s[6] - s[2],
+            -s[3] + s[1],
+            -s[0] - s[4] - s[8],
+        ]
+    })
 }
 
 /// int2e_sps1ssp2 (gaunt1.c:215): σ·p on i(e1) + l(e2). headroom (1,0,0,1).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_sps1ssp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_sps1ssp2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li + 1, lj, lk, ll), exp: Al },
-        Rel2eStep { dst: 2, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
-        Rel2eStep { dst: 3, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpL,
+            bounds: (li + 1, lj, lk, ll),
+            exp: Al,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
     ];
-    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        s[8] + s[4], -s[1], -s[2], -s[5] + s[7],
-        -s[3], s[8] + s[0], -s[5], s[2] - s[6],
-        -s[6], -s[7], s[4] + s[0], -s[1] + s[3],
-        s[7] - s[5], -s[6] + s[2], s[3] - s[1], -s[0] - s[4] - s[8],
-    ])
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            s[8] + s[4],
+            -s[1],
+            -s[2],
+            -s[5] + s[7],
+            -s[3],
+            s[8] + s[0],
+            -s[5],
+            s[2] - s[6],
+            -s[6],
+            -s[7],
+            s[4] + s[0],
+            -s[1] + s[3],
+            s[7] - s[5],
+            -s[6] + s[2],
+            s[3] - s[1],
+            -s[0] - s[4] - s[8],
+        ]
+    })
 }
 
 /// int2e_sps1sps2 (gaunt1.c:313): σ·p on i(e1) + k(e2). headroom (1,0,1,0).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_sps1sps2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_sps1sps2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpK, bounds: (li + 1, lj, lk, ll), exp: Ak },
-        Rel2eStep { dst: 2, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
-        Rel2eStep { dst: 3, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpK,
+            bounds: (li + 1, lj, lk, ll),
+            exp: Ak,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
     ];
-    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        s[8] + s[4], -s[1], -s[2], -s[5] + s[7],
-        -s[3], s[8] + s[0], -s[5], s[2] - s[6],
-        -s[6], -s[7], s[4] + s[0], -s[1] + s[3],
-        -s[7] + s[5], s[6] - s[2], -s[3] + s[1], s[0] + s[4] + s[8],
-    ])
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            s[8] + s[4],
+            -s[1],
+            -s[2],
+            -s[5] + s[7],
+            -s[3],
+            s[8] + s[0],
+            -s[5],
+            s[2] - s[6],
+            -s[6],
+            -s[7],
+            s[4] + s[0],
+            -s[1] + s[3],
+            -s[7] + s[5],
+            s[6] - s[2],
+            -s[3] + s[1],
+            s[0] + s[4] + s[8],
+        ]
+    })
 }
 
 /// int2e_spv1 (dkb.c:171): σ·∇ on i(e1), 3 components → (s0,s1,s2,0). si_2e1+sf_2e2, headroom (1,0,0,0).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_spv1(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
-    let steps = [Rel2eStep { dst: 1, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai }];
-    gout_rel2e_rank3(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [s[0], s[1], s[2], 0.0])
+pub(crate) fn gout_spv1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
+    let steps = [Rel2eStep {
+        dst: 1,
+        src: 0,
+        op: OpI,
+        bounds: (li, lj, lk, ll),
+        exp: Ai,
+    }];
+    gout_rel2e_rank3(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [s[0], s[1], s[2], 0.0]
+    })
 }
 
 /// int2e_vsp1 (dkb.c:255): σ·∇ on j(e1) → (-s0,-s1,-s2,0). si_2e1+sf_2e2, headroom (0,1,0,0).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_vsp1(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
-    let steps = [Rel2eStep { dst: 1, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj }];
-    gout_rel2e_rank3(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [-s[0], -s[1], -s[2], 0.0])
+pub(crate) fn gout_vsp1(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
+    let steps = [Rel2eStep {
+        dst: 1,
+        src: 0,
+        op: OpJ,
+        bounds: (li, lj, lk, ll),
+        exp: Aj,
+    }];
+    gout_rel2e_rank3(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [-s[0], -s[1], -s[2], 0.0]
+    })
 }
 
 /// int2e_spv1spv2 (dkb.c): σ·∇ on i(e1) + k(e2). si_2e1+si_2e2, headroom (1,0,1,0).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_spv1spv2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_spv1spv2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpK, bounds: (li + 1, lj, lk, ll), exp: Ak },
-        Rel2eStep { dst: 2, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
-        Rel2eStep { dst: 3, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpK,
+            bounds: (li + 1, lj, lk, ll),
+            exp: Ak,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
     ];
-    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        s[0], s[3], s[6], 0.0,
-        s[1], s[4], s[7], 0.0,
-        s[2], s[5], s[8], 0.0,
-        0.0, 0.0, 0.0, 0.0,
-    ])
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            s[0], s[3], s[6], 0.0, s[1], s[4], s[7], 0.0, s[2], s[5], s[8], 0.0, 0.0, 0.0, 0.0, 0.0,
+        ]
+    })
 }
 
 /// int2e_vsp1spv2 (dkb.c): σ·∇ on j(e1) + k(e2). si_2e1+si_2e2, headroom (0,1,1,0).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_vsp1spv2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_vsp1spv2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpK, bounds: (li, lj + 1, lk, ll), exp: Ak },
-        Rel2eStep { dst: 2, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
-        Rel2eStep { dst: 3, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpK,
+            bounds: (li, lj + 1, lk, ll),
+            exp: Ak,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
     ];
-    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        -s[0], -s[3], -s[6], 0.0,
-        -s[1], -s[4], -s[7], 0.0,
-        -s[2], -s[5], -s[8], 0.0,
-        0.0, 0.0, 0.0, 0.0,
-    ])
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            -s[0], -s[3], -s[6], 0.0, -s[1], -s[4], -s[7], 0.0, -s[2], -s[5], -s[8], 0.0, 0.0, 0.0,
+            0.0, 0.0,
+        ]
+    })
 }
 
 /// int2e_spv1vsp2 (dkb.c): σ·∇ on i(e1) + l(e2). si_2e1+si_2e2, headroom (1,0,0,1).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_spv1vsp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_spv1vsp2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li + 1, lj, lk, ll), exp: Al },
-        Rel2eStep { dst: 2, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
-        Rel2eStep { dst: 3, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpL,
+            bounds: (li + 1, lj, lk, ll),
+            exp: Al,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
     ];
-    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        -s[0], -s[3], -s[6], 0.0,
-        -s[1], -s[4], -s[7], 0.0,
-        -s[2], -s[5], -s[8], 0.0,
-        0.0, 0.0, 0.0, 0.0,
-    ])
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            -s[0], -s[3], -s[6], 0.0, -s[1], -s[4], -s[7], 0.0, -s[2], -s[5], -s[8], 0.0, 0.0, 0.0,
+            0.0, 0.0,
+        ]
+    })
 }
 
 /// int2e_vsp1vsp2 (dkb.c): σ·∇ on j(e1) + l(e2). si_2e1+si_2e2, headroom (0,1,0,1).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_vsp1vsp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_vsp1vsp2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li, lj + 1, lk, ll), exp: Al },
-        Rel2eStep { dst: 2, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
-        Rel2eStep { dst: 3, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpL,
+            bounds: (li, lj + 1, lk, ll),
+            exp: Al,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
     ];
-    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        s[0], s[3], s[6], 0.0,
-        s[1], s[4], s[7], 0.0,
-        s[2], s[5], s[8], 0.0,
-        0.0, 0.0, 0.0, 0.0,
-    ])
+    gout_rel2e_rank9::<16>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            s[0], s[3], s[6], 0.0, s[1], s[4], s[7], 0.0, s[2], s[5], s[8], 0.0, 0.0, 0.0, 0.0, 0.0,
+        ]
+    })
 }
 
 /// int2e_spv1spsp2 (dkb.c): σ·∇ on i(e1) + σ·p² on (k,l)(e2). si_2e1+si_2e2, headroom (1,0,1,1).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_spv1spsp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_spv1spsp2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li + 1, lj, lk + 1, ll), exp: Al },
-        Rel2eStep { dst: 2, src: 0, op: OpK, bounds: (li + 1, lj, lk, ll), exp: Ak },
-        Rel2eStep { dst: 3, src: 1, op: OpK, bounds: (li + 1, lj, lk, ll), exp: Ak },
-        Rel2eStep { dst: 4, src: 0, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
-        Rel2eStep { dst: 5, src: 1, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
-        Rel2eStep { dst: 6, src: 2, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
-        Rel2eStep { dst: 7, src: 3, op: OpI, bounds: (li, lj, lk, ll), exp: Ai },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpL,
+            bounds: (li + 1, lj, lk + 1, ll),
+            exp: Al,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpK,
+            bounds: (li + 1, lj, lk, ll),
+            exp: Ak,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpK,
+            bounds: (li + 1, lj, lk, ll),
+            exp: Ak,
+        },
+        Rel2eStep {
+            dst: 4,
+            src: 0,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
+        Rel2eStep {
+            dst: 5,
+            src: 1,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
+        Rel2eStep {
+            dst: 6,
+            src: 2,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
+        Rel2eStep {
+            dst: 7,
+            src: 3,
+            op: OpI,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        },
     ];
-    gout_rel2e_rank27(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        s[5] - s[7], s[14] - s[16], s[23] - s[25], 0.0,
-        s[6] - s[2], s[15] - s[11], s[24] - s[20], 0.0,
-        s[1] - s[3], s[10] - s[12], s[19] - s[21], 0.0,
-        s[0] + s[4] + s[8], s[9] + s[13] + s[17], s[18] + s[22] + s[26], 0.0,
-    ])
+    gout_rel2e_rank27(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            s[5] - s[7],
+            s[14] - s[16],
+            s[23] - s[25],
+            0.0,
+            s[6] - s[2],
+            s[15] - s[11],
+            s[24] - s[20],
+            0.0,
+            s[1] - s[3],
+            s[10] - s[12],
+            s[19] - s[21],
+            0.0,
+            s[0] + s[4] + s[8],
+            s[9] + s[13] + s[17],
+            s[18] + s[22] + s[26],
+            0.0,
+        ]
+    })
 }
 
 /// int2e_vsp1spsp2 (dkb.c): σ·∇ on j(e1) + σ·p² on (k,l)(e2). si_2e1+si_2e2, headroom (0,1,1,1).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn gout_vsp1spsp2(g: &[f64], shape: &F12Shape, li: usize, lj: usize, lk: usize, ll: usize, ai: f64, aj: f64, ak: f64, al: f64) -> Vec<f64> {
+pub(crate) fn gout_vsp1spsp2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
     let steps = [
-        Rel2eStep { dst: 1, src: 0, op: OpL, bounds: (li, lj + 1, lk + 1, ll), exp: Al },
-        Rel2eStep { dst: 2, src: 0, op: OpK, bounds: (li, lj + 1, lk, ll), exp: Ak },
-        Rel2eStep { dst: 3, src: 1, op: OpK, bounds: (li, lj + 1, lk, ll), exp: Ak },
-        Rel2eStep { dst: 4, src: 0, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
-        Rel2eStep { dst: 5, src: 1, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
-        Rel2eStep { dst: 6, src: 2, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
-        Rel2eStep { dst: 7, src: 3, op: OpJ, bounds: (li, lj, lk, ll), exp: Aj },
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: OpL,
+            bounds: (li, lj + 1, lk + 1, ll),
+            exp: Al,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: OpK,
+            bounds: (li, lj + 1, lk, ll),
+            exp: Ak,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: OpK,
+            bounds: (li, lj + 1, lk, ll),
+            exp: Ak,
+        },
+        Rel2eStep {
+            dst: 4,
+            src: 0,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
+        Rel2eStep {
+            dst: 5,
+            src: 1,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
+        Rel2eStep {
+            dst: 6,
+            src: 2,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
+        Rel2eStep {
+            dst: 7,
+            src: 3,
+            op: OpJ,
+            bounds: (li, lj, lk, ll),
+            exp: Aj,
+        },
     ];
-    gout_rel2e_rank27(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| [
-        -s[5] + s[7], -s[14] + s[16], -s[23] + s[25], 0.0,
-        -s[6] + s[2], -s[15] + s[11], -s[24] + s[20], 0.0,
-        -s[1] + s[3], -s[10] + s[12], -s[19] + s[21], 0.0,
-        -s[0] - s[4] - s[8], -s[9] - s[13] - s[17], -s[18] - s[22] - s[26], 0.0,
-    ])
+    gout_rel2e_rank27(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+        [
+            -s[5] + s[7],
+            -s[14] + s[16],
+            -s[23] + s[25],
+            0.0,
+            -s[6] + s[2],
+            -s[15] + s[11],
+            -s[24] + s[20],
+            0.0,
+            -s[1] + s[3],
+            -s[10] + s[12],
+            -s[19] + s[21],
+            0.0,
+            -s[0] - s[4] - s[8],
+            -s[9] - s[13] - s[17],
+            -s[18] - s[22] - s[26],
+            0.0,
+        ]
+    })
 }
 
 /// Compute gout for the ip1ip2 variant (ncomp=9): `\nabla_i` on e1 and `\nabla_k` on e2.
@@ -2620,9 +3357,18 @@ pub(crate) fn gout_ip1ip2(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 9];
                     for irys in 0..shape.nroots {
@@ -2755,18 +3501,39 @@ pub(crate) fn gout_ipip1ipip2(
         for &(kx, ky, kz) in &ck_comps {
             for &(jx, jy, jz) in &cj_comps {
                 for &(ix, iy, iz) in &ci_comps {
-                    let ix_base = ix as usize * shape.di + kx as usize * shape.dk + lx as usize * shape.dl + jx as usize * shape.dj;
-                    let iy_base = iy as usize * shape.di + ky as usize * shape.dk + ly as usize * shape.dl + jy as usize * shape.dj;
-                    let iz_base = iz as usize * shape.di + kz as usize * shape.dk + lz as usize * shape.dl + jz as usize * shape.dj;
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
 
                     let mut s = [0.0_f64; 81];
                     for irys in 0..shape.nroots {
                         let r = irys;
                         // closures to fetch the x/y/z component of buffer b at the
                         // (ix_base/iy_base/iz_base + r) index.
-                        macro_rules! gx { ($b:expr) => { $b[gx_off + ix_base + r] }; }
-                        macro_rules! gy { ($b:expr) => { $b[gy_off + iy_base + r] }; }
-                        macro_rules! gz { ($b:expr) => { $b[gz_off + iz_base + r] }; }
+                        macro_rules! gx {
+                            ($b:expr) => {
+                                $b[gx_off + ix_base + r]
+                            };
+                        }
+                        macro_rules! gy {
+                            ($b:expr) => {
+                                $b[gy_off + iy_base + r]
+                            };
+                        }
+                        macro_rules! gz {
+                            ($b:expr) => {
+                                $b[gz_off + iz_base + r]
+                            };
+                        }
                         // s[] triple products — copied VERBATIM from hess.c.
                         s[0] += gx!(g15) * gy!(g) * gz!(g);
                         s[1] += gx!(g14) * gy!(g1) * gz!(g);
@@ -3237,27 +4004,23 @@ fn run_f12_cart_contraction_on_backend(
             client, g, shape, li, lj, lk, ll,
         ),
         #[cfg(feature = "wgpu")]
-        ResolvedBackend::Wgpu(client, _) => {
-            run_f12_cart_contraction_device::<cubecl_wgpu::WgpuRuntime>(
+        ResolvedBackend::Wgpu(client, _) => run_f12_cart_contraction_device::<
+            cubecl_wgpu::WgpuRuntime,
+        >(client, g, shape, li, lj, lk, ll),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => {
+            run_f12_cart_contraction_device::<cubecl_cuda::CudaRuntime>(
                 client, g, shape, li, lj, lk, ll,
             )
         }
-        #[cfg(feature = "cuda")]
-        ResolvedBackend::Cuda(client) => run_f12_cart_contraction_device::<cubecl_cuda::CudaRuntime>(
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_f12_cart_contraction_device::<cubecl_hip::HipRuntime>(
             client, g, shape, li, lj, lk, ll,
         ),
-        #[cfg(feature = "rocm")]
-        ResolvedBackend::Rocm(client) => {
-            run_f12_cart_contraction_device::<cubecl_hip::HipRuntime>(
-                client, g, shape, li, lj, lk, ll,
-            )
-        }
         #[cfg(feature = "metal")]
-        ResolvedBackend::Metal(client, _) => {
-            run_f12_cart_contraction_device::<cubecl_wgpu::WgpuRuntime>(
-                client, g, shape, li, lj, lk, ll,
-            )
-        }
+        ResolvedBackend::Metal(client, _) => run_f12_cart_contraction_device::<
+            cubecl_wgpu::WgpuRuntime,
+        >(client, g, shape, li, lj, lk, ll),
     }
 }
 
@@ -3371,9 +4134,8 @@ fn f12_kernel_core(
             let ai = shell_i.exponents[pi];
             for pj in 0..n_prim_j {
                 let aj = shell_j.exponents[pj];
-                let pdata_ij = compute_pdata_host(
-                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-                );
+                let pdata_ij =
+                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
                 for pk in 0..n_prim_k {
                     let ak = shell_k.exponents[pk];
                     for pl in 0..n_prim_l {
@@ -3384,8 +4146,18 @@ fn f12_kernel_core(
                         let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
                         let g = fill_g_tensor_f12(
-                            ai, aj, ak, al, &ri, &rj, &rk, &rl,
-                            shape, quartet_fac, zeta, is_stg,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                            &ri,
+                            &rj,
+                            &rk,
+                            &rl,
+                            shape,
+                            quartet_fac,
+                            zeta,
+                            is_stg,
                         );
                         // Base Cartesian contraction now runs on-device as a
                         // #[cube(launch)] kernel dispatched onto the resolved
@@ -3431,9 +4203,8 @@ fn f12_kernel_core(
                 let kappa_k = shell_k.kappa;
                 let kappa_l = shell_l.kappa;
                 cart_to_spinor_sf_4d(
-                    staging, &cart_buf,
-                    li_base_u8, kappa_i, lj_base_u8, kappa_j,
-                    lk_base_u8, kappa_k, ll_base_u8, kappa_l,
+                    staging, &cart_buf, li_base_u8, kappa_i, lj_base_u8, kappa_j, lk_base_u8,
+                    kappa_k, ll_base_u8, kappa_l,
                 )?;
             }
             Representation::Cart => {
@@ -3453,9 +4224,8 @@ fn f12_kernel_core(
             let ai = shell_i.exponents[pi];
             for pj in 0..n_prim_j {
                 let aj = shell_j.exponents[pj];
-                let pdata_ij = compute_pdata_host(
-                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-                );
+                let pdata_ij =
+                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
                 for pk in 0..n_prim_k {
                     let ak = shell_k.exponents[pk];
                     for pl in 0..n_prim_l {
@@ -3466,8 +4236,18 @@ fn f12_kernel_core(
                         let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
                         let g = fill_g_tensor_f12(
-                            ai, aj, ak, al, &ri, &rj, &rk, &rl,
-                            shape, quartet_fac, zeta, is_stg,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                            &ri,
+                            &rj,
+                            &rk,
+                            &rl,
+                            shape,
+                            quartet_fac,
+                            zeta,
+                            is_stg,
                         );
 
                         // Apply the variant-specific gout function to get ncomp * nf_base values.
@@ -3478,13 +4258,20 @@ fn f12_kernel_core(
                                 (0, 0) => gout_ipip1(&g, &shape, li, lj, lk, ll, ai),
                                 (1, 0) => gout_ipvip1(&g, &shape, li, lj, lk, ll, ai, aj),
                                 (0, 1) => gout_ip1ip2(&g, &shape, li, lj, lk, ll, ai, ak),
-                                _ => return Err(cintxRsError::UnsupportedApi {
-                                    requested: format!("f12 derivative: unknown 9-component variant j_inc={} k_inc={}", variant.j_inc, variant.k_inc),
-                                }),
+                                _ => {
+                                    return Err(cintxRsError::UnsupportedApi {
+                                        requested: format!(
+                                            "f12 derivative: unknown 9-component variant j_inc={} k_inc={}",
+                                            variant.j_inc, variant.k_inc
+                                        ),
+                                    });
+                                }
                             },
-                            _ => return Err(cintxRsError::UnsupportedApi {
-                                requested: format!("f12 derivative: unsupported ncomp={ncomp}"),
-                            }),
+                            _ => {
+                                return Err(cintxRsError::UnsupportedApi {
+                                    requested: format!("f12 derivative: unsupported ncomp={ncomp}"),
+                                });
+                            }
                         };
 
                         // Accumulate with contraction weights
@@ -3516,7 +4303,8 @@ fn f12_kernel_core(
                 let sph_size = nsi * nsj * nsk * nsl;
                 for comp in 0..ncomp {
                     let cart_slice = &gout_contracted[comp * nf_base..(comp + 1) * nf_base];
-                    let sph = cart_to_sph_2e(cart_slice, li_base_u8, lj_base_u8, lk_base_u8, ll_base_u8);
+                    let sph =
+                        cart_to_sph_2e(cart_slice, li_base_u8, lj_base_u8, lk_base_u8, ll_base_u8);
                     let stage_off = comp * sph_size;
                     // FND-06 (D-04): the upfront planner assertion proves staging is
                     // large enough for all `ncomp` components; copy unconditionally
@@ -3538,10 +4326,7 @@ fn f12_kernel_core(
         }
     }
 
-    let not0 = staging
-        .iter()
-        .filter(|&&v| v.abs() > 1e-18)
-        .count() as i32;
+    let not0 = staging.iter().filter(|&&v| v.abs() > 1e-18).count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<f64>();
     Ok(ExecutionStats {
@@ -3751,7 +4536,11 @@ fn launch_f12_typed<F: CintFloat>(
     // Per-symbol nonzero sentinel
     // WR-06: precision-aware sentinel so f32 stale lanes (< f32 noise floor ~1e-7)
     // are not counted. Bounded to out_elems so stale upper-half lanes cannot register.
-    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging[..out_elems]
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -3786,9 +4575,7 @@ pub fn launch_f12(
     staging: &mut [f64],
 ) -> Result<ExecutionStats, cintxRsError> {
     match plan.precision {
-        PrecisionKind::F64 => {
-            launch_f12_typed::<f64>(backend, plan, specialization, staging)
-        }
+        PrecisionKind::F64 => launch_f12_typed::<f64>(backend, plan, specialization, staging),
         PrecisionKind::F32 => {
             // CR-01: capture the true output element count BEFORE the bytemuck cast.
             // api.rs sizes Vec<f64> to chunk_len == the TRUE output element count;
@@ -3816,35 +4603,67 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_f12_parity_f64() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a0 = make_s_shell(0);
         let shell_a1 = make_s_shell(0);
         let shell_b0 = make_s_shell(1);
         let shell_b1 = make_s_shell(1);
-        let all_shells = Arc::from(vec![shell_a0.clone(), shell_a1.clone(), shell_b0.clone(), shell_b1.clone()].into_boxed_slice());
+        let all_shells = Arc::from(
+            vec![
+                shell_a0.clone(),
+                shell_a1.clone(),
+                shell_b0.clone(),
+                shell_b1.clone(),
+            ]
+            .into_boxed_slice(),
+        );
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
-        let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
+        let shells =
+            cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1])
+                .unwrap();
 
         use cintx_ops::resolver::Resolver;
-        let desc = Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
+        let desc =
+            Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
         let op_id = desc.id;
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(op_id, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            op_id,
+            Representation::Spheric,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F64;
         // f12_zeta stays Option<f64> on plan.operator_env_params (env-side, D-06 / Open Q3)
         plan.operator_env_params.f12_zeta = Some(1.0);
@@ -3857,14 +4676,27 @@ mod tests {
         let mut staging_typed = vec![0.0_f64; 1];
 
         let result_outer = launch_f12(&backend, &plan, &spec, &mut staging_outer);
-        assert!(result_outer.is_ok(), "outer f64 f12 should succeed: {:?}", result_outer);
+        assert!(
+            result_outer.is_ok(),
+            "outer f64 f12 should succeed: {:?}",
+            result_outer
+        );
 
         // RED: compile fails until launch_f12_typed is defined
         let result_typed = launch_f12_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
-        assert!(result_typed.is_ok(), "typed f64 f12 should succeed: {:?}", result_typed);
+        assert!(
+            result_typed.is_ok(),
+            "typed f64 f12 should succeed: {:?}",
+            result_typed
+        );
 
-        assert_eq!(staging_outer[0].to_bits(), staging_typed[0].to_bits(),
-            "f64 outer and typed f12 should be byte-identical: outer={} typed={}", staging_outer[0], staging_typed[0]);
+        assert_eq!(
+            staging_outer[0].to_bits(),
+            staging_typed[0].to_bits(),
+            "f64 outer and typed f12 should be byte-identical: outer={} typed={}",
+            staging_outer[0],
+            staging_typed[0]
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -3873,35 +4705,67 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_f12_f32_smoke() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a0 = make_s_shell(0);
         let shell_a1 = make_s_shell(0);
         let shell_b0 = make_s_shell(1);
         let shell_b1 = make_s_shell(1);
-        let all_shells = Arc::from(vec![shell_a0.clone(), shell_a1.clone(), shell_b0.clone(), shell_b1.clone()].into_boxed_slice());
+        let all_shells = Arc::from(
+            vec![
+                shell_a0.clone(),
+                shell_a1.clone(),
+                shell_b0.clone(),
+                shell_b1.clone(),
+            ]
+            .into_boxed_slice(),
+        );
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
-        let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
+        let shells =
+            cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1])
+                .unwrap();
 
         use cintx_ops::resolver::Resolver;
-        let desc = Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
+        let desc =
+            Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
         let op_id = desc.id;
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(op_id, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            op_id,
+            Representation::Spheric,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F32;
         plan.operator_env_params.f12_zeta = Some(1.0);
 
@@ -3914,8 +4778,16 @@ mod tests {
         assert!(result.is_ok(), "F32 f12 should succeed: {:?}", result);
 
         let staging_f32 = bytemuck::cast_slice::<f64, f32>(&staging);
-        assert!(staging_f32[0].is_finite(), "F32 f12 result should be finite: {}", staging_f32[0]);
-        assert!(staging_f32[0].abs() > 0.0, "F32 f12 result should be nonzero: {}", staging_f32[0]);
+        assert!(
+            staging_f32[0].is_finite(),
+            "F32 f12 result should be finite: {}",
+            staging_f32[0]
+        );
+        assert!(
+            staging_f32[0].abs() > 0.0,
+            "F32 f12 result should be nonzero: {}",
+            staging_f32[0]
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -3923,36 +4795,68 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_f12_zeta_zero_rejection() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Spheric,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Spheric,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a0 = make_s_shell(0);
         let shell_a1 = make_s_shell(0);
         let shell_b0 = make_s_shell(1);
         let shell_b1 = make_s_shell(1);
-        let all_shells = Arc::from(vec![shell_a0.clone(), shell_a1.clone(), shell_b0.clone(), shell_b1.clone()].into_boxed_slice());
+        let all_shells = Arc::from(
+            vec![
+                shell_a0.clone(),
+                shell_a1.clone(),
+                shell_b0.clone(),
+                shell_b1.clone(),
+            ]
+            .into_boxed_slice(),
+        );
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
-        let shells = cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1]).unwrap();
+        let shells =
+            cintx_core::ShellTuple::try_from_iter([shell_a0, shell_a1, shell_b0, shell_b1])
+                .unwrap();
 
         use cintx_ops::resolver::Resolver;
-        let desc = Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
+        let desc =
+            Resolver::descriptor_by_symbol("int2e_stg_sph").expect("int2e_stg_sph must exist");
         let op_id = desc.id;
 
         // No zeta set — should be rejected
         let opts = ExecutionOptions::default();
-        let query = query_workspace(op_id, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            op_id,
+            Representation::Spheric,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan =
+            ExecutionPlan::new(op_id, Representation::Spheric, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F64;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -3961,7 +4865,11 @@ mod tests {
 
         let mut staging = vec![0.0_f64; 1];
         let result = launch_f12(&backend, &plan, &spec, &mut staging);
-        assert!(result.is_err(), "f12 without zeta should fail closed: got {:?}", result);
+        assert!(
+            result.is_err(),
+            "f12 without zeta should fail closed: got {:?}",
+            result
+        );
     }
 
     /// Smoke test: STG weight post-processing produces non-zero values and differs from YP.
@@ -3971,7 +4879,7 @@ mod tests {
     #[test]
     fn stg_vs_yp_weight_post_processing_diverge() {
         let nroots = 1;
-        let ta = 1.0_f64;  // Moderate t value
+        let ta = 1.0_f64; // Moderate t value
         let zeta = 1.2_f64;
         let aij = 1.0_f64;
         let akl = 1.0_f64;
@@ -3981,8 +4889,14 @@ mod tests {
         let (roots_stg, weights_raw_stg) = stg_roots_host::<f64>(nroots, ta, ua);
         let (roots_yp, weights_raw_yp) = stg_roots_host::<f64>(nroots, ta, ua);
 
-        assert!(!roots_stg.is_empty(), "stg_roots_host should return non-empty roots");
-        assert!(!weights_raw_stg.is_empty(), "stg_roots_host should return non-empty weights");
+        assert!(
+            !roots_stg.is_empty(),
+            "stg_roots_host should return non-empty roots"
+        );
+        assert!(
+            !weights_raw_stg.is_empty(),
+            "stg_roots_host should return non-empty weights"
+        );
 
         // Apply STG weight post-processing
         let ua2 = 2.0 * ua / zeta;
@@ -4010,10 +4924,16 @@ mod tests {
         );
 
         // Both should be finite and non-zero
-        assert!(stg_weights[0].is_finite() && stg_weights[0].abs() > 1e-50,
-            "STG weight should be finite and non-zero, got {}", stg_weights[0]);
-        assert!(yp_weights[0].is_finite() && yp_weights[0].abs() > 1e-50,
-            "YP weight should be finite and non-zero, got {}", yp_weights[0]);
+        assert!(
+            stg_weights[0].is_finite() && stg_weights[0].abs() > 1e-50,
+            "STG weight should be finite and non-zero, got {}",
+            stg_weights[0]
+        );
+        assert!(
+            yp_weights[0].is_finite() && yp_weights[0].abs() > 1e-50,
+            "YP weight should be finite and non-zero, got {}",
+            yp_weights[0]
+        );
 
         // Transformed u values should be equal (same formula applied to same inputs)
         assert!(
@@ -4041,7 +4961,11 @@ mod tests {
 
         // For pp|pp: L_tot = 4, nroots = (4+3)/2 = 3
         let pppp = build_f12_shape(1, 1, 1, 1);
-        assert_eq!(pppp.nroots, 3, "pp|pp nroots should be 3, got {}", pppp.nroots);
+        assert_eq!(
+            pppp.nroots, 3,
+            "pp|pp nroots should be 3, got {}",
+            pppp.nroots
+        );
     }
 
     /// Verify F12Variant constants match cint2e_f12.c ng arrays.
@@ -4279,7 +5203,8 @@ mod tests {
             for n in 0..nroots {
                 let expected = -2.0 * al * g[off + n + dl];
                 assert_eq!(
-                    f[off + n], expected,
+                    f[off + n],
+                    expected,
                     "axis {axis} l=0 n={n}: nabla1l first-order term mismatch"
                 );
             }
@@ -4342,7 +5267,10 @@ mod tests {
         // walks must be identical: dk in the k-shape == dl in the l-shape.
         assert_eq!(shape_k.g_size, shape_l.g_size);
         assert_eq!(shape_k.nroots, shape_l.nroots);
-        assert_eq!(shape_k.dk, shape_l.dl, "dk and dl strides must align for the mirror check");
+        assert_eq!(
+            shape_k.dk, shape_l.dl,
+            "dk and dl strides must align for the mirror check"
+        );
 
         let mut gk = vec![0.0_f64; 3 * shape_k.g_size];
         let mut gl = vec![0.0_f64; 3 * shape_l.g_size];
@@ -4403,7 +5331,10 @@ mod tests {
         let mut gj = vec![0.0_f64; 3 * shape_j.g_size];
         fill_distinct(&mut gj);
         let out_j = gout_ipn(&gj, &shape_j, li, lj, lk, ll, Nabla1Center::J, exponent);
-        assert!(out_j.iter().all(|v| v.is_finite()), "center J output must be finite");
+        assert!(
+            out_j.iter().all(|v| v.is_finite()),
+            "center J output must be finite"
+        );
 
         // center K: needs lk_ceil = lk+1.
         let (li, lj, lk, ll) = (0usize, 0usize, 1usize, 0usize);
@@ -4411,7 +5342,10 @@ mod tests {
         let mut gk = vec![0.0_f64; 3 * shape_k.g_size];
         fill_distinct(&mut gk);
         let out_k = gout_ipn(&gk, &shape_k, li, lj, lk, ll, Nabla1Center::K, exponent);
-        assert!(out_k.iter().all(|v| v.is_finite()), "center K output must be finite");
+        assert!(
+            out_k.iter().all(|v| v.is_finite()),
+            "center K output must be finite"
+        );
 
         // center L: needs ll_ceil = ll+1.
         let (li, lj, lk, ll) = (0usize, 0usize, 0usize, 1usize);
@@ -4419,11 +5353,23 @@ mod tests {
         let mut gl = vec![0.0_f64; 3 * shape_l.g_size];
         fill_distinct(&mut gl);
         let out_l = gout_ipn(&gl, &shape_l, li, lj, lk, ll, Nabla1Center::L, exponent);
-        assert!(out_l.iter().all(|v| v.is_finite()), "center L output must be finite");
+        assert!(
+            out_l.iter().all(|v| v.is_finite()),
+            "center L output must be finite"
+        );
 
         // At least one component must be non-zero for each (the synthetic tensor is dense).
-        assert!(out_j.iter().any(|&v| v != 0.0), "center J output should be non-trivial");
-        assert!(out_k.iter().any(|&v| v != 0.0), "center K output should be non-trivial");
-        assert!(out_l.iter().any(|&v| v != 0.0), "center L output should be non-trivial");
+        assert!(
+            out_j.iter().any(|&v| v != 0.0),
+            "center J output should be non-trivial"
+        );
+        assert!(
+            out_k.iter().any(|&v| v != 0.0),
+            "center K output should be non-trivial"
+        );
+        assert!(
+            out_l.iter().any(|&v| v != 0.0),
+            "center L output should be non-trivial"
+        );
     }
 }

@@ -103,7 +103,8 @@ fn boys_small_t() {
                 assert!(
                     diff < 1e-12,
                     "boys_small_t failed for t={t}, m={m}, k={k}: got {}, expected {}, diff={diff}",
-                    computed[k as usize], reference[k as usize]
+                    computed[k as usize],
+                    reference[k as usize]
                 );
             }
         }
@@ -130,7 +131,8 @@ fn boys_large_t() {
                 assert!(
                     diff < 1e-12,
                     "boys_large_t failed for t={t}, m={m}, k={k}: got {}, expected {}, diff={diff}",
-                    computed[k as usize], reference[k as usize]
+                    computed[k as usize],
+                    reference[k as usize]
                 );
             }
         }
@@ -161,12 +163,14 @@ fn boys_turnover_boundary() {
         assert!(
             diff_below < 1e-12,
             "boys_turnover_boundary (below) failed for k={k}: got {}, expected {}, diff={diff_below}",
-            f_below[k as usize], ref_below[k as usize]
+            f_below[k as usize],
+            ref_below[k as usize]
         );
         assert!(
             diff_above < 1e-12,
             "boys_turnover_boundary (above) failed for k={k}: got {}, expected {}, diff={diff_above}",
-            f_above[k as usize], ref_above[k as usize]
+            f_above[k as usize],
+            ref_above[k as usize]
         );
     }
 }
@@ -188,7 +192,8 @@ fn boys_high_order() {
         assert!(
             diff < 1e-12,
             "boys_high_order failed for t={t}, m={m}, k={k}: got {}, expected {}, diff={diff}",
-            computed[k as usize], reference[k as usize]
+            computed[k as usize],
+            reference[k as usize]
         );
     }
 }

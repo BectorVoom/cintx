@@ -23,7 +23,11 @@ fn a5_f64_to_f64_roundtrip() {
     assert_eq!(view.len(), n, "f64->f64 cast should preserve element count");
 
     for (got, exp) in view.iter().zip(expected.iter()) {
-        assert_eq!(got.to_bits(), exp.to_bits(), "f64->f64 cast must preserve bit patterns");
+        assert_eq!(
+            got.to_bits(),
+            exp.to_bits(),
+            "f64->f64 cast must preserve bit patterns"
+        );
     }
 }
 
@@ -47,7 +51,11 @@ fn a5_u8_to_f32_write_read_bitexact() {
 
     // Read back via the original Vec and verify bit-exact
     for (got, exp) in buf.iter().zip(vals.iter()) {
-        assert_eq!(got.to_bits(), exp.to_bits(), "u8-buffer f32 write-read must be bit-exact");
+        assert_eq!(
+            got.to_bits(),
+            exp.to_bits(),
+            "u8-buffer f32 write-read must be bit-exact"
+        );
     }
 }
 
@@ -104,5 +112,9 @@ fn a5_summary_proven() {
     assert_eq!(size_of::<f64>(), 8, "PrecisionKind::F64.element_size() = 8");
     assert_eq!(size_of::<f32>(), 4, "PrecisionKind::F32.element_size() = 4");
     // The ratio: one f64 slot holds 2 f32 values
-    assert_eq!(size_of::<f64>() / size_of::<f32>(), 2, "f64/f32 size ratio = 2");
+    assert_eq!(
+        size_of::<f64>() / size_of::<f32>(),
+        2,
+        "f64/f32 size ratio = 2"
+    );
 }

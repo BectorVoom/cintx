@@ -39,8 +39,8 @@
 //! The `nmax>=1` VRR guard and the `vrr_2e_step` vs `vrr_step` distinction
 //! are preserved verbatim — only the float type changes.
 
-use cubecl::prelude::*;
 use cintx_core::CintFloat;
+use cubecl::prelude::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  vrr_step — 1e vertical recurrence for one Cartesian dimension

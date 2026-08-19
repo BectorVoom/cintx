@@ -19,17 +19,28 @@ use cintx_cubecl::math::pdata::compute_pdata_host;
 /// Golden: zeta_ab=2.0, center_p_x=0.7, rirj_x=-1.4, fac=exp(-0.98), aij2=0.25
 #[test]
 fn pdata_generic_f64_byte_identity() {
-    let p = compute_pdata_host::<f64>(
-        1.0, 1.0,
-        0.0, 0.0, 0.0,
-        1.4, 0.0, 0.0,
-        1.0, 1.0,
+    let p = compute_pdata_host::<f64>(1.0, 1.0, 0.0, 0.0, 0.0, 1.4, 0.0, 0.0, 1.0, 1.0);
+    assert!(
+        (p.zeta_ab - 2.0f64).abs() < 1e-12,
+        "f64 zeta_ab: got {}",
+        p.zeta_ab
     );
-    assert!((p.zeta_ab - 2.0f64).abs() < 1e-12, "f64 zeta_ab: got {}", p.zeta_ab);
-    assert!((p.center_p_x - 0.7f64).abs() < 1e-12, "f64 center_p_x: got {}", p.center_p_x);
-    assert!((p.rirj_x - (-1.4f64)).abs() < 1e-12, "f64 rirj_x: got {}", p.rirj_x);
+    assert!(
+        (p.center_p_x - 0.7f64).abs() < 1e-12,
+        "f64 center_p_x: got {}",
+        p.center_p_x
+    );
+    assert!(
+        (p.rirj_x - (-1.4f64)).abs() < 1e-12,
+        "f64 rirj_x: got {}",
+        p.rirj_x
+    );
     let expected_fac = (-0.98f64).exp();
-    assert!((p.fac - expected_fac).abs() < 1e-12, "f64 fac: got {}", p.fac);
+    assert!(
+        (p.fac - expected_fac).abs() < 1e-12,
+        "f64 fac: got {}",
+        p.fac
+    );
     assert!((p.aij2 - 0.25f64).abs() < 1e-12, "f64 aij2: got {}", p.aij2);
 }
 
@@ -39,15 +50,18 @@ fn pdata_generic_f64_byte_identity() {
 #[test]
 fn pdata_generic_f32_smoke() {
     let p = compute_pdata_host::<f32>(
-        1.0_f32, 1.0_f32,
-        0.0_f32, 0.0_f32, 0.0_f32,
-        1.4_f32, 0.0_f32, 0.0_f32,
-        1.0_f32, 1.0_f32,
+        1.0_f32, 1.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 1.4_f32, 0.0_f32, 0.0_f32, 1.0_f32, 1.0_f32,
     );
     // PairData fields are f64 (computed from f32, converted at boundary)
     assert!(p.zeta_ab.is_finite(), "f32-input zeta_ab must be finite");
-    assert!(p.fac.is_finite() && p.fac != 0.0_f64, "f32-input fac must be finite and non-zero");
-    assert!(p.aij2.is_finite() && p.aij2 != 0.0_f64, "f32-input aij2 must be finite and non-zero");
+    assert!(
+        p.fac.is_finite() && p.fac != 0.0_f64,
+        "f32-input fac must be finite and non-zero"
+    );
+    assert!(
+        p.aij2.is_finite() && p.aij2 != 0.0_f64,
+        "f32-input aij2 must be finite and non-zero"
+    );
     // Sanity: f32-input zeta_ab should be close to f64 golden
     let rel = (p.zeta_ab - 2.0f64).abs() / 2.0f64;
     assert!(rel < 1e-5, "f32-input zeta_ab relative error: {rel:.2e}");
@@ -66,12 +80,7 @@ fn pdata_generic_f32_smoke() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[test]
 fn pdata_equal_exponents() {
-    let p = compute_pdata_host(
-        1.0, 1.0,
-        0.0, 0.0, 0.0,
-        1.4, 0.0, 0.0,
-        1.0, 1.0,
-    );
+    let p = compute_pdata_host(1.0, 1.0, 0.0, 0.0, 0.0, 1.4, 0.0, 0.0, 1.0, 1.0);
 
     // zeta_ab = ai + aj, g1e.c line 130
     let expected_zeta = 2.0f64;
@@ -137,15 +146,14 @@ fn pdata_equal_exponents() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[test]
 fn pdata_asymmetric() {
-    let p = compute_pdata_host(
-        5.0, 2.0,
-        0.0, 0.0, 0.0,
-        1.0, 0.0, 0.0,
-        1.0, 1.0,
-    );
+    let p = compute_pdata_host(5.0, 2.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0);
 
     // zeta_ab = 7.0, g1e.c line 130
-    assert!((p.zeta_ab - 7.0).abs() < 1e-12, "zeta_ab: got {}", p.zeta_ab);
+    assert!(
+        (p.zeta_ab - 7.0).abs() < 1e-12,
+        "zeta_ab: got {}",
+        p.zeta_ab
+    );
 
     // center_p_x = 2/7 ≈ 0.285714... — center shifts toward Ri (ai=5 dominates)
     // g1e.c line 131: center_p = (ai*Ri + aj*Rj) / zeta_ab
@@ -186,20 +194,31 @@ fn pdata_asymmetric() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[test]
 fn pdata_coincident() {
-    let p = compute_pdata_host(
-        3.0, 4.0,
-        1.0, 2.0, 3.0,
-        1.0, 2.0, 3.0,
-        1.0, 1.0,
-    );
+    let p = compute_pdata_host(3.0, 4.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 1.0);
 
     // zeta_ab = 7.0, g1e.c line 130
-    assert!((p.zeta_ab - 7.0).abs() < 1e-12, "zeta_ab: got {}", p.zeta_ab);
+    assert!(
+        (p.zeta_ab - 7.0).abs() < 1e-12,
+        "zeta_ab: got {}",
+        p.zeta_ab
+    );
 
     // center_p = Ri = (1, 2, 3) when Ri == Rj, g1e.c lines 131-133
-    assert!((p.center_p_x - 1.0).abs() < 1e-12, "center_p_x: got {}", p.center_p_x);
-    assert!((p.center_p_y - 2.0).abs() < 1e-12, "center_p_y: got {}", p.center_p_y);
-    assert!((p.center_p_z - 3.0).abs() < 1e-12, "center_p_z: got {}", p.center_p_z);
+    assert!(
+        (p.center_p_x - 1.0).abs() < 1e-12,
+        "center_p_x: got {}",
+        p.center_p_x
+    );
+    assert!(
+        (p.center_p_y - 2.0).abs() < 1e-12,
+        "center_p_y: got {}",
+        p.center_p_y
+    );
+    assert!(
+        (p.center_p_z - 3.0).abs() < 1e-12,
+        "center_p_z: got {}",
+        p.center_p_z
+    );
 
     // rirj = (0, 0, 0), g1e.c line 135
     assert!(p.rirj_x.abs() < 1e-12, "rirj_x: got {}", p.rirj_x);

@@ -111,7 +111,7 @@ use crate::backend::ResolvedBackend;
 use crate::math::ecp_k_taylor::{
     EcpRadShell, ecprad_part_host, type1_rad_part_host, type2_facs_rad_host,
 };
-use crate::math::radial_quadrature::{LEVEL0, LEVEL_MAX, gauss_chebyshev_nodes_weights_host};
+use crate::math::radial_quadrature::{LEVEL_MAX, LEVEL0, gauss_chebyshev_nodes_weights_host};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
 use cintx_core::ecp::{EcpChannel, EcpShell};
@@ -148,23 +148,52 @@ fn cint_common_fac_sp(l: usize) -> f64 {
 /// `_factorial2[n] = n!!` — used by `int_unit_xyz`. `factorial2(n<0) = 1`.
 /// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:4473-4486 + 4488-4496.
 const FACTORIAL2: [f64; 40] = [
-    1., 1., 2., 3., 8., 15., 48., 105., 384., 945., 3840., 10395., 46080., 135135., 645120.,
-    2027025., 10321920., 34459425., 185794560., 654729075., 3715891200., 13749310575.,
-    81749606400., 316234143225., 1961990553600., 7905853580625., 51011754393600.,
-    213458046676875., 1428329123020800., 6190283353629376., 42849873690624000.,
-    1.9189878396251069e+17, 1.371195958099968e+18, 6.3326598707628524e+18,
-    4.6620662575398912e+19, 2.2164309547669976e+20, 1.6783438527143608e+21,
-    8.2007945326378929e+21, 6.3777066403145712e+22, 3.1983098677287775e+23,
+    1.,
+    1.,
+    2.,
+    3.,
+    8.,
+    15.,
+    48.,
+    105.,
+    384.,
+    945.,
+    3840.,
+    10395.,
+    46080.,
+    135135.,
+    645120.,
+    2027025.,
+    10321920.,
+    34459425.,
+    185794560.,
+    654729075.,
+    3715891200.,
+    13749310575.,
+    81749606400.,
+    316234143225.,
+    1961990553600.,
+    7905853580625.,
+    51011754393600.,
+    213458046676875.,
+    1428329123020800.,
+    6190283353629376.,
+    42849873690624000.,
+    1.9189878396251069e+17,
+    1.371195958099968e+18,
+    6.3326598707628524e+18,
+    4.6620662575398912e+19,
+    2.2164309547669976e+20,
+    1.6783438527143608e+21,
+    8.2007945326378929e+21,
+    6.3777066403145712e+22,
+    3.1983098677287775e+23,
 ];
 
 /// `factorial2(n)` with the `n < 0 => 1` guard (PySCF nr_ecp.c:4488-4496).
 #[inline]
 fn factorial2(n: i32) -> f64 {
-    if n < 0 {
-        1.0
-    } else {
-        FACTORIAL2[n as usize]
-    }
+    if n < 0 { 1.0 } else { FACTORIAL2[n as usize] }
 }
 
 /// `_binom[n][m]` for `n < 10`; PySCF `binom(n, m)`.
@@ -504,8 +533,7 @@ fn type2_facs_ang(facs: &mut [f64], li: usize, lc: usize, ri: &[f64; 3]) {
             for j in 0..=ps {
                 for k in 0..=pt {
                     let need_even = (lc + i + j + k) % 2;
-                    let fac =
-                        fac3dx[pr * li1 + i] * fac3dy[ps * li1 + j] * fac3dz[pt * li1 + k];
+                    let fac = fac3dx[pr * li1 + i] * fac3dy[ps * li1 + j] * fac3dz[pt * li1 + k];
                     let pomega_off = (i * li1 * li1 + j * li1 + k) * dlclmb;
                     let pfacs_off = ((i + j + k) * nfi + mi) * dlclmb;
                     for m in 0..dlc {
@@ -526,7 +554,15 @@ fn type2_facs_ang(facs: &mut [f64], li: usize, lc: usize, ri: &[f64; 3]) {
 /// Gaussian prefactor and `CINTcommon_fac_sp(li) * 4 pi` into the contraction
 /// coefficients. `cei[ic*npi + ip] = ci[ic*npi + ip] * exp(-ai[ip]*r2ca) * fac`.
 /// Source: vendor/pyscf-nr-ecp/src/nr_ecp.c:5740-5752.
-fn scale_coeff(cei: &mut [f64], ci: &[f64], ai: &[f64], r2ca: f64, npi: usize, nci: usize, li: usize) {
+fn scale_coeff(
+    cei: &mut [f64],
+    ci: &[f64],
+    ai: &[f64],
+    r2ca: f64,
+    npi: usize,
+    nci: usize,
+    li: usize,
+) {
     let common_fac = cint_common_fac_sp(li) * 4.0 * std::f64::consts::PI;
     for ip in 0..npi {
         let tmp = (-ai[ip] * r2ca).exp() * common_fac;
@@ -740,7 +776,16 @@ fn ecp_type1_cart(
                     ai[ip] * rca[2] + aj[jp] * rcb[2],
                 ];
                 let k = (rij[0] * rij[0] + rij[1] * rij[1] + rij[2] * rij[2]).sqrt() * 2.0;
-                type1_rad_part_host(prad, li + lj, k, ai[ip] + aj[jp], &ur, &rs_max[start..], nrs, step);
+                type1_rad_part_host(
+                    prad,
+                    li + lj,
+                    k,
+                    ai[ip] + aj[jp],
+                    &ur,
+                    &rs_max[start..],
+                    nrs,
+                    step,
+                );
                 converged[ip * npj + jp] = true;
                 for i in 0..d2 {
                     if !close_enough(plast[i], prad[i]) {
@@ -1308,9 +1353,11 @@ fn run_ecp_type2_splice_on_backend(
             client, li, lj, lc, prad, angi, angj, common_fac,
         ),
         #[cfg(feature = "wgpu")]
-        ResolvedBackend::Wgpu(client, _) => run_ecp_type2_angular_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li, lj, lc, prad, angi, angj, common_fac,
-        ),
+        ResolvedBackend::Wgpu(client, _) => {
+            run_ecp_type2_angular_device::<cubecl_wgpu::WgpuRuntime>(
+                client, li, lj, lc, prad, angi, angj, common_fac,
+            )
+        }
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_ecp_type2_angular_device::<cubecl_cuda::CudaRuntime>(
             client, li, lj, lc, prad, angi, angj, common_fac,
@@ -1371,8 +1418,11 @@ fn ecp_type2_cart(
     let ci = &ci_cm;
     let cj = &cj_cm;
 
-    let common_fac =
-        cint_common_fac_sp(li) * cint_common_fac_sp(lj) * 16.0 * std::f64::consts::PI * std::f64::consts::PI;
+    let common_fac = cint_common_fac_sp(li)
+        * cint_common_fac_sp(lj)
+        * 16.0
+        * std::f64::consts::PI
+        * std::f64::consts::PI;
 
     let rca = [rc[0] - ri[0], rc[1] - ri[1], rc[2] - ri[2]];
     let rcb = [rc[0] - rj[0], rc[1] - rj[1], rc[2] - rj[2]];
@@ -1529,14 +1579,7 @@ fn ecp_type2_cart(
         for jc in 0..ncj {
             let prad = &rad_all[(ic * ncj + jc) * d3..(ic * ncj + jc) * d3 + d3];
             let block = run_ecp_type2_splice_on_backend(
-                backend,
-                li as u32,
-                lj as u32,
-                lc as u32,
-                prad,
-                &angi,
-                &angj,
-                common_fac,
+                backend, li as u32, lj as u32, lc as u32, prad, &angi, &angj, common_fac,
             );
             // Scatter into gctr at c_off = jc*nfj*di + ic*nfi (di = nci*nfi), the
             // exact target the host two-dgemm wrote (gctr[c_off + col2*di + row]).
@@ -1987,11 +2030,17 @@ pub fn launch_ecp(
     // an array-index panic in this public-API-reachable path.
     let ai = shell_i.atom_index as usize;
     if ai >= atom_count {
-        return Err(cintxRsError::InvalidShellAtomIndex { index: ai, atom_count });
+        return Err(cintxRsError::InvalidShellAtomIndex {
+            index: ai,
+            atom_count,
+        });
     }
     let aj = shell_j.atom_index as usize;
     if aj >= atom_count {
-        return Err(cintxRsError::InvalidShellAtomIndex { index: aj, atom_count });
+        return Err(cintxRsError::InvalidShellAtomIndex {
+            index: aj,
+            atom_count,
+        });
     }
     let ri = atoms[ai].coord_bohr;
     let rj = atoms[aj].coord_bohr;
@@ -2053,13 +2102,13 @@ pub fn launch_ecp(
     // vendor `_one_shell_ecpbas` shl_id<0 → 0 path). `ecp`/`ecp_ipnuc` are
     // unaffected: they process every slot (None = "no restriction").
     let iprinv_selected: Option<Vec<usize>> = if is_iprinv {
-        let origin =
-            plan.operator_env_params
-                .rinv_orig
-                .ok_or(cintxRsError::InvalidEnvParam {
-                    param: "PTR_RINV_ORIG",
-                    reason: "ecp_iprinv kernel reached with no rinv origin".to_owned(),
-                })?;
+        let origin = plan
+            .operator_env_params
+            .rinv_orig
+            .ok_or(cintxRsError::InvalidEnvParam {
+                param: "PTR_RINV_ORIG",
+                reason: "ecp_iprinv kernel reached with no rinv origin".to_owned(),
+            })?;
         Some(select_iprinv_slots(&slots, atoms, origin))
     } else {
         None
@@ -2076,7 +2125,10 @@ pub fn launch_ecp(
         }
         let ac = slot.atom_index as usize;
         if ac >= atom_count {
-            return Err(cintxRsError::InvalidShellAtomIndex { index: ac, atom_count });
+            return Err(cintxRsError::InvalidShellAtomIndex {
+                index: ac,
+                atom_count,
+            });
         }
         let rc = atoms[ac].coord_bohr;
         if slot.lc >= 0 {
@@ -2089,7 +2141,15 @@ pub fn launch_ecp(
         }
         match (is_gradient, slot.lc < 0) {
             (false, true) => ecp_type1_cart(
-                backend, &mut gctr, shell_i, shell_j, ri, rj, rc, &slot.rad_shells, &rs_max,
+                backend,
+                &mut gctr,
+                shell_i,
+                shell_j,
+                ri,
+                rj,
+                rc,
+                &slot.rad_shells,
+                &rs_max,
                 &ws_max,
             ),
             (false, false) => ecp_type2_cart(
@@ -2108,7 +2168,15 @@ pub fn launch_ecp(
             // Gradient: route Local → compute_type1_pair_grad,
             // Projected(l) → compute_type2_pair_grad (both via deriv1_cart_pair).
             (true, true) => compute_type1_pair_grad(
-                backend, &mut gctr, shell_i, shell_j, ri, rj, rc, &slot.rad_shells, &rs_max,
+                backend,
+                &mut gctr,
+                shell_i,
+                shell_j,
+                ri,
+                rj,
+                rc,
+                &slot.rad_shells,
+                &rs_max,
                 &ws_max,
             ),
             (true, false) => compute_type2_pair_grad(
@@ -2305,8 +2373,7 @@ mod tests {
     #[cfg(feature = "cpu")]
     #[test]
     fn gradient_zero_overlap_is_negligible() {
-        let backend =
-            ResolvedBackend::Cpu(cubecl::cpu::CpuRuntime::client(&Default::default()));
+        let backend = ResolvedBackend::Cpu(cubecl::cpu::CpuRuntime::client(&Default::default()));
         let (rs_max, ws_max) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
         // s-shell bra/ket, single tight primitive.
         let mk = |l: u8| {
@@ -2363,17 +2430,26 @@ mod tests {
     #[cfg(feature = "cpu")]
     #[test]
     fn gradient_on_center_is_finite() {
-        let backend =
-            ResolvedBackend::Cpu(cubecl::cpu::CpuRuntime::client(&Default::default()));
+        let backend = ResolvedBackend::Cpu(cubecl::cpu::CpuRuntime::client(&Default::default()));
         let (rs_max, ws_max) = gauss_chebyshev_nodes_weights_host(LEVEL_MAX);
         let si = Shell::try_new(
-            0, 1, 1, 1, 0, Representation::Cart,
+            0,
+            1,
+            1,
+            1,
+            0,
+            Representation::Cart,
             Arc::from(vec![1.5_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice()),
         )
         .unwrap();
         let sj = Shell::try_new(
-            0, 0, 1, 1, 0, Representation::Cart,
+            0,
+            0,
+            1,
+            1,
+            0,
+            Representation::Cart,
             Arc::from(vec![1.2_f64].into_boxed_slice()),
             Arc::from(vec![1.0_f64].into_boxed_slice()),
         )
@@ -2381,14 +2457,29 @@ mod tests {
         let nfi = ncart(1);
         let nfj = ncart(0);
         let mut gctr = vec![0.0_f64; 3 * nfi * nfj];
-        let rad = EcpRadShell { exponents: vec![1.0], coefficients: vec![1.0], radial_power: 0 };
+        let rad = EcpRadShell {
+            exponents: vec![1.0],
+            coefficients: vec![1.0],
+            radial_power: 0,
+        };
         deriv1_cart_pair(
-            &backend, &mut gctr, &si, &sj,
-            [0.1, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.0],
-            -1, std::slice::from_ref(&rad), &rs_max, &ws_max,
+            &backend,
+            &mut gctr,
+            &si,
+            &sj,
+            [0.1, 0.0, 0.0],
+            [0.0, 0.2, 0.0],
+            [0.0, 0.0, 0.0],
+            -1,
+            std::slice::from_ref(&rad),
+            &rs_max,
+            &ws_max,
         );
         assert_eq!(gctr.len(), 3 * nfi * nfj);
-        assert!(gctr.iter().all(|v| v.is_finite()), "gradient must be finite");
+        assert!(
+            gctr.iter().all(|v| v.is_finite()),
+            "gradient must be finite"
+        );
     }
 
     // ── ecp_iprinv per-nucleus selector (21-07, D-09) ─────────────────────────
@@ -2400,7 +2491,9 @@ mod tests {
         coords
             .iter()
             .enumerate()
-            .map(|(i, &c)| Atom::try_new((i as u16) + 1, c, NuclearModel::Point, None, None).unwrap())
+            .map(|(i, &c)| {
+                Atom::try_new((i as u16) + 1, c, NuclearModel::Point, None, None).unwrap()
+            })
             .collect()
     }
 
@@ -2469,7 +2562,10 @@ mod tests {
         let ecp_shells = [mk_ecp_shell(0), mk_ecp_shell(1)];
         let slots = group_ecp_slots(&ecp_shells);
         let sel = select_iprinv_slots(&slots, &atoms, [10.0, 10.0, 10.0]);
-        assert!(sel.is_empty(), "no-match origin selects no slot (zero output)");
+        assert!(
+            sel.is_empty(),
+            "no-match origin selects no slot (zero output)"
+        );
     }
 
     /// The selector tolerance is tight: an origin off by more than
@@ -2518,7 +2614,10 @@ mod tests {
             }
             fn next_f64(&mut self) -> f64 {
                 // Numerical-Recipes LCG; map to [-1, 1).
-                self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                self.0 = self
+                    .0
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 let u = (self.0 >> 11) as f64 / (1u64 << 53) as f64;
                 2.0 * u - 1.0
             }
@@ -2562,10 +2661,8 @@ mod tests {
                                         for j3 in 0..=jz {
                                             acc += pifac[i1 * di2 + i2 * di1 + i3]
                                                 * pjfac[j1 * dj2 + j2 * dj1 + j3]
-                                                * rad_ang[(i1 + j1) * d2
-                                                    + (i2 + j2) * d1
-                                                    + i3
-                                                    + j3];
+                                                * rad_ang
+                                                    [(i1 + j1) * d2 + (i2 + j2) * d1 + i3 + j3];
                                         }
                                     }
                                 }
@@ -2628,7 +2725,17 @@ mod tests {
         #[test]
         fn ecp_angular_device_matches_host_f64() {
             // Several (li,lj) up to (2,2).
-            for (li, lj) in [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0), (0, 2), (2, 1), (1, 2), (2, 2)] {
+            for (li, lj) in [
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (2, 0),
+                (0, 2),
+                (2, 1),
+                (1, 2),
+                (2, 2),
+            ] {
                 assert_f64_byte_identity(li, lj, 0x9E3779B97F4A7C15 ^ ((li * 7 + lj) as u64));
             }
         }
@@ -2761,8 +2868,12 @@ mod tests {
             let d2 = lilc1 * ljlc1;
             let d3 = (li + lj + 1) * d2;
             let prad: Vec<f64> = (0..d3).map(|_| rng.next_f64()).collect();
-            let angi: Vec<f64> = (0..(li + 1) * nfi * dlc * lilc1).map(|_| rng.next_f64()).collect();
-            let angj: Vec<f64> = (0..(lj + 1) * nfj * dlc * ljlc1).map(|_| rng.next_f64()).collect();
+            let angi: Vec<f64> = (0..(li + 1) * nfi * dlc * lilc1)
+                .map(|_| rng.next_f64())
+                .collect();
+            let angj: Vec<f64> = (0..(lj + 1) * nfj * dlc * ljlc1)
+                .map(|_| rng.next_f64())
+                .collect();
             // common_fac: a positive-ish nonzero scalar in (0, 2).
             let common_fac = rng.next_f64() + 1.0;
             (prad, angi, angj, common_fac)
@@ -2783,7 +2894,11 @@ mod tests {
                 &angj,
                 common_fac,
             );
-            assert_eq!(host.len(), dev.len(), "len mismatch li={li} lj={lj} lc={lc}");
+            assert_eq!(
+                host.len(),
+                dev.len(),
+                "len mismatch li={li} lj={lj} lc={lc}"
+            );
             let mut max_diff = 0.0_f64;
             let mut any_nonzero = false;
             for (&h, &d) in host.iter().zip(dev.iter()) {
@@ -2796,13 +2911,26 @@ mod tests {
                 max_diff, 0.0,
                 "ecp type2 device/host f64 max-abs-diff must be 0.0 (li={li} lj={lj} lc={lc}), got {max_diff:e}"
             );
-            assert!(any_nonzero, "host type2 reference all zeros (li={li} lj={lj} lc={lc})");
+            assert!(
+                any_nonzero,
+                "host type2 reference all zeros (li={li} lj={lj} lc={lc})"
+            );
         }
 
         #[test]
         fn ecp_type2_angular_device_matches_host_f64() {
             // (li,lj) up to (2,2) × lc in {0,1,2}.
-            for (li, lj) in [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0), (0, 2), (2, 1), (1, 2), (2, 2)] {
+            for (li, lj) in [
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (2, 0),
+                (0, 2),
+                (2, 1),
+                (1, 2),
+                (2, 2),
+            ] {
                 for lc in [0usize, 1, 2] {
                     let seed = 0xA5A5_5A5A_C3C3_3C3C ^ ((li * 31 + lj * 7 + lc) as u64);
                     assert_type2_f64_byte_identity(li, lj, lc, seed);

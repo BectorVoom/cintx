@@ -457,13 +457,7 @@ mod tests {
             let out = modified_spherical_bessel_in_host(ECP_LMAX, x);
             assert_eq!(out.len(), (ECP_LMAX + 1) as usize);
             for (l, v) in out.iter().enumerate() {
-                assert!(
-                    v.is_finite(),
-                    "i_{}(x={}) = {} is not finite",
-                    l,
-                    x,
-                    v,
-                );
+                assert!(v.is_finite(), "i_{}(x={}) = {} is not finite", l, x, v,);
             }
         }
     }

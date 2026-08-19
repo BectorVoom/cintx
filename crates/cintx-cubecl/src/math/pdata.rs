@@ -29,8 +29,8 @@
 //! Wave 2 (kernel launchers) will genericize the full pipeline once `PairData<F>` is
 //! needed end-to-end.
 
-use cubecl::prelude::*;
 use cintx_core::CintFloat;
+use cubecl::prelude::*;
 
 /// Gaussian pair data — all quantities for a two-center shell pair.
 ///
@@ -157,14 +157,30 @@ pub fn compute_pdata_host<F: CintFloat>(
     // CintFloat is sealed to f64|f32; to_f64() is total for both types (WR-04: no fabricated fallback).
     let ai = ai.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
     let aj = aj.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
-    let ri_x = ri_x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
-    let ri_y = ri_y.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
-    let ri_z = ri_z.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
-    let rj_x = rj_x.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
-    let rj_y = rj_y.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
-    let rj_z = rj_z.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
-    let norm_i = norm_i.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
-    let norm_j = norm_j.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
+    let ri_x = ri_x
+        .to_f64()
+        .expect("CintFloat is f32|f64; to_f64 is total");
+    let ri_y = ri_y
+        .to_f64()
+        .expect("CintFloat is f32|f64; to_f64 is total");
+    let ri_z = ri_z
+        .to_f64()
+        .expect("CintFloat is f32|f64; to_f64 is total");
+    let rj_x = rj_x
+        .to_f64()
+        .expect("CintFloat is f32|f64; to_f64 is total");
+    let rj_y = rj_y
+        .to_f64()
+        .expect("CintFloat is f32|f64; to_f64 is total");
+    let rj_z = rj_z
+        .to_f64()
+        .expect("CintFloat is f32|f64; to_f64 is total");
+    let norm_i = norm_i
+        .to_f64()
+        .expect("CintFloat is f32|f64; to_f64 is total");
+    let norm_j = norm_j
+        .to_f64()
+        .expect("CintFloat is f32|f64; to_f64 is total");
 
     // Gaussian-product math runs entirely in f64.
     let zeta_ab = ai + aj;

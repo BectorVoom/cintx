@@ -215,7 +215,10 @@ mod tests {
         // Cloned snapshot must produce the same fingerprint.
         let snap2 = snap.clone();
         let fp3 = capability_fingerprint(&snap2);
-        assert_eq!(fp1, fp3, "Cloned snapshot must produce the same fingerprint");
+        assert_eq!(
+            fp1, fp3,
+            "Cloned snapshot must produce the same fingerprint"
+        );
     }
 
     #[test]
@@ -284,7 +287,10 @@ mod tests {
             s.starts_with("missing_feature:"),
             "Should start with 'missing_feature:': {s}"
         );
-        assert!(s.contains("TIMESTAMP_QUERY"), "Should contain feature name: {s}");
+        assert!(
+            s.contains("TIMESTAMP_QUERY"),
+            "Should contain feature name: {s}"
+        );
 
         // limit_too_low:<name>:<actual>/<required>
         let r = CapabilityReason::LimitTooLow("max_storage_buffers".to_owned(), 4, 8);
@@ -293,7 +299,10 @@ mod tests {
             s.starts_with("limit_too_low:"),
             "Should start with 'limit_too_low:': {s}"
         );
-        assert!(s.contains("max_storage_buffers"), "Should contain limit name: {s}");
+        assert!(
+            s.contains("max_storage_buffers"),
+            "Should contain limit name: {s}"
+        );
         assert!(s.contains("4"), "Should contain actual value: {s}");
         assert!(s.contains("8"), "Should contain required value: {s}");
 
@@ -313,7 +322,10 @@ mod tests {
             s.starts_with("representation_unsupported:"),
             "Should start with 'representation_unsupported:': {s}"
         );
-        assert!(s.contains("spinor"), "Should contain representation name: {s}");
+        assert!(
+            s.contains("spinor"),
+            "Should contain representation name: {s}"
+        );
     }
 
     #[test]
@@ -330,7 +342,9 @@ mod tests {
         let snap = sample_snapshot();
         let report = WgpuPreflightReport::new(
             snap,
-            vec![CapabilityReason::MissingFeature("TIMESTAMP_QUERY".to_owned())],
+            vec![CapabilityReason::MissingFeature(
+                "TIMESTAMP_QUERY".to_owned(),
+            )],
         );
         assert!(!report.is_capable());
         assert!(report.first_reason().is_some());

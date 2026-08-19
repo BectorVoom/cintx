@@ -6,9 +6,9 @@ pub mod rys;
 // Task 1a: eigh MRRR symmetric-tridiagonal eigensolver.
 // Task 1b: Wheeler/Jacobi modified-moments engine.
 pub mod eigh;
-pub mod rys_wheeler;
 pub mod roots_jacobi_data;
 pub mod roots_xw_data;
+pub mod rys_wheeler;
 pub mod stg;
 // Phase 19 Plan 01 Wave 0 scaffolding — algorithm bodies land in Plan 02.
 pub mod bessel;

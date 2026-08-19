@@ -39,7 +39,9 @@
 //! `bessel.rs` / `boys.rs` Phase 8 P02 note, no `#[cube]` body appears in this
 //! file.
 
-use crate::math::bessel::{K_TAB_COL, K_TAB_INTERVAL, K_TAYLOR_MAX, X_LARGE_THRESHOLD, X_SMALL_THRESHOLD};
+use crate::math::bessel::{
+    K_TAB_COL, K_TAB_INTERVAL, K_TAYLOR_MAX, X_LARGE_THRESHOLD, X_SMALL_THRESHOLD,
+};
 use crate::math::ecp_k_taylor_data::{sph_ine_tab, sph_ine_tab_order7};
 
 /// `ORDER7OFFSET` — stride between Taylor-coefficient rows in `_sph_ine_tab_order7`.
@@ -709,7 +711,10 @@ mod tests {
         let rs: Vec<f64> = Vec::new();
         let ur: Vec<f64> = Vec::new();
         type1_rad_part_host(&mut rad_all, lmax, 1.0, 1.0, &ur, &rs, 0, 1);
-        assert!(rad_all.iter().all(|&v| v == 0.0), "nrs==0 must leave rad_all zero");
+        assert!(
+            rad_all.iter().all(|&v| v == 0.0),
+            "nrs==0 must leave rad_all zero"
+        );
     }
 
     /// `type2_facs_rad_host` early-returns (no panic, no writes) when nrs == 0,
@@ -719,7 +724,18 @@ mod tests {
         // nrs == 0 early return: facs untouched.
         let mut facs_empty = vec![0.0f64; 4];
         let rs_empty: Vec<f64> = Vec::new();
-        type2_facs_rad_host(&mut facs_empty, 1, 1, 0.5, &[1.0], &[1.0], 1, &rs_empty, 0, 1);
+        type2_facs_rad_host(
+            &mut facs_empty,
+            1,
+            1,
+            0.5,
+            &[1.0],
+            &[1.0],
+            1,
+            &rs_empty,
+            0,
+            1,
+        );
         assert!(facs_empty.iter().all(|&v| v == 0.0));
 
         // Internal consistency for li=1, lc=1, single primitive, single contraction.

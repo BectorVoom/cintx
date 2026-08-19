@@ -57,19 +57,34 @@ const MAX_ITER_U32: u32 = 200;
 
 /// `_dlarrk`: Sturm bisection.  eigh.c:62.  Plan acceptance criterion.
 pub(crate) fn dlarrk(n: usize, iw: usize, gl: f64, gu: f64, d: &[f64], e2: &[f64]) -> f64 {
-    if n == 0 { return 0.0; }
+    if n == 0 {
+        return 0.0;
+    }
     let tnorm = f64::max(gl.abs(), gu.abs());
-    let eps   = f64::EPSILON;
+    let eps = f64::EPSILON;
     let mut lo = gl - tnorm * 2.0 * eps * n as f64;
     let mut hi = gu + tnorm * 2.0 * eps * n as f64;
     for _ in 0..1000 {
-        if (hi - lo).abs() < eps * f64::max(lo.abs(), hi.abs()) { break; }
+        if (hi - lo).abs() < eps * f64::max(lo.abs(), hi.abs()) {
+            break;
+        }
         let mid = (lo + hi) * 0.5;
         let mut neg = 0i32;
         let mut t = d[0] - mid;
-        if t <= 0.0 { neg += 1; }
-        for i in 1..n { t = d[i] - e2[i-1] / t - mid; if t <= 0.0 { neg += 1; } }
-        if neg >= iw as i32 { hi = mid; } else { lo = mid; }
+        if t <= 0.0 {
+            neg += 1;
+        }
+        for i in 1..n {
+            t = d[i] - e2[i - 1] / t - mid;
+            if t <= 0.0 {
+                neg += 1;
+            }
+        }
+        if neg >= iw as i32 {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
     }
     (lo + hi) * 0.5
 }
@@ -78,11 +93,17 @@ pub(crate) fn dlarrk(n: usize, iw: usize, gl: f64, gu: f64, d: &[f64], e2: &[f64
 pub(crate) fn dlaneg(n: usize, d: &[f64], e: &[f64], sigma: f64) -> i32 {
     let mut neg = 0i32;
     let mut p = d[0] - sigma;
-    if p < 0.0 { neg += 1; }
+    if p < 0.0 {
+        neg += 1;
+    }
     for i in 1..n {
-        if p == 0.0 { p = -f64::MIN_POSITIVE; }
-        p = d[i] - sigma - e[i-1] * e[i-1] / p;
-        if p < 0.0 { neg += 1; }
+        if p == 0.0 {
+            p = -f64::MIN_POSITIVE;
+        }
+        p = d[i] - sigma - e[i - 1] * e[i - 1] / p;
+        if p < 0.0 {
+            neg += 1;
+        }
     }
     neg
 }
@@ -102,13 +123,19 @@ fn refine_eigenvalues_rayleigh(n: usize, d: &[f64], e: &[f64], vec: &[f64], eig:
         let (mut den, mut denc) = (0.0f64, 0.0f64);
         for row in 0..n {
             let mut tv = d[row] * v[row];
-            if row > 0 { tv += e[row - 1] * v[row - 1]; }
-            if row < n - 1 { tv += e[row] * v[row + 1]; }
+            if row > 0 {
+                tv += e[row - 1] * v[row - 1];
+            }
+            if row < n - 1 {
+                tv += e[row] * v[row + 1];
+            }
             comp_add(&mut num, &mut numc, v[row] * tv);
             comp_add(&mut den, &mut denc, v[row] * v[row]);
         }
         let denom = den + denc;
-        if denom > 0.0 { eig[k] = (num + numc) / denom; }
+        if denom > 0.0 {
+            eig[k] = (num + numc) / denom;
+        }
     }
 }
 
@@ -139,9 +166,19 @@ fn refine_eigenvalues_bisection(n: usize, d: &[f64], e: &[f64], eig: &mut [f64])
             width *= 4.0;
         }
         if !ok {
-            lo = if k == 0 { gmin } else { 0.5 * (eig_copy[k - 1] + eig_copy[k]) };
-            hi = if k == n - 1 { gmax } else { 0.5 * (eig_copy[k] + eig_copy[k + 1]) };
-            if lo > hi { std::mem::swap(&mut lo, &mut hi); }
+            lo = if k == 0 {
+                gmin
+            } else {
+                0.5 * (eig_copy[k - 1] + eig_copy[k])
+            };
+            hi = if k == n - 1 {
+                gmax
+            } else {
+                0.5 * (eig_copy[k] + eig_copy[k + 1])
+            };
+            if lo > hi {
+                std::mem::swap(&mut lo, &mut hi);
+            }
             if dlaneg(n, d, e, lo) >= target || dlaneg(n, d, e, hi) < target {
                 lo = gmin - span * 1e-12;
                 hi = gmax + span * 1e-12;
@@ -152,25 +189,41 @@ fn refine_eigenvalues_bisection(n: usize, d: &[f64], e: &[f64], eig: &mut [f64])
         }
         for _ in 0..200 {
             let mid = 0.5 * (lo + hi);
-            if mid <= lo || mid >= hi { break; }
-            if dlaneg(n, d, e, mid) < target { lo = mid; } else { hi = mid; }
+            if mid <= lo || mid >= hi {
+                break;
+            }
+            if dlaneg(n, d, e, mid) < target {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
         }
         eig[k] = 0.5 * (lo + hi);
     }
 }
 
 /// `_dlarrf`: RRR shift stub.  eigh.c:853.  Plan acceptance criterion.
-pub(crate) fn dlarrf(n: usize, d: &[f64]) -> i32 { 0 }
+pub(crate) fn dlarrf(n: usize, d: &[f64]) -> i32 {
+    0
+}
 /// `_dlasq2`: dqds inner stub.  eigh.c:388.  Plan acceptance criterion.
-pub(crate) fn dlasq2(n: usize, z: &mut [f64]) -> i32 { 0 }
+pub(crate) fn dlasq2(n: usize, z: &mut [f64]) -> i32 {
+    0
+}
 /// `_dlasq4`: dqds shift stub.  eigh.c:149.  Plan acceptance criterion.
-pub(crate) fn dlasq4(n: usize, tau: &mut f64) -> i32 { 0 }
+pub(crate) fn dlasq4(n: usize, tau: &mut f64) -> i32 {
+    0
+}
 /// `_dlasq5`: dqds step stub.  eigh.c:431.  Plan acceptance criterion.
-pub(crate) fn dlasq5(n: usize, z: &mut [f64]) -> i32 { 0 }
+pub(crate) fn dlasq5(n: usize, z: &mut [f64]) -> i32 {
+    0
+}
 
 /// `_compute_eigenvalues` name alias — plan acceptance criterion.
 pub(crate) fn compute_eigenvalues(n: usize, d: &mut [f64], e: &mut [f64]) -> i32 {
-    let mut z: Vec<f64> = (0..n*n).map(|k| if k/n == k%n { 1.0 } else { 0.0 }).collect();
+    let mut z: Vec<f64> = (0..n * n)
+        .map(|k| if k / n == k % n { 1.0 } else { 0.0 })
+        .collect();
     tqli_impl(n, d, e, &mut z)
 }
 
@@ -190,10 +243,14 @@ fn pythag(a: f64, b: f64) -> f64 {
 }
 
 #[inline]
-fn sign_f64(a: f64, b: f64) -> f64 { if b >= 0.0 { a.abs() } else { -a.abs() } }
+fn sign_f64(a: f64, b: f64) -> f64 {
+    if b >= 0.0 { a.abs() } else { -a.abs() }
+}
 
 fn tqli_impl(n: usize, d: &mut [f64], e: &mut [f64], z: &mut [f64]) -> i32 {
-    if n <= 1 { return 0; }
+    if n <= 1 {
+        return 0;
+    }
     e[n - 1] = 0.0;
     for l in 0..n {
         let mut iter = 0usize;
@@ -201,11 +258,17 @@ fn tqli_impl(n: usize, d: &mut [f64], e: &mut [f64], z: &mut [f64]) -> i32 {
             let mut m = l;
             while m < n - 1 {
                 let dd = d[m].abs() + d[m + 1].abs();
-                if e[m].abs() <= f64::EPSILON * dd { break; }
+                if e[m].abs() <= f64::EPSILON * dd {
+                    break;
+                }
                 m += 1;
             }
-            if m == l { break; }
-            if iter >= MAX_ITER { return 1; }
+            if m == l {
+                break;
+            }
+            if iter >= MAX_ITER {
+                return 1;
+            }
             iter += 1;
             let mut g = (d[l + 1] - d[l]) / (2.0 * e[l]);
             let r = pythag(g, 1.0);
@@ -240,7 +303,9 @@ fn tqli_impl(n: usize, d: &mut [f64], e: &mut [f64], z: &mut [f64]) -> i32 {
                     z[k * n + i] = c * z[k * n + i] - s * tmp;
                 }
             }
-            if underflow { continue; }
+            if underflow {
+                continue;
+            }
             d[l] -= p;
             e[l] = g;
             e[m] = 0.0;
@@ -250,9 +315,9 @@ fn tqli_impl(n: usize, d: &mut [f64], e: &mut [f64], z: &mut [f64]) -> i32 {
 }
 
 fn dlaev2(eig: &mut [f64], vec: &mut [f64], d: &[f64], e: &[f64]) -> i32 {
-    let a  = d[0];
-    let b  = e[0];
-    let c  = d[1];
+    let a = d[0];
+    let b = e[0];
+    let c = d[1];
     let df = a - c;
     let tb = b + b;
     let rt = f64::sqrt(tb * tb + df * df);
@@ -265,10 +330,14 @@ fn dlaev2(eig: &mut [f64], vec: &mut [f64], d: &[f64], e: &[f64]) -> i32 {
     } else {
         (rt * 0.5, -rt * 0.5, 1i32)
     };
-    let (cs, sgn2) = if df >= 0.0 { (df + rt, 1i32) } else { (df - rt, -1i32) };
+    let (cs, sgn2) = if df >= 0.0 {
+        (df + rt, 1i32)
+    } else {
+        (df - rt, -1i32)
+    };
     let (mut cs1, mut sn1) = if cs.abs() > tb.abs() {
         let ct = -tb / cs;
-        let s  = 1.0 / f64::sqrt(ct * ct + 1.0);
+        let s = 1.0 / f64::sqrt(ct * ct + 1.0);
         (ct * s, s)
     } else if b == 0.0 {
         (1.0, 0.0)
@@ -277,11 +346,16 @@ fn dlaev2(eig: &mut [f64], vec: &mut [f64], d: &[f64], e: &[f64]) -> i32 {
         let c1 = 1.0 / f64::sqrt(tn * tn + 1.0);
         (c1, tn * c1)
     };
-    if sgn1 == sgn2 { std::mem::swap(&mut cs1, &mut sn1); cs1 = -cs1; }
+    if sgn1 == sgn2 {
+        std::mem::swap(&mut cs1, &mut sn1);
+        cs1 = -cs1;
+    }
     eig[0] = rt2;
     eig[1] = rt1;
-    vec[0] = -sn1; vec[1] = cs1;
-    vec[2] =  cs1; vec[3] = sn1;
+    vec[0] = -sn1;
+    vec[1] = cs1;
+    vec[2] = cs1;
+    vec[3] = sn1;
     0
 }
 
@@ -293,7 +367,9 @@ pub fn cint_diagonalize_host(
     eig: &mut [f64],
     vec: &mut [f64],
 ) -> i32 {
-    if n == 0 { return 0; }
+    if n == 0 {
+        return 0;
+    }
     if n == 1 {
         eig[0] = diag[0];
         vec[0] = 1.0;
@@ -302,22 +378,33 @@ pub fn cint_diagonalize_host(
     if n == 2 {
         return dlaev2(eig, vec, diag, diag_off1);
     }
-    assert!(n <= MXRYSROOTS, "cint_diagonalize: n={n} > MXRYSROOTS={MXRYSROOTS}");
+    assert!(
+        n <= MXRYSROOTS,
+        "cint_diagonalize: n={n} > MXRYSROOTS={MXRYSROOTS}"
+    );
     let d_orig: Vec<f64> = diag[0..n].to_vec();
     let mut e_orig: Vec<f64> = vec![0.0; n];
-    for i in 0..n - 1 { e_orig[i] = diag_off1[i]; }
+    for i in 0..n - 1 {
+        e_orig[i] = diag_off1[i];
+    }
     let mut d: Vec<f64> = diag[0..n].to_vec();
     let mut e: Vec<f64> = diag_off1[0..n].to_vec();
     e[n - 1] = 0.0;
     let mut z: Vec<f64> = vec![0.0; n * n];
-    for i in 0..n { z[i * n + i] = 1.0; }
+    for i in 0..n {
+        z[i * n + i] = 1.0;
+    }
     let info = tqli_impl(n, &mut d, &mut e, &mut z);
-    if info != 0 { return info; }
+    if info != 0 {
+        return info;
+    }
     let mut idx: Vec<usize> = (0..n).collect();
     idx.sort_by(|&a, &b| d[a].partial_cmp(&d[b]).unwrap_or(std::cmp::Ordering::Equal));
     let mut d_sorted: Vec<f64> = idx.iter().map(|&i| d[i]).collect();
     for (new_i, &old_col) in idx.iter().enumerate() {
-        for j in 0..n { vec[new_i * n + j] = z[j * n + old_col]; }
+        for j in 0..n {
+            vec[new_i * n + j] = z[j * n + old_col];
+        }
     }
     refine_eigenvalues_rayleigh(n, &d_orig, &e_orig, vec, &mut d_sorted);
     refine_eigenvalues_bisection(n, &d_orig, &e_orig, &mut d_sorted);
@@ -415,9 +502,11 @@ fn tqli_dev<F: Float>(
                     converged = true;
                 } else {
                     iter += 1;
-                    let mut g = (d[(l + 1) as usize] - d[(l) as usize]) / (F::new(2.0) * e[(l) as usize]);
+                    let mut g =
+                        (d[(l + 1) as usize] - d[(l) as usize]) / (F::new(2.0) * e[(l) as usize]);
                     let r = pythag_dev::<F>(g, F::new(1.0));
-                    g = d[(m) as usize] - d[(l) as usize] + e[(l) as usize] / (g + sign_dev::<F>(r, g));
+                    g = d[(m) as usize] - d[(l) as usize]
+                        + e[(l) as usize] / (g + sign_dev::<F>(r, g));
                     let mut s = F::new(1.0);
                     let mut c = F::new(1.0);
                     let mut p = F::new(0.0);
@@ -793,7 +882,9 @@ pub fn cint_diagonalize(
     eig: &mut [f64],
     vec: &mut [f64],
 ) -> i32 {
-    if n == 0 { return 0; }
+    if n == 0 {
+        return 0;
+    }
     if n == 1 {
         eig[0] = diag[0];
         vec[0] = 1.0;
@@ -802,7 +893,10 @@ pub fn cint_diagonalize(
     if n == 2 {
         return dlaev2(eig, vec, diag, diag_off1);
     }
-    assert!(n <= MXRYSROOTS, "cint_diagonalize: n={n} > MXRYSROOTS={MXRYSROOTS}");
+    assert!(
+        n <= MXRYSROOTS,
+        "cint_diagonalize: n={n} > MXRYSROOTS={MXRYSROOTS}"
+    );
 
     let client = cubecl::cpu::CpuRuntime::client(&Default::default());
     cint_diagonalize_device::<cubecl::cpu::CpuRuntime>(&client, n, diag, diag_off1, eig, vec)
@@ -820,8 +914,10 @@ mod tests {
             for j in 0..n {
                 let dot: f64 = (0..n).map(|k| vec[i * n + k] * vec[j * n + k]).sum();
                 let exp = if i == j { 1.0 } else { 0.0 };
-                assert!((dot - exp).abs() < tol,
-                    "orthonormality: <v{i},v{j}> = {dot:.3e}, expected {exp}");
+                assert!(
+                    (dot - exp).abs() < tol,
+                    "orthonormality: <v{i},v{j}> = {dot:.3e}, expected {exp}"
+                );
             }
         }
     }
@@ -831,11 +927,17 @@ mod tests {
             let lam = eig[i];
             for row in 0..n {
                 let mut av = d[row] * vec[i * n + row];
-                if row > 0     { av += e[row - 1] * vec[i * n + row - 1]; }
-                if row < n - 1 { av += e[row]     * vec[i * n + row + 1]; }
+                if row > 0 {
+                    av += e[row - 1] * vec[i * n + row - 1];
+                }
+                if row < n - 1 {
+                    av += e[row] * vec[i * n + row + 1];
+                }
                 let res = (av - lam * vec[i * n + row]).abs();
-                assert!(res < tol,
-                    "Av−λv: eigvec {i} (λ={lam:.8}), row {row}: residual {res:.3e}");
+                assert!(
+                    res < tol,
+                    "Av−λv: eigvec {i} (λ={lam:.8}), row {row}: residual {res:.3e}"
+                );
             }
         }
     }
@@ -847,7 +949,7 @@ mod tests {
         let n = 3usize;
         let d_orig = [2.0f64, 3.0, 4.0];
         let e_orig = [1.0f64, 1.0];
-        let mut diag      = d_orig;
+        let mut diag = d_orig;
         let mut diag_off1 = [e_orig[0], e_orig[1], 0.0f64];
         let mut eig = [0.0f64; 3];
         let mut vec = [0.0f64; 9];
@@ -856,8 +958,13 @@ mod tests {
         let refs = [1.2679491924311228_f64, 3.0_f64, 4.732050807568877_f64];
         for i in 0..n {
             let diff = (eig[i] - refs[i]).abs();
-            assert!(diff < 1e-12,
-                "eig[{i}]={:.15} expected {:.15} diff={:e}", eig[i], refs[i], diff);
+            assert!(
+                diff < 1e-12,
+                "eig[{i}]={:.15} expected {:.15} diff={:e}",
+                eig[i],
+                refs[i],
+                diff
+            );
         }
         check_orthonormal(n, &vec, 1e-12);
         check_eigendecomp(n, &d_orig, &e_orig, &eig, &vec, 1e-12);
@@ -867,7 +974,7 @@ mod tests {
     #[test]
     fn eigh_mrrr_tridiag_2x2_exact() {
         let n = 2usize;
-        let mut diag      = [1.0f64, 3.0];
+        let mut diag = [1.0f64, 3.0];
         let mut diag_off1 = [2.0f64, 0.0];
         let mut eig = [0.0f64; 2];
         let mut vec = [0.0f64; 4];
@@ -876,8 +983,13 @@ mod tests {
         let sqrt5 = f64::sqrt(5.0);
         for (i, re) in [2.0 - sqrt5, 2.0 + sqrt5].iter().enumerate() {
             let diff = (eig[i] - re).abs();
-            assert!(diff < 1e-14,
-                "2×2 eig[{i}]={} expected {} diff={:e}", eig[i], re, diff);
+            assert!(
+                diff < 1e-14,
+                "2×2 eig[{i}]={} expected {} diff={:e}",
+                eig[i],
+                re,
+                diff
+            );
         }
         check_orthonormal(n, &vec, 1e-13);
     }
@@ -885,22 +997,30 @@ mod tests {
     /// 6×6 Wilkinson via the #[cube] solver.
     #[test]
     fn eigh_mrrr_tridiag_6x6_wilkinson() {
-        let n     = 6usize;
+        let n = 6usize;
         let d_orig = [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0];
         let e_orig = [1.0f64, 1.0, 1.0, 1.0, 1.0];
-        let mut diag      = d_orig;
+        let mut diag = d_orig;
         let mut diag_off1 = [1.0f64, 1.0, 1.0, 1.0, 1.0, 0.0];
         let mut eig = [0.0f64; 6];
         let mut vec = [0.0f64; 36];
         let info = cint_diagonalize(n, &mut diag, &mut diag_off1, &mut eig, &mut vec);
         assert_eq!(info, 0, "cint_diagonalize error {info}");
         for i in 0..n {
-            assert!(eig[i].is_finite() && eig[i] > 0.0 && eig[i] < 8.5,
-                "eig[{i}]={} out of Gershgorin range", eig[i]);
+            assert!(
+                eig[i].is_finite() && eig[i] > 0.0 && eig[i] < 8.5,
+                "eig[{i}]={} out of Gershgorin range",
+                eig[i]
+            );
         }
         for i in 0..n - 1 {
-            assert!(eig[i] <= eig[i + 1] + 1e-10,
-                "not ascending: [{i}]={} [{next}]={}", eig[i], eig[i+1], next = i+1);
+            assert!(
+                eig[i] <= eig[i + 1] + 1e-10,
+                "not ascending: [{i}]={} [{next}]={}",
+                eig[i],
+                eig[i + 1],
+                next = i + 1
+            );
         }
         check_orthonormal(n, &vec, 1e-12);
         check_eigendecomp(n, &d_orig, &e_orig, &eig, &vec, 1e-12);
@@ -909,9 +1029,9 @@ mod tests {
     /// Diagonal matrix: eigenvalues = sorted diagonal.
     #[test]
     fn eigh_mrrr_tridiag_diagonal() {
-        let n     = 6usize;
+        let n = 6usize;
         let d_orig = [5.0f64, 1.0, 3.0, 2.0, 4.0, 6.0];
-        let mut diag      = d_orig;
+        let mut diag = d_orig;
         let mut diag_off1 = [0.0f64; 6];
         let mut eig = [0.0f64; 6];
         let mut vec = [0.0f64; 36];
@@ -920,8 +1040,12 @@ mod tests {
         let mut sorted = d_orig;
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
         for i in 0..n {
-            assert!((eig[i] - sorted[i]).abs() < 1e-12,
-                "eig[{i}]={} expected {}", eig[i], sorted[i]);
+            assert!(
+                (eig[i] - sorted[i]).abs() < 1e-12,
+                "eig[{i}]={} expected {}",
+                eig[i],
+                sorted[i]
+            );
         }
     }
 
@@ -931,20 +1055,34 @@ mod tests {
         let n = 12usize;
         let mut d_orig = [0.0f64; 12];
         let e_orig: Vec<f64> = vec![1.0; 11];
-        for i in 0..n { d_orig[i] = (i + 2) as f64; }
-        let mut diag      = d_orig;
-        let mut diag_off1 = { let mut v = [1.0f64; 12]; v[11] = 0.0; v };
+        for i in 0..n {
+            d_orig[i] = (i + 2) as f64;
+        }
+        let mut diag = d_orig;
+        let mut diag_off1 = {
+            let mut v = [1.0f64; 12];
+            v[11] = 0.0;
+            v
+        };
         let mut eig = [0.0f64; 12];
         let mut vec = [0.0f64; 144];
         let info = cint_diagonalize(n, &mut diag, &mut diag_off1, &mut eig, &mut vec);
         assert_eq!(info, 0, "cint_diagonalize error on 12×12");
         for i in 0..n {
-            assert!(eig[i].is_finite() && eig[i] > 0.5 && eig[i] < 15.5,
-                "eig[{i}]={} out of Gershgorin", eig[i]);
+            assert!(
+                eig[i].is_finite() && eig[i] > 0.5 && eig[i] < 15.5,
+                "eig[{i}]={} out of Gershgorin",
+                eig[i]
+            );
         }
         for i in 0..n - 1 {
-            assert!(eig[i] <= eig[i + 1] + 1e-10,
-                "not ascending: [{i}]={} [{next}]={}", eig[i], eig[i+1], next = i+1);
+            assert!(
+                eig[i] <= eig[i + 1] + 1e-10,
+                "not ascending: [{i}]={} [{next}]={}",
+                eig[i],
+                eig[i + 1],
+                next = i + 1
+            );
         }
         check_orthonormal(n, &vec, 1e-11);
         check_eigendecomp(n, &d_orig, &e_orig, &eig, &vec, 1e-11);
@@ -955,20 +1093,30 @@ mod tests {
     fn eigh_device_matches_host() {
         let n = 7usize;
         let mut d0 = [0.0f64; 7];
-        for i in 0..n { d0[i] = (i + 1) as f64 * 1.3 + 0.7; }
+        for i in 0..n {
+            d0[i] = (i + 1) as f64 * 1.3 + 0.7;
+        }
         let off = [0.9f64, 1.1, 0.8, 1.2, 0.6, 1.05, 0.0];
 
-        let mut da = d0; let mut oa = off;
-        let mut eig_h = [0.0f64; 7]; let mut vec_h = [0.0f64; 49];
+        let mut da = d0;
+        let mut oa = off;
+        let mut eig_h = [0.0f64; 7];
+        let mut vec_h = [0.0f64; 49];
         cint_diagonalize_host(n, &mut da, &mut oa, &mut eig_h, &mut vec_h);
 
-        let mut db = d0; let mut ob = off;
-        let mut eig_d = [0.0f64; 7]; let mut vec_d = [0.0f64; 49];
+        let mut db = d0;
+        let mut ob = off;
+        let mut eig_d = [0.0f64; 7];
+        let mut vec_d = [0.0f64; 49];
         cint_diagonalize(n, &mut db, &mut ob, &mut eig_d, &mut vec_d);
 
         for i in 0..n {
-            assert!((eig_h[i] - eig_d[i]).abs() <= 1e-13,
-                "eig mismatch [{i}]: host={} device={}", eig_h[i], eig_d[i]);
+            assert!(
+                (eig_h[i] - eig_d[i]).abs() <= 1e-13,
+                "eig mismatch [{i}]: host={} device={}",
+                eig_h[i],
+                eig_d[i]
+            );
         }
     }
 }

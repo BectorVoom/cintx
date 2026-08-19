@@ -8,10 +8,10 @@
 
 pub mod backend;
 pub mod capability;
-pub mod math;
 pub mod executor;
 #[path = "kernels/mod.rs"]
 pub mod kernels;
+pub mod math;
 pub mod resident_cache;
 #[cfg(feature = "wgpu")]
 pub mod runtime_bootstrap;
@@ -23,7 +23,9 @@ pub use backend::{ResolvedBackend, compiled_backends};
 pub use capability::{
     CapabilityReason, WgpuCapabilitySnapshot, WgpuPreflightReport, capability_fingerprint,
 };
-pub use executor::{BackendCache, CUBECL_RUNTIME_PROFILE, CubeClExecutor, check_shader_f64_in_features};
+pub use executor::{
+    BackendCache, CUBECL_RUNTIME_PROFILE, CubeClExecutor, check_shader_f64_in_features,
+};
 pub use resident_cache::{DeviceResidentCache, ResidentCache};
 #[cfg(feature = "wgpu")]
 pub use runtime_bootstrap::bootstrap_wgpu_runtime;

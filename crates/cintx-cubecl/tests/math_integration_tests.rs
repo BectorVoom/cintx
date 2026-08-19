@@ -63,9 +63,7 @@ fn math_integration_1e_overlap_ss() {
 
     // Step 1: compute pair data
     // zeta=2.5, center_p=(0.6,0,0), aij2=0.2, rirj=(-1,0,0), fac=exp(-0.6)
-    let pdata = compute_pdata_host(
-        ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-    );
+    let pdata = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
     // Verify pdata fields
     assert_abs_diff_eq!(pdata.zeta_ab, 2.5, epsilon = 1e-12);
@@ -109,9 +107,7 @@ fn math_integration_1e_overlap_ps() {
     let rj = [1.0_f64, 0.0, 0.0];
 
     // Step 1: compute pair data
-    let pdata = compute_pdata_host(
-        ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-    );
+    let pdata = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
     // Step 2: Boys function with t=0, m=1
     // F_0(0)=1, F_1(0)=1/3
@@ -134,7 +130,10 @@ fn math_integration_1e_overlap_ps() {
     assert_abs_diff_eq!(g[1], expected_g1, epsilon = 1e-12);
 
     // g[1] must be non-zero (center_p_x != ri_x when ai != aj and positions differ)
-    assert!(g[1].abs() > 1e-10, "g[1] should be non-zero for p-s pair with offset geometry");
+    assert!(
+        g[1].abs() > 1e-10,
+        "g[1] should be non-zero for p-s pair with offset geometry"
+    );
 }
 
 /// d-s shell pair integration test.
@@ -151,9 +150,7 @@ fn math_integration_1e_overlap_ds() {
     let rj = [1.0_f64, 0.0, 0.0];
 
     // Step 1: compute pair data
-    let pdata = compute_pdata_host(
-        ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-    );
+    let pdata = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
     // Step 2: Boys function t=0, m=2
     // F_m(0) = 1/(2m+1): F_0=1, F_1=1/3, F_2=1/5

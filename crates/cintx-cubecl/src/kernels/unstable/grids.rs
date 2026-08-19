@@ -144,9 +144,27 @@ fn grids_contract_nuclear_like(
         g_root[gz_off] = gz0_root;
 
         if nmax >= 1 {
-            vrr_2e_step_host(&mut g_root[gx_off..gx_off + g_per_axis], c00[0], rt, nmax, 1);
-            vrr_2e_step_host(&mut g_root[gy_off..gy_off + g_per_axis], c00[1], rt, nmax, 1);
-            vrr_2e_step_host(&mut g_root[gz_off..gz_off + g_per_axis], c00[2], rt, nmax, 1);
+            vrr_2e_step_host(
+                &mut g_root[gx_off..gx_off + g_per_axis],
+                c00[0],
+                rt,
+                nmax,
+                1,
+            );
+            vrr_2e_step_host(
+                &mut g_root[gy_off..gy_off + g_per_axis],
+                c00[1],
+                rt,
+                nmax,
+                1,
+            );
+            vrr_2e_step_host(
+                &mut g_root[gz_off..gz_off + g_per_axis],
+                c00[2],
+                rt,
+                nmax,
+                1,
+            );
         }
 
         let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
@@ -412,10 +430,18 @@ fn run_grids_nuclear_device<R: Runtime>(
                 unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0], ri[1], ri[2],
-                rj[0], rj[1], rj[2],
-                rc[0], rc[1], rc[2],
-                rp[0], rp[1], rp[2],
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                rc[0],
+                rc[1],
+                rc[2],
+                rp[0],
+                rp[1],
+                rp[2],
                 zeta_ab,
                 aij2,
                 fac,
@@ -758,101 +784,101 @@ fn grids_deriv_kernel<F: Float + CubeElement>(
                 grids_nabla_i_axis::<F>(g3, g1, gz_off, ai, li, lj, dj);
             }
 
-        // ── Cartesian contraction (ci outer, cj inner; lx descending) ─────
-        let mut ci_idx = 0u32;
-        let mut ia = 0u32;
-        while ia <= li {
-            let ix = li - ia;
-            let li_minus_ix = li - ix;
-            let mut ib = 0u32;
-            while ib <= li_minus_ix {
-                let iy = li_minus_ix - ib;
-                let iz = li - ix - iy;
+            // ── Cartesian contraction (ci outer, cj inner; lx descending) ─────
+            let mut ci_idx = 0u32;
+            let mut ia = 0u32;
+            while ia <= li {
+                let ix = li - ia;
+                let li_minus_ix = li - ix;
+                let mut ib = 0u32;
+                while ib <= li_minus_ix {
+                    let iy = li_minus_ix - ib;
+                    let iz = li - ix - iy;
 
-                let mut cj_idx = 0u32;
-                let mut ja = 0u32;
-                while ja <= lj {
-                    let jx = lj - ja;
-                    let lj_minus_jx = lj - jx;
-                    let mut jb = 0u32;
-                    while jb <= lj_minus_jx {
-                        let jy = lj_minus_jx - jb;
-                        let jz = lj - jx - jy;
+                    let mut cj_idx = 0u32;
+                    let mut ja = 0u32;
+                    while ja <= lj {
+                        let jx = lj - ja;
+                        let lj_minus_jx = lj - jx;
+                        let mut jb = 0u32;
+                        while jb <= lj_minus_jx {
+                            let jy = lj_minus_jx - jb;
+                            let jz = lj - jx - jy;
 
-                        let g0x = g0[(gx_off + jx * dj + ix) as usize];
-                        let g0y = g0[(gy_off + jy * dj + iy) as usize];
-                        let g0z = g0[(gz_off + jz * dj + iz) as usize];
-                        let g1x = g1[(gx_off + jx * dj + ix) as usize];
-                        let g1y = g1[(gy_off + jy * dj + iy) as usize];
-                        let g1z = g1[(gz_off + jz * dj + iz) as usize];
+                            let g0x = g0[(gx_off + jx * dj + ix) as usize];
+                            let g0y = g0[(gy_off + jy * dj + iy) as usize];
+                            let g0z = g0[(gz_off + jz * dj + iz) as usize];
+                            let g1x = g1[(gx_off + jx * dj + ix) as usize];
+                            let g1y = g1[(gy_off + jy * dj + iy) as usize];
+                            let g1z = g1[(gz_off + jz * dj + iz) as usize];
 
-                        let base = ci_idx * ncj + cj_idx;
+                            let base = ci_idx * ncj + cj_idx;
 
-                        if comptime!(op_kind == GRIDS_OP_IP) {
-                            cart_out[(0u32 * nij + base) as usize] += g1x * g0y * g0z;
-                            cart_out[(1u32 * nij + base) as usize] += g0x * g1y * g0z;
-                            cart_out[(2u32 * nij + base) as usize] += g0x * g0y * g1z;
-                        } else {
-                            let g2x = g2[(gx_off + jx * dj + ix) as usize];
-                            let g2y = g2[(gy_off + jy * dj + iy) as usize];
-                            let g2z = g2[(gz_off + jz * dj + iz) as usize];
-                            let g3x = g3[(gx_off + jx * dj + ix) as usize];
-                            let g3y = g3[(gy_off + jy * dj + iy) as usize];
-                            let g3z = g3[(gz_off + jz * dj + iz) as usize];
-
-                            let s0 = g3x * g0y * g0z;
-                            let s1 = g2x * g1y * g0z;
-                            let s2 = g2x * g0y * g1z;
-                            let s3 = g1x * g2y * g0z;
-                            let s4 = g0x * g3y * g0z;
-                            let s5 = g0x * g2y * g1z;
-                            let s6 = g1x * g0y * g2z;
-                            let s7 = g0x * g1y * g2z;
-                            let s8 = g0x * g0y * g3z;
-
-                            if comptime!(op_kind == GRIDS_OP_IPIP) {
-                                // libcint column-transposed: s0 s3 s6 s1 s4 s7 s2 s5 s8
-                                cart_out[(0u32 * nij + base) as usize] += s0;
-                                cart_out[(1u32 * nij + base) as usize] += s3;
-                                cart_out[(2u32 * nij + base) as usize] += s6;
-                                cart_out[(3u32 * nij + base) as usize] += s1;
-                                cart_out[(4u32 * nij + base) as usize] += s4;
-                                cart_out[(5u32 * nij + base) as usize] += s7;
-                                cart_out[(6u32 * nij + base) as usize] += s2;
-                                cart_out[(7u32 * nij + base) as usize] += s5;
-                                cart_out[(8u32 * nij + base) as usize] += s8;
-                            } else if comptime!(op_kind == GRIDS_OP_IPVIP) {
-                                cart_out[(0u32 * nij + base) as usize] += s0;
-                                cart_out[(1u32 * nij + base) as usize] += s1;
-                                cart_out[(2u32 * nij + base) as usize] += s2;
-                                cart_out[(3u32 * nij + base) as usize] += s3;
-                                cart_out[(4u32 * nij + base) as usize] += s4;
-                                cart_out[(5u32 * nij + base) as usize] += s5;
-                                cart_out[(6u32 * nij + base) as usize] += s6;
-                                cart_out[(7u32 * nij + base) as usize] += s7;
-                                cart_out[(8u32 * nij + base) as usize] += s8;
+                            if comptime!(op_kind == GRIDS_OP_IP) {
+                                cart_out[(0u32 * nij + base) as usize] += g1x * g0y * g0z;
+                                cart_out[(1u32 * nij + base) as usize] += g0x * g1y * g0z;
+                                cart_out[(2u32 * nij + base) as usize] += g0x * g0y * g1z;
                             } else {
-                                // spvsp: gout = [s5-s7, s6-s2, s1-s3, s0+s4+s8].
-                                // The combine is linear in the per-root products
-                                // s0..s8, so accumulating (s5-s7) etc. per root is
-                                // identical to combining the root-summed products.
-                                cart_out[(0u32 * nij + base) as usize] += s5 - s7;
-                                cart_out[(1u32 * nij + base) as usize] += s6 - s2;
-                                cart_out[(2u32 * nij + base) as usize] += s1 - s3;
-                                cart_out[(3u32 * nij + base) as usize] += s0 + s4 + s8;
-                            }
-                        }
+                                let g2x = g2[(gx_off + jx * dj + ix) as usize];
+                                let g2y = g2[(gy_off + jy * dj + iy) as usize];
+                                let g2z = g2[(gz_off + jz * dj + iz) as usize];
+                                let g3x = g3[(gx_off + jx * dj + ix) as usize];
+                                let g3y = g3[(gy_off + jy * dj + iy) as usize];
+                                let g3z = g3[(gz_off + jz * dj + iz) as usize];
 
-                        cj_idx += 1u32;
-                        jb += 1u32;
+                                let s0 = g3x * g0y * g0z;
+                                let s1 = g2x * g1y * g0z;
+                                let s2 = g2x * g0y * g1z;
+                                let s3 = g1x * g2y * g0z;
+                                let s4 = g0x * g3y * g0z;
+                                let s5 = g0x * g2y * g1z;
+                                let s6 = g1x * g0y * g2z;
+                                let s7 = g0x * g1y * g2z;
+                                let s8 = g0x * g0y * g3z;
+
+                                if comptime!(op_kind == GRIDS_OP_IPIP) {
+                                    // libcint column-transposed: s0 s3 s6 s1 s4 s7 s2 s5 s8
+                                    cart_out[(0u32 * nij + base) as usize] += s0;
+                                    cart_out[(1u32 * nij + base) as usize] += s3;
+                                    cart_out[(2u32 * nij + base) as usize] += s6;
+                                    cart_out[(3u32 * nij + base) as usize] += s1;
+                                    cart_out[(4u32 * nij + base) as usize] += s4;
+                                    cart_out[(5u32 * nij + base) as usize] += s7;
+                                    cart_out[(6u32 * nij + base) as usize] += s2;
+                                    cart_out[(7u32 * nij + base) as usize] += s5;
+                                    cart_out[(8u32 * nij + base) as usize] += s8;
+                                } else if comptime!(op_kind == GRIDS_OP_IPVIP) {
+                                    cart_out[(0u32 * nij + base) as usize] += s0;
+                                    cart_out[(1u32 * nij + base) as usize] += s1;
+                                    cart_out[(2u32 * nij + base) as usize] += s2;
+                                    cart_out[(3u32 * nij + base) as usize] += s3;
+                                    cart_out[(4u32 * nij + base) as usize] += s4;
+                                    cart_out[(5u32 * nij + base) as usize] += s5;
+                                    cart_out[(6u32 * nij + base) as usize] += s6;
+                                    cart_out[(7u32 * nij + base) as usize] += s7;
+                                    cart_out[(8u32 * nij + base) as usize] += s8;
+                                } else {
+                                    // spvsp: gout = [s5-s7, s6-s2, s1-s3, s0+s4+s8].
+                                    // The combine is linear in the per-root products
+                                    // s0..s8, so accumulating (s5-s7) etc. per root is
+                                    // identical to combining the root-summed products.
+                                    cart_out[(0u32 * nij + base) as usize] += s5 - s7;
+                                    cart_out[(1u32 * nij + base) as usize] += s6 - s2;
+                                    cart_out[(2u32 * nij + base) as usize] += s1 - s3;
+                                    cart_out[(3u32 * nij + base) as usize] += s0 + s4 + s8;
+                                }
+                            }
+
+                            cj_idx += 1u32;
+                            jb += 1u32;
+                        }
+                        ja += 1u32;
                     }
-                    ja += 1u32;
+                    ci_idx += 1u32;
+                    ib += 1u32;
                 }
-                ci_idx += 1u32;
-                ib += 1u32;
+                ia += 1u32;
             }
-            ia += 1u32;
-        }
 
             nr += 1u32;
         }
@@ -912,10 +938,18 @@ fn run_grids_deriv_device<R: Runtime>(
                 unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0], ri[1], ri[2],
-                rj[0], rj[1], rj[2],
-                rc[0], rc[1], rc[2],
-                rp[0], rp[1], rp[2],
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
+                rc[0],
+                rc[1],
+                rc[2],
+                rp[0],
+                rp[1],
+                rp[2],
                 zeta_ab,
                 aij2,
                 fac,
@@ -1077,14 +1111,35 @@ fn grids_contract_ip(
 
         if nmax >= 1 {
             vrr_2e_step_host(&mut g0[0..g_per_axis], c00[0], rt, nmax, 1);
-            vrr_2e_step_host(&mut g0[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
-            vrr_2e_step_host(&mut g0[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[g_per_axis..2 * g_per_axis], c00[1], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[2 * g_per_axis..3 * g_per_axis], c00[2], rt, nmax, 1);
         }
 
         if lj >= 1 {
-            hrr_step_host(&mut g0[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj as u32);
-            hrr_step_host(&mut g0[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj as u32);
-            hrr_step_host(&mut g0[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj as u32);
+            hrr_step_host(
+                &mut g0[0..g_per_axis],
+                rirj[0],
+                1,
+                nmax + 1,
+                nmax,
+                lj as u32,
+            );
+            hrr_step_host(
+                &mut g0[g_per_axis..2 * g_per_axis],
+                rirj[1],
+                1,
+                nmax + 1,
+                nmax,
+                lj as u32,
+            );
+            hrr_step_host(
+                &mut g0[2 * g_per_axis..3 * g_per_axis],
+                rirj[2],
+                1,
+                nmax + 1,
+                nmax,
+                lj as u32,
+            );
         }
 
         // Apply nabla_i to THIS root's G-tensor.
@@ -1095,15 +1150,15 @@ fn grids_contract_ip(
             for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
                 let g0x = g0[jx as usize * dj + ix as usize];
                 let g0y = g0[g_per_axis + jy as usize * dj + iy as usize];
-                let g0z = g0[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g0z = g0[2 * g_per_axis + jz as usize * dj + iz as usize];
                 let g1x = g1[jx as usize * dj + ix as usize];
                 let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
-                let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g1z = g1[2 * g_per_axis + jz as usize * dj + iz as usize];
 
                 let base_idx = ci_idx * ncj + cj_idx;
-                out[0 * nci * ncj + base_idx] += g1x * g0y * g0z;  // comp x
-                out[1 * nci * ncj + base_idx] += g0x * g1y * g0z;  // comp y
-                out[2 * nci * ncj + base_idx] += g0x * g0y * g1z;  // comp z
+                out[0 * nci * ncj + base_idx] += g1x * g0y * g0z; // comp x
+                out[1 * nci * ncj + base_idx] += g0x * g1y * g0z; // comp y
+                out[2 * nci * ncj + base_idx] += g0x * g0y * g1z; // comp z
             }
         }
     }
@@ -1169,18 +1224,39 @@ fn grids_contract_ipip(
         let mut g0 = vec![0.0_f64; 3 * g_per_axis];
         g0[0] = 1.0;
         g0[g_per_axis] = 1.0;
-        g0[2*g_per_axis] = gz0_root;
+        g0[2 * g_per_axis] = gz0_root;
 
         if nmax >= 1 {
             vrr_2e_step_host(&mut g0[0..g_per_axis], c00[0], rt, nmax, 1);
-            vrr_2e_step_host(&mut g0[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
-            vrr_2e_step_host(&mut g0[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[g_per_axis..2 * g_per_axis], c00[1], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[2 * g_per_axis..3 * g_per_axis], c00[2], rt, nmax, 1);
         }
 
         if lj >= 1 {
-            hrr_step_host(&mut g0[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj as u32);
-            hrr_step_host(&mut g0[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj as u32);
-            hrr_step_host(&mut g0[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj as u32);
+            hrr_step_host(
+                &mut g0[0..g_per_axis],
+                rirj[0],
+                1,
+                nmax + 1,
+                nmax,
+                lj as u32,
+            );
+            hrr_step_host(
+                &mut g0[g_per_axis..2 * g_per_axis],
+                rirj[1],
+                1,
+                nmax + 1,
+                nmax,
+                lj as u32,
+            );
+            hrr_step_host(
+                &mut g0[2 * g_per_axis..3 * g_per_axis],
+                rirj[2],
+                1,
+                nmax + 1,
+                nmax,
+                lj as u32,
+            );
         }
 
         // g1 = D_i(g0) applied with li+1 bra levels
@@ -1198,16 +1274,16 @@ fn grids_contract_ipip(
                 let base = ci_idx * ncj + cj_idx;
                 let g0x = g0[jx as usize * dj + ix as usize];
                 let g0y = g0[g_per_axis + jy as usize * dj + iy as usize];
-                let g0z = g0[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g0z = g0[2 * g_per_axis + jz as usize * dj + iz as usize];
                 let g1x = g1[jx as usize * dj + ix as usize];
                 let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
-                let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g1z = g1[2 * g_per_axis + jz as usize * dj + iz as usize];
                 let g2x = g2[jx as usize * dj + ix as usize];
                 let g2y = g2[g_per_axis + jy as usize * dj + iy as usize];
-                let g2z = g2[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g2z = g2[2 * g_per_axis + jz as usize * dj + iz as usize];
                 let g3x = g3[jx as usize * dj + ix as usize];
                 let g3y = g3[g_per_axis + jy as usize * dj + iy as usize];
-                let g3z = g3[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g3z = g3[2 * g_per_axis + jz as usize * dj + iz as usize];
 
                 // s[0..8] = [g3x*g0y*g0z, g2x*g1y*g0z, g2x*g0y*g1z,
                 //            g1x*g2y*g0z, g0x*g3y*g0z, g0x*g2y*g1z,
@@ -1299,19 +1375,33 @@ fn grids_contract_ipvip(
         let mut g0 = vec![0.0_f64; 3 * g_per_axis];
         g0[0] = 1.0;
         g0[g_per_axis] = 1.0;
-        g0[2*g_per_axis] = gz0_root;
+        g0[2 * g_per_axis] = gz0_root;
 
         if nmax >= 1 {
             vrr_2e_step_host(&mut g0[0..g_per_axis], c00[0], rt, nmax, 1);
-            vrr_2e_step_host(&mut g0[g_per_axis..2*g_per_axis], c00[1], rt, nmax, 1);
-            vrr_2e_step_host(&mut g0[2*g_per_axis..3*g_per_axis], c00[2], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[g_per_axis..2 * g_per_axis], c00[1], rt, nmax, 1);
+            vrr_2e_step_host(&mut g0[2 * g_per_axis..3 * g_per_axis], c00[2], rt, nmax, 1);
         }
 
         // HRR to lj+1 for derivative on ket
         let lj_hrr = lj as u32 + 1;
-        hrr_step_host(&mut g0[0..g_per_axis], rirj[0], 1, nmax+1, nmax, lj_hrr);
-        hrr_step_host(&mut g0[g_per_axis..2*g_per_axis], rirj[1], 1, nmax+1, nmax, lj_hrr);
-        hrr_step_host(&mut g0[2*g_per_axis..3*g_per_axis], rirj[2], 1, nmax+1, nmax, lj_hrr);
+        hrr_step_host(&mut g0[0..g_per_axis], rirj[0], 1, nmax + 1, nmax, lj_hrr);
+        hrr_step_host(
+            &mut g0[g_per_axis..2 * g_per_axis],
+            rirj[1],
+            1,
+            nmax + 1,
+            nmax,
+            lj_hrr,
+        );
+        hrr_step_host(
+            &mut g0[2 * g_per_axis..3 * g_per_axis],
+            rirj[2],
+            1,
+            nmax + 1,
+            nmax,
+            lj_hrr,
+        );
 
         // g1 = D_j(g0)
         let g1 = apply_nabla_j_3axis(&g0, aj, li as u32 + 1, lj as u32, nmax, g_per_axis);
@@ -1325,16 +1415,16 @@ fn grids_contract_ipvip(
                 let base = ci_idx * ncj + cj_idx;
                 let g0x = g0[jx as usize * dj + ix as usize];
                 let g0y = g0[g_per_axis + jy as usize * dj + iy as usize];
-                let g0z = g0[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g0z = g0[2 * g_per_axis + jz as usize * dj + iz as usize];
                 let g1x = g1[jx as usize * dj + ix as usize];
                 let g1y = g1[g_per_axis + jy as usize * dj + iy as usize];
-                let g1z = g1[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g1z = g1[2 * g_per_axis + jz as usize * dj + iz as usize];
                 let g2x = g2[jx as usize * dj + ix as usize];
                 let g2y = g2[g_per_axis + jy as usize * dj + iy as usize];
-                let g2z = g2[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g2z = g2[2 * g_per_axis + jz as usize * dj + iz as usize];
                 let g3x = g3[jx as usize * dj + ix as usize];
                 let g3y = g3[g_per_axis + jy as usize * dj + iy as usize];
-                let g3z = g3[2*g_per_axis + jz as usize * dj + iz as usize];
+                let g3z = g3[2 * g_per_axis + jz as usize * dj + iz as usize];
 
                 let s0 = g3x * g0y * g0z;
                 let s1 = g2x * g1y * g0z;
@@ -1479,9 +1569,8 @@ fn launch_grids_kernel(
             for pj in 0..n_prim_j {
                 let aj = shell_j.exponents[pj];
 
-                let pd = compute_pdata_host(
-                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-                );
+                let pd =
+                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
                 let prim_buf = contract_fn(&pd, ri, rj, rc, ai, aj, li, lj);
 
@@ -1615,26 +1704,32 @@ pub fn launch_grids(
                     provided: staging.len(),
                 });
             }
-            launch_grids_kernel(plan, grids_params, ncomp, &mut staging[..required], |pd, ri, rj, rc, _ai, _aj, li, lj| {
-                let nci = ncart(li) as u32;
-                let ncj = ncart(lj) as u32;
-                let nmax = (li + lj) as u32;
-                let lj_hrr = lj as u32;
-                let dj = nmax + 1;
-                let g_per_axis = (nmax + 1) * (lj_hrr + 1);
-                let nroots = (li + lj) as u32 / 2 + 1;
-                // Fail-closed: the device kernel wires rys_root{1,2} (nroots<=2),
-                // covering the s/p shells this scalar path targets. Higher-L pairs
-                // fall back to the host reference (byte-identical algorithm).
-                if nroots > GRIDS_MAX_DEVICE_NROOTS {
-                    return grids_contract_nuclear_like(pd, ri, rj, rc, li, lj, 0, 0);
-                }
-                let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
-                run_grids_nuclear_on_backend(
-                    backend, nroots, li as u32, lj as u32, nmax, lj_hrr, dj, g_per_axis, nci, ncj,
-                    ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac,
-                )
-            })?;
+            launch_grids_kernel(
+                plan,
+                grids_params,
+                ncomp,
+                &mut staging[..required],
+                |pd, ri, rj, rc, _ai, _aj, li, lj| {
+                    let nci = ncart(li) as u32;
+                    let ncj = ncart(lj) as u32;
+                    let nmax = (li + lj) as u32;
+                    let lj_hrr = lj as u32;
+                    let dj = nmax + 1;
+                    let g_per_axis = (nmax + 1) * (lj_hrr + 1);
+                    let nroots = (li + lj) as u32 / 2 + 1;
+                    // Fail-closed: the device kernel wires rys_root{1,2} (nroots<=2),
+                    // covering the s/p shells this scalar path targets. Higher-L pairs
+                    // fall back to the host reference (byte-identical algorithm).
+                    if nroots > GRIDS_MAX_DEVICE_NROOTS {
+                        return grids_contract_nuclear_like(pd, ri, rj, rc, li, lj, 0, 0);
+                    }
+                    let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
+                    run_grids_nuclear_on_backend(
+                        backend, nroots, li as u32, lj as u32, nmax, lj_hrr, dj, g_per_axis, nci,
+                        ncj, ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac,
+                    )
+                },
+            )?;
             Ok(grids_stats(plan, required))
         }
         "grids_ip" => {
@@ -1646,24 +1741,49 @@ pub fn launch_grids(
                     provided: staging.len(),
                 });
             }
-            launch_grids_kernel(plan, grids_params, ncomp, &mut staging[..required], |pd, ri, rj, rc, ai, aj, li, lj| {
-                let nci = ncart(li) as u32;
-                let ncj = ncart(lj) as u32;
-                let nmax = (li + 1 + lj) as u32;
-                let lj_hrr = lj as u32;
-                let dj = nmax + 1;
-                let g_per_axis = (nmax + 1) * (lj as u32 + 1);
-                let nroots = (li + 1 + lj) as u32 / 2 + 1;
-                // Fail-closed: device wires rys_root{1,2}; higher-L falls back to host.
-                if nroots > GRIDS_MAX_DEVICE_NROOTS {
-                    return grids_contract_ip(pd, ri, rj, rc, ai, li, lj);
-                }
-                let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
-                run_grids_deriv_on_backend(
-                    backend, GRIDS_OP_IP, nroots, li as u32, lj as u32, nmax, lj_hrr, dj,
-                    g_per_axis, nci, ncj, 3, ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac, ai, aj,
-                )
-            })?;
+            launch_grids_kernel(
+                plan,
+                grids_params,
+                ncomp,
+                &mut staging[..required],
+                |pd, ri, rj, rc, ai, aj, li, lj| {
+                    let nci = ncart(li) as u32;
+                    let ncj = ncart(lj) as u32;
+                    let nmax = (li + 1 + lj) as u32;
+                    let lj_hrr = lj as u32;
+                    let dj = nmax + 1;
+                    let g_per_axis = (nmax + 1) * (lj as u32 + 1);
+                    let nroots = (li + 1 + lj) as u32 / 2 + 1;
+                    // Fail-closed: device wires rys_root{1,2}; higher-L falls back to host.
+                    if nroots > GRIDS_MAX_DEVICE_NROOTS {
+                        return grids_contract_ip(pd, ri, rj, rc, ai, li, lj);
+                    }
+                    let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
+                    run_grids_deriv_on_backend(
+                        backend,
+                        GRIDS_OP_IP,
+                        nroots,
+                        li as u32,
+                        lj as u32,
+                        nmax,
+                        lj_hrr,
+                        dj,
+                        g_per_axis,
+                        nci,
+                        ncj,
+                        3,
+                        ri,
+                        rj,
+                        rc,
+                        rp,
+                        pd.zeta_ab,
+                        pd.aij2,
+                        pd.fac,
+                        ai,
+                        aj,
+                    )
+                },
+            )?;
             Ok(grids_stats(plan, required))
         }
         "grids_ipvip" => {
@@ -1675,23 +1795,48 @@ pub fn launch_grids(
                     provided: staging.len(),
                 });
             }
-            launch_grids_kernel(plan, grids_params, ncomp, &mut staging[..required], |pd, ri, rj, rc, ai, aj, li, lj| {
-                let nci = ncart(li) as u32;
-                let ncj = ncart(lj) as u32;
-                let nmax = (li + 1 + lj + 1) as u32;
-                let lj_hrr = lj as u32 + 1;
-                let dj = nmax + 1;
-                let g_per_axis = (nmax + 1) * (lj as u32 + 2);
-                let nroots = (li + 1 + lj + 1) as u32 / 2 + 1;
-                if nroots > GRIDS_MAX_DEVICE_NROOTS {
-                    return grids_contract_ipvip(pd, ri, rj, rc, ai, aj, li, lj);
-                }
-                let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
-                run_grids_deriv_on_backend(
-                    backend, GRIDS_OP_IPVIP, nroots, li as u32, lj as u32, nmax, lj_hrr, dj,
-                    g_per_axis, nci, ncj, 9, ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac, ai, aj,
-                )
-            })?;
+            launch_grids_kernel(
+                plan,
+                grids_params,
+                ncomp,
+                &mut staging[..required],
+                |pd, ri, rj, rc, ai, aj, li, lj| {
+                    let nci = ncart(li) as u32;
+                    let ncj = ncart(lj) as u32;
+                    let nmax = (li + 1 + lj + 1) as u32;
+                    let lj_hrr = lj as u32 + 1;
+                    let dj = nmax + 1;
+                    let g_per_axis = (nmax + 1) * (lj as u32 + 2);
+                    let nroots = (li + 1 + lj + 1) as u32 / 2 + 1;
+                    if nroots > GRIDS_MAX_DEVICE_NROOTS {
+                        return grids_contract_ipvip(pd, ri, rj, rc, ai, aj, li, lj);
+                    }
+                    let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
+                    run_grids_deriv_on_backend(
+                        backend,
+                        GRIDS_OP_IPVIP,
+                        nroots,
+                        li as u32,
+                        lj as u32,
+                        nmax,
+                        lj_hrr,
+                        dj,
+                        g_per_axis,
+                        nci,
+                        ncj,
+                        9,
+                        ri,
+                        rj,
+                        rc,
+                        rp,
+                        pd.zeta_ab,
+                        pd.aij2,
+                        pd.fac,
+                        ai,
+                        aj,
+                    )
+                },
+            )?;
             Ok(grids_stats(plan, required))
         }
         "grids_spvsp" => {
@@ -1703,23 +1848,48 @@ pub fn launch_grids(
                     provided: staging.len(),
                 });
             }
-            launch_grids_kernel(plan, grids_params, ncomp, &mut staging[..required], |pd, ri, rj, rc, ai, aj, li, lj| {
-                let nci = ncart(li) as u32;
-                let ncj = ncart(lj) as u32;
-                let nmax = (li + 1 + lj + 1) as u32;
-                let lj_hrr = lj as u32 + 1;
-                let dj = nmax + 1;
-                let g_per_axis = (nmax + 1) * (lj as u32 + 2);
-                let nroots = (li + 1 + lj + 1) as u32 / 2 + 1;
-                if nroots > GRIDS_MAX_DEVICE_NROOTS {
-                    return grids_contract_spvsp(pd, ri, rj, rc, ai, aj, li, lj);
-                }
-                let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
-                run_grids_deriv_on_backend(
-                    backend, GRIDS_OP_SPVSP, nroots, li as u32, lj as u32, nmax, lj_hrr, dj,
-                    g_per_axis, nci, ncj, 4, ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac, ai, aj,
-                )
-            })?;
+            launch_grids_kernel(
+                plan,
+                grids_params,
+                ncomp,
+                &mut staging[..required],
+                |pd, ri, rj, rc, ai, aj, li, lj| {
+                    let nci = ncart(li) as u32;
+                    let ncj = ncart(lj) as u32;
+                    let nmax = (li + 1 + lj + 1) as u32;
+                    let lj_hrr = lj as u32 + 1;
+                    let dj = nmax + 1;
+                    let g_per_axis = (nmax + 1) * (lj as u32 + 2);
+                    let nroots = (li + 1 + lj + 1) as u32 / 2 + 1;
+                    if nroots > GRIDS_MAX_DEVICE_NROOTS {
+                        return grids_contract_spvsp(pd, ri, rj, rc, ai, aj, li, lj);
+                    }
+                    let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
+                    run_grids_deriv_on_backend(
+                        backend,
+                        GRIDS_OP_SPVSP,
+                        nroots,
+                        li as u32,
+                        lj as u32,
+                        nmax,
+                        lj_hrr,
+                        dj,
+                        g_per_axis,
+                        nci,
+                        ncj,
+                        4,
+                        ri,
+                        rj,
+                        rc,
+                        rp,
+                        pd.zeta_ab,
+                        pd.aij2,
+                        pd.fac,
+                        ai,
+                        aj,
+                    )
+                },
+            )?;
             Ok(grids_stats(plan, required))
         }
         "grids_ipip" => {
@@ -1731,30 +1901,53 @@ pub fn launch_grids(
                     provided: staging.len(),
                 });
             }
-            launch_grids_kernel(plan, grids_params, ncomp, &mut staging[..required], |pd, ri, rj, rc, ai, aj, li, lj| {
-                let nci = ncart(li) as u32;
-                let ncj = ncart(lj) as u32;
-                let nmax = (li + 2 + lj) as u32;
-                let lj_hrr = lj as u32;
-                let dj = nmax + 1;
-                let g_per_axis = (nmax + 1) * (lj as u32 + 1);
-                let nroots = (li + 2 + lj) as u32 / 2 + 1;
-                if nroots > GRIDS_MAX_DEVICE_NROOTS {
-                    return grids_contract_ipip(pd, ri, rj, rc, ai, li, lj);
-                }
-                let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
-                run_grids_deriv_on_backend(
-                    backend, GRIDS_OP_IPIP, nroots, li as u32, lj as u32, nmax, lj_hrr, dj,
-                    g_per_axis, nci, ncj, 9, ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac, ai, aj,
-                )
-            })?;
+            launch_grids_kernel(
+                plan,
+                grids_params,
+                ncomp,
+                &mut staging[..required],
+                |pd, ri, rj, rc, ai, aj, li, lj| {
+                    let nci = ncart(li) as u32;
+                    let ncj = ncart(lj) as u32;
+                    let nmax = (li + 2 + lj) as u32;
+                    let lj_hrr = lj as u32;
+                    let dj = nmax + 1;
+                    let g_per_axis = (nmax + 1) * (lj as u32 + 1);
+                    let nroots = (li + 2 + lj) as u32 / 2 + 1;
+                    if nroots > GRIDS_MAX_DEVICE_NROOTS {
+                        return grids_contract_ipip(pd, ri, rj, rc, ai, li, lj);
+                    }
+                    let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
+                    run_grids_deriv_on_backend(
+                        backend,
+                        GRIDS_OP_IPIP,
+                        nroots,
+                        li as u32,
+                        lj as u32,
+                        nmax,
+                        lj_hrr,
+                        dj,
+                        g_per_axis,
+                        nci,
+                        ncj,
+                        9,
+                        ri,
+                        rj,
+                        rc,
+                        rp,
+                        pd.zeta_ab,
+                        pd.aij2,
+                        pd.fac,
+                        ai,
+                        aj,
+                    )
+                },
+            )?;
             Ok(grids_stats(plan, required))
         }
-        other => {
-            Err(cintxRsError::UnsupportedApi {
-                requested: format!("grids operator '{}' is not supported", other),
-            })
-        }
+        other => Err(cintxRsError::UnsupportedApi {
+            requested: format!("grids operator '{}' is not supported", other),
+        }),
     }
 }
 
@@ -1849,21 +2042,39 @@ mod tests {
             unsafe { ArrayArg::from_raw_parts(u_h, 1) },
             unsafe { ArrayArg::from_raw_parts(w_h, 1) },
             unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
-            0.0_f32, 0.0_f32, 0.0_f32,
-            0.6_f32, 0.5_f32, 0.7_f32,
-            0.3_f32, -0.4_f32, 0.8_f32,
-            0.27_f32, 0.225_f32, 0.315_f32,
+            0.0_f32,
+            0.0_f32,
+            0.0_f32,
+            0.6_f32,
+            0.5_f32,
+            0.7_f32,
+            0.3_f32,
+            -0.4_f32,
+            0.8_f32,
+            0.27_f32,
+            0.225_f32,
+            0.315_f32,
             2.2_f32,
             0.5_f32,
             0.6_f32,
             GRIDS_PIE4 as f32,
             (2.0 * std::f64::consts::PI) as f32,
-            0u32, 0u32, 0u32, 0u32, 1u32, 1u32, 1u32, 1u32,
+            0u32,
+            0u32,
+            0u32,
+            0u32,
+            1u32,
+            1u32,
+            1u32,
+            1u32,
             1u32,
         );
         let raw = client.read_one_unchecked(out_h);
         let out = f32::from_bytes(&raw);
-        assert!(out[0].is_finite(), "grids f32 kernel produced non-finite output");
+        assert!(
+            out[0].is_finite(),
+            "grids f32 kernel produced non-finite output"
+        );
     }
 
     /// ROCm device-vs-host parity oracle for the grids scalar nuclear-like path.
@@ -1926,7 +2137,10 @@ mod tests {
         println!(
             "grids_device_vs_host_rocm: cases={cases} mismatch_count={mismatch_count} any_nonzero={any_nonzero}"
         );
-        assert!(any_nonzero, "grids ROCm: all-zero output — kernel appears stubbed");
+        assert!(
+            any_nonzero,
+            "grids ROCm: all-zero output — kernel appears stubbed"
+        );
         assert_eq!(
             mismatch_count, 0,
             "grids ROCm device-vs-host: {mismatch_count} mismatch(es) at atol=1e-12/rtol=1e-10"
@@ -1987,8 +2201,8 @@ mod tests {
         let pd = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
         let rp = [pd.center_p_x, pd.center_p_y, pd.center_p_z];
         Some(run_grids_deriv_device::<R>(
-            client, op, nroots, li as u32, lj as u32, nmax, lj_hrr, dj, g_per_axis, nci, ncj, ncomp,
-            ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac, ai, aj,
+            client, op, nroots, li as u32, lj as u32, nmax, lj_hrr, dj, g_per_axis, nci, ncj,
+            ncomp, ri, rj, rc, rp, pd.zeta_ab, pd.aij2, pd.fac, ai, aj,
         ))
     }
 
@@ -2031,7 +2245,10 @@ mod tests {
                 tested += 1;
             }
         }
-        assert!(tested > 0, "{tag}: no (li,lj) pair exercised the device path");
+        assert!(
+            tested > 0,
+            "{tag}: no (li,lj) pair exercised the device path"
+        );
     }
 
     #[test]
@@ -2098,16 +2315,35 @@ mod tests {
                         unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots as usize) },
                         unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots as usize) },
                         unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                        0.0_f32, 0.0_f32, 0.0_f32,
-                        0.6_f32, 0.5_f32, 0.7_f32,
-                        0.3_f32, -0.4_f32, 0.8_f32,
-                        0.27_f32, 0.225_f32, 0.315_f32,
-                        2.2_f32, 0.5_f32, 0.6_f32,
-                        0.9_f32, 1.3_f32,
+                        0.0_f32,
+                        0.0_f32,
+                        0.0_f32,
+                        0.6_f32,
+                        0.5_f32,
+                        0.7_f32,
+                        0.3_f32,
+                        -0.4_f32,
+                        0.8_f32,
+                        0.27_f32,
+                        0.225_f32,
+                        0.315_f32,
+                        2.2_f32,
+                        0.5_f32,
+                        0.6_f32,
+                        0.9_f32,
+                        1.3_f32,
                         GRIDS_PIE4 as f32,
                         (2.0 * std::f64::consts::PI) as f32,
-                        li as u32, lj as u32, nmax, lj_hrr, dj, g_per_axis, 1u32, 1u32,
-                        $nr, $op,
+                        li as u32,
+                        lj as u32,
+                        nmax,
+                        lj_hrr,
+                        dj,
+                        g_per_axis,
+                        1u32,
+                        1u32,
+                        $nr,
+                        $op,
                     )
                 };
             }
@@ -2192,7 +2428,10 @@ mod tests {
                 "grids_deriv_device_vs_host_rocm[{tag}]: cases={cases} mismatch_count={mismatch_count} any_nonzero={any_nonzero}"
             );
             assert!(cases > 0, "{tag} ROCm: no device-path cases exercised");
-            assert!(any_nonzero, "{tag} ROCm: all-zero output — kernel appears stubbed");
+            assert!(
+                any_nonzero,
+                "{tag} ROCm: all-zero output — kernel appears stubbed"
+            );
             assert_eq!(
                 mismatch_count, 0,
                 "{tag} ROCm device-vs-host: {mismatch_count} mismatch(es) at atol=1e-12/rtol=1e-10"
