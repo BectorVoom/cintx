@@ -903,7 +903,7 @@ fn run_ecp_angular_splice_on_backend(
 ///
 /// Source of the splice arithmetic: vendor/pyscf-nr-ecp/src/nr_ecp.c:5976-5988
 /// (the cintx host driver `ecp_type1_cart` tail loop, lines ~783-817).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn ecp_angular_kernel<F: Float + CubeElement>(
     rad_ang: &Array<F>,
@@ -1043,24 +1043,28 @@ fn run_ecp_angular_device<R: Runtime>(
     let comps_i_h = client.create_from_slice(u32::as_bytes(comps_i));
     let comps_j_h = client.create_from_slice(u32::as_bytes(comps_j));
 
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    ecp_angular_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(rad_h, rad_ang.len()) },
-        unsafe { ArrayArg::from_raw_parts(ifac_h, ifac.len()) },
-        unsafe { ArrayArg::from_raw_parts(jfac_h, jfac.len()) },
-        unsafe { ArrayArg::from_raw_parts(comps_i_h, comps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(comps_j_h, comps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        li,
-        lj,
-        nfi as u32,
-        nfj as u32,
-    );
+    // SAFETY: Input buffer lengths match exact slice lengths.
+    // Out buffer is allocated to exact out_len.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        ecp_angular_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(rad_h, rad_ang.len()),
+            ArrayArg::from_raw_parts(ifac_h, ifac.len()),
+            ArrayArg::from_raw_parts(jfac_h, jfac.len()),
+            ArrayArg::from_raw_parts(comps_i_h, comps_i.len()),
+            ArrayArg::from_raw_parts(comps_j_h, comps_j.len()),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            li,
+            lj,
+            nfi as u32,
+            nfj as u32,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -1117,7 +1121,7 @@ fn cart_comps_flat_u32(l: u8) -> Vec<u32> {
 /// (`ecp_type2_cart`, ecp.rs:1272-1309) bit-for-bit at f64.
 ///
 /// Source of the splice arithmetic: vendor/pyscf-nr-ecp/src/nr_ecp.c:5505-5510.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn ecp_type2_angular_kernel<F: Float + CubeElement>(
     prad: &Array<F>,
@@ -1253,24 +1257,28 @@ fn run_ecp_type2_angular_device<R: Runtime>(
     let angi_h = client.create_from_slice(f64::as_bytes(angi));
     let angj_h = client.create_from_slice(f64::as_bytes(angj));
 
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    ecp_type2_angular_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(prad_h, prad.len()) },
-        unsafe { ArrayArg::from_raw_parts(angi_h, angi.len()) },
-        unsafe { ArrayArg::from_raw_parts(angj_h, angj.len()) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        common_fac,
-        li,
-        lj,
-        lc,
-        nfi as u32,
-        nfj as u32,
-    );
+    // SAFETY: Input buffer lengths match exact slice lengths.
+    // Out buffer is allocated to exact out_len.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        ecp_type2_angular_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(prad_h, prad.len()),
+            ArrayArg::from_raw_parts(angi_h, angi.len()),
+            ArrayArg::from_raw_parts(angj_h, angj.len()),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            common_fac,
+            li,
+            lj,
+            lc,
+            nfi as u32,
+            nfj as u32,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()

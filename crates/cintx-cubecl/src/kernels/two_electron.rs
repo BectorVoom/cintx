@@ -657,7 +657,7 @@ pub(crate) fn two_e_shape_as_f12(shape: &TwoEShape) -> crate::kernels::f12::F12S
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Single-work-item scalar 2e kernel. See module note above.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn two_electron_scalar_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -1369,69 +1369,71 @@ fn run_2e_scalar_device<R: Runtime>(
     let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
     let coeff_l_h = client.create_from_slice(f64::as_bytes(coeff_l));
 
-    let g_zero = vec![0.0_f64; 3 * g_size_u];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(3 * g_size_u * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    two_electron_scalar_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_l_h, exps_l.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_l_h, coeff_l.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size_u) },
-        unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        rk[0],
-        rk[1],
-        rk[2],
-        rl[0],
-        rl[1],
-        rl[2],
-        common_factor,
-        PIE4,
-        li,
-        lj,
-        lk,
-        ll,
-        nprim_i,
-        nprim_j,
-        nprim_k,
-        nprim_l,
-        nctr_i,
-        nctr_j,
-        nctr_k,
-        nctr_l,
-        di,
-        dk,
-        dl,
-        dj,
-        g_size,
-        nmax,
-        mmax,
-        g2d_ijmax,
-        g2d_klmax,
-        ibase,
-        kbase,
-        nroots,
-    );
+    // SAFETY: Input buffer lengths match exact lengths.
+    // Scratch and output buffers are allocated to their exact sizes.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        two_electron_scalar_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
+            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
+            ArrayArg::from_raw_parts(exps_l_h, exps_l.len()),
+            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()),
+            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
+            ArrayArg::from_raw_parts(coeff_l_h, coeff_l.len()),
+            ArrayArg::from_raw_parts(g_h, 3 * g_size_u),
+            ArrayArg::from_raw_parts(u_h, nroots_u),
+            ArrayArg::from_raw_parts(w_h, nroots_u),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            rk[0],
+            rk[1],
+            rk[2],
+            rl[0],
+            rl[1],
+            rl[2],
+            common_factor,
+            PIE4,
+            li,
+            lj,
+            lk,
+            ll,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nprim_l,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            nctr_l,
+            di,
+            dk,
+            dl,
+            dj,
+            g_size,
+            nmax,
+            mmax,
+            g2d_ijmax,
+            g2d_klmax,
+            ibase,
+            kbase,
+            nroots,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()

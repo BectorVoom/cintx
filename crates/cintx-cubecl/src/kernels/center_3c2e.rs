@@ -372,7 +372,7 @@ fn transpose_ij_3idx(buf: &[f64], ni: usize, nj: usize, nk: usize) -> Vec<f64> {
 ///
 /// `cart_out` (size `nci*ncj*nck`, i fastest, k slowest) is zeroed in-kernel and
 /// accumulated over all primitive and contraction triples.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -840,56 +840,56 @@ fn run_3c2e_device<R: Runtime>(
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
     let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
 
-    let g_zero = vec![0.0_f64; 3 * g_size];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let gs_zero = vec![0.0_f64; 3 * split_size];
-    let gs_h = client.create_from_slice(f64::as_bytes(&gs_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let work_zero = vec![0.0_f64; work_len];
-    let work_h = client.create_from_slice(f64::as_bytes(&work_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(3 * g_size * std::mem::size_of::<f64>());
+    let gs_h = client.empty(3 * split_size * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let work_h = client.empty(work_len * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    center_3c2e_scalar_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size) },
-        unsafe { ArrayArg::from_raw_parts(gs_h, 3 * split_size) },
-        unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(work_h, work_len) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        rk[0],
-        rk[1],
-        rk[2],
-        common_factor,
-        PIE4,
-        li,
-        lj,
-        lk,
-        nprim_i,
-        nprim_j,
-        nprim_k,
-        nctr_i,
-        nctr_j,
-        nctr_k,
-        nroots,
-    );
+    // SAFETY: Input buffer lengths match exps and coeffs lengths.
+    // Scratch and output buffers are allocated to their exact sizes.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        center_3c2e_scalar_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
+            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
+            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()),
+            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
+            ArrayArg::from_raw_parts(g_h, 3 * g_size),
+            ArrayArg::from_raw_parts(gs_h, 3 * split_size),
+            ArrayArg::from_raw_parts(u_h, nroots_u),
+            ArrayArg::from_raw_parts(w_h, nroots_u),
+            ArrayArg::from_raw_parts(work_h, work_len),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            rk[0],
+            rk[1],
+            rk[2],
+            common_factor,
+            PIE4,
+            li,
+            lj,
+            lk,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            nroots,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -918,7 +918,7 @@ fn run_3c2e_device<R: Runtime>(
 ///
 /// Output `cart_out` (size `3*nci*ncj*nck`, component-leading `[3][nk][nj][ni]`,
 /// i fastest within each component) is zeroed in-kernel and accumulated.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn center_3c2e_ip1_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -1566,60 +1566,61 @@ fn run_3c2e_ip1_device<R: Runtime>(
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
     let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
 
-    let g_zero = vec![0.0_f64; 3 * g_size_u];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(3 * g_size_u * std::mem::size_of::<f64>());
+    let g1_h = client.empty(3 * g_size_u * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    center_3c2e_ip1_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size_u) },
-        unsafe { ArrayArg::from_raw_parts(g1_h, 3 * g_size_u) },
-        unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        rk[0],
-        rk[1],
-        rk[2],
-        common_factor,
-        PIE4,
-        li,
-        lj,
-        lk,
-        nprim_i,
-        nprim_j,
-        nprim_k,
-        nctr_i,
-        nctr_j,
-        nctr_k,
-        di,
-        dk,
-        dl,
-        dj,
-        g_size,
-        nmax,
-        mmax,
-        ibase,
-        nroots,
-    );
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        center_3c2e_ip1_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
+            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
+            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()),
+            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
+            ArrayArg::from_raw_parts(g_h, 3 * g_size_u),
+            ArrayArg::from_raw_parts(g1_h, 3 * g_size_u),
+            ArrayArg::from_raw_parts(u_h, nroots_u),
+            ArrayArg::from_raw_parts(w_h, nroots_u),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            rk[0],
+            rk[1],
+            rk[2],
+            common_factor,
+            PIE4,
+            li,
+            lj,
+            lk,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            di,
+            dk,
+            dl,
+            dj,
+            g_size,
+            nmax,
+            mmax,
+            ibase,
+            nroots,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -1651,7 +1652,7 @@ fn run_3c2e_ip1_device<R: Runtime>(
 ///
 /// Output `cart_out` (size `3*nci*ncj*nck`, component-leading `[3][nk][nj][ni]`,
 /// i fastest within each component) is zeroed in-kernel and accumulated.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn center_3c2e_ip2_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -2301,60 +2302,61 @@ fn run_3c2e_ip2_device<R: Runtime>(
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
     let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
 
-    let g_zero = vec![0.0_f64; 3 * g_size_u];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(3 * g_size_u * std::mem::size_of::<f64>());
+    let g1_h = client.empty(3 * g_size_u * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    center_3c2e_ip2_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size_u) },
-        unsafe { ArrayArg::from_raw_parts(g1_h, 3 * g_size_u) },
-        unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        rk[0],
-        rk[1],
-        rk[2],
-        common_factor,
-        PIE4,
-        li,
-        lj,
-        lk,
-        nprim_i,
-        nprim_j,
-        nprim_k,
-        nctr_i,
-        nctr_j,
-        nctr_k,
-        di,
-        dk,
-        dl,
-        dj,
-        g_size,
-        nmax,
-        mmax,
-        ibase,
-        nroots,
-    );
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        center_3c2e_ip2_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
+            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
+            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()),
+            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
+            ArrayArg::from_raw_parts(g_h, 3 * g_size_u),
+            ArrayArg::from_raw_parts(g1_h, 3 * g_size_u),
+            ArrayArg::from_raw_parts(u_h, nroots_u),
+            ArrayArg::from_raw_parts(w_h, nroots_u),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            rk[0],
+            rk[1],
+            rk[2],
+            common_factor,
+            PIE4,
+            li,
+            lj,
+            lk,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nctr_i,
+            nctr_j,
+            nctr_k,
+            di,
+            dk,
+            dl,
+            dj,
+            g_size,
+            nmax,
+            mmax,
+            ibase,
+            nroots,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()

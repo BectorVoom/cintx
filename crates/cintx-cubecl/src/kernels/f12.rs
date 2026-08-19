@@ -3053,7 +3053,7 @@ fn cart_comps_flat_u32(l: u8) -> Vec<u32> {
 /// - `comps_i/j/k/l`: flat u32 cartesian-power triples (3 entries per component).
 /// - `out`: the `nfi*nfj*nfk*nfl` Cartesian block.
 /// - scalars (u32): `nfi, nfj, nfk, nfl, nroots, di, dk, dl, dj, g_size`.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn f12_cart_contraction_kernel<F: Float + CubeElement>(
     g: &Array<F>,
@@ -3180,30 +3180,34 @@ fn run_f12_cart_contraction_device<R: Runtime>(
     let comps_k_h = client.create_from_slice(u32::as_bytes(&comps_k));
     let comps_l_h = client.create_from_slice(u32::as_bytes(&comps_l));
 
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    f12_cart_contraction_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(g_h, g.len()) },
-        unsafe { ArrayArg::from_raw_parts(comps_i_h, comps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(comps_j_h, comps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(comps_k_h, comps_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(comps_l_h, comps_l.len()) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        nfi as u32,
-        nfj as u32,
-        nfk as u32,
-        nfl as u32,
-        shape.nroots as u32,
-        shape.di as u32,
-        shape.dk as u32,
-        shape.dl as u32,
-        shape.dj as u32,
-        shape.g_size as u32,
-    );
+    // SAFETY: Input buffer lengths match exact slice lengths.
+    // Out buffer is allocated to exact out_len.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        f12_cart_contraction_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(g_h, g.len()),
+            ArrayArg::from_raw_parts(comps_i_h, comps_i.len()),
+            ArrayArg::from_raw_parts(comps_j_h, comps_j.len()),
+            ArrayArg::from_raw_parts(comps_k_h, comps_k.len()),
+            ArrayArg::from_raw_parts(comps_l_h, comps_l.len()),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            nfi as u32,
+            nfj as u32,
+            nfk as u32,
+            nfl as u32,
+            shape.nroots as u32,
+            shape.di as u32,
+            shape.dk as u32,
+            shape.dl as u32,
+            shape.dj as u32,
+            shape.g_size as u32,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()

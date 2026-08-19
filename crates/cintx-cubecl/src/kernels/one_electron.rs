@@ -205,7 +205,7 @@ fn fill_g_tensor_overlap(
 ///
 /// Source: libcint-master/src/g1e.c `CINTg1e_ovlp` / `CINTg1e_nuc`,
 ///         autocode/intor1.c `CINTgout1e_int1e_kin`.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_scalar_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -646,7 +646,7 @@ fn one_electron_kin_d2<F: Float>(g: &Array<F>, base: u32, nx: u32, dj: u32, jx: 
 /// Scratch: `g` (overlap base G-tensor), `g1` (bra-nabla of g), `d2g0`/`d2g1`
 /// (kinetic second ket-derivatives; only written for op_kind=1, but always sized).
 /// `cart_out` is the 3-component component-leading accumulator.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_grad_bra_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -951,46 +951,49 @@ fn run_1e_grad_bra_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    // Scratch + output buffers.
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let d2g0_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let d2g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let d2g0_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let d2g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input buffer lengths match exact lengths.
+    // Scratch and output buffers are allocated to their exact sizes.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($op:expr) => {
-            one_electron_grad_bra_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g1_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(d2g0_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(d2g1_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                SQRTPI,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                $op,
-            )
+            unsafe {
+                one_electron_grad_bra_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g1_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(d2g0_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(d2g1_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    SQRTPI,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    $op,
+                );
+            }
         };
     }
 
@@ -1078,7 +1081,7 @@ fn run_1e_grad_bra_on_backend(
 /// `CINTgout1e_int1e_ipovlpip`. Scratch buffers `g`/`g1`/`g2`/`g3` hold
 /// g0, D_j(g0), D_i(g0), D_i(D_j(g0)). `cart_out` is the 9-component
 /// component-leading accumulator of length `9 * nci * ncj * nctr_i * nctr_j`.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_grad_both_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -1368,43 +1371,45 @@ fn run_1e_grad_both_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    // Scratch + output buffers.
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g3_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g3_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    one_electron_grad_both_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(g1_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(g2_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(g3_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        SQRTPI,
-        std::f64::consts::PI,
-        li,
-        lj,
-        nprim_i,
-        nprim_j,
-        nctr_i,
-        nctr_j,
-    );
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        one_electron_grad_both_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+            ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+            ArrayArg::from_raw_parts(g_h.clone(), total_g),
+            ArrayArg::from_raw_parts(g1_h.clone(), total_g),
+            ArrayArg::from_raw_parts(g2_h.clone(), total_g),
+            ArrayArg::from_raw_parts(g3_h.clone(), total_g),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            SQRTPI,
+            std::f64::consts::PI,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -1471,7 +1476,7 @@ fn run_1e_grad_both_on_backend(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// On-device bra-only rank-9 overlap Hessian (`int1e_ipipovlp`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_gradgrad_bra_ovlp_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -1732,42 +1737,45 @@ fn run_1e_gradgrad_bra_ovlp_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g3_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g3_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    one_electron_gradgrad_bra_ovlp_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(g1_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(g2_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(g3_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        SQRTPI,
-        std::f64::consts::PI,
-        li,
-        lj,
-        nprim_i,
-        nprim_j,
-        nctr_i,
-        nctr_j,
-    );
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        one_electron_gradgrad_bra_ovlp_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+            ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+            ArrayArg::from_raw_parts(g_h.clone(), total_g),
+            ArrayArg::from_raw_parts(g1_h.clone(), total_g),
+            ArrayArg::from_raw_parts(g2_h.clone(), total_g),
+            ArrayArg::from_raw_parts(g3_h.clone(), total_g),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            SQRTPI,
+            std::f64::consts::PI,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -1929,7 +1937,7 @@ fn d_i_1e_into<F: Float + CubeElement>(
 ///   `g` = overlap base; `dj1`/`dj2` = D_J/D_J² of g; `di1`/`di2` = D_I/D_I² of g;
 ///   `t1` = D_I(dj2); `di2dj2` = D_I(t1) = D_I²(D_J²(g)). Output is the single
 /// rank-1 component per AO pair (component-leading, blocks of `nci*ncj`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_p4_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -2175,48 +2183,51 @@ fn run_1e_p4_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let dj1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let dj2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let di1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let di2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let t1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let di2dj2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let dj1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let dj2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let t1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di2dj2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    one_electron_p4_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(dj1_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(dj2_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(di1_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(di2_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(t1_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(di2dj2_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        SQRTPI,
-        std::f64::consts::PI,
-        li,
-        lj,
-        nprim_i,
-        nprim_j,
-        nctr_i,
-        nctr_j,
-    );
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        one_electron_p4_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+            ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+            ArrayArg::from_raw_parts(g_h.clone(), total_g),
+            ArrayArg::from_raw_parts(dj1_h.clone(), total_g),
+            ArrayArg::from_raw_parts(dj2_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di1_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di2_h.clone(), total_g),
+            ArrayArg::from_raw_parts(t1_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di2dj2_h.clone(), total_g),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            SQRTPI,
+            std::f64::consts::PI,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -2298,7 +2309,7 @@ fn run_1e_p4_on_backend(
 ///   `g` = overlap base g0; `dj1` = D_J(g0); `rcj` = RCJ(g0) (r on ket); `djrcj`
 ///   = D_J(rcj). Output is the 9 components per AO pair (component-leading, blocks
 /// of `nci*ncj`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_irp_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -2627,45 +2638,48 @@ fn run_1e_irp_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let dj1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rcj_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let djrcj_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let dj1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let rcj_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let djrcj_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    one_electron_irp_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(dj1_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(rcj_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(djrcj_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        drj[0],
-        drj[1],
-        drj[2],
-        SQRTPI,
-        std::f64::consts::PI,
-        li,
-        lj,
-        nprim_i,
-        nprim_j,
-        nctr_i,
-        nctr_j,
-    );
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        one_electron_irp_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+            ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+            ArrayArg::from_raw_parts(g_h.clone(), total_g),
+            ArrayArg::from_raw_parts(dj1_h.clone(), total_g),
+            ArrayArg::from_raw_parts(rcj_h.clone(), total_g),
+            ArrayArg::from_raw_parts(djrcj_h.clone(), total_g),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            drj[0],
+            drj[1],
+            drj[2],
+            SQRTPI,
+            std::f64::consts::PI,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -2749,7 +2763,7 @@ fn run_1e_irp_on_backend(
 /// On-device 1e GIAO overlap-engine kernel (rank 3). `op_kind` selects the family
 /// (0=govlp 1=igovlp 2=cg_irxp 3=giao_irjxp 4=igkin). Emits REAL components
 /// (component-leading; the host materializes the complex re=0/im=value view).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_giao_ovlp_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -3106,56 +3120,59 @@ fn run_1e_giao_ovlp_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let t1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let t2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let t3_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let t4_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let t5_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let t6_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let t7_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let t1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let t2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let t3_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let t4_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let t5_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let t6_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let t7_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($kind:expr) => {
-            one_electron_giao_ovlp_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(t1_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(t2_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(t3_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(t4_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(t5_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(t6_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(t7_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                drj[0],
-                drj[1],
-                drj[2],
-                SQRTPI,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                $kind,
-            )
+            unsafe {
+                one_electron_giao_ovlp_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(t1_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(t2_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(t3_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(t4_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(t5_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(t6_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(t7_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    drj[0],
+                    drj[1],
+                    drj[2],
+                    SQRTPI,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    $kind,
+                );
+            }
         };
     }
 
@@ -3239,7 +3256,7 @@ fn run_1e_giao_ovlp_on_backend(
 
 /// On-device 1e GIAO nuclear-engine kernel. `op_kind` selects the family;
 /// `rank` (comptime) is 3 (gnuc/ignuc/ia01p) or 9 (a01gp/cg_a11part/giao_a11part).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -3809,53 +3826,54 @@ fn run_1e_giao_nuc_device<R: Runtime>(
     let oc_h = client.create_from_slice(f64::as_bytes(origin_coords));
     let och_h = client.create_from_slice(f64::as_bytes(origin_charges));
 
-    // Flat buffer holds 8 tensors (g0 + t1..t7).
-    let gbuf_zero = vec![0.0_f64; 8 * total_g];
-    let gbuf_h = client.create_from_slice(f64::as_bytes(&gbuf_zero));
-    let urys_zero = vec![0.0_f64; nroots as usize];
-    let urys_h = client.create_from_slice(f64::as_bytes(&urys_zero));
-    let wrys_h = client.create_from_slice(f64::as_bytes(&urys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Flat buffer holds 8 tensors (g0 + t1..t7): allocate directly on device.
+    let gbuf_h = client.empty(8 * total_g * std::mem::size_of::<f64>());
+    let urys_h = client.empty((nroots as usize) * std::mem::size_of::<f64>());
+    let wrys_h = client.empty((nroots as usize) * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($kind:expr, $rank:expr, $nr:expr) => {
-            one_electron_giao_nuc_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(oc_h.clone(), origin_coords.len()) },
-                unsafe { ArrayArg::from_raw_parts(och_h.clone(), origin_charges.len()) },
-                unsafe { ArrayArg::from_raw_parts(gbuf_h.clone(), 8 * total_g) },
-                unsafe { ArrayArg::from_raw_parts(urys_h.clone(), nroots as usize) },
-                unsafe { ArrayArg::from_raw_parts(wrys_h.clone(), nroots as usize) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                drj[0],
-                drj[1],
-                drj[2],
-                PIE4,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                norig as u32,
-                $kind,
-                $rank,
-                $nr,
-            )
+            unsafe {
+                one_electron_giao_nuc_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(oc_h.clone(), origin_coords.len()),
+                    ArrayArg::from_raw_parts(och_h.clone(), origin_charges.len()),
+                    ArrayArg::from_raw_parts(gbuf_h.clone(), 8 * total_g),
+                    ArrayArg::from_raw_parts(urys_h.clone(), nroots as usize),
+                    ArrayArg::from_raw_parts(wrys_h.clone(), nroots as usize),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    drj[0],
+                    drj[1],
+                    drj[2],
+                    PIE4,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    norig as u32,
+                    $kind,
+                    $rank,
+                    $nr,
+                );
+            }
         };
     }
 
@@ -4039,7 +4057,7 @@ fn run_1e_giao_nuc_on_backend(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// On-device both-side rank-9 kinetic gradient (`int1e_ipkinip`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_grad_kin_both_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -4310,50 +4328,53 @@ fn run_1e_grad_kin_both_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let dj1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let dj2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let dj3_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let di0_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let di1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let di2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let di3_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let dj1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let dj2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let dj3_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di0_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di3_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    one_electron_grad_kin_both_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(dj1_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(dj2_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(dj3_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(di0_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(di1_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(di2_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(di3_h.clone(), total_g) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        SQRTPI,
-        std::f64::consts::PI,
-        li,
-        lj,
-        nprim_i,
-        nprim_j,
-        nctr_i,
-        nctr_j,
-    );
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        one_electron_grad_kin_both_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+            ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+            ArrayArg::from_raw_parts(g_h.clone(), total_g),
+            ArrayArg::from_raw_parts(dj1_h.clone(), total_g),
+            ArrayArg::from_raw_parts(dj2_h.clone(), total_g),
+            ArrayArg::from_raw_parts(dj3_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di0_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di1_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di2_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di3_h.clone(), total_g),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            SQRTPI,
+            std::f64::consts::PI,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -4430,7 +4451,7 @@ fn run_1e_grad_kin_both_on_backend(
 /// (per-root nuclear G-tensor with +1 bra headroom), `g1` (bra-nabla of g),
 /// `urys`/`wrys` (Rys roots). `cart_out` is the 3-component component-leading
 /// accumulator (`(ci*nctr_j+cj)*total_len + comp*block_len + cj_idx*nci+ci_idx`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -4721,50 +4742,51 @@ fn run_1e_nuc_grad_device<R: Runtime>(
     let coords_h = client.create_from_slice(f64::as_bytes(coords_src));
     let charges_h = client.create_from_slice(f64::as_bytes(charges_src));
 
-    // Scratch + output buffers.
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($nr:expr) => {
-            one_electron_nuc_grad_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()) },
-                unsafe { ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g1_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                PIE4,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                norig,
-                $nr,
-            )
+            unsafe {
+                one_electron_nuc_grad_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()),
+                    ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g1_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(u_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(w_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    PIE4,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    norig,
+                    $nr,
+                );
+            }
         };
     }
 
@@ -4917,7 +4939,7 @@ fn run_1e_nuc_grad_on_backend(
 /// Single work item. Scratch: `g` (per-root rinv G-tensor), `urys`/`wrys` (Rys
 /// roots). `cart_out` is the rank-1 contraction-major accumulator
 /// (`(ci*nctr_j+cj)*block_len + cj_idx*nci+ci_idx`). `charge` is the +1 factor.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_rinv_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -5140,48 +5162,50 @@ fn run_1e_rinv_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($nr:expr) => {
-            one_electron_rinv_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                rc[0],
-                rc[1],
-                rc[2],
-                charge,
-                PIE4,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                $nr,
-            )
+            unsafe {
+                one_electron_rinv_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(u_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(w_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    rc[0],
+                    rc[1],
+                    rc[2],
+                    charge,
+                    PIE4,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    $nr,
+                );
+            }
         };
     }
 
@@ -5266,7 +5290,7 @@ fn run_1e_rinv_on_backend(
 /// Single work item. Scratch: `g` (rinv G-tensor with bra+1 / ket+1 headroom),
 /// `g1` (D_J), `g2` (D_I), `urys`/`wrys`. `cart_out` is the rank-3 component-leading
 /// accumulator (`(ci*nctr_j+cj)*total_len + comp*block_len + cj_idx*nci+ci_idx`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_drinv_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -5518,52 +5542,54 @@ fn run_1e_drinv_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($nr:expr) => {
-            one_electron_drinv_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g1_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g2_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                rc[0],
-                rc[1],
-                rc[2],
-                charge,
-                PIE4,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                $nr,
-            )
+            unsafe {
+                one_electron_drinv_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g1_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g2_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(u_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(w_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    rc[0],
+                    rc[1],
+                    rc[2],
+                    charge,
+                    PIE4,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    $nr,
+                );
+            }
         };
     }
 
@@ -5642,7 +5668,7 @@ fn run_1e_drinv_on_backend(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// On-device both-side rank-9 nuclear-attraction gradient (`int1e_ipnucip`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_nuc_grad_both_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -5938,53 +5964,55 @@ fn run_1e_nuc_grad_both_device<R: Runtime>(
     let oc_h = client.create_from_slice(f64::as_bytes(origin_coords));
     let och_h = client.create_from_slice(f64::as_bytes(origin_charges));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g3_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let urys_zero = vec![0.0_f64; nroots as usize];
-    let urys_h = client.create_from_slice(f64::as_bytes(&urys_zero));
-    let wrys_h = client.create_from_slice(f64::as_bytes(&urys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g3_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let urys_h = client.empty((nroots as usize) * std::mem::size_of::<f64>());
+    let wrys_h = client.empty((nroots as usize) * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($nr:expr) => {
-            one_electron_nuc_grad_both_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(oc_h.clone(), origin_coords.len()) },
-                unsafe { ArrayArg::from_raw_parts(och_h.clone(), norig) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g1_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g2_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g3_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(urys_h.clone(), nroots as usize) },
-                unsafe { ArrayArg::from_raw_parts(wrys_h.clone(), nroots as usize) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                PIE4,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                norig as u32,
-                $nr,
-            )
+            unsafe {
+                one_electron_nuc_grad_both_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(oc_h.clone(), origin_coords.len()),
+                    ArrayArg::from_raw_parts(och_h.clone(), norig),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g1_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g2_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g3_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(urys_h.clone(), nroots as usize),
+                    ArrayArg::from_raw_parts(wrys_h.clone(), nroots as usize),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    PIE4,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    norig as u32,
+                    $nr,
+                );
+            }
         };
     }
 
@@ -6139,7 +6167,7 @@ fn run_1e_nuc_grad_both_on_backend(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// On-device bra-only rank-9 nuclear/rinv Hessian (`int1e_ipipnuc`/`ipiprinv`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_nuc_gradgrad_bra_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -6340,53 +6368,55 @@ fn run_1e_nuc_gradgrad_bra_device<R: Runtime>(
     let oc_h = client.create_from_slice(f64::as_bytes(origin_coords));
     let och_h = client.create_from_slice(f64::as_bytes(origin_charges));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g2_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g3_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let urys_zero = vec![0.0_f64; nroots as usize];
-    let urys_h = client.create_from_slice(f64::as_bytes(&urys_zero));
-    let wrys_h = client.create_from_slice(f64::as_bytes(&urys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g3_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let urys_h = client.empty((nroots as usize) * std::mem::size_of::<f64>());
+    let wrys_h = client.empty((nroots as usize) * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($nr:expr) => {
-            one_electron_nuc_gradgrad_bra_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(oc_h.clone(), origin_coords.len()) },
-                unsafe { ArrayArg::from_raw_parts(och_h.clone(), norig) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g1_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g2_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(g3_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(urys_h.clone(), nroots as usize) },
-                unsafe { ArrayArg::from_raw_parts(wrys_h.clone(), nroots as usize) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                PIE4,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                norig as u32,
-                $nr,
-            )
+            unsafe {
+                one_electron_nuc_gradgrad_bra_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(oc_h.clone(), origin_coords.len()),
+                    ArrayArg::from_raw_parts(och_h.clone(), norig),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g1_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g2_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(g3_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(urys_h.clone(), nroots as usize),
+                    ArrayArg::from_raw_parts(wrys_h.clone(), nroots as usize),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    PIE4,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    norig as u32,
+                    $nr,
+                );
+            }
         };
     }
 
@@ -6726,7 +6756,7 @@ fn add_tensor_flat<F: Float + CubeElement>(
 }
 
 /// On-device bra-only rank-9 kinetic Hessian (`int1e_ipipkin`).
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_gradgrad_bra_kin_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -7025,36 +7055,39 @@ fn run_1e_gradgrad_bra_kin_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let buf_zero = vec![0.0_f64; buf_len];
-    let gbuf_h = client.create_from_slice(f64::as_bytes(&buf_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let gbuf_h = client.empty(buf_len * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    one_electron_gradgrad_bra_kin_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(gbuf_h.clone(), buf_len) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        SQRTPI,
-        std::f64::consts::PI,
-        li,
-        lj,
-        nprim_i,
-        nprim_j,
-        nctr_i,
-        nctr_j,
-    );
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        one_electron_gradgrad_bra_kin_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+            ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+            ArrayArg::from_raw_parts(gbuf_h.clone(), buf_len),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            SQRTPI,
+            std::f64::consts::PI,
+            li,
+            lj,
+            nprim_i,
+            nprim_j,
+            nctr_i,
+            nctr_j,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()
@@ -7172,51 +7205,52 @@ fn run_1e_scalar_device<R: Runtime>(
     let coords_h = client.create_from_slice(f64::as_bytes(coords_src));
     let charges_h = client.create_from_slice(f64::as_bytes(charges_src));
 
-    // Scratch + output buffers.
-    let g_zero = vec![0.0_f64; 3 * g_per_axis];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(3 * g_per_axis * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     // Comptime op_kind / nroots: select the monomorphization at the call site.
     macro_rules! launch_with {
         ($op:expr, $nr:expr) => {
-            one_electron_scalar_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()) },
-                unsafe { ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_per_axis) },
-                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                PIE4,
-                SQRTPI,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                natm,
-                $op,
-                $nr,
-            )
+            unsafe {
+                one_electron_scalar_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()),
+                    ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), 3 * g_per_axis),
+                    ArrayArg::from_raw_parts(u_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(w_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    PIE4,
+                    SQRTPI,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    natm,
+                    $op,
+                    $nr,
+                );
+            }
         };
     }
 
@@ -7404,7 +7438,7 @@ fn run_1e_scalar_on_backend(
 /// ket headroom and the depth of the per-axis moment ladder; `rank` is the
 /// output component count (3/9/27/81/1). `cart_out` is component-leading:
 /// `cart_out[(ci*nctr_j+cj)*rank*block_len + comp*block_len + cj_idx*nci+ci_idx]`.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn one_electron_moment_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -7872,44 +7906,47 @@ fn run_1e_moment_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($mode:expr, $order:expr, $rank:expr) => {
-            one_electron_moment_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                drj[0],
-                drj[1],
-                drj[2],
-                SQRTPI,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                $mode,
-                $order,
-                $rank,
-            )
+            unsafe {
+                one_electron_moment_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    drj[0],
+                    drj[1],
+                    drj[2],
+                    SQRTPI,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    $mode,
+                    $order,
+                    $rank,
+                );
+            }
         };
     }
 

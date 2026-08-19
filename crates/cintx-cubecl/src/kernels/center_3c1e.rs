@@ -131,7 +131,7 @@ fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
 ///
 /// Source: libcint-master/src/g3c1e.c `CINTg3c1e_ovlp`,
 ///         cint3c1e.c `CINT3c1e_loop_nopt`.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn center_3c1e_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -501,46 +501,50 @@ fn run_3c1e_device<R: Runtime>(
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
     let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
 
-    // Scratch + output buffers (zero-initialised on the host for determinism;
-    // the kernel also zeros `g` and `cart_out` before use).
-    let g_zero = vec![0.0_f64; 3 * g_alloc];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty
+    // (the kernel zeros `g` and `cart_out` before use).
+    let g_h = client.empty(3 * g_alloc * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    center_3c1e_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_alloc) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        rk[0],
-        rk[1],
-        rk[2],
-        common_factor,
-        expcutoff,
-        li,
-        lj,
-        lk,
-        nprim_i,
-        nprim_j,
-        nprim_k,
-        1u32,
-        1u32,
-        1u32,
-    );
+    // SAFETY: Input buffer lengths match exps and coeffs lengths.
+    // Scratch buffers `g_h` and `out_h` are allocated to exact sizes `3 * g_alloc` and `out_len`.
+    // Kernel loops strictly index within bounds: pi < nprim_i, pj < nprim_j, pk < nprim_k,
+    // oi < out_len, and gi < 3 * g_alloc.
+    unsafe {
+        center_3c1e_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
+            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
+            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()),
+            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
+            ArrayArg::from_raw_parts(g_h, 3 * g_alloc),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            rk[0],
+            rk[1],
+            rk[2],
+            common_factor,
+            expcutoff,
+            li,
+            lj,
+            lk,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            1u32,
+            1u32,
+            1u32,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()

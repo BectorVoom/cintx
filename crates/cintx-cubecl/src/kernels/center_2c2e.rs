@@ -137,7 +137,7 @@ fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
 ///
 /// Source: libcint-master/src/g2e.c `CINTg0_2e` + `CINTg0_2e_2d`,
 ///         g2c2e.c `CINT2c2e_loop_nopt`.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn center_2c2e_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -436,44 +436,48 @@ fn run_2c2e_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
 
-    // Scratch + output buffers (zero-initialised on the host for determinism;
-    // the kernel also zeros `g` and `cart_out` before use).
-    let g_zero = vec![0.0_f64; 3 * g_size];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty
+    // (the kernel zeros `g` and `cart_out`, and `rys_root` writes `u` and `w`).
+    let g_h = client.empty(3 * g_size * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    center_2c2e_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size) },
-        unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rk[0],
-        rk[1],
-        rk[2],
-        common_factor,
-        PIE4,
-        li,
-        lk,
-        nprim_i,
-        nprim_k,
-        nctr_i,
-        nctr_k,
-        nroots,
-    );
+    // SAFETY: Input buffer lengths match exps and coeffs lengths.
+    // Scratch buffers `g_h`, `u_h`, `w_h`, and `out_h` are allocated to exact sizes
+    // `3 * g_size`, `nroots_u`, `nroots_u`, and `out_len`.
+    // Kernel loops strictly index within bounds: pi < nprim_i, pk < nprim_k, ci < nctr_i, ck < nctr_k,
+    // irys < nroots, oi < out_len, and gi < 3 * g_size.
+    unsafe {
+        center_2c2e_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
+            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
+            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
+            ArrayArg::from_raw_parts(g_h, 3 * g_size),
+            ArrayArg::from_raw_parts(u_h, nroots_u),
+            ArrayArg::from_raw_parts(w_h, nroots_u),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rk[0],
+            rk[1],
+            rk[2],
+            common_factor,
+            PIE4,
+            li,
+            lk,
+            nprim_i,
+            nprim_k,
+            nctr_i,
+            nctr_k,
+            nroots,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()

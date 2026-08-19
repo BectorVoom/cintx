@@ -107,7 +107,7 @@ fn validated_4c1e_error(reason: &str) -> cintxRsError {
 /// tuple; the host launcher dispatches one launch per tuple.
 ///
 /// Source: libcint-master/src/g4c1e.c, cint4c1e.c `CINT4c1e_loop_nopt`.
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn center_4c1e_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -817,56 +817,58 @@ fn run_4c1e_device<R: Runtime>(
     let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
     let coeff_l_h = client.create_from_slice(f64::as_bytes(coeff_l));
 
-    // Scratch + output buffers (zero-initialised on the host; the kernel also
-    // zeros `g` and `cart_out` before use, and fully overwrites `buf`).
-    let g_zero = vec![0.0_f64; 3 * g_size];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let buf_zero = vec![0.0_f64; buf_size];
-    let buf_h = client.create_from_slice(f64::as_bytes(&buf_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty
+    // (the kernel zeros `g` and `cart_out` before use, and fully overwrites `buf`).
+    let g_h = client.empty(3 * g_size * std::mem::size_of::<f64>());
+    let buf_h = client.empty(buf_size * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
-    center_4c1e_kernel::launch::<f64, R>(
-        client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
-        unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(exps_l_h, exps_l.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()) },
-        unsafe { ArrayArg::from_raw_parts(coeff_l_h, coeff_l.len()) },
-        unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size) },
-        unsafe { ArrayArg::from_raw_parts(buf_h, buf_size) },
-        unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-        ri[0],
-        ri[1],
-        ri[2],
-        rj[0],
-        rj[1],
-        rj[2],
-        rk[0],
-        rk[1],
-        rk[2],
-        rl[0],
-        rl[1],
-        rl[2],
-        common_factor,
-        li,
-        lj,
-        lk,
-        ll,
-        nprim_i,
-        nprim_j,
-        nprim_k,
-        nprim_l,
-        1u32,
-        1u32,
-        1u32,
-        1u32,
-    );
+    // SAFETY: Input buffer lengths match exact lengths.
+    // Scratch and output buffers are allocated to their exact sizes.
+    // In-kernel loops strictly bound indices to valid array ranges.
+    unsafe {
+        center_4c1e_kernel::launch_unchecked::<f64, R>(
+            client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new_1d(1),
+            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
+            ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
+            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
+            ArrayArg::from_raw_parts(exps_l_h, exps_l.len()),
+            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
+            ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()),
+            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
+            ArrayArg::from_raw_parts(coeff_l_h, coeff_l.len()),
+            ArrayArg::from_raw_parts(g_h, 3 * g_size),
+            ArrayArg::from_raw_parts(buf_h, buf_size),
+            ArrayArg::from_raw_parts(out_h.clone(), out_len),
+            ri[0],
+            ri[1],
+            ri[2],
+            rj[0],
+            rj[1],
+            rj[2],
+            rk[0],
+            rk[1],
+            rk[2],
+            rl[0],
+            rl[1],
+            rl[2],
+            common_factor,
+            li,
+            lj,
+            lk,
+            ll,
+            nprim_i,
+            nprim_j,
+            nprim_k,
+            nprim_l,
+            1u32,
+            1u32,
+            1u32,
+            1u32,
+        );
+    }
 
     let raw = client.read_one_unchecked(out_h);
     f64::from_bytes(&raw)[0..out_len].to_vec()

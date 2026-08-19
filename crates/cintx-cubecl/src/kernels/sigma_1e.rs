@@ -124,7 +124,7 @@ fn ov_hrr_axis<F: Float>(g: &mut Array<F>, base: u32, rirj: F, dj: u32, li_max: 
 //  group `grp` (0..rank), block `b` (0..4) at base + (grp*N_GC + b)*block_len.
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn sigma_ov_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -507,39 +507,42 @@ fn run_sigma_ov_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($fam:expr) => {
-            sigma_ov_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0],
-                ri[1],
-                ri[2],
-                rj[0],
-                rj[1],
-                rj[2],
-                SQRTPI,
-                std::f64::consts::PI,
-                li,
-                lj,
-                nprim_i,
-                nprim_j,
-                nctr_i,
-                nctr_j,
-                $fam,
-            )
+            unsafe {
+                sigma_ov_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
+                    SQRTPI,
+                    std::f64::consts::PI,
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    $fam,
+                );
+            }
         };
     }
 

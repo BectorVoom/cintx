@@ -167,7 +167,7 @@ fn nuc_x1i_of_j<F: Float>(g: &Array<F>, idx0: u32, dj: u32, aj2: F, jexp: u32, o
 //  lj_ext = lj+1 (composed +1/+1 headroom). Origins parameterized.
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn sigma_nuc_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -410,7 +410,7 @@ fn sigma_nuc_kernel<F: Float + CubeElement>(
 //  Headroom identical to sigma_nuc_kernel (nmax = li+lj+2, lj_ext = lj+1).
 // ═════════════════════════════════════════════════════════════════════════════
 
-#[cube(launch)]
+#[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn sigma_nuc_gauge_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
@@ -706,37 +706,39 @@ fn run_sigma_nuc_gauge_device<R: Runtime>(
     let coords_h = client.create_from_slice(f64::as_bytes(coords_src));
     let charges_h = client.create_from_slice(f64::as_bytes(charges_src));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    // Scratch + output buffers: allocate directly on device via client.empty.
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
+    // SAFETY: Input and scratch buffer lengths match exact dimensions.
+    // In-kernel loops strictly bound indices to valid array ranges.
     macro_rules! launch_with {
         ($nr:expr) => {
-            sigma_nuc_gauge_kernel::launch::<f64, R>(
-                client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()) },
-                unsafe { ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()) },
-                unsafe { ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()) },
-                unsafe { ArrayArg::from_raw_parts(g_h.clone(), total_g) },
-                unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
-                unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0], ri[1], ri[2], rj[0], rj[1], rj[2],
-                PIE4,
-                std::f64::consts::PI,
-                gauge[0], gauge[1], gauge[2],
-                li, lj, nprim_i, nprim_j, nctr_i, nctr_j, norig,
-                $nr,
-            )
+            unsafe {
+                sigma_nuc_gauge_kernel::launch_unchecked::<f64, R>(
+                    client,
+                    CubeCount::Static(1, 1, 1),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
+                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
+                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
+                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
+                    ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()),
+                    ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
+                    ArrayArg::from_raw_parts(u_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(w_h.clone(), nroots_u),
+                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
+                    ri[0], ri[1], ri[2], rj[0], rj[1], rj[2],
+                    PIE4,
+                    std::f64::consts::PI,
+                    gauge[0], gauge[1], gauge[2],
+                    li, lj, nprim_i, nprim_j, nctr_i, nctr_j, norig,
+                    $nr,
+                );
+            }
         };
     }
 
