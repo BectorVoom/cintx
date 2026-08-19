@@ -315,6 +315,19 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                     }
                 }
 
+                let mut prim_coeff = F::new(0.0);
+                let mut ci = 0u32;
+                while ci < nctr_i {
+                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                    let mut ck = 0u32;
+                    while ck < nctr_k {
+                        let coeff_k_val = coeff_k[(pk * nctr_k + ck) as usize];
+                        prim_coeff += coeff_i_val * coeff_k_val;
+                        ck += 1u32;
+                    }
+                    ci += 1u32;
+                }
+
                 // ── Contract over Rys roots and Cartesian triples ─────
                 // Output: i fastest (innermost), k slowest (outermost):
                 // cart_out[ci_idx + ck_idx*nci]
@@ -352,17 +365,7 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                                     val += vx * vy * vz;
                                 }
 
-                                let mut ci = 0u32;
-                                while ci < nctr_i {
-                                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
-                                    let mut ck = 0u32;
-                                    while ck < nctr_k {
-                                        let coeff_k_val = coeff_k[(pk * nctr_k + ck) as usize];
-                                        cart_out[(ci_idx + ck_idx * nci) as usize] += val * coeff_i_val * coeff_k_val;
-                                        ck += 1u32;
-                                    }
-                                    ci += 1u32;
-                                }
+                                cart_out[(ci_idx + ck_idx * nci) as usize] += val * prim_coeff;
 
                                 ci_idx += 1u32;
                                 ib += 1u32;

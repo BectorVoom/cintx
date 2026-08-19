@@ -314,13 +314,15 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                 //          ovlp/kin (store in `g`-derived reads) and for nuclear we
                 //          recompute the root accumulation inside the contraction.
 
+                let is_uncontracted_1e = (nctr_i == 1u32) && (nctr_j == 1u32);
+                let prim_weight_1e = if is_uncontracted_1e {
+                    coeff_i[pi as usize] * coeff_j[pj as usize]
+                } else {
+                    F::new(0.0)
+                };
+
                 if comptime!(op_kind == 0u32) {
                     // ===== OVERLAP G-tensor (fixed-center VRR + HRR) =====
-                    let mut gi = 0u32;
-                    while gi < total_g {
-                        g[gi as usize] = F::new(0.0);
-                        gi += 1u32;
-                    }
                     // Base case: gx[0]=1, gy[0]=1, gz[0]=fac*SQRTPI*PI/(zeta*sqrt(zeta))
                     g[gx as usize] = F::new(1.0);
                     g[gy as usize] = F::new(1.0);
@@ -339,11 +341,6 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                     }
                 } else if comptime!(op_kind == 1u32) {
                     // ===== KINETIC: overlap G-tensor with lj+2 HRR levels =====
-                    let mut gi = 0u32;
-                    while gi < total_g {
-                        g[gi as usize] = F::new(0.0);
-                        gi += 1u32;
-                    }
                     g[gx as usize] = F::new(1.0);
                     g[gy as usize] = F::new(1.0);
                     g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
@@ -411,18 +408,23 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                                 + vx0 * vy0 * g3z);
                                     }
 
-                                    let mut ci = 0u32;
-                                    while ci < nctr_i {
-                                        let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
-                                        let mut cj = 0u32;
-                                        while cj < nctr_j {
-                                            let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
-                                            let base = (ci * nctr_j + cj) * block_len;
-                                            cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
-                                                coeff_i_val * coeff_j_val * val;
-                                            cj += 1u32;
+                                    if is_uncontracted_1e {
+                                        cart_out[(cj_idx * nci + ci_idx) as usize] +=
+                                            prim_weight_1e * val;
+                                    } else {
+                                        let mut ci = 0u32;
+                                        while ci < nctr_i {
+                                            let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                                            let mut cj = 0u32;
+                                            while cj < nctr_j {
+                                                let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                                                let base = (ci * nctr_j + cj) * block_len;
+                                                cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
+                                                    coeff_i_val * coeff_j_val * val;
+                                                cj += 1u32;
+                                            }
+                                            ci += 1u32;
                                         }
-                                        ci += 1u32;
                                     }
 
                                     ci_idx += 1u32;

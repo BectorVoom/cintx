@@ -263,13 +263,6 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                         let aijk1 = F::new(0.5) / aijk;
 
                         // ── Fill the G-tensor ─────────────────────────────────
-                        // Zero the whole g buffer.
-                        let mut gi = 0u32;
-                        while gi < total_g {
-                            g[gi as usize] = F::new(0.0);
-                            gi += 1u32;
-                        }
-
                         // Base case: gx[0]=1, gy[0]=1, gz[0]=fac.
                         g[0u32 as usize] = F::new(1.0);
                         g[g_alloc as usize] = F::new(1.0);

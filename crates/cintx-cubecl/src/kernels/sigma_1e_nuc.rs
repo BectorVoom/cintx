@@ -864,13 +864,10 @@ fn run_sigma_nuc_device<R: Runtime>(
     let coords_h = client.create_from_slice(f64::as_bytes(coords_src));
     let charges_h = client.create_from_slice(f64::as_bytes(charges_src));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
     macro_rules! launch_with {
         ($nr:expr, $ur:expr) => {

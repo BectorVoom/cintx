@@ -362,11 +362,9 @@ fn run_sigma_p_device<R: Runtime>(
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
     // Scratch + output buffers.
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let g1_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let g1_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
     macro_rules! launch_with {
         ($rank:expr) => {
@@ -846,10 +844,8 @@ fn run_sigma_p_cg_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
     sigma_p_cg_sa10sp_kernel::launch::<f64, R>(
         client,
@@ -1666,10 +1662,8 @@ fn run_sigma_p_spgsp_device<R: Runtime>(
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
 
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
     sigma_p_spgsp_kernel::launch::<f64, R>(
         client,
@@ -2616,13 +2610,10 @@ fn run_sa01_rys_device<R: Runtime>(
     let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
     macro_rules! launch_with {
         ($nr:expr) => {
@@ -3404,13 +3395,10 @@ fn run_spgnucsp_rys_device<R: Runtime>(
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
     let oc_h = client.create_from_slice(f64::as_bytes(origin_coords));
     let och_h = client.create_from_slice(f64::as_bytes(origin_charges));
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
     macro_rules! launch_with {
         ($nr:expr) => {
@@ -4247,13 +4235,10 @@ fn run_spgsa01_rys_device<R: Runtime>(
     let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
-    let g_zero = vec![0.0_f64; total_g];
-    let g_h = client.create_from_slice(f64::as_bytes(&g_zero));
-    let rys_zero = vec![0.0_f64; nroots_u];
-    let u_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let w_h = client.create_from_slice(f64::as_bytes(&rys_zero));
-    let out_zero = vec![0.0_f64; out_len];
-    let out_h = client.create_from_slice(f64::as_bytes(&out_zero));
+    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
+    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
     macro_rules! launch_with {
         ($nr:expr) => {

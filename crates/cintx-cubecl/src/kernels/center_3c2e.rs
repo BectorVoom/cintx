@@ -499,12 +499,6 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                     }
 
                     // ── Fill the 2D G-tensor (fill_g_tensor_3c2e) ──────────────
-                    let mut gi = 0u32;
-                    while gi < total_g {
-                        g[gi as usize] = F::new(0.0);
-                        gi += 1u32;
-                    }
-
                     #[unroll]
                     for irys in 0..nroots {
                         let u2 = a0 * urys[irys as usize];
@@ -601,12 +595,6 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                     }
 
                     // ── split_ij_hrr: recover (i,j) channels via j-HRR ─────────
-                    let mut gsi = 0u32;
-                    while gsi < total_split {
-                        g_split[gsi as usize] = F::new(0.0);
-                        gsi += 1u32;
-                    }
-
                     #[unroll]
                     for axis2 in 0..3u32 {
                         let axis_in_off = axis2 * g_size;
@@ -669,7 +657,8 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                     let gy_off = split_size;
                     let gz_off = 2u32 * split_size;
 
-                    // Contraction coefficients (canonical nctr handling: one block).
+                    // Contraction coefficients: sum over contraction columns.
+                    let mut prim_coeff = F::new(0.0);
                     let mut cci = 0u32;
                     while cci < nctr_i {
                         let coeff_i_val = coeff_i[(ip * nctr_i + cci) as usize];
@@ -679,91 +668,90 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                             let mut cck = 0u32;
                             while cck < nctr_k {
                                 let coeff_k_val = coeff_k[(kp * nctr_k + cck) as usize];
-                                let weight = coeff_i_val * coeff_j_val * coeff_k_val;
-
-                                // k cart triples (descending nested-while), k slowest.
-                                let mut k_idx = 0u32;
-                                let mut ka = 0u32;
-                                while ka <= lk {
-                                    let kx = lk - ka;
-                                    let lk_minus_kx = lk - kx;
-                                    let mut kb = 0u32;
-                                    while kb <= lk_minus_kx {
-                                        let ky = lk_minus_kx - kb;
-                                        let kz = lk - kx - ky;
-
-                                        // j cart triples.
-                                        let mut j_idx = 0u32;
-                                        let mut ja = 0u32;
-                                        while ja <= lj {
-                                            let jx = lj - ja;
-                                            let lj_minus_jx = lj - jx;
-                                            let mut jb = 0u32;
-                                            while jb <= lj_minus_jx {
-                                                let jy = lj_minus_jx - jb;
-                                                let jz = lj - jx - jy;
-
-                                                // i cart triples (i fastest).
-                                                let mut i_idx = 0u32;
-                                                let mut ia = 0u32;
-                                                while ia <= li {
-                                                    let ix = li - ia;
-                                                    let li_minus_ix = li - ix;
-                                                    let mut ib = 0u32;
-                                                    while ib <= li_minus_ix {
-                                                        let iy = li_minus_ix - ib;
-                                                        let iz = li - ix - iy;
-
-                                                        let mut val = F::new(0.0);
-                                                        #[unroll]
-                                                        for root2 in 0..nroots {
-                                                            let idx_x = ((root2 * nk + kx) * nj
-                                                                + jx)
-                                                                * ni
-                                                                + ix;
-                                                            let idx_y = ((root2 * nk + ky) * nj
-                                                                + jy)
-                                                                * ni
-                                                                + iy;
-                                                            let idx_z = ((root2 * nk + kz) * nj
-                                                                + jz)
-                                                                * ni
-                                                                + iz;
-                                                            val += g_split
-                                                                [(gx_off + idx_x) as usize]
-                                                                * g_split
-                                                                    [(gy_off + idx_y) as usize]
-                                                                * g_split
-                                                                    [(gz_off + idx_z) as usize];
-                                                        }
-                                                        let out_idx =
-                                                            (k_idx * ncj + j_idx) * nci + i_idx;
-                                                        cart_out[out_idx as usize] +=
-                                                            weight * val;
-
-                                                        i_idx += 1u32;
-                                                        ib += 1u32;
-                                                    }
-                                                    ia += 1u32;
-                                                }
-
-                                                j_idx += 1u32;
-                                                jb += 1u32;
-                                            }
-                                            ja += 1u32;
-                                        }
-
-                                        k_idx += 1u32;
-                                        kb += 1u32;
-                                    }
-                                    ka += 1u32;
-                                }
-
+                                prim_coeff += coeff_i_val * coeff_j_val * coeff_k_val;
                                 cck += 1u32;
                             }
                             ccj += 1u32;
                         }
                         cci += 1u32;
+                    }
+
+                    // k cart triples (descending nested-while), k slowest.
+                    let mut k_idx = 0u32;
+                    let mut ka = 0u32;
+                    while ka <= lk {
+                        let kx = lk - ka;
+                        let lk_minus_kx = lk - kx;
+                        let mut kb = 0u32;
+                        while kb <= lk_minus_kx {
+                            let ky = lk_minus_kx - kb;
+                            let kz = lk - kx - ky;
+
+                            // j cart triples.
+                            let mut j_idx = 0u32;
+                            let mut ja = 0u32;
+                            while ja <= lj {
+                                let jx = lj - ja;
+                                let lj_minus_jx = lj - jx;
+                                let mut jb = 0u32;
+                                while jb <= lj_minus_jx {
+                                    let jy = lj_minus_jx - jb;
+                                    let jz = lj - jx - jy;
+
+                                    // i cart triples (i fastest).
+                                    let mut i_idx = 0u32;
+                                    let mut ia = 0u32;
+                                    while ia <= li {
+                                        let ix = li - ia;
+                                        let li_minus_ix = li - ix;
+                                        let mut ib = 0u32;
+                                        while ib <= li_minus_ix {
+                                            let iy = li_minus_ix - ib;
+                                            let iz = li - ix - iy;
+
+                                            let mut val = F::new(0.0);
+                                            #[unroll]
+                                            for root2 in 0..nroots {
+                                                let idx_x = ((root2 * nk + kx) * nj
+                                                    + jx)
+                                                    * ni
+                                                    + ix;
+                                                let idx_y = ((root2 * nk + ky) * nj
+                                                    + jy)
+                                                    * ni
+                                                    + iy;
+                                                let idx_z = ((root2 * nk + kz) * nj
+                                                    + jz)
+                                                    * ni
+                                                    + iz;
+                                                val += g_split
+                                                    [(gx_off + idx_x) as usize]
+                                                    * g_split
+                                                        [(gy_off + idx_y) as usize]
+                                                    * g_split
+                                                        [(gz_off + idx_z) as usize];
+                                            }
+                                            let out_idx =
+                                                (k_idx * ncj + j_idx) * nci + i_idx;
+                                            cart_out[out_idx as usize] +=
+                                                prim_coeff * val;
+
+                                            i_idx += 1u32;
+                                            ib += 1u32;
+                                        }
+                                        ia += 1u32;
+                                    }
+
+                                    j_idx += 1u32;
+                                    jb += 1u32;
+                                }
+                                ja += 1u32;
+                            }
+
+                            k_idx += 1u32;
+                            kb += 1u32;
+                        }
+                        ka += 1u32;
                     }
 
                     ip += 1u32;
