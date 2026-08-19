@@ -1,4 +1,4 @@
-use crate::boys::{rys_root1_simd, rys_root2_simd};
+use crate::boys::rys_roots_simd;
 use crate::kernels::one_electron::{cart_comps, common_fac_sp, ncart, SQRTPI};
 use crate::kernels::recurrence::vrr_2e_2d_axis;
 use crate::vector::SimdFloat;
@@ -148,9 +148,9 @@ impl SimdCenter3c2eKernel {
 
                     g.fill(V::splat(V::Scalar::default()));
 
-                    if nroots == 1 {
-                        let (u0, w0) = rys_root1_simd(x_rys);
-                        let u2 = a0 * u0;
+                    let (u_vec, w_vec) = rys_roots_simd(nroots, x_rys);
+                    for irys in 0..nroots {
+                        let u2 = a0 * u_vec[irys];
                         let tmp4 = V::from_f64(0.5) / (u2 * (aij + akl) + a1);
                         let tmp5 = u2 * tmp4;
                         let b00 = tmp5;
@@ -166,52 +166,19 @@ impl SimdCenter3c2eKernel {
                         let c0py = tmp3 * dy_pk;
                         let c0pz = tmp3 * dz_pk;
 
-                        g[gx] = V::from_f64(1.0);
-                        g[gy] = V::from_f64(1.0);
-                        g[gz] = w0 * fac1;
+                        g[gx + irys] = V::from_f64(1.0);
+                        g[gy + irys] = V::from_f64(1.0);
+                        g[gz + irys] = w_vec[irys] * fac1;
 
                         vrr_2e_2d_axis(
-                            &mut g, gx, 0, nmax, mmax, dn, dm, c00x, c0px, b10, b01, b00,
+                            &mut g, gx, irys, nmax, mmax, dn, dm, c00x, c0px, b10, b01, b00,
                         );
                         vrr_2e_2d_axis(
-                            &mut g, gy, 0, nmax, mmax, dn, dm, c00y, c0py, b10, b01, b00,
+                            &mut g, gy, irys, nmax, mmax, dn, dm, c00y, c0py, b10, b01, b00,
                         );
                         vrr_2e_2d_axis(
-                            &mut g, gz, 0, nmax, mmax, dn, dm, c00z, c0pz, b10, b01, b00,
+                            &mut g, gz, irys, nmax, mmax, dn, dm, c00z, c0pz, b10, b01, b00,
                         );
-                    } else if nroots == 2 {
-                        let (u, w) = rys_root2_simd(x_rys);
-                        for irys in 0..2 {
-                            let u2 = a0 * u[irys];
-                            let tmp4 = V::from_f64(0.5) / (u2 * (aij + akl) + a1);
-                            let tmp5 = u2 * tmp4;
-                            let b00 = tmp5;
-                            let b10 = tmp5 + tmp4 * akl;
-                            let b01 = tmp5 + tmp4 * aij;
-                            let tmp2 = V::from_f64(2.0) * tmp5 * akl;
-                            let tmp3 = V::from_f64(2.0) * tmp5 * aij;
-
-                            let c00x = rx_ij_x - tmp2 * dx_pk;
-                            let c00y = rx_ij_y - tmp2 * dy_pk;
-                            let c00z = rx_ij_z - tmp2 * dz_pk;
-                            let c0px = tmp3 * dx_pk;
-                            let c0py = tmp3 * dy_pk;
-                            let c0pz = tmp3 * dz_pk;
-
-                            g[gx + irys] = V::from_f64(1.0);
-                            g[gy + irys] = V::from_f64(1.0);
-                            g[gz + irys] = w[irys] * fac1;
-
-                            vrr_2e_2d_axis(
-                                &mut g, gx, irys, nmax, mmax, dn, dm, c00x, c0px, b10, b01, b00,
-                            );
-                            vrr_2e_2d_axis(
-                                &mut g, gy, irys, nmax, mmax, dn, dm, c00y, c0py, b10, b01, b00,
-                            );
-                            vrr_2e_2d_axis(
-                                &mut g, gz, irys, nmax, mmax, dn, dm, c00z, c0pz, b10, b01, b00,
-                            );
-                        }
                     }
 
                     // HRR Transfer on bra j (j <- i)

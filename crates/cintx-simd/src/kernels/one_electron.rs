@@ -1,4 +1,4 @@
-use crate::boys::{rys_root1_simd, rys_root2_simd};
+use crate::boys::rys_roots_simd;
 use crate::kernels::recurrence::{hrr_1e_axis, kin_d2_axis, vrr_1e_axis, vrr_nuc_axis};
 use crate::vector::SimdFloat;
 use std::f64::consts::PI;
@@ -401,9 +401,11 @@ impl SimdOneElectronKernel {
 
                     let fac1 = V::from_f64(2.0) * pi_const * (V::from_f64(0.0) - z_c) * fac / zeta;
 
-                    // Evaluate Rys quadrature roots (1 or 2 roots supported in SIMD kernel)
-                    if nroots == 1 {
-                        let (u_n, w_n) = rys_root1_simd(x_boys);
+                    // Evaluate Rys quadrature roots (up to 12 roots supported)
+                    let (u_vec, w_vec) = rys_roots_simd(nroots, x_boys);
+                    for irys in 0..nroots {
+                        let u_n = u_vec[irys];
+                        let w_n = w_vec[irys];
                         let tau = u_n / (V::from_f64(1.0) + u_n);
                         let rt = aij2 * (V::from_f64(1.0) - tau);
 
@@ -455,65 +457,6 @@ impl SimdOneElectronKernel {
                                     }
                                 }
                                 cj_idx += 1;
-                            }
-                        }
-                    } else if nroots == 2 {
-                        let ([u0, u1], [w0, w1]) = rys_root2_simd(x_boys);
-                        let roots_w = [(u0, w0), (u1, w1)];
-
-                        for (u_n, w_n) in roots_w {
-                            let tau = u_n / (V::from_f64(1.0) + u_n);
-                            let rt = aij2 * (V::from_f64(1.0) - tau);
-
-                            let c00x = (px - V::from_f64(input.ri[0])) + tau * crijx;
-                            let c00y = (py - V::from_f64(input.ri[1])) + tau * crijy;
-                            let c00z = (pz - V::from_f64(input.ri[2])) + tau * crijz;
-
-                            g.fill(V::splat(V::Scalar::default()));
-                            g[gx] = V::from_f64(1.0);
-                            g[gy] = V::from_f64(1.0);
-                            g[gz] = fac1 * w_n;
-
-                            vrr_nuc_axis(&mut g, gx, c00x, rt, nmax);
-                            vrr_nuc_axis(&mut g, gy, c00y, rt, nmax);
-                            vrr_nuc_axis(&mut g, gz, c00z, rt, nmax);
-
-                            if lj >= 1 {
-                                hrr_1e_axis(&mut g, gx, rirjx, dj, nmax, lj);
-                                hrr_1e_axis(&mut g, gy, rirjy, dj, nmax, lj);
-                                hrr_1e_axis(&mut g, gz, rirjz, dj, nmax, lj);
-                            }
-
-                            let mut cj_idx = 0;
-                            for ja in 0..=lj {
-                                let jx = lj - ja;
-                                let lj_minus_jx = lj - jx;
-                                for jb in 0..=lj_minus_jx {
-                                    let jy = lj_minus_jx - jb;
-                                    let jz = lj - jx - jy;
-
-                                    let mut ci_idx = 0;
-                                    for ia in 0..=li {
-                                        let ix = li - ia;
-                                        let li_minus_ix = li - ix;
-                                        for ib in 0..=li_minus_ix {
-                                            let iy = li_minus_ix - ib;
-                                            let iz = li - ix - iy;
-
-                                            let vx = g[gx + jx * dj + ix];
-                                            let vy = g[gy + jy * dj + iy];
-                                            let vz = g[gz + jz * dj + iz];
-                                            let val = vx * vy * vz;
-
-                                            let term = (weight * val).reduce_add();
-                                            let term_f64: f64 = term.into();
-                                            out[cj_idx * nci + ci_idx] += term_f64 * norm_fac;
-
-                                            ci_idx += 1;
-                                        }
-                                    }
-                                    cj_idx += 1;
-                                }
                             }
                         }
                     }

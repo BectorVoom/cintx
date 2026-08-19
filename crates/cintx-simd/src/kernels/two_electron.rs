@@ -1,4 +1,4 @@
-use crate::boys::{rys_root1_simd, rys_root2_simd};
+use crate::boys::rys_roots_simd;
 use crate::kernels::one_electron::{cart_comps, common_fac_sp, ncart, SQRTPI};
 use crate::vector::SimdFloat;
 use std::f64::consts::PI;
@@ -264,13 +264,13 @@ impl SimdTwoElectronKernel {
                         let gy_off = shape.g_size;
                         let gz_off = 2 * shape.g_size;
 
-                        if nroots == 1 {
-                            let (u0, w0) = rys_root1_simd(x_rys);
-                            g[0] = V::from_f64(1.0);
-                            g[gy_off] = V::from_f64(1.0);
-                            g[gz_off] = w0 * fac1;
+                        let (u_vec, w_vec) = rys_roots_simd(nroots, x_rys);
+                        for irys in 0..nroots {
+                            g[irys] = V::from_f64(1.0);
+                            g[gy_off + irys] = V::from_f64(1.0);
+                            g[gz_off + irys] = w_vec[irys] * fac1;
 
-                            let u2 = a0 * u0;
+                            let u2 = a0 * u_vec[irys];
                             let tmp4 = V::from_f64(0.5) / (u2 * (aij + akl) + a1);
                             let tmp5 = u2 * tmp4;
                             let tmp1 = V::from_f64(2.0) * tmp5;
@@ -294,7 +294,7 @@ impl SimdTwoElectronKernel {
 
                             vrr_fill_axis_simd(
                                 gx,
-                                0,
+                                irys,
                                 shape.nmax,
                                 shape.mmax,
                                 shape.g2d_ijmax,
@@ -307,7 +307,7 @@ impl SimdTwoElectronKernel {
                             );
                             vrr_fill_axis_simd(
                                 gy,
-                                0,
+                                irys,
                                 shape.nmax,
                                 shape.mmax,
                                 shape.g2d_ijmax,
@@ -320,7 +320,7 @@ impl SimdTwoElectronKernel {
                             );
                             vrr_fill_axis_simd(
                                 gz,
-                                0,
+                                irys,
                                 shape.nmax,
                                 shape.mmax,
                                 shape.g2d_ijmax,
@@ -331,75 +331,6 @@ impl SimdTwoElectronKernel {
                                 b01,
                                 b00,
                             );
-                        } else if nroots == 2 {
-                            let (u, w) = rys_root2_simd(x_rys);
-                            for irys in 0..2 {
-                                g[irys] = V::from_f64(1.0);
-                                g[gy_off + irys] = V::from_f64(1.0);
-                                g[gz_off + irys] = w[irys] * fac1;
-
-                                let u2 = a0 * u[irys];
-                                let tmp4 = V::from_f64(0.5) / (u2 * (aij + akl) + a1);
-                                let tmp5 = u2 * tmp4;
-                                let tmp1 = V::from_f64(2.0) * tmp5;
-                                let tmp2 = tmp1 * akl;
-                                let tmp3 = tmp1 * aij;
-
-                                let b00 = tmp5;
-                                let b10 = tmp5 + tmp4 * akl;
-                                let b01 = tmp5 + tmp4 * aij;
-
-                                let c00x = rijrx_x - tmp2 * dx_pq;
-                                let c00y = rijrx_y - tmp2 * dy_pq;
-                                let c00z = rijrx_z - tmp2 * dz_pq;
-
-                                let c0px = rklrx_x + tmp3 * dx_pq;
-                                let c0py = rklrx_y + tmp3 * dy_pq;
-                                let c0pz = rklrx_z + tmp3 * dz_pq;
-
-                                let (gx, rest) = g.split_at_mut(shape.g_size);
-                                let (gy, gz) = rest.split_at_mut(shape.g_size);
-
-                                vrr_fill_axis_simd(
-                                    gx,
-                                    irys,
-                                    shape.nmax,
-                                    shape.mmax,
-                                    shape.g2d_ijmax,
-                                    shape.g2d_klmax,
-                                    c00x,
-                                    c0px,
-                                    b10,
-                                    b01,
-                                    b00,
-                                );
-                                vrr_fill_axis_simd(
-                                    gy,
-                                    irys,
-                                    shape.nmax,
-                                    shape.mmax,
-                                    shape.g2d_ijmax,
-                                    shape.g2d_klmax,
-                                    c00y,
-                                    c0py,
-                                    b10,
-                                    b01,
-                                    b00,
-                                );
-                                vrr_fill_axis_simd(
-                                    gz,
-                                    irys,
-                                    shape.nmax,
-                                    shape.mmax,
-                                    shape.g2d_ijmax,
-                                    shape.g2d_klmax,
-                                    c00z,
-                                    c0pz,
-                                    b10,
-                                    b01,
-                                    b00,
-                                );
-                            }
                         }
 
                         // HRR Transfer in-place

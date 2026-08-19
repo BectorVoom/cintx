@@ -287,79 +287,254 @@ fn test_int3c2e_ip1_spinor_adversarial_parity() {
     );
 }
 
+fn relayout_2c2e_grad_to_blocked(
+    out_buf: &[f64],
+    li: u8,
+    lk: u8,
+    n_ctr_i: usize,
+    n_ctr_k: usize,
+) -> Vec<f64> {
+    let nci = cintx_cubecl::transform::c2s::ncart(li);
+    let nck = cintx_cubecl::transform::c2s::ncart(lk);
+    let block_len = nci * nck;
+    let ncomp = 3usize;
+    let ni_full = n_ctr_i * nci;
+    let nk_full = n_ctr_k * nck;
+    let total_len = ncomp * block_len;
+
+    let mut blocked = vec![0.0_f64; n_ctr_i * n_ctr_k * total_len];
+    for ci in 0..n_ctr_i {
+        for ck in 0..n_ctr_k {
+            let dst_base = (ci * n_ctr_k + ck) * total_len;
+            for comp in 0..ncomp {
+                let comp_base = comp * ni_full * nk_full;
+                for k in 0..nck {
+                    let k_global = ck * nck + k;
+                    for i in 0..nci {
+                        let i_global = ci * nci + i;
+                        let src = comp_base + k_global * ni_full + i_global;
+                        let dst = dst_base + comp * block_len + k * nci + i;
+                        blocked[dst] = out_buf[src];
+                    }
+                }
+            }
+        }
+    }
+    blocked
+}
+
+fn relayout_3c1e_grad_to_blocked(
+    out_buf: &[f64],
+    li: u8,
+    lj: u8,
+    lk: u8,
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+) -> Vec<f64> {
+    let nci = cintx_cubecl::transform::c2s::ncart(li);
+    let ncj = cintx_cubecl::transform::c2s::ncart(lj);
+    let nck = cintx_cubecl::transform::c2s::ncart(lk);
+    let kblock = nck * ncj * nci;
+    let ncomp = 3usize;
+    let ni_full = n_ctr_i * nci;
+    let nj_full = n_ctr_j * ncj;
+    let comp_stride = ni_full * nj_full * nck;
+
+    let mut blocked = vec![0.0_f64; n_ctr_i * n_ctr_j * ncomp * kblock];
+    for ci in 0..n_ctr_i {
+        for cj in 0..n_ctr_j {
+            let dst_base = (ci * n_ctr_j + cj) * ncomp * kblock;
+            for comp in 0..ncomp {
+                let comp_base = comp * comp_stride;
+                for k in 0..nck {
+                    for j in 0..ncj {
+                        let j_global = cj * ncj + j;
+                        for i in 0..nci {
+                            let i_global = ci * nci + i;
+                            let src = comp_base + (k * nj_full + j_global) * ni_full + i_global;
+                            let dst = dst_base + comp * kblock + (k * ncj + j) * nci + i;
+                            blocked[dst] = out_buf[src];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    blocked
+}
+
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
-#[ignore = "DEFERRED (phase 27, 2026-05-31 user decision: pause & re-plan): libcint 6.1.3 \
-ships int2c2e_ip1/ip2_spinor as unimplemented stubs (autocode/int3c2e.c:384,462 — \
-`return 0`, all-zero output), so there is NO vendor byte-identity reference. cintx \
-produces correct nonzero output. Re-plan will replace this vendor compare with a \
-finite-difference reference (FD of cintx scalar int2c2e_spinor). oracle_covered stays false."]
 fn test_int2c2e_ip1_spinor_adversarial_parity() {
     use cintx_oracle::vendor_ffi;
-    let (atm, bas, env) = build_adversarial_spinor_fixture();
+    use cintx_compat::raw::{ATM_SLOTS, KAPPA_OF};
 
-    let vendor = collect_vendor_2c(vendor_ffi::vendor_int2c2e_ip1_spinor, 3, &atm, &bas, &env);
+    let (atm, bas, env) = build_adversarial_spinor_fixture();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let shls = [SI as i32, SJ as i32];
+
+    let li = bas[SI * BAS_SLOTS + ANG_OF] as u8;
+    let kappa_i = bas[SI * BAS_SLOTS + KAPPA_OF] as i16;
+    let nctr_i = bas[SI * BAS_SLOTS + NCTR_OF] as usize;
+
+    let lj = bas[SJ * BAS_SLOTS + ANG_OF] as u8;
+    let kappa_j = bas[SJ * BAS_SLOTS + KAPPA_OF] as i16;
+    let nctr_j = bas[SJ * BAS_SLOTS + NCTR_OF] as usize;
+
+    let nci = cintx_cubecl::transform::c2s::ncart(li);
+    let ncj = cintx_cubecl::transform::c2s::ncart(lj);
+
+    let mut vendor_cart = vec![0.0f64; 3 * nci * nctr_i * ncj * nctr_j];
+    vendor_ffi::vendor_int2c2e_ip1_cart(&mut vendor_cart, &shls, &atm, natm, &bas, nbas, &env);
+
+    let blocked = relayout_2c2e_grad_to_blocked(&vendor_cart, li, lj, nctr_i, nctr_j);
+
+    let ni_sp = shell_nsp_full(&bas, SI);
+    let nj_sp = shell_nsp_full(&bas, SJ);
+    let mut vendor_spinor_ref = vec![0.0f64; 3 * ni_sp * nj_sp * 2];
+
+    cintx_cubecl::transform::c2spinor::cart_to_spinor_sf_derivative_2d(
+        &mut vendor_spinor_ref,
+        &blocked,
+        3,
+        li,
+        kappa_i,
+        lj,
+        kappa_j,
+        nctr_i,
+        nctr_j,
+    ).unwrap();
+
     let cintx = collect_cintx_2c(RawApiId::INT2C2E_IP1_SPINOR, 3, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int2c2e_ip1_spinor cintx");
-    assert_any_nonzero(&vendor, "int2c2e_ip1_spinor vendor");
+    assert_any_nonzero(&vendor_spinor_ref, "int2c2e_ip1_spinor vendor ref");
     assert_eq!(
-        count_mismatches(&vendor, &cintx, ATOL, RTOL),
+        count_mismatches(&vendor_spinor_ref, &cintx, ATOL, RTOL),
         0,
-        "int2c2e_ip1_spinor adversarial parity vs vendored libcint"
+        "int2c2e_ip1_spinor adversarial parity vs vendored libcint cart + CG spinor transform"
     );
 }
 
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
-#[ignore = "DEFERRED (phase 27, 2026-05-31 user decision: pause & re-plan): libcint 6.1.3's \
-CINT3c1e_spinor_drv is an unimplemented stub that `exit(1)`s (cint3c1e.c:450) — calling \
-vendor_int3c1e_ip1_spinor ABORTS the whole test harness. cintx output is correct; the shared \
-wrapper/transpose math is vendor-validated via int3c2e_ip1. Re-plan will use an FD reference. \
-oracle_covered stays false. DO NOT run with --include-ignored against a vendor build."]
 fn test_int3c1e_ip1_spinor_adversarial_parity() {
     use cintx_oracle::vendor_ffi;
-    // D-02 arity-3 family. The int3c1e launchers are host-side (center_3c1e.rs);
-    // Plan 04 wires the spinor fold. RED until then.
-    let (atm, bas, env) = build_adversarial_spinor_fixture();
+    use cintx_compat::raw::{ATM_SLOTS, KAPPA_OF};
 
-    let vendor = collect_vendor_3c(vendor_ffi::vendor_int3c1e_ip1_spinor, 3, &atm, &bas, &env);
+    let (atm, bas, env) = build_adversarial_spinor_fixture();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let shls = [SI as i32, SJ as i32, SK as i32];
+
+    let li = bas[SI * BAS_SLOTS + ANG_OF] as u8;
+    let kappa_i = bas[SI * BAS_SLOTS + KAPPA_OF] as i16;
+    let nctr_i = bas[SI * BAS_SLOTS + NCTR_OF] as usize;
+
+    let lj = bas[SJ * BAS_SLOTS + ANG_OF] as u8;
+    let kappa_j = bas[SJ * BAS_SLOTS + KAPPA_OF] as i16;
+    let nctr_j = bas[SJ * BAS_SLOTS + NCTR_OF] as usize;
+
+    let lk = bas[SK * BAS_SLOTS + ANG_OF] as u8;
+
+    let nci = cintx_cubecl::transform::c2s::ncart(li);
+    let ncj = cintx_cubecl::transform::c2s::ncart(lj);
+    let nck = cintx_cubecl::transform::c2s::ncart(lk);
+
+    let mut vendor_cart = vec![0.0f64; 3 * nci * nctr_i * ncj * nctr_j * nck];
+    vendor_ffi::vendor_int3c1e_ip1_cart(&mut vendor_cart, &shls, &atm, natm, &bas, nbas, &env);
+
+    let blocked = relayout_3c1e_grad_to_blocked(&vendor_cart, li, lj, lk, nctr_i, nctr_j);
+
+    let ni_sp = shell_nsp_full(&bas, SI);
+    let nj_sp = shell_nsp_full(&bas, SJ);
+    let nk_sph = shell_nsph_full(&bas, SK);
+    let mut vendor_spinor_ref = vec![0.0f64; 3 * ni_sp * nj_sp * nk_sph * 2];
+
+    cintx_cubecl::transform::c2spinor::cart_to_spinor_sf_derivative_3c1e(
+        &mut vendor_spinor_ref,
+        &blocked,
+        3,
+        li,
+        kappa_i,
+        lj,
+        kappa_j,
+        lk,
+        nctr_i,
+        nctr_j,
+    ).unwrap();
+
     let cintx = collect_cintx_3c(RawApiId::INT3C1E_IP1_SPINOR, 3, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int3c1e_ip1_spinor cintx");
-    assert_any_nonzero(&vendor, "int3c1e_ip1_spinor vendor");
+    assert_any_nonzero(&vendor_spinor_ref, "int3c1e_ip1_spinor vendor ref");
     assert_eq!(
-        count_mismatches(&vendor, &cintx, ATOL, RTOL),
+        count_mismatches(&vendor_spinor_ref, &cintx, ATOL, RTOL),
         0,
-        "int3c1e_ip1_spinor (D-02 arity-3) adversarial parity vs vendored libcint"
+        "int3c1e_ip1_spinor (D-02 arity-3) adversarial parity vs vendored libcint cart + CG spinor transform"
     );
 }
 
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
-#[ignore = "DEFERRED (phase 27, 2026-05-31 user decision: pause & re-plan): same upstream gap as \
-test_int3c1e_ip1_spinor_adversarial_parity — CINT3c1e_spinor_drv `exit(1)`s (cint3c1e.c:450), \
-ABORTING the harness. cintx output correct; re-plan will use an FD reference; oracle_covered stays \
-false. DO NOT run with --include-ignored against a vendor build."]
 fn test_int3c1e_iprinv_spinor_adversarial_parity() {
     use cintx_oracle::vendor_ffi;
-    // D-02 arity-3 family, Rys-driven. MUST use a NON-ZERO rinv origin — the
-    // fixture sets env[PTR_RINV_ORIG..+3] non-zero so the rinv-center path is
-    // actually exercised, NOT a zero-origin shortcut (T-27-04).
-    let (atm, bas, env) = build_adversarial_spinor_fixture();
+    use cintx_compat::raw::{ATM_SLOTS, KAPPA_OF};
 
-    let vendor = collect_vendor_3c(vendor_ffi::vendor_int3c1e_iprinv_spinor, 3, &atm, &bas, &env);
+    let (atm, bas, env) = build_adversarial_spinor_fixture();
+    let natm = (atm.len() / ATM_SLOTS) as i32;
+    let nbas = (bas.len() / BAS_SLOTS) as i32;
+    let shls = [SI as i32, SJ as i32, SK as i32];
+
+    let li = bas[SI * BAS_SLOTS + ANG_OF] as u8;
+    let kappa_i = bas[SI * BAS_SLOTS + KAPPA_OF] as i16;
+    let nctr_i = bas[SI * BAS_SLOTS + NCTR_OF] as usize;
+
+    let lj = bas[SJ * BAS_SLOTS + ANG_OF] as u8;
+    let kappa_j = bas[SJ * BAS_SLOTS + KAPPA_OF] as i16;
+    let nctr_j = bas[SJ * BAS_SLOTS + NCTR_OF] as usize;
+
+    let lk = bas[SK * BAS_SLOTS + ANG_OF] as u8;
+
+    let nci = cintx_cubecl::transform::c2s::ncart(li);
+    let ncj = cintx_cubecl::transform::c2s::ncart(lj);
+    let nck = cintx_cubecl::transform::c2s::ncart(lk);
+
+    let mut vendor_cart = vec![0.0f64; 3 * nci * nctr_i * ncj * nctr_j * nck];
+    vendor_ffi::vendor_int3c1e_iprinv_cart(&mut vendor_cart, &shls, &atm, natm, &bas, nbas, &env);
+
+    let blocked = relayout_3c1e_grad_to_blocked(&vendor_cart, li, lj, lk, nctr_i, nctr_j);
+
+    let ni_sp = shell_nsp_full(&bas, SI);
+    let nj_sp = shell_nsp_full(&bas, SJ);
+    let nk_sph = shell_nsph_full(&bas, SK);
+    let mut vendor_spinor_ref = vec![0.0f64; 3 * ni_sp * nj_sp * nk_sph * 2];
+
+    cintx_cubecl::transform::c2spinor::cart_to_spinor_sf_derivative_3c1e(
+        &mut vendor_spinor_ref,
+        &blocked,
+        3,
+        li,
+        kappa_i,
+        lj,
+        kappa_j,
+        lk,
+        nctr_i,
+        nctr_j,
+    ).unwrap();
+
     let cintx = collect_cintx_3c(RawApiId::INT3C1E_IPRINV_SPINOR, 3, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int3c1e_iprinv_spinor cintx");
-    assert_any_nonzero(&vendor, "int3c1e_iprinv_spinor vendor");
+    assert_any_nonzero(&vendor_spinor_ref, "int3c1e_iprinv_spinor vendor ref");
     assert_eq!(
-        count_mismatches(&vendor, &cintx, ATOL, RTOL),
+        count_mismatches(&vendor_spinor_ref, &cintx, ATOL, RTOL),
         0,
-        "int3c1e_iprinv_spinor (D-02 arity-3, nonzero rinv) adversarial parity vs vendored libcint"
+        "int3c1e_iprinv_spinor (D-02 arity-3, nonzero rinv) adversarial parity vs vendored libcint cart + CG spinor transform"
     );
 }
 

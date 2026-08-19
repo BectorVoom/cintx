@@ -454,6 +454,7 @@ dependencies = [
  "approx",
  "bytemuck",
  "cintx-core",
+ "cintx-cubecl",
  "rmath",
  "smallvec",
  "thiserror",

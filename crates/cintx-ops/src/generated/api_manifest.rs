@@ -548,6 +548,24 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         representation: RepresentationSupport::new(false, true, false),
     },
     ManifestEntry {
+        family_name: "3c1e",
+        operator_name: "overlap",
+        symbol_name: "int3c1e_spinor",
+        category: "3c1e",
+        arity: 3,
+        forms: &["spinor"],
+        component_rank: "1",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "unknown",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: false,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "3c1e",
+        representation: RepresentationSupport::new(false, false, true),
+    },
+    ManifestEntry {
         family_name: "helper",
         operator_name: "CINTlen_cart",
         symbol_name: "CINTlen_cart",
@@ -8368,5 +8386,9 @@ pub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &[
     OperatorDescriptor {
         id: OperatorId::new(379),
         entry: &MANIFEST_ENTRIES[379],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(380),
+        entry: &MANIFEST_ENTRIES[380],
     },
 ];

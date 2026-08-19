@@ -1117,9 +1117,10 @@ pub struct ArtifactWriteResult {
 }
 
 #[derive(Clone, Debug)]
-struct LockSymbolMetadata {
-    profiles: BTreeSet<String>,
-    stability: String,
+pub(crate) struct LockSymbolMetadata {
+    pub(crate) profiles: BTreeSet<String>,
+    pub(crate) stability: String,
+    pub(crate) oracle_covered: bool,
 }
 
 pub fn write_pretty_json_artifact(
@@ -1321,7 +1322,7 @@ fn ensure_profile_approved(profile: &str) -> Result<()> {
     )
 }
 
-fn manifest_lock_symbol_metadata() -> Result<BTreeMap<String, LockSymbolMetadata>> {
+pub(crate) fn manifest_lock_symbol_metadata() -> Result<BTreeMap<String, LockSymbolMetadata>> {
     let root: Value = serde_json::from_str(COMPILED_MANIFEST_LOCK_JSON)
         .context("parse compiled manifest lock")?;
     let entries = root
@@ -1377,11 +1378,16 @@ fn manifest_lock_symbol_metadata() -> Result<BTreeMap<String, LockSymbolMetadata
             .and_then(Value::as_str)
             .unwrap_or("stable")
             .to_owned();
+        let oracle_covered = entry
+            .get("oracle_covered")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
         symbols.insert(
             symbol.to_owned(),
             LockSymbolMetadata {
                 profiles,
                 stability,
+                oracle_covered,
             },
         );
     }
@@ -1421,7 +1427,9 @@ fn phase4_operator_entries(
                 entry.symbol_name
             );
         };
-        if !lock_entry.profiles.contains(profile) {
+        let profile_matches = lock_entry.profiles.contains(profile)
+            || (include_unstable_source && lock_entry.stability == "unstable_source");
+        if !profile_matches {
             continue;
         }
         if !stability_is_included(&lock_entry.stability, include_unstable_source) {
@@ -1457,7 +1465,10 @@ pub fn manifest_lock_symbols_for_profile(
     let metadata = manifest_lock_symbol_metadata()?;
     Ok(metadata
         .into_iter()
-        .filter(|(_, value)| value.profiles.contains(profile))
+        .filter(|(_, value)| {
+            value.profiles.contains(profile)
+                || (include_unstable_source && value.stability == "unstable_source")
+        })
         .filter(|(_, value)| stability_is_included(&value.stability, include_unstable_source))
         .map(|(symbol, _)| symbol)
         .collect())
@@ -1496,7 +1507,8 @@ pub fn build_profile_representation_matrix(
             dims,
             component_count: oracle_component_count(entry)
                 .with_context(|| format!("component_count for `{}`", entry.symbol_name))?,
-            complex_interleaved: matches!(representation, Representation::Spinor),
+            complex_interleaved: matches!(representation, Representation::Spinor)
+                || entry.complex_output,
         });
     }
     fixtures.sort_by(|a, b| a.symbol.cmp(&b.symbol));

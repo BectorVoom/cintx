@@ -43,7 +43,6 @@
 //!         libcint-master/src/g2e.c (CINTg0_2e, CINTg0_2e_2d).
 
 use crate::backend::ResolvedBackend;
-#[cfg(test)]
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::kernels::f12::{Nabla1Center, gout_ipip1, gout_ipn};
@@ -96,7 +95,6 @@ fn common_fac_sp(l: u8) -> f64 {
 ///
 /// Host reference (the device kernel reproduces this ordering inline). Kept for
 /// the host-vs-device cross-check and the G-tensor unit tests.
-#[cfg(test)]
 fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
     let mut comps = Vec::new();
     let l = l as i32;
@@ -482,7 +480,6 @@ fn run_2c2e_device<R: Runtime>(
 /// Returns flat `[gx | gy | gz]` each of size `g_size = nrys * (li+1) * (lk+1)`.
 ///
 /// Source: libcint-master/src/g2e.c `CINTg0_2e` + `CINTg0_2e_2d`.
-#[cfg(test)]
 fn fill_g_tensor_2c2e(
     ai: f64,
     ak: f64,
@@ -1014,11 +1011,11 @@ fn launch_center_2c2e_typed<F: CintFloat>(
     }
 
     let nroots = (li as usize + lk as usize) / 2 + 1;
-    if nroots > MAX_DEVICE_NROOTS {
+    if nroots > 12 {
         return Err(cintxRsError::ChunkPlanFailed {
             from: "cubecl_center_2c2e",
             detail: format!(
-                "device 2c2e kernel supports nroots<={MAX_DEVICE_NROOTS} (l_i+l_k<=8); \
+                "2c2e kernel supports nroots<=12; \
                  got nroots={nroots} for l_i={li}, l_k={lk}"
             ),
         });
@@ -1045,38 +1042,82 @@ fn launch_center_2c2e_typed<F: CintFloat>(
     let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
     let coeff_k: Vec<f64> = shell_k.coefficients[..n_prim_k * n_ctr_k].to_vec();
 
-    // Dispatch onto the resolved backend's device client (compute in f64).
-    let cart_buf: Vec<f64> = match backend {
-        #[cfg(feature = "cpu")]
-        ResolvedBackend::Cpu(client) => run_2c2e_device::<cubecl::cpu::CpuRuntime>(
-            client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-            n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
-            &coeff_k,
-        ),
-        #[cfg(feature = "wgpu")]
-        ResolvedBackend::Wgpu(client, _) => run_2c2e_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-            n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
-            &coeff_k,
-        ),
-        #[cfg(feature = "cuda")]
-        ResolvedBackend::Cuda(client) => run_2c2e_device::<cubecl_cuda::CudaRuntime>(
-            client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-            n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
-            &coeff_k,
-        ),
-        #[cfg(feature = "rocm")]
-        ResolvedBackend::Rocm(client) => run_2c2e_device::<cubecl_hip::HipRuntime>(
-            client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-            n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
-            &coeff_k,
-        ),
-        #[cfg(feature = "metal")]
-        ResolvedBackend::Metal(client, _) => run_2c2e_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-            n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
-            &coeff_k,
-        ),
+    // Dispatch onto device client (if nroots <= MAX_DEVICE_NROOTS) or host loop (if nroots > MAX_DEVICE_NROOTS).
+    let cart_buf: Vec<f64> = if nroots > MAX_DEVICE_NROOTS {
+        let nci = ncart(li);
+        let nck = ncart(lk);
+        let block_len = nci * nck;
+        let mut cart_accum = vec![0.0f64; n_ctr_i * n_ctr_k * block_len];
+        for pi in 0..n_prim_i {
+            let ai = exps_i[pi];
+            for pk in 0..n_prim_k {
+                let ak = exps_k[pk];
+                let g = fill_g_tensor_2c2e(ai, ak, &ri, &rk, li, lk, common_factor);
+                let dn = nroots;
+                let dm = nroots * (li as usize + 1);
+                let g_size = nroots * (li as usize + 1) * (lk as usize + 1);
+                let ci_comps = cart_comps(li);
+                let ck_comps = cart_comps(lk);
+                let mut prim_buf = vec![0.0f64; block_len];
+                for (ck_idx, &(kx, ky, kz)) in ck_comps.iter().enumerate() {
+                    for (ci_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
+                        let mut val = 0.0f64;
+                        for irys in 0..nroots {
+                            let vx = g[kx as usize * dm + ix as usize * dn + irys];
+                            let vy = g[g_size + ky as usize * dm + iy as usize * dn + irys];
+                            let vz = g[2 * g_size + kz as usize * dm + iz as usize * dn + irys];
+                            val += vx * vy * vz;
+                        }
+                        prim_buf[ci_idx + ck_idx * nci] = val;
+                    }
+                }
+                for ci in 0..n_ctr_i {
+                    let ci_coeff = coeff_i[ci * n_prim_i + pi];
+                    for ck in 0..n_ctr_k {
+                        let ck_coeff = coeff_k[ck * n_prim_k + pk];
+                        let pair_weight = ci_coeff * ck_coeff;
+                        let block_offset = (ci * n_ctr_k + ck) * block_len;
+                        for idx in 0..block_len {
+                            cart_accum[block_offset + idx] += pair_weight * prim_buf[idx];
+                        }
+                    }
+                }
+            }
+        }
+        cart_accum
+    } else {
+        match backend {
+            #[cfg(feature = "cpu")]
+            ResolvedBackend::Cpu(client) => run_2c2e_device::<cubecl::cpu::CpuRuntime>(
+                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
+                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                &coeff_k,
+            ),
+            #[cfg(feature = "wgpu")]
+            ResolvedBackend::Wgpu(client, _) => run_2c2e_device::<cubecl_wgpu::WgpuRuntime>(
+                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
+                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                &coeff_k,
+            ),
+            #[cfg(feature = "cuda")]
+            ResolvedBackend::Cuda(client) => run_2c2e_device::<cubecl_cuda::CudaRuntime>(
+                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
+                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                &coeff_k,
+            ),
+            #[cfg(feature = "rocm")]
+            ResolvedBackend::Rocm(client) => run_2c2e_device::<cubecl_hip::HipRuntime>(
+                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
+                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                &coeff_k,
+            ),
+            #[cfg(feature = "metal")]
+            ResolvedBackend::Metal(client, _) => run_2c2e_device::<cubecl_wgpu::WgpuRuntime>(
+                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
+                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                &coeff_k,
+            ),
+        }
     };
 
     // Representation dispatch: intermediate transforms use f64 temp buffers;

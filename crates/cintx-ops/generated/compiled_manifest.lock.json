@@ -623,6 +623,39 @@
       "stability": "stable"
     },
     {
+      "arity": 3,
+      "canonical_family": "3c1e",
+      "category": "3c1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "1",
+      "declared_in": "unknown",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "3c1e",
+        "operator": "overlap",
+        "representation": "spinor",
+        "symbol": "int3c1e_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
       "arity": 0,
       "canonical_family": "helper",
       "category": "helper",

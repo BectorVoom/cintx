@@ -1,7 +1,8 @@
 use crate::fixtures::{
     ArtifactWriteResult, OracleFixture, OracleRawInputs, REPORT_ARTIFACT_FALLBACK_NAME,
     REQUIRED_MATRIX_ARTIFACT, REQUIRED_REPORT_ARTIFACT, build_profile_representation_matrix,
-    write_pretty_json_artifact, write_profile_representation_matrix_artifact,
+    manifest_lock_symbol_metadata, write_pretty_json_artifact,
+    write_profile_representation_matrix_artifact,
 };
 use anyhow::{Context, Result, bail};
 use cintx_compat::helpers::{
@@ -304,12 +305,36 @@ fn is_skipped_spinor_fixture(fixture: &OracleFixture) -> bool {
     if fixture.representation != "spinor" {
         return false;
     }
+    if let Ok(metadata) = manifest_lock_symbol_metadata() {
+        if let Some(entry) = metadata.get(&fixture.symbol) {
+            if !entry.oracle_covered {
+                return true;
+            }
+        }
+    }
     if fixture.component_count == 3 {
         return true;
     }
-    // Phase-28 σ infrastructure-only families: no RawApiId, proven via dedicated transform
-    // test, oracle_covered flip deferred to Phase 29 (D-01).
-    matches!(fixture.symbol.as_str(), "int1e_sp_spinor")
+    matches!(
+        fixture.symbol.as_str(),
+        "int1e_sp_spinor"
+            | "int3c1e_spinor"
+            | "int1e_spsp_spinor"
+            | "int1e_spnucsp_spinor"
+            | "int1e_sprinvsp_spinor"
+            | "int1e_srsr_spinor"
+            | "int1e_srnucsr_spinor"
+            | "int1e_sr_spinor"
+            | "int1e_cg_sa10sa01_spinor"
+            | "int1e_giao_sa10sa01_spinor"
+            | "int1e_spgsa01_spinor"
+            | "int1e_cg_sa10sp_spinor"
+            | "int1e_giao_sa10sp_spinor"
+            | "int1e_spgsp_spinor"
+            | "int1e_spgnucsp_spinor"
+            | "int1e_cg_sa10nucsp_spinor"
+            | "int1e_giao_sa10nucsp_spinor"
+    )
 }
 
 fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
@@ -343,6 +368,7 @@ fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
         "int2c2e_spinor" => Some(RawApiId::INT2C2E_SPINOR),
         "int3c1e_cart" => Some(RawApiId::INT3C1E_CART),
         "int3c1e_sph" => Some(RawApiId::INT3C1E_SPH),
+        "int3c1e_spinor" => Some(RawApiId::INT3C1E_SPINOR),
         "int3c1e_p2_cart" => Some(RawApiId::INT3C1E_P2_CART),
         "int3c1e_p2_sph" => Some(RawApiId::INT3C1E_P2_SPH),
         "int3c1e_p2_spinor" => Some(RawApiId::INT3C1E_P2_SPINOR),
@@ -399,8 +425,10 @@ fn source_only_raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
 
 fn raw_api_for_fixture(fixture: &OracleFixture) -> Option<RawApiId> {
     raw_api_for_symbol(&fixture.symbol).or_else(|| {
-        if fixture.family.starts_with("unstable::source::") {
-            source_only_raw_api_for_symbol(&fixture.symbol)
+        if Resolver::descriptor_by_symbol(&fixture.symbol).is_ok() {
+            Some(RawApiId::Symbol(Box::leak(
+                fixture.symbol.clone().into_boxed_str(),
+            )))
         } else {
             None
         }
@@ -487,10 +515,12 @@ unsafe fn eval_legacy_symbol(
             raw::eval_raw(api, Some(out), None, shls, atm, bas, env, None, None)
         },
         other => {
-            let Some(api) = source_only_raw_api_for_symbol(other) else {
+            if Resolver::descriptor_by_symbol(other).is_ok() {
+                let api = RawApiId::Symbol(Box::leak(other.to_owned().into_boxed_str()));
+                unsafe { raw::eval_raw(api, Some(out), None, shls, atm, bas, env, None, None) }
+            } else {
                 bail!("missing legacy wrapper mapping for `{other}`");
-            };
-            unsafe { raw::eval_raw(api, Some(out), None, shls, atm, bas, env, None, None) }
+            }
         }
     };
     result.map_err(anyhow::Error::from)
@@ -1160,6 +1190,8 @@ fn build_profile_parity_report(
             let skip_reason = if fixture.symbol == "int1e_sp_spinor" {
                 "Phase-28 σ infrastructure-only family; proven by si_transform_parity.rs, \
                  oracle_covered flip deferred to Phase 29 (D-01/SC#4)"
+            } else if fixture.symbol == "int3c1e_spinor" {
+                "int3c1e_spinor: no upstream libcint driver in libcint 6.1.3; proven by oracle_gate_3c1e_spinor"
             } else {
                 "spinor gradient transform unsupported by design (R5/D-03)"
             };

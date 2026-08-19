@@ -49,7 +49,9 @@ use crate::backend::ResolvedBackend;
 use crate::math::rys::rys_roots_host;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_3c1e, ncart, nsph};
-use crate::transform::c2spinor::cart_to_spinor_sf_derivative_3c1e;
+use crate::transform::c2spinor::{
+    cart_to_spinor_sf_3c2e, cart_to_spinor_sf_derivative_3c1e, spinor_len,
+};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -1447,17 +1449,25 @@ fn launch_center_3c1e_typed<F: CintFloat>(
     let exps_k: Vec<f64> = (0..n_prim_k).map(|kp| shell_k.exponents[kp]).collect();
 
     // WR-03: general-contraction (nctr>1) output is a SINGLE dense interleaved
+    // WR-03: general-contraction (nctr>1) output is a SINGLE dense interleaved
     // block per libcint's c2s_{cart,sph}_3c2e1 — contraction is the MAJOR (outer)
     // index within each axis (i_global = ci*nblk_i + i_idx), NOT a stack of
     // independent blocks. Per-shell block lengths depend on the representation.
-    let is_spheric = matches!(plan.representation, Representation::Spheric);
-    let (nblk_i, nblk_j, nblk_k) =
-        if is_spheric { (nsi, nsj, nsk) } else { (nci, ncj, nck) };
+    let (nblk_i, nblk_j, nblk_k, is_complex) = match plan.representation {
+        Representation::Spheric => (nsi, nsj, nsk, false),
+        Representation::Spinor => {
+            let di = spinor_len(li, shell_i.kappa as i32);
+            let dj = spinor_len(lj, shell_j.kappa as i32);
+            (di, dj, nsk, true)
+        }
+        Representation::Cart => (nci, ncj, nck, false),
+    };
     let ni_full = n_ctr_i * nblk_i;
     let nj_full = n_ctr_j * nblk_j;
     let nk_full = n_ctr_k * nblk_k;
-    let out_total = ni_full * nj_full * nk_full;
-    // Final interleaved Cartesian-or-spherical output (i fastest, k slowest).
+    let multiplier = if is_complex { 2 } else { 1 };
+    let out_total = ni_full * nj_full * nk_full * multiplier;
+    // Final interleaved Cartesian-or-spherical-or-spinor output (i fastest, k slowest).
     let mut out_buf = vec![0.0_f64; out_total];
 
     // Dispatch onto the resolved backend's device client (compute in f64), once
@@ -1514,23 +1524,62 @@ fn launch_center_3c1e_typed<F: CintFloat>(
                 // (ci,cj,ck) column triple, laid out (i fastest, k slowest):
                 //   prim_buf[(k_idx*ncj + j_idx)*nci + i_idx].
                 // Convert to the output representation (cart→sph per block when
-                // spheric), then scatter into the single interleaved global buffer
-                // at the libcint contraction-MAJOR offset. For nctr==1 this writes
-                // the lone block at offset 0 — byte-identical to the old path.
-                let block: Vec<f64> = if is_spheric {
-                    cart_to_sph_3c1e(&prim_buf, li, lj, lk)
-                } else {
-                    prim_buf
-                };
-                for k_idx in 0..nblk_k {
-                    let k_global = ck * nblk_k + k_idx;
-                    for j_idx in 0..nblk_j {
-                        let j_global = cj * nblk_j + j_idx;
-                        let row_base = (k_global * nj_full + j_global) * ni_full;
-                        let src_base = (k_idx * nblk_j + j_idx) * nblk_i;
-                        for i_idx in 0..nblk_i {
-                            let i_global = ci * nblk_i + i_idx;
-                            out_buf[row_base + i_global] = block[src_base + i_idx];
+                // spheric, cart→spinor when spinor), then scatter into the single
+                // interleaved global buffer at the contraction-MAJOR offset.
+                match plan.representation {
+                    Representation::Spheric => {
+                        let block = cart_to_sph_3c1e(&prim_buf, li, lj, lk);
+                        for k_idx in 0..nblk_k {
+                            let k_global = ck * nblk_k + k_idx;
+                            for j_idx in 0..nblk_j {
+                                let j_global = cj * nblk_j + j_idx;
+                                let row_base = (k_global * nj_full + j_global) * ni_full;
+                                let src_base = (k_idx * nblk_j + j_idx) * nblk_i;
+                                for i_idx in 0..nblk_i {
+                                    let i_global = ci * nblk_i + i_idx;
+                                    out_buf[row_base + i_global] = block[src_base + i_idx];
+                                }
+                            }
+                        }
+                    }
+                    Representation::Spinor => {
+                        let mut block = vec![0.0_f64; nblk_i * nblk_j * nblk_k * 2];
+                        cart_to_spinor_sf_3c2e::<f64>(
+                            &mut block,
+                            &prim_buf,
+                            li,
+                            shell_i.kappa,
+                            lj,
+                            shell_j.kappa,
+                            lk,
+                        )?;
+                        for k_idx in 0..nblk_k {
+                            let k_global = ck * nblk_k + k_idx;
+                            for j_idx in 0..nblk_j {
+                                let j_global = cj * nblk_j + j_idx;
+                                let row_base =
+                                    ((k_global * nj_full + j_global) * ni_full + ci * nblk_i) * 2;
+                                let src_base = (k_idx * nblk_j + j_idx) * nblk_i * 2;
+                                for i_idx in 0..nblk_i {
+                                    out_buf[row_base + i_idx * 2] = block[src_base + i_idx * 2];
+                                    out_buf[row_base + i_idx * 2 + 1] =
+                                        block[src_base + i_idx * 2 + 1];
+                                }
+                            }
+                        }
+                    }
+                    Representation::Cart => {
+                        for k_idx in 0..nblk_k {
+                            let k_global = ck * nblk_k + k_idx;
+                            for j_idx in 0..nblk_j {
+                                let j_global = cj * nblk_j + j_idx;
+                                let row_base = (k_global * nj_full + j_global) * ni_full;
+                                let src_base = (k_idx * nblk_j + j_idx) * nblk_i;
+                                for i_idx in 0..nblk_i {
+                                    let i_global = ci * nblk_i + i_idx;
+                                    out_buf[row_base + i_global] = prim_buf[src_base + i_idx];
+                                }
+                            }
                         }
                     }
                 }

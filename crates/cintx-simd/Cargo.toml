@@ -9,6 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 cintx-core = { path = "../cintx-core" }
+cintx-cubecl = { path = "../cintx-cubecl", features = ["cpu"] }
 wide = { version = "1.6", features = ["std"] }
 smallvec = "1"
 bytemuck = { version = "1", features = ["derive"] }

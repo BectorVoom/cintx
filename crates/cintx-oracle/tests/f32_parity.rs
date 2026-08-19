@@ -811,10 +811,9 @@ fn test_f32_int3c2e_sph_parity() {
                 let nk = shell_nao[k];
                 let n_elem = ni * nj * nk;
 
-                // OperatorId 20 = int3c2e_ip1_sph; cintx kernel computes plain 3c2e
-                // (same as arity3 f64 gate — kernel-misnomer disposition from 18-RESEARCH).
+                // OperatorId 23 = int3c2e_sph
                 let f32_out = collect_safe_api_tuple_buffer_f32(
-                    OperatorId::new(20),
+                    OperatorId::new(23),
                     Representation::Spheric,
                     &basis,
                     &[shells[i].clone(), shells[j].clone(), shells[k].clone()],

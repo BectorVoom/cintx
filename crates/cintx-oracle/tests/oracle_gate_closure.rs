@@ -1225,10 +1225,10 @@ fn vendor_ffi_3c1e_spinor_not_implemented() {
 /// suitable reference is identified), the manifest is updated, and the kernel
 /// wiring is added.
 #[test]
-#[ignore = "upstream gap: int3c1e_spinor not implemented in libcint 6.1.3 + missing from manifest + missing kernel Spinor wiring"]
 #[cfg(has_vendor_libcint)]
 fn oracle_gate_3c1e_spinor() {
     use cintx_oracle::vendor_ffi;
+    use cintx_compat::raw::{ANG_OF, KAPPA_OF};
 
     let (atm, bas, env) = build_h2o_sto3g();
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -1238,16 +1238,36 @@ fn oracle_gate_3c1e_spinor() {
     let (si, sj, sk) = (3i32, 4i32, 0i32);
     let shls = [si, sj, sk];
 
+    let li = bas[(si as usize) * BAS_SLOTS + ANG_OF] as u8;
+    let kappa_i = bas[(si as usize) * BAS_SLOTS + KAPPA_OF] as i16;
+    let lj = bas[(sj as usize) * BAS_SLOTS + ANG_OF] as u8;
+    let kappa_j = bas[(sj as usize) * BAS_SLOTS + KAPPA_OF] as i16;
+    let lk = bas[(sk as usize) * BAS_SLOTS + ANG_OF] as u8;
+
     let ni_sp = vendor_ffi::vendor_CINTcgto_spinor(si, &bas) as usize;
     let nj_sp = vendor_ffi::vendor_CINTcgto_spinor(sj, &bas) as usize;
-    let nk_sp = vendor_ffi::vendor_CINTcgto_spinor(sk, &bas) as usize;
-    let nelems = ni_sp * nj_sp * nk_sp * 2;
+    let nk_sph = vendor_ffi::vendor_CINTcgto_spheric(sk, &bas) as usize;
+    let nelems = ni_sp * nj_sp * nk_sph * 2;
 
-    let mut vendor_out = vec![0.0f64; nelems];
-    vendor_ffi::vendor_int3c1e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+    let nci = cintx_cubecl::transform::c2s::ncart(li);
+    let ncj = cintx_cubecl::transform::c2s::ncart(lj);
+    let nck = cintx_cubecl::transform::c2s::ncart(lk);
+    let mut vendor_cart = vec![0.0f64; nci * ncj * nck];
+    vendor_ffi::vendor_int3c1e_cart(&mut vendor_cart, &shls, &atm, natm, &bas, nbas, &env);
+
+    let mut vendor_spinor_ref = vec![0.0f64; nelems];
+    cintx_cubecl::transform::c2spinor::cart_to_spinor_sf_3c2e(
+        &mut vendor_spinor_ref,
+        &vendor_cart,
+        li,
+        kappa_i,
+        lj,
+        kappa_j,
+        lk,
+    )
+    .unwrap();
 
     let mut cintx_out = vec![0.0f64; nelems];
-    // TODO: INT3C1E_SPINOR requires manifest entry — resolver will fail without it.
     let eval_result = unsafe {
         eval_raw(
             RawApiId::INT3C1E_SPINOR,
@@ -1266,7 +1286,7 @@ fn oracle_gate_3c1e_spinor() {
         panic!("eval_raw INT3C1E_SPINOR failed for shells ({si},{sj},{sk}): {e:?}")
     });
 
-    let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
+    let mc = count_mismatches_atol(&vendor_spinor_ref, &cintx_out, ATOL_SPINOR);
     let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
 
     assert!(

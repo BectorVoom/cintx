@@ -484,3 +484,40 @@ pub fn rys_root2_simd<V: SimdFloat>(x: V) -> ([V; 2], [V; 2]) {
         ],
     )
 }
+
+/// Vectorized n-root Rys roots & weights for SIMD vectors `V` up to nroots=12.
+#[inline]
+pub fn rys_roots_simd<V: SimdFloat>(nroots: usize, x: V) -> (Vec<V>, Vec<V>) {
+    if nroots == 1 {
+        let (u, w) = rys_root1_simd(x);
+        return (vec![u], vec![w]);
+    } else if nroots == 2 {
+        let ([u0, u1], [w0, w1]) = rys_root2_simd(x);
+        return (vec![u0, u1], vec![w0, w1]);
+    }
+
+    let mut arr = [0.0; 8];
+    x.store_to_f64_slice(&mut arr[..V::LANES]);
+
+    let mut u_res = vec![V::splat(V::Scalar::default()); nroots];
+    let mut w_res = vec![V::splat(V::Scalar::default()); nroots];
+
+    let mut r_lanes = vec![[0.0f64; 8]; nroots];
+    let mut w_lanes = vec![[0.0f64; 8]; nroots];
+
+    for i in 0..V::LANES {
+        let (r, w) = cintx_cubecl::math::rys::rys_roots_host(nroots, arr[i]);
+        for k in 0..nroots {
+            r_lanes[k][i] = r[k];
+            w_lanes[k][i] = w[k];
+        }
+    }
+
+    for k in 0..nroots {
+        u_res[k] = V::from_f64_slice(&r_lanes[k][..V::LANES], 0.0);
+        w_res[k] = V::from_f64_slice(&w_lanes[k][..V::LANES], 0.0);
+    }
+
+    (u_res, w_res)
+}
+

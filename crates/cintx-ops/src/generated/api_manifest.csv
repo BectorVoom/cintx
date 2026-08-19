@@ -29,6 +29,7 @@ family_name,operator_name,symbol_name,category,arity,forms,component_rank,comple
 "1e","ecp","int1e_ecp_sph","1e",2,"sph","",false,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","ecp"
 "1e","ecp_ipnuc","int1e_ecp_ipnuc_cart","1e",2,"cart","3",false,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","ecp"
 "1e","ecp_ipnuc","int1e_ecp_ipnuc_sph","1e",2,"sph","3",false,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"operator","ecp"
+"3c1e","overlap","int3c1e_spinor","3c1e",3,"spinor","1",true,"none","stable","unknown","base|with-f12|with-4c1e|with-f12+with-4c1e",false,"operator","3c1e"
 "helper","CINTlen_cart","CINTlen_cart","helper",0,"cart|helper","scalar",false,"none","stable","include/cint.h.in","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"helper","helper"
 "helper","CINTlen_spinor","CINTlen_spinor","helper",0,"spinor|helper","scalar",false,"none","stable","include/cint.h.in","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"helper","helper"
 "helper","CINTcgtos_cart","CINTcgtos_cart","helper",0,"cart|helper","scalar",false,"none","stable","include/cint.h.in","base|with-f12|with-4c1e|with-f12+with-4c1e",true,"helper","helper"

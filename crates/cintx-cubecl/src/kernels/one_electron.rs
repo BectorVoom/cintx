@@ -12,11 +12,8 @@
 //! 5. Apply cart-to-sph transform if representation is Spheric.
 
 use crate::backend::ResolvedBackend;
-#[cfg(test)]
 use crate::math::obara_saika::{hrr_step_host, vrr_step_host};
-#[cfg(test)]
 use crate::math::pdata::compute_pdata_host;
-#[cfg(test)]
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
@@ -77,7 +74,6 @@ fn common_fac_sp(l: u8) -> f64 {
 ///
 /// Host helper — the live device kernels enumerate the Cartesian triples inline;
 /// the only remaining callers are the host cross-check / contract references.
-#[cfg(test)]
 fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
     let mut comps = Vec::new();
     let l = l as i32;
@@ -8484,9 +8480,7 @@ fn contract_ipkin(g: &[f64], li: u8, lj: u8, nmax: u32, ai: f64, aj: f64) -> Vec
 /// Uses Rys quadrature with Boys-weighted VRR.
 /// Reference: g1e.c lines 208-320 (CINTg1e_nuc).
 ///
-/// Host f64 reference — used by the device-vs-host cross-check and unit tests
-/// (the live scalar path now computes via [`one_electron_scalar_kernel`]).
-#[cfg(test)]
+/// Host f64 reference — used by the device-vs-host cross-check, unit tests, and host fallback.
 fn contract_nuclear(
     pd: &crate::math::pdata::PairData,
     ri: [f64; 3],
@@ -10990,12 +10984,11 @@ fn launch_one_electron_typed<F: CintFloat>(
         (2u32, (li as u32 + lj as u32) / 2 + 1)
     };
 
-    // Device Rys kernels cover nroots<=5 (li+lj<=8). H2O/STO-3G stays well within.
-    if op_kind == 2 && nroots as usize > MAX_DEVICE_NROOTS {
+    if op_kind == 2 && nroots as usize > 12 {
         return Err(cintxRsError::ChunkPlanFailed {
             from: "cubecl_1e",
             detail: format!(
-                "device 1e nuclear kernel supports nroots<={MAX_DEVICE_NROOTS} (l_i+l_j<=8); \
+                "1e nuclear kernel supports nroots<=12; \
                  got nroots={nroots} for l_i={li}, l_j={lj}"
             ),
         });
@@ -11021,26 +11014,55 @@ fn launch_one_electron_typed<F: CintFloat>(
         (Vec::new(), Vec::new())
     };
 
-    // Dispatch the scalar arm onto the resolved backend's device client (f64).
-    let cart_blocks = run_1e_scalar_on_backend(
-        backend,
-        op_kind,
-        nroots,
-        li as u32,
-        lj as u32,
-        n_prim_i as u32,
-        n_prim_j as u32,
-        n_ctr_i as u32,
-        n_ctr_j as u32,
-        ri,
-        rj,
-        &exps_i,
-        &exps_j,
-        &coeff_i,
-        &coeff_j,
-        &atom_coords,
-        &atom_charges,
-    );
+    // Dispatch the scalar arm onto the resolved backend's device client (f64) or host loop.
+    let cart_blocks = if op_kind == 2 && nroots as usize > MAX_DEVICE_NROOTS {
+        let nci = ncart(li);
+        let ncj = ncart(lj);
+        let block_len = nci * ncj;
+        let mut cart_accum = vec![0.0f64; n_ctr_i * n_ctr_j * block_len];
+        for pi in 0..n_prim_i {
+            let ai = exps_i[pi];
+            for pj in 0..n_prim_j {
+                let aj = exps_j[pj];
+                let pd = crate::math::pdata::compute_pdata_host(
+                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+                );
+                let nuc_prim = contract_nuclear(&pd, ri, rj, li, lj, atoms);
+                for ci in 0..n_ctr_i {
+                    let ci_coeff = coeff_i[ci * n_prim_i + pi];
+                    for cj in 0..n_ctr_j {
+                        let cj_coeff = coeff_j[cj * n_prim_j + pj];
+                        let pair_weight = ci_coeff * cj_coeff;
+                        let block_offset = (ci * n_ctr_j + cj) * block_len;
+                        for idx in 0..block_len {
+                            cart_accum[block_offset + idx] += pair_weight * nuc_prim[idx];
+                        }
+                    }
+                }
+            }
+        }
+        cart_accum
+    } else {
+        run_1e_scalar_on_backend(
+            backend,
+            op_kind,
+            nroots,
+            li as u32,
+            lj as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            ri,
+            rj,
+            &exps_i,
+            &exps_j,
+            &coeff_i,
+            &coeff_j,
+            &atom_coords,
+            &atom_charges,
+        )
+    };
     let mut cart_blocks = cart_blocks;
 
     // Apply the libcint `CINTcommon_fac_sp` normalization scale to the
