@@ -409,6 +409,7 @@ name = "cintx-oracle"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "approx",
  "bindgen",
  "cc",
  "cintx-compat",
@@ -417,8 +418,10 @@ dependencies = [
  "cintx-ops",
  "cintx-rs",
  "cintx-runtime",
+ "cintx-simd",
  "num-complex",
  "serde_json",
+ "wide",
 ]
 
 [[package]]
@@ -442,6 +445,19 @@ dependencies = [
  "cintx-core",
  "cintx-ops",
  "tracing",
+]
+
+[[package]]
+name = "cintx-simd"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "bytemuck",
+ "cintx-core",
+ "rmath",
+ "smallvec",
+ "thiserror",
+ "wide",
 ]
 
 [[package]]
@@ -2942,6 +2958,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmath"
+version = "0.1.0"
+dependencies = [
+ "wide",
+]
+
+[[package]]
 name = "rstsr-cblas-base"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3047,6 +3070,15 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "safe_arch"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42c6efa15875e6ecb39ca61fb0b0c1a40b84fac5a5ffe71eef7d1000c8eb3f5f"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "same-file"
@@ -4080,6 +4112,16 @@ dependencies = [
  "log",
  "raw-window-handle",
  "web-sys",
+]
+
+[[package]]
+name = "wide"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de2aaf408e58689c2096682331b1f42bb2d9f2ed6b11560407d023cd0a6c634e"
+dependencies = [
+ "bytemuck",
+ "safe_arch",
 ]
 
 [[package]]

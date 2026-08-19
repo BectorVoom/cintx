@@ -30,6 +30,9 @@ cintx-runtime = { path = "../cintx-runtime", default-features = false }
 serde_json = "1.0.145"
 
 [dev-dependencies]
+cintx-simd = { path = "../cintx-simd" }
+wide = "1.6"
+approx = "0.5"
 # Phase 25 FND-02: the nroots-sweep parity test exercises the host Rys
 # `rys_roots_host` engine (cintx-cubecl::math::rys) directly against the
 # vendored `CINTrys_roots`. Host-only path; no GPU backend feature needed.

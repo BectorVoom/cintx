@@ -27,3 +27,6 @@ target
 
 # GSD per-agent git worktrees (ephemeral; never commit, never index)
 .claude/worktrees/
+
+# CodeGraph database and logs
+.codegraph/

@@ -1,0 +1,21 @@
+[package]
+name = "cintx-simd"
+version = "0.1.0"
+edition = "2024"
+description = "SIMD-vectorized integral evaluation kernels for cintx using portable SIMD math types."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+cintx-core = { path = "../cintx-core" }
+wide = { version = "1.6", features = ["std"] }
+smallvec = "1"
+bytemuck = { version = "1", features = ["derive"] }
+thiserror = "2"
+rmath = { path = "../../../rmath" }
+
+[dev-dependencies]
+approx = "0.5"
+
+

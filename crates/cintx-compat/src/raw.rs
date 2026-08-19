@@ -153,6 +153,10 @@ impl RawApiId {
     pub const INT3C1E_P2_SPH: Self = Self::Symbol("int3c1e_p2_sph");
     pub const INT3C1E_P2_SPINOR: Self = Self::Symbol("int3c1e_p2_spinor");
 
+    pub const INT3C2E_CART: Self = Self::Symbol("int3c2e_cart");
+    pub const INT3C2E_SPH: Self = Self::Symbol("int3c2e_sph");
+    pub const INT3C2E_SPINOR: Self = Self::Symbol("int3c2e_spinor");
+
     pub const INT3C2E_IP1_CART: Self = Self::Symbol("int3c2e_ip1_cart");
     pub const INT3C2E_IP1_SPH: Self = Self::Symbol("int3c2e_ip1_sph");
     pub const INT3C2E_IP1_SPINOR: Self = Self::Symbol("int3c2e_ip1_spinor");
