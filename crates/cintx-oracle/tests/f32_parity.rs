@@ -41,43 +41,84 @@ fn arc_f64(values: &[f64]) -> Arc<[f64]> {
 }
 
 fn build_h2o_sto3g_safe_basis(rep: Representation) -> (BasisSet, Vec<Arc<Shell>>) {
-    let atom_o  = Atom::try_new(8, [0.0, 0.0, 0.0],        NuclearModel::Point, None, None).unwrap();
-    let atom_h1 = Atom::try_new(1, [0.0, 1.4307, 1.1078],  NuclearModel::Point, None, None).unwrap();
-    let atom_h2 = Atom::try_new(1, [0.0, -1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
+    let atom_o = Atom::try_new(8, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+    let atom_h1 = Atom::try_new(1, [0.0, 1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
+    let atom_h2 =
+        Atom::try_new(1, [0.0, -1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
     let atoms = Arc::from(vec![atom_o, atom_h1, atom_h2].into_boxed_slice());
 
     // STO-3G exponents/coefficients (Hehre, Stewart & Pople, J. Chem. Phys. 51, 2657, 1969).
     // Identical values to safe_api_arity2_parity.rs so vendor f64 reference is the same.
 
-    let shell_o1s = Arc::new(Shell::try_new(
-        0, 0, 3, 1, 0, rep,
-        arc_f64(&[130.7093200, 23.8088610, 6.4436083]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_o1s = Arc::new(
+        Shell::try_new(
+            0,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[130.7093200, 23.8088610, 6.4436083]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
-    let shell_o2s = Arc::new(Shell::try_new(
-        0, 0, 3, 1, 0, rep,
-        arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
-        arc_f64(&[-0.09996723, 0.39951283, 0.70011547]),
-    ).unwrap());
+    let shell_o2s = Arc::new(
+        Shell::try_new(
+            0,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
+            arc_f64(&[-0.09996723, 0.39951283, 0.70011547]),
+        )
+        .unwrap(),
+    );
 
-    let shell_o2p = Arc::new(Shell::try_new(
-        0, 1, 3, 1, 0, rep,
-        arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
-        arc_f64(&[0.15591627, 0.60768372, 0.39195739]),
-    ).unwrap());
+    let shell_o2p = Arc::new(
+        Shell::try_new(
+            0,
+            1,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
+            arc_f64(&[0.15591627, 0.60768372, 0.39195739]),
+        )
+        .unwrap(),
+    );
 
-    let shell_h1_1s = Arc::new(Shell::try_new(
-        1, 0, 3, 1, 0, rep,
-        arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_h1_1s = Arc::new(
+        Shell::try_new(
+            1,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
-    let shell_h2_1s = Arc::new(Shell::try_new(
-        2, 0, 3, 1, 0, rep,
-        arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_h2_1s = Arc::new(
+        Shell::try_new(
+            2,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
     let shells = vec![shell_o1s, shell_o2s, shell_o2p, shell_h1_1s, shell_h2_1s];
     let basis = BasisSet::try_new(atoms, Arc::from(shells.clone().into_boxed_slice())).unwrap();
@@ -128,7 +169,8 @@ fn collect_safe_api_matrix_f32(
             let pair_values = &output.tensor.owned_values;
             for ii in 0..ni {
                 for jj in 0..nj {
-                    matrix[(row_offset + ii) * n_ao + (col_offset + jj)] = pair_values[ii * nj + jj];
+                    matrix[(row_offset + ii) * n_ao + (col_offset + jj)] =
+                        pair_values[ii * nj + jj];
                 }
             }
             col_offset += nj;
@@ -263,9 +305,13 @@ fn count_mismatches_f32(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Number of spherical AOs for angular momentum l: 2l+1.
-fn nsph(l: i32) -> usize { (2 * l + 1) as usize }
+fn nsph(l: i32) -> usize {
+    (2 * l + 1) as usize
+}
 /// Number of Cartesian AOs for angular momentum l: (l+1)(l+2)/2.
-fn ncart(l: i32) -> usize { ((l + 1) * (l + 2) / 2) as usize }
+fn ncart(l: i32) -> usize {
+    ((l + 1) * (l + 2) / 2) as usize
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Vendor f64 reference collectors (f64 only — reference side is FROZEN)
@@ -276,8 +322,8 @@ fn ncart(l: i32) -> usize { ((l + 1) * (l + 2) / 2) as usize }
 // ─────────────────────────────────────────────────────────────────────────────
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF,
-    NUC_MOD_OF, POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA,
 };
 
 fn build_h2o_sto3g_raw() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
@@ -295,18 +341,30 @@ fn build_h2o_sto3g_raw() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let h_1s_coeff = [0.15432897_f64, 0.53532814, 0.44463454];
 
     let mut env = vec![0.0_f64; PTR_ENV_START];
-    let o_coord_ptr = env.len() as i32;   env.extend_from_slice(&o_coord);
-    let h1_coord_ptr = env.len() as i32;  env.extend_from_slice(&h1_coord);
-    let h2_coord_ptr = env.len() as i32;  env.extend_from_slice(&h2_coord);
-    let zeta_ptr = env.len() as i32;      env.push(0.0);
-    let o1s_exp_ptr = env.len() as i32;   env.extend_from_slice(&o_1s_exp);
-    let o1s_coeff_ptr = env.len() as i32; env.extend_from_slice(&o_1s_coeff);
-    let o2s_exp_ptr = env.len() as i32;   env.extend_from_slice(&o_2s_exp);
-    let o2s_coeff_ptr = env.len() as i32; env.extend_from_slice(&o_2s_coeff);
-    let o2p_exp_ptr = env.len() as i32;   env.extend_from_slice(&o_2p_exp);
-    let o2p_coeff_ptr = env.len() as i32; env.extend_from_slice(&o_2p_coeff);
-    let h1s_exp_ptr = env.len() as i32;   env.extend_from_slice(&h_1s_exp);
-    let h1s_coeff_ptr = env.len() as i32; env.extend_from_slice(&h_1s_coeff);
+    let o_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&o_coord);
+    let h1_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&h1_coord);
+    let h2_coord_ptr = env.len() as i32;
+    env.extend_from_slice(&h2_coord);
+    let zeta_ptr = env.len() as i32;
+    env.push(0.0);
+    let o1s_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&o_1s_exp);
+    let o1s_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&o_1s_coeff);
+    let o2s_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&o_2s_exp);
+    let o2s_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&o_2s_coeff);
+    let o2p_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&o_2p_exp);
+    let o2p_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&o_2p_coeff);
+    let h1s_exp_ptr = env.len() as i32;
+    env.extend_from_slice(&h_1s_exp);
+    let h1s_coeff_ptr = env.len() as i32;
+    env.extend_from_slice(&h_1s_coeff);
 
     let mut atm = vec![0_i32; 3 * ATM_SLOTS];
     atm[0 * ATM_SLOTS + CHARGE_OF] = 8;
@@ -323,25 +381,40 @@ fn build_h2o_sto3g_raw() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     atm[2 * ATM_SLOTS + PTR_ZETA] = zeta_ptr;
 
     let mut bas = vec![0_i32; 5 * BAS_SLOTS];
-    bas[0 * BAS_SLOTS + ATOM_OF] = 0; bas[0 * BAS_SLOTS + ANG_OF] = 0;
-    bas[0 * BAS_SLOTS + NPRIM_OF] = 3; bas[0 * BAS_SLOTS + NCTR_OF] = 1;
-    bas[0 * BAS_SLOTS + PTR_EXP] = o1s_exp_ptr; bas[0 * BAS_SLOTS + PTR_COEFF] = o1s_coeff_ptr;
+    bas[0 * BAS_SLOTS + ATOM_OF] = 0;
+    bas[0 * BAS_SLOTS + ANG_OF] = 0;
+    bas[0 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[0 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[0 * BAS_SLOTS + PTR_EXP] = o1s_exp_ptr;
+    bas[0 * BAS_SLOTS + PTR_COEFF] = o1s_coeff_ptr;
 
-    bas[1 * BAS_SLOTS + ATOM_OF] = 0; bas[1 * BAS_SLOTS + ANG_OF] = 0;
-    bas[1 * BAS_SLOTS + NPRIM_OF] = 3; bas[1 * BAS_SLOTS + NCTR_OF] = 1;
-    bas[1 * BAS_SLOTS + PTR_EXP] = o2s_exp_ptr; bas[1 * BAS_SLOTS + PTR_COEFF] = o2s_coeff_ptr;
+    bas[1 * BAS_SLOTS + ATOM_OF] = 0;
+    bas[1 * BAS_SLOTS + ANG_OF] = 0;
+    bas[1 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[1 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[1 * BAS_SLOTS + PTR_EXP] = o2s_exp_ptr;
+    bas[1 * BAS_SLOTS + PTR_COEFF] = o2s_coeff_ptr;
 
-    bas[2 * BAS_SLOTS + ATOM_OF] = 0; bas[2 * BAS_SLOTS + ANG_OF] = 1;
-    bas[2 * BAS_SLOTS + NPRIM_OF] = 3; bas[2 * BAS_SLOTS + NCTR_OF] = 1;
-    bas[2 * BAS_SLOTS + PTR_EXP] = o2p_exp_ptr; bas[2 * BAS_SLOTS + PTR_COEFF] = o2p_coeff_ptr;
+    bas[2 * BAS_SLOTS + ATOM_OF] = 0;
+    bas[2 * BAS_SLOTS + ANG_OF] = 1;
+    bas[2 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[2 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[2 * BAS_SLOTS + PTR_EXP] = o2p_exp_ptr;
+    bas[2 * BAS_SLOTS + PTR_COEFF] = o2p_coeff_ptr;
 
-    bas[3 * BAS_SLOTS + ATOM_OF] = 1; bas[3 * BAS_SLOTS + ANG_OF] = 0;
-    bas[3 * BAS_SLOTS + NPRIM_OF] = 3; bas[3 * BAS_SLOTS + NCTR_OF] = 1;
-    bas[3 * BAS_SLOTS + PTR_EXP] = h1s_exp_ptr; bas[3 * BAS_SLOTS + PTR_COEFF] = h1s_coeff_ptr;
+    bas[3 * BAS_SLOTS + ATOM_OF] = 1;
+    bas[3 * BAS_SLOTS + ANG_OF] = 0;
+    bas[3 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[3 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[3 * BAS_SLOTS + PTR_EXP] = h1s_exp_ptr;
+    bas[3 * BAS_SLOTS + PTR_COEFF] = h1s_coeff_ptr;
 
-    bas[4 * BAS_SLOTS + ATOM_OF] = 2; bas[4 * BAS_SLOTS + ANG_OF] = 0;
-    bas[4 * BAS_SLOTS + NPRIM_OF] = 3; bas[4 * BAS_SLOTS + NCTR_OF] = 1;
-    bas[4 * BAS_SLOTS + PTR_EXP] = h1s_exp_ptr; bas[4 * BAS_SLOTS + PTR_COEFF] = h1s_coeff_ptr;
+    bas[4 * BAS_SLOTS + ATOM_OF] = 2;
+    bas[4 * BAS_SLOTS + ANG_OF] = 0;
+    bas[4 * BAS_SLOTS + NPRIM_OF] = 3;
+    bas[4 * BAS_SLOTS + NCTR_OF] = 1;
+    bas[4 * BAS_SLOTS + PTR_EXP] = h1s_exp_ptr;
+    bas[4 * BAS_SLOTS + PTR_COEFF] = h1s_coeff_ptr;
 
     (atm, bas, env)
 }
@@ -374,9 +447,15 @@ fn collect_1e_sph_matrix_vendor_ref(
             let n_elem = ni * nj;
             let mut out = vec![0.0_f64; n_elem];
             let _ret = match operator {
-                "ovlp" => vendor_ffi::vendor_int1e_ovlp_sph(&mut out, &shls, atm, natm, bas, nbas, env),
-                "kin"  => vendor_ffi::vendor_int1e_kin_sph( &mut out, &shls, atm, natm, bas, nbas, env),
-                "nuc"  => vendor_ffi::vendor_int1e_nuc_sph( &mut out, &shls, atm, natm, bas, nbas, env),
+                "ovlp" => {
+                    vendor_ffi::vendor_int1e_ovlp_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "kin" => {
+                    vendor_ffi::vendor_int1e_kin_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "nuc" => {
+                    vendor_ffi::vendor_int1e_nuc_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
                 _ => panic!("unknown operator: {operator}"),
             };
             // vendor 1e is column-major; convert to row-major
@@ -416,9 +495,15 @@ fn collect_1e_cart_matrix_vendor_ref(
             let n_elem = ni * nj;
             let mut out = vec![0.0_f64; n_elem];
             let _ret = match operator {
-                "ovlp" => vendor_ffi::vendor_int1e_ovlp_cart(&mut out, &shls, atm, natm, bas, nbas, env),
-                "kin"  => vendor_ffi::vendor_int1e_kin_cart( &mut out, &shls, atm, natm, bas, nbas, env),
-                "nuc"  => vendor_ffi::vendor_int1e_nuc_cart( &mut out, &shls, atm, natm, bas, nbas, env),
+                "ovlp" => {
+                    vendor_ffi::vendor_int1e_ovlp_cart(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "kin" => {
+                    vendor_ffi::vendor_int1e_kin_cart(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "nuc" => {
+                    vendor_ffi::vendor_int1e_nuc_cart(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
                 _ => panic!("unknown operator: {operator}"),
             };
             // vendor 1e cart is column-major; convert to row-major
@@ -472,11 +557,7 @@ fn collect_2c2e_sph_matrix_vendor_ref(atm: &[i32], bas: &[i32], env: &[f64]) -> 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Aggregate max relative error across all arity-2 shell pairs.
-fn measure_max_rel_error_arity2(
-    f32_matrix: &[f32],
-    f64_ref: &[f64],
-    zero_threshold: f64,
-) -> f64 {
+fn measure_max_rel_error_arity2(f32_matrix: &[f32], f64_ref: &[f64], zero_threshold: f64) -> f64 {
     assert_eq!(f32_matrix.len(), f64_ref.len());
     let mut max_rel = 0.0_f64;
     for (&r, &o) in f64_ref.iter().zip(f32_matrix.iter()) {
@@ -506,24 +587,32 @@ fn test_f32_int1e_ovlp_sph_parity() {
     let (atm, bas, env) = build_h2o_sto3g_raw();
     let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Spheric);
 
-    let f32_matrix = collect_safe_api_matrix_f32(
-        OperatorId::new(1),
-        Representation::Spheric,
-        &basis,
-        &shells,
-    );
+    let f32_matrix =
+        collect_safe_api_matrix_f32(OperatorId::new(1), Representation::Spheric, &basis, &shells);
     let f64_ref = collect_1e_sph_matrix_vendor_ref("ovlp", &atm, &bas, &env);
     let tol = f32_tolerance_for_family("1e");
 
     // Anti-zero-fill sentinel (Phase 18 convention)
     let nonzero = f32_matrix.iter().filter(|&&v| v.abs() > 1e-18_f32).count();
-    assert!(nonzero > 0, "f32 ovlp_sph: all-zero fill detected — f32 kernel regression?");
+    assert!(
+        nonzero > 0,
+        "f32 ovlp_sph: all-zero fill detected — f32 kernel regression?"
+    );
 
     // Empirical max_rel_error diagnostic
     let max_rel = measure_max_rel_error_arity2(&f32_matrix, &f64_ref, tol.zero_threshold);
-    eprintln!("f32 1e/ovlp_sph: max_rel_error={max_rel:.3e} (floor={:.3e})", tol.rtol);
+    eprintln!(
+        "f32 1e/ovlp_sph: max_rel_error={max_rel:.3e} (floor={:.3e})",
+        tol.rtol
+    );
 
-    let (mismatches, _) = count_mismatches_f32(&f64_ref, &f32_matrix, tol.atol, tol.rtol, tol.zero_threshold);
+    let (mismatches, _) = count_mismatches_f32(
+        &f64_ref,
+        &f32_matrix,
+        tol.atol,
+        tol.rtol,
+        tol.zero_threshold,
+    );
     assert_eq!(
         mismatches, 0,
         "f32 int1e_ovlp_sph: {mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -537,12 +626,8 @@ fn test_f32_int1e_kin_sph_parity() {
     let (atm, bas, env) = build_h2o_sto3g_raw();
     let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Spheric);
 
-    let f32_matrix = collect_safe_api_matrix_f32(
-        OperatorId::new(4),
-        Representation::Spheric,
-        &basis,
-        &shells,
-    );
+    let f32_matrix =
+        collect_safe_api_matrix_f32(OperatorId::new(4), Representation::Spheric, &basis, &shells);
     let f64_ref = collect_1e_sph_matrix_vendor_ref("kin", &atm, &bas, &env);
     let tol = f32_tolerance_for_family("1e");
 
@@ -550,9 +635,18 @@ fn test_f32_int1e_kin_sph_parity() {
     assert!(nonzero > 0, "f32 kin_sph: all-zero fill detected");
 
     let max_rel = measure_max_rel_error_arity2(&f32_matrix, &f64_ref, tol.zero_threshold);
-    eprintln!("f32 1e/kin_sph: max_rel_error={max_rel:.3e} (floor={:.3e})", tol.rtol);
+    eprintln!(
+        "f32 1e/kin_sph: max_rel_error={max_rel:.3e} (floor={:.3e})",
+        tol.rtol
+    );
 
-    let (mismatches, _) = count_mismatches_f32(&f64_ref, &f32_matrix, tol.atol, tol.rtol, tol.zero_threshold);
+    let (mismatches, _) = count_mismatches_f32(
+        &f64_ref,
+        &f32_matrix,
+        tol.atol,
+        tol.rtol,
+        tol.zero_threshold,
+    );
     assert_eq!(
         mismatches, 0,
         "f32 int1e_kin_sph: {mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -566,12 +660,8 @@ fn test_f32_int1e_nuc_sph_parity() {
     let (atm, bas, env) = build_h2o_sto3g_raw();
     let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Spheric);
 
-    let f32_matrix = collect_safe_api_matrix_f32(
-        OperatorId::new(7),
-        Representation::Spheric,
-        &basis,
-        &shells,
-    );
+    let f32_matrix =
+        collect_safe_api_matrix_f32(OperatorId::new(7), Representation::Spheric, &basis, &shells);
     let f64_ref = collect_1e_sph_matrix_vendor_ref("nuc", &atm, &bas, &env);
     let tol = f32_tolerance_for_family("1e");
 
@@ -579,9 +669,18 @@ fn test_f32_int1e_nuc_sph_parity() {
     assert!(nonzero > 0, "f32 nuc_sph: all-zero fill detected");
 
     let max_rel = measure_max_rel_error_arity2(&f32_matrix, &f64_ref, tol.zero_threshold);
-    eprintln!("f32 1e/nuc_sph: max_rel_error={max_rel:.3e} (floor={:.3e})", tol.rtol);
+    eprintln!(
+        "f32 1e/nuc_sph: max_rel_error={max_rel:.3e} (floor={:.3e})",
+        tol.rtol
+    );
 
-    let (mismatches, _) = count_mismatches_f32(&f64_ref, &f32_matrix, tol.atol, tol.rtol, tol.zero_threshold);
+    let (mismatches, _) = count_mismatches_f32(
+        &f64_ref,
+        &f32_matrix,
+        tol.atol,
+        tol.rtol,
+        tol.zero_threshold,
+    );
     assert_eq!(
         mismatches, 0,
         "f32 int1e_nuc_sph: {mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -601,12 +700,8 @@ fn test_f32_int1e_ovlp_cart_parity() {
     let (atm, bas, env) = build_h2o_sto3g_raw();
     let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Cart);
 
-    let f32_matrix = collect_safe_api_matrix_f32(
-        OperatorId::new(0),
-        Representation::Cart,
-        &basis,
-        &shells,
-    );
+    let f32_matrix =
+        collect_safe_api_matrix_f32(OperatorId::new(0), Representation::Cart, &basis, &shells);
     let f64_ref = collect_1e_cart_matrix_vendor_ref("ovlp", &atm, &bas, &env);
     let tol = f32_tolerance_for_family("1e");
 
@@ -614,9 +709,18 @@ fn test_f32_int1e_ovlp_cart_parity() {
     assert!(nonzero > 0, "f32 ovlp_cart: all-zero fill detected");
 
     let max_rel = measure_max_rel_error_arity2(&f32_matrix, &f64_ref, tol.zero_threshold);
-    eprintln!("f32 1e/ovlp_cart: max_rel_error={max_rel:.3e} (floor={:.3e})", tol.rtol);
+    eprintln!(
+        "f32 1e/ovlp_cart: max_rel_error={max_rel:.3e} (floor={:.3e})",
+        tol.rtol
+    );
 
-    let (mismatches, _) = count_mismatches_f32(&f64_ref, &f32_matrix, tol.atol, tol.rtol, tol.zero_threshold);
+    let (mismatches, _) = count_mismatches_f32(
+        &f64_ref,
+        &f32_matrix,
+        tol.atol,
+        tol.rtol,
+        tol.zero_threshold,
+    );
     assert_eq!(
         mismatches, 0,
         "f32 int1e_ovlp_cart: {mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -630,12 +734,8 @@ fn test_f32_int1e_kin_cart_parity() {
     let (atm, bas, env) = build_h2o_sto3g_raw();
     let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Cart);
 
-    let f32_matrix = collect_safe_api_matrix_f32(
-        OperatorId::new(3),
-        Representation::Cart,
-        &basis,
-        &shells,
-    );
+    let f32_matrix =
+        collect_safe_api_matrix_f32(OperatorId::new(3), Representation::Cart, &basis, &shells);
     let f64_ref = collect_1e_cart_matrix_vendor_ref("kin", &atm, &bas, &env);
     let tol = f32_tolerance_for_family("1e");
 
@@ -643,9 +743,18 @@ fn test_f32_int1e_kin_cart_parity() {
     assert!(nonzero > 0, "f32 kin_cart: all-zero fill detected");
 
     let max_rel = measure_max_rel_error_arity2(&f32_matrix, &f64_ref, tol.zero_threshold);
-    eprintln!("f32 1e/kin_cart: max_rel_error={max_rel:.3e} (floor={:.3e})", tol.rtol);
+    eprintln!(
+        "f32 1e/kin_cart: max_rel_error={max_rel:.3e} (floor={:.3e})",
+        tol.rtol
+    );
 
-    let (mismatches, _) = count_mismatches_f32(&f64_ref, &f32_matrix, tol.atol, tol.rtol, tol.zero_threshold);
+    let (mismatches, _) = count_mismatches_f32(
+        &f64_ref,
+        &f32_matrix,
+        tol.atol,
+        tol.rtol,
+        tol.zero_threshold,
+    );
     assert_eq!(
         mismatches, 0,
         "f32 int1e_kin_cart: {mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -659,12 +768,8 @@ fn test_f32_int1e_nuc_cart_parity() {
     let (atm, bas, env) = build_h2o_sto3g_raw();
     let (basis, shells) = build_h2o_sto3g_safe_basis(Representation::Cart);
 
-    let f32_matrix = collect_safe_api_matrix_f32(
-        OperatorId::new(6),
-        Representation::Cart,
-        &basis,
-        &shells,
-    );
+    let f32_matrix =
+        collect_safe_api_matrix_f32(OperatorId::new(6), Representation::Cart, &basis, &shells);
     let f64_ref = collect_1e_cart_matrix_vendor_ref("nuc", &atm, &bas, &env);
     let tol = f32_tolerance_for_family("1e");
 
@@ -672,9 +777,18 @@ fn test_f32_int1e_nuc_cart_parity() {
     assert!(nonzero > 0, "f32 nuc_cart: all-zero fill detected");
 
     let max_rel = measure_max_rel_error_arity2(&f32_matrix, &f64_ref, tol.zero_threshold);
-    eprintln!("f32 1e/nuc_cart: max_rel_error={max_rel:.3e} (floor={:.3e})", tol.rtol);
+    eprintln!(
+        "f32 1e/nuc_cart: max_rel_error={max_rel:.3e} (floor={:.3e})",
+        tol.rtol
+    );
 
-    let (mismatches, _) = count_mismatches_f32(&f64_ref, &f32_matrix, tol.atol, tol.rtol, tol.zero_threshold);
+    let (mismatches, _) = count_mismatches_f32(
+        &f64_ref,
+        &f32_matrix,
+        tol.atol,
+        tol.rtol,
+        tol.zero_threshold,
+    );
     assert_eq!(
         mismatches, 0,
         "f32 int1e_nuc_cart: {mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -707,9 +821,18 @@ fn test_f32_int2c2e_sph_parity() {
     assert!(nonzero > 0, "f32 2c2e_sph: all-zero fill detected");
 
     let max_rel = measure_max_rel_error_arity2(&f32_matrix, &f64_ref, tol.zero_threshold);
-    eprintln!("f32 2c2e/sph: max_rel_error={max_rel:.3e} (floor={:.3e})", tol.rtol);
+    eprintln!(
+        "f32 2c2e/sph: max_rel_error={max_rel:.3e} (floor={:.3e})",
+        tol.rtol
+    );
 
-    let (mismatches, _) = count_mismatches_f32(&f64_ref, &f32_matrix, tol.atol, tol.rtol, tol.zero_threshold);
+    let (mismatches, _) = count_mismatches_f32(
+        &f64_ref,
+        &f32_matrix,
+        tol.atol,
+        tol.rtol,
+        tol.zero_threshold,
+    );
     assert_eq!(
         mismatches, 0,
         "f32 int2c2e_sph: {mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -761,17 +884,33 @@ fn test_f32_int3c1e_sph_parity() {
                 vendor_ffi::vendor_int3c1e_sph(&mut f64_ref, &shls, &atm, natm, &bas, nbas, &env);
 
                 let nonzero = f32_out.iter().filter(|&&v| v.abs() > 1e-18_f32).count();
-                if nonzero > 0 { any_nonzero = true; }
+                if nonzero > 0 {
+                    any_nonzero = true;
+                }
 
-                let (mc, mr) = count_mismatches_f32(&f64_ref, &f32_out, tol.atol, tol.rtol, tol.zero_threshold);
+                let (mc, mr) = count_mismatches_f32(
+                    &f64_ref,
+                    &f32_out,
+                    tol.atol,
+                    tol.rtol,
+                    tol.zero_threshold,
+                );
                 total_mismatches += mc;
-                if mr > max_rel_family { max_rel_family = mr; }
+                if mr > max_rel_family {
+                    max_rel_family = mr;
+                }
             }
         }
     }
 
-    eprintln!("f32 3c1e/sph: max_rel_error={max_rel_family:.3e} (floor={:.3e})", tol.rtol);
-    assert!(any_nonzero, "f32 3c1e_sph: all-zero fill detected across all triples");
+    eprintln!(
+        "f32 3c1e/sph: max_rel_error={max_rel_family:.3e} (floor={:.3e})",
+        tol.rtol
+    );
+    assert!(
+        any_nonzero,
+        "f32 3c1e_sph: all-zero fill detected across all triples"
+    );
     assert_eq!(
         total_mismatches, 0,
         "f32 int3c1e_sph: {total_mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -825,17 +964,33 @@ fn test_f32_int3c2e_sph_parity() {
                 vendor_ffi::vendor_int3c2e_sph(&mut f64_ref, &shls, &atm, natm, &bas, nbas, &env);
 
                 let nonzero = f32_out.iter().filter(|&&v| v.abs() > 1e-18_f32).count();
-                if nonzero > 0 { any_nonzero = true; }
+                if nonzero > 0 {
+                    any_nonzero = true;
+                }
 
-                let (mc, mr) = count_mismatches_f32(&f64_ref, &f32_out, tol.atol, tol.rtol, tol.zero_threshold);
+                let (mc, mr) = count_mismatches_f32(
+                    &f64_ref,
+                    &f32_out,
+                    tol.atol,
+                    tol.rtol,
+                    tol.zero_threshold,
+                );
                 total_mismatches += mc;
-                if mr > max_rel_family { max_rel_family = mr; }
+                if mr > max_rel_family {
+                    max_rel_family = mr;
+                }
             }
         }
     }
 
-    eprintln!("f32 3c2e/sph: max_rel_error={max_rel_family:.3e} (floor={:.3e})", tol.rtol);
-    assert!(any_nonzero, "f32 3c2e_sph: all-zero fill detected across all triples");
+    eprintln!(
+        "f32 3c2e/sph: max_rel_error={max_rel_family:.3e} (floor={:.3e})",
+        tol.rtol
+    );
+    assert!(
+        any_nonzero,
+        "f32 3c2e_sph: all-zero fill detected across all triples"
+    );
     assert_eq!(
         total_mismatches, 0,
         "f32 int3c2e_sph: {total_mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -893,18 +1048,34 @@ fn test_f32_int2e_sph_parity() {
                     vendor_ffi::vendor_int2e_sph(&mut f64_ref, &shls, &atm, natm, &bas, nbas, &env);
 
                     let nonzero = f32_out.iter().filter(|&&v| v.abs() > 1e-18_f32).count();
-                    if nonzero > 0 { any_nonzero = true; }
+                    if nonzero > 0 {
+                        any_nonzero = true;
+                    }
 
-                    let (mc, mr) = count_mismatches_f32(&f64_ref, &f32_out, tol.atol, tol.rtol, tol.zero_threshold);
+                    let (mc, mr) = count_mismatches_f32(
+                        &f64_ref,
+                        &f32_out,
+                        tol.atol,
+                        tol.rtol,
+                        tol.zero_threshold,
+                    );
                     total_mismatches += mc;
-                    if mr > max_rel_family { max_rel_family = mr; }
+                    if mr > max_rel_family {
+                        max_rel_family = mr;
+                    }
                 }
             }
         }
     }
 
-    eprintln!("f32 2e/sph: max_rel_error={max_rel_family:.3e} (floor={:.3e})", tol.rtol);
-    assert!(any_nonzero, "f32 2e_sph: all-zero fill detected across all quartets");
+    eprintln!(
+        "f32 2e/sph: max_rel_error={max_rel_family:.3e} (floor={:.3e})",
+        tol.rtol
+    );
+    assert!(
+        any_nonzero,
+        "f32 2e_sph: all-zero fill detected across all quartets"
+    );
     assert_eq!(
         total_mismatches, 0,
         "f32 int2e_sph: {total_mismatches} elements exceed f32 floor atol={:.0e}/rtol={:.0e}",
@@ -942,13 +1113,19 @@ fn test_f32_evaluate_generic_produces_nonzero_finite_output() {
         .expect("evaluate_generic::<f32>() smoke test");
 
     let values = &output.tensor.owned_values;
-    assert!(!values.is_empty(), "f32 evaluate_generic returned empty output");
+    assert!(
+        !values.is_empty(),
+        "f32 evaluate_generic returned empty output"
+    );
     assert!(
         values.iter().all(|v| v.is_finite()),
         "f32 evaluate_generic returned non-finite value"
     );
     let nonzero = values.iter().filter(|&&v| v.abs() > 1e-18_f32).count();
-    assert!(nonzero > 0, "f32 evaluate_generic returned all-zero output for O1s–O2s overlap");
+    assert!(
+        nonzero > 0,
+        "f32 evaluate_generic returned all-zero output for O1s–O2s overlap"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1047,8 +1224,8 @@ fn collect_stg_ip1_f32(
 #[test]
 #[cfg(all(has_vendor_libcint, feature = "with-f12"))]
 fn test_f32_int2e_stg_ip1_sph_parity() {
-    use cintx_oracle::vendor_ffi;
     use cintx_oracle::fixtures::build_h2o_sto3g_f12;
+    use cintx_oracle::vendor_ffi;
 
     // Build the raw fixture for the vendor reference (f64 libcint, zeta=1.2).
     let (atm, bas, env) = build_h2o_sto3g_f12(1.2_f64);
@@ -1097,21 +1274,30 @@ fn test_f32_int2e_stg_ip1_sph_parity() {
         // This drives the f12 kernel through the F32 arm (CR-01/CR-02 regime).
         let f32_out = collect_stg_ip1_f32(
             &basis,
-            &[shells[i].clone(), shells[j].clone(), shells[k].clone(), shells[l].clone()],
+            &[
+                shells[i].clone(),
+                shells[j].clone(),
+                shells[k].clone(),
+                shells[l].clone(),
+            ],
         );
 
         assert_eq!(
-            f32_out.len(), n_elem,
+            f32_out.len(),
+            n_elem,
             "int2e_stg_ip1_sph f32 output length mismatch: got {} expected {} for ({},{},{},{})",
-            f32_out.len(), n_elem, i, j, k, l
+            f32_out.len(),
+            n_elem,
+            i,
+            j,
+            k,
+            l
         );
 
         // ── f64 libcint vendor reference (same quartets as f64 oracle) ───────
         let shls = [i as i32, j as i32, k as i32, l as i32];
         let mut vendor_out = vec![0.0_f64; n_elem];
-        vendor_ffi::vendor_int2e_stg_ip1_sph(
-            &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
-        );
+        vendor_ffi::vendor_int2e_stg_ip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
 
         // ── anti-zero-fill sentinel ──────────────────────────────────────────
         let nonzero_count = f32_out.iter().filter(|&&v| v.abs() > 1e-18_f32).count();
@@ -1123,12 +1309,19 @@ fn test_f32_int2e_stg_ip1_sph_parity() {
         assert!(
             f32_out.iter().all(|v| v.is_finite()),
             "int2e_stg_ip1_sph f32 output non-finite for shls ({},{},{},{})",
-            i, j, k, l
+            i,
+            j,
+            k,
+            l
         );
 
         // ── max_rel diagnostic (records the empirical floor) ─────────────────
         let (mc, mr) = count_mismatches_f32(
-            &vendor_out, &f32_out, tol.atol, tol.rtol, tol.zero_threshold,
+            &vendor_out,
+            &f32_out,
+            tol.atol,
+            tol.rtol,
+            tol.zero_threshold,
         );
         if mr > max_rel_family {
             max_rel_family = mr;

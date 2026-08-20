@@ -1,5 +1,5 @@
 use crate::boys::rys_roots_simd;
-use crate::kernels::one_electron::{cart_comps, common_fac_sp, ncart, SQRTPI};
+use crate::kernels::one_electron::{SQRTPI, cart_comps, common_fac_sp, ncart};
 use crate::vector::SimdFloat;
 use std::f64::consts::PI;
 
@@ -214,8 +214,7 @@ impl SimdTwoElectronKernel {
                         let mut weight_arr = [0.0; 8];
                         for lane in 0..chunk_size {
                             al_arr[lane] = input.exps_l[pl + lane];
-                            weight_arr[lane] =
-                                ci_val * cj_val * ck_val * input.coeff_l[pl + lane];
+                            weight_arr[lane] = ci_val * cj_val * ck_val * input.coeff_l[pl + lane];
                         }
 
                         let ak = V::from_f64(ak_val);
@@ -383,7 +382,10 @@ impl SimdTwoElectronKernel {
                                                 + kz as usize * shape.dk
                                                 + lz as usize * shape.dl
                                                 + jz as usize * shape.dj;
-                                            sum = sum + g[gx_off + x_idx] * g[gy_off + y_idx] * g[gz_off + z_idx];
+                                            sum = sum
+                                                + g[gx_off + x_idx]
+                                                    * g[gy_off + y_idx]
+                                                    * g[gz_off + z_idx];
                                         }
 
                                         let out_idx = i_idx
@@ -447,7 +449,8 @@ fn vrr_fill_axis_simd<V: SimdFloat>(
             let mut s1n = c0p * s0n + b00 * g_axis[root];
             g_axis[root + dn + dm] = s1n;
             for m in 1..mmax {
-                let s2n = c0p * s1n + V::from_f64(m as f64) * b01 * s0n + b00 * g_axis[root + m * dm];
+                let s2n =
+                    c0p * s1n + V::from_f64(m as f64) * b01 * s0n + b00 * g_axis[root + m * dm];
                 g_axis[root + dn + (m + 1) * dm] = s2n;
                 s0n = s1n;
                 s1n = s2n;

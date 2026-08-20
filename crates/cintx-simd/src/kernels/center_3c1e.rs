@@ -1,4 +1,4 @@
-use crate::kernels::one_electron::{cart_comps, common_fac_sp, ncart, SQRTPI};
+use crate::kernels::one_electron::{SQRTPI, cart_comps, common_fac_sp, ncart};
 use crate::vector::SimdFloat;
 use std::f64::consts::PI;
 
@@ -98,8 +98,7 @@ impl SimdCenter3c1eKernel {
                     let mut weight_arr = [0.0; 8];
                     for lane in 0..chunk_size {
                         ak_arr[lane] = input.exps_k[pk + lane];
-                        weight_arr[lane] =
-                            ci_val * cj_val * input.coeff_k[pk + lane];
+                        weight_arr[lane] = ci_val * cj_val * input.coeff_k[pk + lane];
                     }
 
                     let ai = V::from_f64(ai_val);

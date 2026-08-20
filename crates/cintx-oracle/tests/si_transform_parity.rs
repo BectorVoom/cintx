@@ -98,7 +98,15 @@ fn extract_shell(s: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> ShellData {
         }
     }
 
-    ShellData { l, kappa, nprim, nctr, coord, exps, coeff_row_major }
+    ShellData {
+        l,
+        kappa,
+        nprim,
+        nctr,
+        coord,
+        exps,
+        coeff_row_major,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,11 +229,23 @@ fn test_kappa_sizing_non_4l_plus_2() {
     assert_eq!(spinor_len(1, 1), 2, "p kappa=+1 (LT) → di = 2*1 = 2");
     assert_eq!(spinor_len(2, -1), 6, "d kappa=−1 (GT) → dj = 2*2+2 = 6");
     // Contrast: the kappa=0 sizing the fixture deliberately does NOT use.
-    assert_eq!(spinor_len(1, 0), 6, "p kappa=0 would be 4l+2 = 6 (NOT used)");
-    assert_eq!(spinor_len(2, 0), 10, "d kappa=0 would be 4l+2 = 10 (NOT used)");
+    assert_eq!(
+        spinor_len(1, 0),
+        6,
+        "p kappa=0 would be 4l+2 = 6 (NOT used)"
+    );
+    assert_eq!(
+        spinor_len(2, 0),
+        10,
+        "d kappa=0 would be 4l+2 = 10 (NOT used)"
+    );
 
     // The per-(ci,cj) staging sub-block is di*dj*2 = 2*6*2 = 24 f64.
-    assert_eq!(spinor_len(1, 1) * spinor_len(2, -1) * 2, 24, "staging sub-block = 24");
+    assert_eq!(
+        spinor_len(1, 1) * spinor_len(2, -1) * 2,
+        24,
+        "staging sub-block = 24"
+    );
 
     // The fixture really carries p kappa=+1 (nctr=2) and d kappa=−1.
     let (_atm, bas, _env) = cintx_oracle::fixtures::build_kappa_spinor_fixture();
@@ -278,7 +298,11 @@ fn test_int1e_sp_kappa_spinor_byte_identity() {
     let cintx = collect_cintx_sp_spinor(&atm, &bas, &env);
 
     // T-28-04-01: assert the kappa≠0 non-(4l+2) buffer size on both sides.
-    assert_eq!(vendor.len(), 4 * 6 * 2, "vendor kappa block = (2*2)*(1*6)*2 = 48");
+    assert_eq!(
+        vendor.len(),
+        4 * 6 * 2,
+        "vendor kappa block = (2*2)*(1*6)*2 = 48"
+    );
     assert_eq!(cintx.len(), vendor.len(), "cintx/vendor length must match");
 
     assert_any_nonzero(&cintx, "int1e_sp kappa cintx");
@@ -372,9 +396,19 @@ fn test_no_silent_skip() {
 fn test_fixtures_build_without_vendor() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_fixture();
     assert_eq!(bas.len() % BAS_SLOTS, 0, "kappa bas rows well-formed");
-    assert!(!atm.is_empty() && !env.is_empty(), "kappa fixture populated");
+    assert!(
+        !atm.is_empty() && !env.is_empty(),
+        "kappa fixture populated"
+    );
 
     let (h_atm, h_bas, h_env) = cintx_oracle::fixtures::build_heavy_atom_spinor_fixture();
-    assert_eq!(h_bas.len() % BAS_SLOTS, 0, "heavy-atom bas rows well-formed");
-    assert!(!h_atm.is_empty() && !h_env.is_empty(), "heavy-atom fixture populated");
+    assert_eq!(
+        h_bas.len() % BAS_SLOTS,
+        0,
+        "heavy-atom bas rows well-formed"
+    );
+    assert!(
+        !h_atm.is_empty() && !h_env.is_empty(),
+        "heavy-atom fixture populated"
+    );
 }

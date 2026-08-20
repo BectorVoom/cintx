@@ -1,7 +1,7 @@
-use crate::errors::{clear_last_error, set_last_error, CintxErrorReport, CintxStatus};
-use cintx_compat::{eval_raw, query_workspace_raw, RawApiId, RawOptimizerHandle};
+use crate::errors::{CintxErrorReport, CintxStatus, clear_last_error, set_last_error};
+use cintx_compat::{RawApiId, RawOptimizerHandle, eval_raw, query_workspace_raw};
 use cintx_core::cintxRsError;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
 #[repr(i32)]
@@ -456,7 +456,7 @@ pub unsafe extern "C" fn cintrs_eval(
 mod tests {
     use super::*;
     use crate::errors::{
-        cintrs_last_error_code, clear_last_error, current_last_error, CintxStatus,
+        CintxStatus, cintrs_last_error_code, clear_last_error, current_last_error,
     };
 
     struct RawFixture {
@@ -650,7 +650,11 @@ mod tests {
         assert_eq!(status, CintxStatus::NullPointer.code());
         let report = current_last_error();
         assert_eq!(report.status, CintxStatus::NullPointer);
-        assert!(report.message.contains("null pointer for required parameter `out`"));
+        assert!(
+            report
+                .message
+                .contains("null pointer for required parameter `out`")
+        );
         assert_eq!(summary, CintxEvalSummary::default());
     }
 

@@ -205,19 +205,37 @@ fn test_int3c1e_ip1_origk_random_rocm_parity() {
                     match r_power {
                         2 => {
                             cintx_oracle::vendor_ffi::vendor_int3c1e_ip1_r2_origk_sph(
-                                &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                                &mut vendor_out,
+                                &shls,
+                                &atm,
+                                natm,
+                                &bas,
+                                nbas,
+                                &env,
                             );
                             mismatch_r2 += count_mismatches(&cintx_out, &vendor_out);
                         }
                         4 => {
                             cintx_oracle::vendor_ffi::vendor_int3c1e_ip1_r4_origk_sph(
-                                &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                                &mut vendor_out,
+                                &shls,
+                                &atm,
+                                natm,
+                                &bas,
+                                nbas,
+                                &env,
                             );
                             mismatch_r4 += count_mismatches(&cintx_out, &vendor_out);
                         }
                         _ => {
                             cintx_oracle::vendor_ffi::vendor_int3c1e_ip1_r6_origk_sph(
-                                &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                                &mut vendor_out,
+                                &shls,
+                                &atm,
+                                natm,
+                                &bas,
+                                nbas,
+                                &env,
                             );
                             mismatch_r6 += count_mismatches(&cintx_out, &vendor_out);
                         }

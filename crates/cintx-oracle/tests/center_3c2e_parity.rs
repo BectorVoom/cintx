@@ -13,7 +13,7 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
     PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
@@ -182,7 +182,9 @@ fn test_center_3c2e_sph_h2o_sto3g_nonzero() {
                         None,
                         None,
                     )
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}"));
+                    .unwrap_or_else(|e| {
+                        panic!("eval_raw failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}")
+                    });
                     eval_raw(
                         api_id,
                         Some(&mut out2),
@@ -194,7 +196,11 @@ fn test_center_3c2e_sph_h2o_sto3g_nonzero() {
                         None,
                         None,
                     )
-                    .unwrap_or_else(|e| panic!("eval_raw second call failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}"));
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "eval_raw second call failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}"
+                        )
+                    });
                 }
 
                 mismatch_count += count_mismatches(&out1, &out2, 1e-15);
@@ -273,7 +279,9 @@ fn test_center_3c2e_sph_h2o_sto3g_vendor_parity() {
                         None,
                         None,
                     )
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}"));
+                    .unwrap_or_else(|e| {
+                        panic!("eval_raw failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}")
+                    });
                 }
 
                 if vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -352,7 +360,9 @@ fn test_int3c2e_sph_h2o_sto3g_rocm_parity() {
                         None,
                         None,
                     )
-                    .unwrap_or_else(|e| panic!("rocm eval_raw failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}"));
+                    .unwrap_or_else(|e| {
+                        panic!("rocm eval_raw failed for shells ({i_sh},{j_sh},{k_sh}): {e:?}")
+                    });
                     eval_raw(
                         api_id,
                         Some(&mut out2),
@@ -456,7 +466,11 @@ fn build_random_3shell_3c2e(rng: &mut Lcg) -> (Vec<i32>, Vec<i32>, Vec<f64>, i32
     let nprim_j = rng.range_i32(1, 3) as usize;
     let nprim_k = rng.range_i32(1, 3) as usize;
 
-    let coord_i = [rng.uniform(-1.5, 1.5), rng.uniform(-1.5, 1.5), rng.uniform(-1.5, 1.5)];
+    let coord_i = [
+        rng.uniform(-1.5, 1.5),
+        rng.uniform(-1.5, 1.5),
+        rng.uniform(-1.5, 1.5),
+    ];
     // Offset shells j and k so the three centers never coincide.
     let coord_j = [
         coord_i[0] + rng.uniform(0.8, 2.5),

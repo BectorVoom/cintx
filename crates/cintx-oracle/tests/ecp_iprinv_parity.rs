@@ -40,13 +40,11 @@
 // Module gate matches safe_api_ecp_parity.rs.
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
-use cintx_compat::raw::{
-    ANG_OF, AS_ECPBAS_OFFSET, AS_NECPBAS, ATM_SLOTS, BAS_SLOTS, PTR_COORD,
-};
+use cintx_compat::raw::{ANG_OF, AS_ECPBAS_OFFSET, AS_NECPBAS, ATM_SLOTS, BAS_SLOTS, PTR_COORD};
 use cintx_core::ecp::{EcpChannel, EcpShell};
 use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
-use cintx_oracle::fixtures::build_cu_lanl2dz;
 use cintx_ops::resolver::Resolver;
+use cintx_oracle::fixtures::build_cu_lanl2dz;
 use cintx_rs::SessionRequest;
 use cintx_runtime::ExecutionOptions;
 use std::sync::Arc;
@@ -71,11 +69,9 @@ fn arc_f64(values: &[f64]) -> Arc<[f64]> {
 
 /// Returns the typed BasisSet, the AO Shell vector, and the molecule's atom
 /// coordinates (for the per-nucleus rinv-origin sweep).
-fn build_cu_lanl2dz_safe_basis(
-    rep: Representation,
-) -> (BasisSet, Vec<Arc<Shell>>, Vec<[f64; 3]>) {
-    let raw = std::fs::read_to_string("data/cu_lanl2dz.json")
-        .expect("Cu/LANL2DZ fixture JSON missing");
+fn build_cu_lanl2dz_safe_basis(rep: Representation) -> (BasisSet, Vec<Arc<Shell>>, Vec<[f64; 3]>) {
+    let raw =
+        std::fs::read_to_string("data/cu_lanl2dz.json").expect("Cu/LANL2DZ fixture JSON missing");
     let parsed: serde_json::Value = serde_json::from_str(&raw).expect("Cu/LANL2DZ JSON invalid");
 
     let coord_arr = parsed["atom"]["coord"].as_array().unwrap();
@@ -206,8 +202,7 @@ fn collect_safe_api_iprinv_matrix(
             let nj = shell_nao[sj];
             let shell_tuple = ShellTuple::try_from_iter([shells[si].clone(), shells[sj].clone()])
                 .expect("ShellTuple");
-            let request =
-                SessionRequest::new(op, rep, basis, shell_tuple, options.clone());
+            let request = SessionRequest::new(op, rep, basis, shell_tuple, options.clone());
             let query = request.query_workspace().expect("query_workspace");
             let output = query.evaluate().expect("evaluate");
             let pair = &output.tensor.owned_values;
@@ -221,9 +216,8 @@ fn collect_safe_api_iprinv_matrix(
                     for jj in 0..nj {
                         // F-order [axis, ao_j, ao_i]: axis slowest, ao_i fastest.
                         let v = pair[axis * ni * nj + jj * ni + ii];
-                        comp_matrix[axis * n_ao * n_ao
-                            + (row_offset + ii) * n_ao
-                            + (col_offset + jj)] = v;
+                        comp_matrix
+                            [axis * n_ao * n_ao + (row_offset + ii) * n_ao + (col_offset + jj)] = v;
                     }
                 }
             }
@@ -320,9 +314,8 @@ fn collect_iprinv_matrix_vendor(
                 for ii in 0..ni {
                     for jj in 0..nj {
                         let v = out[axis * ni * nj + jj * ni + ii];
-                        comp_matrix[axis * n_ao * n_ao
-                            + (row_offset + ii) * n_ao
-                            + (col_offset + jj)] = v;
+                        comp_matrix
+                            [axis * n_ao * n_ao + (row_offset + ii) * n_ao + (col_offset + jj)] = v;
                     }
                 }
             }
@@ -389,7 +382,10 @@ fn test_ECPscalar_iprinv_cart_cu_lanl2dz_parity() {
     let op = iprinv_operator_id("int1e_ecp_iprinv_cart");
 
     let ecp_atoms = ecp_bearing_atoms(&ecpbas);
-    assert!(!ecp_atoms.is_empty(), "Cu/LANL2DZ must have ≥1 ECP-bearing atom");
+    assert!(
+        !ecp_atoms.is_empty(),
+        "Cu/LANL2DZ must have ≥1 ECP-bearing atom"
+    );
 
     let mut any_nonzero = false;
     for &atom_id in &ecp_atoms {
@@ -425,7 +421,10 @@ fn test_ECPscalar_iprinv_sph_cu_lanl2dz_parity() {
     let op = iprinv_operator_id("int1e_ecp_iprinv_sph");
 
     let ecp_atoms = ecp_bearing_atoms(&ecpbas);
-    assert!(!ecp_atoms.is_empty(), "Cu/LANL2DZ must have ≥1 ECP-bearing atom");
+    assert!(
+        !ecp_atoms.is_empty(),
+        "Cu/LANL2DZ must have ≥1 ECP-bearing atom"
+    );
 
     let mut any_nonzero = false;
     for &atom_id in &ecp_atoms {

@@ -83,23 +83,6 @@ cintx is a public Rust library that redesigns and reimplements libcint with resu
 - Before creating any test code, read `\home\chemtech\workspace\cintx\docs\rust_crate_test_guideline.md` and follow it when designing and implementing the tests.
 
 
-### Notes
-- Do not skip the manual, even if the error appears familiar.
-- Do not provide an ad hoc fix without first checking whether the manual already covers the issue pattern.
-- If the manual does not fully cover the error, use it as the baseline format and extend the investigation accordingly.
-
-### Definition of Done
-The work is complete only when all of the following are satisfied:
-- The unclear API has been investigated with supporting evidence
-- The minimal implementation has been completed
-- Tests have been executed successfully
-- A Markdown manual summarizing the investigation and implementation has been created
-
-### Prohibited Actions
-- Assumption-based implementation without evidence
-- Reporting completion without running tests
-- Reporting completion without creating the manual
-- Large-scale unrelated changes
 
 ## Cubecl manual
 /home/user/Documents/workspace/cubecl_manual/manual/Cubecl

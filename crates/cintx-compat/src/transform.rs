@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 
 use cintx_core::cintxRsError;
-use cintx_cubecl::transform::c2spinor;
 use cintx_cubecl::transform::c2s::{c2s_coeff, ncart, nsph};
+use cintx_cubecl::transform::c2spinor;
 
 /// Apply the real per-l bra cart->sph transform, mirroring libcint's
 /// `*_bra_cart2spheric` (cart2sph.c). Ket-blocked layout: for each ket block,
@@ -153,10 +153,16 @@ pub fn CINTc2s_iket_spinor_sf1(
     let required_out = out_per_ctr * nctr_usize;
 
     if gcart.len() < required_cart {
-        return Err(cintxRsError::BufferTooSmall { required: required_cart, provided: gcart.len() });
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_cart,
+            provided: gcart.len(),
+        });
     }
     if gsp.len() < required_out {
-        return Err(cintxRsError::BufferTooSmall { required: required_out, provided: gsp.len() });
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_out,
+            provided: gsp.len(),
+        });
     }
 
     for k in 0..nctr_usize {
@@ -200,10 +206,16 @@ pub fn CINTc2s_ket_spinor_si1(
     let required_out = out_per_ctr * nctr_usize;
 
     if gcart.len() < required_cart {
-        return Err(cintxRsError::BufferTooSmall { required: required_cart, provided: gcart.len() });
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_cart,
+            provided: gcart.len(),
+        });
     }
     if gsp.len() < required_out {
-        return Err(cintxRsError::BufferTooSmall { required: required_out, provided: gsp.len() });
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_out,
+            provided: gsp.len(),
+        });
     }
 
     for k in 0..nctr_usize {
@@ -246,10 +258,16 @@ pub fn CINTc2s_iket_spinor_si1(
     let required_out = out_per_ctr * nctr_usize;
 
     if gcart.len() < required_cart {
-        return Err(cintxRsError::BufferTooSmall { required: required_cart, provided: gcart.len() });
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_cart,
+            provided: gcart.len(),
+        });
     }
     if gsp.len() < required_out {
-        return Err(cintxRsError::BufferTooSmall { required: required_out, provided: gsp.len() });
+        return Err(cintxRsError::BufferTooSmall {
+            required: required_out,
+            provided: gsp.len(),
+        });
     }
 
     for k in 0..nctr_usize {
@@ -296,12 +314,12 @@ mod tests {
         CINTc2s_bra_sph(&mut sph, 1, &cart, 2).unwrap();
 
         let expected = [
-            1.092548430592079070 * cart[1],                                   // m=-2 dxy
-            1.092548430592079070 * cart[4],                                   // m=-1 dyz
+            1.092548430592079070 * cart[1], // m=-2 dxy
+            1.092548430592079070 * cart[4], // m=-1 dyz
             -0.315391565252520002 * cart[0] - 0.315391565252520002 * cart[3]  // m= 0 dz2
                 + 0.630783130505040012 * cart[5],
-            1.092548430592079070 * cart[2],                                   // m=+1 dxz
-            0.546274215296039535 * cart[0] - 0.546274215296039535 * cart[3],  // m=+2 dx2y2
+            1.092548430592079070 * cart[2], // m=+1 dxz
+            0.546274215296039535 * cart[0] - 0.546274215296039535 * cart[3], // m=+2 dx2y2
         ];
         for m in 0..5 {
             assert!(
@@ -370,7 +388,13 @@ mod tests {
         c2spinor::cart_to_spinor_sf(&mut gsp_direct, &cart, 0, kappa).unwrap();
 
         for (i, (a, b)) in gsp_compat.iter().zip(gsp_direct.iter()).enumerate() {
-            assert!((a - b).abs() < 1e-15, "compat vs direct at [{}]: {} vs {}", i, a, b);
+            assert!(
+                (a - b).abs() < 1e-15,
+                "compat vs direct at [{}]: {} vs {}",
+                i,
+                a,
+                b
+            );
         }
     }
 
@@ -381,8 +405,8 @@ mod tests {
     /// - si vs iket_si: differ in real/imag sign pattern
     #[test]
     fn compat_all_four_variants_produce_different_output() {
-        use cintx_cubecl::transform::c2spinor;
         use cintx_cubecl::transform::c2s::ncart;
+        use cintx_cubecl::transform::c2spinor;
 
         let l = 1i32;
         let kappa = -1i32;
@@ -412,15 +436,27 @@ mod tests {
         CINTc2s_iket_spinor_si1(&mut gsp_iket_si, &cart_si, 0, 1, 1, l, kappa).unwrap();
 
         // sf vs iket_sf must differ (iket multiplies by i)
-        let sf_vs_iket = gsp_sf.iter().zip(gsp_iket_sf.iter()).any(|(a, b)| (a - b).abs() > 1e-15);
+        let sf_vs_iket = gsp_sf
+            .iter()
+            .zip(gsp_iket_sf.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-15);
         assert!(sf_vs_iket, "sf and iket_sf should differ");
 
         // sf vs si must differ when Pauli is non-zero
-        let sf_vs_si = gsp_sf.iter().zip(gsp_si.iter()).any(|(a, b)| (a - b).abs() > 1e-15);
-        assert!(sf_vs_si, "sf and si should differ when Pauli components are non-zero");
+        let sf_vs_si = gsp_sf
+            .iter()
+            .zip(gsp_si.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-15);
+        assert!(
+            sf_vs_si,
+            "sf and si should differ when Pauli components are non-zero"
+        );
 
         // si vs iket_si must differ
-        let si_vs_iket = gsp_si.iter().zip(gsp_iket_si.iter()).any(|(a, b)| (a - b).abs() > 1e-15);
+        let si_vs_iket = gsp_si
+            .iter()
+            .zip(gsp_iket_si.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-15);
         assert!(si_vs_iket, "si and iket_si should differ");
 
         let _ = nf; // suppress unused warning

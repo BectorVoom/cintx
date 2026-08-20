@@ -146,8 +146,18 @@ fn collect_3c_triple(
 
     // SAFETY: atm/bas/env well-formed by construction; shls valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for triple {shls:?}: {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for triple {shls:?}: {e:?}"));
     }
     out
 }
@@ -194,7 +204,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: matrix is all-zero (zero-fill regression)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -240,7 +253,10 @@ fn determinism_and_shape(api_sph: RawApiId, api_cart: RawApiId, label: &str) {
         // Non-square probe: (p on atom0, d on atom1, s on atom2) — ∇_k cross-center.
         let probe = collect_3c_triple(api, &atm, &bas, &env, &[1, 5, 6], nf);
         assert_any_nonzero(&probe, &format!("{label}_{rep} probe (p,d,s)"));
-        assert!(tested > 0, "{label}_{rep}: no triples within nroots ceiling");
+        assert!(
+            tested > 0,
+            "{label}_{rep}: no triples within nroots ceiling"
+        );
     }
 }
 
@@ -286,8 +302,7 @@ fn vendor_parity(
                         continue;
                     }
                     let shls = [i as i32, j as i32, k as i32];
-                    let vendor =
-                        collect_vendor_3c_triple(vendor_fn, &atm, &bas, &env, &shls, &nf);
+                    let vendor = collect_vendor_3c_triple(vendor_fn, &atm, &bas, &env, &shls, &nf);
                     let cintx = collect_3c_triple(api, &atm, &bas, &env, &shls, &nf);
                     mismatches += count_mismatches(&vendor, &cintx, ATOL, RTOL);
                     if cintx.iter().any(|v| v.abs() > 1e-18) {
@@ -306,7 +321,10 @@ fn vendor_parity(
             mismatches, 0,
             "{label}_{rep}: {mismatches} parity mismatches vs vendored libcint (component-leading F-order)"
         );
-        assert!(any_nonzero, "{label}_{rep}: all outputs zero — kernel appears stubbed");
+        assert!(
+            any_nonzero,
+            "{label}_{rep}: all outputs zero — kernel appears stubbed"
+        );
         assert!(nonsquare, "{label}_{rep}: no non-square triple exercised");
         assert!(tested > 0, "{label}_{rep}: no triples tested");
         println!("{label}_{rep}: vendor parity PASS over {tested} triples, atol={ATOL:.0e}");

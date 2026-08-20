@@ -1,4 +1,8 @@
-use crate::backend::{self, ResolvedBackend};
+use crate::backend::ResolvedBackend;
+use crate::batch_pilot::{
+    EriSsssInput, OverlapSsInput, PilotOutputArena, PilotOutputArenaStats, SsBatchChunkOutput,
+    run_eri_ssss_batch_chunks, run_overlap_ss_batch, run_ss_batch_chunks_with_output_arena,
+};
 use crate::kernels;
 use crate::resident_cache::DeviceResidentCache;
 use crate::specialization::SpecializationKey;
@@ -10,24 +14,67 @@ use cintx_runtime::{
     BackendExecutor, BackendIntent, ExecutionIo, ExecutionPlan, ExecutionStats, OutputOwnership,
     WorkspaceBytes,
 };
+use std::sync::{Arc, Mutex, RwLock};
 
 pub const CUBECL_RUNTIME_PROFILE: &str = "cpu";
 
-/// Lightweight cache that resolves a `ResolvedBackend` from a `BackendIntent`.
+/// Long-lived CubeCL clients keyed by the query-time backend intent.
 ///
-/// Currently performs live resolution on every call. A future revision may
-/// cache the live client handle across calls.
-#[derive(Debug, Default)]
-pub struct BackendCache;
+/// Backend bootstrap is a cold-path operation. Retaining the client here keeps
+/// query and evaluation on the same device and removes that work from warm
+/// submissions.
+#[derive(Default)]
+pub struct BackendCache {
+    entries: RwLock<Vec<(BackendIntent, Arc<ResolvedBackend>)>>,
+}
+
+impl std::fmt::Debug for BackendCache {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let entries = self
+            .entries
+            .read()
+            .map(|entries| entries.len())
+            .unwrap_or(0);
+        formatter
+            .debug_struct("BackendCache")
+            .field("entries", &entries)
+            .finish()
+    }
+}
 
 impl BackendCache {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
-    /// Resolve a backend from the given intent, constructing a live client.
-    pub fn resolve(&self, intent: &BackendIntent) -> Result<ResolvedBackend, cintxRsError> {
-        ResolvedBackend::from_intent(intent)
+    /// Resolve a backend from the supplied intent, bootstrapping it once.
+    pub fn resolve(&self, intent: &BackendIntent) -> Result<Arc<ResolvedBackend>, cintxRsError> {
+        if let Some(existing) = self
+            .entries
+            .read()
+            .expect("backend cache poisoned")
+            .iter()
+            .find_map(|(cached_intent, backend)| {
+                (cached_intent == intent).then(|| Arc::clone(backend))
+            })
+        {
+            return Ok(existing);
+        }
+
+        let resolved = Arc::new(ResolvedBackend::from_intent(intent)?);
+        let mut entries = self.entries.write().expect("backend cache poisoned");
+        if let Some((_, existing)) = entries
+            .iter()
+            .find(|(cached_intent, _)| cached_intent == intent)
+        {
+            return Ok(Arc::clone(existing));
+        }
+        entries.push((intent.clone(), Arc::clone(&resolved)));
+        Ok(resolved)
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.read().expect("backend cache poisoned").len()
     }
 }
 
@@ -35,6 +82,10 @@ impl BackendCache {
 pub struct CubeClExecutor {
     resident_cache: DeviceResidentCache,
     backend_cache: BackendCache,
+    /// Output-only staging for the narrow Cartesian s-s batch pilot. The
+    /// mutex deliberately spans submission through its collective readback so
+    /// one reusable output handle cannot be rebound by a concurrent batch.
+    pilot_output_arena: Mutex<PilotOutputArena>,
 }
 
 impl CubeClExecutor {
@@ -42,6 +93,7 @@ impl CubeClExecutor {
         Self {
             resident_cache: DeviceResidentCache::new(),
             backend_cache: BackendCache::new(),
+            pilot_output_arena: Mutex::new(PilotOutputArena::default()),
         }
     }
 
@@ -49,19 +101,105 @@ impl CubeClExecutor {
         &self.resident_cache
     }
 
-    /// Resolve the `ResolvedBackend` from the executor's backend cache.
+    /// Number of backend clients retained for distinct query-time intents.
+    pub fn backend_cache_entries(&self) -> usize {
+        self.backend_cache.len()
+    }
+
+    /// Aggregate output-staging reuse retained by the Cartesian s-s batch pilot.
+    /// Descriptor uploads are intentionally excluded because they remain
+    /// request-specific and are never structurally cached.
+    pub fn pilot_output_arena_stats(&self) -> PilotOutputArenaStats {
+        self.pilot_output_arena
+            .lock()
+            .expect("pilot output arena poisoned")
+            .stats()
+    }
+
+    /// Run the verified s-s overlap batch pilot through this executor's cached client.
     ///
-    /// Reads `CINTX_BACKEND` env var (or defaults to Cpu per D-11) and
-    /// constructs a live client handle via `BackendCache::resolve`. Returns
-    /// `BackendNotCompiled` / `InvalidEnvParam` per D-01/D-02 when the env
-    /// var asks for an unavailable backend.
-    fn resolve_backend(&self) -> Result<ResolvedBackend, cintxRsError> {
-        let backend_kind = backend::resolve_backend_kind()?;
-        let intent = BackendIntent {
-            backend: backend_kind,
-            selector: "auto".to_owned(),
-        };
-        self.backend_cache.resolve(&intent)
+    /// This is intentionally narrow while general shell-pair descriptors and transposed
+    /// recurrence scratch are being migrated.
+    pub fn execute_overlap_ss_batch(
+        &self,
+        intent: &BackendIntent,
+        inputs: &[OverlapSsInput],
+    ) -> Result<Vec<f64>, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        run_overlap_ss_batch(&backend, inputs)
+    }
+
+    /// Submit all planned overlap chunks before the pilot's single collective readback.
+    pub fn execute_overlap_ss_batch_chunks(
+        &self,
+        intent: &BackendIntent,
+        chunks: &[&[OverlapSsInput]],
+    ) -> Result<SsBatchChunkOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        self.execute_ss_batch_chunks_with_output_arena(&backend, intent, chunks, false)
+    }
+
+    /// Submit all planned single-contraction Cartesian kinetic s-s chunks before one readback.
+    pub fn execute_kinetic_ss_batch_chunks(
+        &self,
+        intent: &BackendIntent,
+        chunks: &[&[OverlapSsInput]],
+    ) -> Result<SsBatchChunkOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        self.execute_ss_batch_chunks_with_output_arena(&backend, intent, chunks, true)
+    }
+
+    /// Select the verified Cartesian s-s pilot specialization for a homogeneous bucket.
+    pub fn execute_ss_batch_chunks(
+        &self,
+        intent: &BackendIntent,
+        chunks: &[&[OverlapSsInput]],
+        kinetic: bool,
+    ) -> Result<SsBatchChunkOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        self.execute_ss_batch_chunks_with_output_arena(&backend, intent, chunks, kinetic)
+    }
+
+    fn execute_ss_batch_chunks_with_output_arena(
+        &self,
+        backend: &ResolvedBackend,
+        intent: &BackendIntent,
+        chunks: &[&[OverlapSsInput]],
+        kinetic: bool,
+    ) -> Result<SsBatchChunkOutput, cintxRsError> {
+        let mut arena = self
+            .pilot_output_arena
+            .lock()
+            .expect("pilot output arena poisoned");
+        Ok(run_ss_batch_chunks_with_output_arena(
+            backend, chunks, kinetic, intent, &mut arena,
+        ))
+    }
+
+    /// Submit all primitive Cartesian `(s s | s s)` chunks before one
+    /// collective readback.  This is intentionally separate from the general
+    /// two-electron dispatcher until all 2e descriptor/output variants carry
+    /// their own parity gates.
+    pub fn execute_eri_ssss_batch_chunks(
+        &self,
+        intent: &BackendIntent,
+        chunks: &[&[EriSsssInput]],
+    ) -> Result<SsBatchChunkOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        Ok(run_eri_ssss_batch_chunks(&backend, chunks))
+    }
+
+    /// Resolve the client chosen at query time, never from a later env read.
+    fn resolve_backend(
+        &self,
+        plan: &ExecutionPlan<'_>,
+    ) -> Result<Arc<ResolvedBackend>, cintxRsError> {
+        self.backend_cache.resolve(&plan.workspace.backend_intent)
     }
 
     /// Check that the backend supports f64 compute (SHADER_F64).
@@ -70,11 +208,7 @@ impl CubeClExecutor {
     /// CPU path: always passes (native f64 support).
     /// CUDA path: f64 capable; runtime accept-with-failure.
     /// ROCm path: dev-host runtime-verified; accept-with-failure.
-    fn check_f64_capability(
-        &self,
-        backend: &ResolvedBackend,
-        _plan: &ExecutionPlan<'_>,
-    ) -> Result<(), cintxRsError> {
+    fn check_f64_capability(&self, backend: &ResolvedBackend) -> Result<(), cintxRsError> {
         match backend {
             #[cfg(feature = "cpu")]
             ResolvedBackend::Cpu(_) => Ok(()),
@@ -116,7 +250,7 @@ impl CubeClExecutor {
             return Ok(());
         }
         // F64 arm: delegate to the byte-identical existing capability check.
-        self.check_f64_capability(backend, plan)
+        self.check_f64_capability(backend)
     }
 
     #[cfg(feature = "with-4c1e")]
@@ -221,7 +355,7 @@ impl BackendExecutor for CubeClExecutor {
     }
 
     fn query_workspace(&self, plan: &ExecutionPlan<'_>) -> Result<WorkspaceBytes, cintxRsError> {
-        let backend = self.resolve_backend()?;
+        let backend = self.resolve_backend(plan)?;
         self.check_capability(&backend, plan)?;
         self.ensure_supported_family(plan)?;
         Ok(WorkspaceBytes(plan.workspace.bytes))
@@ -232,7 +366,7 @@ impl BackendExecutor for CubeClExecutor {
         plan: &ExecutionPlan<'_>,
         io: &mut ExecutionIo<'_>,
     ) -> Result<ExecutionStats, cintxRsError> {
-        let backend = self.resolve_backend()?;
+        let backend = self.resolve_backend(plan)?;
         self.check_capability(&backend, plan)?;
         self.ensure_supported_family(plan)?;
         io.ensure_output_contract()?;
@@ -279,11 +413,85 @@ mod tests {
     use super::*;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
     use cintx_ops::resolver::Resolver;
-    use cintx_runtime::{ExecutionOptions, FallibleBuffer, query_workspace};
+    use cintx_runtime::{
+        BackendIntent, BackendKind, ExecutionOptions, FallibleBuffer, query_workspace,
+    };
     use std::sync::Arc;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
         Arc::from(values.to_vec().into_boxed_slice())
+    }
+
+    #[test]
+    #[cfg(feature = "cpu")]
+    fn backend_cache_reuses_query_intent_client() {
+        let cache = BackendCache::new();
+        let intent = BackendIntent {
+            backend: BackendKind::Cpu,
+            selector: "auto".to_owned(),
+        };
+
+        let first = cache.resolve(&intent).expect("cpu backend resolves");
+        let second = cache.resolve(&intent).expect("cached cpu backend resolves");
+
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    #[cfg(feature = "cpu")]
+    fn overlap_ss_batch_pilot_uses_the_executor_client_cache() {
+        let executor = CubeClExecutor::new();
+        let intent = BackendIntent {
+            backend: BackendKind::Cpu,
+            selector: "auto".to_owned(),
+        };
+        let inputs = vec![
+            OverlapSsInput {
+                exponents_i: Arc::from(vec![0.5].into_boxed_slice()),
+                exponents_j: Arc::from(vec![0.7].into_boxed_slice()),
+                coefficients_i: Arc::from(vec![1.0].into_boxed_slice()),
+                coefficients_j: Arc::from(vec![0.8].into_boxed_slice()),
+                center_i: [0.0, 0.0, 0.0],
+                center_j: [0.0, 0.0, 1.4],
+            };
+            65
+        ];
+
+        let output = executor
+            .execute_overlap_ss_batch_chunks(&intent, &[&inputs])
+            .unwrap();
+
+        assert_eq!(output.chunks[0].len(), inputs.len());
+        assert!(
+            output.chunks[0]
+                .iter()
+                .all(|value| value.is_finite() && *value > 0.0)
+        );
+        assert_eq!(output.output_staging_allocations, 1);
+
+        let warm = executor
+            .execute_overlap_ss_batch_chunks(&intent, &[&inputs[..1]])
+            .unwrap();
+        assert_eq!(warm.output_staging_allocations, 0);
+        assert_eq!(warm.output_staging_reuses, 1);
+
+        let mut larger = inputs.clone();
+        larger.push(inputs[0].clone());
+        let grown = executor
+            .execute_overlap_ss_batch_chunks(&intent, &[&larger])
+            .unwrap();
+        assert_eq!(grown.output_staging_allocations, 1);
+        assert_eq!(grown.output_staging_growths, 1);
+        let arena = executor.pilot_output_arena_stats();
+        assert_eq!(arena.allocations, 2);
+        assert_eq!(arena.reuses, 1);
+        assert_eq!(arena.growths, 1);
+        assert_eq!(
+            arena.retained_bytes,
+            larger.len() * std::mem::size_of::<f64>()
+        );
+        assert_eq!(executor.backend_cache_entries(), 1);
     }
 
     fn sample_basis(rep: Representation, shell_count: usize) -> BasisSet {

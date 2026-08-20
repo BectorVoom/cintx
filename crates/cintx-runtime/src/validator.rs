@@ -188,8 +188,7 @@ pub fn validate_rinv_orig_env_params(
             None => {
                 return Err(cintxRsError::InvalidEnvParam {
                     param: "PTR_RINV_ORIG",
-                    reason: "env[4..6] (PTR_RINV_ORIG) must be set for iprinv operators"
-                        .to_owned(),
+                    reason: "env[4..6] (PTR_RINV_ORIG) must be set for iprinv operators".to_owned(),
                 });
             }
             _ => {}
@@ -225,9 +224,9 @@ pub fn validate_common_orig_env_params(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::planner::GridsEnvParams;
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell};
     use cintx_ops::resolver::Resolver;
-    use crate::planner::GridsEnvParams;
     use std::sync::Arc;
 
     fn arc_f64(values: &[f64]) -> Arc<[f64]> {
@@ -330,27 +329,48 @@ mod tests {
 
     #[test]
     fn f12_env_params_zeta_zero_is_rejected() {
-        let params = OperatorEnvParams { f12_zeta: Some(0.0_f64), ..OperatorEnvParams::default() };
+        let params = OperatorEnvParams {
+            f12_zeta: Some(0.0_f64),
+            ..OperatorEnvParams::default()
+        };
         let err = validate_f12_env_params("f12", &params).unwrap_err();
         assert!(
-            matches!(err, cintxRsError::InvalidEnvParam { param: "PTR_F12_ZETA", .. }),
+            matches!(
+                err,
+                cintxRsError::InvalidEnvParam {
+                    param: "PTR_F12_ZETA",
+                    ..
+                }
+            ),
             "expected InvalidEnvParam(PTR_F12_ZETA), got {err:?}"
         );
     }
 
     #[test]
     fn f12_env_params_zeta_none_is_rejected() {
-        let params = OperatorEnvParams { f12_zeta: None, ..OperatorEnvParams::default() };
+        let params = OperatorEnvParams {
+            f12_zeta: None,
+            ..OperatorEnvParams::default()
+        };
         let err = validate_f12_env_params("f12", &params).unwrap_err();
         assert!(
-            matches!(err, cintxRsError::InvalidEnvParam { param: "PTR_F12_ZETA", .. }),
+            matches!(
+                err,
+                cintxRsError::InvalidEnvParam {
+                    param: "PTR_F12_ZETA",
+                    ..
+                }
+            ),
             "expected InvalidEnvParam(PTR_F12_ZETA), got {err:?}"
         );
     }
 
     #[test]
     fn f12_env_params_valid_zeta_passes() {
-        let params = OperatorEnvParams { f12_zeta: Some(1.2_f64), ..OperatorEnvParams::default() };
+        let params = OperatorEnvParams {
+            f12_zeta: Some(1.2_f64),
+            ..OperatorEnvParams::default()
+        };
         validate_f12_env_params("f12", &params).expect("valid zeta should pass");
     }
 
@@ -367,7 +387,13 @@ mod tests {
         let params = OperatorEnvParams::default(); // grids_params: None
         let err = validate_grids_env_params("grids", &params).unwrap_err();
         assert!(
-            matches!(err, cintxRsError::InvalidEnvParam { param: "NGRIDS", .. }),
+            matches!(
+                err,
+                cintxRsError::InvalidEnvParam {
+                    param: "NGRIDS",
+                    ..
+                }
+            ),
             "expected InvalidEnvParam(NGRIDS), got {err:?}"
         );
     }
@@ -375,12 +401,22 @@ mod tests {
     #[test]
     fn validate_grids_env_params_ngrids_zero_is_rejected() {
         let params = OperatorEnvParams {
-            grids_params: Some(GridsEnvParams { ngrids: 0, ptr_grids: 20, grid_coords: vec![] }),
+            grids_params: Some(GridsEnvParams {
+                ngrids: 0,
+                ptr_grids: 20,
+                grid_coords: vec![],
+            }),
             ..OperatorEnvParams::default()
         };
         let err = validate_grids_env_params("grids", &params).unwrap_err();
         assert!(
-            matches!(err, cintxRsError::InvalidEnvParam { param: "NGRIDS", .. }),
+            matches!(
+                err,
+                cintxRsError::InvalidEnvParam {
+                    param: "NGRIDS",
+                    ..
+                }
+            ),
             "expected InvalidEnvParam(NGRIDS), got {err:?}"
         );
     }
@@ -388,19 +424,21 @@ mod tests {
     #[test]
     fn validate_grids_env_params_valid_passes() {
         let params = OperatorEnvParams {
-            grids_params: Some(GridsEnvParams { ngrids: 5, ptr_grids: 20, grid_coords: vec![[0.0,0.0,0.0]; 5] }),
+            grids_params: Some(GridsEnvParams {
+                ngrids: 5,
+                ptr_grids: 20,
+                grid_coords: vec![[0.0, 0.0, 0.0]; 5],
+            }),
             ..OperatorEnvParams::default()
         };
-        validate_grids_env_params("grids", &params)
-            .expect("valid grids params should pass");
+        validate_grids_env_params("grids", &params).expect("valid grids params should pass");
     }
 
     #[test]
     fn validate_grids_env_params_non_grids_family_skips_check() {
         // Non-grids families should not be gated even with no grids_params.
         let params = OperatorEnvParams::default();
-        validate_grids_env_params("1e", &params)
-            .expect("non-grids family should not be checked");
+        validate_grids_env_params("1e", &params).expect("non-grids family should not be checked");
         validate_grids_env_params("origi", &params)
             .expect("non-grids family should not be checked");
     }
@@ -466,8 +504,7 @@ mod tests {
             common_orig: Some([0.5, -1.2, 0.0]),
             ..OperatorEnvParams::default()
         };
-        validate_common_orig_env_params("", &params)
-            .expect("finite gauge origin must pass");
+        validate_common_orig_env_params("", &params).expect("finite gauge origin must pass");
     }
 
     #[test]
@@ -477,7 +514,10 @@ mod tests {
             [0.0, f64::INFINITY, 0.0],
             [0.0, 0.0, f64::NEG_INFINITY],
         ] {
-            let params = OperatorEnvParams { common_orig: Some(bad), ..OperatorEnvParams::default() };
+            let params = OperatorEnvParams {
+                common_orig: Some(bad),
+                ..OperatorEnvParams::default()
+            };
             let err = validate_common_orig_env_params("int1e_r", &params)
                 .expect_err("non-finite gauge origin must be rejected");
             match err {

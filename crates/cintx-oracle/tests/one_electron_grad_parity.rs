@@ -8,8 +8,8 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, PTR_COEFF, PTR_COORD,
-    PTR_EXP, PTR_ZETA, NUC_MOD_OF, POINT_NUC, RawApiId, eval_raw,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
 const ATOL: f64 = 1e-12;
@@ -140,15 +140,8 @@ fn nsph(l: i32) -> usize {
 /// For each shell pair (si, sj), eval_raw fills 3 * ni * nj elements in component-leading
 /// order (the planner allocates 3-component staging because component_rank="3" in the
 /// manifest). We stitch each shell-pair block into the full matrix per component.
-fn collect_1e_grad_sph_matrix(
-    api_id: RawApiId,
-    atm: &[i32],
-    bas: &[i32],
-    env: &[f64],
-) -> Vec<f64> {
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+fn collect_1e_grad_sph_matrix(api_id: RawApiId, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
@@ -166,8 +159,18 @@ fn collect_1e_grad_sph_matrix(
 
             // SAFETY: atm/bas/env are well-formed by construction. shls are valid.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
 
             // Stitch into full matrix: out is component-leading [comp * ni * nj + n].
@@ -200,9 +203,7 @@ fn collect_1e_grad_cart_matrix(
     bas: &[i32],
     env: &[f64],
 ) -> Vec<f64> {
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| ncart(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
@@ -219,8 +220,18 @@ fn collect_1e_grad_cart_matrix(
             let mut out = vec![0.0_f64; n_elem];
 
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw cart failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw cart failed for shells ({si},{sj}): {e:?}"));
             }
 
             for comp in 0..3usize {
@@ -258,9 +269,7 @@ fn collect_vendor_1e_grad_sph_matrix<F>(
 where
     F: Fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32,
 {
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -312,9 +321,7 @@ fn collect_vendor_1e_grad_cart_matrix<F>(
 where
     F: Fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32,
 {
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| ncart(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -390,7 +397,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 /// Guards against zero-fill regressions where a stub kernel would silently pass parity.
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: gradient matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: gradient matrix is all-zero (zero-fill regression)"
+    );
 }
 
 /// int1e_ipovlp_sph: determinism check (two calls must be bit-identical).
@@ -405,7 +415,11 @@ fn test_int1e_ipovlp_sph_determinism() {
     let mat2 = collect_1e_grad_sph_matrix(api, &atm, &bas, &env);
 
     // Expected: 3 * 7 * 7 = 147 elements (n_ao=7 for H2O STO-3G sph)
-    assert_eq!(mat1.len(), 3 * 7 * 7, "ipovlp_sph matrix size should be 3*7*7=147");
+    assert_eq!(
+        mat1.len(),
+        3 * 7 * 7,
+        "ipovlp_sph matrix size should be 3*7*7=147"
+    );
 
     for (a, b) in mat1.iter().zip(mat2.iter()) {
         assert_eq!(
@@ -429,7 +443,11 @@ fn test_int1e_ipovlp_cart_determinism() {
 
     // Expected: 3 * 9 * 9 = 243 elements (n_ao_cart=9: O-1s=1,O-2s=1,O-2p=3,H1-1s=1,H2-1s=1 → 7 sph, 9 cart)
     // Actually H2O STO-3G cart: s+s+p+s+s = 1+1+3+1+1=7 (p cart = 3 = p sph for l=1)
-    assert_eq!(mat1.len(), 3 * 7 * 7, "ipovlp_cart matrix size should be 3*7*7=147");
+    assert_eq!(
+        mat1.len(),
+        3 * 7 * 7,
+        "ipovlp_cart matrix size should be 3*7*7=147"
+    );
 
     for (a, b) in mat1.iter().zip(mat2.iter()) {
         assert_eq!(
@@ -451,7 +469,11 @@ fn test_int1e_ipkin_sph_determinism() {
     let mat1 = collect_1e_grad_sph_matrix(api, &atm, &bas, &env);
     let mat2 = collect_1e_grad_sph_matrix(api, &atm, &bas, &env);
 
-    assert_eq!(mat1.len(), 3 * 7 * 7, "ipkin_sph matrix size should be 3*7*7=147");
+    assert_eq!(
+        mat1.len(),
+        3 * 7 * 7,
+        "ipkin_sph matrix size should be 3*7*7=147"
+    );
 
     for (a, b) in mat1.iter().zip(mat2.iter()) {
         assert_eq!(
@@ -473,7 +495,11 @@ fn test_int1e_ipkin_cart_determinism() {
     let mat1 = collect_1e_grad_cart_matrix(api, &atm, &bas, &env);
     let mat2 = collect_1e_grad_cart_matrix(api, &atm, &bas, &env);
 
-    assert_eq!(mat1.len(), 3 * 7 * 7, "ipkin_cart matrix size should be 3*7*7=147");
+    assert_eq!(
+        mat1.len(),
+        3 * 7 * 7,
+        "ipkin_cart matrix size should be 3*7*7=147"
+    );
 
     for (a, b) in mat1.iter().zip(mat2.iter()) {
         assert_eq!(
@@ -497,12 +523,8 @@ fn test_int1e_ipovlp_sph_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g();
 
-    let vendor = collect_vendor_1e_grad_sph_matrix(
-        vendor_ffi::vendor_int1e_ipovlp_sph,
-        &atm,
-        &bas,
-        &env,
-    );
+    let vendor =
+        collect_vendor_1e_grad_sph_matrix(vendor_ffi::vendor_int1e_ipovlp_sph, &atm, &bas, &env);
     let cintx = collect_1e_grad_sph_matrix(RawApiId::INT1E_IPOVLP_SPH, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipovlp_sph cintx");
@@ -510,8 +532,7 @@ fn test_int1e_ipovlp_sph_h2o_sto3g_parity() {
 
     let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
     assert_eq!(
-        mismatches,
-        0,
+        mismatches, 0,
         "int1e_ipovlp_sph: {mismatches} mismatches vs vendored libcint at atol={ATOL}"
     );
 }
@@ -524,12 +545,8 @@ fn test_int1e_ipovlp_cart_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g();
 
-    let vendor = collect_vendor_1e_grad_cart_matrix(
-        vendor_ffi::vendor_int1e_ipovlp_cart,
-        &atm,
-        &bas,
-        &env,
-    );
+    let vendor =
+        collect_vendor_1e_grad_cart_matrix(vendor_ffi::vendor_int1e_ipovlp_cart, &atm, &bas, &env);
     let cintx = collect_1e_grad_cart_matrix(RawApiId::INT1E_IPOVLP_CART, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipovlp_cart cintx");
@@ -537,8 +554,7 @@ fn test_int1e_ipovlp_cart_h2o_sto3g_parity() {
 
     let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
     assert_eq!(
-        mismatches,
-        0,
+        mismatches, 0,
         "int1e_ipovlp_cart: {mismatches} mismatches vs vendored libcint at atol={ATOL}"
     );
 }
@@ -551,12 +567,8 @@ fn test_int1e_ipkin_sph_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g();
 
-    let vendor = collect_vendor_1e_grad_sph_matrix(
-        vendor_ffi::vendor_int1e_ipkin_sph,
-        &atm,
-        &bas,
-        &env,
-    );
+    let vendor =
+        collect_vendor_1e_grad_sph_matrix(vendor_ffi::vendor_int1e_ipkin_sph, &atm, &bas, &env);
     let cintx = collect_1e_grad_sph_matrix(RawApiId::INT1E_IPKIN_SPH, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipkin_sph cintx");
@@ -564,8 +576,7 @@ fn test_int1e_ipkin_sph_h2o_sto3g_parity() {
 
     let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
     assert_eq!(
-        mismatches,
-        0,
+        mismatches, 0,
         "int1e_ipkin_sph: {mismatches} mismatches vs vendored libcint at atol={ATOL}"
     );
 }
@@ -578,12 +589,8 @@ fn test_int1e_ipkin_cart_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g();
 
-    let vendor = collect_vendor_1e_grad_cart_matrix(
-        vendor_ffi::vendor_int1e_ipkin_cart,
-        &atm,
-        &bas,
-        &env,
-    );
+    let vendor =
+        collect_vendor_1e_grad_cart_matrix(vendor_ffi::vendor_int1e_ipkin_cart, &atm, &bas, &env);
     let cintx = collect_1e_grad_cart_matrix(RawApiId::INT1E_IPKIN_CART, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipkin_cart cintx");
@@ -591,8 +598,7 @@ fn test_int1e_ipkin_cart_h2o_sto3g_parity() {
 
     let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
     assert_eq!(
-        mismatches,
-        0,
+        mismatches, 0,
         "int1e_ipkin_cart: {mismatches} mismatches vs vendored libcint at atol={ATOL}"
     );
 }

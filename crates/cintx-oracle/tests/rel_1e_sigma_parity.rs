@@ -120,7 +120,15 @@ fn extract_shell(s: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> ShellData {
         }
     }
 
-    ShellData { l, kappa, nprim, nctr, coord, exps, coeff_row_major }
+    ShellData {
+        l,
+        kappa,
+        nprim,
+        nctr,
+        coord,
+        exps,
+        coeff_row_major,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,7 +243,11 @@ fn nuclear_origins(op: &str, atm: &[i32], env: &[f64]) -> (Vec<f64>, Vec<f64>) {
         "sprinvsp" => {
             // type-1 rinv: single center at PTR_RINV_ORIG, charge +1.
             (
-                vec![env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]],
+                vec![
+                    env[PTR_RINV_ORIG],
+                    env[PTR_RINV_ORIG + 1],
+                    env[PTR_RINV_ORIG + 2],
+                ],
                 vec![1.0],
             )
         }
@@ -279,18 +291,14 @@ fn collect_vendor_rel_1e(family: &str, atm: &[i32], bas: &[i32], env: &[f64]) ->
 
     let mut out = vec![0.0_f64; ni_sp * nj_sp * 2 * family_component_rank(family)];
     match family {
-        "int1e_spsp_spinor" => {
-            vendor_int1e_spsp_spinor(&mut out, &shls, atm, natm, bas, nbas, env)
-        }
+        "int1e_spsp_spinor" => vendor_int1e_spsp_spinor(&mut out, &shls, atm, natm, bas, nbas, env),
         "int1e_spnucsp_spinor" => {
             vendor_int1e_spnucsp_spinor(&mut out, &shls, atm, natm, bas, nbas, env)
         }
         "int1e_sprinvsp_spinor" => {
             vendor_int1e_sprinvsp_spinor(&mut out, &shls, atm, natm, bas, nbas, env)
         }
-        "int1e_srsr_spinor" => {
-            vendor_int1e_srsr_spinor(&mut out, &shls, atm, natm, bas, nbas, env)
-        }
+        "int1e_srsr_spinor" => vendor_int1e_srsr_spinor(&mut out, &shls, atm, natm, bas, nbas, env),
         "int1e_srnucsr_spinor" => {
             vendor_int1e_srnucsr_spinor(&mut out, &shls, atm, natm, bas, nbas, env)
         }
@@ -313,9 +321,21 @@ fn collect_vendor_rel_1e(family: &str, atm: &[i32], bas: &[i32], env: &[f64]) ->
 fn test_kappa_sizing_non_4l_plus_2() {
     assert_eq!(spinor_len(1, 1), 2, "p kappa=+1 (LT) → di = 2*1 = 2");
     assert_eq!(spinor_len(2, -1), 6, "d kappa=−1 (GT) → dj = 2*2+2 = 6");
-    assert_eq!(spinor_len(1, 0), 6, "p kappa=0 would be 4l+2 = 6 (NOT used)");
-    assert_eq!(spinor_len(2, 0), 10, "d kappa=0 would be 4l+2 = 10 (NOT used)");
-    assert_eq!(spinor_len(1, 1) * spinor_len(2, -1) * 2, 24, "staging sub-block = 24");
+    assert_eq!(
+        spinor_len(1, 0),
+        6,
+        "p kappa=0 would be 4l+2 = 6 (NOT used)"
+    );
+    assert_eq!(
+        spinor_len(2, 0),
+        10,
+        "d kappa=0 would be 4l+2 = 10 (NOT used)"
+    );
+    assert_eq!(
+        spinor_len(1, 1) * spinor_len(2, -1) * 2,
+        24,
+        "staging sub-block = 24"
+    );
 
     let (_atm, bas, _env) = cintx_oracle::fixtures::build_kappa_spinor_fixture();
     assert_eq!(bas[ANG_OF], 1, "shell 0 = p");
@@ -360,7 +380,11 @@ fn test_sigma_rank_measured() {
     vendor_int1e_sigma_spinor(&mut out, &shls, &atm, natm, &bas, nbas, &env);
 
     // Find the highest written (non-NaN) index → the empirical output length.
-    let written = out.iter().rposition(|v| v.is_finite()).map(|p| p + 1).unwrap_or(0);
+    let written = out
+        .iter()
+        .rposition(|v| v.is_finite())
+        .map(|p| p + 1)
+        .unwrap_or(0);
     eprintln!(
         "MEASURED int1e_sigma vendor output length = {written} (ni_sp={ni_sp} nj_sp={nj_sp}, \
          ni_sp*nj_sp*2 = {rank1_len}, ratio = {})",
@@ -395,7 +419,12 @@ macro_rules! rel_1e_byte_identity_gate {
             let vendor = collect_vendor_rel_1e($family, &atm, &bas, &env);
             let cintx = collect_cintx_rel_1e($family, &atm, &bas, &env);
 
-            assert_eq!(cintx.len(), vendor.len(), "cintx/vendor length must match for {}", $family);
+            assert_eq!(
+                cintx.len(),
+                vendor.len(),
+                "cintx/vendor length must match for {}",
+                $family
+            );
             assert_any_nonzero(&cintx, concat!($family, " kappa cintx"));
             assert_any_nonzero(&vendor, concat!($family, " kappa vendor"));
 
@@ -470,7 +499,8 @@ fn test_no_silent_skip() {
             "29-02 Task 3 must flip {family} oracle_covered=true after its gate is green"
         );
         assert_eq!(
-            entry.forms, &["spinor"],
+            entry.forms,
+            &["spinor"],
             "{family} must stay spinor-only (SC#5: do not over-claim cart/sph σ intermediates)"
         );
     }
@@ -488,14 +518,21 @@ fn test_rel_1e_rows_registered_without_vendor() {
 
     let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_fixture();
     assert_eq!(bas.len() % BAS_SLOTS, 0, "kappa bas rows well-formed");
-    assert!(!atm.is_empty() && !env.is_empty(), "kappa fixture populated");
+    assert!(
+        !atm.is_empty() && !env.is_empty(),
+        "kappa fixture populated"
+    );
 
     for &family in REL_1E_FAMILIES {
         let entry = MANIFEST_ENTRIES
             .iter()
             .find(|e| e.symbol_name == family)
             .unwrap_or_else(|| panic!("{family} missing from MANIFEST_ENTRIES (Plan 29-01 row)"));
-        let expected_rank = if family == "int1e_sigma_spinor" { "3" } else { "1" };
+        let expected_rank = if family == "int1e_sigma_spinor" {
+            "3"
+        } else {
+            "1"
+        };
         assert_eq!(
             entry.component_rank, expected_rank,
             "{family} must be component_rank={expected_rank} (sigma=3 stacked σ-matrices, \
@@ -503,6 +540,9 @@ fn test_rel_1e_rows_registered_without_vendor() {
         );
         assert_eq!(entry.forms, &["spinor"], "{family} must be spinor-only");
         // Post-29-02 flip: every gated family reads oracle_covered=true.
-        assert!(entry.oracle_covered, "{family} must read oracle_covered=true after 29-02 Task 3");
+        assert!(
+            entry.oracle_covered,
+            "{family} must read oracle_covered=true after 29-02 Task 3"
+        );
     }
 }

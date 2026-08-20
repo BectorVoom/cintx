@@ -35,13 +35,7 @@ mod sealed {
 /// Only `f64` and `f32` implement this trait. The private `sealed::Sealed` supertrait
 /// prevents external implementations.
 pub trait CintFloat:
-    Copy
-    + Send
-    + Sync
-    + 'static
-    + num_traits::Float
-    + num_traits::FromPrimitive
-    + sealed::Sealed
+    Copy + Send + Sync + 'static + num_traits::Float + num_traits::FromPrimitive + sealed::Sealed
 {
     /// The `PrecisionKind` runtime tag for this float type.
     ///

@@ -96,7 +96,14 @@ fn nuc_nabla_ij<F: Float>(
 /// `*_J` operator at `idx0`: R-tensor index shift (`g[idx0+dj]`) when `use_r==1`,
 /// else D-tensor j-nabla.
 #[cube]
-fn op_j<F: Float>(g: &Array<F>, idx0: u32, dj: u32, aj2: F, jexp: u32, #[comptime] use_r: u32) -> F {
+fn op_j<F: Float>(
+    g: &Array<F>,
+    idx0: u32,
+    dj: u32,
+    aj2: F,
+    jexp: u32,
+    #[comptime] use_r: u32,
+) -> F {
     if comptime!(use_r == 1u32) {
         g[(idx0 + dj) as usize]
     } else {
@@ -339,13 +346,16 @@ fn sigma_nuc_kernel<F: Float + CubeElement>(
                                                 // selected by comptime use_r).
                                                 let g1x = op_j::<F>(g, bx, dj, aj2, jx, use_r);
                                                 let g2x = op_i::<F>(g, bx, ai2, ix, use_r);
-                                                let g3x = op_ij::<F>(g, bx, dj, ai2, aj2, ix, jx, use_r);
+                                                let g3x =
+                                                    op_ij::<F>(g, bx, dj, ai2, aj2, ix, jx, use_r);
                                                 let g1y = op_j::<F>(g, by, dj, aj2, jy, use_r);
                                                 let g2y = op_i::<F>(g, by, ai2, iy, use_r);
-                                                let g3y = op_ij::<F>(g, by, dj, ai2, aj2, iy, jy, use_r);
+                                                let g3y =
+                                                    op_ij::<F>(g, by, dj, ai2, aj2, iy, jy, use_r);
                                                 let g1z = op_j::<F>(g, bz, dj, aj2, jz, use_r);
                                                 let g2z = op_i::<F>(g, bz, ai2, iz, use_r);
-                                                let g3z = op_ij::<F>(g, bz, dj, ai2, aj2, iz, jz, use_r);
+                                                let g3z =
+                                                    op_ij::<F>(g, bz, dj, ai2, aj2, iz, jz, use_r);
 
                                                 let s0 = g3x * g0y * g0z;
                                                 let s1 = g2x * g1y * g0z;
@@ -362,9 +372,11 @@ fn sigma_nuc_kernel<F: Float + CubeElement>(
                                                     weight * (s5 - s7);
                                                 gc_out[(base + block_len + elem) as usize] +=
                                                     weight * (s6 - s2);
-                                                gc_out[(base + 2u32 * block_len + elem) as usize] +=
+                                                gc_out
+                                                    [(base + 2u32 * block_len + elem) as usize] +=
                                                     weight * (s1 - s3);
-                                                gc_out[(base + 3u32 * block_len + elem) as usize] +=
+                                                gc_out
+                                                    [(base + 3u32 * block_len + elem) as usize] +=
                                                     weight * (s0 + s4 + s8);
 
                                                 ci_idx += 1u32;
@@ -613,24 +625,21 @@ fn sigma_nuc_gauge_kernel<F: Float + CubeElement>(
                                                 let gg0 = base;
                                                 let gg1 = base + N_GC * block_len;
                                                 let gg2 = base + 2u32 * N_GC * block_len;
-                                                gc_out[(gg0 + elem) as usize] +=
-                                                    weight * (s8 + s4);
+                                                gc_out[(gg0 + elem) as usize] += weight * (s8 + s4);
                                                 gc_out[(gg0 + block_len + elem) as usize] +=
                                                     weight * (-s3);
                                                 gc_out[(gg0 + 2u32 * block_len + elem) as usize] +=
                                                     weight * (-s6);
                                                 gc_out[(gg0 + 3u32 * block_len + elem) as usize] +=
                                                     weight * (s7 - s5);
-                                                gc_out[(gg1 + elem) as usize] +=
-                                                    weight * (-s1);
+                                                gc_out[(gg1 + elem) as usize] += weight * (-s1);
                                                 gc_out[(gg1 + block_len + elem) as usize] +=
                                                     weight * (s0 + s8);
                                                 gc_out[(gg1 + 2u32 * block_len + elem) as usize] +=
                                                     weight * (-s7);
                                                 gc_out[(gg1 + 3u32 * block_len + elem) as usize] +=
                                                     weight * (s2 - s6);
-                                                gc_out[(gg2 + elem) as usize] +=
-                                                    weight * (-s2);
+                                                gc_out[(gg2 + elem) as usize] += weight * (-s2);
                                                 gc_out[(gg2 + block_len + elem) as usize] +=
                                                     weight * (-s5);
                                                 gc_out[(gg2 + 2u32 * block_len + elem) as usize] +=
@@ -699,8 +708,16 @@ fn run_sigma_nuc_gauge_device<R: Runtime>(
     let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
-    let coords_src = if origin_coords.is_empty() { &[0.0_f64][..] } else { origin_coords };
-    let charges_src = if origin_charges.is_empty() { &[0.0_f64][..] } else { origin_charges };
+    let coords_src = if origin_coords.is_empty() {
+        &[0.0_f64][..]
+    } else {
+        origin_coords
+    };
+    let charges_src = if origin_charges.is_empty() {
+        &[0.0_f64][..]
+    } else {
+        origin_charges
+    };
     let coords_h = client.create_from_slice(f64::as_bytes(coords_src));
     let charges_h = client.create_from_slice(f64::as_bytes(charges_src));
 
@@ -729,11 +746,24 @@ fn run_sigma_nuc_gauge_device<R: Runtime>(
                     ArrayArg::from_raw_parts(u_h.clone(), nroots_u),
                     ArrayArg::from_raw_parts(w_h.clone(), nroots_u),
                     ArrayArg::from_raw_parts(out_h.clone(), out_len),
-                    ri[0], ri[1], ri[2], rj[0], rj[1], rj[2],
+                    ri[0],
+                    ri[1],
+                    ri[2],
+                    rj[0],
+                    rj[1],
+                    rj[2],
                     PIE4,
                     std::f64::consts::PI,
-                    gauge[0], gauge[1], gauge[2],
-                    li, lj, nprim_i, nprim_j, nctr_i, nctr_j, norig,
+                    gauge[0],
+                    gauge[1],
+                    gauge[2],
+                    li,
+                    lj,
+                    nprim_i,
+                    nprim_j,
+                    nctr_i,
+                    nctr_j,
+                    norig,
                     $nr,
                 );
             }
@@ -791,34 +821,106 @@ pub(crate) fn run_sigma_nuc_gauge_on_backend(
     let out = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_sigma_nuc_gauge_device::<cubecl::cpu::CpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, gauge, exps_i, exps_j, coeff_i, coeff_j, origin_coords,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            gauge,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
             origin_charges,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_sigma_nuc_gauge_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, gauge, exps_i, exps_j, coeff_i, coeff_j, origin_coords,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            gauge,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
             origin_charges,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_sigma_nuc_gauge_device::<cubecl_cuda::CudaRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, gauge, exps_i, exps_j, coeff_i, coeff_j, origin_coords,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            gauge,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
             origin_charges,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_sigma_nuc_gauge_device::<cubecl_hip::HipRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, gauge, exps_i, exps_j, coeff_i, coeff_j, origin_coords,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            gauge,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            origin_coords,
             origin_charges,
         ),
         #[cfg(feature = "metal")]
-        ResolvedBackend::Metal(client, _) => run_sigma_nuc_gauge_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, gauge, exps_i, exps_j, coeff_i, coeff_j, origin_coords,
-            origin_charges,
-        ),
+        ResolvedBackend::Metal(client, _) => {
+            run_sigma_nuc_gauge_device::<cubecl_wgpu::WgpuRuntime>(
+                client,
+                nroots,
+                li as u32,
+                lj as u32,
+                nprim_i as u32,
+                nprim_j as u32,
+                nctr_i as u32,
+                nctr_j as u32,
+                ri,
+                rj,
+                gauge,
+                exps_i,
+                exps_j,
+                coeff_i,
+                coeff_j,
+                origin_coords,
+                origin_charges,
+            )
+        }
     };
     Ok(out)
 }
@@ -859,8 +961,16 @@ fn run_sigma_nuc_device<R: Runtime>(
     let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
     let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
     let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
-    let coords_src = if origin_coords.is_empty() { &[0.0_f64][..] } else { origin_coords };
-    let charges_src = if origin_charges.is_empty() { &[0.0_f64][..] } else { origin_charges };
+    let coords_src = if origin_coords.is_empty() {
+        &[0.0_f64][..]
+    } else {
+        origin_coords
+    };
+    let charges_src = if origin_charges.is_empty() {
+        &[0.0_f64][..]
+    } else {
+        origin_charges
+    };
     let coords_h = client.create_from_slice(f64::as_bytes(coords_src));
     let charges_h = client.create_from_slice(f64::as_bytes(charges_src));
 
@@ -885,11 +995,23 @@ fn run_sigma_nuc_device<R: Runtime>(
                 unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots_u) },
                 unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots_u) },
                 unsafe { ArrayArg::from_raw_parts(out_h.clone(), out_len) },
-                ri[0], ri[1], ri[2], rj[0], rj[1], rj[2],
+                ri[0],
+                ri[1],
+                ri[2],
+                rj[0],
+                rj[1],
+                rj[2],
                 PIE4,
                 std::f64::consts::PI,
-                li, lj, nprim_i, nprim_j, nctr_i, nctr_j, norig,
-                $nr, $ur,
+                li,
+                lj,
+                nprim_i,
+                nprim_j,
+                nctr_i,
+                nctr_j,
+                norig,
+                $nr,
+                $ur,
             )
         };
     }
@@ -958,32 +1080,102 @@ pub(crate) fn run_sigma_nuc_on_backend(
     let out = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_sigma_nuc_device::<cubecl::cpu::CpuRuntime>(
-            client, nroots, use_r, li as u32, lj as u32, nprim_i as u32, nprim_j as u32,
-            nctr_i as u32, nctr_j as u32, ri, rj, exps_i, exps_j, coeff_i, coeff_j, coords,
+            client,
+            nroots,
+            use_r,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            coords,
             charges,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_sigma_nuc_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, use_r, li as u32, lj as u32, nprim_i as u32, nprim_j as u32,
-            nctr_i as u32, nctr_j as u32, ri, rj, exps_i, exps_j, coeff_i, coeff_j, coords,
+            client,
+            nroots,
+            use_r,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            coords,
             charges,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_sigma_nuc_device::<cubecl_cuda::CudaRuntime>(
-            client, nroots, use_r, li as u32, lj as u32, nprim_i as u32, nprim_j as u32,
-            nctr_i as u32, nctr_j as u32, ri, rj, exps_i, exps_j, coeff_i, coeff_j, coords,
+            client,
+            nroots,
+            use_r,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            coords,
             charges,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_sigma_nuc_device::<cubecl_hip::HipRuntime>(
-            client, nroots, use_r, li as u32, lj as u32, nprim_i as u32, nprim_j as u32,
-            nctr_i as u32, nctr_j as u32, ri, rj, exps_i, exps_j, coeff_i, coeff_j, coords,
+            client,
+            nroots,
+            use_r,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            coords,
             charges,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_sigma_nuc_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, use_r, li as u32, lj as u32, nprim_i as u32, nprim_j as u32,
-            nctr_i as u32, nctr_j as u32, ri, rj, exps_i, exps_j, coeff_i, coeff_j, coords,
+            client,
+            nroots,
+            use_r,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            coords,
             charges,
         ),
     };

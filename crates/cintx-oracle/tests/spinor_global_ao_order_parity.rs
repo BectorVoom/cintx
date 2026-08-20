@@ -276,8 +276,18 @@ fn collect_cintx_global(api_id: RawApiId, atm: &[i32], bas: &[i32], env: &[f64])
 
             // SAFETY: atm/bas/env are well-formed by construction; shls are valid.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
 
             stitch_block(&mut matrix, &out, ni, nj, n_sp, row_offset, col_offset);

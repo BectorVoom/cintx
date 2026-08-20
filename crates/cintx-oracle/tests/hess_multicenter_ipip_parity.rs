@@ -150,8 +150,18 @@ fn collect_triple(
     let mut out = vec![0.0_f64; NCOMP * ni * nj * nk];
     // SAFETY: atm/bas/env well-formed by construction; shls valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for triple {shls:?}: {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for triple {shls:?}: {e:?}"));
     }
     out
 }
@@ -169,8 +179,18 @@ fn collect_pair(
     let mut out = vec![0.0_f64; NCOMP * ni * nk];
     // SAFETY: atm/bas/env well-formed by construction; shls valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for pair {shls:?}: {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for pair {shls:?}: {e:?}"));
     }
     out
 }
@@ -241,7 +261,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 #[allow(dead_code)]
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: matrix is all-zero (zero-fill regression)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,7 +282,11 @@ fn hess_multicenter_ipip_determinism_and_shape() {
     // ── int2c2e_ipip1 (2-shell, bra-i ∇², i_inc=2) ──
     for (api, nf, rep) in [
         (RawApiId::INT2C2E_IPIP1_SPH, nsph as fn(i32) -> usize, "sph"),
-        (RawApiId::INT2C2E_IPIP1_CART, ncart as fn(i32) -> usize, "cart"),
+        (
+            RawApiId::INT2C2E_IPIP1_CART,
+            ncart as fn(i32) -> usize,
+            "cart",
+        ),
     ] {
         let mut nonsquare = false;
         let mut tested = 0usize;
@@ -273,9 +300,17 @@ fn hess_multicenter_ipip_determinism_and_shape() {
                 let (ni, nk) = (nf(li), nf(lk));
                 let m1 = collect_pair(api, &atm, &bas, &env, &shls, nf);
                 let m2 = collect_pair(api, &atm, &bas, &env, &shls, nf);
-                assert_eq!(m1.len(), NCOMP * ni * nk, "int2c2e_ipip1_{rep} {shls:?} size");
+                assert_eq!(
+                    m1.len(),
+                    NCOMP * ni * nk,
+                    "int2c2e_ipip1_{rep} {shls:?} size"
+                );
                 for (a, b) in m1.iter().zip(m2.iter()) {
-                    assert_eq!(a.to_bits(), b.to_bits(), "int2c2e_ipip1_{rep} {shls:?} not bit-identical");
+                    assert_eq!(
+                        a.to_bits(),
+                        b.to_bits(),
+                        "int2c2e_ipip1_{rep} {shls:?} not bit-identical"
+                    );
                 }
                 if nf(li) != nf(lk) {
                     nonsquare = true;
@@ -286,14 +321,32 @@ fn hess_multicenter_ipip_determinism_and_shape() {
         // p×d cross-center probe — non-vanishing second derivative.
         let probe = collect_pair(api, &atm, &bas, &env, &[1, 8], nf);
         assert_any_nonzero(&probe, &format!("int2c2e_ipip1_{rep} probe (p,d)"));
-        assert!(nonsquare, "int2c2e_ipip1_{rep}: no non-square block exercised");
-        assert!(tested > 0, "int2c2e_ipip1_{rep}: no pairs within nroots ceiling");
+        assert!(
+            nonsquare,
+            "int2c2e_ipip1_{rep}: no non-square block exercised"
+        );
+        assert!(
+            tested > 0,
+            "int2c2e_ipip1_{rep}: no pairs within nroots ceiling"
+        );
     }
 
     // ── int3c2e_ipip1 (bra-i ∇², i_inc=2) + int3c2e_ipip2 (ket-k ∇², k_inc=2) ──
     for (cart, sph, i_inc, k_inc, name) in [
-        (RawApiId::INT3C2E_IPIP1_CART, RawApiId::INT3C2E_IPIP1_SPH, 2, 0, "int3c2e_ipip1"),
-        (RawApiId::INT3C2E_IPIP2_CART, RawApiId::INT3C2E_IPIP2_SPH, 0, 2, "int3c2e_ipip2"),
+        (
+            RawApiId::INT3C2E_IPIP1_CART,
+            RawApiId::INT3C2E_IPIP1_SPH,
+            2,
+            0,
+            "int3c2e_ipip1",
+        ),
+        (
+            RawApiId::INT3C2E_IPIP2_CART,
+            RawApiId::INT3C2E_IPIP2_SPH,
+            0,
+            2,
+            "int3c2e_ipip2",
+        ),
     ] {
         for (api, nf, rep) in [
             (sph, nsph as fn(i32) -> usize, "sph"),
@@ -314,7 +367,11 @@ fn hess_multicenter_ipip_determinism_and_shape() {
                         let m2 = collect_triple(api, &atm, &bas, &env, &shls, nf);
                         assert_eq!(m1.len(), NCOMP * ni * nj * nk, "{name}_{rep} {shls:?} size");
                         for (a, b) in m1.iter().zip(m2.iter()) {
-                            assert_eq!(a.to_bits(), b.to_bits(), "{name}_{rep} {shls:?} not bit-identical");
+                            assert_eq!(
+                                a.to_bits(),
+                                b.to_bits(),
+                                "{name}_{rep} {shls:?} not bit-identical"
+                            );
                         }
                         // NON-SQUARE: for ipip2 (ket headroom) the aux k l must
                         // differ from the bra i l so a transposed layout cannot pass.
@@ -387,9 +444,18 @@ fn hess_multicenter_ipip() {
                 tested += 1;
             }
         }
-        assert_eq!(mismatches, 0, "int2c2e_ipip1_{rep}: {mismatches} parity mismatches vs vendor");
-        assert!(any_nonzero, "int2c2e_ipip1_{rep}: all outputs zero — kernel appears stubbed");
-        assert!(nonsquare, "int2c2e_ipip1_{rep}: no non-square block exercised");
+        assert_eq!(
+            mismatches, 0,
+            "int2c2e_ipip1_{rep}: {mismatches} parity mismatches vs vendor"
+        );
+        assert!(
+            any_nonzero,
+            "int2c2e_ipip1_{rep}: all outputs zero — kernel appears stubbed"
+        );
+        assert!(
+            nonsquare,
+            "int2c2e_ipip1_{rep}: no non-square block exercised"
+        );
         assert!(tested > 0, "int2c2e_ipip1_{rep}: no pairs tested");
         println!("int2c2e_ipip1_{rep}: vendor parity PASS over {tested} pairs, atol={ATOL:.0e}");
     }
@@ -402,8 +468,16 @@ fn hess_multicenter_ipip() {
             2,
             0,
             [
-                (false, RawApiId::INT3C2E_IPIP1_SPH, vendor_ffi::vendor_int3c2e_ipip1_sph),
-                (true, RawApiId::INT3C2E_IPIP1_CART, vendor_ffi::vendor_int3c2e_ipip1_cart),
+                (
+                    false,
+                    RawApiId::INT3C2E_IPIP1_SPH,
+                    vendor_ffi::vendor_int3c2e_ipip1_sph,
+                ),
+                (
+                    true,
+                    RawApiId::INT3C2E_IPIP1_CART,
+                    vendor_ffi::vendor_int3c2e_ipip1_cart,
+                ),
             ],
         ),
         (
@@ -411,8 +485,16 @@ fn hess_multicenter_ipip() {
             0,
             2,
             [
-                (false, RawApiId::INT3C2E_IPIP2_SPH, vendor_ffi::vendor_int3c2e_ipip2_sph),
-                (true, RawApiId::INT3C2E_IPIP2_CART, vendor_ffi::vendor_int3c2e_ipip2_cart),
+                (
+                    false,
+                    RawApiId::INT3C2E_IPIP2_SPH,
+                    vendor_ffi::vendor_int3c2e_ipip2_sph,
+                ),
+                (
+                    true,
+                    RawApiId::INT3C2E_IPIP2_CART,
+                    vendor_ffi::vendor_int3c2e_ipip2_cart,
+                ),
             ],
         ),
     ];
@@ -447,9 +529,18 @@ fn hess_multicenter_ipip() {
                     }
                 }
             }
-            assert_eq!(mismatches, 0, "{name}_{rep}: {mismatches} parity mismatches vs vendor");
-            assert!(any_nonzero, "{name}_{rep}: all outputs zero — kernel appears stubbed");
-            assert!(nonsquare, "{name}_{rep}: no non-square (ni!=nk) triple exercised");
+            assert_eq!(
+                mismatches, 0,
+                "{name}_{rep}: {mismatches} parity mismatches vs vendor"
+            );
+            assert!(
+                any_nonzero,
+                "{name}_{rep}: all outputs zero — kernel appears stubbed"
+            );
+            assert!(
+                nonsquare,
+                "{name}_{rep}: no non-square (ni!=nk) triple exercised"
+            );
             assert!(tested > 0, "{name}_{rep}: no triples tested");
             println!("{name}_{rep}: vendor parity PASS over {tested} triples, atol={ATOL:.0e}");
         }

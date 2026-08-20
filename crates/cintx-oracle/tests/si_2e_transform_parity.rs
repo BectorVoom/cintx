@@ -94,7 +94,15 @@ fn extract_shell(s: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> ShellData {
         }
     }
 
-    ShellData { l, kappa, nprim, nctr, coord, exps, coeff_row_major }
+    ShellData {
+        l,
+        kappa,
+        nprim,
+        nctr,
+        coord,
+        exps,
+        coeff_row_major,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,13 +136,35 @@ fn collect_cintx_spsp1_spinor(atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64>
 
     let mut staging = vec![0.0_f64; ni_sp * nj_sp * nk_sp * nl_sp * 2];
     launch_int2e_spsp1_spinor_quartet::<f64>(
-        si.l, si.kappa, sj.l, sj.kappa, sk.l, sk.kappa, sl.l, sl.kappa,
-        si.nprim, sj.nprim, sk.nprim, sl.nprim,
-        si.nctr, sj.nctr, sk.nctr, sl.nctr,
-        si.coord, sj.coord, sk.coord, sl.coord,
+        si.l,
+        si.kappa,
+        sj.l,
+        sj.kappa,
+        sk.l,
+        sk.kappa,
+        sl.l,
+        sl.kappa,
+        si.nprim,
+        sj.nprim,
+        sk.nprim,
+        sl.nprim,
+        si.nctr,
+        sj.nctr,
+        sk.nctr,
+        sl.nctr,
+        si.coord,
+        sj.coord,
+        sk.coord,
+        sl.coord,
         common_factor,
-        &si.exps, &sj.exps, &sk.exps, &sl.exps,
-        &si.coeff_row_major, &sj.coeff_row_major, &sk.coeff_row_major, &sl.coeff_row_major,
+        &si.exps,
+        &sj.exps,
+        &sk.exps,
+        &sl.exps,
+        &si.coeff_row_major,
+        &sj.coeff_row_major,
+        &sk.coeff_row_major,
+        &sl.coeff_row_major,
         &mut staging,
     )
     .expect("int2e_spsp1 spinor quartet launch must succeed");
@@ -214,23 +244,46 @@ fn test_kappa_sizing_2e_non_4l_plus_2() {
     assert_eq!(spinor_len(0, -1), 2, "k: s kappa=−1 (GT) → dk = 2*0+2 = 2");
     assert_eq!(spinor_len(1, -1), 4, "l: p kappa=−1 (GT) → dl = 2*1+2 = 4");
     // Contrast: the kappa=0 sizing the fixture deliberately does NOT use.
-    assert_eq!(spinor_len(1, 0), 6, "p kappa=0 would be 4l+2 = 6 (NOT used)");
-    assert_eq!(spinor_len(2, 0), 10, "d kappa=0 would be 4l+2 = 10 (NOT used)");
+    assert_eq!(
+        spinor_len(1, 0),
+        6,
+        "p kappa=0 would be 4l+2 = 6 (NOT used)"
+    );
+    assert_eq!(
+        spinor_len(2, 0),
+        10,
+        "d kappa=0 would be 4l+2 = 10 (NOT used)"
+    );
 
     // The fixture really carries i p kappa=+1 (nctr=2) and j d / k s / l p kappa=−1.
     let (_atm, bas, _env) = cintx_oracle::fixtures::build_kappa_spinor_2e_fixture();
     assert_eq!(bas[ANG_OF], 1, "shell 0 (i) = p");
     assert_eq!(bas[KAPPA_OF], 1, "shell 0 (i) kappa = +1 (LT)");
-    assert_eq!(bas[NCTR_OF], 2, "shell 0 (i) nctr = 2 (general contraction)");
+    assert_eq!(
+        bas[NCTR_OF], 2,
+        "shell 0 (i) nctr = 2 (general contraction)"
+    );
     assert_eq!(bas[BAS_SLOTS + ANG_OF], 2, "shell 1 (j) = d");
     assert_eq!(bas[BAS_SLOTS + KAPPA_OF], -1, "shell 1 (j) kappa = −1 (GT)");
     assert_eq!(bas[2 * BAS_SLOTS + ANG_OF], 0, "shell 2 (k) = s");
-    assert_eq!(bas[2 * BAS_SLOTS + KAPPA_OF], -1, "shell 2 (k) kappa = −1 (GT)");
+    assert_eq!(
+        bas[2 * BAS_SLOTS + KAPPA_OF],
+        -1,
+        "shell 2 (k) kappa = −1 (GT)"
+    );
     assert_eq!(bas[3 * BAS_SLOTS + ANG_OF], 1, "shell 3 (l) = p");
-    assert_eq!(bas[3 * BAS_SLOTS + KAPPA_OF], -1, "shell 3 (l) kappa = −1 (GT)");
+    assert_eq!(
+        bas[3 * BAS_SLOTS + KAPPA_OF],
+        -1,
+        "shell 3 (l) kappa = −1 (GT)"
+    );
 
     // Total spinor block = (2*2)*(1*6)*(1*2)*(1*4)*2 = 4*6*2*4*2 = 384.
-    assert_eq!(2 * 2 * 6 * 2 * 4 * 2, 384, "non-square 2e spinor block = 384 f64");
+    assert_eq!(
+        2 * 2 * 6 * 2 * 4 * 2,
+        384,
+        "non-square 2e spinor block = 384 f64"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,7 +296,10 @@ fn test_kappa_2e_fixture_evaluates() {
     let cintx = collect_cintx_spsp1_spinor(&atm, &bas, &env);
     // ni_sp=2*2=4, nj_sp=6, nk_sp=2, nl_sp=4 → 4*6*2*4*2 = 384.
     assert_eq!(cintx.len(), 4 * 6 * 2 * 4 * 2, "kappa 2e block = 384");
-    assert!(cintx.iter().all(|v| v.is_finite()), "all spinor output must be finite");
+    assert!(
+        cintx.iter().all(|v| v.is_finite()),
+        "all spinor output must be finite"
+    );
     assert_any_nonzero(&cintx, "int2e_spsp1 kappa fixture cintx");
 }
 
@@ -262,7 +318,11 @@ fn test_int2e_spsp1_kappa_spinor_byte_identity() {
     let cintx = collect_cintx_spsp1_spinor(&atm, &bas, &env);
 
     // Assert the kappa≠0 non-(4l+2) non-square buffer size on both sides.
-    assert_eq!(vendor.len(), 4 * 6 * 2 * 4 * 2, "vendor kappa 2e block = 384");
+    assert_eq!(
+        vendor.len(),
+        4 * 6 * 2 * 4 * 2,
+        "vendor kappa 2e block = 384"
+    );
     assert_eq!(cintx.len(), vendor.len(), "cintx/vendor length must match");
 
     assert_any_nonzero(&cintx, "int2e_spsp1 kappa cintx");
@@ -336,6 +396,13 @@ fn test_no_silent_skip() {
 fn test_2e_fixture_builds_without_vendor() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_2e_fixture();
     assert_eq!(bas.len() % BAS_SLOTS, 0, "kappa 2e bas rows well-formed");
-    assert!(!atm.is_empty() && !env.is_empty(), "kappa 2e fixture populated");
-    assert_eq!(bas.len() / BAS_SLOTS, 4, "exactly 4 shells (a 2-electron quartet)");
+    assert!(
+        !atm.is_empty() && !env.is_empty(),
+        "kappa 2e fixture populated"
+    );
+    assert_eq!(
+        bas.len() / BAS_SLOTS,
+        4,
+        "exactly 4 shells (a 2-electron quartet)"
+    );
 }

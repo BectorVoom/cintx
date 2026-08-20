@@ -537,7 +537,10 @@ pub fn build_kappa_spinor_2e_fixture() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     env.extend_from_slice(&pl_coeff);
 
     let mut atm = vec![0_i32; 4 * ATM_SLOTS];
-    for (n, &ptr) in [i_coord_ptr, j_coord_ptr, k_coord_ptr, l_coord_ptr].iter().enumerate() {
+    for (n, &ptr) in [i_coord_ptr, j_coord_ptr, k_coord_ptr, l_coord_ptr]
+        .iter()
+        .enumerate()
+    {
         atm[n * ATM_SLOTS + CHARGE_OF] = 1;
         atm[n * ATM_SLOTS + PTR_COORD] = ptr;
         atm[n * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
@@ -783,7 +786,8 @@ pub fn build_cu_lanl2dz() -> (Vec<i32>, Vec<i32>, Vec<i32>, Vec<f64>) {
     let ecp_shells_json = parsed["ecp"]["shells"]
         .as_array()
         .expect("cu_lanl2dz.json: ecp.shells must be array");
-    let mut ecp_entries: Vec<(i32, i32, i32, i32, i32, i32)> = Vec::with_capacity(ecp_shells_json.len());
+    let mut ecp_entries: Vec<(i32, i32, i32, i32, i32, i32)> =
+        Vec::with_capacity(ecp_shells_json.len());
     // (ang_of, radial_power_sum, so_type, nprim, exp_ptr, coeff_ptr).
     // radial_power_sum is the FIRST r_exponent in the list (PySCF stores a
     // single integer at the RADI_POWER slot; per-primitive r_exponents in
@@ -1658,7 +1662,10 @@ mod tests {
         // exponent). env[PTR_RANGE_OMEGA]=env[8] must STILL be 0.0 (asserted above).
         for slot in 0..PTR_ENV_START {
             if slot == NGRIDS {
-                assert_eq!(inputs.env[slot], 1.0, "env[NGRIDS] must be 1.0 (one grid point)");
+                assert_eq!(
+                    inputs.env[slot], 1.0,
+                    "env[NGRIDS] must be 1.0 (one grid point)"
+                );
             } else if slot == PTR_GRIDS {
                 assert_eq!(
                     inputs.env[slot], grid_coord_index,
@@ -1843,20 +1850,32 @@ mod tests {
             let kappa = bas[s * BAS_SLOTS + KAPPA_OF];
             let nctr = bas[s * BAS_SLOTS + NCTR_OF];
             assert_ne!(kappa, 0, "shell {s} must have genuine kappa≠0 (GT/LT path)");
-            if kappa < 0 { has_gt = true; }
-            if kappa > 0 { has_lt = true; }
-            if nctr > 1 { has_nctr_gt1 = true; }
+            if kappa < 0 {
+                has_gt = true;
+            }
+            if kappa > 0 {
+                has_lt = true;
+            }
+            if nctr > 1 {
+                has_nctr_gt1 = true;
+            }
             dims.push(spinor_len(l, kappa));
         }
 
         // GT/LT mix present (exercises BOTH 2l and 2l+2 spinor_len branches)
-        assert!(has_gt && has_lt, "fixture must mix GT (kappa<0) and LT (kappa>0) shells");
+        assert!(
+            has_gt && has_lt,
+            "fixture must mix GT (kappa<0) and LT (kappa>0) shells"
+        );
         // ≥1 shell with nctr>1 (catches the column/row-major coeff transpose)
         assert!(has_nctr_gt1, "fixture must have ≥1 shell with nctr>1");
 
         // NON-SQUARE: not all four spinor dims equal (defeats transpose symmetry)
         let all_equal = dims.iter().all(|&d| d == dims[0]);
-        assert!(!all_equal, "fixture spinor dims must NOT all be equal (non-square): {dims:?}");
+        assert!(
+            !all_equal,
+            "fixture spinor dims must NOT all be equal (non-square): {dims:?}"
+        );
 
         // Concrete sizing check: the LT path (2l) and GT path (2l+2) are both exercised.
         // i: p kappa=+1 → 2 (LT);  j: d kappa=−1 → 6 (GT);  k: s kappa=−1 → 2;  l: p kappa=−1 → 4
@@ -1869,7 +1888,14 @@ mod tests {
     #[test]
     fn heavy_atom_spinor_fixture_is_well_formed() {
         let (_atm, bas, env) = build_heavy_atom_spinor_fixture();
-        assert_eq!(bas.len() / BAS_SLOTS, 2, "heavy-atom realism fixture is 2 shells");
-        assert!(env.iter().all(|v| v.is_finite()), "heavy-atom env must be finite");
+        assert_eq!(
+            bas.len() / BAS_SLOTS,
+            2,
+            "heavy-atom realism fixture is 2 shells"
+        );
+        assert!(
+            env.iter().all(|v| v.is_finite()),
+            "heavy-atom env must be finite"
+        );
     }
 }

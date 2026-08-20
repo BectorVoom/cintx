@@ -121,8 +121,18 @@ fn collect_3c_quartet(
 
     // SAFETY: atm/bas/env well-formed by construction; shls valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for quartet {shls:?}: {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for quartet {shls:?}: {e:?}"));
     }
     out
 }
@@ -170,7 +180,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: matrix is all-zero (zero-fill regression)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,8 +234,14 @@ fn test_int2e_ip2_determinism_and_shape() {
         // individual quartets vanish by symmetry, so the sentinel is global).
         // Non-coincident probe (k on atom1 so ∇_k does not vanish by symmetry).
         let probe = collect_3c_quartet(api, &atm, &bas, &env, &[1, 0, 4, 3], nf);
-        assert_any_nonzero(&probe, &format!("int2e_ip2_{rep} probe (p,s,p,s) cross-atom"));
-        assert!(tested > 0, "int2e_ip2_{rep}: no quartets within nroots ceiling");
+        assert_any_nonzero(
+            &probe,
+            &format!("int2e_ip2_{rep} probe (p,s,p,s) cross-atom"),
+        );
+        assert!(
+            tested > 0,
+            "int2e_ip2_{rep}: no quartets within nroots ceiling"
+        );
     }
 }
 
@@ -240,8 +259,16 @@ fn test_int2e_ip2_spd_parity() {
 
     type VFn = fn(&mut [f64], &[i32; 4], &[i32], i32, &[i32], i32, &[f64]) -> i32;
     let cases: [(bool, RawApiId, VFn); 2] = [
-        (false, RawApiId::INT2E_IP2_SPH, vendor_ffi::vendor_int2e_ip2_sph),
-        (true, RawApiId::INT2E_IP2_CART, vendor_ffi::vendor_int2e_ip2_cart),
+        (
+            false,
+            RawApiId::INT2E_IP2_SPH,
+            vendor_ffi::vendor_int2e_ip2_sph,
+        ),
+        (
+            true,
+            RawApiId::INT2E_IP2_CART,
+            vendor_ffi::vendor_int2e_ip2_cart,
+        ),
     ];
     for (cart, api, vendor_fn) in cases {
         let nf = |l: i32| if cart { ncart(l) } else { nsph(l) };
@@ -260,7 +287,8 @@ fn test_int2e_ip2_spd_parity() {
                             continue;
                         }
                         let shls = [i as i32, j as i32, k as i32, l as i32];
-                        let vendor = collect_vendor_3c_quartet(vendor_fn, &atm, &bas, &env, &shls, &nf);
+                        let vendor =
+                            collect_vendor_3c_quartet(vendor_fn, &atm, &bas, &env, &shls, &nf);
                         let cintx = collect_3c_quartet(api, &atm, &bas, &env, &shls, &nf);
                         mismatches += count_mismatches(&vendor, &cintx, ATOL, RTOL);
                         if cintx.iter().any(|v| v.abs() > 1e-18) {
@@ -279,8 +307,14 @@ fn test_int2e_ip2_spd_parity() {
             mismatches, 0,
             "int2e_ip2_{rep}: {mismatches} parity mismatches vs vendored libcint (component-leading F-order)"
         );
-        assert!(any_nonzero, "int2e_ip2_{rep}: all outputs zero — kernel appears stubbed");
-        assert!(nonsquare, "int2e_ip2_{rep}: no non-square (ni!=nk) quartet exercised");
+        assert!(
+            any_nonzero,
+            "int2e_ip2_{rep}: all outputs zero — kernel appears stubbed"
+        );
+        assert!(
+            nonsquare,
+            "int2e_ip2_{rep}: no non-square (ni!=nk) quartet exercised"
+        );
         assert!(tested > 0, "int2e_ip2_{rep}: no quartets tested");
         println!("int2e_ip2_{rep}: vendor parity PASS over {tested} quartets, atol={ATOL:.0e}");
     }

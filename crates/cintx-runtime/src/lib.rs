@@ -1,5 +1,6 @@
 //! Runtime planning and workspace governance for cintx.
 
+pub mod batch;
 pub mod dispatch;
 pub mod metrics;
 pub mod options;
@@ -8,6 +9,9 @@ pub mod scheduler;
 pub mod validator;
 pub mod workspace;
 
+pub use batch::{
+    BatchBucket, BatchChunk, BatchExecutionPlan, BatchItem, BatchItemRequest, KernelClass,
+};
 pub use dispatch::BackendExecutor;
 pub use dispatch::DispatchDecision;
 pub use dispatch::DispatchFamily;
@@ -16,10 +20,16 @@ pub use dispatch::OutputOwnership;
 pub use dispatch::WorkspaceBytes;
 pub use metrics::ExecutionStats;
 pub use options::{BackendCapabilityToken, BackendIntent, BackendKind, ExecutionOptions};
-pub use planner::{ExecutionPlan, GridsEnvParams, OperatorEnvParams, OutputLayoutMetadata, evaluate, query_workspace};
+pub use planner::{
+    ExecutionPlan, GridsEnvParams, OperatorEnvParams, OutputLayoutMetadata, evaluate,
+    query_workspace,
+};
 pub use scheduler::schedule_chunks;
-pub use validator::{ValidatedShellTuple, validate_dims, validate_grids_env_params, validate_f12_env_params, validate_shell_tuple};
+pub use validator::{
+    ValidatedShellTuple, validate_dims, validate_f12_env_params, validate_grids_env_params,
+    validate_shell_tuple,
+};
 pub use workspace::{
-    ChunkInfo, ChunkPlan, ChunkPlanner, FallibleBuffer, HostWorkspaceAllocator, WorkspaceAllocator,
-    WorkspaceQuery, WorkspaceRequest,
+    ChunkInfo, ChunkPlan, ChunkPlanner, FallibleBuffer, HostWorkspaceAllocator,
+    ReusableWorkspaceAllocator, WorkspaceAllocator, WorkspaceQuery, WorkspaceRequest,
 };

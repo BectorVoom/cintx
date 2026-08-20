@@ -4,10 +4,10 @@ pub mod vector;
 
 pub use boys::{rys_root1_scalar, rys_root1_simd, rys_root2_scalar, rys_root2_simd};
 pub use kernels::{
-    common_fac_sp, ncart, AtomCoord, Center2c2eInput, Center3c1eInput, Center3c2eInput,
-    Center4c1eInput, OneElectronInput, SimdCenter2c2eKernel, SimdCenter3c1eKernel,
-    SimdCenter3c2eKernel, SimdCenter4c1eKernel, SimdOneElectronKernel, SimdTwoElectronKernel,
-    TwoElectronInput,
+    AtomCoord, Center2c2eInput, Center3c1eInput, Center3c2eInput, Center4c1eInput,
+    OneElectronInput, SimdCenter2c2eKernel, SimdCenter3c1eKernel, SimdCenter3c2eKernel,
+    SimdCenter4c1eKernel, SimdOneElectronKernel, SimdTwoElectronKernel, TwoElectronInput,
+    common_fac_sp, ncart,
 };
 pub use vector::SimdFloat;
 
@@ -170,7 +170,10 @@ mod tests {
         SimdOneElectronKernel::eval_nuc::<f64x4>(&input, &mut out_f64x4);
 
         assert!(out_scalar[0].is_finite());
-        assert!(out_scalar[0] < 0.0, "Nuclear attraction should be attractive (< 0)");
+        assert!(
+            out_scalar[0] < 0.0,
+            "Nuclear attraction should be attractive (< 0)"
+        );
         assert_relative_eq!(out_scalar[0], out_f64x4[0], epsilon = 1e-14);
         assert_eq!(out_scalar[0].to_bits(), out_f64x4[0].to_bits());
     }
@@ -466,7 +469,10 @@ mod tests {
         SimdTwoElectronKernel::eval::<f64x2>(&input, &mut out_f64x2);
         SimdTwoElectronKernel::eval::<f64x4>(&input, &mut out_f64x4);
 
-        assert!(out_scalar[0] > 0.0, "2e (ss|ss) integral should be positive");
+        assert!(
+            out_scalar[0] > 0.0,
+            "2e (ss|ss) integral should be positive"
+        );
         assert_relative_eq!(out_scalar[0], out_f64x2[0], epsilon = 1e-14);
         assert_relative_eq!(out_scalar[0], out_f64x4[0], epsilon = 1e-14);
         assert_eq!(out_scalar[0].to_bits(), out_f64x4[0].to_bits());
@@ -725,4 +731,3 @@ mod tests {
         assert_eq!(out_scalar[0].to_bits(), out_simd[0].to_bits());
     }
 }
-

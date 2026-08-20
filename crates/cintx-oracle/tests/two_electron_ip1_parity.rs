@@ -31,7 +31,7 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
     PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
@@ -149,18 +149,30 @@ const N_SHELLS: usize = 6;
 /// Drive cintx for one int2e_ip1 quartet via the RAW eval_raw path (the same
 /// arity-4 raw arm pyscf-gto's intor.rs uses — independent of Phase 18, D-11).
 /// `n_elem` is `3 * ni*nj*nk*nl` (component-leading staging).
-fn eval_cintx(api: RawApiId, shls: &[i32; 4], n_elem: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+fn eval_cintx(
+    api: RawApiId,
+    shls: &[i32; 4],
+    n_elem: usize,
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+) -> Vec<f64> {
     let mut out = vec![0.0_f64; n_elem];
     unsafe {
-        eval_raw(api, Some(&mut out), None, shls, atm, bas, env, None, None).unwrap_or_else(|e| {
-            panic!("eval_raw {api:?} failed for shells {shls:?}: {e:?}")
-        });
+        eval_raw(api, Some(&mut out), None, shls, atm, bas, env, None, None)
+            .unwrap_or_else(|e| panic!("eval_raw {api:?} failed for shells {shls:?}: {e:?}"));
     }
     out
 }
 
 #[cfg(has_vendor_libcint)]
-fn eval_vendor_sph(shls: &[i32; 4], n_elem: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+fn eval_vendor_sph(
+    shls: &[i32; 4],
+    n_elem: usize,
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+) -> Vec<f64> {
     use cintx_oracle::vendor_ffi;
     let mut out = vec![0.0_f64; n_elem];
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -170,7 +182,13 @@ fn eval_vendor_sph(shls: &[i32; 4], n_elem: usize, atm: &[i32], bas: &[i32], env
 }
 
 #[cfg(has_vendor_libcint)]
-fn eval_vendor_cart(shls: &[i32; 4], n_elem: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+fn eval_vendor_cart(
+    shls: &[i32; 4],
+    n_elem: usize,
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+) -> Vec<f64> {
     use cintx_oracle::vendor_ffi;
     let mut out = vec![0.0_f64; n_elem];
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -183,16 +201,14 @@ fn eval_vendor_cart(shls: &[i32; 4], n_elem: usize, atm: &[i32], bas: &[i32], en
 /// vs vendored libcint. The element-for-element comparison validates the
 /// component-leading `[3, nl, nk, nj, ni]` F-order (Risk R3).
 #[cfg(has_vendor_libcint)]
-fn run_ip1_parity(
-    label: &str,
-    cart: bool,
-    atm: &[i32],
-    bas: &[i32],
-    env: &[f64],
-) {
+fn run_ip1_parity(label: &str, cart: bool, atm: &[i32], bas: &[i32], env: &[f64]) {
     let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let nf = |l: i32| if cart { ncart(l) } else { nsph(l) };
-    let api = if cart { RawApiId::INT2E_IP1_CART } else { RawApiId::INT2E_IP1_SPH };
+    let api = if cart {
+        RawApiId::INT2E_IP1_CART
+    } else {
+        RawApiId::INT2E_IP1_SPH
+    };
 
     let mut mismatch_count = 0usize;
     let mut any_nonzero = false;
@@ -285,7 +301,11 @@ fn int2e_ip1_sph_determinism_and_nonzero_sentinel() {
 
     assert_eq!(out1.len(), out2.len());
     for (a, b) in out1.iter().zip(out2.iter()) {
-        assert_eq!(a.to_bits(), b.to_bits(), "int2e_ip1 not bit-identical across two evals");
+        assert_eq!(
+            a.to_bits(),
+            b.to_bits(),
+            "int2e_ip1 not bit-identical across two evals"
+        );
     }
     assert!(
         out1.iter().any(|v| v.abs() > 1.0e-18),

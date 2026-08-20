@@ -249,9 +249,81 @@ impl WorkspaceAllocator for HostWorkspaceAllocator {
     fn release(&mut self, _buffer: FallibleBuffer<u8>) {}
 }
 
+/// A serial workspace arena that retains the largest released host buffer.
+///
+/// Callers that share this allocator must serialize allocation/use/release of a
+/// workspace. A larger retained buffer is valid for a smaller request because
+/// backend IO treats the buffer as scratch capacity, never an exact layout.
+#[derive(Debug, Default)]
+pub struct ReusableWorkspaceAllocator {
+    retained: Option<FallibleBuffer<u8>>,
+    allocations: usize,
+    reuses: usize,
+    peak_bytes: usize,
+}
+
+impl ReusableWorkspaceAllocator {
+    pub fn allocations(&self) -> usize {
+        self.allocations
+    }
+
+    pub fn reuses(&self) -> usize {
+        self.reuses
+    }
+
+    pub fn peak_bytes(&self) -> usize {
+        self.peak_bytes
+    }
+}
+
+impl WorkspaceAllocator for ReusableWorkspaceAllocator {
+    fn try_alloc(
+        &mut self,
+        bytes: usize,
+        alignment: usize,
+    ) -> Result<FallibleBuffer<u8>, cintxRsError> {
+        let requested = bytes.max(1);
+        self.peak_bytes = self.peak_bytes.max(bytes);
+        if self
+            .retained
+            .as_ref()
+            .is_some_and(|buffer| buffer.len() >= requested && buffer.alignment() >= alignment)
+        {
+            self.reuses += 1;
+            return Ok(self.retained.take().expect("retained buffer checked above"));
+        }
+
+        let buffer = FallibleBuffer::try_uninit(requested, alignment)?;
+        self.allocations += 1;
+        Ok(buffer)
+    }
+
+    fn release(&mut self, buffer: FallibleBuffer<u8>) {
+        if self
+            .retained
+            .as_ref()
+            .is_none_or(|retained| buffer.len() > retained.len())
+        {
+            self.retained = Some(buffer);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reusable_allocator_retains_a_larger_released_buffer() {
+        let mut allocator = ReusableWorkspaceAllocator::default();
+        let first = allocator.try_alloc(128, DEFAULT_ALIGNMENT_BYTES).unwrap();
+        allocator.release(first);
+        let second = allocator.try_alloc(64, DEFAULT_ALIGNMENT_BYTES).unwrap();
+
+        assert_eq!(second.len(), 128);
+        assert_eq!(allocator.allocations(), 1);
+        assert_eq!(allocator.reuses(), 1);
+    }
 
     #[test]
     fn chunk_planner_splits_to_fit_limit() {
@@ -382,7 +454,10 @@ mod tests {
             backend_intent: opts.backend_intent.clone(),
             backend_capability_token: opts.backend_capability_token.clone(),
         };
-        assert!(query.planning_matches(&opts), "matching contract should return true");
+        assert!(
+            query.planning_matches(&opts),
+            "matching contract should return true"
+        );
 
         // Change backend_intent.backend — should return false.
         let mut opts_different_backend = opts.clone();
@@ -402,7 +477,9 @@ mod tests {
 
         // Change capability_fingerprint — should return false.
         let mut opts_different_token = opts.clone();
-        opts_different_token.backend_capability_token.capability_fingerprint = 99;
+        opts_different_token
+            .backend_capability_token
+            .capability_fingerprint = 99;
         assert!(
             !query.planning_matches(&opts_different_token),
             "capability token drift must fail planning_matches"

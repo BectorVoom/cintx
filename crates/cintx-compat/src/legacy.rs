@@ -377,20 +377,12 @@ mod tests {
 
     fn misc_wrapper_macro(base_symbol: &str) -> Option<MiscWrapperMacro> {
         match base_symbol {
-            "int1e_ovlp"
-            | "int1e_nuc"
-            | "int2e"
-            | "int2c2e"
-            | "int3c1e"
-            | "int3c1e_p2"
-            | "int3c2e_ip1"
-            | "int2e_ip1" => Some(MiscWrapperMacro::AllCint),
+            "int1e_ovlp" | "int1e_nuc" | "int2e" | "int2c2e" | "int3c1e" | "int3c1e_p2"
+            | "int3c2e_ip1" | "int2e_ip1" => Some(MiscWrapperMacro::AllCint),
             // ALL_CINT1E families (libcint 6.1.3 src/autocode/grad1.c + intor1.c) — no optimizer wrappers.
-            "int1e_kin"
-            | "int1e_ipovlp"
-            | "int1e_ipkin"
-            | "int1e_ipnuc"
-            | "int1e_iprinv" => Some(MiscWrapperMacro::AllCint1e),
+            "int1e_kin" | "int1e_ipovlp" | "int1e_ipkin" | "int1e_ipnuc" | "int1e_iprinv" => {
+                Some(MiscWrapperMacro::AllCint1e)
+            }
             // int1e_ecp_iprinv (ECP) has no misc.h cint* wrapper at all.
             _ => None,
         }
@@ -457,7 +449,9 @@ mod tests {
             Ok(summary) => {
                 assert!(summary.bytes_written > 0);
             }
-            Err(cintxRsError::UnsupportedApi { ref requested }) if requested.contains("wgpu-capability") => {
+            Err(cintxRsError::UnsupportedApi { ref requested })
+                if requested.contains("wgpu-capability") =>
+            {
                 // No GPU adapter — correct fail-closed behavior (D-01/D-02).
             }
             Err(other) => panic!("unexpected error from legacy eval: {other:?}"),

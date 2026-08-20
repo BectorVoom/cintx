@@ -19,7 +19,7 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
     PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_RINV_ORIG, PTR_ZETA, RawApiId, eval_raw,
 };
 
@@ -195,8 +195,18 @@ fn collect_1e_grad_matrix(
 
             // SAFETY: atm/bas/env are well-formed by construction; shls are valid.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
 
             // out is component-leading [comp * ni * nj + n]; column-major within block (n = jj*ni+ii).
@@ -314,7 +324,10 @@ fn max_abs_diff(reference: &[f64], observed: &[f64]) -> f64 {
 
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: gradient matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: gradient matrix is all-zero (zero-fill regression)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -328,9 +341,17 @@ fn test_int1e_ipnuc_sph_determinism() {
     let (atm, bas, env) = build_h2o_sto3g_envstart();
     let mat1 = collect_1e_grad_matrix(RawApiId::INT1E_IPNUC_SPH, &atm, &bas, &env, true);
     let mat2 = collect_1e_grad_matrix(RawApiId::INT1E_IPNUC_SPH, &atm, &bas, &env, true);
-    assert_eq!(mat1.len(), 3 * 7 * 7, "ipnuc_sph matrix size should be 3*7*7=147");
+    assert_eq!(
+        mat1.len(),
+        3 * 7 * 7,
+        "ipnuc_sph matrix size should be 3*7*7=147"
+    );
     for (a, b) in mat1.iter().zip(mat2.iter()) {
-        assert_eq!(a.to_bits(), b.to_bits(), "int1e_ipnuc_sph must be bit-identical across two calls");
+        assert_eq!(
+            a.to_bits(),
+            b.to_bits(),
+            "int1e_ipnuc_sph must be bit-identical across two calls"
+        );
     }
     assert_any_nonzero(&mat1, "int1e_ipnuc_sph");
 }
@@ -353,12 +374,22 @@ fn test_int1e_iprinv_sph_origin_sensitivity() {
 
     // Determinism for a fixed origin.
     for (a, b) in mat_o.iter().zip(mat_o2.iter()) {
-        assert_eq!(a.to_bits(), b.to_bits(), "iprinv_sph must be bit-identical for a fixed origin");
+        assert_eq!(
+            a.to_bits(),
+            b.to_bits(),
+            "iprinv_sph must be bit-identical for a fixed origin"
+        );
     }
     assert_any_nonzero(&mat_o, "int1e_iprinv_sph @ O");
     // Different origins → different result.
-    let any_diff = mat_o.iter().zip(mat_h1.iter()).any(|(a, b)| (a - b).abs() > 1e-10);
-    assert!(any_diff, "iprinv: O vs H1 rinv origins must produce different output (origin consumed)");
+    let any_diff = mat_o
+        .iter()
+        .zip(mat_h1.iter())
+        .any(|(a, b)| (a - b).abs() > 1e-10);
+    assert!(
+        any_diff,
+        "iprinv: O vs H1 rinv origins must produce different output (origin consumed)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -374,15 +405,22 @@ fn test_int1e_ipnuc_sph_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g_envstart();
 
-    let vendor = collect_vendor_1e_grad_matrix(vendor_ffi::vendor_int1e_ipnuc_sph, &atm, &bas, &env, true);
+    let vendor =
+        collect_vendor_1e_grad_matrix(vendor_ffi::vendor_int1e_ipnuc_sph, &atm, &bas, &env, true);
     let cintx = collect_1e_grad_matrix(RawApiId::INT1E_IPNUC_SPH, &atm, &bas, &env, true);
 
     assert_any_nonzero(&cintx, "int1e_ipnuc_sph cintx");
     assert_any_nonzero(&vendor, "int1e_ipnuc_sph vendor");
 
     let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
-    eprintln!("int1e_ipnuc_sph worst |diff| = {:.3e}", max_abs_diff(&vendor, &cintx));
-    assert_eq!(mismatches, 0, "int1e_ipnuc_sph: {mismatches} mismatches vs vendored libcint at atol={ATOL}");
+    eprintln!(
+        "int1e_ipnuc_sph worst |diff| = {:.3e}",
+        max_abs_diff(&vendor, &cintx)
+    );
+    assert_eq!(
+        mismatches, 0,
+        "int1e_ipnuc_sph: {mismatches} mismatches vs vendored libcint at atol={ATOL}"
+    );
 }
 
 /// int1e_ipnuc_cart: byte-identity parity vs vendored libcint 6.1.3 at atol=1e-12.
@@ -393,15 +431,22 @@ fn test_int1e_ipnuc_cart_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g_envstart();
 
-    let vendor = collect_vendor_1e_grad_matrix(vendor_ffi::vendor_int1e_ipnuc_cart, &atm, &bas, &env, false);
+    let vendor =
+        collect_vendor_1e_grad_matrix(vendor_ffi::vendor_int1e_ipnuc_cart, &atm, &bas, &env, false);
     let cintx = collect_1e_grad_matrix(RawApiId::INT1E_IPNUC_CART, &atm, &bas, &env, false);
 
     assert_any_nonzero(&cintx, "int1e_ipnuc_cart cintx");
     assert_any_nonzero(&vendor, "int1e_ipnuc_cart vendor");
 
     let mismatches = count_mismatches(&vendor, &cintx, ATOL, RTOL);
-    eprintln!("int1e_ipnuc_cart worst |diff| = {:.3e}", max_abs_diff(&vendor, &cintx));
-    assert_eq!(mismatches, 0, "int1e_ipnuc_cart: {mismatches} mismatches vs vendored libcint at atol={ATOL}");
+    eprintln!(
+        "int1e_ipnuc_cart worst |diff| = {:.3e}",
+        max_abs_diff(&vendor, &cintx)
+    );
+    assert_eq!(
+        mismatches, 0,
+        "int1e_ipnuc_cart: {mismatches} mismatches vs vendored libcint at atol={ATOL}"
+    );
 }
 
 /// int1e_iprinv_sph: byte-identity parity vs vendored libcint 6.1.3 at atol=1e-12.
@@ -419,7 +464,13 @@ fn test_int1e_iprinv_sph_h2o_sto3g_parity() {
         // Set env[PTR_RINV_ORIG..+3] for BOTH the cintx and vendor paths.
         let env_c = env_with_rinv_origin(&env, origin);
 
-        let vendor = collect_vendor_1e_grad_matrix(vendor_ffi::vendor_int1e_iprinv_sph, &atm, &bas, &env_c, true);
+        let vendor = collect_vendor_1e_grad_matrix(
+            vendor_ffi::vendor_int1e_iprinv_sph,
+            &atm,
+            &bas,
+            &env_c,
+            true,
+        );
         let cintx = collect_1e_grad_matrix(RawApiId::INT1E_IPRINV_SPH, &atm, &bas, &env_c, true);
 
         assert_any_nonzero(&cintx, &format!("int1e_iprinv_sph cintx @ nucleus {c}"));
@@ -449,7 +500,13 @@ fn test_int1e_iprinv_cart_h2o_sto3g_parity() {
         let origin = nucleus_coord(&atm, &env, c);
         let env_c = env_with_rinv_origin(&env, origin);
 
-        let vendor = collect_vendor_1e_grad_matrix(vendor_ffi::vendor_int1e_iprinv_cart, &atm, &bas, &env_c, false);
+        let vendor = collect_vendor_1e_grad_matrix(
+            vendor_ffi::vendor_int1e_iprinv_cart,
+            &atm,
+            &bas,
+            &env_c,
+            false,
+        );
         let cintx = collect_1e_grad_matrix(RawApiId::INT1E_IPRINV_CART, &atm, &bas, &env_c, false);
 
         assert_any_nonzero(&cintx, &format!("int1e_iprinv_cart cintx @ nucleus {c}"));

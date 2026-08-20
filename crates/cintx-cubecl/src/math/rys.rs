@@ -11,8 +11,8 @@
 
 #![allow(unused_assignments)]
 
-use cubecl::prelude::*;
 use cintx_core::CintFloat;
+use cubecl::prelude::*;
 
 /// PIE4 = pi/4, used in large-x asymptotic formula.
 /// Source: rys_roots.c line 24 (`#define PIE4 0.78539816339744827900`).
@@ -27,25 +27,61 @@ const PIE4: f64 = 0.78539816339744827900_f64;
 /// Source: polyfits.c `_CINT_clenshaw_d1`, adapted to single-root scalar form.
 #[cube]
 pub fn clenshaw_d1<F: Float>(
-    c0: F, c1: F, c2: F, c3: F, c4: F, c5: F,
-    c6: F, c7: F, c8: F, c9: F, c10: F, c11: F,
-    c12: F, c13: F, u: F,
+    c0: F,
+    c1: F,
+    c2: F,
+    c3: F,
+    c4: F,
+    c5: F,
+    c6: F,
+    c7: F,
+    c8: F,
+    c9: F,
+    c10: F,
+    c11: F,
+    c12: F,
+    c13: F,
+    u: F,
 ) -> F {
     let u2 = F::new(2.0) * u;
     let mut g = c13;
     let mut d = F::new(0.0);
-    let tmp = u2 * g - d + c12; d = g; g = tmp;
-    let tmp = u2 * g - d + c11; d = g; g = tmp;
-    let tmp = u2 * g - d + c10; d = g; g = tmp;
-    let tmp = u2 * g - d + c9;  d = g; g = tmp;
-    let tmp = u2 * g - d + c8;  d = g; g = tmp;
-    let tmp = u2 * g - d + c7;  d = g; g = tmp;
-    let tmp = u2 * g - d + c6;  d = g; g = tmp;
-    let tmp = u2 * g - d + c5;  d = g; g = tmp;
-    let tmp = u2 * g - d + c4;  d = g; g = tmp;
-    let tmp = u2 * g - d + c3;  d = g; g = tmp;
-    let tmp = u2 * g - d + c2;  d = g; g = tmp;
-    let tmp = u2 * g - d + c1;  d = g; g = tmp;
+    let tmp = u2 * g - d + c12;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c11;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c10;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c9;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c8;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c7;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c6;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c5;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c4;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c3;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c2;
+    d = g;
+    g = tmp;
+    let tmp = u2 * g - d + c1;
+    d = g;
+    g = tmp;
     u * g - d + F::new(0.5) * c0
 }
 
@@ -73,8 +109,11 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         let e = F::exp(-x);
         if x > F::new(15.0) {
             let y = F::new(1.0) / x;
-            let mut f1 = ((F::cast_from(1.9623264149430e-01_f64) * y - F::cast_from(4.9695241464490e-01_f64)) * y
-                - F::cast_from(6.0156581186481e-05_f64)) * e
+            let mut f1 = ((F::cast_from(1.9623264149430e-01_f64) * y
+                - F::cast_from(4.9695241464490e-01_f64))
+                * y
+                - F::cast_from(6.0156581186481e-05_f64))
+                * e
                 + F::sqrt(pie4 / x)
                 - e;
             f1 = f1 * y * F::new(0.5);
@@ -82,9 +121,13 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             rt1 = f1 / (ww1 - f1);
         } else if x > F::new(10.0) {
             let y = F::new(1.0) / x;
-            let mut f1 = (((F::cast_from(-1.8784686463512e-01_f64) * y + F::cast_from(2.2991849164985e-01_f64)) * y
-                - F::cast_from(4.9893752514047e-01_f64)) * y
-                - F::cast_from(2.1916512131607e-05_f64)) * e
+            let mut f1 = (((F::cast_from(-1.8784686463512e-01_f64) * y
+                + F::cast_from(2.2991849164985e-01_f64))
+                * y
+                - F::cast_from(4.9893752514047e-01_f64))
+                * y
+                - F::cast_from(2.1916512131607e-05_f64))
+                * e
                 + F::sqrt(pie4 / x)
                 - e;
             f1 = f1 * y * F::new(0.5);
@@ -92,12 +135,19 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             rt1 = f1 / (ww1 - f1);
         } else if x > F::new(5.0) {
             let y = F::new(1.0) / x;
-            let mut f1 = ((((((F::cast_from(4.6897511375022e-01_f64) * y - F::cast_from(6.9955602298985e-01_f64)) * y
-                + F::cast_from(5.3689283271887e-01_f64)) * y
-                - F::cast_from(3.2883030418398e-01_f64)) * y
-                + F::cast_from(2.4645596956002e-01_f64)) * y
-                - F::cast_from(4.9984072848436e-01_f64)) * y
-                - F::cast_from(3.1501078774085e-06_f64)) * e
+            let mut f1 = ((((((F::cast_from(4.6897511375022e-01_f64) * y
+                - F::cast_from(6.9955602298985e-01_f64))
+                * y
+                + F::cast_from(5.3689283271887e-01_f64))
+                * y
+                - F::cast_from(3.2883030418398e-01_f64))
+                * y
+                + F::cast_from(2.4645596956002e-01_f64))
+                * y
+                - F::cast_from(4.9984072848436e-01_f64))
+                * y
+                - F::cast_from(3.1501078774085e-06_f64))
+                * e
                 + F::sqrt(pie4 / x)
                 - e;
             f1 = f1 * y * F::new(0.5);
@@ -105,43 +155,74 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             rt1 = f1 / (ww1 - f1);
         } else if x > F::new(3.0) {
             let y = x - F::new(4.0);
-            let f1 = ((((((((((F::cast_from(-2.62453564772299e-11_f64) * y + F::cast_from(3.24031041623823e-10_f64)) * y
-                - F::cast_from(3.614965656163e-09_f64)) * y
-                + F::cast_from(3.760256799971e-08_f64)) * y
-                - F::cast_from(3.553558319675e-07_f64)) * y
-                + F::cast_from(3.022556449731e-06_f64)) * y
-                - F::cast_from(2.290098979647e-05_f64)) * y
-                + F::cast_from(1.526537461148e-04_f64)) * y
-                - F::cast_from(8.81947375894379e-04_f64)) * y
-                + F::cast_from(4.33207949514611e-03_f64)) * y
-                - F::cast_from(1.75257821619926e-02_f64)) * y
+            let f1 = ((((((((((F::cast_from(-2.62453564772299e-11_f64) * y
+                + F::cast_from(3.24031041623823e-10_f64))
+                * y
+                - F::cast_from(3.614965656163e-09_f64))
+                * y
+                + F::cast_from(3.760256799971e-08_f64))
+                * y
+                - F::cast_from(3.553558319675e-07_f64))
+                * y
+                + F::cast_from(3.022556449731e-06_f64))
+                * y
+                - F::cast_from(2.290098979647e-05_f64))
+                * y
+                + F::cast_from(1.526537461148e-04_f64))
+                * y
+                - F::cast_from(8.81947375894379e-04_f64))
+                * y
+                + F::cast_from(4.33207949514611e-03_f64))
+                * y
+                - F::cast_from(1.75257821619926e-02_f64))
+                * y
                 + F::cast_from(5.28406320615584e-02_f64);
             ww1 = F::new(2.0) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
         } else if x > F::new(1.0) {
             let y = x - F::new(2.0);
-            let f1 = ((((((((((F::cast_from(-1.61702782425558e-10_f64) * y + F::cast_from(1.96215250865776e-09_f64)) * y
-                - F::cast_from(2.14234468198419e-08_f64)) * y
-                + F::cast_from(2.17216556336318e-07_f64)) * y
-                - F::cast_from(1.98850171329371e-06_f64)) * y
-                + F::cast_from(1.62429321438911e-05_f64)) * y
-                - F::cast_from(1.16740298039895e-04_f64)) * y
-                + F::cast_from(7.24888732052332e-04_f64)) * y
-                - F::cast_from(3.79490003707156e-03_f64)) * y
-                + F::cast_from(1.61723488664661e-02_f64)) * y
-                - F::cast_from(5.29428148329736e-02_f64)) * y
+            let f1 = ((((((((((F::cast_from(-1.61702782425558e-10_f64) * y
+                + F::cast_from(1.96215250865776e-09_f64))
+                * y
+                - F::cast_from(2.14234468198419e-08_f64))
+                * y
+                + F::cast_from(2.17216556336318e-07_f64))
+                * y
+                - F::cast_from(1.98850171329371e-06_f64))
+                * y
+                + F::cast_from(1.62429321438911e-05_f64))
+                * y
+                - F::cast_from(1.16740298039895e-04_f64))
+                * y
+                + F::cast_from(7.24888732052332e-04_f64))
+                * y
+                - F::cast_from(3.79490003707156e-03_f64))
+                * y
+                + F::cast_from(1.61723488664661e-02_f64))
+                * y
+                - F::cast_from(5.29428148329736e-02_f64))
+                * y
                 + F::cast_from(1.15702180856167e-01_f64);
             ww1 = F::new(2.0) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
         } else {
-            let f1 = ((((((((F::cast_from(-8.36313918003957e-08_f64) * x + F::cast_from(1.21222603512827e-06_f64)) * x
-                - F::cast_from(1.15662609053481e-05_f64)) * x
-                + F::cast_from(9.25197374512647e-05_f64)) * x
-                - F::cast_from(6.40994113129432e-04_f64)) * x
-                + F::cast_from(3.78787044215009e-03_f64)) * x
-                - F::cast_from(1.85185172458485e-02_f64)) * x
-                + F::cast_from(7.14285713298222e-02_f64)) * x
-                - F::cast_from(1.99999999997023e-01_f64)) * x
+            let f1 = ((((((((F::cast_from(-8.36313918003957e-08_f64) * x
+                + F::cast_from(1.21222603512827e-06_f64))
+                * x
+                - F::cast_from(1.15662609053481e-05_f64))
+                * x
+                + F::cast_from(9.25197374512647e-05_f64))
+                * x
+                - F::cast_from(6.40994113129432e-04_f64))
+                * x
+                + F::cast_from(3.78787044215009e-03_f64))
+                * x
+                - F::cast_from(1.85185172458485e-02_f64))
+                * x
+                + F::cast_from(7.14285713298222e-02_f64))
+                * x
+                - F::cast_from(1.99999999997023e-01_f64))
+                * x
                 + F::cast_from(3.33333333333318e-01_f64);
             ww1 = F::new(2.0) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
@@ -178,197 +259,361 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww1 = F::cast_from(6.52145154862545e-01_f64) - F::cast_from(1.22713621927067e-01_f64) * x;
         ww2 = F::cast_from(3.47854845137453e-01_f64) - F::cast_from(2.10619711404725e-01_f64) * x;
     } else if x < F::new(1.0) {
-        let f1 = ((((((((F::cast_from(-8.36313918003957e-08_f64) * x + F::cast_from(1.21222603512827e-06_f64)) * x
-            - F::cast_from(1.15662609053481e-05_f64)) * x
-            + F::cast_from(9.25197374512647e-05_f64)) * x
-            - F::cast_from(6.40994113129432e-04_f64)) * x
-            + F::cast_from(3.78787044215009e-03_f64)) * x
-            - F::cast_from(1.85185172458485e-02_f64)) * x
-            + F::cast_from(7.14285713298222e-02_f64)) * x
-            - F::cast_from(1.99999999997023e-01_f64)) * x
+        let f1 = ((((((((F::cast_from(-8.36313918003957e-08_f64) * x
+            + F::cast_from(1.21222603512827e-06_f64))
+            * x
+            - F::cast_from(1.15662609053481e-05_f64))
+            * x
+            + F::cast_from(9.25197374512647e-05_f64))
+            * x
+            - F::cast_from(6.40994113129432e-04_f64))
+            * x
+            + F::cast_from(3.78787044215009e-03_f64))
+            * x
+            - F::cast_from(1.85185172458485e-02_f64))
+            * x
+            + F::cast_from(7.14285713298222e-02_f64))
+            * x
+            - F::cast_from(1.99999999997023e-01_f64))
+            * x
             + F::cast_from(3.33333333333318e-01_f64);
         let e = F::exp(-x);
         ww1 = (x + x) * f1 + e;
-        rt1 = (((((((F::cast_from(-2.35234358048491e-09_f64) * x + F::cast_from(2.49173650389842e-08_f64)) * x
-            - F::cast_from(4.558315364581e-08_f64)) * x
-            - F::cast_from(2.447252174587e-06_f64)) * x
-            + F::cast_from(4.743292959463e-05_f64)) * x
-            - F::cast_from(5.33184749432408e-04_f64)) * x
-            + F::cast_from(4.44654947116579e-03_f64)) * x
-            - F::cast_from(2.90430236084697e-02_f64)) * x
+        rt1 = (((((((F::cast_from(-2.35234358048491e-09_f64) * x
+            + F::cast_from(2.49173650389842e-08_f64))
+            * x
+            - F::cast_from(4.558315364581e-08_f64))
+            * x
+            - F::cast_from(2.447252174587e-06_f64))
+            * x
+            + F::cast_from(4.743292959463e-05_f64))
+            * x
+            - F::cast_from(5.33184749432408e-04_f64))
+            * x
+            + F::cast_from(4.44654947116579e-03_f64))
+            * x
+            - F::cast_from(2.90430236084697e-02_f64))
+            * x
             + F::cast_from(1.30693606237085e-01_f64);
-        rt2 = (((((((F::cast_from(-2.47404902329170e-08_f64) * x + F::cast_from(2.36809910635906e-07_f64)) * x
-            + F::cast_from(1.835367736310e-06_f64)) * x
-            - F::cast_from(2.066168802076e-05_f64)) * x
-            - F::cast_from(1.345693393936e-04_f64)) * x
-            - F::cast_from(5.88154362858038e-05_f64)) * x
-            + F::cast_from(5.32735082098139e-02_f64)) * x
-            - F::cast_from(6.37623643056745e-01_f64)) * x
+        rt2 = (((((((F::cast_from(-2.47404902329170e-08_f64) * x
+            + F::cast_from(2.36809910635906e-07_f64))
+            * x
+            + F::cast_from(1.835367736310e-06_f64))
+            * x
+            - F::cast_from(2.066168802076e-05_f64))
+            * x
+            - F::cast_from(1.345693393936e-04_f64))
+            * x
+            - F::cast_from(5.88154362858038e-05_f64))
+            * x
+            + F::cast_from(5.32735082098139e-02_f64))
+            * x
+            - F::cast_from(6.37623643056745e-01_f64))
+            * x
             + F::cast_from(2.86930639376289e+00_f64);
         ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < F::new(3.0) {
         let y = x - F::new(2.0);
-        let f1 = ((((((((((F::cast_from(-1.61702782425558e-10_f64) * y + F::cast_from(1.96215250865776e-09_f64)) * y
-            - F::cast_from(2.14234468198419e-08_f64)) * y
-            + F::cast_from(2.17216556336318e-07_f64)) * y
-            - F::cast_from(1.98850171329371e-06_f64)) * y
-            + F::cast_from(1.62429321438911e-05_f64)) * y
-            - F::cast_from(1.16740298039895e-04_f64)) * y
-            + F::cast_from(7.24888732052332e-04_f64)) * y
-            - F::cast_from(3.79490003707156e-03_f64)) * y
-            + F::cast_from(1.61723488664661e-02_f64)) * y
-            - F::cast_from(5.29428148329736e-02_f64)) * y
+        let f1 = ((((((((((F::cast_from(-1.61702782425558e-10_f64) * y
+            + F::cast_from(1.96215250865776e-09_f64))
+            * y
+            - F::cast_from(2.14234468198419e-08_f64))
+            * y
+            + F::cast_from(2.17216556336318e-07_f64))
+            * y
+            - F::cast_from(1.98850171329371e-06_f64))
+            * y
+            + F::cast_from(1.62429321438911e-05_f64))
+            * y
+            - F::cast_from(1.16740298039895e-04_f64))
+            * y
+            + F::cast_from(7.24888732052332e-04_f64))
+            * y
+            - F::cast_from(3.79490003707156e-03_f64))
+            * y
+            + F::cast_from(1.61723488664661e-02_f64))
+            * y
+            - F::cast_from(5.29428148329736e-02_f64))
+            * y
             + F::cast_from(1.15702180856167e-01_f64);
         let e = F::exp(-x);
         ww1 = (x + x) * f1 + e;
-        rt1 = (((((((((F::cast_from(-6.36859636616415e-12_f64) * y + F::cast_from(8.47417064776270e-11_f64)) * y
-            - F::cast_from(5.152207846962e-10_f64)) * y
-            - F::cast_from(3.846389873308e-10_f64)) * y
-            + F::cast_from(8.472253388380e-08_f64)) * y
-            - F::cast_from(1.85306035634293e-06_f64)) * y
-            + F::cast_from(2.47191693238413e-05_f64)) * y
-            - F::cast_from(2.49018321709815e-04_f64)) * y
-            + F::cast_from(2.19173220020161e-03_f64)) * y
-            - F::cast_from(1.63329339286794e-02_f64)) * y
+        rt1 = (((((((((F::cast_from(-6.36859636616415e-12_f64) * y
+            + F::cast_from(8.47417064776270e-11_f64))
+            * y
+            - F::cast_from(5.152207846962e-10_f64))
+            * y
+            - F::cast_from(3.846389873308e-10_f64))
+            * y
+            + F::cast_from(8.472253388380e-08_f64))
+            * y
+            - F::cast_from(1.85306035634293e-06_f64))
+            * y
+            + F::cast_from(2.47191693238413e-05_f64))
+            * y
+            - F::cast_from(2.49018321709815e-04_f64))
+            * y
+            + F::cast_from(2.19173220020161e-03_f64))
+            * y
+            - F::cast_from(1.63329339286794e-02_f64))
+            * y
             + F::cast_from(8.68085688285261e-02_f64);
-        rt2 = ((((((((( F::cast_from(1.45331350488343e-10_f64) * y + F::cast_from(2.07111465297976e-09_f64)) * y
-            - F::cast_from(1.878920917404e-08_f64)) * y
-            - F::cast_from(1.725838516261e-07_f64)) * y
-            + F::cast_from(2.247389642339e-06_f64)) * y
-            + F::cast_from(9.76783813082564e-06_f64)) * y
-            - F::cast_from(1.93160765581969e-04_f64)) * y
-            - F::cast_from(1.58064140671893e-03_f64)) * y
-            + F::cast_from(4.85928174507904e-02_f64)) * y
-            - F::cast_from(4.30761584997596e-01_f64)) * y
+        rt2 = (((((((((F::cast_from(1.45331350488343e-10_f64) * y
+            + F::cast_from(2.07111465297976e-09_f64))
+            * y
+            - F::cast_from(1.878920917404e-08_f64))
+            * y
+            - F::cast_from(1.725838516261e-07_f64))
+            * y
+            + F::cast_from(2.247389642339e-06_f64))
+            * y
+            + F::cast_from(9.76783813082564e-06_f64))
+            * y
+            - F::cast_from(1.93160765581969e-04_f64))
+            * y
+            - F::cast_from(1.58064140671893e-03_f64))
+            * y
+            + F::cast_from(4.85928174507904e-02_f64))
+            * y
+            - F::cast_from(4.30761584997596e-01_f64))
+            * y
             + F::cast_from(1.80400974537950e+00_f64);
         ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < F::new(5.0) {
         let y = x - F::new(4.0);
-        let f1 = ((((((((((F::cast_from(-2.62453564772299e-11_f64) * y + F::cast_from(3.24031041623823e-10_f64)) * y
-            - F::cast_from(3.614965656163e-09_f64)) * y
-            + F::cast_from(3.760256799971e-08_f64)) * y
-            - F::cast_from(3.553558319675e-07_f64)) * y
-            + F::cast_from(3.022556449731e-06_f64)) * y
-            - F::cast_from(2.290098979647e-05_f64)) * y
-            + F::cast_from(1.526537461148e-04_f64)) * y
-            - F::cast_from(8.81947375894379e-04_f64)) * y
-            + F::cast_from(4.33207949514611e-03_f64)) * y
-            - F::cast_from(1.75257821619926e-02_f64)) * y
+        let f1 = ((((((((((F::cast_from(-2.62453564772299e-11_f64) * y
+            + F::cast_from(3.24031041623823e-10_f64))
+            * y
+            - F::cast_from(3.614965656163e-09_f64))
+            * y
+            + F::cast_from(3.760256799971e-08_f64))
+            * y
+            - F::cast_from(3.553558319675e-07_f64))
+            * y
+            + F::cast_from(3.022556449731e-06_f64))
+            * y
+            - F::cast_from(2.290098979647e-05_f64))
+            * y
+            + F::cast_from(1.526537461148e-04_f64))
+            * y
+            - F::cast_from(8.81947375894379e-04_f64))
+            * y
+            + F::cast_from(4.33207949514611e-03_f64))
+            * y
+            - F::cast_from(1.75257821619926e-02_f64))
+            * y
             + F::cast_from(5.28406320615584e-02_f64);
         let e = F::exp(-x);
         ww1 = (x + x) * f1 + e;
-        rt1 = ((((((((F::cast_from(-4.11560117487296e-12_f64) * y + F::cast_from(7.10910223886747e-11_f64)) * y
-            - F::cast_from(1.73508862390291e-09_f64)) * y
-            + F::cast_from(5.93066856324744e-08_f64)) * y
-            - F::cast_from(9.76085576741771e-07_f64)) * y
-            + F::cast_from(1.08484384385679e-05_f64)) * y
-            - F::cast_from(1.12608004981982e-04_f64)) * y
-            + F::cast_from(1.16210907653515e-03_f64)) * y
-            - F::cast_from(9.89572595720351e-03_f64)) * y
+        rt1 = ((((((((F::cast_from(-4.11560117487296e-12_f64) * y
+            + F::cast_from(7.10910223886747e-11_f64))
+            * y
+            - F::cast_from(1.73508862390291e-09_f64))
+            * y
+            + F::cast_from(5.93066856324744e-08_f64))
+            * y
+            - F::cast_from(9.76085576741771e-07_f64))
+            * y
+            + F::cast_from(1.08484384385679e-05_f64))
+            * y
+            - F::cast_from(1.12608004981982e-04_f64))
+            * y
+            + F::cast_from(1.16210907653515e-03_f64))
+            * y
+            - F::cast_from(9.89572595720351e-03_f64))
+            * y
             + F::cast_from(6.12589701086408e-02_f64);
-        rt2 = (((((((((F::cast_from(-1.80555625241001e-10_f64) * y + F::cast_from(5.44072475994123e-10_f64)) * y
-            + F::cast_from(1.603498045240e-08_f64)) * y
-            - F::cast_from(1.497986283037e-07_f64)) * y
-            - F::cast_from(7.017002532106e-07_f64)) * y
-            + F::cast_from(1.85882653064034e-05_f64)) * y
-            - F::cast_from(2.04685420150802e-05_f64)) * y
-            - F::cast_from(2.49327728643089e-03_f64)) * y
-            + F::cast_from(3.56550690684281e-02_f64)) * y
-            - F::cast_from(2.60417417692375e-01_f64)) * y
+        rt2 = (((((((((F::cast_from(-1.80555625241001e-10_f64) * y
+            + F::cast_from(5.44072475994123e-10_f64))
+            * y
+            + F::cast_from(1.603498045240e-08_f64))
+            * y
+            - F::cast_from(1.497986283037e-07_f64))
+            * y
+            - F::cast_from(7.017002532106e-07_f64))
+            * y
+            + F::cast_from(1.85882653064034e-05_f64))
+            * y
+            - F::cast_from(2.04685420150802e-05_f64))
+            * y
+            - F::cast_from(2.49327728643089e-03_f64))
+            * y
+            + F::cast_from(3.56550690684281e-02_f64))
+            * y
+            - F::cast_from(2.60417417692375e-01_f64))
+            * y
             + F::cast_from(1.12155283108289e+00_f64);
         ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < F::new(10.0) {
         let e = F::exp(-x);
-        ww1 = ((((((F::cast_from(4.6897511375022e-01_f64) / x - F::cast_from(6.9955602298985e-01_f64)) / x
-            + F::cast_from(5.3689283271887e-01_f64)) / x
-            - F::cast_from(3.2883030418398e-01_f64)) / x
-            + F::cast_from(2.4645596956002e-01_f64)) / x
-            - F::cast_from(4.9984072848436e-01_f64)) / x
-            - F::cast_from(3.1501078774085e-06_f64)) * e
+        ww1 = ((((((F::cast_from(4.6897511375022e-01_f64) / x
+            - F::cast_from(6.9955602298985e-01_f64))
+            / x
+            + F::cast_from(5.3689283271887e-01_f64))
+            / x
+            - F::cast_from(3.2883030418398e-01_f64))
+            / x
+            + F::cast_from(2.4645596956002e-01_f64))
+            / x
+            - F::cast_from(4.9984072848436e-01_f64))
+            / x
+            - F::cast_from(3.1501078774085e-06_f64))
+            * e
             + F::sqrt(pie4 / x);
         let f1 = (ww1 - e) / (x + x);
         let y = x - F::new(7.5);
-        rt1 = (((((((((((((F::cast_from(-1.43632730148572e-16_f64) * y + F::cast_from(2.38198922570405e-16_f64)) * y
-            + F::cast_from(1.358319618800e-14_f64)) * y
-            - F::cast_from(7.064522786879e-14_f64)) * y
-            - F::cast_from(7.719300212748e-13_f64)) * y
-            + F::cast_from(7.802544789997e-12_f64)) * y
-            + F::cast_from(6.628721099436e-11_f64)) * y
-            - F::cast_from(1.775564159743e-09_f64)) * y
-            + F::cast_from(1.713828823990e-08_f64)) * y
-            - F::cast_from(1.497500187053e-07_f64)) * y
-            + F::cast_from(2.283485114279e-06_f64)) * y
-            - F::cast_from(3.76953869614706e-05_f64)) * y
-            + F::cast_from(4.74791204651451e-04_f64)) * y
-            - F::cast_from(4.60448960876139e-03_f64)) * y
+        rt1 = (((((((((((((F::cast_from(-1.43632730148572e-16_f64) * y
+            + F::cast_from(2.38198922570405e-16_f64))
+            * y
+            + F::cast_from(1.358319618800e-14_f64))
+            * y
+            - F::cast_from(7.064522786879e-14_f64))
+            * y
+            - F::cast_from(7.719300212748e-13_f64))
+            * y
+            + F::cast_from(7.802544789997e-12_f64))
+            * y
+            + F::cast_from(6.628721099436e-11_f64))
+            * y
+            - F::cast_from(1.775564159743e-09_f64))
+            * y
+            + F::cast_from(1.713828823990e-08_f64))
+            * y
+            - F::cast_from(1.497500187053e-07_f64))
+            * y
+            + F::cast_from(2.283485114279e-06_f64))
+            * y
+            - F::cast_from(3.76953869614706e-05_f64))
+            * y
+            + F::cast_from(4.74791204651451e-04_f64))
+            * y
+            - F::cast_from(4.60448960876139e-03_f64))
+            * y
             + F::cast_from(3.72458587837249e-02_f64);
-        rt2 = (((((((((((( F::cast_from(2.48791622798900e-14_f64) * y - F::cast_from(1.36113510175724e-13_f64)) * y
-            - F::cast_from(2.224334349799e-12_f64)) * y
-            + F::cast_from(4.190559455515e-11_f64)) * y
-            - F::cast_from(2.222722579924e-10_f64)) * y
-            - F::cast_from(2.624183464275e-09_f64)) * y
-            + F::cast_from(6.128153450169e-08_f64)) * y
-            - F::cast_from(4.383376014528e-07_f64)) * y
-            - F::cast_from(2.49952200232910e-06_f64)) * y
-            + F::cast_from(1.03236647888320e-04_f64)) * y
-            - F::cast_from(1.44614664924989e-03_f64)) * y
-            + F::cast_from(1.35094294917224e-02_f64)) * y
-            - F::cast_from(9.53478510453887e-02_f64)) * y
+        rt2 = ((((((((((((F::cast_from(2.48791622798900e-14_f64) * y
+            - F::cast_from(1.36113510175724e-13_f64))
+            * y
+            - F::cast_from(2.224334349799e-12_f64))
+            * y
+            + F::cast_from(4.190559455515e-11_f64))
+            * y
+            - F::cast_from(2.222722579924e-10_f64))
+            * y
+            - F::cast_from(2.624183464275e-09_f64))
+            * y
+            + F::cast_from(6.128153450169e-08_f64))
+            * y
+            - F::cast_from(4.383376014528e-07_f64))
+            * y
+            - F::cast_from(2.49952200232910e-06_f64))
+            * y
+            + F::cast_from(1.03236647888320e-04_f64))
+            * y
+            - F::cast_from(1.44614664924989e-03_f64))
+            * y
+            + F::cast_from(1.35094294917224e-02_f64))
+            * y
+            - F::cast_from(9.53478510453887e-02_f64))
+            * y
             + F::cast_from(5.44765245686790e-01_f64);
         ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < F::new(15.0) {
         let e = F::exp(-x);
-        ww1 = (((F::cast_from(-1.8784686463512e-01_f64) / x + F::cast_from(2.2991849164985e-01_f64)) / x
-            - F::cast_from(4.9893752514047e-01_f64)) / x
-            - F::cast_from(2.1916512131607e-05_f64)) * e
+        ww1 = (((F::cast_from(-1.8784686463512e-01_f64) / x
+            + F::cast_from(2.2991849164985e-01_f64))
+            / x
+            - F::cast_from(4.9893752514047e-01_f64))
+            / x
+            - F::cast_from(2.1916512131607e-05_f64))
+            * e
             + F::sqrt(pie4 / x);
         let f1 = (ww1 - e) / (x + x);
-        rt1 = ((((F::cast_from(-1.01041157064226e-05_f64) * x + F::cast_from(1.19483054115173e-03_f64)) * x
-            - F::cast_from(6.73760231824074e-02_f64)) * x
-            + F::cast_from(1.25705571069895e+00_f64)) * x
-            + (((F::cast_from(-8.57609422987199e+03_f64) / x + F::cast_from(5.91005939591842e+03_f64)) / x
-                - F::cast_from(1.70807677109425e+03_f64)) / x
-                + F::cast_from(2.64536689959503e+02_f64)) / x
-            - F::cast_from(2.38570496490846e+01_f64)) * e
+        rt1 = ((((F::cast_from(-1.01041157064226e-05_f64) * x
+            + F::cast_from(1.19483054115173e-03_f64))
+            * x
+            - F::cast_from(6.73760231824074e-02_f64))
+            * x
+            + F::cast_from(1.25705571069895e+00_f64))
+            * x
+            + (((F::cast_from(-8.57609422987199e+03_f64) / x
+                + F::cast_from(5.91005939591842e+03_f64))
+                / x
+                - F::cast_from(1.70807677109425e+03_f64))
+                / x
+                + F::cast_from(2.64536689959503e+02_f64))
+                / x
+            - F::cast_from(2.38570496490846e+01_f64))
+            * e
             + r12 / (x - r12);
-        rt2 = ((( F::cast_from(3.39024225137123e-04_f64) * x - F::cast_from(9.34976436343509e-02_f64)) * x
-            - F::cast_from(4.22216483306320e+00_f64)) * x
-            + (((F::cast_from(-2.08457050986847e+03_f64) / x - F::cast_from(1.04999071905664e+03_f64)) / x
-                + F::cast_from(3.39891508992661e+02_f64)) / x
-                - F::cast_from(1.56184800325063e+02_f64)) / x
-            + F::cast_from(8.00839033297501e+00_f64)) * e
+        rt2 = (((F::cast_from(3.39024225137123e-04_f64) * x
+            - F::cast_from(9.34976436343509e-02_f64))
+            * x
+            - F::cast_from(4.22216483306320e+00_f64))
+            * x
+            + (((F::cast_from(-2.08457050986847e+03_f64) / x
+                - F::cast_from(1.04999071905664e+03_f64))
+                / x
+                + F::cast_from(3.39891508992661e+02_f64))
+                / x
+                - F::cast_from(1.56184800325063e+02_f64))
+                / x
+            + F::cast_from(8.00839033297501e+00_f64))
+            * e
             + r22 / (x - r22);
         ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < F::new(33.0) {
         let e = F::exp(-x);
-        ww1 = ((F::cast_from(1.9623264149430e-01_f64) / x - F::cast_from(4.9695241464490e-01_f64)) / x
-            - F::cast_from(6.0156581186481e-05_f64)) * e
+        ww1 = ((F::cast_from(1.9623264149430e-01_f64) / x - F::cast_from(4.9695241464490e-01_f64))
+            / x
+            - F::cast_from(6.0156581186481e-05_f64))
+            * e
             + F::sqrt(pie4 / x);
         let f1 = (ww1 - e) / (x + x);
-        rt1 = ((((F::cast_from(-1.14906395546354e-06_f64) * x + F::cast_from(1.76003409708332e-04_f64)) * x
-            - F::cast_from(1.71984023644904e-02_f64)) * x
-            - F::cast_from(1.37292644149838e-01_f64)) * x
-            + (F::cast_from(-4.75742064274859e+01_f64) / x + F::cast_from(9.21005186542857e+00_f64)) / x
-            - F::cast_from(2.31080873898939e-02_f64)) * e
+        rt1 = ((((F::cast_from(-1.14906395546354e-06_f64) * x
+            + F::cast_from(1.76003409708332e-04_f64))
+            * x
+            - F::cast_from(1.71984023644904e-02_f64))
+            * x
+            - F::cast_from(1.37292644149838e-01_f64))
+            * x
+            + (F::cast_from(-4.75742064274859e+01_f64) / x
+                + F::cast_from(9.21005186542857e+00_f64))
+                / x
+            - F::cast_from(2.31080873898939e-02_f64))
+            * e
             + r12 / (x - r12);
-        rt2 = ((( F::cast_from(3.64921633404158e-04_f64) * x - F::cast_from(9.71850973831558e-02_f64)) * x
-            - F::cast_from(4.02886174850252e+00_f64)) * x
-            + (F::cast_from(-1.35831002139173e+02_f64) / x - F::cast_from(8.66891724287962e+01_f64)) / x
-            + F::cast_from(2.98011277766958e+00_f64)) * e
+        rt2 = (((F::cast_from(3.64921633404158e-04_f64) * x
+            - F::cast_from(9.71850973831558e-02_f64))
+            * x
+            - F::cast_from(4.02886174850252e+00_f64))
+            * x
+            + (F::cast_from(-1.35831002139173e+02_f64) / x
+                - F::cast_from(8.66891724287962e+01_f64))
+                / x
+            + F::cast_from(2.98011277766958e+00_f64))
+            * e
             + r22 / (x - r22);
         ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < F::new(40.0) {
         let ww1_sqrt = F::sqrt(pie4 / x);
         let e = F::exp(-x);
-        rt1 = (F::cast_from(-8.78947307498880e-01_f64) * x + F::cast_from(1.09243702330261e+01_f64)) * e + r12 / (x - r12);
-        rt2 = (F::cast_from(-9.28903924275977e+00_f64) * x + F::cast_from(8.10642367843811e+01_f64)) * e + r22 / (x - r22);
-        ww2 = (F::cast_from(4.46857389308400e+00_f64) * x - F::cast_from(7.79250653461045e+01_f64)) * e + w22 * ww1_sqrt;
+        rt1 = (F::cast_from(-8.78947307498880e-01_f64) * x
+            + F::cast_from(1.09243702330261e+01_f64))
+            * e
+            + r12 / (x - r12);
+        rt2 = (F::cast_from(-9.28903924275977e+00_f64) * x
+            + F::cast_from(8.10642367843811e+01_f64))
+            * e
+            + r22 / (x - r22);
+        ww2 = (F::cast_from(4.46857389308400e+00_f64) * x - F::cast_from(7.79250653461045e+01_f64))
+            * e
+            + w22 * ww1_sqrt;
         ww1 = ww1_sqrt - ww2;
     } else {
         ww1 = F::sqrt(pie4 / x);
@@ -417,263 +662,608 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
     let mut a2 = F::new(0.0);
     let mut y = F::new(0.0);
 
+    r13 = F::cast_from(1.90163509193487e-01_f64);
+    r23 = F::cast_from(1.78449274854325e+00_f64);
+    w23 = F::cast_from(1.77231492083829e-01_f64);
+    r33 = F::cast_from(5.52534374226326e+00_f64);
+    w33 = F::cast_from(5.11156880411248e-03_f64);
 
-
-        r13 = F::cast_from(1.90163509193487e-01_f64);
-        r23 = F::cast_from(1.78449274854325e+00_f64);
-        w23 = F::cast_from(1.77231492083829e-01_f64);
-        r33 = F::cast_from(5.52534374226326e+00_f64);
-        w33 = F::cast_from(5.11156880411248e-03_f64);
-
-        if x < F::new(3.0e-7){
-                rt1 = F::cast_from(6.03769246832797e-02_f64) -F::cast_from(9.28875764357368e-03_f64) *x;
-                rt2 = F::cast_from(7.76823355931043e-01_f64) -F::cast_from(1.19511285527878e-01_f64) *x;
-                rt3 = F::cast_from(6.66279971938567e+00_f64) -F::cast_from(1.02504611068957e+00_f64) *x;
-                ww1 = F::cast_from(4.67913934572691e-01_f64) -F::cast_from(5.64876917232519e-02_f64) *x;
-                ww2 = F::cast_from(3.60761573048137e-01_f64) -F::cast_from(1.49077186455208e-01_f64) *x;
-                ww3 = F::cast_from(1.71324492379169e-01_f64) -F::cast_from(1.27768455150979e-01_f64) *x;
-        } else if x < F::new(1.0) {
-                rt1 = ((((((F::cast_from(-5.10186691538870e-10_f64)*x+F::cast_from(2.40134415703450e-08_f64))*x-
-                           F::cast_from(5.01081057744427e-07_f64) )*x+F::cast_from(7.58291285499256e-06_f64) )*x-
-                         F::cast_from(9.55085533670919e-05_f64) )*x+F::cast_from(1.02893039315878e-03_f64) )*x-
-                       F::cast_from(9.28875764374337e-03_f64) )*x+F::cast_from(6.03769246832810e-02_f64);
-                rt2 = ((((((F::cast_from(-1.29646524960555e-08_f64)*x+F::cast_from(7.74602292865683e-08_f64))*x+
-                           F::cast_from(1.56022811158727e-06_f64) )*x-F::cast_from(1.58051990661661e-05_f64) )*x-
-                         F::cast_from(3.30447806384059e-04_f64) )*x+F::cast_from(9.74266885190267e-03_f64) )*x-
-                       F::cast_from(1.19511285526388e-01_f64) )*x+F::cast_from(7.76823355931033e-01_f64);
-                rt3 = ((((((F::cast_from(-9.28536484109606e-09_f64)*x-F::cast_from(3.02786290067014e-07_f64))*x-
-                           F::cast_from(2.50734477064200e-06_f64) )*x-F::cast_from(7.32728109752881e-06_f64) )*x+
-                         F::cast_from(2.44217481700129e-04_f64) )*x+F::cast_from(4.94758452357327e-02_f64) )*x-
-                       F::cast_from(1.02504611065774e+00_f64) )*x+F::cast_from(6.66279971938553e+00_f64);
-                f2 = ((((((((F::cast_from(-7.60911486098850e-08_f64)*x+F::cast_from(1.09552870123182e-06_f64) )*x-
-                            F::cast_from(1.03463270693454e-05_f64) )*x+F::cast_from(8.16324851790106e-05_f64) )*x-
-                          F::cast_from(5.55526624875562e-04_f64) )*x+F::cast_from(3.20512054753924e-03_f64) )*x-
-                        F::cast_from(1.51515139838540e-02_f64) )*x+F::cast_from(5.55555554649585e-02_f64) )*x-
-                      F::cast_from(1.42857142854412e-01_f64) )*x+F::cast_from(1.99999999999986e-01_f64);
-                e = F::exp(-x);
-                f1 = ((x+x)*f2+e)/F::cast_from(3.0e+00_f64);
-                ww1 = (x+x)*f1+e;
-                t1 = rt1/(rt1+F::cast_from(1.0e+00_f64));
-                t2 = rt2/(rt2+F::cast_from(1.0e+00_f64));
-                t3 = rt3/(rt3+F::cast_from(1.0e+00_f64));
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < F::new(3.0) {
-                y = x-F::cast_from(2.0e+00_f64);
-                rt1 = (((((((( F::cast_from(1.44687969563318e-12_f64)*y+F::cast_from(4.85300143926755e-12_f64))*y-
-                             F::cast_from(6.55098264095516e-10_f64) )*y+F::cast_from(1.56592951656828e-08_f64) )*y-
-                           F::cast_from(2.60122498274734e-07_f64) )*y+F::cast_from(3.86118485517386e-06_f64) )*y-
-                         F::cast_from(5.13430986707889e-05_f64) )*y+F::cast_from(6.03194524398109e-04_f64) )*y-
-                       F::cast_from(6.11219349825090e-03_f64) )*y+F::cast_from(4.52578254679079e-02_f64);
-                rt2 = ((((((( F::cast_from(6.95964248788138e-10_f64)*y-F::cast_from(5.35281831445517e-09_f64))*y-
-                            F::cast_from(6.745205954533e-08_f64))*y+F::cast_from(1.502366784525e-06_f64))*y+
-                          F::cast_from(9.923326947376e-07_f64))*y-F::cast_from(3.89147469249594e-04_f64) )*y+
-                        F::cast_from(7.51549330892401e-03_f64) )*y-F::cast_from(8.48778120363400e-02_f64) )*y+
-                        F::cast_from(5.73928229597613e-01_f64);
-                rt3 = ((((((((F::cast_from(-2.81496588401439e-10_f64)*y+F::cast_from(3.61058041895031e-09_f64))*y+
-                             F::cast_from(4.53631789436255e-08_f64) )*y-F::cast_from(1.40971837780847e-07_f64) )*y-
-                           F::cast_from(6.05865557561067e-06_f64) )*y-F::cast_from(5.15964042227127e-05_f64) )*y+
-                         F::cast_from(3.34761560498171e-05_f64) )*y+F::cast_from(5.04871005319119e-02_f64) )*y-
-                       F::cast_from(8.24708946991557e-01_f64) )*y+F::cast_from(4.81234667357205e+00_f64);
-                f2 = ((((((((((F::cast_from(-1.48044231072140e-10_f64)*y+F::cast_from(1.78157031325097e-09_f64) )*y-
-                              F::cast_from(1.92514145088973e-08_f64) )*y+F::cast_from(1.92804632038796e-07_f64) )*y-
-                            F::cast_from(1.73806555021045e-06_f64) )*y+F::cast_from(1.39195169625425e-05_f64) )*y-
-                          F::cast_from(9.74574633246452e-05_f64) )*y+F::cast_from(5.83701488646511e-04_f64) )*y-
-                        F::cast_from(2.89955494844975e-03_f64) )*y+F::cast_from(1.13847001113810e-02_f64) )*y-
-                      F::cast_from(3.23446977320647e-02_f64) )*y+F::cast_from(5.29428148329709e-02_f64);
-                e = F::exp(-x);
-                f1 = ((x+x)*f2+e)/F::cast_from(3.0e+00_f64);
-                ww1 = (x+x)*f1+e;
-                t1 = rt1/(rt1+F::cast_from(1.0e+00_f64));
-                t2 = rt2/(rt2+F::cast_from(1.0e+00_f64));
-                t3 = rt3/(rt3+F::cast_from(1.0e+00_f64));
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < F::new(5.0){
-                y = x-F::cast_from(4.0e+00_f64);
-                rt1 = ((((((( F::cast_from(1.44265709189601e-11_f64)*y-F::cast_from(4.66622033006074e-10_f64))*y+
-                            F::cast_from(7.649155832025e-09_f64))*y-F::cast_from(1.229940017368e-07_f64))*y+
-                          F::cast_from(2.026002142457e-06_f64))*y-F::cast_from(2.87048671521677e-05_f64) )*y+
-                        F::cast_from(3.70326938096287e-04_f64) )*y-F::cast_from(4.21006346373634e-03_f64) )*y+
-                        F::cast_from(3.50898470729044e-02_f64);
-                rt2 = ((((((((F::cast_from(-2.65526039155651e-11_f64)*y+F::cast_from(1.97549041402552e-10_f64))*y+
-                             F::cast_from(2.15971131403034e-09_f64) )*y-F::cast_from(7.95045680685193e-08_f64) )*y+
-                           F::cast_from(5.15021914287057e-07_f64) )*y+F::cast_from(1.11788717230514e-05_f64) )*y-
-                         F::cast_from(3.33739312603632e-04_f64) )*y+F::cast_from(5.30601428208358e-03_f64) )*y-
-                       F::cast_from(5.93483267268959e-02_f64) )*y+F::cast_from(4.31180523260239e-01_f64);
-                rt3 = ((((((((F::cast_from(-3.92833750584041e-10_f64)*y-F::cast_from(4.16423229782280e-09_f64))*y+
-                             F::cast_from(4.42413039572867e-08_f64) )*y+F::cast_from(6.40574545989551e-07_f64) )*y-
-                           F::cast_from(3.05512456576552e-06_f64) )*y-F::cast_from(1.05296443527943e-04_f64) )*y-
-                         F::cast_from(6.14120969315617e-04_f64) )*y+F::cast_from(4.89665802767005e-02_f64) )*y-
-                       F::cast_from(6.24498381002855e-01_f64) )*y+F::cast_from(3.36412312243724e+00_f64);
-                f2 = ((((((((((F::cast_from(-2.36788772599074e-11_f64)*y+F::cast_from(2.89147476459092e-10_f64) )*y-
-                              F::cast_from(3.18111322308846e-09_f64) )*y+F::cast_from(3.25336816562485e-08_f64) )*y-
-                            F::cast_from(3.00873821471489e-07_f64) )*y+F::cast_from(2.48749160874431e-06_f64) )*y-
-                          F::cast_from(1.81353179793672e-05_f64) )*y+F::cast_from(1.14504948737066e-04_f64) )*y-
-                        F::cast_from(6.10614987696677e-04_f64) )*y+F::cast_from(2.64584212770942e-03_f64) )*y-
-                      F::cast_from(8.66415899015349e-03_f64) )*y+F::cast_from(1.75257821619922e-02_f64);
-                e = F::exp(-x);
-                f1 = ((x+x)*f2+e)/F::cast_from(3.0e+00_f64);
-                ww1 = (x+x)*f1+e;
-                t1 = rt1/(rt1+F::cast_from(1.0e+00_f64));
-                t2 = rt2/(rt2+F::cast_from(1.0e+00_f64));
-                t3 = rt3/(rt3+F::cast_from(1.0e+00_f64));
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < F::new(10.0) {
-                e = F::exp(-x);
-                ww1 = (((((( F::cast_from(4.6897511375022e-01_f64)/x-F::cast_from(6.9955602298985e-01_f64))/x +
-                           F::cast_from(5.3689283271887e-01_f64))/x-F::cast_from(3.2883030418398e-01_f64))/x +
-                         F::cast_from(2.4645596956002e-01_f64))/x-F::cast_from(4.9984072848436e-01_f64))/x -
-                       F::cast_from(3.1501078774085e-06_f64))*e + F::sqrt(pie4/x);
-                f1 = (ww1-e)/(x+x);
-                f2 = (f1+f1+f1-e)/(x+x);
-                y = x-F::cast_from(7.5e+00_f64);
-                rt1 = ((((((((((( F::cast_from(5.74429401360115e-16_f64)*y+F::cast_from(7.11884203790984e-16_f64))*y-
-                                F::cast_from(6.736701449826e-14_f64))*y-F::cast_from(6.264613873998e-13_f64))*y+
-                              F::cast_from(1.315418927040e-11_f64))*y-F::cast_from(4.23879635610964e-11_f64) )*y+
-                            F::cast_from(1.39032379769474e-09_f64) )*y-F::cast_from(4.65449552856856e-08_f64) )*y+
-                          F::cast_from(7.34609900170759e-07_f64) )*y-F::cast_from(1.08656008854077e-05_f64) )*y+
-                        F::cast_from(1.77930381549953e-04_f64) )*y-F::cast_from(2.39864911618015e-03_f64) )*y+
-                        F::cast_from(2.39112249488821e-02_f64);
-                rt2 = ((((((((((( F::cast_from(1.13464096209120e-14_f64)*y+F::cast_from(6.99375313934242e-15_f64))*y-
-                                F::cast_from(8.595618132088e-13_f64))*y-F::cast_from(5.293620408757e-12_f64))*y-
-                              F::cast_from(2.492175211635e-11_f64))*y+F::cast_from(2.73681574882729e-09_f64) )*y-
-                            F::cast_from(1.06656985608482e-08_f64) )*y-F::cast_from(4.40252529648056e-07_f64) )*y+
-                          F::cast_from(9.68100917793911e-06_f64) )*y-F::cast_from(1.68211091755327e-04_f64) )*y+
-                        F::cast_from(2.69443611274173e-03_f64) )*y-F::cast_from(3.23845035189063e-02_f64) )*y+
-                        F::cast_from(2.75969447451882e-01_f64);
-                rt3 = (((((((((((( F::cast_from(6.66339416996191e-15_f64)*y+F::cast_from(1.84955640200794e-13_f64))*y-
-                                 F::cast_from(1.985141104444e-12_f64))*y-F::cast_from(2.309293727603e-11_f64))*y+
-                               F::cast_from(3.917984522103e-10_f64))*y+F::cast_from(1.663165279876e-09_f64))*y-
-                             F::cast_from(6.205591993923e-08_f64))*y+F::cast_from(8.769581622041e-09_f64))*y+
-                           F::cast_from(8.97224398620038e-06_f64) )*y-F::cast_from(3.14232666170796e-05_f64) )*y-
-                         F::cast_from(1.83917335649633e-03_f64) )*y+F::cast_from(3.51246831672571e-02_f64) )*y-
-                       F::cast_from(3.22335051270860e-01_f64) )*y+F::cast_from(1.73582831755430e+00_f64);
-                t1 = rt1/(rt1+F::cast_from(1.0e+00_f64));
-                t2 = rt2/(rt2+F::cast_from(1.0e+00_f64));
-                t3 = rt3/(rt3+F::cast_from(1.0e+00_f64));
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < F::new(15.0) {
-                e = F::exp(-x);
-                ww1 = (((F::cast_from(-1.8784686463512e-01_f64)/x+F::cast_from(2.2991849164985e-01_f64))/x -
-                        F::cast_from(4.9893752514047e-01_f64))/x-F::cast_from(2.1916512131607e-05_f64))*e
-                        + F::sqrt(pie4/x);
-                f1 = (ww1-e)/(x+x);
-                f2 = (f1+f1+f1-e)/(x+x);
-                y = x-F::cast_from(12.5e+00_f64);
-                rt1 = ((((((((((( F::cast_from(4.42133001283090e-16_f64)*y-F::cast_from(2.77189767070441e-15_f64))*y-
-                                F::cast_from(4.084026087887e-14_f64))*y+F::cast_from(5.379885121517e-13_f64))*y+
-                              F::cast_from(1.882093066702e-12_f64))*y-F::cast_from(8.67286219861085e-11_f64) )*y+
-                            F::cast_from(7.11372337079797e-10_f64) )*y-F::cast_from(3.55578027040563e-09_f64) )*y+
-                          F::cast_from(1.29454702851936e-07_f64) )*y-F::cast_from(4.14222202791434e-06_f64) )*y+
-                        F::cast_from(8.04427643593792e-05_f64) )*y-F::cast_from(1.18587782909876e-03_f64) )*y+
-                        F::cast_from(1.53435577063174e-02_f64);
-                rt2 = ((((((((((( F::cast_from(6.85146742119357e-15_f64)*y-F::cast_from(1.08257654410279e-14_f64))*y-
-                                F::cast_from(8.579165965128e-13_f64))*y+F::cast_from(6.642452485783e-12_f64))*y+
-                              F::cast_from(4.798806828724e-11_f64))*y-F::cast_from(1.13413908163831e-09_f64) )*y+
-                            F::cast_from(7.08558457182751e-09_f64) )*y-F::cast_from(5.59678576054633e-08_f64) )*y+
-                          F::cast_from(2.51020389884249e-06_f64) )*y-F::cast_from(6.63678914608681e-05_f64) )*y+
-                        F::cast_from(1.11888323089714e-03_f64) )*y-F::cast_from(1.45361636398178e-02_f64) )*y+
-                        F::cast_from(1.65077877454402e-01_f64);
-                rt3 = (((((((((((( F::cast_from(3.20622388697743e-15_f64)*y-F::cast_from(2.73458804864628e-14_f64))*y-
-                                 F::cast_from(3.157134329361e-13_f64))*y+F::cast_from(8.654129268056e-12_f64))*y-
-                               F::cast_from(5.625235879301e-11_f64))*y-F::cast_from(7.718080513708e-10_f64))*y+
-                             F::cast_from(2.064664199164e-08_f64))*y-F::cast_from(1.567725007761e-07_f64))*y-
-                           F::cast_from(1.57938204115055e-06_f64) )*y+F::cast_from(6.27436306915967e-05_f64) )*y-
-                         F::cast_from(1.01308723606946e-03_f64) )*y+F::cast_from(1.13901881430697e-02_f64) )*y-
-                       F::cast_from(1.01449652899450e-01_f64) )*y+F::cast_from(7.77203937334739e-01_f64);
-                t1 = rt1/(rt1+F::cast_from(1.0e+00_f64));
-                t2 = rt2/(rt2+F::cast_from(1.0e+00_f64));
-                t3 = rt3/(rt3+F::cast_from(1.0e+00_f64));
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < F::new(33.0) {
-                e = F::exp(-x);
-                ww1 = (( F::cast_from(1.9623264149430e-01_f64)/x-F::cast_from(4.9695241464490e-01_f64))/x -
-                       F::cast_from(6.0156581186481e-05_f64))*e + F::sqrt(pie4/x);
-                f1 = (ww1-e)/(x+x);
-                f2 = (f1+f1+f1-e)/(x+x);
-                if x < F::new(20.0) {
-                        rt1 = ((((((F::cast_from(-2.43270989903742e-06_f64)*x+F::cast_from(3.57901398988359e-04_f64))*x -
-                                   F::cast_from(2.34112415981143e-02_f64))*x+F::cast_from(7.81425144913975e-01_f64))*x -
-                                 F::cast_from(1.73209218219175e+01_f64))*x+F::cast_from(2.43517435690398e+02_f64))*x +
-                               (F::cast_from(-1.97611541576986e+04_f64)/x+F::cast_from(9.82441363463929e+03_f64))/x -
-                               F::cast_from(2.07970687843258e+03_f64))*e + r13/(x-r13);
-                        rt2 = (((((F::cast_from(-2.62627010965435e-04_f64)*x+F::cast_from(3.49187925428138e-02_f64))*x -
-                                  F::cast_from(3.09337618731880e+00_f64))*x+F::cast_from(1.07037141010778e+02_f64))*x -
-                                F::cast_from(2.36659637247087e+03_f64))*x +
-                               ((F::cast_from(-2.91669113681020e+06_f64)/x +
-                                 F::cast_from(1.41129505262758e+06_f64))/x-F::cast_from(2.91532335433779e+05_f64))/x +
-                               F::cast_from(3.35202872835409e+04_f64))*e + r23/(x-r23);
-                        rt3 = ((((( F::cast_from(9.31856404738601e-05_f64)*x-F::cast_from(2.87029400759565e-02_f64))*x -
-                                  F::cast_from(7.83503697918455e-01_f64))*x-F::cast_from(1.84338896480695e+01_f64))*x +
-                                F::cast_from(4.04996712650414e+02_f64))*x +
-                               (F::cast_from(-1.89829509315154e+05_f64)/x +
-                                F::cast_from(5.11498390849158e+04_f64))/x-F::cast_from(6.88145821789955e+03_f64))*e
-                                + r33/(x-r33);
-                } else {
-                        rt1 = ((((F::cast_from(-4.97561537069643e-04_f64)*x-F::cast_from(5.00929599665316e-02_f64))*x +
-                                 F::cast_from(1.31099142238996e+00_f64))*x-F::cast_from(1.88336409225481e+01_f64))*x -
-                               F::cast_from(6.60344754467191e+02_f64) /x+F::cast_from(1.64931462413877e+02_f64))*e
-                                + r13/(x-r13);
-                        rt2 = ((((F::cast_from(-4.48218898474906e-03_f64)*x-F::cast_from(5.17373211334924e-01_f64))*x +
-                                 F::cast_from(1.13691058739678e+01_f64))*x-F::cast_from(1.65426392885291e+02_f64))*x -
-                               F::cast_from(6.30909125686731e+03_f64) /x+F::cast_from(1.52231757709236e+03_f64))*e
-                                + r23/(x-r23);
-                        rt3 = ((((F::cast_from(-1.38368602394293e-02_f64)*x-F::cast_from(1.77293428863008e+00_f64))*x +
-                                 F::cast_from(1.73639054044562e+01_f64))*x-F::cast_from(3.57615122086961e+02_f64))*x -
-                               F::cast_from(1.45734701095912e+04_f64) /x+F::cast_from(2.69831813951849e+03_f64))*e
-                                + r33/(x-r33);
-                }
-                t1 = rt1/(rt1+F::cast_from(1.0e+00_f64));
-                t2 = rt2/(rt2+F::cast_from(1.0e+00_f64));
-                t3 = rt3/(rt3+F::cast_from(1.0e+00_f64));
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < F::new(47.0) {
-                ww1 = F::sqrt(pie4/x);
-                e = F::exp(-x);
-                rt1 = ((F::cast_from(-7.39058467995275e+00_f64)*x+F::cast_from(3.21318352526305e+02_f64))*x -
-                       F::cast_from(3.99433696473658e+03_f64))*e + r13/(x-r13);
-                rt2 = ((F::cast_from(-7.38726243906513e+01_f64)*x+F::cast_from(3.13569966333873e+03_f64))*x -
-                       F::cast_from(3.86862867311321e+04_f64))*e + r23/(x-r23);
-                rt3 = ((F::cast_from(-2.63750565461336e+02_f64)*x+F::cast_from(1.04412168692352e+04_f64))*x -
-                       F::cast_from(1.28094577915394e+05_f64))*e + r33/(x-r33);
-                ww3 = ((( F::cast_from(1.52258947224714e-01_f64)*x-F::cast_from(8.30661900042651e+00_f64))*x +
-                        F::cast_from(1.92977367967984e+02_f64))*x-F::cast_from(1.67787926005344e+03_f64))*e
-                        + w33*ww1;
-                ww2 = (( F::cast_from(6.15072615497811e+01_f64)*x-F::cast_from(2.91980647450269e+03_f64))*x +
-                       F::cast_from(3.80794303087338e+04_f64))*e + w23*ww1;
-                ww1 = ww1-ww2-ww3;
+    if x < F::new(3.0e-7) {
+        rt1 = F::cast_from(6.03769246832797e-02_f64) - F::cast_from(9.28875764357368e-03_f64) * x;
+        rt2 = F::cast_from(7.76823355931043e-01_f64) - F::cast_from(1.19511285527878e-01_f64) * x;
+        rt3 = F::cast_from(6.66279971938567e+00_f64) - F::cast_from(1.02504611068957e+00_f64) * x;
+        ww1 = F::cast_from(4.67913934572691e-01_f64) - F::cast_from(5.64876917232519e-02_f64) * x;
+        ww2 = F::cast_from(3.60761573048137e-01_f64) - F::cast_from(1.49077186455208e-01_f64) * x;
+        ww3 = F::cast_from(1.71324492379169e-01_f64) - F::cast_from(1.27768455150979e-01_f64) * x;
+    } else if x < F::new(1.0) {
+        rt1 = ((((((F::cast_from(-5.10186691538870e-10_f64) * x
+            + F::cast_from(2.40134415703450e-08_f64))
+            * x
+            - F::cast_from(5.01081057744427e-07_f64))
+            * x
+            + F::cast_from(7.58291285499256e-06_f64))
+            * x
+            - F::cast_from(9.55085533670919e-05_f64))
+            * x
+            + F::cast_from(1.02893039315878e-03_f64))
+            * x
+            - F::cast_from(9.28875764374337e-03_f64))
+            * x
+            + F::cast_from(6.03769246832810e-02_f64);
+        rt2 = ((((((F::cast_from(-1.29646524960555e-08_f64) * x
+            + F::cast_from(7.74602292865683e-08_f64))
+            * x
+            + F::cast_from(1.56022811158727e-06_f64))
+            * x
+            - F::cast_from(1.58051990661661e-05_f64))
+            * x
+            - F::cast_from(3.30447806384059e-04_f64))
+            * x
+            + F::cast_from(9.74266885190267e-03_f64))
+            * x
+            - F::cast_from(1.19511285526388e-01_f64))
+            * x
+            + F::cast_from(7.76823355931033e-01_f64);
+        rt3 = ((((((F::cast_from(-9.28536484109606e-09_f64) * x
+            - F::cast_from(3.02786290067014e-07_f64))
+            * x
+            - F::cast_from(2.50734477064200e-06_f64))
+            * x
+            - F::cast_from(7.32728109752881e-06_f64))
+            * x
+            + F::cast_from(2.44217481700129e-04_f64))
+            * x
+            + F::cast_from(4.94758452357327e-02_f64))
+            * x
+            - F::cast_from(1.02504611065774e+00_f64))
+            * x
+            + F::cast_from(6.66279971938553e+00_f64);
+        f2 = ((((((((F::cast_from(-7.60911486098850e-08_f64) * x
+            + F::cast_from(1.09552870123182e-06_f64))
+            * x
+            - F::cast_from(1.03463270693454e-05_f64))
+            * x
+            + F::cast_from(8.16324851790106e-05_f64))
+            * x
+            - F::cast_from(5.55526624875562e-04_f64))
+            * x
+            + F::cast_from(3.20512054753924e-03_f64))
+            * x
+            - F::cast_from(1.51515139838540e-02_f64))
+            * x
+            + F::cast_from(5.55555554649585e-02_f64))
+            * x
+            - F::cast_from(1.42857142854412e-01_f64))
+            * x
+            + F::cast_from(1.99999999999986e-01_f64);
+        e = F::exp(-x);
+        f1 = ((x + x) * f2 + e) / F::cast_from(3.0e+00_f64);
+        ww1 = (x + x) * f1 + e;
+        t1 = rt1 / (rt1 + F::cast_from(1.0e+00_f64));
+        t2 = rt2 / (rt2 + F::cast_from(1.0e+00_f64));
+        t3 = rt3 / (rt3 + F::cast_from(1.0e+00_f64));
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < F::new(3.0) {
+        y = x - F::cast_from(2.0e+00_f64);
+        rt1 = ((((((((F::cast_from(1.44687969563318e-12_f64) * y
+            + F::cast_from(4.85300143926755e-12_f64))
+            * y
+            - F::cast_from(6.55098264095516e-10_f64))
+            * y
+            + F::cast_from(1.56592951656828e-08_f64))
+            * y
+            - F::cast_from(2.60122498274734e-07_f64))
+            * y
+            + F::cast_from(3.86118485517386e-06_f64))
+            * y
+            - F::cast_from(5.13430986707889e-05_f64))
+            * y
+            + F::cast_from(6.03194524398109e-04_f64))
+            * y
+            - F::cast_from(6.11219349825090e-03_f64))
+            * y
+            + F::cast_from(4.52578254679079e-02_f64);
+        rt2 = (((((((F::cast_from(6.95964248788138e-10_f64) * y
+            - F::cast_from(5.35281831445517e-09_f64))
+            * y
+            - F::cast_from(6.745205954533e-08_f64))
+            * y
+            + F::cast_from(1.502366784525e-06_f64))
+            * y
+            + F::cast_from(9.923326947376e-07_f64))
+            * y
+            - F::cast_from(3.89147469249594e-04_f64))
+            * y
+            + F::cast_from(7.51549330892401e-03_f64))
+            * y
+            - F::cast_from(8.48778120363400e-02_f64))
+            * y
+            + F::cast_from(5.73928229597613e-01_f64);
+        rt3 = ((((((((F::cast_from(-2.81496588401439e-10_f64) * y
+            + F::cast_from(3.61058041895031e-09_f64))
+            * y
+            + F::cast_from(4.53631789436255e-08_f64))
+            * y
+            - F::cast_from(1.40971837780847e-07_f64))
+            * y
+            - F::cast_from(6.05865557561067e-06_f64))
+            * y
+            - F::cast_from(5.15964042227127e-05_f64))
+            * y
+            + F::cast_from(3.34761560498171e-05_f64))
+            * y
+            + F::cast_from(5.04871005319119e-02_f64))
+            * y
+            - F::cast_from(8.24708946991557e-01_f64))
+            * y
+            + F::cast_from(4.81234667357205e+00_f64);
+        f2 = ((((((((((F::cast_from(-1.48044231072140e-10_f64) * y
+            + F::cast_from(1.78157031325097e-09_f64))
+            * y
+            - F::cast_from(1.92514145088973e-08_f64))
+            * y
+            + F::cast_from(1.92804632038796e-07_f64))
+            * y
+            - F::cast_from(1.73806555021045e-06_f64))
+            * y
+            + F::cast_from(1.39195169625425e-05_f64))
+            * y
+            - F::cast_from(9.74574633246452e-05_f64))
+            * y
+            + F::cast_from(5.83701488646511e-04_f64))
+            * y
+            - F::cast_from(2.89955494844975e-03_f64))
+            * y
+            + F::cast_from(1.13847001113810e-02_f64))
+            * y
+            - F::cast_from(3.23446977320647e-02_f64))
+            * y
+            + F::cast_from(5.29428148329709e-02_f64);
+        e = F::exp(-x);
+        f1 = ((x + x) * f2 + e) / F::cast_from(3.0e+00_f64);
+        ww1 = (x + x) * f1 + e;
+        t1 = rt1 / (rt1 + F::cast_from(1.0e+00_f64));
+        t2 = rt2 / (rt2 + F::cast_from(1.0e+00_f64));
+        t3 = rt3 / (rt3 + F::cast_from(1.0e+00_f64));
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < F::new(5.0) {
+        y = x - F::cast_from(4.0e+00_f64);
+        rt1 = (((((((F::cast_from(1.44265709189601e-11_f64) * y
+            - F::cast_from(4.66622033006074e-10_f64))
+            * y
+            + F::cast_from(7.649155832025e-09_f64))
+            * y
+            - F::cast_from(1.229940017368e-07_f64))
+            * y
+            + F::cast_from(2.026002142457e-06_f64))
+            * y
+            - F::cast_from(2.87048671521677e-05_f64))
+            * y
+            + F::cast_from(3.70326938096287e-04_f64))
+            * y
+            - F::cast_from(4.21006346373634e-03_f64))
+            * y
+            + F::cast_from(3.50898470729044e-02_f64);
+        rt2 = ((((((((F::cast_from(-2.65526039155651e-11_f64) * y
+            + F::cast_from(1.97549041402552e-10_f64))
+            * y
+            + F::cast_from(2.15971131403034e-09_f64))
+            * y
+            - F::cast_from(7.95045680685193e-08_f64))
+            * y
+            + F::cast_from(5.15021914287057e-07_f64))
+            * y
+            + F::cast_from(1.11788717230514e-05_f64))
+            * y
+            - F::cast_from(3.33739312603632e-04_f64))
+            * y
+            + F::cast_from(5.30601428208358e-03_f64))
+            * y
+            - F::cast_from(5.93483267268959e-02_f64))
+            * y
+            + F::cast_from(4.31180523260239e-01_f64);
+        rt3 = ((((((((F::cast_from(-3.92833750584041e-10_f64) * y
+            - F::cast_from(4.16423229782280e-09_f64))
+            * y
+            + F::cast_from(4.42413039572867e-08_f64))
+            * y
+            + F::cast_from(6.40574545989551e-07_f64))
+            * y
+            - F::cast_from(3.05512456576552e-06_f64))
+            * y
+            - F::cast_from(1.05296443527943e-04_f64))
+            * y
+            - F::cast_from(6.14120969315617e-04_f64))
+            * y
+            + F::cast_from(4.89665802767005e-02_f64))
+            * y
+            - F::cast_from(6.24498381002855e-01_f64))
+            * y
+            + F::cast_from(3.36412312243724e+00_f64);
+        f2 = ((((((((((F::cast_from(-2.36788772599074e-11_f64) * y
+            + F::cast_from(2.89147476459092e-10_f64))
+            * y
+            - F::cast_from(3.18111322308846e-09_f64))
+            * y
+            + F::cast_from(3.25336816562485e-08_f64))
+            * y
+            - F::cast_from(3.00873821471489e-07_f64))
+            * y
+            + F::cast_from(2.48749160874431e-06_f64))
+            * y
+            - F::cast_from(1.81353179793672e-05_f64))
+            * y
+            + F::cast_from(1.14504948737066e-04_f64))
+            * y
+            - F::cast_from(6.10614987696677e-04_f64))
+            * y
+            + F::cast_from(2.64584212770942e-03_f64))
+            * y
+            - F::cast_from(8.66415899015349e-03_f64))
+            * y
+            + F::cast_from(1.75257821619922e-02_f64);
+        e = F::exp(-x);
+        f1 = ((x + x) * f2 + e) / F::cast_from(3.0e+00_f64);
+        ww1 = (x + x) * f1 + e;
+        t1 = rt1 / (rt1 + F::cast_from(1.0e+00_f64));
+        t2 = rt2 / (rt2 + F::cast_from(1.0e+00_f64));
+        t3 = rt3 / (rt3 + F::cast_from(1.0e+00_f64));
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < F::new(10.0) {
+        e = F::exp(-x);
+        ww1 = ((((((F::cast_from(4.6897511375022e-01_f64) / x
+            - F::cast_from(6.9955602298985e-01_f64))
+            / x
+            + F::cast_from(5.3689283271887e-01_f64))
+            / x
+            - F::cast_from(3.2883030418398e-01_f64))
+            / x
+            + F::cast_from(2.4645596956002e-01_f64))
+            / x
+            - F::cast_from(4.9984072848436e-01_f64))
+            / x
+            - F::cast_from(3.1501078774085e-06_f64))
+            * e
+            + F::sqrt(pie4 / x);
+        f1 = (ww1 - e) / (x + x);
+        f2 = (f1 + f1 + f1 - e) / (x + x);
+        y = x - F::cast_from(7.5e+00_f64);
+        rt1 = (((((((((((F::cast_from(5.74429401360115e-16_f64) * y
+            + F::cast_from(7.11884203790984e-16_f64))
+            * y
+            - F::cast_from(6.736701449826e-14_f64))
+            * y
+            - F::cast_from(6.264613873998e-13_f64))
+            * y
+            + F::cast_from(1.315418927040e-11_f64))
+            * y
+            - F::cast_from(4.23879635610964e-11_f64))
+            * y
+            + F::cast_from(1.39032379769474e-09_f64))
+            * y
+            - F::cast_from(4.65449552856856e-08_f64))
+            * y
+            + F::cast_from(7.34609900170759e-07_f64))
+            * y
+            - F::cast_from(1.08656008854077e-05_f64))
+            * y
+            + F::cast_from(1.77930381549953e-04_f64))
+            * y
+            - F::cast_from(2.39864911618015e-03_f64))
+            * y
+            + F::cast_from(2.39112249488821e-02_f64);
+        rt2 = (((((((((((F::cast_from(1.13464096209120e-14_f64) * y
+            + F::cast_from(6.99375313934242e-15_f64))
+            * y
+            - F::cast_from(8.595618132088e-13_f64))
+            * y
+            - F::cast_from(5.293620408757e-12_f64))
+            * y
+            - F::cast_from(2.492175211635e-11_f64))
+            * y
+            + F::cast_from(2.73681574882729e-09_f64))
+            * y
+            - F::cast_from(1.06656985608482e-08_f64))
+            * y
+            - F::cast_from(4.40252529648056e-07_f64))
+            * y
+            + F::cast_from(9.68100917793911e-06_f64))
+            * y
+            - F::cast_from(1.68211091755327e-04_f64))
+            * y
+            + F::cast_from(2.69443611274173e-03_f64))
+            * y
+            - F::cast_from(3.23845035189063e-02_f64))
+            * y
+            + F::cast_from(2.75969447451882e-01_f64);
+        rt3 = ((((((((((((F::cast_from(6.66339416996191e-15_f64) * y
+            + F::cast_from(1.84955640200794e-13_f64))
+            * y
+            - F::cast_from(1.985141104444e-12_f64))
+            * y
+            - F::cast_from(2.309293727603e-11_f64))
+            * y
+            + F::cast_from(3.917984522103e-10_f64))
+            * y
+            + F::cast_from(1.663165279876e-09_f64))
+            * y
+            - F::cast_from(6.205591993923e-08_f64))
+            * y
+            + F::cast_from(8.769581622041e-09_f64))
+            * y
+            + F::cast_from(8.97224398620038e-06_f64))
+            * y
+            - F::cast_from(3.14232666170796e-05_f64))
+            * y
+            - F::cast_from(1.83917335649633e-03_f64))
+            * y
+            + F::cast_from(3.51246831672571e-02_f64))
+            * y
+            - F::cast_from(3.22335051270860e-01_f64))
+            * y
+            + F::cast_from(1.73582831755430e+00_f64);
+        t1 = rt1 / (rt1 + F::cast_from(1.0e+00_f64));
+        t2 = rt2 / (rt2 + F::cast_from(1.0e+00_f64));
+        t3 = rt3 / (rt3 + F::cast_from(1.0e+00_f64));
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < F::new(15.0) {
+        e = F::exp(-x);
+        ww1 = (((F::cast_from(-1.8784686463512e-01_f64) / x
+            + F::cast_from(2.2991849164985e-01_f64))
+            / x
+            - F::cast_from(4.9893752514047e-01_f64))
+            / x
+            - F::cast_from(2.1916512131607e-05_f64))
+            * e
+            + F::sqrt(pie4 / x);
+        f1 = (ww1 - e) / (x + x);
+        f2 = (f1 + f1 + f1 - e) / (x + x);
+        y = x - F::cast_from(12.5e+00_f64);
+        rt1 = (((((((((((F::cast_from(4.42133001283090e-16_f64) * y
+            - F::cast_from(2.77189767070441e-15_f64))
+            * y
+            - F::cast_from(4.084026087887e-14_f64))
+            * y
+            + F::cast_from(5.379885121517e-13_f64))
+            * y
+            + F::cast_from(1.882093066702e-12_f64))
+            * y
+            - F::cast_from(8.67286219861085e-11_f64))
+            * y
+            + F::cast_from(7.11372337079797e-10_f64))
+            * y
+            - F::cast_from(3.55578027040563e-09_f64))
+            * y
+            + F::cast_from(1.29454702851936e-07_f64))
+            * y
+            - F::cast_from(4.14222202791434e-06_f64))
+            * y
+            + F::cast_from(8.04427643593792e-05_f64))
+            * y
+            - F::cast_from(1.18587782909876e-03_f64))
+            * y
+            + F::cast_from(1.53435577063174e-02_f64);
+        rt2 = (((((((((((F::cast_from(6.85146742119357e-15_f64) * y
+            - F::cast_from(1.08257654410279e-14_f64))
+            * y
+            - F::cast_from(8.579165965128e-13_f64))
+            * y
+            + F::cast_from(6.642452485783e-12_f64))
+            * y
+            + F::cast_from(4.798806828724e-11_f64))
+            * y
+            - F::cast_from(1.13413908163831e-09_f64))
+            * y
+            + F::cast_from(7.08558457182751e-09_f64))
+            * y
+            - F::cast_from(5.59678576054633e-08_f64))
+            * y
+            + F::cast_from(2.51020389884249e-06_f64))
+            * y
+            - F::cast_from(6.63678914608681e-05_f64))
+            * y
+            + F::cast_from(1.11888323089714e-03_f64))
+            * y
+            - F::cast_from(1.45361636398178e-02_f64))
+            * y
+            + F::cast_from(1.65077877454402e-01_f64);
+        rt3 = ((((((((((((F::cast_from(3.20622388697743e-15_f64) * y
+            - F::cast_from(2.73458804864628e-14_f64))
+            * y
+            - F::cast_from(3.157134329361e-13_f64))
+            * y
+            + F::cast_from(8.654129268056e-12_f64))
+            * y
+            - F::cast_from(5.625235879301e-11_f64))
+            * y
+            - F::cast_from(7.718080513708e-10_f64))
+            * y
+            + F::cast_from(2.064664199164e-08_f64))
+            * y
+            - F::cast_from(1.567725007761e-07_f64))
+            * y
+            - F::cast_from(1.57938204115055e-06_f64))
+            * y
+            + F::cast_from(6.27436306915967e-05_f64))
+            * y
+            - F::cast_from(1.01308723606946e-03_f64))
+            * y
+            + F::cast_from(1.13901881430697e-02_f64))
+            * y
+            - F::cast_from(1.01449652899450e-01_f64))
+            * y
+            + F::cast_from(7.77203937334739e-01_f64);
+        t1 = rt1 / (rt1 + F::cast_from(1.0e+00_f64));
+        t2 = rt2 / (rt2 + F::cast_from(1.0e+00_f64));
+        t3 = rt3 / (rt3 + F::cast_from(1.0e+00_f64));
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < F::new(33.0) {
+        e = F::exp(-x);
+        ww1 = ((F::cast_from(1.9623264149430e-01_f64) / x - F::cast_from(4.9695241464490e-01_f64))
+            / x
+            - F::cast_from(6.0156581186481e-05_f64))
+            * e
+            + F::sqrt(pie4 / x);
+        f1 = (ww1 - e) / (x + x);
+        f2 = (f1 + f1 + f1 - e) / (x + x);
+        if x < F::new(20.0) {
+            rt1 = ((((((F::cast_from(-2.43270989903742e-06_f64) * x
+                + F::cast_from(3.57901398988359e-04_f64))
+                * x
+                - F::cast_from(2.34112415981143e-02_f64))
+                * x
+                + F::cast_from(7.81425144913975e-01_f64))
+                * x
+                - F::cast_from(1.73209218219175e+01_f64))
+                * x
+                + F::cast_from(2.43517435690398e+02_f64))
+                * x
+                + (F::cast_from(-1.97611541576986e+04_f64) / x
+                    + F::cast_from(9.82441363463929e+03_f64))
+                    / x
+                - F::cast_from(2.07970687843258e+03_f64))
+                * e
+                + r13 / (x - r13);
+            rt2 = (((((F::cast_from(-2.62627010965435e-04_f64) * x
+                + F::cast_from(3.49187925428138e-02_f64))
+                * x
+                - F::cast_from(3.09337618731880e+00_f64))
+                * x
+                + F::cast_from(1.07037141010778e+02_f64))
+                * x
+                - F::cast_from(2.36659637247087e+03_f64))
+                * x
+                + ((F::cast_from(-2.91669113681020e+06_f64) / x
+                    + F::cast_from(1.41129505262758e+06_f64))
+                    / x
+                    - F::cast_from(2.91532335433779e+05_f64))
+                    / x
+                + F::cast_from(3.35202872835409e+04_f64))
+                * e
+                + r23 / (x - r23);
+            rt3 = (((((F::cast_from(9.31856404738601e-05_f64) * x
+                - F::cast_from(2.87029400759565e-02_f64))
+                * x
+                - F::cast_from(7.83503697918455e-01_f64))
+                * x
+                - F::cast_from(1.84338896480695e+01_f64))
+                * x
+                + F::cast_from(4.04996712650414e+02_f64))
+                * x
+                + (F::cast_from(-1.89829509315154e+05_f64) / x
+                    + F::cast_from(5.11498390849158e+04_f64))
+                    / x
+                - F::cast_from(6.88145821789955e+03_f64))
+                * e
+                + r33 / (x - r33);
         } else {
-                ww1 = F::sqrt(pie4/x);
-                rt1 = r13/(x-r13);
-                rt2 = r23/(x-r23);
-                rt3 = r33/(x-r33);
-                ww2 = w23*ww1;
-                ww3 = w33*ww1;
-                ww1 = ww1-ww2-ww3;
+            rt1 = ((((F::cast_from(-4.97561537069643e-04_f64) * x
+                - F::cast_from(5.00929599665316e-02_f64))
+                * x
+                + F::cast_from(1.31099142238996e+00_f64))
+                * x
+                - F::cast_from(1.88336409225481e+01_f64))
+                * x
+                - F::cast_from(6.60344754467191e+02_f64) / x
+                + F::cast_from(1.64931462413877e+02_f64))
+                * e
+                + r13 / (x - r13);
+            rt2 = ((((F::cast_from(-4.48218898474906e-03_f64) * x
+                - F::cast_from(5.17373211334924e-01_f64))
+                * x
+                + F::cast_from(1.13691058739678e+01_f64))
+                * x
+                - F::cast_from(1.65426392885291e+02_f64))
+                * x
+                - F::cast_from(6.30909125686731e+03_f64) / x
+                + F::cast_from(1.52231757709236e+03_f64))
+                * e
+                + r23 / (x - r23);
+            rt3 = ((((F::cast_from(-1.38368602394293e-02_f64) * x
+                - F::cast_from(1.77293428863008e+00_f64))
+                * x
+                + F::cast_from(1.73639054044562e+01_f64))
+                * x
+                - F::cast_from(3.57615122086961e+02_f64))
+                * x
+                - F::cast_from(1.45734701095912e+04_f64) / x
+                + F::cast_from(2.69831813951849e+03_f64))
+                * e
+                + r33 / (x - r33);
         }
+        t1 = rt1 / (rt1 + F::cast_from(1.0e+00_f64));
+        t2 = rt2 / (rt2 + F::cast_from(1.0e+00_f64));
+        t3 = rt3 / (rt3 + F::cast_from(1.0e+00_f64));
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < F::new(47.0) {
+        ww1 = F::sqrt(pie4 / x);
+        e = F::exp(-x);
+        rt1 = ((F::cast_from(-7.39058467995275e+00_f64) * x
+            + F::cast_from(3.21318352526305e+02_f64))
+            * x
+            - F::cast_from(3.99433696473658e+03_f64))
+            * e
+            + r13 / (x - r13);
+        rt2 = ((F::cast_from(-7.38726243906513e+01_f64) * x
+            + F::cast_from(3.13569966333873e+03_f64))
+            * x
+            - F::cast_from(3.86862867311321e+04_f64))
+            * e
+            + r23 / (x - r23);
+        rt3 = ((F::cast_from(-2.63750565461336e+02_f64) * x
+            + F::cast_from(1.04412168692352e+04_f64))
+            * x
+            - F::cast_from(1.28094577915394e+05_f64))
+            * e
+            + r33 / (x - r33);
+        ww3 = (((F::cast_from(1.52258947224714e-01_f64) * x
+            - F::cast_from(8.30661900042651e+00_f64))
+            * x
+            + F::cast_from(1.92977367967984e+02_f64))
+            * x
+            - F::cast_from(1.67787926005344e+03_f64))
+            * e
+            + w33 * ww1;
+        ww2 = ((F::cast_from(6.15072615497811e+01_f64) * x
+            - F::cast_from(2.91980647450269e+03_f64))
+            * x
+            + F::cast_from(3.80794303087338e+04_f64))
+            * e
+            + w23 * ww1;
+        ww1 = ww1 - ww2 - ww3;
+    } else {
+        ww1 = F::sqrt(pie4 / x);
+        rt1 = r13 / (x - r13);
+        rt2 = r23 / (x - r23);
+        rt3 = r33 / (x - r33);
+        ww2 = w23 * ww1;
+        ww3 = w33 * ww1;
+        ww1 = ww1 - ww2 - ww3;
+    }
     u[0usize] = rt1;
     u[1usize] = rt2;
     u[2usize] = rt3;
@@ -712,358 +1302,1098 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
     let mut y = F::new(0.0);
     let mut e = F::new(0.0);
 
+    r14 = F::cast_from(1.45303521503316e-01_f64);
+    r24 = F::cast_from(1.33909728812636e+00_f64);
+    w24 = F::cast_from(2.34479815323517e-01_f64);
+    r34 = F::cast_from(3.92696350135829e+00_f64);
+    w34 = F::cast_from(1.92704402415764e-02_f64);
+    r44 = F::cast_from(8.58863568901199e+00_f64);
+    w44 = F::cast_from(2.25229076750736e-04_f64);
 
-        r14 = F::cast_from(1.45303521503316e-01_f64);
-        r24 = F::cast_from(1.33909728812636e+00_f64);
-        w24 = F::cast_from(2.34479815323517e-01_f64);
-        r34 = F::cast_from(3.92696350135829e+00_f64);
-        w34 = F::cast_from(1.92704402415764e-02_f64);
-        r44 = F::cast_from(8.58863568901199e+00_f64);
-        w44 = F::cast_from(2.25229076750736e-04_f64);
-
-        if x <= F::new(3.0e-7) {
-                rt1 = F::cast_from(3.48198973061471e-02_f64) -F::cast_from(4.09645850660395e-03_f64) *x;
-                rt2 = F::cast_from(3.81567185080042e-01_f64) -F::cast_from(4.48902570656719e-02_f64) *x;
-                rt3 = F::cast_from(1.73730726945891e+00_f64) -F::cast_from(2.04389090547327e-01_f64) *x;
-                rt4 = F::cast_from(1.18463056481549e+01_f64) -F::cast_from(1.39368301742312e+00_f64) *x;
-                ww1 = F::cast_from(3.62683783378362e-01_f64) -F::cast_from(3.13844305713928e-02_f64) *x;
-                ww2 = F::cast_from(3.13706645877886e-01_f64) -F::cast_from(8.98046242557724e-02_f64) *x;
-                ww3 = F::cast_from(2.22381034453372e-01_f64) -F::cast_from(1.29314370958973e-01_f64) *x;
-                ww4 = F::cast_from(1.01228536290376e-01_f64) -F::cast_from(8.28299075414321e-02_f64) *x;
-        } else if x <= F::new(1.0) {
-                rt1 = ((((((F::cast_from(-1.95309614628539e-10_f64)*x+F::cast_from(5.19765728707592e-09_f64))*x-
-                           F::cast_from(1.01756452250573e-07_f64) )*x+F::cast_from(1.72365935872131e-06_f64) )*x-
-                         F::cast_from(2.61203523522184e-05_f64) )*x+F::cast_from(3.52921308769880e-04_f64) )*x-
-                       F::cast_from(4.09645850658433e-03_f64) )*x+F::cast_from(3.48198973061469e-02_f64);
-                rt2 = (((((F::cast_from(-1.89554881382342e-08_f64)*x+F::cast_from(3.07583114342365e-07_f64))*x+
-                          F::cast_from(1.270981734393e-06_f64))*x-F::cast_from(1.417298563884e-04_f64))*x+
-                        F::cast_from(3.226979163176e-03_f64))*x-F::cast_from(4.48902570678178e-02_f64) )*x+
-                        F::cast_from(3.81567185080039e-01_f64);
-                rt3 = (((((( F::cast_from(1.77280535300416e-09_f64)*x+F::cast_from(3.36524958870615e-08_f64))*x-
-                           F::cast_from(2.58341529013893e-07_f64) )*x-F::cast_from(1.13644895662320e-05_f64) )*x-
-                         F::cast_from(7.91549618884063e-05_f64) )*x+F::cast_from(1.03825827346828e-02_f64) )*x-
-                       F::cast_from(2.04389090525137e-01_f64) )*x+F::cast_from(1.73730726945889e+00_f64);
-                rt4 = (((((F::cast_from(-5.61188882415248e-08_f64)*x-F::cast_from(2.49480733072460e-07_f64))*x+
-                          F::cast_from(3.428685057114e-06_f64))*x+F::cast_from(1.679007454539e-04_f64))*x+
-                        F::cast_from(4.722855585715e-02_f64))*x-F::cast_from(1.39368301737828e+00_f64) )*x+
-                        F::cast_from(1.18463056481543e+01_f64);
-                ww1 = ((((((F::cast_from(-1.14649303201279e-08_f64)*x+F::cast_from(1.88015570196787e-07_f64))*x-
-                           F::cast_from(2.33305875372323e-06_f64) )*x+F::cast_from(2.68880044371597e-05_f64) )*x-
-                         F::cast_from(2.94268428977387e-04_f64) )*x+F::cast_from(3.06548909776613e-03_f64) )*x-
-                       F::cast_from(3.13844305680096e-02_f64) )*x+F::cast_from(3.62683783378335e-01_f64);
-                ww2 = ((((((((F::cast_from(-4.11720483772634e-09_f64)*x+F::cast_from(6.54963481852134e-08_f64))*x-
-                             F::cast_from(7.20045285129626e-07_f64) )*x+F::cast_from(6.93779646721723e-06_f64) )*x-
-                           F::cast_from(6.05367572016373e-05_f64) )*x+F::cast_from(4.74241566251899e-04_f64) )*x-
-                         F::cast_from(3.26956188125316e-03_f64) )*x+F::cast_from(1.91883866626681e-02_f64) )*x-
-                       F::cast_from(8.98046242565811e-02_f64) )*x+F::cast_from(3.13706645877886e-01_f64);
-                ww3 = ((((((((F::cast_from(-3.41688436990215e-08_f64)*x+F::cast_from(5.07238960340773e-07_f64))*x-
-                             F::cast_from(5.01675628408220e-06_f64) )*x+F::cast_from(4.20363420922845e-05_f64) )*x-
-                           F::cast_from(3.08040221166823e-04_f64) )*x+F::cast_from(1.94431864731239e-03_f64) )*x-
-                         F::cast_from(1.02477820460278e-02_f64) )*x+F::cast_from(4.28670143840073e-02_f64) )*x-
-                       F::cast_from(1.29314370962569e-01_f64) )*x+F::cast_from(2.22381034453369e-01_f64);
-                ww4 = ((((((((( F::cast_from(4.99660550769508e-09_f64)*x-F::cast_from(7.94585963310120e-08_f64))*x+
-                              F::cast_from(8.359072409485e-07_f64))*x-F::cast_from(7.422369210610e-06_f64))*x+
-                            F::cast_from(5.763374308160e-05_f64))*x-F::cast_from(3.86645606718233e-04_f64) )*x+
-                          F::cast_from(2.18417516259781e-03_f64) )*x-F::cast_from(9.99791027771119e-03_f64) )*x+
-                        F::cast_from(3.48791097377370e-02_f64) )*x-F::cast_from(8.28299075413889e-02_f64) )*x+
-                        F::cast_from(1.01228536290376e-01_f64);
-        } else if x <= F::new(5.0) {
-                y = x-F::cast_from(3.0e+00_f64);
-                rt1 = (((((((((F::cast_from(-1.48570633747284e-15_f64)*y-F::cast_from(1.33273068108777e-13_f64))*y+
-                              F::cast_from(4.068543696670e-12_f64))*y-F::cast_from(9.163164161821e-11_f64))*y+
-                            F::cast_from(2.046819017845e-09_f64))*y-F::cast_from(4.03076426299031e-08_f64) )*y+
-                          F::cast_from(7.29407420660149e-07_f64) )*y-F::cast_from(1.23118059980833e-05_f64) )*y+
-                        F::cast_from(1.88796581246938e-04_f64) )*y-F::cast_from(2.53262912046853e-03_f64) )*y+
-                        F::cast_from(2.51198234505021e-02_f64);
-                rt2 = ((((((((( F::cast_from(1.35830583483312e-13_f64)*y-F::cast_from(2.29772605964836e-12_f64))*y-
-                              F::cast_from(3.821500128045e-12_f64))*y+F::cast_from(6.844424214735e-10_f64))*y-
-                            F::cast_from(1.048063352259e-08_f64))*y+F::cast_from(1.50083186233363e-08_f64) )*y+
-                          F::cast_from(3.48848942324454e-06_f64) )*y-F::cast_from(1.08694174399193e-04_f64) )*y+
-                        F::cast_from(2.08048885251999e-03_f64) )*y-F::cast_from(2.91205805373793e-02_f64) )*y+
-                        F::cast_from(2.72276489515713e-01_f64);
-                rt3 = ((((((((( F::cast_from(5.02799392850289e-13_f64)*y+F::cast_from(1.07461812944084e-11_f64))*y-
-                              F::cast_from(1.482277886411e-10_f64))*y-F::cast_from(2.153585661215e-09_f64))*y+
-                            F::cast_from(3.654087802817e-08_f64))*y+F::cast_from(5.15929575830120e-07_f64) )*y-
-                          F::cast_from(9.52388379435709e-06_f64) )*y-F::cast_from(2.16552440036426e-04_f64) )*y+
-                        F::cast_from(9.03551469568320e-03_f64) )*y-F::cast_from(1.45505469175613e-01_f64) )*y+
-                        F::cast_from(1.21449092319186e+00_f64);
-                rt4 = (((((((((F::cast_from(-1.08510370291979e-12_f64)*y+F::cast_from(6.41492397277798e-11_f64))*y+
-                              F::cast_from(7.542387436125e-10_f64))*y-F::cast_from(2.213111836647e-09_f64))*y-
-                            F::cast_from(1.448228963549e-07_f64))*y-F::cast_from(1.95670833237101e-06_f64) )*y-
-                          F::cast_from(1.07481314670844e-05_f64) )*y+F::cast_from(1.49335941252765e-04_f64) )*y+
-                        F::cast_from(4.87791531990593e-02_f64) )*y-F::cast_from(1.10559909038653e+00_f64) )*y+
-                        F::cast_from(8.09502028611780e+00_f64);
-                ww1 = ((((((((((F::cast_from(-4.65801912689961e-14_f64)*y+F::cast_from(7.58669507106800e-13_f64))*y-
-                               F::cast_from(1.186387548048e-11_f64))*y+F::cast_from(1.862334710665e-10_f64))*y-
-                             F::cast_from(2.799399389539e-09_f64))*y+F::cast_from(4.148972684255e-08_f64))*y-
-                           F::cast_from(5.933568079600e-07_f64))*y+F::cast_from(8.168349266115e-06_f64))*y-
-                         F::cast_from(1.08989176177409e-04_f64) )*y+F::cast_from(1.41357961729531e-03_f64) )*y-
-                       F::cast_from(1.87588361833659e-02_f64) )*y+F::cast_from(2.89898651436026e-01_f64);
-                ww2 = ((((((((((((F::cast_from(-1.46345073267549e-14_f64)*y+F::cast_from(2.25644205432182e-13_f64))*y-
-                                 F::cast_from(3.116258693847e-12_f64))*y+F::cast_from(4.321908756610e-11_f64))*y-
-                               F::cast_from(5.673270062669e-10_f64))*y+F::cast_from(7.006295962960e-09_f64))*y-
-                             F::cast_from(8.120186517000e-08_f64))*y+F::cast_from(8.775294645770e-07_f64))*y-
-                           F::cast_from(8.77829235749024e-06_f64) )*y+F::cast_from(8.04372147732379e-05_f64) )*y-
-                         F::cast_from(6.64149238804153e-04_f64) )*y+F::cast_from(4.81181506827225e-03_f64) )*y-
-                       F::cast_from(2.88982669486183e-02_f64) )*y+F::cast_from(1.56247249979288e-01_f64);
-                ww3 = ((((((((((((( F::cast_from(9.06812118895365e-15_f64)*y-F::cast_from(1.40541322766087e-13_f64))*
-                                  y+F::cast_from(1.919270015269e-12_f64))*y-F::cast_from(2.605135739010e-11_f64))*y+
-                                F::cast_from(3.299685839012e-10_f64))*y-F::cast_from(3.86354139348735e-09_f64) )*y+
-                              F::cast_from(4.16265847927498e-08_f64) )*y-F::cast_from(4.09462835471470e-07_f64) )*y+
-                            F::cast_from(3.64018881086111e-06_f64) )*y-F::cast_from(2.88665153269386e-05_f64) )*y+
-                          F::cast_from(2.00515819789028e-04_f64) )*y-F::cast_from(1.18791896897934e-03_f64) )*y+
-                        F::cast_from(5.75223633388589e-03_f64) )*y-F::cast_from(2.09400418772687e-02_f64) )*y+
-                        F::cast_from(4.85368861938873e-02_f64);
-                ww4 = ((((((((((((((F::cast_from(-9.74835552342257e-16_f64)*y+F::cast_from(1.57857099317175e-14_f64))*
-                                   y-F::cast_from(2.249993780112e-13_f64))*y+F::cast_from(3.173422008953e-12_f64))*y-
-                                 F::cast_from(4.161159459680e-11_f64))*y+F::cast_from(5.021343560166e-10_f64))*y-
-                               F::cast_from(5.545047534808e-09_f64))*y+F::cast_from(5.554146993491e-08_f64))*y-
-                             F::cast_from(4.99048696190133e-07_f64) )*y+F::cast_from(3.96650392371311e-06_f64) )*y-
-                           F::cast_from(2.73816413291214e-05_f64) )*y+F::cast_from(1.60106988333186e-04_f64) )*y-
-                         F::cast_from(7.64560567879592e-04_f64) )*y+F::cast_from(2.81330044426892e-03_f64) )*y-
-                       F::cast_from(7.16227030134947e-03_f64) )*y+F::cast_from(9.66077262223353e-03_f64);
-        } else if x <= F::new(10.0) {
-                y = x-F::cast_from(7.5e+00_f64);
-                rt1 = ((((((((( F::cast_from(4.64217329776215e-15_f64)*y-F::cast_from(6.27892383644164e-15_f64))*y+
-                              F::cast_from(3.462236347446e-13_f64))*y-F::cast_from(2.927229355350e-11_f64))*y+
-                            F::cast_from(5.090355371676e-10_f64))*y-F::cast_from(9.97272656345253e-09_f64) )*y+
-                          F::cast_from(2.37835295639281e-07_f64) )*y-F::cast_from(4.60301761310921e-06_f64) )*y+
-                        F::cast_from(8.42824204233222e-05_f64) )*y-F::cast_from(1.37983082233081e-03_f64) )*y+
-                        F::cast_from(1.66630865869375e-02_f64);
-                rt2 = ((((((((( F::cast_from(2.93981127919047e-14_f64)*y+F::cast_from(8.47635639065744e-13_f64))*y-
-                              F::cast_from(1.446314544774e-11_f64))*y-F::cast_from(6.149155555753e-12_f64))*y+
-                            F::cast_from(8.484275604612e-10_f64))*y-F::cast_from(6.10898827887652e-08_f64) )*y+
-                          F::cast_from(2.39156093611106e-06_f64) )*y-F::cast_from(5.35837089462592e-05_f64) )*y+
-                        F::cast_from(1.00967602595557e-03_f64) )*y-F::cast_from(1.57769317127372e-02_f64) )*y+
-                        F::cast_from(1.74853819464285e-01_f64);
-                rt3 = (((((((((( F::cast_from(2.93523563363000e-14_f64)*y-F::cast_from(6.40041776667020e-14_f64))*y-
-                               F::cast_from(2.695740446312e-12_f64))*y+F::cast_from(1.027082960169e-10_f64))*y-
-                             F::cast_from(5.822038656780e-10_f64))*y-F::cast_from(3.159991002539e-08_f64))*y+
-                           F::cast_from(4.327249251331e-07_f64))*y+F::cast_from(4.856768455119e-06_f64))*y-
-                         F::cast_from(2.54617989427762e-04_f64) )*y+F::cast_from(5.54843378106589e-03_f64) )*y-
-                       F::cast_from(7.95013029486684e-02_f64) )*y+F::cast_from(7.20206142703162e-01_f64);
-                rt4 = (((((((((((F::cast_from(-1.62212382394553e-14_f64)*y+F::cast_from(7.68943641360593e-13_f64))*y+
-                                F::cast_from(5.764015756615e-12_f64))*y-F::cast_from(1.380635298784e-10_f64))*y-
-                              F::cast_from(1.476849808675e-09_f64))*y+F::cast_from(1.84347052385605e-08_f64) )*y+
-                            F::cast_from(3.34382940759405e-07_f64) )*y-F::cast_from(1.39428366421645e-06_f64) )*y-
-                          F::cast_from(7.50249313713996e-05_f64) )*y-F::cast_from(6.26495899187507e-04_f64) )*y+
-                        F::cast_from(4.69716410901162e-02_f64) )*y-F::cast_from(6.66871297428209e-01_f64) )*y+
-                        F::cast_from(4.11207530217806e+00_f64);
-                ww1 = ((((((((((F::cast_from(-1.65995045235997e-15_f64)*y+F::cast_from(6.91838935879598e-14_f64))*y-
-                               F::cast_from(9.131223418888e-13_f64))*y+F::cast_from(1.403341829454e-11_f64))*y-
-                             F::cast_from(3.672235069444e-10_f64))*y+F::cast_from(6.366962546990e-09_f64))*y-
-                           F::cast_from(1.039220021671e-07_f64))*y+F::cast_from(1.959098751715e-06_f64))*y-
-                         F::cast_from(3.33474893152939e-05_f64) )*y+F::cast_from(5.72164211151013e-04_f64) )*y-
-                       F::cast_from(1.05583210553392e-02_f64) )*y+F::cast_from(2.26696066029591e-01_f64);
-                ww2 = ((((((((((((F::cast_from(-3.57248951192047e-16_f64)*y+F::cast_from(6.25708409149331e-15_f64))*y-
-                                 F::cast_from(9.657033089714e-14_f64))*y+F::cast_from(1.507864898748e-12_f64))*y-
-                               F::cast_from(2.332522256110e-11_f64))*y+F::cast_from(3.428545616603e-10_f64))*y-
-                             F::cast_from(4.698730937661e-09_f64))*y+F::cast_from(6.219977635130e-08_f64))*y-
-                           F::cast_from(7.83008889613661e-07_f64) )*y+F::cast_from(9.08621687041567e-06_f64) )*y-
-                         F::cast_from(9.86368311253873e-05_f64) )*y+F::cast_from(9.69632496710088e-04_f64) )*y-
-                       F::cast_from(8.14594214284187e-03_f64) )*y+F::cast_from(8.50218447733457e-02_f64);
-                ww3 = ((((((((((((( F::cast_from(1.64742458534277e-16_f64)*y-F::cast_from(2.68512265928410e-15_f64))*
-                                  y+F::cast_from(3.788890667676e-14_f64))*y-F::cast_from(5.508918529823e-13_f64))*y+
-                                F::cast_from(7.555896810069e-12_f64))*y-F::cast_from(9.69039768312637e-11_f64) )*y+
-                              F::cast_from(1.16034263529672e-09_f64) )*y-F::cast_from(1.28771698573873e-08_f64) )*y+
-                            F::cast_from(1.31949431805798e-07_f64) )*y-F::cast_from(1.23673915616005e-06_f64) )*y+
-                          F::cast_from(1.04189803544936e-05_f64) )*y-F::cast_from(7.79566003744742e-05_f64) )*y+
-                        F::cast_from(5.03162624754434e-04_f64) )*y-F::cast_from(2.55138844587555e-03_f64) )*y+
-                        F::cast_from(1.13250730954014e-02_f64);
-                ww4 = ((((((((((((((F::cast_from(-1.55714130075679e-17_f64)*y+F::cast_from(2.57193722698891e-16_f64))*
-                                   y-F::cast_from(3.626606654097e-15_f64))*y+F::cast_from(5.234734676175e-14_f64))*y-
-                                 F::cast_from(7.067105402134e-13_f64))*y+F::cast_from(8.793512664890e-12_f64))*y-
-                               F::cast_from(1.006088923498e-10_f64))*y+F::cast_from(1.050565098393e-09_f64))*y-
-                             F::cast_from(9.91517881772662e-09_f64) )*y+F::cast_from(8.35835975882941e-08_f64) )*y-
-                           F::cast_from(6.19785782240693e-07_f64) )*y+F::cast_from(3.95841149373135e-06_f64) )*y-
-                         F::cast_from(2.11366761402403e-05_f64) )*y+F::cast_from(9.00474771229507e-05_f64) )*y-
-                       F::cast_from(2.78777909813289e-04_f64) )*y+F::cast_from(5.26543779837487e-04_f64);
-        } else if x <= F::new(15.0) {
-                y = x-F::cast_from(12.5e+00_f64);
-                rt1 = ((((((((((( F::cast_from(4.94869622744119e-17_f64)*y+F::cast_from(8.03568805739160e-16_f64))*y-
-                                F::cast_from(5.599125915431e-15_f64))*y-F::cast_from(1.378685560217e-13_f64))*y+
-                              F::cast_from(7.006511663249e-13_f64))*y+F::cast_from(1.30391406991118e-11_f64) )*y+
-                            F::cast_from(8.06987313467541e-11_f64) )*y-F::cast_from(5.20644072732933e-09_f64) )*y+
-                          F::cast_from(7.72794187755457e-08_f64) )*y-F::cast_from(1.61512612564194e-06_f64) )*y+
-                        F::cast_from(4.15083811185831e-05_f64) )*y-F::cast_from(7.87855975560199e-04_f64) )*y+
-                        F::cast_from(1.14189319050009e-02_f64);
-                rt2 = ((((((((((( F::cast_from(4.89224285522336e-16_f64)*y+F::cast_from(1.06390248099712e-14_f64))*y-
-                                F::cast_from(5.446260182933e-14_f64))*y-F::cast_from(1.613630106295e-12_f64))*y+
-                              F::cast_from(3.910179118937e-12_f64))*y+F::cast_from(1.90712434258806e-10_f64) )*y+
-                            F::cast_from(8.78470199094761e-10_f64) )*y-F::cast_from(5.97332993206797e-08_f64) )*y+
-                          F::cast_from(9.25750831481589e-07_f64) )*y-F::cast_from(2.02362185197088e-05_f64) )*y+
-                        F::cast_from(4.92341968336776e-04_f64) )*y-F::cast_from(8.68438439874703e-03_f64) )*y+
-                        F::cast_from(1.15825965127958e-01_f64);
-                rt3 = (((((((((( F::cast_from(6.12419396208408e-14_f64)*y+F::cast_from(1.12328861406073e-13_f64))*y-
-                               F::cast_from(9.051094103059e-12_f64))*y-F::cast_from(4.781797525341e-11_f64))*y+
-                             F::cast_from(1.660828868694e-09_f64))*y+F::cast_from(4.499058798868e-10_f64))*y-
-                           F::cast_from(2.519549641933e-07_f64))*y+F::cast_from(4.977444040180e-06_f64))*y-
-                         F::cast_from(1.25858350034589e-04_f64) )*y+F::cast_from(2.70279176970044e-03_f64) )*y-
-                       F::cast_from(3.99327850801083e-02_f64) )*y+F::cast_from(4.33467200855434e-01_f64);
-                rt4 = ((((((((((( F::cast_from(4.63414725924048e-14_f64)*y-F::cast_from(4.72757262693062e-14_f64))*y-
-                                F::cast_from(1.001926833832e-11_f64))*y+F::cast_from(6.074107718414e-11_f64))*y+
-                              F::cast_from(1.576976911942e-09_f64))*y-F::cast_from(2.01186401974027e-08_f64) )*y-
-                            F::cast_from(1.84530195217118e-07_f64) )*y+F::cast_from(5.02333087806827e-06_f64) )*y+
-                          F::cast_from(9.66961790843006e-06_f64) )*y-F::cast_from(1.58522208889528e-03_f64) )*y+
-                        F::cast_from(2.80539673938339e-02_f64) )*y-F::cast_from(2.78953904330072e-01_f64) )*y+
-                        F::cast_from(1.82835655238235e+00_f64);
-                ww4 = ((((((((((((( F::cast_from(2.90401781000996e-18_f64)*y-F::cast_from(4.63389683098251e-17_f64))*
-                                  y+F::cast_from(6.274018198326e-16_f64))*y-F::cast_from(8.936002188168e-15_f64))*y+
-                                F::cast_from(1.194719074934e-13_f64))*y-F::cast_from(1.45501321259466e-12_f64) )*y+
-                              F::cast_from(1.64090830181013e-11_f64) )*y-F::cast_from(1.71987745310181e-10_f64) )*y+
-                            F::cast_from(1.63738403295718e-09_f64) )*y-F::cast_from(1.39237504892842e-08_f64) )*y+
-                          F::cast_from(1.06527318142151e-07_f64) )*y-F::cast_from(7.27634957230524e-07_f64) )*y+
-                        F::cast_from(4.12159381310339e-06_f64) )*y-F::cast_from(1.74648169719173e-05_f64) )*y+
-                        F::cast_from(8.50290130067818e-05_f64);
-                ww3 = ((((((((((((F::cast_from(-4.19569145459480e-17_f64)*y+F::cast_from(5.94344180261644e-16_f64))*y-
-                                 F::cast_from(1.148797566469e-14_f64))*y+F::cast_from(1.881303962576e-13_f64))*y-
-                               F::cast_from(2.413554618391e-12_f64))*y+F::cast_from(3.372127423047e-11_f64))*y-
-                             F::cast_from(4.933988617784e-10_f64))*y+F::cast_from(6.116545396281e-09_f64))*y-
-                           F::cast_from(6.69965691739299e-08_f64) )*y+F::cast_from(7.52380085447161e-07_f64) )*y-
-                         F::cast_from(8.08708393262321e-06_f64) )*y+F::cast_from(6.88603417296672e-05_f64) )*y-
-                       F::cast_from(4.67067112993427e-04_f64) )*y+F::cast_from(5.42313365864597e-03_f64);
-                ww2 = ((((((((((F::cast_from(-6.22272689880615e-15_f64)*y+F::cast_from(1.04126809657554e-13_f64))*y-
-                               F::cast_from(6.842418230913e-13_f64))*y+F::cast_from(1.576841731919e-11_f64))*y-
-                             F::cast_from(4.203948834175e-10_f64))*y+F::cast_from(6.287255934781e-09_f64))*y-
-                           F::cast_from(8.307159819228e-08_f64))*y+F::cast_from(1.356478091922e-06_f64))*y-
-                         F::cast_from(2.08065576105639e-05_f64) )*y+F::cast_from(2.52396730332340e-04_f64) )*y-
-                       F::cast_from(2.94484050194539e-03_f64) )*y+F::cast_from(6.01396183129168e-02_f64);
-                ww1 = (((F::cast_from(-1.8784686463512e-01_f64)/x+F::cast_from(2.2991849164985e-01_f64))/x -
-                        F::cast_from(4.9893752514047e-01_f64))/x-F::cast_from(2.1916512131607e-05_f64))*F::exp(-x) +
-                        F::sqrt(pie4/x)-ww4-ww3-ww2;
-        } else if x <= F::new(20.0) {
-                ww1 = F::sqrt(pie4/x);
-                y = x-F::cast_from(17.5e+00_f64);
-                rt1 = ((((((((((( F::cast_from(4.36701759531398e-17_f64)*y-F::cast_from(1.12860600219889e-16_f64))*y-
-                                F::cast_from(6.149849164164e-15_f64))*y+F::cast_from(5.820231579541e-14_f64))*y+
-                              F::cast_from(4.396602872143e-13_f64))*y-F::cast_from(1.24330365320172e-11_f64) )*y+
-                            F::cast_from(6.71083474044549e-11_f64) )*y+F::cast_from(2.43865205376067e-10_f64) )*y+
-                          F::cast_from(1.67559587099969e-08_f64) )*y-F::cast_from(9.32738632357572e-07_f64) )*y+
-                        F::cast_from(2.39030487004977e-05_f64) )*y-F::cast_from(4.68648206591515e-04_f64) )*y+
-                        F::cast_from(8.34977776583956e-03_f64);
-                rt2 = ((((((((((( F::cast_from(4.98913142288158e-16_f64)*y-F::cast_from(2.60732537093612e-16_f64))*y-
-                                F::cast_from(7.775156445127e-14_f64))*y+F::cast_from(5.766105220086e-13_f64))*y+
-                              F::cast_from(6.432696729600e-12_f64))*y-F::cast_from(1.39571683725792e-10_f64) )*y+
-                            F::cast_from(5.95451479522191e-10_f64) )*y+F::cast_from(2.42471442836205e-09_f64) )*y+
-                          F::cast_from(2.47485710143120e-07_f64) )*y-F::cast_from(1.14710398652091e-05_f64) )*y+
-                        F::cast_from(2.71252453754519e-04_f64) )*y-F::cast_from(4.96812745851408e-03_f64) )*y+
-                        F::cast_from(8.26020602026780e-02_f64);
-                rt3 = ((((((((((( F::cast_from(1.91498302509009e-15_f64)*y+F::cast_from(1.48840394311115e-14_f64))*y-
-                                F::cast_from(4.316925145767e-13_f64))*y+F::cast_from(1.186495793471e-12_f64))*y+
-                              F::cast_from(4.615806713055e-11_f64))*y-F::cast_from(5.54336148667141e-10_f64) )*y+
-                            F::cast_from(3.48789978951367e-10_f64) )*y-F::cast_from(2.79188977451042e-09_f64) )*y+
-                          F::cast_from(2.09563208958551e-06_f64) )*y-F::cast_from(6.76512715080324e-05_f64) )*y+
-                        F::cast_from(1.32129867629062e-03_f64) )*y-F::cast_from(2.05062147771513e-02_f64) )*y+
-                        F::cast_from(2.88068671894324e-01_f64);
-                rt4 = (((((((((((F::cast_from(-5.43697691672942e-15_f64)*y-F::cast_from(1.12483395714468e-13_f64))*y+
-                                F::cast_from(2.826607936174e-12_f64))*y-F::cast_from(1.266734493280e-11_f64))*y-
-                              F::cast_from(4.258722866437e-10_f64))*y+F::cast_from(9.45486578503261e-09_f64) )*y-
-                            F::cast_from(5.86635622821309e-08_f64) )*y-F::cast_from(1.28835028104639e-06_f64) )*y+
-                          F::cast_from(4.41413815691885e-05_f64) )*y-F::cast_from(7.61738385590776e-04_f64) )*y+
-                        F::cast_from(9.66090902985550e-03_f64) )*y-F::cast_from(1.01410568057649e-01_f64) )*y+
-                        F::cast_from(9.54714798156712e-01_f64);
-                ww4 = ((((((((((((F::cast_from(-7.56882223582704e-19_f64)*y+F::cast_from(7.53541779268175e-18_f64))*y-
-                                 F::cast_from(1.157318032236e-16_f64))*y+F::cast_from(2.411195002314e-15_f64))*y-
-                               F::cast_from(3.601794386996e-14_f64))*y+F::cast_from(4.082150659615e-13_f64))*y-
-                             F::cast_from(4.289542980767e-12_f64))*y+F::cast_from(5.086829642731e-11_f64))*y-
-                           F::cast_from(6.35435561050807e-10_f64) )*y+F::cast_from(6.82309323251123e-09_f64) )*y-
-                         F::cast_from(5.63374555753167e-08_f64) )*y+F::cast_from(3.57005361100431e-07_f64) )*y-
-                       F::cast_from(2.40050045173721e-06_f64) )*y+F::cast_from(4.94171300536397e-05_f64);
-                ww3 = (((((((((((F::cast_from(-5.54451040921657e-17_f64)*y+F::cast_from(2.68748367250999e-16_f64))*y+
-                                F::cast_from(1.349020069254e-14_f64))*y-F::cast_from(2.507452792892e-13_f64))*y+
-                              F::cast_from(1.944339743818e-12_f64))*y-F::cast_from(1.29816917658823e-11_f64) )*y+
-                            F::cast_from(3.49977768819641e-10_f64) )*y-F::cast_from(8.67270669346398e-09_f64) )*y+
-                          F::cast_from(1.31381116840118e-07_f64) )*y-F::cast_from(1.36790720600822e-06_f64) )*y+
-                        F::cast_from(1.19210697673160e-05_f64) )*y-F::cast_from(1.42181943986587e-04_f64) )*y+
-                        F::cast_from(4.12615396191829e-03_f64);
-                ww2 = (((((((((((F::cast_from(-1.86506057729700e-16_f64)*y+F::cast_from(1.16661114435809e-15_f64))*y+
-                                F::cast_from(2.563712856363e-14_f64))*y-F::cast_from(4.498350984631e-13_f64))*y+
-                              F::cast_from(1.765194089338e-12_f64))*y+F::cast_from(9.04483676345625e-12_f64) )*y+
-                            F::cast_from(4.98930345609785e-10_f64) )*y-F::cast_from(2.11964170928181e-08_f64) )*y+
-                          F::cast_from(3.98295476005614e-07_f64) )*y-F::cast_from(5.49390160829409e-06_f64) )*y+
-                        F::cast_from(7.74065155353262e-05_f64) )*y-F::cast_from(1.48201933009105e-03_f64) )*y+
-                        F::cast_from(4.97836392625268e-02_f64);
-                ww1 = (( F::cast_from(1.9623264149430e-01_f64)/x-F::cast_from(4.9695241464490e-01_f64))/x -
-                       F::cast_from(6.0156581186481e-05_f64))*F::exp(-x)+ww1-ww2-ww3-ww4;
-        } else if x <= F::new(35.0) {
-                ww1 = F::sqrt(pie4/x);
-                e = F::exp(-x);
-                rt1 = ((((((F::cast_from(-4.45711399441838e-05_f64)*x+F::cast_from(1.27267770241379e-03_f64))*x -
-                           F::cast_from(2.36954961381262e-01_f64))*x+F::cast_from(1.54330657903756e+01_f64))*x -
-                         F::cast_from(5.22799159267808e+02_f64))*x+F::cast_from(1.05951216669313e+04_f64))*x +
-                       (F::cast_from(-2.51177235556236e+06_f64)/x+F::cast_from(8.72975373557709e+05_f64))/x -
-                       F::cast_from(1.29194382386499e+05_f64))*e + r14/(x-r14);
-                rt2 = (((((F::cast_from(-7.85617372254488e-02_f64)*x+F::cast_from(6.35653573484868e+00_f64))*x -
-                          F::cast_from(3.38296938763990e+02_f64))*x+F::cast_from(1.25120495802096e+04_f64))*x -
-                        F::cast_from(3.16847570511637e+05_f64))*x +
-                       ((F::cast_from(-1.02427466127427e+09_f64)/x +
-                         F::cast_from(3.70104713293016e+08_f64))/x-F::cast_from(5.87119005093822e+07_f64))/x +
-                       F::cast_from(5.38614211391604e+06_f64))*e + r24/(x-r24);
-                rt3 = (((((F::cast_from(-2.37900485051067e-01_f64)*x+F::cast_from(1.84122184400896e+01_f64))*x -
-                          F::cast_from(1.00200731304146e+03_f64))*x+F::cast_from(3.75151841595736e+04_f64))*x -
-                        F::cast_from(9.50626663390130e+05_f64))*x +
-                       ((F::cast_from(-2.88139014651985e+09_f64)/x +
-                         F::cast_from(1.06625915044526e+09_f64))/x-F::cast_from(1.72465289687396e+08_f64))/x +
-                       F::cast_from(1.60419390230055e+07_f64))*e + r34/(x-r34);
-                rt4 = ((((((F::cast_from(-6.00691586407385e-04_f64)*x-F::cast_from(3.64479545338439e-01_f64))*x +
-                           F::cast_from(1.57496131755179e+01_f64))*x-F::cast_from(6.54944248734901e+02_f64))*x +
-                         F::cast_from(1.70830039597097e+04_f64))*x-F::cast_from(2.90517939780207e+05_f64))*x +
-                       (F::cast_from(3.49059698304732e+07_f64)/x-F::cast_from(1.64944522586065e+07_f64))/x +
-                       F::cast_from(2.96817940164703e+06_f64))*e + r44/(x-r44);
-                if x <= F::new(25.0) {
-ww4 = ((((((( F::cast_from(2.33766206773151e-07_f64)*x-
-                                      F::cast_from(3.81542906607063e-05_f64))*x +F::cast_from(3.51416601267000e-03_f64))*x-
-                                   F::cast_from(1.66538571864728e-01_f64))*x +F::cast_from(4.80006136831847e+00_f64))*x-
-                                 F::cast_from(8.73165934223603e+01_f64))*x +F::cast_from(9.77683627474638e+02_f64))*x +
-                               F::cast_from(1.66000945117640e+04_f64)/x -F::cast_from(6.14479071209961e+03_f64))*e + w44*ww1;
-        }
-                else {
-ww4 = (((((( F::cast_from(5.74245945342286e-06_f64)*x-
-                                     F::cast_from(7.58735928102351e-05_f64))*x +F::cast_from(2.35072857922892e-04_f64))*x-
-                                  F::cast_from(3.78812134013125e-03_f64))*x +F::cast_from(3.09871652785805e-01_f64))*x-
-                                F::cast_from(7.11108633061306e+00_f64))*x +F::cast_from(5.55297573149528e+01_f64))*e + w44*ww1;
-        }
-                ww3 = (((((( F::cast_from(2.36392855180768e-04_f64)*x-F::cast_from(9.16785337967013e-03_f64))*x +
-                           F::cast_from(4.62186525041313e-01_f64))*x-F::cast_from(1.96943786006540e+01_f64))*x +
-                         F::cast_from(4.99169195295559e+02_f64))*x-F::cast_from(6.21419845845090e+03_f64))*x +
-                       ((F::cast_from(5.21445053212414e+07_f64)/x-F::cast_from(1.34113464389309e+07_f64))/x +
-                        F::cast_from(1.13673298305631e+06_f64))/x-F::cast_from(2.81501182042707e+03_f64))*e + w34*ww1;
-                ww2 = (((((( F::cast_from(7.29841848989391e-04_f64)*x-F::cast_from(3.53899555749875e-02_f64))*x +
-                           F::cast_from(2.07797425718513e+00_f64))*x-F::cast_from(1.00464709786287e+02_f64))*x +
-                         F::cast_from(3.15206108877819e+03_f64))*x-F::cast_from(6.27054715090012e+04_f64))*x +
-                       (F::cast_from(1.54721246264919e+07_f64)/x-F::cast_from(5.26074391316381e+06_f64))/x +
-                       F::cast_from(7.67135400969617e+05_f64))*e + w24*ww1;
-                ww1 = (( F::cast_from(1.9623264149430e-01_f64)/x-F::cast_from(4.9695241464490e-01_f64))/x -
-                       F::cast_from(6.0156581186481e-05_f64))*e + ww1-ww2-ww3-ww4;
-        } else if x <= F::new(53.0) {
-                ww1 = F::sqrt(pie4/x);
-                e = F::exp(-x)*x * x * x * x;
-                rt4 = ((F::cast_from(-2.19135070169653e-03_f64)*x-F::cast_from(1.19108256987623e-01_f64))*x -
-                       F::cast_from(7.50238795695573e-01_f64))*e + r44/(x-r44);
-                rt3 = ((F::cast_from(-9.65842534508637e-04_f64)*x-F::cast_from(4.49822013469279e-02_f64))*x +
-                       F::cast_from(6.08784033347757e-01_f64))*e + r34/(x-r34);
-                rt2 = ((F::cast_from(-3.62569791162153e-04_f64)*x-F::cast_from(9.09231717268466e-03_f64))*x +
-                       F::cast_from(1.84336760556262e-01_f64))*e + r24/(x-r24);
-                rt1 = ((F::cast_from(-4.07557525914600e-05_f64)*x-F::cast_from(6.88846864931685e-04_f64))*x +
-                       F::cast_from(1.74725309199384e-02_f64))*e + r14/(x-r14);
-                ww4 = (( F::cast_from(5.76631982000990e-06_f64)*x-F::cast_from(7.89187283804890e-05_f64))*x +
-                       F::cast_from(3.28297971853126e-04_f64))*e + w44*ww1;
-                ww3 = (( F::cast_from(2.08294969857230e-04_f64)*x-F::cast_from(3.77489954837361e-03_f64))*x +
-                       F::cast_from(2.09857151617436e-02_f64))*e + w34*ww1;
-                ww2 = (( F::cast_from(6.16374517326469e-04_f64)*x-F::cast_from(1.26711744680092e-02_f64))*x +
-                       F::cast_from(8.14504890732155e-02_f64))*e + w24*ww1;
-                ww1 = ww1-ww2-ww3-ww4;
+    if x <= F::new(3.0e-7) {
+        rt1 = F::cast_from(3.48198973061471e-02_f64) - F::cast_from(4.09645850660395e-03_f64) * x;
+        rt2 = F::cast_from(3.81567185080042e-01_f64) - F::cast_from(4.48902570656719e-02_f64) * x;
+        rt3 = F::cast_from(1.73730726945891e+00_f64) - F::cast_from(2.04389090547327e-01_f64) * x;
+        rt4 = F::cast_from(1.18463056481549e+01_f64) - F::cast_from(1.39368301742312e+00_f64) * x;
+        ww1 = F::cast_from(3.62683783378362e-01_f64) - F::cast_from(3.13844305713928e-02_f64) * x;
+        ww2 = F::cast_from(3.13706645877886e-01_f64) - F::cast_from(8.98046242557724e-02_f64) * x;
+        ww3 = F::cast_from(2.22381034453372e-01_f64) - F::cast_from(1.29314370958973e-01_f64) * x;
+        ww4 = F::cast_from(1.01228536290376e-01_f64) - F::cast_from(8.28299075414321e-02_f64) * x;
+    } else if x <= F::new(1.0) {
+        rt1 = ((((((F::cast_from(-1.95309614628539e-10_f64) * x
+            + F::cast_from(5.19765728707592e-09_f64))
+            * x
+            - F::cast_from(1.01756452250573e-07_f64))
+            * x
+            + F::cast_from(1.72365935872131e-06_f64))
+            * x
+            - F::cast_from(2.61203523522184e-05_f64))
+            * x
+            + F::cast_from(3.52921308769880e-04_f64))
+            * x
+            - F::cast_from(4.09645850658433e-03_f64))
+            * x
+            + F::cast_from(3.48198973061469e-02_f64);
+        rt2 = (((((F::cast_from(-1.89554881382342e-08_f64) * x
+            + F::cast_from(3.07583114342365e-07_f64))
+            * x
+            + F::cast_from(1.270981734393e-06_f64))
+            * x
+            - F::cast_from(1.417298563884e-04_f64))
+            * x
+            + F::cast_from(3.226979163176e-03_f64))
+            * x
+            - F::cast_from(4.48902570678178e-02_f64))
+            * x
+            + F::cast_from(3.81567185080039e-01_f64);
+        rt3 = ((((((F::cast_from(1.77280535300416e-09_f64) * x
+            + F::cast_from(3.36524958870615e-08_f64))
+            * x
+            - F::cast_from(2.58341529013893e-07_f64))
+            * x
+            - F::cast_from(1.13644895662320e-05_f64))
+            * x
+            - F::cast_from(7.91549618884063e-05_f64))
+            * x
+            + F::cast_from(1.03825827346828e-02_f64))
+            * x
+            - F::cast_from(2.04389090525137e-01_f64))
+            * x
+            + F::cast_from(1.73730726945889e+00_f64);
+        rt4 = (((((F::cast_from(-5.61188882415248e-08_f64) * x
+            - F::cast_from(2.49480733072460e-07_f64))
+            * x
+            + F::cast_from(3.428685057114e-06_f64))
+            * x
+            + F::cast_from(1.679007454539e-04_f64))
+            * x
+            + F::cast_from(4.722855585715e-02_f64))
+            * x
+            - F::cast_from(1.39368301737828e+00_f64))
+            * x
+            + F::cast_from(1.18463056481543e+01_f64);
+        ww1 = ((((((F::cast_from(-1.14649303201279e-08_f64) * x
+            + F::cast_from(1.88015570196787e-07_f64))
+            * x
+            - F::cast_from(2.33305875372323e-06_f64))
+            * x
+            + F::cast_from(2.68880044371597e-05_f64))
+            * x
+            - F::cast_from(2.94268428977387e-04_f64))
+            * x
+            + F::cast_from(3.06548909776613e-03_f64))
+            * x
+            - F::cast_from(3.13844305680096e-02_f64))
+            * x
+            + F::cast_from(3.62683783378335e-01_f64);
+        ww2 = ((((((((F::cast_from(-4.11720483772634e-09_f64) * x
+            + F::cast_from(6.54963481852134e-08_f64))
+            * x
+            - F::cast_from(7.20045285129626e-07_f64))
+            * x
+            + F::cast_from(6.93779646721723e-06_f64))
+            * x
+            - F::cast_from(6.05367572016373e-05_f64))
+            * x
+            + F::cast_from(4.74241566251899e-04_f64))
+            * x
+            - F::cast_from(3.26956188125316e-03_f64))
+            * x
+            + F::cast_from(1.91883866626681e-02_f64))
+            * x
+            - F::cast_from(8.98046242565811e-02_f64))
+            * x
+            + F::cast_from(3.13706645877886e-01_f64);
+        ww3 = ((((((((F::cast_from(-3.41688436990215e-08_f64) * x
+            + F::cast_from(5.07238960340773e-07_f64))
+            * x
+            - F::cast_from(5.01675628408220e-06_f64))
+            * x
+            + F::cast_from(4.20363420922845e-05_f64))
+            * x
+            - F::cast_from(3.08040221166823e-04_f64))
+            * x
+            + F::cast_from(1.94431864731239e-03_f64))
+            * x
+            - F::cast_from(1.02477820460278e-02_f64))
+            * x
+            + F::cast_from(4.28670143840073e-02_f64))
+            * x
+            - F::cast_from(1.29314370962569e-01_f64))
+            * x
+            + F::cast_from(2.22381034453369e-01_f64);
+        ww4 = (((((((((F::cast_from(4.99660550769508e-09_f64) * x
+            - F::cast_from(7.94585963310120e-08_f64))
+            * x
+            + F::cast_from(8.359072409485e-07_f64))
+            * x
+            - F::cast_from(7.422369210610e-06_f64))
+            * x
+            + F::cast_from(5.763374308160e-05_f64))
+            * x
+            - F::cast_from(3.86645606718233e-04_f64))
+            * x
+            + F::cast_from(2.18417516259781e-03_f64))
+            * x
+            - F::cast_from(9.99791027771119e-03_f64))
+            * x
+            + F::cast_from(3.48791097377370e-02_f64))
+            * x
+            - F::cast_from(8.28299075413889e-02_f64))
+            * x
+            + F::cast_from(1.01228536290376e-01_f64);
+    } else if x <= F::new(5.0) {
+        y = x - F::cast_from(3.0e+00_f64);
+        rt1 = (((((((((F::cast_from(-1.48570633747284e-15_f64) * y
+            - F::cast_from(1.33273068108777e-13_f64))
+            * y
+            + F::cast_from(4.068543696670e-12_f64))
+            * y
+            - F::cast_from(9.163164161821e-11_f64))
+            * y
+            + F::cast_from(2.046819017845e-09_f64))
+            * y
+            - F::cast_from(4.03076426299031e-08_f64))
+            * y
+            + F::cast_from(7.29407420660149e-07_f64))
+            * y
+            - F::cast_from(1.23118059980833e-05_f64))
+            * y
+            + F::cast_from(1.88796581246938e-04_f64))
+            * y
+            - F::cast_from(2.53262912046853e-03_f64))
+            * y
+            + F::cast_from(2.51198234505021e-02_f64);
+        rt2 = (((((((((F::cast_from(1.35830583483312e-13_f64) * y
+            - F::cast_from(2.29772605964836e-12_f64))
+            * y
+            - F::cast_from(3.821500128045e-12_f64))
+            * y
+            + F::cast_from(6.844424214735e-10_f64))
+            * y
+            - F::cast_from(1.048063352259e-08_f64))
+            * y
+            + F::cast_from(1.50083186233363e-08_f64))
+            * y
+            + F::cast_from(3.48848942324454e-06_f64))
+            * y
+            - F::cast_from(1.08694174399193e-04_f64))
+            * y
+            + F::cast_from(2.08048885251999e-03_f64))
+            * y
+            - F::cast_from(2.91205805373793e-02_f64))
+            * y
+            + F::cast_from(2.72276489515713e-01_f64);
+        rt3 = (((((((((F::cast_from(5.02799392850289e-13_f64) * y
+            + F::cast_from(1.07461812944084e-11_f64))
+            * y
+            - F::cast_from(1.482277886411e-10_f64))
+            * y
+            - F::cast_from(2.153585661215e-09_f64))
+            * y
+            + F::cast_from(3.654087802817e-08_f64))
+            * y
+            + F::cast_from(5.15929575830120e-07_f64))
+            * y
+            - F::cast_from(9.52388379435709e-06_f64))
+            * y
+            - F::cast_from(2.16552440036426e-04_f64))
+            * y
+            + F::cast_from(9.03551469568320e-03_f64))
+            * y
+            - F::cast_from(1.45505469175613e-01_f64))
+            * y
+            + F::cast_from(1.21449092319186e+00_f64);
+        rt4 = (((((((((F::cast_from(-1.08510370291979e-12_f64) * y
+            + F::cast_from(6.41492397277798e-11_f64))
+            * y
+            + F::cast_from(7.542387436125e-10_f64))
+            * y
+            - F::cast_from(2.213111836647e-09_f64))
+            * y
+            - F::cast_from(1.448228963549e-07_f64))
+            * y
+            - F::cast_from(1.95670833237101e-06_f64))
+            * y
+            - F::cast_from(1.07481314670844e-05_f64))
+            * y
+            + F::cast_from(1.49335941252765e-04_f64))
+            * y
+            + F::cast_from(4.87791531990593e-02_f64))
+            * y
+            - F::cast_from(1.10559909038653e+00_f64))
+            * y
+            + F::cast_from(8.09502028611780e+00_f64);
+        ww1 = ((((((((((F::cast_from(-4.65801912689961e-14_f64) * y
+            + F::cast_from(7.58669507106800e-13_f64))
+            * y
+            - F::cast_from(1.186387548048e-11_f64))
+            * y
+            + F::cast_from(1.862334710665e-10_f64))
+            * y
+            - F::cast_from(2.799399389539e-09_f64))
+            * y
+            + F::cast_from(4.148972684255e-08_f64))
+            * y
+            - F::cast_from(5.933568079600e-07_f64))
+            * y
+            + F::cast_from(8.168349266115e-06_f64))
+            * y
+            - F::cast_from(1.08989176177409e-04_f64))
+            * y
+            + F::cast_from(1.41357961729531e-03_f64))
+            * y
+            - F::cast_from(1.87588361833659e-02_f64))
+            * y
+            + F::cast_from(2.89898651436026e-01_f64);
+        ww2 = ((((((((((((F::cast_from(-1.46345073267549e-14_f64) * y
+            + F::cast_from(2.25644205432182e-13_f64))
+            * y
+            - F::cast_from(3.116258693847e-12_f64))
+            * y
+            + F::cast_from(4.321908756610e-11_f64))
+            * y
+            - F::cast_from(5.673270062669e-10_f64))
+            * y
+            + F::cast_from(7.006295962960e-09_f64))
+            * y
+            - F::cast_from(8.120186517000e-08_f64))
+            * y
+            + F::cast_from(8.775294645770e-07_f64))
+            * y
+            - F::cast_from(8.77829235749024e-06_f64))
+            * y
+            + F::cast_from(8.04372147732379e-05_f64))
+            * y
+            - F::cast_from(6.64149238804153e-04_f64))
+            * y
+            + F::cast_from(4.81181506827225e-03_f64))
+            * y
+            - F::cast_from(2.88982669486183e-02_f64))
+            * y
+            + F::cast_from(1.56247249979288e-01_f64);
+        ww3 = (((((((((((((F::cast_from(9.06812118895365e-15_f64) * y
+            - F::cast_from(1.40541322766087e-13_f64))
+            * y
+            + F::cast_from(1.919270015269e-12_f64))
+            * y
+            - F::cast_from(2.605135739010e-11_f64))
+            * y
+            + F::cast_from(3.299685839012e-10_f64))
+            * y
+            - F::cast_from(3.86354139348735e-09_f64))
+            * y
+            + F::cast_from(4.16265847927498e-08_f64))
+            * y
+            - F::cast_from(4.09462835471470e-07_f64))
+            * y
+            + F::cast_from(3.64018881086111e-06_f64))
+            * y
+            - F::cast_from(2.88665153269386e-05_f64))
+            * y
+            + F::cast_from(2.00515819789028e-04_f64))
+            * y
+            - F::cast_from(1.18791896897934e-03_f64))
+            * y
+            + F::cast_from(5.75223633388589e-03_f64))
+            * y
+            - F::cast_from(2.09400418772687e-02_f64))
+            * y
+            + F::cast_from(4.85368861938873e-02_f64);
+        ww4 = ((((((((((((((F::cast_from(-9.74835552342257e-16_f64) * y
+            + F::cast_from(1.57857099317175e-14_f64))
+            * y
+            - F::cast_from(2.249993780112e-13_f64))
+            * y
+            + F::cast_from(3.173422008953e-12_f64))
+            * y
+            - F::cast_from(4.161159459680e-11_f64))
+            * y
+            + F::cast_from(5.021343560166e-10_f64))
+            * y
+            - F::cast_from(5.545047534808e-09_f64))
+            * y
+            + F::cast_from(5.554146993491e-08_f64))
+            * y
+            - F::cast_from(4.99048696190133e-07_f64))
+            * y
+            + F::cast_from(3.96650392371311e-06_f64))
+            * y
+            - F::cast_from(2.73816413291214e-05_f64))
+            * y
+            + F::cast_from(1.60106988333186e-04_f64))
+            * y
+            - F::cast_from(7.64560567879592e-04_f64))
+            * y
+            + F::cast_from(2.81330044426892e-03_f64))
+            * y
+            - F::cast_from(7.16227030134947e-03_f64))
+            * y
+            + F::cast_from(9.66077262223353e-03_f64);
+    } else if x <= F::new(10.0) {
+        y = x - F::cast_from(7.5e+00_f64);
+        rt1 = (((((((((F::cast_from(4.64217329776215e-15_f64) * y
+            - F::cast_from(6.27892383644164e-15_f64))
+            * y
+            + F::cast_from(3.462236347446e-13_f64))
+            * y
+            - F::cast_from(2.927229355350e-11_f64))
+            * y
+            + F::cast_from(5.090355371676e-10_f64))
+            * y
+            - F::cast_from(9.97272656345253e-09_f64))
+            * y
+            + F::cast_from(2.37835295639281e-07_f64))
+            * y
+            - F::cast_from(4.60301761310921e-06_f64))
+            * y
+            + F::cast_from(8.42824204233222e-05_f64))
+            * y
+            - F::cast_from(1.37983082233081e-03_f64))
+            * y
+            + F::cast_from(1.66630865869375e-02_f64);
+        rt2 = (((((((((F::cast_from(2.93981127919047e-14_f64) * y
+            + F::cast_from(8.47635639065744e-13_f64))
+            * y
+            - F::cast_from(1.446314544774e-11_f64))
+            * y
+            - F::cast_from(6.149155555753e-12_f64))
+            * y
+            + F::cast_from(8.484275604612e-10_f64))
+            * y
+            - F::cast_from(6.10898827887652e-08_f64))
+            * y
+            + F::cast_from(2.39156093611106e-06_f64))
+            * y
+            - F::cast_from(5.35837089462592e-05_f64))
+            * y
+            + F::cast_from(1.00967602595557e-03_f64))
+            * y
+            - F::cast_from(1.57769317127372e-02_f64))
+            * y
+            + F::cast_from(1.74853819464285e-01_f64);
+        rt3 = ((((((((((F::cast_from(2.93523563363000e-14_f64) * y
+            - F::cast_from(6.40041776667020e-14_f64))
+            * y
+            - F::cast_from(2.695740446312e-12_f64))
+            * y
+            + F::cast_from(1.027082960169e-10_f64))
+            * y
+            - F::cast_from(5.822038656780e-10_f64))
+            * y
+            - F::cast_from(3.159991002539e-08_f64))
+            * y
+            + F::cast_from(4.327249251331e-07_f64))
+            * y
+            + F::cast_from(4.856768455119e-06_f64))
+            * y
+            - F::cast_from(2.54617989427762e-04_f64))
+            * y
+            + F::cast_from(5.54843378106589e-03_f64))
+            * y
+            - F::cast_from(7.95013029486684e-02_f64))
+            * y
+            + F::cast_from(7.20206142703162e-01_f64);
+        rt4 = (((((((((((F::cast_from(-1.62212382394553e-14_f64) * y
+            + F::cast_from(7.68943641360593e-13_f64))
+            * y
+            + F::cast_from(5.764015756615e-12_f64))
+            * y
+            - F::cast_from(1.380635298784e-10_f64))
+            * y
+            - F::cast_from(1.476849808675e-09_f64))
+            * y
+            + F::cast_from(1.84347052385605e-08_f64))
+            * y
+            + F::cast_from(3.34382940759405e-07_f64))
+            * y
+            - F::cast_from(1.39428366421645e-06_f64))
+            * y
+            - F::cast_from(7.50249313713996e-05_f64))
+            * y
+            - F::cast_from(6.26495899187507e-04_f64))
+            * y
+            + F::cast_from(4.69716410901162e-02_f64))
+            * y
+            - F::cast_from(6.66871297428209e-01_f64))
+            * y
+            + F::cast_from(4.11207530217806e+00_f64);
+        ww1 = ((((((((((F::cast_from(-1.65995045235997e-15_f64) * y
+            + F::cast_from(6.91838935879598e-14_f64))
+            * y
+            - F::cast_from(9.131223418888e-13_f64))
+            * y
+            + F::cast_from(1.403341829454e-11_f64))
+            * y
+            - F::cast_from(3.672235069444e-10_f64))
+            * y
+            + F::cast_from(6.366962546990e-09_f64))
+            * y
+            - F::cast_from(1.039220021671e-07_f64))
+            * y
+            + F::cast_from(1.959098751715e-06_f64))
+            * y
+            - F::cast_from(3.33474893152939e-05_f64))
+            * y
+            + F::cast_from(5.72164211151013e-04_f64))
+            * y
+            - F::cast_from(1.05583210553392e-02_f64))
+            * y
+            + F::cast_from(2.26696066029591e-01_f64);
+        ww2 = ((((((((((((F::cast_from(-3.57248951192047e-16_f64) * y
+            + F::cast_from(6.25708409149331e-15_f64))
+            * y
+            - F::cast_from(9.657033089714e-14_f64))
+            * y
+            + F::cast_from(1.507864898748e-12_f64))
+            * y
+            - F::cast_from(2.332522256110e-11_f64))
+            * y
+            + F::cast_from(3.428545616603e-10_f64))
+            * y
+            - F::cast_from(4.698730937661e-09_f64))
+            * y
+            + F::cast_from(6.219977635130e-08_f64))
+            * y
+            - F::cast_from(7.83008889613661e-07_f64))
+            * y
+            + F::cast_from(9.08621687041567e-06_f64))
+            * y
+            - F::cast_from(9.86368311253873e-05_f64))
+            * y
+            + F::cast_from(9.69632496710088e-04_f64))
+            * y
+            - F::cast_from(8.14594214284187e-03_f64))
+            * y
+            + F::cast_from(8.50218447733457e-02_f64);
+        ww3 = (((((((((((((F::cast_from(1.64742458534277e-16_f64) * y
+            - F::cast_from(2.68512265928410e-15_f64))
+            * y
+            + F::cast_from(3.788890667676e-14_f64))
+            * y
+            - F::cast_from(5.508918529823e-13_f64))
+            * y
+            + F::cast_from(7.555896810069e-12_f64))
+            * y
+            - F::cast_from(9.69039768312637e-11_f64))
+            * y
+            + F::cast_from(1.16034263529672e-09_f64))
+            * y
+            - F::cast_from(1.28771698573873e-08_f64))
+            * y
+            + F::cast_from(1.31949431805798e-07_f64))
+            * y
+            - F::cast_from(1.23673915616005e-06_f64))
+            * y
+            + F::cast_from(1.04189803544936e-05_f64))
+            * y
+            - F::cast_from(7.79566003744742e-05_f64))
+            * y
+            + F::cast_from(5.03162624754434e-04_f64))
+            * y
+            - F::cast_from(2.55138844587555e-03_f64))
+            * y
+            + F::cast_from(1.13250730954014e-02_f64);
+        ww4 = ((((((((((((((F::cast_from(-1.55714130075679e-17_f64) * y
+            + F::cast_from(2.57193722698891e-16_f64))
+            * y
+            - F::cast_from(3.626606654097e-15_f64))
+            * y
+            + F::cast_from(5.234734676175e-14_f64))
+            * y
+            - F::cast_from(7.067105402134e-13_f64))
+            * y
+            + F::cast_from(8.793512664890e-12_f64))
+            * y
+            - F::cast_from(1.006088923498e-10_f64))
+            * y
+            + F::cast_from(1.050565098393e-09_f64))
+            * y
+            - F::cast_from(9.91517881772662e-09_f64))
+            * y
+            + F::cast_from(8.35835975882941e-08_f64))
+            * y
+            - F::cast_from(6.19785782240693e-07_f64))
+            * y
+            + F::cast_from(3.95841149373135e-06_f64))
+            * y
+            - F::cast_from(2.11366761402403e-05_f64))
+            * y
+            + F::cast_from(9.00474771229507e-05_f64))
+            * y
+            - F::cast_from(2.78777909813289e-04_f64))
+            * y
+            + F::cast_from(5.26543779837487e-04_f64);
+    } else if x <= F::new(15.0) {
+        y = x - F::cast_from(12.5e+00_f64);
+        rt1 = (((((((((((F::cast_from(4.94869622744119e-17_f64) * y
+            + F::cast_from(8.03568805739160e-16_f64))
+            * y
+            - F::cast_from(5.599125915431e-15_f64))
+            * y
+            - F::cast_from(1.378685560217e-13_f64))
+            * y
+            + F::cast_from(7.006511663249e-13_f64))
+            * y
+            + F::cast_from(1.30391406991118e-11_f64))
+            * y
+            + F::cast_from(8.06987313467541e-11_f64))
+            * y
+            - F::cast_from(5.20644072732933e-09_f64))
+            * y
+            + F::cast_from(7.72794187755457e-08_f64))
+            * y
+            - F::cast_from(1.61512612564194e-06_f64))
+            * y
+            + F::cast_from(4.15083811185831e-05_f64))
+            * y
+            - F::cast_from(7.87855975560199e-04_f64))
+            * y
+            + F::cast_from(1.14189319050009e-02_f64);
+        rt2 = (((((((((((F::cast_from(4.89224285522336e-16_f64) * y
+            + F::cast_from(1.06390248099712e-14_f64))
+            * y
+            - F::cast_from(5.446260182933e-14_f64))
+            * y
+            - F::cast_from(1.613630106295e-12_f64))
+            * y
+            + F::cast_from(3.910179118937e-12_f64))
+            * y
+            + F::cast_from(1.90712434258806e-10_f64))
+            * y
+            + F::cast_from(8.78470199094761e-10_f64))
+            * y
+            - F::cast_from(5.97332993206797e-08_f64))
+            * y
+            + F::cast_from(9.25750831481589e-07_f64))
+            * y
+            - F::cast_from(2.02362185197088e-05_f64))
+            * y
+            + F::cast_from(4.92341968336776e-04_f64))
+            * y
+            - F::cast_from(8.68438439874703e-03_f64))
+            * y
+            + F::cast_from(1.15825965127958e-01_f64);
+        rt3 = ((((((((((F::cast_from(6.12419396208408e-14_f64) * y
+            + F::cast_from(1.12328861406073e-13_f64))
+            * y
+            - F::cast_from(9.051094103059e-12_f64))
+            * y
+            - F::cast_from(4.781797525341e-11_f64))
+            * y
+            + F::cast_from(1.660828868694e-09_f64))
+            * y
+            + F::cast_from(4.499058798868e-10_f64))
+            * y
+            - F::cast_from(2.519549641933e-07_f64))
+            * y
+            + F::cast_from(4.977444040180e-06_f64))
+            * y
+            - F::cast_from(1.25858350034589e-04_f64))
+            * y
+            + F::cast_from(2.70279176970044e-03_f64))
+            * y
+            - F::cast_from(3.99327850801083e-02_f64))
+            * y
+            + F::cast_from(4.33467200855434e-01_f64);
+        rt4 = (((((((((((F::cast_from(4.63414725924048e-14_f64) * y
+            - F::cast_from(4.72757262693062e-14_f64))
+            * y
+            - F::cast_from(1.001926833832e-11_f64))
+            * y
+            + F::cast_from(6.074107718414e-11_f64))
+            * y
+            + F::cast_from(1.576976911942e-09_f64))
+            * y
+            - F::cast_from(2.01186401974027e-08_f64))
+            * y
+            - F::cast_from(1.84530195217118e-07_f64))
+            * y
+            + F::cast_from(5.02333087806827e-06_f64))
+            * y
+            + F::cast_from(9.66961790843006e-06_f64))
+            * y
+            - F::cast_from(1.58522208889528e-03_f64))
+            * y
+            + F::cast_from(2.80539673938339e-02_f64))
+            * y
+            - F::cast_from(2.78953904330072e-01_f64))
+            * y
+            + F::cast_from(1.82835655238235e+00_f64);
+        ww4 = (((((((((((((F::cast_from(2.90401781000996e-18_f64) * y
+            - F::cast_from(4.63389683098251e-17_f64))
+            * y
+            + F::cast_from(6.274018198326e-16_f64))
+            * y
+            - F::cast_from(8.936002188168e-15_f64))
+            * y
+            + F::cast_from(1.194719074934e-13_f64))
+            * y
+            - F::cast_from(1.45501321259466e-12_f64))
+            * y
+            + F::cast_from(1.64090830181013e-11_f64))
+            * y
+            - F::cast_from(1.71987745310181e-10_f64))
+            * y
+            + F::cast_from(1.63738403295718e-09_f64))
+            * y
+            - F::cast_from(1.39237504892842e-08_f64))
+            * y
+            + F::cast_from(1.06527318142151e-07_f64))
+            * y
+            - F::cast_from(7.27634957230524e-07_f64))
+            * y
+            + F::cast_from(4.12159381310339e-06_f64))
+            * y
+            - F::cast_from(1.74648169719173e-05_f64))
+            * y
+            + F::cast_from(8.50290130067818e-05_f64);
+        ww3 = ((((((((((((F::cast_from(-4.19569145459480e-17_f64) * y
+            + F::cast_from(5.94344180261644e-16_f64))
+            * y
+            - F::cast_from(1.148797566469e-14_f64))
+            * y
+            + F::cast_from(1.881303962576e-13_f64))
+            * y
+            - F::cast_from(2.413554618391e-12_f64))
+            * y
+            + F::cast_from(3.372127423047e-11_f64))
+            * y
+            - F::cast_from(4.933988617784e-10_f64))
+            * y
+            + F::cast_from(6.116545396281e-09_f64))
+            * y
+            - F::cast_from(6.69965691739299e-08_f64))
+            * y
+            + F::cast_from(7.52380085447161e-07_f64))
+            * y
+            - F::cast_from(8.08708393262321e-06_f64))
+            * y
+            + F::cast_from(6.88603417296672e-05_f64))
+            * y
+            - F::cast_from(4.67067112993427e-04_f64))
+            * y
+            + F::cast_from(5.42313365864597e-03_f64);
+        ww2 = ((((((((((F::cast_from(-6.22272689880615e-15_f64) * y
+            + F::cast_from(1.04126809657554e-13_f64))
+            * y
+            - F::cast_from(6.842418230913e-13_f64))
+            * y
+            + F::cast_from(1.576841731919e-11_f64))
+            * y
+            - F::cast_from(4.203948834175e-10_f64))
+            * y
+            + F::cast_from(6.287255934781e-09_f64))
+            * y
+            - F::cast_from(8.307159819228e-08_f64))
+            * y
+            + F::cast_from(1.356478091922e-06_f64))
+            * y
+            - F::cast_from(2.08065576105639e-05_f64))
+            * y
+            + F::cast_from(2.52396730332340e-04_f64))
+            * y
+            - F::cast_from(2.94484050194539e-03_f64))
+            * y
+            + F::cast_from(6.01396183129168e-02_f64);
+        ww1 = (((F::cast_from(-1.8784686463512e-01_f64) / x
+            + F::cast_from(2.2991849164985e-01_f64))
+            / x
+            - F::cast_from(4.9893752514047e-01_f64))
+            / x
+            - F::cast_from(2.1916512131607e-05_f64))
+            * F::exp(-x)
+            + F::sqrt(pie4 / x)
+            - ww4
+            - ww3
+            - ww2;
+    } else if x <= F::new(20.0) {
+        ww1 = F::sqrt(pie4 / x);
+        y = x - F::cast_from(17.5e+00_f64);
+        rt1 = (((((((((((F::cast_from(4.36701759531398e-17_f64) * y
+            - F::cast_from(1.12860600219889e-16_f64))
+            * y
+            - F::cast_from(6.149849164164e-15_f64))
+            * y
+            + F::cast_from(5.820231579541e-14_f64))
+            * y
+            + F::cast_from(4.396602872143e-13_f64))
+            * y
+            - F::cast_from(1.24330365320172e-11_f64))
+            * y
+            + F::cast_from(6.71083474044549e-11_f64))
+            * y
+            + F::cast_from(2.43865205376067e-10_f64))
+            * y
+            + F::cast_from(1.67559587099969e-08_f64))
+            * y
+            - F::cast_from(9.32738632357572e-07_f64))
+            * y
+            + F::cast_from(2.39030487004977e-05_f64))
+            * y
+            - F::cast_from(4.68648206591515e-04_f64))
+            * y
+            + F::cast_from(8.34977776583956e-03_f64);
+        rt2 = (((((((((((F::cast_from(4.98913142288158e-16_f64) * y
+            - F::cast_from(2.60732537093612e-16_f64))
+            * y
+            - F::cast_from(7.775156445127e-14_f64))
+            * y
+            + F::cast_from(5.766105220086e-13_f64))
+            * y
+            + F::cast_from(6.432696729600e-12_f64))
+            * y
+            - F::cast_from(1.39571683725792e-10_f64))
+            * y
+            + F::cast_from(5.95451479522191e-10_f64))
+            * y
+            + F::cast_from(2.42471442836205e-09_f64))
+            * y
+            + F::cast_from(2.47485710143120e-07_f64))
+            * y
+            - F::cast_from(1.14710398652091e-05_f64))
+            * y
+            + F::cast_from(2.71252453754519e-04_f64))
+            * y
+            - F::cast_from(4.96812745851408e-03_f64))
+            * y
+            + F::cast_from(8.26020602026780e-02_f64);
+        rt3 = (((((((((((F::cast_from(1.91498302509009e-15_f64) * y
+            + F::cast_from(1.48840394311115e-14_f64))
+            * y
+            - F::cast_from(4.316925145767e-13_f64))
+            * y
+            + F::cast_from(1.186495793471e-12_f64))
+            * y
+            + F::cast_from(4.615806713055e-11_f64))
+            * y
+            - F::cast_from(5.54336148667141e-10_f64))
+            * y
+            + F::cast_from(3.48789978951367e-10_f64))
+            * y
+            - F::cast_from(2.79188977451042e-09_f64))
+            * y
+            + F::cast_from(2.09563208958551e-06_f64))
+            * y
+            - F::cast_from(6.76512715080324e-05_f64))
+            * y
+            + F::cast_from(1.32129867629062e-03_f64))
+            * y
+            - F::cast_from(2.05062147771513e-02_f64))
+            * y
+            + F::cast_from(2.88068671894324e-01_f64);
+        rt4 = (((((((((((F::cast_from(-5.43697691672942e-15_f64) * y
+            - F::cast_from(1.12483395714468e-13_f64))
+            * y
+            + F::cast_from(2.826607936174e-12_f64))
+            * y
+            - F::cast_from(1.266734493280e-11_f64))
+            * y
+            - F::cast_from(4.258722866437e-10_f64))
+            * y
+            + F::cast_from(9.45486578503261e-09_f64))
+            * y
+            - F::cast_from(5.86635622821309e-08_f64))
+            * y
+            - F::cast_from(1.28835028104639e-06_f64))
+            * y
+            + F::cast_from(4.41413815691885e-05_f64))
+            * y
+            - F::cast_from(7.61738385590776e-04_f64))
+            * y
+            + F::cast_from(9.66090902985550e-03_f64))
+            * y
+            - F::cast_from(1.01410568057649e-01_f64))
+            * y
+            + F::cast_from(9.54714798156712e-01_f64);
+        ww4 = ((((((((((((F::cast_from(-7.56882223582704e-19_f64) * y
+            + F::cast_from(7.53541779268175e-18_f64))
+            * y
+            - F::cast_from(1.157318032236e-16_f64))
+            * y
+            + F::cast_from(2.411195002314e-15_f64))
+            * y
+            - F::cast_from(3.601794386996e-14_f64))
+            * y
+            + F::cast_from(4.082150659615e-13_f64))
+            * y
+            - F::cast_from(4.289542980767e-12_f64))
+            * y
+            + F::cast_from(5.086829642731e-11_f64))
+            * y
+            - F::cast_from(6.35435561050807e-10_f64))
+            * y
+            + F::cast_from(6.82309323251123e-09_f64))
+            * y
+            - F::cast_from(5.63374555753167e-08_f64))
+            * y
+            + F::cast_from(3.57005361100431e-07_f64))
+            * y
+            - F::cast_from(2.40050045173721e-06_f64))
+            * y
+            + F::cast_from(4.94171300536397e-05_f64);
+        ww3 = (((((((((((F::cast_from(-5.54451040921657e-17_f64) * y
+            + F::cast_from(2.68748367250999e-16_f64))
+            * y
+            + F::cast_from(1.349020069254e-14_f64))
+            * y
+            - F::cast_from(2.507452792892e-13_f64))
+            * y
+            + F::cast_from(1.944339743818e-12_f64))
+            * y
+            - F::cast_from(1.29816917658823e-11_f64))
+            * y
+            + F::cast_from(3.49977768819641e-10_f64))
+            * y
+            - F::cast_from(8.67270669346398e-09_f64))
+            * y
+            + F::cast_from(1.31381116840118e-07_f64))
+            * y
+            - F::cast_from(1.36790720600822e-06_f64))
+            * y
+            + F::cast_from(1.19210697673160e-05_f64))
+            * y
+            - F::cast_from(1.42181943986587e-04_f64))
+            * y
+            + F::cast_from(4.12615396191829e-03_f64);
+        ww2 = (((((((((((F::cast_from(-1.86506057729700e-16_f64) * y
+            + F::cast_from(1.16661114435809e-15_f64))
+            * y
+            + F::cast_from(2.563712856363e-14_f64))
+            * y
+            - F::cast_from(4.498350984631e-13_f64))
+            * y
+            + F::cast_from(1.765194089338e-12_f64))
+            * y
+            + F::cast_from(9.04483676345625e-12_f64))
+            * y
+            + F::cast_from(4.98930345609785e-10_f64))
+            * y
+            - F::cast_from(2.11964170928181e-08_f64))
+            * y
+            + F::cast_from(3.98295476005614e-07_f64))
+            * y
+            - F::cast_from(5.49390160829409e-06_f64))
+            * y
+            + F::cast_from(7.74065155353262e-05_f64))
+            * y
+            - F::cast_from(1.48201933009105e-03_f64))
+            * y
+            + F::cast_from(4.97836392625268e-02_f64);
+        ww1 = ((F::cast_from(1.9623264149430e-01_f64) / x - F::cast_from(4.9695241464490e-01_f64))
+            / x
+            - F::cast_from(6.0156581186481e-05_f64))
+            * F::exp(-x)
+            + ww1
+            - ww2
+            - ww3
+            - ww4;
+    } else if x <= F::new(35.0) {
+        ww1 = F::sqrt(pie4 / x);
+        e = F::exp(-x);
+        rt1 = ((((((F::cast_from(-4.45711399441838e-05_f64) * x
+            + F::cast_from(1.27267770241379e-03_f64))
+            * x
+            - F::cast_from(2.36954961381262e-01_f64))
+            * x
+            + F::cast_from(1.54330657903756e+01_f64))
+            * x
+            - F::cast_from(5.22799159267808e+02_f64))
+            * x
+            + F::cast_from(1.05951216669313e+04_f64))
+            * x
+            + (F::cast_from(-2.51177235556236e+06_f64) / x
+                + F::cast_from(8.72975373557709e+05_f64))
+                / x
+            - F::cast_from(1.29194382386499e+05_f64))
+            * e
+            + r14 / (x - r14);
+        rt2 = (((((F::cast_from(-7.85617372254488e-02_f64) * x
+            + F::cast_from(6.35653573484868e+00_f64))
+            * x
+            - F::cast_from(3.38296938763990e+02_f64))
+            * x
+            + F::cast_from(1.25120495802096e+04_f64))
+            * x
+            - F::cast_from(3.16847570511637e+05_f64))
+            * x
+            + ((F::cast_from(-1.02427466127427e+09_f64) / x
+                + F::cast_from(3.70104713293016e+08_f64))
+                / x
+                - F::cast_from(5.87119005093822e+07_f64))
+                / x
+            + F::cast_from(5.38614211391604e+06_f64))
+            * e
+            + r24 / (x - r24);
+        rt3 = (((((F::cast_from(-2.37900485051067e-01_f64) * x
+            + F::cast_from(1.84122184400896e+01_f64))
+            * x
+            - F::cast_from(1.00200731304146e+03_f64))
+            * x
+            + F::cast_from(3.75151841595736e+04_f64))
+            * x
+            - F::cast_from(9.50626663390130e+05_f64))
+            * x
+            + ((F::cast_from(-2.88139014651985e+09_f64) / x
+                + F::cast_from(1.06625915044526e+09_f64))
+                / x
+                - F::cast_from(1.72465289687396e+08_f64))
+                / x
+            + F::cast_from(1.60419390230055e+07_f64))
+            * e
+            + r34 / (x - r34);
+        rt4 = ((((((F::cast_from(-6.00691586407385e-04_f64) * x
+            - F::cast_from(3.64479545338439e-01_f64))
+            * x
+            + F::cast_from(1.57496131755179e+01_f64))
+            * x
+            - F::cast_from(6.54944248734901e+02_f64))
+            * x
+            + F::cast_from(1.70830039597097e+04_f64))
+            * x
+            - F::cast_from(2.90517939780207e+05_f64))
+            * x
+            + (F::cast_from(3.49059698304732e+07_f64) / x
+                - F::cast_from(1.64944522586065e+07_f64))
+                / x
+            + F::cast_from(2.96817940164703e+06_f64))
+            * e
+            + r44 / (x - r44);
+        if x <= F::new(25.0) {
+            ww4 = (((((((F::cast_from(2.33766206773151e-07_f64) * x
+                - F::cast_from(3.81542906607063e-05_f64))
+                * x
+                + F::cast_from(3.51416601267000e-03_f64))
+                * x
+                - F::cast_from(1.66538571864728e-01_f64))
+                * x
+                + F::cast_from(4.80006136831847e+00_f64))
+                * x
+                - F::cast_from(8.73165934223603e+01_f64))
+                * x
+                + F::cast_from(9.77683627474638e+02_f64))
+                * x
+                + F::cast_from(1.66000945117640e+04_f64) / x
+                - F::cast_from(6.14479071209961e+03_f64))
+                * e
+                + w44 * ww1;
         } else {
-                ww1 = F::sqrt(pie4/x);
-                rt1 = r14/(x-r14);
-                rt2 = r24/(x-r24);
-                rt3 = r34/(x-r34);
-                rt4 = r44/(x-r44);
-                ww4 = w44*ww1;
-                ww3 = w34*ww1;
-                ww2 = w24*ww1;
-                ww1 = ww1-ww2-ww3-ww4;
+            ww4 = ((((((F::cast_from(5.74245945342286e-06_f64) * x
+                - F::cast_from(7.58735928102351e-05_f64))
+                * x
+                + F::cast_from(2.35072857922892e-04_f64))
+                * x
+                - F::cast_from(3.78812134013125e-03_f64))
+                * x
+                + F::cast_from(3.09871652785805e-01_f64))
+                * x
+                - F::cast_from(7.11108633061306e+00_f64))
+                * x
+                + F::cast_from(5.55297573149528e+01_f64))
+                * e
+                + w44 * ww1;
         }
+        ww3 = ((((((F::cast_from(2.36392855180768e-04_f64) * x
+            - F::cast_from(9.16785337967013e-03_f64))
+            * x
+            + F::cast_from(4.62186525041313e-01_f64))
+            * x
+            - F::cast_from(1.96943786006540e+01_f64))
+            * x
+            + F::cast_from(4.99169195295559e+02_f64))
+            * x
+            - F::cast_from(6.21419845845090e+03_f64))
+            * x
+            + ((F::cast_from(5.21445053212414e+07_f64) / x
+                - F::cast_from(1.34113464389309e+07_f64))
+                / x
+                + F::cast_from(1.13673298305631e+06_f64))
+                / x
+            - F::cast_from(2.81501182042707e+03_f64))
+            * e
+            + w34 * ww1;
+        ww2 = ((((((F::cast_from(7.29841848989391e-04_f64) * x
+            - F::cast_from(3.53899555749875e-02_f64))
+            * x
+            + F::cast_from(2.07797425718513e+00_f64))
+            * x
+            - F::cast_from(1.00464709786287e+02_f64))
+            * x
+            + F::cast_from(3.15206108877819e+03_f64))
+            * x
+            - F::cast_from(6.27054715090012e+04_f64))
+            * x
+            + (F::cast_from(1.54721246264919e+07_f64) / x
+                - F::cast_from(5.26074391316381e+06_f64))
+                / x
+            + F::cast_from(7.67135400969617e+05_f64))
+            * e
+            + w24 * ww1;
+        ww1 = ((F::cast_from(1.9623264149430e-01_f64) / x - F::cast_from(4.9695241464490e-01_f64))
+            / x
+            - F::cast_from(6.0156581186481e-05_f64))
+            * e
+            + ww1
+            - ww2
+            - ww3
+            - ww4;
+    } else if x <= F::new(53.0) {
+        ww1 = F::sqrt(pie4 / x);
+        e = F::exp(-x) * x * x * x * x;
+        rt4 = ((F::cast_from(-2.19135070169653e-03_f64) * x
+            - F::cast_from(1.19108256987623e-01_f64))
+            * x
+            - F::cast_from(7.50238795695573e-01_f64))
+            * e
+            + r44 / (x - r44);
+        rt3 = ((F::cast_from(-9.65842534508637e-04_f64) * x
+            - F::cast_from(4.49822013469279e-02_f64))
+            * x
+            + F::cast_from(6.08784033347757e-01_f64))
+            * e
+            + r34 / (x - r34);
+        rt2 = ((F::cast_from(-3.62569791162153e-04_f64) * x
+            - F::cast_from(9.09231717268466e-03_f64))
+            * x
+            + F::cast_from(1.84336760556262e-01_f64))
+            * e
+            + r24 / (x - r24);
+        rt1 = ((F::cast_from(-4.07557525914600e-05_f64) * x
+            - F::cast_from(6.88846864931685e-04_f64))
+            * x
+            + F::cast_from(1.74725309199384e-02_f64))
+            * e
+            + r14 / (x - r14);
+        ww4 = ((F::cast_from(5.76631982000990e-06_f64) * x
+            - F::cast_from(7.89187283804890e-05_f64))
+            * x
+            + F::cast_from(3.28297971853126e-04_f64))
+            * e
+            + w44 * ww1;
+        ww3 = ((F::cast_from(2.08294969857230e-04_f64) * x
+            - F::cast_from(3.77489954837361e-03_f64))
+            * x
+            + F::cast_from(2.09857151617436e-02_f64))
+            * e
+            + w34 * ww1;
+        ww2 = ((F::cast_from(6.16374517326469e-04_f64) * x
+            - F::cast_from(1.26711744680092e-02_f64))
+            * x
+            + F::cast_from(8.14504890732155e-02_f64))
+            * e
+            + w24 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4;
+    } else {
+        ww1 = F::sqrt(pie4 / x);
+        rt1 = r14 / (x - r14);
+        rt2 = r24 / (x - r24);
+        rt3 = r34 / (x - r34);
+        rt4 = r44 / (x - r44);
+        ww4 = w44 * ww1;
+        ww3 = w34 * ww1;
+        ww2 = w24 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4;
+    }
     u[0usize] = rt1;
     u[1usize] = rt2;
     u[2usize] = rt3;
@@ -1109,492 +2439,1583 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
     let mut e = F::new(0.0);
     let mut xxx = F::new(0.0);
 
+    r15 = F::cast_from(1.17581320211778e-01_f64);
+    r25 = F::cast_from(1.07456201243690e+00_f64);
+    w25 = F::cast_from(2.70967405960535e-01_f64);
+    r35 = F::cast_from(3.08593744371754e+00_f64);
+    w35 = F::cast_from(3.82231610015404e-02_f64);
+    r45 = F::cast_from(6.41472973366203e+00_f64);
+    w45 = F::cast_from(1.51614186862443e-03_f64);
+    r55 = F::cast_from(1.18071894899717e+01_f64);
+    w55 = F::cast_from(8.62130526143657e-06_f64);
 
-        r15 = F::cast_from(1.17581320211778e-01_f64);
-        r25 = F::cast_from(1.07456201243690e+00_f64);
-        w25 = F::cast_from(2.70967405960535e-01_f64);
-        r35 = F::cast_from(3.08593744371754e+00_f64);
-        w35 = F::cast_from(3.82231610015404e-02_f64);
-        r45 = F::cast_from(6.41472973366203e+00_f64);
-        w45 = F::cast_from(1.51614186862443e-03_f64);
-        r55 = F::cast_from(1.18071894899717e+01_f64);
-        w55 = F::cast_from(8.62130526143657e-06_f64);
-
-        if x < F::new(3.0e-7){
-                rt1 = F::cast_from(2.26659266316985e-02_f64) -F::cast_from(2.15865967920897e-03_f64) *x;
-                rt2 = F::cast_from(2.31271692140903e-01_f64) -F::cast_from(2.20258754389745e-02_f64) *x;
-                rt3 = F::cast_from(8.57346024118836e-01_f64) -F::cast_from(8.16520023025515e-02_f64) *x;
-                rt4 = F::cast_from(2.97353038120346e+00_f64) -F::cast_from(2.83193369647137e-01_f64) *x;
-                rt5 = F::cast_from(1.84151859759051e+01_f64) -F::cast_from(1.75382723579439e+00_f64) *x;
-                ww1 = F::cast_from(2.95524224714752e-01_f64) -F::cast_from(1.96867576909777e-02_f64) *x;
-                ww2 = F::cast_from(2.69266719309995e-01_f64) -F::cast_from(5.61737590184721e-02_f64) *x;
-                ww3 = F::cast_from(2.19086362515981e-01_f64) -F::cast_from(9.71152726793658e-02_f64) *x;
-                ww4 = F::cast_from(1.49451349150580e-01_f64) -F::cast_from(1.02979262193565e-01_f64) *x;
-                ww5 = F::cast_from(6.66713443086877e-02_f64) -F::cast_from(5.73782817488315e-02_f64) *x;
-        } else if x < F::new(1.0){
-                rt1 = ((((((F::cast_from(-4.46679165328413e-11_f64)*x+F::cast_from(1.21879111988031e-09_f64))*x-
-                           F::cast_from(2.62975022612104e-08_f64) )*x+F::cast_from(5.15106194905897e-07_f64) )*x-
-                         F::cast_from(9.27933625824749e-06_f64) )*x+F::cast_from(1.51794097682482e-04_f64) )*x-
-                       F::cast_from(2.15865967920301e-03_f64) )*x+F::cast_from(2.26659266316985e-02_f64);
-                rt2 = (((((( F::cast_from(1.93117331714174e-10_f64)*x-F::cast_from(4.57267589660699e-09_f64))*x+
-                           F::cast_from(2.48339908218932e-08_f64) )*x+F::cast_from(1.50716729438474e-06_f64) )*x-
-                         F::cast_from(6.07268757707381e-05_f64) )*x+F::cast_from(1.37506939145643e-03_f64) )*x-
-                       F::cast_from(2.20258754419939e-02_f64) )*x+F::cast_from(2.31271692140905e-01_f64);
-                rt3 = ((((( F::cast_from(4.84989776180094e-09_f64)*x+F::cast_from(1.31538893944284e-07_f64))*x-
-                          F::cast_from(2.766753852879e-06_f64))*x-F::cast_from(7.651163510626e-05_f64))*x+
-                        F::cast_from(4.033058545972e-03_f64))*x-F::cast_from(8.16520022916145e-02_f64) )*x+
-                        F::cast_from(8.57346024118779e-01_f64);
-                rt4 = ((((F::cast_from(-2.48581772214623e-07_f64)*x-F::cast_from(4.34482635782585e-06_f64))*x-
-                         F::cast_from(7.46018257987630e-07_f64) )*x+F::cast_from(1.01210776517279e-02_f64) )*x-
-                       F::cast_from(2.83193369640005e-01_f64) )*x+F::cast_from(2.97353038120345e+00_f64);
-                rt5 = (((((F::cast_from(-8.92432153868554e-09_f64)*x+F::cast_from(1.77288899268988e-08_f64))*x+
-                          F::cast_from(3.040754680666e-06_f64))*x+F::cast_from(1.058229325071e-04_f64))*x+
-                        F::cast_from(4.596379534985e-02_f64))*x-F::cast_from(1.75382723579114e+00_f64) )*x+
-                        F::cast_from(1.84151859759049e+01_f64);
-                ww1 = ((((((F::cast_from(-2.03822632771791e-09_f64)*x+F::cast_from(3.89110229133810e-08_f64))*x-
-                           F::cast_from(5.84914787904823e-07_f64) )*x+F::cast_from(8.30316168666696e-06_f64) )*x-
-                         F::cast_from(1.13218402310546e-04_f64) )*x+F::cast_from(1.49128888586790e-03_f64) )*x-
-                       F::cast_from(1.96867576904816e-02_f64) )*x+F::cast_from(2.95524224714749e-01_f64);
-                ww2 = ((((((( F::cast_from(8.62848118397570e-09_f64)*x-F::cast_from(1.38975551148989e-07_f64))*x+
-                            F::cast_from(1.602894068228e-06_f64))*x-F::cast_from(1.646364300836e-05_f64))*x+
-                          F::cast_from(1.538445806778e-04_f64))*x-F::cast_from(1.28848868034502e-03_f64) )*x+
-                        F::cast_from(9.38866933338584e-03_f64) )*x-F::cast_from(5.61737590178812e-02_f64) )*x+
-                        F::cast_from(2.69266719309991e-01_f64);
-                ww3 = ((((((((F::cast_from(-9.41953204205665e-09_f64)*x+F::cast_from(1.47452251067755e-07_f64))*x-
-                             F::cast_from(1.57456991199322e-06_f64) )*x+F::cast_from(1.45098401798393e-05_f64) )*x-
-                           F::cast_from(1.18858834181513e-04_f64) )*x+F::cast_from(8.53697675984210e-04_f64) )*x-
-                         F::cast_from(5.22877807397165e-03_f64) )*x+F::cast_from(2.60854524809786e-02_f64) )*x-
-                       F::cast_from(9.71152726809059e-02_f64) )*x+F::cast_from(2.19086362515979e-01_f64);
-                ww4 = ((((((((F::cast_from(-3.84961617022042e-08_f64)*x+F::cast_from(5.66595396544470e-07_f64))*x-
-                             F::cast_from(5.52351805403748e-06_f64) )*x+F::cast_from(4.53160377546073e-05_f64) )*x-
-                           F::cast_from(3.22542784865557e-04_f64) )*x+F::cast_from(1.95682017370967e-03_f64) )*x-
-                         F::cast_from(9.77232537679229e-03_f64) )*x+F::cast_from(3.79455945268632e-02_f64) )*x-
-                       F::cast_from(1.02979262192227e-01_f64) )*x+F::cast_from(1.49451349150573e-01_f64);
-                ww5 = ((((((((( F::cast_from(4.09594812521430e-09_f64)*x-F::cast_from(6.47097874264417e-08_f64))*x+
-                              F::cast_from(6.743541482689e-07_f64))*x-F::cast_from(5.917993920224e-06_f64))*x+
-                            F::cast_from(4.531969237381e-05_f64))*x-F::cast_from(2.99102856679638e-04_f64) )*x+
-                          F::cast_from(1.65695765202643e-03_f64) )*x-F::cast_from(7.40671222520653e-03_f64) )*x+
-                        F::cast_from(2.50889946832192e-02_f64) )*x-F::cast_from(5.73782817487958e-02_f64) )*x+
-                        F::cast_from(6.66713443086877e-02_f64);
-        } else if x < F::new(5.0) {
-                y = x-F::cast_from(3.0e+00_f64);
-                rt1 = ((((((((F::cast_from(-2.58163897135138e-14_f64)*y+F::cast_from(8.14127461488273e-13_f64))*y-
-                             F::cast_from(2.11414838976129e-11_f64) )*y+F::cast_from(5.09822003260014e-10_f64) )*y-
-                           F::cast_from(1.16002134438663e-08_f64) )*y+F::cast_from(2.46810694414540e-07_f64) )*y-
-                         F::cast_from(4.92556826124502e-06_f64) )*y+F::cast_from(9.02580687971053e-05_f64) )*y-
-                       F::cast_from(1.45190025120726e-03_f64) )*y+F::cast_from(1.73416786387475e-02_f64);
-                rt2 = ((((((((( F::cast_from(1.04525287289788e-14_f64)*y+F::cast_from(5.44611782010773e-14_f64))*y-
-                              F::cast_from(4.831059411392e-12_f64))*y+F::cast_from(1.136643908832e-10_f64))*y-
-                            F::cast_from(1.104373076913e-09_f64))*y-F::cast_from(2.35346740649916e-08_f64) )*y+
-                          F::cast_from(1.43772622028764e-06_f64) )*y-F::cast_from(4.23405023015273e-05_f64) )*y+
-                        F::cast_from(9.12034574793379e-04_f64) )*y-F::cast_from(1.52479441718739e-02_f64) )*y+
-                        F::cast_from(1.76055265928744e-01_f64);
-                rt3 = (((((((((F::cast_from(-6.89693150857911e-14_f64)*y+F::cast_from(5.92064260918861e-13_f64))*y+
-                              F::cast_from(1.847170956043e-11_f64))*y-F::cast_from(3.390752744265e-10_f64))*y-
-                            F::cast_from(2.995532064116e-09_f64))*y+F::cast_from(1.57456141058535e-07_f64) )*y-
-                          F::cast_from(3.95859409711346e-07_f64) )*y-F::cast_from(9.58924580919747e-05_f64) )*y+
-                        F::cast_from(3.23551502557785e-03_f64) )*y-F::cast_from(5.97587007636479e-02_f64) )*y+
-                        F::cast_from(6.46432853383057e-01_f64);
-                rt4 = ((((((((F::cast_from(-3.61293809667763e-12_f64)*y-F::cast_from(2.70803518291085e-11_f64))*y+
-                             F::cast_from(8.83758848468769e-10_f64) )*y+F::cast_from(1.59166632851267e-08_f64) )*y-
-                           F::cast_from(1.32581997983422e-07_f64) )*y-F::cast_from(7.60223407443995e-06_f64) )*y-
-                         F::cast_from(7.41019244900952e-05_f64) )*y+F::cast_from(9.81432631743423e-03_f64) )*y-
-                       F::cast_from(2.23055570487771e-01_f64) )*y+F::cast_from(2.21460798080643e+00_f64);
-                rt5 = ((((((((( F::cast_from(7.12332088345321e-13_f64)*y+F::cast_from(3.16578501501894e-12_f64))*y-
-                              F::cast_from(8.776668218053e-11_f64))*y-F::cast_from(2.342817613343e-09_f64))*y-
-                            F::cast_from(3.496962018025e-08_f64))*y-F::cast_from(3.03172870136802e-07_f64) )*y+
-                          F::cast_from(1.50511293969805e-06_f64) )*y+F::cast_from(1.37704919387696e-04_f64) )*y+
-                        F::cast_from(4.70723869619745e-02_f64) )*y-F::cast_from(1.47486623003693e+00_f64) )*y+
-                        F::cast_from(1.35704792175847e+01_f64);
-                ww1 = ((((((((( F::cast_from(1.04348658616398e-13_f64)*y-F::cast_from(1.94147461891055e-12_f64))*y+
-                              F::cast_from(3.485512360993e-11_f64))*y-F::cast_from(6.277497362235e-10_f64))*y+
-                            F::cast_from(1.100758247388e-08_f64))*y-F::cast_from(1.88329804969573e-07_f64) )*y+
-                          F::cast_from(3.12338120839468e-06_f64) )*y-F::cast_from(5.04404167403568e-05_f64) )*y+
-                        F::cast_from(8.00338056610995e-04_f64) )*y-F::cast_from(1.30892406559521e-02_f64) )*y+
-                        F::cast_from(2.47383140241103e-01_f64);
-                ww2 = ((((((((((( F::cast_from(3.23496149760478e-14_f64)*y-F::cast_from(5.24314473469311e-13_f64))*y+
-                                F::cast_from(7.743219385056e-12_f64))*y-F::cast_from(1.146022750992e-10_f64))*y+
-                              F::cast_from(1.615238462197e-09_f64))*y-F::cast_from(2.15479017572233e-08_f64) )*y+
-                            F::cast_from(2.70933462557631e-07_f64) )*y-F::cast_from(3.18750295288531e-06_f64) )*y+
-                          F::cast_from(3.47425221210099e-05_f64) )*y-F::cast_from(3.45558237388223e-04_f64) )*y+
-                        F::cast_from(3.05779768191621e-03_f64) )*y-F::cast_from(2.29118251223003e-02_f64) )*y+
-                        F::cast_from(1.59834227924213e-01_f64);
-                ww3 = ((((((((((((F::cast_from(-3.42790561802876e-14_f64)*y+F::cast_from(5.26475736681542e-13_f64))*y-
-                                 F::cast_from(7.184330797139e-12_f64))*y+F::cast_from(9.763932908544e-11_f64))*y-
-                               F::cast_from(1.244014559219e-09_f64))*y+F::cast_from(1.472744068942e-08_f64))*y-
-                             F::cast_from(1.611749975234e-07_f64))*y+F::cast_from(1.616487851917e-06_f64))*y-
-                           F::cast_from(1.46852359124154e-05_f64) )*y+F::cast_from(1.18900349101069e-04_f64) )*y-
-                         F::cast_from(8.37562373221756e-04_f64) )*y+F::cast_from(4.93752683045845e-03_f64) )*y-
-                       F::cast_from(2.25514728915673e-02_f64) )*y+F::cast_from(6.95211812453929e-02_f64);
-                ww4 = ((((((((((((( F::cast_from(1.04072340345039e-14_f64)*y-F::cast_from(1.60808044529211e-13_f64))*
-                                  y+F::cast_from(2.183534866798e-12_f64))*y-F::cast_from(2.939403008391e-11_f64))*y+
-                                F::cast_from(3.679254029085e-10_f64))*y-F::cast_from(4.23775673047899e-09_f64) )*y+
-                              F::cast_from(4.46559231067006e-08_f64) )*y-F::cast_from(4.26488836563267e-07_f64) )*y+
-                            F::cast_from(3.64721335274973e-06_f64) )*y-F::cast_from(2.74868382777722e-05_f64) )*y+
-                          F::cast_from(1.78586118867488e-04_f64) )*y-F::cast_from(9.68428981886534e-04_f64) )*y+
-                        F::cast_from(4.16002324339929e-03_f64) )*y-F::cast_from(1.28290192663141e-02_f64) )*y+
-                        F::cast_from(2.22353727685016e-02_f64);
-                ww5 = ((((((((((((((F::cast_from(-8.16770412525963e-16_f64)*y+F::cast_from(1.31376515047977e-14_f64))*
-                                   y-F::cast_from(1.856950818865e-13_f64))*y+F::cast_from(2.596836515749e-12_f64))*y-
-                                 F::cast_from(3.372639523006e-11_f64))*y+F::cast_from(4.025371849467e-10_f64))*y-
-                               F::cast_from(4.389453269417e-09_f64))*y+F::cast_from(4.332753856271e-08_f64))*y-
-                             F::cast_from(3.82673275931962e-07_f64) )*y+F::cast_from(2.98006900751543e-06_f64) )*y-
-                           F::cast_from(2.00718990300052e-05_f64) )*y+F::cast_from(1.13876001386361e-04_f64) )*y-
-                         F::cast_from(5.23627942443563e-04_f64) )*y+F::cast_from(1.83524565118203e-03_f64) )*y-
-                       F::cast_from(4.37785737450783e-03_f64) )*y+F::cast_from(5.36963805223095e-03_f64);
-        } else if x < F::new(10.0) {
-                y = x-F::cast_from(7.5e+00_f64);
-                rt1 = ((((((((F::cast_from(-1.13825201010775e-14_f64)*y+F::cast_from(1.89737681670375e-13_f64))*y-
-                             F::cast_from(4.81561201185876e-12_f64) )*y+F::cast_from(1.56666512163407e-10_f64) )*y-
-                           F::cast_from(3.73782213255083e-09_f64) )*y+F::cast_from(9.15858355075147e-08_f64) )*y-
-                         F::cast_from(2.13775073585629e-06_f64) )*y+F::cast_from(4.56547356365536e-05_f64) )*y-
-                       F::cast_from(8.68003909323740e-04_f64) )*y+F::cast_from(1.22703754069176e-02_f64);
-                rt2 = (((((((((F::cast_from(-3.67160504428358e-15_f64)*y+F::cast_from(1.27876280158297e-14_f64))*y-
-                              F::cast_from(1.296476623788e-12_f64))*y+F::cast_from(1.477175434354e-11_f64))*y+
-                            F::cast_from(5.464102147892e-10_f64))*y-F::cast_from(2.42538340602723e-08_f64) )*y+
-                          F::cast_from(8.20460740637617e-07_f64) )*y-F::cast_from(2.20379304598661e-05_f64) )*y+
-                        F::cast_from(4.90295372978785e-04_f64) )*y-F::cast_from(9.14294111576119e-03_f64) )*y+
-                        F::cast_from(1.22590403403690e-01_f64);
-                rt3 = ((((((((( F::cast_from(1.39017367502123e-14_f64)*y-F::cast_from(6.96391385426890e-13_f64))*y+
-                              F::cast_from(1.176946020731e-12_f64))*y+F::cast_from(1.725627235645e-10_f64))*y-
-                            F::cast_from(3.686383856300e-09_f64))*y+F::cast_from(2.87495324207095e-08_f64) )*y+
-                          F::cast_from(1.71307311000282e-06_f64) )*y-F::cast_from(7.94273603184629e-05_f64) )*y+
-                        F::cast_from(2.00938064965897e-03_f64) )*y-F::cast_from(3.63329491677178e-02_f64) )*y+
-                        F::cast_from(4.34393683888443e-01_f64);
-                rt4 = ((((((((((F::cast_from(-1.27815158195209e-14_f64)*y+F::cast_from(1.99910415869821e-14_f64))*y+
-                               F::cast_from(3.753542914426e-12_f64))*y-F::cast_from(2.708018219579e-11_f64))*y-
-                             F::cast_from(1.190574776587e-09_f64))*y+F::cast_from(1.106696436509e-08_f64))*y+
-                           F::cast_from(3.954955671326e-07_f64))*y-F::cast_from(4.398596059588e-06_f64))*y-
-                         F::cast_from(2.01087998907735e-04_f64) )*y+F::cast_from(7.89092425542937e-03_f64) )*y-
-                       F::cast_from(1.42056749162695e-01_f64) )*y+F::cast_from(1.39964149420683e+00_f64);
-                rt5 = ((((((((((F::cast_from(-1.19442341030461e-13_f64)*y-F::cast_from(2.34074833275956e-12_f64))*y+
-                               F::cast_from(6.861649627426e-12_f64))*y+F::cast_from(6.082671496226e-10_f64))*y+
-                             F::cast_from(5.381160105420e-09_f64))*y-F::cast_from(6.253297138700e-08_f64))*y-
-                           F::cast_from(2.135966835050e-06_f64))*y-F::cast_from(2.373394341886e-05_f64))*y+
-                         F::cast_from(2.88711171412814e-06_f64) )*y+F::cast_from(4.85221195290753e-02_f64) )*y-
-                       F::cast_from(1.04346091985269e+00_f64) )*y+F::cast_from(7.89901551676692e+00_f64);
-                ww1 = ((((((((( F::cast_from(7.95526040108997e-15_f64)*y-F::cast_from(2.48593096128045e-13_f64))*y+
-                              F::cast_from(4.761246208720e-12_f64))*y-F::cast_from(9.535763686605e-11_f64))*y+
-                            F::cast_from(2.225273630974e-09_f64))*y-F::cast_from(4.49796778054865e-08_f64) )*y+
-                          F::cast_from(9.17812870287386e-07_f64) )*y-F::cast_from(1.86764236490502e-05_f64) )*y+
-                        F::cast_from(3.76807779068053e-04_f64) )*y-F::cast_from(8.10456360143408e-03_f64) )*y+
-                        F::cast_from(2.01097936411496e-01_f64);
-                ww2 = ((((((((((( F::cast_from(1.25678686624734e-15_f64)*y-F::cast_from(2.34266248891173e-14_f64))*y+
-                                F::cast_from(3.973252415832e-13_f64))*y-F::cast_from(6.830539401049e-12_f64))*y+
-                              F::cast_from(1.140771033372e-10_f64))*y-F::cast_from(1.82546185762009e-09_f64) )*y+
-                            F::cast_from(2.77209637550134e-08_f64) )*y-F::cast_from(4.01726946190383e-07_f64) )*y+
-                          F::cast_from(5.48227244014763e-06_f64) )*y-F::cast_from(6.95676245982121e-05_f64) )*y+
-                        F::cast_from(8.05193921815776e-04_f64) )*y-F::cast_from(8.15528438784469e-03_f64) )*y+
-                        F::cast_from(9.71769901268114e-02_f64);
-                ww3 = ((((((((((((F::cast_from(-8.20929494859896e-16_f64)*y+F::cast_from(1.37356038393016e-14_f64))*y-
-                                 F::cast_from(2.022863065220e-13_f64))*y+F::cast_from(3.058055403795e-12_f64))*y-
-                               F::cast_from(4.387890955243e-11_f64))*y+F::cast_from(5.923946274445e-10_f64))*y-
-                             F::cast_from(7.503659964159e-09_f64))*y+F::cast_from(8.851599803902e-08_f64))*y-
-                           F::cast_from(9.65561998415038e-07_f64) )*y+F::cast_from(9.60884622778092e-06_f64) )*y-
-                         F::cast_from(8.56551787594404e-05_f64) )*y+F::cast_from(6.66057194311179e-04_f64) )*y-
-                       F::cast_from(4.17753183902198e-03_f64) )*y+F::cast_from(2.25443826852447e-02_f64);
-                ww4 = ((((((((((((((F::cast_from(-1.08764612488790e-17_f64)*y+F::cast_from(1.85299909689937e-16_f64))*
-                                   y-F::cast_from(2.730195628655e-15_f64))*y+F::cast_from(4.127368817265e-14_f64))*y-
-                                 F::cast_from(5.881379088074e-13_f64))*y+F::cast_from(7.805245193391e-12_f64))*y-
-                               F::cast_from(9.632707991704e-11_f64))*y+F::cast_from(1.099047050624e-09_f64))*y-
-                             F::cast_from(1.15042731790748e-08_f64) )*y+F::cast_from(1.09415155268932e-07_f64) )*y-
-                           F::cast_from(9.33687124875935e-07_f64) )*y+F::cast_from(7.02338477986218e-06_f64) )*y-
-                         F::cast_from(4.53759748787756e-05_f64) )*y+F::cast_from(2.41722511389146e-04_f64) )*y-
-                       F::cast_from(9.75935943447037e-04_f64) )*y+F::cast_from(2.57520532789644e-03_f64);
-                ww5 = ((((((((((((((( F::cast_from(7.28996979748849e-19_f64)*y-F::cast_from(1.26518146195173e-17_f64))
-                                    *y+F::cast_from(1.886145834486e-16_f64))*y-F::cast_from(2.876728287383e-15_f64))*y+
-                                  F::cast_from(4.114588668138e-14_f64))*y-F::cast_from(5.44436631413933e-13_f64) )*y+
-                                F::cast_from(6.64976446790959e-12_f64) )*y-F::cast_from(7.44560069974940e-11_f64) )*y+
-                              F::cast_from(7.57553198166848e-10_f64) )*y-F::cast_from(6.92956101109829e-09_f64) )*y+
-                            F::cast_from(5.62222859033624e-08_f64) )*y-F::cast_from(3.97500114084351e-07_f64) )*y+
-                          F::cast_from(2.39039126138140e-06_f64) )*y-F::cast_from(1.18023950002105e-05_f64) )*y+
-                        F::cast_from(4.52254031046244e-05_f64) )*y-F::cast_from(1.21113782150370e-04_f64) )*y+
-                        F::cast_from(1.75013126731224e-04_f64);
-        } else if x < F::new(15.0) {
-                y = x-F::cast_from(12.5e+00_f64);
-                rt1 = ((((((((((F::cast_from(-4.16387977337393e-17_f64)*y+F::cast_from(7.20872997373860e-16_f64))*y+
-                               F::cast_from(1.395993802064e-14_f64))*y+F::cast_from(3.660484641252e-14_f64))*y-
-                             F::cast_from(4.154857548139e-12_f64))*y+F::cast_from(2.301379846544e-11_f64))*y-
-                           F::cast_from(1.033307012866e-09_f64))*y+F::cast_from(3.997777641049e-08_f64))*y-
-                         F::cast_from(9.35118186333939e-07_f64) )*y+F::cast_from(2.38589932752937e-05_f64) )*y-
-                       F::cast_from(5.35185183652937e-04_f64) )*y+F::cast_from(8.85218988709735e-03_f64);
-                rt2 = ((((((((((F::cast_from(-4.56279214732217e-16_f64)*y+F::cast_from(6.24941647247927e-15_f64))*y+
-                               F::cast_from(1.737896339191e-13_f64))*y+F::cast_from(8.964205979517e-14_f64))*y-
-                             F::cast_from(3.538906780633e-11_f64))*y+F::cast_from(9.561341254948e-11_f64))*y-
-                           F::cast_from(9.772831891310e-09_f64))*y+F::cast_from(4.240340194620e-07_f64))*y-
-                         F::cast_from(1.02384302866534e-05_f64) )*y+F::cast_from(2.57987709704822e-04_f64) )*y-
-                       F::cast_from(5.54735977651677e-03_f64) )*y+F::cast_from(8.68245143991948e-02_f64);
-                rt3 = ((((((((((F::cast_from(-2.52879337929239e-15_f64)*y+F::cast_from(2.13925810087833e-14_f64))*y+
-                               F::cast_from(7.884307667104e-13_f64))*y-F::cast_from(9.023398159510e-13_f64))*y-
-                             F::cast_from(5.814101544957e-11_f64))*y-F::cast_from(1.333480437968e-09_f64))*y-
-                           F::cast_from(2.217064940373e-08_f64))*y+F::cast_from(1.643290788086e-06_f64))*y-
-                         F::cast_from(4.39602147345028e-05_f64) )*y+F::cast_from(1.08648982748911e-03_f64) )*y-
-                       F::cast_from(2.13014521653498e-02_f64) )*y+F::cast_from(2.94150684465425e-01_f64);
-                rt4 = ((((((((((F::cast_from(-6.42391438038888e-15_f64)*y+F::cast_from(5.37848223438815e-15_f64))*y+
-                               F::cast_from(8.960828117859e-13_f64))*y+F::cast_from(5.214153461337e-11_f64))*y-
-                             F::cast_from(1.106601744067e-10_f64))*y-F::cast_from(2.007890743962e-08_f64))*y+
-                           F::cast_from(1.543764346501e-07_f64))*y+F::cast_from(4.520749076914e-06_f64))*y-
-                         F::cast_from(1.88893338587047e-04_f64) )*y+F::cast_from(4.73264487389288e-03_f64) )*y-
-                       F::cast_from(7.91197893350253e-02_f64) )*y+F::cast_from(8.60057928514554e-01_f64);
-                rt5 = (((((((((((F::cast_from(-2.24366166957225e-14_f64)*y+F::cast_from(4.87224967526081e-14_f64))*y+
-                                F::cast_from(5.587369053655e-12_f64))*y-F::cast_from(3.045253104617e-12_f64))*y-
-                              F::cast_from(1.223983883080e-09_f64))*y-F::cast_from(2.05603889396319e-09_f64) )*y+
-                            F::cast_from(2.58604071603561e-07_f64) )*y+F::cast_from(1.34240904266268e-06_f64) )*y-
-                          F::cast_from(5.72877569731162e-05_f64) )*y-F::cast_from(9.56275105032191e-04_f64) )*y+
-                        F::cast_from(4.23367010370921e-02_f64) )*y-F::cast_from(5.76800927133412e-01_f64) )*y+
-                        F::cast_from(3.87328263873381e+00_f64);
-                ww1 = ((((((((( F::cast_from(8.98007931950169e-15_f64)*y+F::cast_from(7.25673623859497e-14_f64))*y+
-                              F::cast_from(5.851494250405e-14_f64))*y-F::cast_from(4.234204823846e-11_f64))*y+
-                            F::cast_from(3.911507312679e-10_f64))*y-F::cast_from(9.65094802088511e-09_f64) )*y+
-                          F::cast_from(3.42197444235714e-07_f64) )*y-F::cast_from(7.51821178144509e-06_f64) )*y+
-                        F::cast_from(1.94218051498662e-04_f64) )*y-F::cast_from(5.38533819142287e-03_f64) )*y+
-                        F::cast_from(1.68122596736809e-01_f64);
-                ww2 = ((((((((((F::cast_from(-1.05490525395105e-15_f64)*y+F::cast_from(1.96855386549388e-14_f64))*y-
-                               F::cast_from(5.500330153548e-13_f64))*y+F::cast_from(1.003849567976e-11_f64))*y-
-                             F::cast_from(1.720997242621e-10_f64))*y+F::cast_from(3.533277061402e-09_f64))*y-
-                           F::cast_from(6.389171736029e-08_f64))*y+F::cast_from(1.046236652393e-06_f64))*y-
-                         F::cast_from(1.73148206795827e-05_f64) )*y+F::cast_from(2.57820531617185e-04_f64) )*y-
-                       F::cast_from(3.46188265338350e-03_f64) )*y+F::cast_from(7.03302497508176e-02_f64);
-                ww3 = ((((((((((( F::cast_from(3.60020423754545e-16_f64)*y-F::cast_from(6.24245825017148e-15_f64))*y+
-                                F::cast_from(9.945311467434e-14_f64))*y-F::cast_from(1.749051512721e-12_f64))*y+
-                              F::cast_from(2.768503957853e-11_f64))*y-F::cast_from(4.08688551136506e-10_f64) )*y+
-                            F::cast_from(6.04189063303610e-09_f64) )*y-F::cast_from(8.23540111024147e-08_f64) )*y+
-                          F::cast_from(1.01503783870262e-06_f64) )*y-F::cast_from(1.20490761741576e-05_f64) )*y+
-                        F::cast_from(1.26928442448148e-04_f64) )*y-F::cast_from(1.05539461930597e-03_f64) )*y+
-                        F::cast_from(1.15543698537013e-02_f64);
-                ww4 = ((((((((((((( F::cast_from(2.51163533058925e-18_f64)*y-F::cast_from(4.31723745510697e-17_f64))*
-                                  y+F::cast_from(6.557620865832e-16_f64))*y-F::cast_from(1.016528519495e-14_f64))*y+
-                                F::cast_from(1.491302084832e-13_f64))*y-F::cast_from(2.06638666222265e-12_f64) )*y+
-                              F::cast_from(2.67958697789258e-11_f64) )*y-F::cast_from(3.23322654638336e-10_f64) )*y+
-                            F::cast_from(3.63722952167779e-09_f64) )*y-F::cast_from(3.75484943783021e-08_f64) )*y+
-                          F::cast_from(3.49164261987184e-07_f64) )*y-F::cast_from(2.92658670674908e-06_f64) )*y+
-                        F::cast_from(2.12937256719543e-05_f64) )*y-F::cast_from(1.19434130620929e-04_f64) )*y+
-                        F::cast_from(6.45524336158384e-04_f64);
-                ww5 = ((((((((((((((F::cast_from(-1.29043630202811e-19_f64)*y+F::cast_from(2.16234952241296e-18_f64))*
-                                   y-F::cast_from(3.107631557965e-17_f64))*y+F::cast_from(4.570804313173e-16_f64))*y-
-                                 F::cast_from(6.301348858104e-15_f64))*y+F::cast_from(8.031304476153e-14_f64))*y-
-                               F::cast_from(9.446196472547e-13_f64))*y+F::cast_from(1.018245804339e-11_f64))*y-
-                             F::cast_from(9.96995451348129e-11_f64) )*y+F::cast_from(8.77489010276305e-10_f64) )*y-
-                           F::cast_from(6.84655877575364e-09_f64) )*y+F::cast_from(4.64460857084983e-08_f64) )*y-
-                         F::cast_from(2.66924538268397e-07_f64) )*y+F::cast_from(1.24621276265907e-06_f64) )*y-
-                       F::cast_from(4.30868944351523e-06_f64) )*y+F::cast_from(9.94307982432868e-06_f64);
-        } else if x < F::new(20.0){
-                y = x-F::cast_from(17.5e+00_f64);
-                rt1 = (((((((((( F::cast_from(1.91875764545740e-16_f64)*y+F::cast_from(7.8357401095707e-16_f64))*y-
-                               F::cast_from(3.260875931644e-14_f64))*y-F::cast_from(1.186752035569e-13_f64))*y+
-                             F::cast_from(4.275180095653e-12_f64))*y+F::cast_from(3.357056136731e-11_f64))*y-
-                           F::cast_from(1.123776903884e-09_f64))*y+F::cast_from(1.231203269887e-08_f64))*y-
-                         F::cast_from(3.99851421361031e-07_f64) )*y+F::cast_from(1.45418822817771e-05_f64) )*y-
-                       F::cast_from(3.49912254976317e-04_f64) )*y+F::cast_from(6.67768703938812e-03_f64);
-                rt2 = (((((((((( F::cast_from(2.02778478673555e-15_f64)*y+F::cast_from(1.01640716785099e-14_f64))*y-
-                               F::cast_from(3.385363492036e-13_f64))*y-F::cast_from(1.615655871159e-12_f64))*y+
-                             F::cast_from(4.527419140333e-11_f64))*y+F::cast_from(3.853670706486e-10_f64))*y-
-                           F::cast_from(1.184607130107e-08_f64))*y+F::cast_from(1.347873288827e-07_f64))*y-
-                         F::cast_from(4.47788241748377e-06_f64) )*y+F::cast_from(1.54942754358273e-04_f64) )*y-
-                       F::cast_from(3.55524254280266e-03_f64) )*y+F::cast_from(6.44912219301603e-02_f64);
-                rt3 = (((((((((( F::cast_from(7.79850771456444e-15_f64)*y+F::cast_from(6.00464406395001e-14_f64))*y-
-                               F::cast_from(1.249779730869e-12_f64))*y-F::cast_from(1.020720636353e-11_f64))*y+
-                             F::cast_from(1.814709816693e-10_f64))*y+F::cast_from(1.766397336977e-09_f64))*y-
-                           F::cast_from(4.603559449010e-08_f64))*y+F::cast_from(5.863956443581e-07_f64))*y-
-                         F::cast_from(2.03797212506691e-05_f64) )*y+F::cast_from(6.31405161185185e-04_f64) )*y-
-                       F::cast_from(1.30102750145071e-02_f64) )*y+F::cast_from(2.10244289044705e-01_f64);
-                rt4 = (((((((((((F::cast_from(-2.92397030777912e-15_f64)*y+F::cast_from(1.94152129078465e-14_f64))*y+
-                                F::cast_from(4.859447665850e-13_f64))*y-F::cast_from(3.217227223463e-12_f64))*y-
-                              F::cast_from(7.484522135512e-11_f64))*y+F::cast_from(7.19101516047753e-10_f64) )*y+
-                            F::cast_from(6.88409355245582e-09_f64) )*y-F::cast_from(1.44374545515769e-07_f64) )*y+
-                          F::cast_from(2.74941013315834e-06_f64) )*y-F::cast_from(1.02790452049013e-04_f64) )*y+
-                        F::cast_from(2.59924221372643e-03_f64) )*y-F::cast_from(4.35712368303551e-02_f64) )*y+
-                        F::cast_from(5.62170709585029e-01_f64);
-                rt5 = ((((((((((( F::cast_from(1.17976126840060e-14_f64)*y+F::cast_from(1.24156229350669e-13_f64))*y-
-                                F::cast_from(3.892741622280e-12_f64))*y-F::cast_from(7.755793199043e-12_f64))*y+
-                              F::cast_from(9.492190032313e-10_f64))*y-F::cast_from(4.98680128123353e-09_f64) )*y-
-                            F::cast_from(1.81502268782664e-07_f64) )*y+F::cast_from(2.69463269394888e-06_f64) )*y+
-                          F::cast_from(2.50032154421640e-05_f64) )*y-F::cast_from(1.33684303917681e-03_f64) )*y+
-                        F::cast_from(2.29121951862538e-02_f64) )*y-F::cast_from(2.45653725061323e-01_f64) )*y+
-                        F::cast_from(1.89999883453047e+00_f64);
-                ww1 = (((((((((( F::cast_from(1.74841995087592e-15_f64)*y-F::cast_from(6.95671892641256e-16_f64))*y-
-                               F::cast_from(3.000659497257e-13_f64))*y+F::cast_from(2.021279817961e-13_f64))*y+
-                             F::cast_from(3.853596935400e-11_f64))*y+F::cast_from(1.461418533652e-10_f64))*y-
-                           F::cast_from(1.014517563435e-08_f64))*y+F::cast_from(1.132736008979e-07_f64))*y-
-                         F::cast_from(2.86605475073259e-06_f64) )*y+F::cast_from(1.21958354908768e-04_f64) )*y-
-                       F::cast_from(3.86293751153466e-03_f64) )*y+F::cast_from(1.45298342081522e-01_f64);
-                ww2 = ((((((((((F::cast_from(-1.11199320525573e-15_f64)*y+F::cast_from(1.85007587796671e-15_f64))*y+
-                               F::cast_from(1.220613939709e-13_f64))*y+F::cast_from(1.275068098526e-12_f64))*y-
-                             F::cast_from(5.341838883262e-11_f64))*y+F::cast_from(6.161037256669e-10_f64))*y-
-                           F::cast_from(1.009147879750e-08_f64))*y+F::cast_from(2.907862965346e-07_f64))*y-
-                         F::cast_from(6.12300038720919e-06_f64) )*y+F::cast_from(1.00104454489518e-04_f64) )*y-
-                       F::cast_from(1.80677298502757e-03_f64) )*y+F::cast_from(5.78009914536630e-02_f64);
-                ww3 = ((((((((((F::cast_from(-9.49816486853687e-16_f64)*y+F::cast_from(6.67922080354234e-15_f64))*y+
-                               F::cast_from(2.606163540537e-15_f64))*y+F::cast_from(1.983799950150e-12_f64))*y-
-                             F::cast_from(5.400548574357e-11_f64))*y+F::cast_from(6.638043374114e-10_f64))*y-
-                           F::cast_from(8.799518866802e-09_f64))*y+F::cast_from(1.791418482685e-07_f64))*y-
-                         F::cast_from(2.96075397351101e-06_f64) )*y+F::cast_from(3.38028206156144e-05_f64) )*y-
-                       F::cast_from(3.58426847857878e-04_f64) )*y+F::cast_from(8.39213709428516e-03_f64);
-                ww4 = ((((((((((( F::cast_from(1.33829971060180e-17_f64)*y-F::cast_from(3.44841877844140e-16_f64))*y+
-                                F::cast_from(4.745009557656e-15_f64))*y-F::cast_from(6.033814209875e-14_f64))*y+
-                              F::cast_from(1.049256040808e-12_f64))*y-F::cast_from(1.70859789556117e-11_f64) )*y+
-                            F::cast_from(2.15219425727959e-10_f64) )*y-F::cast_from(2.52746574206884e-09_f64) )*y+
-                          F::cast_from(3.27761714422960e-08_f64) )*y-F::cast_from(3.90387662925193e-07_f64) )*y+
-                        F::cast_from(3.46340204593870e-06_f64) )*y-F::cast_from(2.43236345136782e-05_f64) )*y+
-                        F::cast_from(3.54846978585226e-04_f64);
-                ww5 = ((((((((((((( F::cast_from(2.69412277020887e-20_f64)*y-F::cast_from(4.24837886165685e-19_f64))*
-                                  y+F::cast_from(6.030500065438e-18_f64))*y-F::cast_from(9.069722758289e-17_f64))*y+
-                                F::cast_from(1.246599177672e-15_f64))*y-F::cast_from(1.56872999797549e-14_f64) )*y+
-                              F::cast_from(1.87305099552692e-13_f64) )*y-F::cast_from(2.09498886675861e-12_f64) )*y+
-                            F::cast_from(2.11630022068394e-11_f64) )*y-F::cast_from(1.92566242323525e-10_f64) )*y+
-                          F::cast_from(1.62012436344069e-09_f64) )*y-F::cast_from(1.23621614171556e-08_f64) )*y+
-                        F::cast_from(7.72165684563049e-08_f64) )*y-F::cast_from(3.59858901591047e-07_f64) )*y+
-                        F::cast_from(2.43682618601000e-06_f64);
-        } else if x < F::new(25.0) {
-                y = x-F::cast_from(22.5e+00_f64);
-                rt1 = (((((((((F::cast_from(-1.13927848238726e-15_f64)*y+F::cast_from(7.39404133595713e-15_f64))*y+
-                              F::cast_from(1.445982921243e-13_f64))*y-F::cast_from(2.676703245252e-12_f64))*y+
-                            F::cast_from(5.823521627177e-12_f64))*y+F::cast_from(2.17264723874381e-10_f64) )*y+
-                          F::cast_from(3.56242145897468e-09_f64) )*y-F::cast_from(3.03763737404491e-07_f64) )*y+
-                        F::cast_from(9.46859114120901e-06_f64) )*y-F::cast_from(2.30896753853196e-04_f64) )*y+
-                        F::cast_from(5.24663913001114e-03_f64);
-                rt2 = (((((((((( F::cast_from(2.89872355524581e-16_f64)*y-F::cast_from(1.22296292045864e-14_f64))*y+
-                               F::cast_from(6.184065097200e-14_f64))*y+F::cast_from(1.649846591230e-12_f64))*y-
-                             F::cast_from(2.729713905266e-11_f64))*y+F::cast_from(3.709913790650e-11_f64))*y+
-                           F::cast_from(2.216486288382e-09_f64))*y+F::cast_from(4.616160236414e-08_f64))*y-
-                         F::cast_from(3.32380270861364e-06_f64) )*y+F::cast_from(9.84635072633776e-05_f64) )*y-
-                       F::cast_from(2.30092118015697e-03_f64) )*y+F::cast_from(5.00845183695073e-02_f64);
-                rt3 = (((((((((( F::cast_from(1.97068646590923e-15_f64)*y-F::cast_from(4.89419270626800e-14_f64))*y+
-                               F::cast_from(1.136466605916e-13_f64))*y+F::cast_from(7.546203883874e-12_f64))*y-
-                             F::cast_from(9.635646767455e-11_f64))*y-F::cast_from(8.295965491209e-11_f64))*y+
-                           F::cast_from(7.534109114453e-09_f64))*y+F::cast_from(2.699970652707e-07_f64))*y-
-                         F::cast_from(1.42982334217081e-05_f64) )*y+F::cast_from(3.78290946669264e-04_f64) )*y-
-                       F::cast_from(8.03133015084373e-03_f64) )*y+F::cast_from(1.58689469640791e-01_f64);
-                rt4 = (((((((((( F::cast_from(1.33642069941389e-14_f64)*y-F::cast_from(1.55850612605745e-13_f64))*y-
-                               F::cast_from(7.522712577474e-13_f64))*y+F::cast_from(3.209520801187e-11_f64))*y-
-                             F::cast_from(2.075594313618e-10_f64))*y-F::cast_from(2.070575894402e-09_f64))*y+
-                           F::cast_from(7.323046997451e-09_f64))*y+F::cast_from(1.851491550417e-06_f64))*y-
-                         F::cast_from(6.37524802411383e-05_f64) )*y+F::cast_from(1.36795464918785e-03_f64) )*y-
-                       F::cast_from(2.42051126993146e-02_f64) )*y+F::cast_from(3.97847167557815e-01_f64);
-                rt5 = ((((((((((F::cast_from(-6.07053986130526e-14_f64)*y+F::cast_from(1.04447493138843e-12_f64))*y-
-                               F::cast_from(4.286617818951e-13_f64))*y-F::cast_from(2.632066100073e-10_f64))*y+
-                             F::cast_from(4.804518986559e-09_f64))*y-F::cast_from(1.835675889421e-08_f64))*y-
-                           F::cast_from(1.068175391334e-06_f64))*y+F::cast_from(3.292234974141e-05_f64))*y-
-                         F::cast_from(5.94805357558251e-04_f64) )*y+F::cast_from(8.29382168612791e-03_f64) )*y-
-                       F::cast_from(9.93122509049447e-02_f64) )*y+F::cast_from(1.09857804755042e+00_f64);
-                ww1 = (((((((((F::cast_from(-9.10338640266542e-15_f64)*y+F::cast_from(1.00438927627833e-13_f64))*y+
-                              F::cast_from(7.817349237071e-13_f64))*y-F::cast_from(2.547619474232e-11_f64))*y+
-                            F::cast_from(1.479321506529e-10_f64))*y+F::cast_from(1.52314028857627e-09_f64) )*y+
-                          F::cast_from(9.20072040917242e-09_f64) )*y-F::cast_from(2.19427111221848e-06_f64) )*y+
-                        F::cast_from(8.65797782880311e-05_f64) )*y-F::cast_from(2.82718629312875e-03_f64) )*y+
-                        F::cast_from(1.28718310443295e-01_f64);
-                ww2 = ((((((((( F::cast_from(5.52380927618760e-15_f64)*y-F::cast_from(6.43424400204124e-14_f64))*y-
-                              F::cast_from(2.358734508092e-13_f64))*y+F::cast_from(8.261326648131e-12_f64))*y+
-                            F::cast_from(9.229645304956e-11_f64))*y-F::cast_from(5.68108973828949e-09_f64) )*y+
-                          F::cast_from(1.22477891136278e-07_f64) )*y-F::cast_from(2.11919643127927e-06_f64) )*y+
-                        F::cast_from(4.23605032368922e-05_f64) )*y-F::cast_from(1.14423444576221e-03_f64) )*y+
-                        F::cast_from(5.06607252890186e-02_f64);
-                ww3 = ((((((((( F::cast_from(3.99457454087556e-15_f64)*y-F::cast_from(5.11826702824182e-14_f64))*y-
-                              F::cast_from(4.157593182747e-14_f64))*y+F::cast_from(4.214670817758e-12_f64))*y+
-                            F::cast_from(6.705582751532e-11_f64))*y-F::cast_from(3.36086411698418e-09_f64) )*y+
-                          F::cast_from(6.07453633298986e-08_f64) )*y-F::cast_from(7.40736211041247e-07_f64) )*y+
-                        F::cast_from(8.84176371665149e-06_f64) )*y-F::cast_from(1.72559275066834e-04_f64) )*y+
-                        F::cast_from(7.16639814253567e-03_f64);
-                ww4 = (((((((((((F::cast_from(-2.14649508112234e-18_f64)*y-F::cast_from(2.45525846412281e-18_f64))*y+
-                                F::cast_from(6.126212599772e-16_f64))*y-F::cast_from(8.526651626939e-15_f64))*y+
-                              F::cast_from(4.826636065733e-14_f64))*y-F::cast_from(3.39554163649740e-13_f64) )*y+
-                            F::cast_from(1.67070784862985e-11_f64) )*y-F::cast_from(4.42671979311163e-10_f64) )*y+
-                          F::cast_from(6.77368055908400e-09_f64) )*y-F::cast_from(7.03520999708859e-08_f64) )*y+
-                        F::cast_from(6.04993294708874e-07_f64) )*y-F::cast_from(7.80555094280483e-06_f64) )*y+
-                        F::cast_from(2.85954806605017e-04_f64);
-                ww5 = ((((((((((((F::cast_from(-5.63938733073804e-21_f64)*y+F::cast_from(6.92182516324628e-20_f64))*y-
-                                 F::cast_from(1.586937691507e-18_f64))*y+F::cast_from(3.357639744582e-17_f64))*y-
-                               F::cast_from(4.810285046442e-16_f64))*y+F::cast_from(5.386312669975e-15_f64))*y-
-                             F::cast_from(6.117895297439e-14_f64))*y+F::cast_from(8.441808227634e-13_f64))*y-
-                           F::cast_from(1.18527596836592e-11_f64) )*y+F::cast_from(1.36296870441445e-10_f64) )*y-
-                         F::cast_from(1.17842611094141e-09_f64) )*y+F::cast_from(7.80430641995926e-09_f64) )*y-
-                       F::cast_from(5.97767417400540e-08_f64) )*y+F::cast_from(1.65186146094969e-06_f64);
-        } else if x < F::new(40.0) {
-                ww1 = F::sqrt(pie4/x);
-                e = F::exp(-x);
-                rt1 = ((((((((F::cast_from(-1.73363958895356e-06_f64)*x+F::cast_from(1.19921331441483e-04_f64))*x -
-                             F::cast_from(1.59437614121125e-02_f64))*x+F::cast_from(1.13467897349442e+00_f64))*x -
-                           F::cast_from(4.47216460864586e+01_f64))*x+F::cast_from(1.06251216612604e+03_f64))*x -
-                         F::cast_from(1.52073917378512e+04_f64))*x+F::cast_from(1.20662887111273e+05_f64))*x -
-                       F::cast_from(4.07186366852475e+05_f64))*e + r15/(x-r15);
-                rt2 = ((((((((F::cast_from(-1.60102542621710e-05_f64)*x+F::cast_from(1.10331262112395e-03_f64))*x -
-                             F::cast_from(1.50043662589017e-01_f64))*x+F::cast_from(1.05563640866077e+01_f64))*x -
-                           F::cast_from(4.10468817024806e+02_f64))*x+F::cast_from(9.62604416506819e+03_f64))*x -
-                         F::cast_from(1.35888069838270e+05_f64))*x+F::cast_from(1.06107577038340e+06_f64))*x -
-                       F::cast_from(3.51190792816119e+06_f64))*e + r25/(x-r25);
-                rt3 = ((((((((F::cast_from(-4.48880032128422e-05_f64)*x+F::cast_from(2.69025112122177e-03_f64))*x -
-                             F::cast_from(4.01048115525954e-01_f64))*x+F::cast_from(2.78360021977405e+01_f64))*x -
-                           F::cast_from(1.04891729356965e+03_f64))*x+F::cast_from(2.36985942687423e+04_f64))*x -
-                         F::cast_from(3.19504627257548e+05_f64))*x+F::cast_from(2.34879693563358e+06_f64))*x -
-                       F::cast_from(7.16341568174085e+06_f64))*e + r35/(x-r35);
-                rt4 = ((((((((F::cast_from(-6.38526371092582e-05_f64)*x-F::cast_from(2.29263585792626e-03_f64))*x -
-                             F::cast_from(7.65735935499627e-02_f64))*x+F::cast_from(9.12692349152792e+00_f64))*x -
-                           F::cast_from(2.32077034386717e+02_f64))*x+F::cast_from(2.81839578728845e+02_f64))*x +
-                         F::cast_from(9.59529683876419e+04_f64))*x-F::cast_from(1.77638956809518e+06_f64))*x +
-                       F::cast_from(1.02489759645410e+07_f64))*e + r45/(x-r45);
-                rt5 = ((((((((F::cast_from(-3.59049364231569e-05_f64)*x-F::cast_from(2.25963977930044e-02_f64))*x +
-                             F::cast_from(1.12594870794668e+00_f64))*x-F::cast_from(4.56752462103909e+01_f64))*x +
-                           F::cast_from(1.05804526830637e+03_f64))*x-F::cast_from(1.16003199605875e+04_f64))*x -
-                         F::cast_from(4.07297627297272e+04_f64))*x+F::cast_from(2.22215528319857e+06_f64))*x -
-                       F::cast_from(1.61196455032613e+07_f64))*e + r55/(x-r55);
-                ww5 = (((((((((F::cast_from(-4.61100906133970e-10_f64)*x+F::cast_from(1.43069932644286e-07_f64))*x -
-                              F::cast_from(1.63960915431080e-05_f64))*x+F::cast_from(1.15791154612838e-03_f64))*x -
-                            F::cast_from(5.30573476742071e-02_f64))*x+F::cast_from(1.61156533367153e+00_f64))*x -
-                          F::cast_from(3.23248143316007e+01_f64))*x+F::cast_from(4.12007318109157e+02_f64))*x -
-                        F::cast_from(3.02260070158372e+03_f64))*x+F::cast_from(9.71575094154768e+03_f64))*e + w55*ww1;
-                ww4 = (((((((((F::cast_from(-2.40799435809950e-08_f64)*x+F::cast_from(8.12621667601546e-06_f64))*x -
-                              F::cast_from(9.04491430884113e-04_f64))*x+F::cast_from(6.37686375770059e-02_f64))*x -
-                            F::cast_from(2.96135703135647e+00_f64))*x+F::cast_from(9.15142356996330e+01_f64))*x -
-                          F::cast_from(1.86971865249111e+03_f64))*x+F::cast_from(2.42945528916947e+04_f64))*x -
-                        F::cast_from(1.81852473229081e+05_f64))*x+F::cast_from(5.96854758661427e+05_f64))*e + w45*ww1;
-                ww3 = (((((((( F::cast_from(1.83574464457207e-05_f64)*x-F::cast_from(1.54837969489927e-03_f64))*x +
-                             F::cast_from(1.18520453711586e-01_f64))*x-F::cast_from(6.69649981309161e+00_f64))*x +
-                           F::cast_from(2.44789386487321e+02_f64))*x-F::cast_from(5.68832664556359e+03_f64))*x +
-                         F::cast_from(8.14507604229357e+04_f64))*x-F::cast_from(6.55181056671474e+05_f64))*x +
-                       F::cast_from(2.26410896607237e+06_f64))*e + w35*ww1;
-                ww2 = (((((((( F::cast_from(2.77778345870650e-05_f64)*x-F::cast_from(2.22835017655890e-03_f64))*x +
-                             F::cast_from(1.61077633475573e-01_f64))*x-F::cast_from(8.96743743396132e+00_f64))*x +
-                           F::cast_from(3.28062687293374e+02_f64))*x-F::cast_from(7.65722701219557e+03_f64))*x +
-                         F::cast_from(1.10255055017664e+05_f64))*x-F::cast_from(8.92528122219324e+05_f64))*x +
-                       F::cast_from(3.10638627744347e+06_f64))*e + w25*ww1;
-                ww1 = ww1-F::cast_from(0.01962e+00_f64)*e-ww2-ww3-ww4-ww5;
-        } else if x < F::new(59.0) {
-                ww1 = F::sqrt(pie4/x);
-                xxx = x * x * x;
-                e = xxx*F::exp(-x);
-                rt1 = (((F::cast_from(-2.43758528330205e-02_f64)*x+F::cast_from(2.07301567989771e+00_f64))*x -
-                        F::cast_from(6.45964225381113e+01_f64))*x+F::cast_from(7.14160088655470e+02_f64))*e + r15/(x-r15);
-                rt2 = (((F::cast_from(-2.28861955413636e-01_f64)*x+F::cast_from(1.93190784733691e+01_f64))*x -
-                        F::cast_from(5.99774730340912e+02_f64))*x+F::cast_from(6.61844165304871e+03_f64))*e + r25/(x-r25);
-                rt3 = (((F::cast_from(-6.95053039285586e-01_f64)*x+F::cast_from(5.76874090316016e+01_f64))*x -
-                        F::cast_from(1.77704143225520e+03_f64))*x+F::cast_from(1.95366082947811e+04_f64))*e + r35/(x-r35);
-                rt4 = (((F::cast_from(-1.58072809087018e+00_f64)*x+F::cast_from(1.27050801091948e+02_f64))*x -
-                        F::cast_from(3.86687350914280e+03_f64))*x+F::cast_from(4.23024828121420e+04_f64))*e + r45/(x-r45);
-                rt5 = (((F::cast_from(-3.33963830405396e+00_f64)*x+F::cast_from(2.51830424600204e+02_f64))*x -
-                        F::cast_from(7.57728527654961e+03_f64))*x+F::cast_from(8.21966816595690e+04_f64))*e + r55/(x-r55);
-                e = xxx*e;
-                ww5 = (( F::cast_from(1.35482430510942e-08_f64)*x-F::cast_from(3.27722199212781e-07_f64))*x +
-                       F::cast_from(2.41522703684296e-06_f64))*e + w55*ww1;
-                ww4 = (( F::cast_from(1.23464092261605e-06_f64)*x-F::cast_from(3.55224564275590e-05_f64))*x +
-                       F::cast_from(3.03274662192286e-04_f64))*e + w45*ww1;
-                ww3 = (( F::cast_from(1.34547929260279e-05_f64)*x-F::cast_from(4.19389884772726e-04_f64))*x +
-                       F::cast_from(3.87706687610809e-03_f64))*e + w35*ww1;
-                ww2 = (( F::cast_from(2.09539509123135e-05_f64)*x-F::cast_from(6.87646614786982e-04_f64))*x +
-                       F::cast_from(6.68743788585688e-03_f64))*e + w25*ww1;
-                ww1 = ww1-ww2-ww3-ww4-ww5;
-        } else {
-                ww1 = F::sqrt(pie4/x);
-                rt1 = r15/(x-r15);
-                rt2 = r25/(x-r25);
-                rt3 = r35/(x-r35);
-                rt4 = r45/(x-r45);
-                rt5 = r55/(x-r55);
-                ww2 = w25*ww1;
-                ww3 = w35*ww1;
-                ww4 = w45*ww1;
-                ww5 = w55*ww1;
-                ww1 = ww1-ww2-ww3-ww4-ww5;
-        }
+    if x < F::new(3.0e-7) {
+        rt1 = F::cast_from(2.26659266316985e-02_f64) - F::cast_from(2.15865967920897e-03_f64) * x;
+        rt2 = F::cast_from(2.31271692140903e-01_f64) - F::cast_from(2.20258754389745e-02_f64) * x;
+        rt3 = F::cast_from(8.57346024118836e-01_f64) - F::cast_from(8.16520023025515e-02_f64) * x;
+        rt4 = F::cast_from(2.97353038120346e+00_f64) - F::cast_from(2.83193369647137e-01_f64) * x;
+        rt5 = F::cast_from(1.84151859759051e+01_f64) - F::cast_from(1.75382723579439e+00_f64) * x;
+        ww1 = F::cast_from(2.95524224714752e-01_f64) - F::cast_from(1.96867576909777e-02_f64) * x;
+        ww2 = F::cast_from(2.69266719309995e-01_f64) - F::cast_from(5.61737590184721e-02_f64) * x;
+        ww3 = F::cast_from(2.19086362515981e-01_f64) - F::cast_from(9.71152726793658e-02_f64) * x;
+        ww4 = F::cast_from(1.49451349150580e-01_f64) - F::cast_from(1.02979262193565e-01_f64) * x;
+        ww5 = F::cast_from(6.66713443086877e-02_f64) - F::cast_from(5.73782817488315e-02_f64) * x;
+    } else if x < F::new(1.0) {
+        rt1 = ((((((F::cast_from(-4.46679165328413e-11_f64) * x
+            + F::cast_from(1.21879111988031e-09_f64))
+            * x
+            - F::cast_from(2.62975022612104e-08_f64))
+            * x
+            + F::cast_from(5.15106194905897e-07_f64))
+            * x
+            - F::cast_from(9.27933625824749e-06_f64))
+            * x
+            + F::cast_from(1.51794097682482e-04_f64))
+            * x
+            - F::cast_from(2.15865967920301e-03_f64))
+            * x
+            + F::cast_from(2.26659266316985e-02_f64);
+        rt2 = ((((((F::cast_from(1.93117331714174e-10_f64) * x
+            - F::cast_from(4.57267589660699e-09_f64))
+            * x
+            + F::cast_from(2.48339908218932e-08_f64))
+            * x
+            + F::cast_from(1.50716729438474e-06_f64))
+            * x
+            - F::cast_from(6.07268757707381e-05_f64))
+            * x
+            + F::cast_from(1.37506939145643e-03_f64))
+            * x
+            - F::cast_from(2.20258754419939e-02_f64))
+            * x
+            + F::cast_from(2.31271692140905e-01_f64);
+        rt3 = (((((F::cast_from(4.84989776180094e-09_f64) * x
+            + F::cast_from(1.31538893944284e-07_f64))
+            * x
+            - F::cast_from(2.766753852879e-06_f64))
+            * x
+            - F::cast_from(7.651163510626e-05_f64))
+            * x
+            + F::cast_from(4.033058545972e-03_f64))
+            * x
+            - F::cast_from(8.16520022916145e-02_f64))
+            * x
+            + F::cast_from(8.57346024118779e-01_f64);
+        rt4 = ((((F::cast_from(-2.48581772214623e-07_f64) * x
+            - F::cast_from(4.34482635782585e-06_f64))
+            * x
+            - F::cast_from(7.46018257987630e-07_f64))
+            * x
+            + F::cast_from(1.01210776517279e-02_f64))
+            * x
+            - F::cast_from(2.83193369640005e-01_f64))
+            * x
+            + F::cast_from(2.97353038120345e+00_f64);
+        rt5 = (((((F::cast_from(-8.92432153868554e-09_f64) * x
+            + F::cast_from(1.77288899268988e-08_f64))
+            * x
+            + F::cast_from(3.040754680666e-06_f64))
+            * x
+            + F::cast_from(1.058229325071e-04_f64))
+            * x
+            + F::cast_from(4.596379534985e-02_f64))
+            * x
+            - F::cast_from(1.75382723579114e+00_f64))
+            * x
+            + F::cast_from(1.84151859759049e+01_f64);
+        ww1 = ((((((F::cast_from(-2.03822632771791e-09_f64) * x
+            + F::cast_from(3.89110229133810e-08_f64))
+            * x
+            - F::cast_from(5.84914787904823e-07_f64))
+            * x
+            + F::cast_from(8.30316168666696e-06_f64))
+            * x
+            - F::cast_from(1.13218402310546e-04_f64))
+            * x
+            + F::cast_from(1.49128888586790e-03_f64))
+            * x
+            - F::cast_from(1.96867576904816e-02_f64))
+            * x
+            + F::cast_from(2.95524224714749e-01_f64);
+        ww2 = (((((((F::cast_from(8.62848118397570e-09_f64) * x
+            - F::cast_from(1.38975551148989e-07_f64))
+            * x
+            + F::cast_from(1.602894068228e-06_f64))
+            * x
+            - F::cast_from(1.646364300836e-05_f64))
+            * x
+            + F::cast_from(1.538445806778e-04_f64))
+            * x
+            - F::cast_from(1.28848868034502e-03_f64))
+            * x
+            + F::cast_from(9.38866933338584e-03_f64))
+            * x
+            - F::cast_from(5.61737590178812e-02_f64))
+            * x
+            + F::cast_from(2.69266719309991e-01_f64);
+        ww3 = ((((((((F::cast_from(-9.41953204205665e-09_f64) * x
+            + F::cast_from(1.47452251067755e-07_f64))
+            * x
+            - F::cast_from(1.57456991199322e-06_f64))
+            * x
+            + F::cast_from(1.45098401798393e-05_f64))
+            * x
+            - F::cast_from(1.18858834181513e-04_f64))
+            * x
+            + F::cast_from(8.53697675984210e-04_f64))
+            * x
+            - F::cast_from(5.22877807397165e-03_f64))
+            * x
+            + F::cast_from(2.60854524809786e-02_f64))
+            * x
+            - F::cast_from(9.71152726809059e-02_f64))
+            * x
+            + F::cast_from(2.19086362515979e-01_f64);
+        ww4 = ((((((((F::cast_from(-3.84961617022042e-08_f64) * x
+            + F::cast_from(5.66595396544470e-07_f64))
+            * x
+            - F::cast_from(5.52351805403748e-06_f64))
+            * x
+            + F::cast_from(4.53160377546073e-05_f64))
+            * x
+            - F::cast_from(3.22542784865557e-04_f64))
+            * x
+            + F::cast_from(1.95682017370967e-03_f64))
+            * x
+            - F::cast_from(9.77232537679229e-03_f64))
+            * x
+            + F::cast_from(3.79455945268632e-02_f64))
+            * x
+            - F::cast_from(1.02979262192227e-01_f64))
+            * x
+            + F::cast_from(1.49451349150573e-01_f64);
+        ww5 = (((((((((F::cast_from(4.09594812521430e-09_f64) * x
+            - F::cast_from(6.47097874264417e-08_f64))
+            * x
+            + F::cast_from(6.743541482689e-07_f64))
+            * x
+            - F::cast_from(5.917993920224e-06_f64))
+            * x
+            + F::cast_from(4.531969237381e-05_f64))
+            * x
+            - F::cast_from(2.99102856679638e-04_f64))
+            * x
+            + F::cast_from(1.65695765202643e-03_f64))
+            * x
+            - F::cast_from(7.40671222520653e-03_f64))
+            * x
+            + F::cast_from(2.50889946832192e-02_f64))
+            * x
+            - F::cast_from(5.73782817487958e-02_f64))
+            * x
+            + F::cast_from(6.66713443086877e-02_f64);
+    } else if x < F::new(5.0) {
+        y = x - F::cast_from(3.0e+00_f64);
+        rt1 = ((((((((F::cast_from(-2.58163897135138e-14_f64) * y
+            + F::cast_from(8.14127461488273e-13_f64))
+            * y
+            - F::cast_from(2.11414838976129e-11_f64))
+            * y
+            + F::cast_from(5.09822003260014e-10_f64))
+            * y
+            - F::cast_from(1.16002134438663e-08_f64))
+            * y
+            + F::cast_from(2.46810694414540e-07_f64))
+            * y
+            - F::cast_from(4.92556826124502e-06_f64))
+            * y
+            + F::cast_from(9.02580687971053e-05_f64))
+            * y
+            - F::cast_from(1.45190025120726e-03_f64))
+            * y
+            + F::cast_from(1.73416786387475e-02_f64);
+        rt2 = (((((((((F::cast_from(1.04525287289788e-14_f64) * y
+            + F::cast_from(5.44611782010773e-14_f64))
+            * y
+            - F::cast_from(4.831059411392e-12_f64))
+            * y
+            + F::cast_from(1.136643908832e-10_f64))
+            * y
+            - F::cast_from(1.104373076913e-09_f64))
+            * y
+            - F::cast_from(2.35346740649916e-08_f64))
+            * y
+            + F::cast_from(1.43772622028764e-06_f64))
+            * y
+            - F::cast_from(4.23405023015273e-05_f64))
+            * y
+            + F::cast_from(9.12034574793379e-04_f64))
+            * y
+            - F::cast_from(1.52479441718739e-02_f64))
+            * y
+            + F::cast_from(1.76055265928744e-01_f64);
+        rt3 = (((((((((F::cast_from(-6.89693150857911e-14_f64) * y
+            + F::cast_from(5.92064260918861e-13_f64))
+            * y
+            + F::cast_from(1.847170956043e-11_f64))
+            * y
+            - F::cast_from(3.390752744265e-10_f64))
+            * y
+            - F::cast_from(2.995532064116e-09_f64))
+            * y
+            + F::cast_from(1.57456141058535e-07_f64))
+            * y
+            - F::cast_from(3.95859409711346e-07_f64))
+            * y
+            - F::cast_from(9.58924580919747e-05_f64))
+            * y
+            + F::cast_from(3.23551502557785e-03_f64))
+            * y
+            - F::cast_from(5.97587007636479e-02_f64))
+            * y
+            + F::cast_from(6.46432853383057e-01_f64);
+        rt4 = ((((((((F::cast_from(-3.61293809667763e-12_f64) * y
+            - F::cast_from(2.70803518291085e-11_f64))
+            * y
+            + F::cast_from(8.83758848468769e-10_f64))
+            * y
+            + F::cast_from(1.59166632851267e-08_f64))
+            * y
+            - F::cast_from(1.32581997983422e-07_f64))
+            * y
+            - F::cast_from(7.60223407443995e-06_f64))
+            * y
+            - F::cast_from(7.41019244900952e-05_f64))
+            * y
+            + F::cast_from(9.81432631743423e-03_f64))
+            * y
+            - F::cast_from(2.23055570487771e-01_f64))
+            * y
+            + F::cast_from(2.21460798080643e+00_f64);
+        rt5 = (((((((((F::cast_from(7.12332088345321e-13_f64) * y
+            + F::cast_from(3.16578501501894e-12_f64))
+            * y
+            - F::cast_from(8.776668218053e-11_f64))
+            * y
+            - F::cast_from(2.342817613343e-09_f64))
+            * y
+            - F::cast_from(3.496962018025e-08_f64))
+            * y
+            - F::cast_from(3.03172870136802e-07_f64))
+            * y
+            + F::cast_from(1.50511293969805e-06_f64))
+            * y
+            + F::cast_from(1.37704919387696e-04_f64))
+            * y
+            + F::cast_from(4.70723869619745e-02_f64))
+            * y
+            - F::cast_from(1.47486623003693e+00_f64))
+            * y
+            + F::cast_from(1.35704792175847e+01_f64);
+        ww1 = (((((((((F::cast_from(1.04348658616398e-13_f64) * y
+            - F::cast_from(1.94147461891055e-12_f64))
+            * y
+            + F::cast_from(3.485512360993e-11_f64))
+            * y
+            - F::cast_from(6.277497362235e-10_f64))
+            * y
+            + F::cast_from(1.100758247388e-08_f64))
+            * y
+            - F::cast_from(1.88329804969573e-07_f64))
+            * y
+            + F::cast_from(3.12338120839468e-06_f64))
+            * y
+            - F::cast_from(5.04404167403568e-05_f64))
+            * y
+            + F::cast_from(8.00338056610995e-04_f64))
+            * y
+            - F::cast_from(1.30892406559521e-02_f64))
+            * y
+            + F::cast_from(2.47383140241103e-01_f64);
+        ww2 = (((((((((((F::cast_from(3.23496149760478e-14_f64) * y
+            - F::cast_from(5.24314473469311e-13_f64))
+            * y
+            + F::cast_from(7.743219385056e-12_f64))
+            * y
+            - F::cast_from(1.146022750992e-10_f64))
+            * y
+            + F::cast_from(1.615238462197e-09_f64))
+            * y
+            - F::cast_from(2.15479017572233e-08_f64))
+            * y
+            + F::cast_from(2.70933462557631e-07_f64))
+            * y
+            - F::cast_from(3.18750295288531e-06_f64))
+            * y
+            + F::cast_from(3.47425221210099e-05_f64))
+            * y
+            - F::cast_from(3.45558237388223e-04_f64))
+            * y
+            + F::cast_from(3.05779768191621e-03_f64))
+            * y
+            - F::cast_from(2.29118251223003e-02_f64))
+            * y
+            + F::cast_from(1.59834227924213e-01_f64);
+        ww3 = ((((((((((((F::cast_from(-3.42790561802876e-14_f64) * y
+            + F::cast_from(5.26475736681542e-13_f64))
+            * y
+            - F::cast_from(7.184330797139e-12_f64))
+            * y
+            + F::cast_from(9.763932908544e-11_f64))
+            * y
+            - F::cast_from(1.244014559219e-09_f64))
+            * y
+            + F::cast_from(1.472744068942e-08_f64))
+            * y
+            - F::cast_from(1.611749975234e-07_f64))
+            * y
+            + F::cast_from(1.616487851917e-06_f64))
+            * y
+            - F::cast_from(1.46852359124154e-05_f64))
+            * y
+            + F::cast_from(1.18900349101069e-04_f64))
+            * y
+            - F::cast_from(8.37562373221756e-04_f64))
+            * y
+            + F::cast_from(4.93752683045845e-03_f64))
+            * y
+            - F::cast_from(2.25514728915673e-02_f64))
+            * y
+            + F::cast_from(6.95211812453929e-02_f64);
+        ww4 = (((((((((((((F::cast_from(1.04072340345039e-14_f64) * y
+            - F::cast_from(1.60808044529211e-13_f64))
+            * y
+            + F::cast_from(2.183534866798e-12_f64))
+            * y
+            - F::cast_from(2.939403008391e-11_f64))
+            * y
+            + F::cast_from(3.679254029085e-10_f64))
+            * y
+            - F::cast_from(4.23775673047899e-09_f64))
+            * y
+            + F::cast_from(4.46559231067006e-08_f64))
+            * y
+            - F::cast_from(4.26488836563267e-07_f64))
+            * y
+            + F::cast_from(3.64721335274973e-06_f64))
+            * y
+            - F::cast_from(2.74868382777722e-05_f64))
+            * y
+            + F::cast_from(1.78586118867488e-04_f64))
+            * y
+            - F::cast_from(9.68428981886534e-04_f64))
+            * y
+            + F::cast_from(4.16002324339929e-03_f64))
+            * y
+            - F::cast_from(1.28290192663141e-02_f64))
+            * y
+            + F::cast_from(2.22353727685016e-02_f64);
+        ww5 = ((((((((((((((F::cast_from(-8.16770412525963e-16_f64) * y
+            + F::cast_from(1.31376515047977e-14_f64))
+            * y
+            - F::cast_from(1.856950818865e-13_f64))
+            * y
+            + F::cast_from(2.596836515749e-12_f64))
+            * y
+            - F::cast_from(3.372639523006e-11_f64))
+            * y
+            + F::cast_from(4.025371849467e-10_f64))
+            * y
+            - F::cast_from(4.389453269417e-09_f64))
+            * y
+            + F::cast_from(4.332753856271e-08_f64))
+            * y
+            - F::cast_from(3.82673275931962e-07_f64))
+            * y
+            + F::cast_from(2.98006900751543e-06_f64))
+            * y
+            - F::cast_from(2.00718990300052e-05_f64))
+            * y
+            + F::cast_from(1.13876001386361e-04_f64))
+            * y
+            - F::cast_from(5.23627942443563e-04_f64))
+            * y
+            + F::cast_from(1.83524565118203e-03_f64))
+            * y
+            - F::cast_from(4.37785737450783e-03_f64))
+            * y
+            + F::cast_from(5.36963805223095e-03_f64);
+    } else if x < F::new(10.0) {
+        y = x - F::cast_from(7.5e+00_f64);
+        rt1 = ((((((((F::cast_from(-1.13825201010775e-14_f64) * y
+            + F::cast_from(1.89737681670375e-13_f64))
+            * y
+            - F::cast_from(4.81561201185876e-12_f64))
+            * y
+            + F::cast_from(1.56666512163407e-10_f64))
+            * y
+            - F::cast_from(3.73782213255083e-09_f64))
+            * y
+            + F::cast_from(9.15858355075147e-08_f64))
+            * y
+            - F::cast_from(2.13775073585629e-06_f64))
+            * y
+            + F::cast_from(4.56547356365536e-05_f64))
+            * y
+            - F::cast_from(8.68003909323740e-04_f64))
+            * y
+            + F::cast_from(1.22703754069176e-02_f64);
+        rt2 = (((((((((F::cast_from(-3.67160504428358e-15_f64) * y
+            + F::cast_from(1.27876280158297e-14_f64))
+            * y
+            - F::cast_from(1.296476623788e-12_f64))
+            * y
+            + F::cast_from(1.477175434354e-11_f64))
+            * y
+            + F::cast_from(5.464102147892e-10_f64))
+            * y
+            - F::cast_from(2.42538340602723e-08_f64))
+            * y
+            + F::cast_from(8.20460740637617e-07_f64))
+            * y
+            - F::cast_from(2.20379304598661e-05_f64))
+            * y
+            + F::cast_from(4.90295372978785e-04_f64))
+            * y
+            - F::cast_from(9.14294111576119e-03_f64))
+            * y
+            + F::cast_from(1.22590403403690e-01_f64);
+        rt3 = (((((((((F::cast_from(1.39017367502123e-14_f64) * y
+            - F::cast_from(6.96391385426890e-13_f64))
+            * y
+            + F::cast_from(1.176946020731e-12_f64))
+            * y
+            + F::cast_from(1.725627235645e-10_f64))
+            * y
+            - F::cast_from(3.686383856300e-09_f64))
+            * y
+            + F::cast_from(2.87495324207095e-08_f64))
+            * y
+            + F::cast_from(1.71307311000282e-06_f64))
+            * y
+            - F::cast_from(7.94273603184629e-05_f64))
+            * y
+            + F::cast_from(2.00938064965897e-03_f64))
+            * y
+            - F::cast_from(3.63329491677178e-02_f64))
+            * y
+            + F::cast_from(4.34393683888443e-01_f64);
+        rt4 = ((((((((((F::cast_from(-1.27815158195209e-14_f64) * y
+            + F::cast_from(1.99910415869821e-14_f64))
+            * y
+            + F::cast_from(3.753542914426e-12_f64))
+            * y
+            - F::cast_from(2.708018219579e-11_f64))
+            * y
+            - F::cast_from(1.190574776587e-09_f64))
+            * y
+            + F::cast_from(1.106696436509e-08_f64))
+            * y
+            + F::cast_from(3.954955671326e-07_f64))
+            * y
+            - F::cast_from(4.398596059588e-06_f64))
+            * y
+            - F::cast_from(2.01087998907735e-04_f64))
+            * y
+            + F::cast_from(7.89092425542937e-03_f64))
+            * y
+            - F::cast_from(1.42056749162695e-01_f64))
+            * y
+            + F::cast_from(1.39964149420683e+00_f64);
+        rt5 = ((((((((((F::cast_from(-1.19442341030461e-13_f64) * y
+            - F::cast_from(2.34074833275956e-12_f64))
+            * y
+            + F::cast_from(6.861649627426e-12_f64))
+            * y
+            + F::cast_from(6.082671496226e-10_f64))
+            * y
+            + F::cast_from(5.381160105420e-09_f64))
+            * y
+            - F::cast_from(6.253297138700e-08_f64))
+            * y
+            - F::cast_from(2.135966835050e-06_f64))
+            * y
+            - F::cast_from(2.373394341886e-05_f64))
+            * y
+            + F::cast_from(2.88711171412814e-06_f64))
+            * y
+            + F::cast_from(4.85221195290753e-02_f64))
+            * y
+            - F::cast_from(1.04346091985269e+00_f64))
+            * y
+            + F::cast_from(7.89901551676692e+00_f64);
+        ww1 = (((((((((F::cast_from(7.95526040108997e-15_f64) * y
+            - F::cast_from(2.48593096128045e-13_f64))
+            * y
+            + F::cast_from(4.761246208720e-12_f64))
+            * y
+            - F::cast_from(9.535763686605e-11_f64))
+            * y
+            + F::cast_from(2.225273630974e-09_f64))
+            * y
+            - F::cast_from(4.49796778054865e-08_f64))
+            * y
+            + F::cast_from(9.17812870287386e-07_f64))
+            * y
+            - F::cast_from(1.86764236490502e-05_f64))
+            * y
+            + F::cast_from(3.76807779068053e-04_f64))
+            * y
+            - F::cast_from(8.10456360143408e-03_f64))
+            * y
+            + F::cast_from(2.01097936411496e-01_f64);
+        ww2 = (((((((((((F::cast_from(1.25678686624734e-15_f64) * y
+            - F::cast_from(2.34266248891173e-14_f64))
+            * y
+            + F::cast_from(3.973252415832e-13_f64))
+            * y
+            - F::cast_from(6.830539401049e-12_f64))
+            * y
+            + F::cast_from(1.140771033372e-10_f64))
+            * y
+            - F::cast_from(1.82546185762009e-09_f64))
+            * y
+            + F::cast_from(2.77209637550134e-08_f64))
+            * y
+            - F::cast_from(4.01726946190383e-07_f64))
+            * y
+            + F::cast_from(5.48227244014763e-06_f64))
+            * y
+            - F::cast_from(6.95676245982121e-05_f64))
+            * y
+            + F::cast_from(8.05193921815776e-04_f64))
+            * y
+            - F::cast_from(8.15528438784469e-03_f64))
+            * y
+            + F::cast_from(9.71769901268114e-02_f64);
+        ww3 = ((((((((((((F::cast_from(-8.20929494859896e-16_f64) * y
+            + F::cast_from(1.37356038393016e-14_f64))
+            * y
+            - F::cast_from(2.022863065220e-13_f64))
+            * y
+            + F::cast_from(3.058055403795e-12_f64))
+            * y
+            - F::cast_from(4.387890955243e-11_f64))
+            * y
+            + F::cast_from(5.923946274445e-10_f64))
+            * y
+            - F::cast_from(7.503659964159e-09_f64))
+            * y
+            + F::cast_from(8.851599803902e-08_f64))
+            * y
+            - F::cast_from(9.65561998415038e-07_f64))
+            * y
+            + F::cast_from(9.60884622778092e-06_f64))
+            * y
+            - F::cast_from(8.56551787594404e-05_f64))
+            * y
+            + F::cast_from(6.66057194311179e-04_f64))
+            * y
+            - F::cast_from(4.17753183902198e-03_f64))
+            * y
+            + F::cast_from(2.25443826852447e-02_f64);
+        ww4 = ((((((((((((((F::cast_from(-1.08764612488790e-17_f64) * y
+            + F::cast_from(1.85299909689937e-16_f64))
+            * y
+            - F::cast_from(2.730195628655e-15_f64))
+            * y
+            + F::cast_from(4.127368817265e-14_f64))
+            * y
+            - F::cast_from(5.881379088074e-13_f64))
+            * y
+            + F::cast_from(7.805245193391e-12_f64))
+            * y
+            - F::cast_from(9.632707991704e-11_f64))
+            * y
+            + F::cast_from(1.099047050624e-09_f64))
+            * y
+            - F::cast_from(1.15042731790748e-08_f64))
+            * y
+            + F::cast_from(1.09415155268932e-07_f64))
+            * y
+            - F::cast_from(9.33687124875935e-07_f64))
+            * y
+            + F::cast_from(7.02338477986218e-06_f64))
+            * y
+            - F::cast_from(4.53759748787756e-05_f64))
+            * y
+            + F::cast_from(2.41722511389146e-04_f64))
+            * y
+            - F::cast_from(9.75935943447037e-04_f64))
+            * y
+            + F::cast_from(2.57520532789644e-03_f64);
+        ww5 = (((((((((((((((F::cast_from(7.28996979748849e-19_f64) * y
+            - F::cast_from(1.26518146195173e-17_f64))
+            * y
+            + F::cast_from(1.886145834486e-16_f64))
+            * y
+            - F::cast_from(2.876728287383e-15_f64))
+            * y
+            + F::cast_from(4.114588668138e-14_f64))
+            * y
+            - F::cast_from(5.44436631413933e-13_f64))
+            * y
+            + F::cast_from(6.64976446790959e-12_f64))
+            * y
+            - F::cast_from(7.44560069974940e-11_f64))
+            * y
+            + F::cast_from(7.57553198166848e-10_f64))
+            * y
+            - F::cast_from(6.92956101109829e-09_f64))
+            * y
+            + F::cast_from(5.62222859033624e-08_f64))
+            * y
+            - F::cast_from(3.97500114084351e-07_f64))
+            * y
+            + F::cast_from(2.39039126138140e-06_f64))
+            * y
+            - F::cast_from(1.18023950002105e-05_f64))
+            * y
+            + F::cast_from(4.52254031046244e-05_f64))
+            * y
+            - F::cast_from(1.21113782150370e-04_f64))
+            * y
+            + F::cast_from(1.75013126731224e-04_f64);
+    } else if x < F::new(15.0) {
+        y = x - F::cast_from(12.5e+00_f64);
+        rt1 = ((((((((((F::cast_from(-4.16387977337393e-17_f64) * y
+            + F::cast_from(7.20872997373860e-16_f64))
+            * y
+            + F::cast_from(1.395993802064e-14_f64))
+            * y
+            + F::cast_from(3.660484641252e-14_f64))
+            * y
+            - F::cast_from(4.154857548139e-12_f64))
+            * y
+            + F::cast_from(2.301379846544e-11_f64))
+            * y
+            - F::cast_from(1.033307012866e-09_f64))
+            * y
+            + F::cast_from(3.997777641049e-08_f64))
+            * y
+            - F::cast_from(9.35118186333939e-07_f64))
+            * y
+            + F::cast_from(2.38589932752937e-05_f64))
+            * y
+            - F::cast_from(5.35185183652937e-04_f64))
+            * y
+            + F::cast_from(8.85218988709735e-03_f64);
+        rt2 = ((((((((((F::cast_from(-4.56279214732217e-16_f64) * y
+            + F::cast_from(6.24941647247927e-15_f64))
+            * y
+            + F::cast_from(1.737896339191e-13_f64))
+            * y
+            + F::cast_from(8.964205979517e-14_f64))
+            * y
+            - F::cast_from(3.538906780633e-11_f64))
+            * y
+            + F::cast_from(9.561341254948e-11_f64))
+            * y
+            - F::cast_from(9.772831891310e-09_f64))
+            * y
+            + F::cast_from(4.240340194620e-07_f64))
+            * y
+            - F::cast_from(1.02384302866534e-05_f64))
+            * y
+            + F::cast_from(2.57987709704822e-04_f64))
+            * y
+            - F::cast_from(5.54735977651677e-03_f64))
+            * y
+            + F::cast_from(8.68245143991948e-02_f64);
+        rt3 = ((((((((((F::cast_from(-2.52879337929239e-15_f64) * y
+            + F::cast_from(2.13925810087833e-14_f64))
+            * y
+            + F::cast_from(7.884307667104e-13_f64))
+            * y
+            - F::cast_from(9.023398159510e-13_f64))
+            * y
+            - F::cast_from(5.814101544957e-11_f64))
+            * y
+            - F::cast_from(1.333480437968e-09_f64))
+            * y
+            - F::cast_from(2.217064940373e-08_f64))
+            * y
+            + F::cast_from(1.643290788086e-06_f64))
+            * y
+            - F::cast_from(4.39602147345028e-05_f64))
+            * y
+            + F::cast_from(1.08648982748911e-03_f64))
+            * y
+            - F::cast_from(2.13014521653498e-02_f64))
+            * y
+            + F::cast_from(2.94150684465425e-01_f64);
+        rt4 = ((((((((((F::cast_from(-6.42391438038888e-15_f64) * y
+            + F::cast_from(5.37848223438815e-15_f64))
+            * y
+            + F::cast_from(8.960828117859e-13_f64))
+            * y
+            + F::cast_from(5.214153461337e-11_f64))
+            * y
+            - F::cast_from(1.106601744067e-10_f64))
+            * y
+            - F::cast_from(2.007890743962e-08_f64))
+            * y
+            + F::cast_from(1.543764346501e-07_f64))
+            * y
+            + F::cast_from(4.520749076914e-06_f64))
+            * y
+            - F::cast_from(1.88893338587047e-04_f64))
+            * y
+            + F::cast_from(4.73264487389288e-03_f64))
+            * y
+            - F::cast_from(7.91197893350253e-02_f64))
+            * y
+            + F::cast_from(8.60057928514554e-01_f64);
+        rt5 = (((((((((((F::cast_from(-2.24366166957225e-14_f64) * y
+            + F::cast_from(4.87224967526081e-14_f64))
+            * y
+            + F::cast_from(5.587369053655e-12_f64))
+            * y
+            - F::cast_from(3.045253104617e-12_f64))
+            * y
+            - F::cast_from(1.223983883080e-09_f64))
+            * y
+            - F::cast_from(2.05603889396319e-09_f64))
+            * y
+            + F::cast_from(2.58604071603561e-07_f64))
+            * y
+            + F::cast_from(1.34240904266268e-06_f64))
+            * y
+            - F::cast_from(5.72877569731162e-05_f64))
+            * y
+            - F::cast_from(9.56275105032191e-04_f64))
+            * y
+            + F::cast_from(4.23367010370921e-02_f64))
+            * y
+            - F::cast_from(5.76800927133412e-01_f64))
+            * y
+            + F::cast_from(3.87328263873381e+00_f64);
+        ww1 = (((((((((F::cast_from(8.98007931950169e-15_f64) * y
+            + F::cast_from(7.25673623859497e-14_f64))
+            * y
+            + F::cast_from(5.851494250405e-14_f64))
+            * y
+            - F::cast_from(4.234204823846e-11_f64))
+            * y
+            + F::cast_from(3.911507312679e-10_f64))
+            * y
+            - F::cast_from(9.65094802088511e-09_f64))
+            * y
+            + F::cast_from(3.42197444235714e-07_f64))
+            * y
+            - F::cast_from(7.51821178144509e-06_f64))
+            * y
+            + F::cast_from(1.94218051498662e-04_f64))
+            * y
+            - F::cast_from(5.38533819142287e-03_f64))
+            * y
+            + F::cast_from(1.68122596736809e-01_f64);
+        ww2 = ((((((((((F::cast_from(-1.05490525395105e-15_f64) * y
+            + F::cast_from(1.96855386549388e-14_f64))
+            * y
+            - F::cast_from(5.500330153548e-13_f64))
+            * y
+            + F::cast_from(1.003849567976e-11_f64))
+            * y
+            - F::cast_from(1.720997242621e-10_f64))
+            * y
+            + F::cast_from(3.533277061402e-09_f64))
+            * y
+            - F::cast_from(6.389171736029e-08_f64))
+            * y
+            + F::cast_from(1.046236652393e-06_f64))
+            * y
+            - F::cast_from(1.73148206795827e-05_f64))
+            * y
+            + F::cast_from(2.57820531617185e-04_f64))
+            * y
+            - F::cast_from(3.46188265338350e-03_f64))
+            * y
+            + F::cast_from(7.03302497508176e-02_f64);
+        ww3 = (((((((((((F::cast_from(3.60020423754545e-16_f64) * y
+            - F::cast_from(6.24245825017148e-15_f64))
+            * y
+            + F::cast_from(9.945311467434e-14_f64))
+            * y
+            - F::cast_from(1.749051512721e-12_f64))
+            * y
+            + F::cast_from(2.768503957853e-11_f64))
+            * y
+            - F::cast_from(4.08688551136506e-10_f64))
+            * y
+            + F::cast_from(6.04189063303610e-09_f64))
+            * y
+            - F::cast_from(8.23540111024147e-08_f64))
+            * y
+            + F::cast_from(1.01503783870262e-06_f64))
+            * y
+            - F::cast_from(1.20490761741576e-05_f64))
+            * y
+            + F::cast_from(1.26928442448148e-04_f64))
+            * y
+            - F::cast_from(1.05539461930597e-03_f64))
+            * y
+            + F::cast_from(1.15543698537013e-02_f64);
+        ww4 = (((((((((((((F::cast_from(2.51163533058925e-18_f64) * y
+            - F::cast_from(4.31723745510697e-17_f64))
+            * y
+            + F::cast_from(6.557620865832e-16_f64))
+            * y
+            - F::cast_from(1.016528519495e-14_f64))
+            * y
+            + F::cast_from(1.491302084832e-13_f64))
+            * y
+            - F::cast_from(2.06638666222265e-12_f64))
+            * y
+            + F::cast_from(2.67958697789258e-11_f64))
+            * y
+            - F::cast_from(3.23322654638336e-10_f64))
+            * y
+            + F::cast_from(3.63722952167779e-09_f64))
+            * y
+            - F::cast_from(3.75484943783021e-08_f64))
+            * y
+            + F::cast_from(3.49164261987184e-07_f64))
+            * y
+            - F::cast_from(2.92658670674908e-06_f64))
+            * y
+            + F::cast_from(2.12937256719543e-05_f64))
+            * y
+            - F::cast_from(1.19434130620929e-04_f64))
+            * y
+            + F::cast_from(6.45524336158384e-04_f64);
+        ww5 = ((((((((((((((F::cast_from(-1.29043630202811e-19_f64) * y
+            + F::cast_from(2.16234952241296e-18_f64))
+            * y
+            - F::cast_from(3.107631557965e-17_f64))
+            * y
+            + F::cast_from(4.570804313173e-16_f64))
+            * y
+            - F::cast_from(6.301348858104e-15_f64))
+            * y
+            + F::cast_from(8.031304476153e-14_f64))
+            * y
+            - F::cast_from(9.446196472547e-13_f64))
+            * y
+            + F::cast_from(1.018245804339e-11_f64))
+            * y
+            - F::cast_from(9.96995451348129e-11_f64))
+            * y
+            + F::cast_from(8.77489010276305e-10_f64))
+            * y
+            - F::cast_from(6.84655877575364e-09_f64))
+            * y
+            + F::cast_from(4.64460857084983e-08_f64))
+            * y
+            - F::cast_from(2.66924538268397e-07_f64))
+            * y
+            + F::cast_from(1.24621276265907e-06_f64))
+            * y
+            - F::cast_from(4.30868944351523e-06_f64))
+            * y
+            + F::cast_from(9.94307982432868e-06_f64);
+    } else if x < F::new(20.0) {
+        y = x - F::cast_from(17.5e+00_f64);
+        rt1 = ((((((((((F::cast_from(1.91875764545740e-16_f64) * y
+            + F::cast_from(7.8357401095707e-16_f64))
+            * y
+            - F::cast_from(3.260875931644e-14_f64))
+            * y
+            - F::cast_from(1.186752035569e-13_f64))
+            * y
+            + F::cast_from(4.275180095653e-12_f64))
+            * y
+            + F::cast_from(3.357056136731e-11_f64))
+            * y
+            - F::cast_from(1.123776903884e-09_f64))
+            * y
+            + F::cast_from(1.231203269887e-08_f64))
+            * y
+            - F::cast_from(3.99851421361031e-07_f64))
+            * y
+            + F::cast_from(1.45418822817771e-05_f64))
+            * y
+            - F::cast_from(3.49912254976317e-04_f64))
+            * y
+            + F::cast_from(6.67768703938812e-03_f64);
+        rt2 = ((((((((((F::cast_from(2.02778478673555e-15_f64) * y
+            + F::cast_from(1.01640716785099e-14_f64))
+            * y
+            - F::cast_from(3.385363492036e-13_f64))
+            * y
+            - F::cast_from(1.615655871159e-12_f64))
+            * y
+            + F::cast_from(4.527419140333e-11_f64))
+            * y
+            + F::cast_from(3.853670706486e-10_f64))
+            * y
+            - F::cast_from(1.184607130107e-08_f64))
+            * y
+            + F::cast_from(1.347873288827e-07_f64))
+            * y
+            - F::cast_from(4.47788241748377e-06_f64))
+            * y
+            + F::cast_from(1.54942754358273e-04_f64))
+            * y
+            - F::cast_from(3.55524254280266e-03_f64))
+            * y
+            + F::cast_from(6.44912219301603e-02_f64);
+        rt3 = ((((((((((F::cast_from(7.79850771456444e-15_f64) * y
+            + F::cast_from(6.00464406395001e-14_f64))
+            * y
+            - F::cast_from(1.249779730869e-12_f64))
+            * y
+            - F::cast_from(1.020720636353e-11_f64))
+            * y
+            + F::cast_from(1.814709816693e-10_f64))
+            * y
+            + F::cast_from(1.766397336977e-09_f64))
+            * y
+            - F::cast_from(4.603559449010e-08_f64))
+            * y
+            + F::cast_from(5.863956443581e-07_f64))
+            * y
+            - F::cast_from(2.03797212506691e-05_f64))
+            * y
+            + F::cast_from(6.31405161185185e-04_f64))
+            * y
+            - F::cast_from(1.30102750145071e-02_f64))
+            * y
+            + F::cast_from(2.10244289044705e-01_f64);
+        rt4 = (((((((((((F::cast_from(-2.92397030777912e-15_f64) * y
+            + F::cast_from(1.94152129078465e-14_f64))
+            * y
+            + F::cast_from(4.859447665850e-13_f64))
+            * y
+            - F::cast_from(3.217227223463e-12_f64))
+            * y
+            - F::cast_from(7.484522135512e-11_f64))
+            * y
+            + F::cast_from(7.19101516047753e-10_f64))
+            * y
+            + F::cast_from(6.88409355245582e-09_f64))
+            * y
+            - F::cast_from(1.44374545515769e-07_f64))
+            * y
+            + F::cast_from(2.74941013315834e-06_f64))
+            * y
+            - F::cast_from(1.02790452049013e-04_f64))
+            * y
+            + F::cast_from(2.59924221372643e-03_f64))
+            * y
+            - F::cast_from(4.35712368303551e-02_f64))
+            * y
+            + F::cast_from(5.62170709585029e-01_f64);
+        rt5 = (((((((((((F::cast_from(1.17976126840060e-14_f64) * y
+            + F::cast_from(1.24156229350669e-13_f64))
+            * y
+            - F::cast_from(3.892741622280e-12_f64))
+            * y
+            - F::cast_from(7.755793199043e-12_f64))
+            * y
+            + F::cast_from(9.492190032313e-10_f64))
+            * y
+            - F::cast_from(4.98680128123353e-09_f64))
+            * y
+            - F::cast_from(1.81502268782664e-07_f64))
+            * y
+            + F::cast_from(2.69463269394888e-06_f64))
+            * y
+            + F::cast_from(2.50032154421640e-05_f64))
+            * y
+            - F::cast_from(1.33684303917681e-03_f64))
+            * y
+            + F::cast_from(2.29121951862538e-02_f64))
+            * y
+            - F::cast_from(2.45653725061323e-01_f64))
+            * y
+            + F::cast_from(1.89999883453047e+00_f64);
+        ww1 = ((((((((((F::cast_from(1.74841995087592e-15_f64) * y
+            - F::cast_from(6.95671892641256e-16_f64))
+            * y
+            - F::cast_from(3.000659497257e-13_f64))
+            * y
+            + F::cast_from(2.021279817961e-13_f64))
+            * y
+            + F::cast_from(3.853596935400e-11_f64))
+            * y
+            + F::cast_from(1.461418533652e-10_f64))
+            * y
+            - F::cast_from(1.014517563435e-08_f64))
+            * y
+            + F::cast_from(1.132736008979e-07_f64))
+            * y
+            - F::cast_from(2.86605475073259e-06_f64))
+            * y
+            + F::cast_from(1.21958354908768e-04_f64))
+            * y
+            - F::cast_from(3.86293751153466e-03_f64))
+            * y
+            + F::cast_from(1.45298342081522e-01_f64);
+        ww2 = ((((((((((F::cast_from(-1.11199320525573e-15_f64) * y
+            + F::cast_from(1.85007587796671e-15_f64))
+            * y
+            + F::cast_from(1.220613939709e-13_f64))
+            * y
+            + F::cast_from(1.275068098526e-12_f64))
+            * y
+            - F::cast_from(5.341838883262e-11_f64))
+            * y
+            + F::cast_from(6.161037256669e-10_f64))
+            * y
+            - F::cast_from(1.009147879750e-08_f64))
+            * y
+            + F::cast_from(2.907862965346e-07_f64))
+            * y
+            - F::cast_from(6.12300038720919e-06_f64))
+            * y
+            + F::cast_from(1.00104454489518e-04_f64))
+            * y
+            - F::cast_from(1.80677298502757e-03_f64))
+            * y
+            + F::cast_from(5.78009914536630e-02_f64);
+        ww3 = ((((((((((F::cast_from(-9.49816486853687e-16_f64) * y
+            + F::cast_from(6.67922080354234e-15_f64))
+            * y
+            + F::cast_from(2.606163540537e-15_f64))
+            * y
+            + F::cast_from(1.983799950150e-12_f64))
+            * y
+            - F::cast_from(5.400548574357e-11_f64))
+            * y
+            + F::cast_from(6.638043374114e-10_f64))
+            * y
+            - F::cast_from(8.799518866802e-09_f64))
+            * y
+            + F::cast_from(1.791418482685e-07_f64))
+            * y
+            - F::cast_from(2.96075397351101e-06_f64))
+            * y
+            + F::cast_from(3.38028206156144e-05_f64))
+            * y
+            - F::cast_from(3.58426847857878e-04_f64))
+            * y
+            + F::cast_from(8.39213709428516e-03_f64);
+        ww4 = (((((((((((F::cast_from(1.33829971060180e-17_f64) * y
+            - F::cast_from(3.44841877844140e-16_f64))
+            * y
+            + F::cast_from(4.745009557656e-15_f64))
+            * y
+            - F::cast_from(6.033814209875e-14_f64))
+            * y
+            + F::cast_from(1.049256040808e-12_f64))
+            * y
+            - F::cast_from(1.70859789556117e-11_f64))
+            * y
+            + F::cast_from(2.15219425727959e-10_f64))
+            * y
+            - F::cast_from(2.52746574206884e-09_f64))
+            * y
+            + F::cast_from(3.27761714422960e-08_f64))
+            * y
+            - F::cast_from(3.90387662925193e-07_f64))
+            * y
+            + F::cast_from(3.46340204593870e-06_f64))
+            * y
+            - F::cast_from(2.43236345136782e-05_f64))
+            * y
+            + F::cast_from(3.54846978585226e-04_f64);
+        ww5 = (((((((((((((F::cast_from(2.69412277020887e-20_f64) * y
+            - F::cast_from(4.24837886165685e-19_f64))
+            * y
+            + F::cast_from(6.030500065438e-18_f64))
+            * y
+            - F::cast_from(9.069722758289e-17_f64))
+            * y
+            + F::cast_from(1.246599177672e-15_f64))
+            * y
+            - F::cast_from(1.56872999797549e-14_f64))
+            * y
+            + F::cast_from(1.87305099552692e-13_f64))
+            * y
+            - F::cast_from(2.09498886675861e-12_f64))
+            * y
+            + F::cast_from(2.11630022068394e-11_f64))
+            * y
+            - F::cast_from(1.92566242323525e-10_f64))
+            * y
+            + F::cast_from(1.62012436344069e-09_f64))
+            * y
+            - F::cast_from(1.23621614171556e-08_f64))
+            * y
+            + F::cast_from(7.72165684563049e-08_f64))
+            * y
+            - F::cast_from(3.59858901591047e-07_f64))
+            * y
+            + F::cast_from(2.43682618601000e-06_f64);
+    } else if x < F::new(25.0) {
+        y = x - F::cast_from(22.5e+00_f64);
+        rt1 = (((((((((F::cast_from(-1.13927848238726e-15_f64) * y
+            + F::cast_from(7.39404133595713e-15_f64))
+            * y
+            + F::cast_from(1.445982921243e-13_f64))
+            * y
+            - F::cast_from(2.676703245252e-12_f64))
+            * y
+            + F::cast_from(5.823521627177e-12_f64))
+            * y
+            + F::cast_from(2.17264723874381e-10_f64))
+            * y
+            + F::cast_from(3.56242145897468e-09_f64))
+            * y
+            - F::cast_from(3.03763737404491e-07_f64))
+            * y
+            + F::cast_from(9.46859114120901e-06_f64))
+            * y
+            - F::cast_from(2.30896753853196e-04_f64))
+            * y
+            + F::cast_from(5.24663913001114e-03_f64);
+        rt2 = ((((((((((F::cast_from(2.89872355524581e-16_f64) * y
+            - F::cast_from(1.22296292045864e-14_f64))
+            * y
+            + F::cast_from(6.184065097200e-14_f64))
+            * y
+            + F::cast_from(1.649846591230e-12_f64))
+            * y
+            - F::cast_from(2.729713905266e-11_f64))
+            * y
+            + F::cast_from(3.709913790650e-11_f64))
+            * y
+            + F::cast_from(2.216486288382e-09_f64))
+            * y
+            + F::cast_from(4.616160236414e-08_f64))
+            * y
+            - F::cast_from(3.32380270861364e-06_f64))
+            * y
+            + F::cast_from(9.84635072633776e-05_f64))
+            * y
+            - F::cast_from(2.30092118015697e-03_f64))
+            * y
+            + F::cast_from(5.00845183695073e-02_f64);
+        rt3 = ((((((((((F::cast_from(1.97068646590923e-15_f64) * y
+            - F::cast_from(4.89419270626800e-14_f64))
+            * y
+            + F::cast_from(1.136466605916e-13_f64))
+            * y
+            + F::cast_from(7.546203883874e-12_f64))
+            * y
+            - F::cast_from(9.635646767455e-11_f64))
+            * y
+            - F::cast_from(8.295965491209e-11_f64))
+            * y
+            + F::cast_from(7.534109114453e-09_f64))
+            * y
+            + F::cast_from(2.699970652707e-07_f64))
+            * y
+            - F::cast_from(1.42982334217081e-05_f64))
+            * y
+            + F::cast_from(3.78290946669264e-04_f64))
+            * y
+            - F::cast_from(8.03133015084373e-03_f64))
+            * y
+            + F::cast_from(1.58689469640791e-01_f64);
+        rt4 = ((((((((((F::cast_from(1.33642069941389e-14_f64) * y
+            - F::cast_from(1.55850612605745e-13_f64))
+            * y
+            - F::cast_from(7.522712577474e-13_f64))
+            * y
+            + F::cast_from(3.209520801187e-11_f64))
+            * y
+            - F::cast_from(2.075594313618e-10_f64))
+            * y
+            - F::cast_from(2.070575894402e-09_f64))
+            * y
+            + F::cast_from(7.323046997451e-09_f64))
+            * y
+            + F::cast_from(1.851491550417e-06_f64))
+            * y
+            - F::cast_from(6.37524802411383e-05_f64))
+            * y
+            + F::cast_from(1.36795464918785e-03_f64))
+            * y
+            - F::cast_from(2.42051126993146e-02_f64))
+            * y
+            + F::cast_from(3.97847167557815e-01_f64);
+        rt5 = ((((((((((F::cast_from(-6.07053986130526e-14_f64) * y
+            + F::cast_from(1.04447493138843e-12_f64))
+            * y
+            - F::cast_from(4.286617818951e-13_f64))
+            * y
+            - F::cast_from(2.632066100073e-10_f64))
+            * y
+            + F::cast_from(4.804518986559e-09_f64))
+            * y
+            - F::cast_from(1.835675889421e-08_f64))
+            * y
+            - F::cast_from(1.068175391334e-06_f64))
+            * y
+            + F::cast_from(3.292234974141e-05_f64))
+            * y
+            - F::cast_from(5.94805357558251e-04_f64))
+            * y
+            + F::cast_from(8.29382168612791e-03_f64))
+            * y
+            - F::cast_from(9.93122509049447e-02_f64))
+            * y
+            + F::cast_from(1.09857804755042e+00_f64);
+        ww1 = (((((((((F::cast_from(-9.10338640266542e-15_f64) * y
+            + F::cast_from(1.00438927627833e-13_f64))
+            * y
+            + F::cast_from(7.817349237071e-13_f64))
+            * y
+            - F::cast_from(2.547619474232e-11_f64))
+            * y
+            + F::cast_from(1.479321506529e-10_f64))
+            * y
+            + F::cast_from(1.52314028857627e-09_f64))
+            * y
+            + F::cast_from(9.20072040917242e-09_f64))
+            * y
+            - F::cast_from(2.19427111221848e-06_f64))
+            * y
+            + F::cast_from(8.65797782880311e-05_f64))
+            * y
+            - F::cast_from(2.82718629312875e-03_f64))
+            * y
+            + F::cast_from(1.28718310443295e-01_f64);
+        ww2 = (((((((((F::cast_from(5.52380927618760e-15_f64) * y
+            - F::cast_from(6.43424400204124e-14_f64))
+            * y
+            - F::cast_from(2.358734508092e-13_f64))
+            * y
+            + F::cast_from(8.261326648131e-12_f64))
+            * y
+            + F::cast_from(9.229645304956e-11_f64))
+            * y
+            - F::cast_from(5.68108973828949e-09_f64))
+            * y
+            + F::cast_from(1.22477891136278e-07_f64))
+            * y
+            - F::cast_from(2.11919643127927e-06_f64))
+            * y
+            + F::cast_from(4.23605032368922e-05_f64))
+            * y
+            - F::cast_from(1.14423444576221e-03_f64))
+            * y
+            + F::cast_from(5.06607252890186e-02_f64);
+        ww3 = (((((((((F::cast_from(3.99457454087556e-15_f64) * y
+            - F::cast_from(5.11826702824182e-14_f64))
+            * y
+            - F::cast_from(4.157593182747e-14_f64))
+            * y
+            + F::cast_from(4.214670817758e-12_f64))
+            * y
+            + F::cast_from(6.705582751532e-11_f64))
+            * y
+            - F::cast_from(3.36086411698418e-09_f64))
+            * y
+            + F::cast_from(6.07453633298986e-08_f64))
+            * y
+            - F::cast_from(7.40736211041247e-07_f64))
+            * y
+            + F::cast_from(8.84176371665149e-06_f64))
+            * y
+            - F::cast_from(1.72559275066834e-04_f64))
+            * y
+            + F::cast_from(7.16639814253567e-03_f64);
+        ww4 = (((((((((((F::cast_from(-2.14649508112234e-18_f64) * y
+            - F::cast_from(2.45525846412281e-18_f64))
+            * y
+            + F::cast_from(6.126212599772e-16_f64))
+            * y
+            - F::cast_from(8.526651626939e-15_f64))
+            * y
+            + F::cast_from(4.826636065733e-14_f64))
+            * y
+            - F::cast_from(3.39554163649740e-13_f64))
+            * y
+            + F::cast_from(1.67070784862985e-11_f64))
+            * y
+            - F::cast_from(4.42671979311163e-10_f64))
+            * y
+            + F::cast_from(6.77368055908400e-09_f64))
+            * y
+            - F::cast_from(7.03520999708859e-08_f64))
+            * y
+            + F::cast_from(6.04993294708874e-07_f64))
+            * y
+            - F::cast_from(7.80555094280483e-06_f64))
+            * y
+            + F::cast_from(2.85954806605017e-04_f64);
+        ww5 = ((((((((((((F::cast_from(-5.63938733073804e-21_f64) * y
+            + F::cast_from(6.92182516324628e-20_f64))
+            * y
+            - F::cast_from(1.586937691507e-18_f64))
+            * y
+            + F::cast_from(3.357639744582e-17_f64))
+            * y
+            - F::cast_from(4.810285046442e-16_f64))
+            * y
+            + F::cast_from(5.386312669975e-15_f64))
+            * y
+            - F::cast_from(6.117895297439e-14_f64))
+            * y
+            + F::cast_from(8.441808227634e-13_f64))
+            * y
+            - F::cast_from(1.18527596836592e-11_f64))
+            * y
+            + F::cast_from(1.36296870441445e-10_f64))
+            * y
+            - F::cast_from(1.17842611094141e-09_f64))
+            * y
+            + F::cast_from(7.80430641995926e-09_f64))
+            * y
+            - F::cast_from(5.97767417400540e-08_f64))
+            * y
+            + F::cast_from(1.65186146094969e-06_f64);
+    } else if x < F::new(40.0) {
+        ww1 = F::sqrt(pie4 / x);
+        e = F::exp(-x);
+        rt1 = ((((((((F::cast_from(-1.73363958895356e-06_f64) * x
+            + F::cast_from(1.19921331441483e-04_f64))
+            * x
+            - F::cast_from(1.59437614121125e-02_f64))
+            * x
+            + F::cast_from(1.13467897349442e+00_f64))
+            * x
+            - F::cast_from(4.47216460864586e+01_f64))
+            * x
+            + F::cast_from(1.06251216612604e+03_f64))
+            * x
+            - F::cast_from(1.52073917378512e+04_f64))
+            * x
+            + F::cast_from(1.20662887111273e+05_f64))
+            * x
+            - F::cast_from(4.07186366852475e+05_f64))
+            * e
+            + r15 / (x - r15);
+        rt2 = ((((((((F::cast_from(-1.60102542621710e-05_f64) * x
+            + F::cast_from(1.10331262112395e-03_f64))
+            * x
+            - F::cast_from(1.50043662589017e-01_f64))
+            * x
+            + F::cast_from(1.05563640866077e+01_f64))
+            * x
+            - F::cast_from(4.10468817024806e+02_f64))
+            * x
+            + F::cast_from(9.62604416506819e+03_f64))
+            * x
+            - F::cast_from(1.35888069838270e+05_f64))
+            * x
+            + F::cast_from(1.06107577038340e+06_f64))
+            * x
+            - F::cast_from(3.51190792816119e+06_f64))
+            * e
+            + r25 / (x - r25);
+        rt3 = ((((((((F::cast_from(-4.48880032128422e-05_f64) * x
+            + F::cast_from(2.69025112122177e-03_f64))
+            * x
+            - F::cast_from(4.01048115525954e-01_f64))
+            * x
+            + F::cast_from(2.78360021977405e+01_f64))
+            * x
+            - F::cast_from(1.04891729356965e+03_f64))
+            * x
+            + F::cast_from(2.36985942687423e+04_f64))
+            * x
+            - F::cast_from(3.19504627257548e+05_f64))
+            * x
+            + F::cast_from(2.34879693563358e+06_f64))
+            * x
+            - F::cast_from(7.16341568174085e+06_f64))
+            * e
+            + r35 / (x - r35);
+        rt4 = ((((((((F::cast_from(-6.38526371092582e-05_f64) * x
+            - F::cast_from(2.29263585792626e-03_f64))
+            * x
+            - F::cast_from(7.65735935499627e-02_f64))
+            * x
+            + F::cast_from(9.12692349152792e+00_f64))
+            * x
+            - F::cast_from(2.32077034386717e+02_f64))
+            * x
+            + F::cast_from(2.81839578728845e+02_f64))
+            * x
+            + F::cast_from(9.59529683876419e+04_f64))
+            * x
+            - F::cast_from(1.77638956809518e+06_f64))
+            * x
+            + F::cast_from(1.02489759645410e+07_f64))
+            * e
+            + r45 / (x - r45);
+        rt5 = ((((((((F::cast_from(-3.59049364231569e-05_f64) * x
+            - F::cast_from(2.25963977930044e-02_f64))
+            * x
+            + F::cast_from(1.12594870794668e+00_f64))
+            * x
+            - F::cast_from(4.56752462103909e+01_f64))
+            * x
+            + F::cast_from(1.05804526830637e+03_f64))
+            * x
+            - F::cast_from(1.16003199605875e+04_f64))
+            * x
+            - F::cast_from(4.07297627297272e+04_f64))
+            * x
+            + F::cast_from(2.22215528319857e+06_f64))
+            * x
+            - F::cast_from(1.61196455032613e+07_f64))
+            * e
+            + r55 / (x - r55);
+        ww5 = (((((((((F::cast_from(-4.61100906133970e-10_f64) * x
+            + F::cast_from(1.43069932644286e-07_f64))
+            * x
+            - F::cast_from(1.63960915431080e-05_f64))
+            * x
+            + F::cast_from(1.15791154612838e-03_f64))
+            * x
+            - F::cast_from(5.30573476742071e-02_f64))
+            * x
+            + F::cast_from(1.61156533367153e+00_f64))
+            * x
+            - F::cast_from(3.23248143316007e+01_f64))
+            * x
+            + F::cast_from(4.12007318109157e+02_f64))
+            * x
+            - F::cast_from(3.02260070158372e+03_f64))
+            * x
+            + F::cast_from(9.71575094154768e+03_f64))
+            * e
+            + w55 * ww1;
+        ww4 = (((((((((F::cast_from(-2.40799435809950e-08_f64) * x
+            + F::cast_from(8.12621667601546e-06_f64))
+            * x
+            - F::cast_from(9.04491430884113e-04_f64))
+            * x
+            + F::cast_from(6.37686375770059e-02_f64))
+            * x
+            - F::cast_from(2.96135703135647e+00_f64))
+            * x
+            + F::cast_from(9.15142356996330e+01_f64))
+            * x
+            - F::cast_from(1.86971865249111e+03_f64))
+            * x
+            + F::cast_from(2.42945528916947e+04_f64))
+            * x
+            - F::cast_from(1.81852473229081e+05_f64))
+            * x
+            + F::cast_from(5.96854758661427e+05_f64))
+            * e
+            + w45 * ww1;
+        ww3 = ((((((((F::cast_from(1.83574464457207e-05_f64) * x
+            - F::cast_from(1.54837969489927e-03_f64))
+            * x
+            + F::cast_from(1.18520453711586e-01_f64))
+            * x
+            - F::cast_from(6.69649981309161e+00_f64))
+            * x
+            + F::cast_from(2.44789386487321e+02_f64))
+            * x
+            - F::cast_from(5.68832664556359e+03_f64))
+            * x
+            + F::cast_from(8.14507604229357e+04_f64))
+            * x
+            - F::cast_from(6.55181056671474e+05_f64))
+            * x
+            + F::cast_from(2.26410896607237e+06_f64))
+            * e
+            + w35 * ww1;
+        ww2 = ((((((((F::cast_from(2.77778345870650e-05_f64) * x
+            - F::cast_from(2.22835017655890e-03_f64))
+            * x
+            + F::cast_from(1.61077633475573e-01_f64))
+            * x
+            - F::cast_from(8.96743743396132e+00_f64))
+            * x
+            + F::cast_from(3.28062687293374e+02_f64))
+            * x
+            - F::cast_from(7.65722701219557e+03_f64))
+            * x
+            + F::cast_from(1.10255055017664e+05_f64))
+            * x
+            - F::cast_from(8.92528122219324e+05_f64))
+            * x
+            + F::cast_from(3.10638627744347e+06_f64))
+            * e
+            + w25 * ww1;
+        ww1 = ww1 - F::cast_from(0.01962e+00_f64) * e - ww2 - ww3 - ww4 - ww5;
+    } else if x < F::new(59.0) {
+        ww1 = F::sqrt(pie4 / x);
+        xxx = x * x * x;
+        e = xxx * F::exp(-x);
+        rt1 = (((F::cast_from(-2.43758528330205e-02_f64) * x
+            + F::cast_from(2.07301567989771e+00_f64))
+            * x
+            - F::cast_from(6.45964225381113e+01_f64))
+            * x
+            + F::cast_from(7.14160088655470e+02_f64))
+            * e
+            + r15 / (x - r15);
+        rt2 = (((F::cast_from(-2.28861955413636e-01_f64) * x
+            + F::cast_from(1.93190784733691e+01_f64))
+            * x
+            - F::cast_from(5.99774730340912e+02_f64))
+            * x
+            + F::cast_from(6.61844165304871e+03_f64))
+            * e
+            + r25 / (x - r25);
+        rt3 = (((F::cast_from(-6.95053039285586e-01_f64) * x
+            + F::cast_from(5.76874090316016e+01_f64))
+            * x
+            - F::cast_from(1.77704143225520e+03_f64))
+            * x
+            + F::cast_from(1.95366082947811e+04_f64))
+            * e
+            + r35 / (x - r35);
+        rt4 = (((F::cast_from(-1.58072809087018e+00_f64) * x
+            + F::cast_from(1.27050801091948e+02_f64))
+            * x
+            - F::cast_from(3.86687350914280e+03_f64))
+            * x
+            + F::cast_from(4.23024828121420e+04_f64))
+            * e
+            + r45 / (x - r45);
+        rt5 = (((F::cast_from(-3.33963830405396e+00_f64) * x
+            + F::cast_from(2.51830424600204e+02_f64))
+            * x
+            - F::cast_from(7.57728527654961e+03_f64))
+            * x
+            + F::cast_from(8.21966816595690e+04_f64))
+            * e
+            + r55 / (x - r55);
+        e = xxx * e;
+        ww5 = ((F::cast_from(1.35482430510942e-08_f64) * x
+            - F::cast_from(3.27722199212781e-07_f64))
+            * x
+            + F::cast_from(2.41522703684296e-06_f64))
+            * e
+            + w55 * ww1;
+        ww4 = ((F::cast_from(1.23464092261605e-06_f64) * x
+            - F::cast_from(3.55224564275590e-05_f64))
+            * x
+            + F::cast_from(3.03274662192286e-04_f64))
+            * e
+            + w45 * ww1;
+        ww3 = ((F::cast_from(1.34547929260279e-05_f64) * x
+            - F::cast_from(4.19389884772726e-04_f64))
+            * x
+            + F::cast_from(3.87706687610809e-03_f64))
+            * e
+            + w35 * ww1;
+        ww2 = ((F::cast_from(2.09539509123135e-05_f64) * x
+            - F::cast_from(6.87646614786982e-04_f64))
+            * x
+            + F::cast_from(6.68743788585688e-03_f64))
+            * e
+            + w25 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4 - ww5;
+    } else {
+        ww1 = F::sqrt(pie4 / x);
+        rt1 = r15 / (x - r15);
+        rt2 = r25 / (x - r25);
+        rt3 = r35 / (x - r35);
+        rt4 = r45 / (x - r45);
+        rt5 = r55 / (x - r55);
+        ww2 = w25 * ww1;
+        ww3 = w35 * ww1;
+        ww4 = w45 * ww1;
+        ww5 = w55 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4 - ww5;
+    }
     u[0usize] = rt1;
     u[1usize] = rt2;
     u[2usize] = rt3;
@@ -1653,7 +4074,8 @@ fn rys_root1_host_f64(x: f64) -> (f64, f64) {
         if x > 15.0_f64 {
             let y = 1.0_f64 / x;
             let mut f1 = ((1.9623264149430e-01_f64 * y - 4.9695241464490e-01_f64) * y
-                - 6.0156581186481e-05_f64) * e
+                - 6.0156581186481e-05_f64)
+                * e
                 + f64::sqrt(pie4 / x)
                 - e;
             f1 = f1 * y * 0.5_f64;
@@ -1662,8 +4084,10 @@ fn rys_root1_host_f64(x: f64) -> (f64, f64) {
         } else if x > 10.0_f64 {
             let y = 1.0_f64 / x;
             let mut f1 = (((-1.8784686463512e-01_f64 * y + 2.2991849164985e-01_f64) * y
-                - 4.9893752514047e-01_f64) * y
-                - 2.1916512131607e-05_f64) * e
+                - 4.9893752514047e-01_f64)
+                * y
+                - 2.1916512131607e-05_f64)
+                * e
                 + f64::sqrt(pie4 / x)
                 - e;
             f1 = f1 * y * 0.5_f64;
@@ -1672,11 +4096,16 @@ fn rys_root1_host_f64(x: f64) -> (f64, f64) {
         } else if x > 5.0_f64 {
             let y = 1.0_f64 / x;
             let mut f1 = ((((((4.6897511375022e-01_f64 * y - 6.9955602298985e-01_f64) * y
-                + 5.3689283271887e-01_f64) * y
-                - 3.2883030418398e-01_f64) * y
-                + 2.4645596956002e-01_f64) * y
-                - 4.9984072848436e-01_f64) * y
-                - 3.1501078774085e-06_f64) * e
+                + 5.3689283271887e-01_f64)
+                * y
+                - 3.2883030418398e-01_f64)
+                * y
+                + 2.4645596956002e-01_f64)
+                * y
+                - 4.9984072848436e-01_f64)
+                * y
+                - 3.1501078774085e-06_f64)
+                * e
                 + f64::sqrt(pie4 / x)
                 - e;
             f1 = f1 * y * 0.5_f64;
@@ -1684,43 +4113,70 @@ fn rys_root1_host_f64(x: f64) -> (f64, f64) {
             rt1 = f1 / (ww1 - f1);
         } else if x > 3.0_f64 {
             let y = x - 4.0_f64;
-            let f1 = ((((((((((-2.62453564772299e-11_f64 * y + 3.24031041623823e-10_f64) * y
-                - 3.614965656163e-09_f64) * y
-                + 3.760256799971e-08_f64) * y
-                - 3.553558319675e-07_f64) * y
-                + 3.022556449731e-06_f64) * y
-                - 2.290098979647e-05_f64) * y
-                + 1.526537461148e-04_f64) * y
-                - 8.81947375894379e-04_f64) * y
-                + 4.33207949514611e-03_f64) * y
-                - 1.75257821619926e-02_f64) * y
+            let f1 = ((((((((((-2.62453564772299e-11_f64 * y + 3.24031041623823e-10_f64)
+                * y
+                - 3.614965656163e-09_f64)
+                * y
+                + 3.760256799971e-08_f64)
+                * y
+                - 3.553558319675e-07_f64)
+                * y
+                + 3.022556449731e-06_f64)
+                * y
+                - 2.290098979647e-05_f64)
+                * y
+                + 1.526537461148e-04_f64)
+                * y
+                - 8.81947375894379e-04_f64)
+                * y
+                + 4.33207949514611e-03_f64)
+                * y
+                - 1.75257821619926e-02_f64)
+                * y
                 + 5.28406320615584e-02_f64;
             ww1 = 2.0_f64 * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
         } else if x > 1.0_f64 {
             let y = x - 2.0_f64;
-            let f1 = ((((((((((-1.61702782425558e-10_f64 * y + 1.96215250865776e-09_f64) * y
-                - 2.14234468198419e-08_f64) * y
-                + 2.17216556336318e-07_f64) * y
-                - 1.98850171329371e-06_f64) * y
-                + 1.62429321438911e-05_f64) * y
-                - 1.16740298039895e-04_f64) * y
-                + 7.24888732052332e-04_f64) * y
-                - 3.79490003707156e-03_f64) * y
-                + 1.61723488664661e-02_f64) * y
-                - 5.29428148329736e-02_f64) * y
+            let f1 = ((((((((((-1.61702782425558e-10_f64 * y + 1.96215250865776e-09_f64)
+                * y
+                - 2.14234468198419e-08_f64)
+                * y
+                + 2.17216556336318e-07_f64)
+                * y
+                - 1.98850171329371e-06_f64)
+                * y
+                + 1.62429321438911e-05_f64)
+                * y
+                - 1.16740298039895e-04_f64)
+                * y
+                + 7.24888732052332e-04_f64)
+                * y
+                - 3.79490003707156e-03_f64)
+                * y
+                + 1.61723488664661e-02_f64)
+                * y
+                - 5.29428148329736e-02_f64)
+                * y
                 + 1.15702180856167e-01_f64;
             ww1 = 2.0_f64 * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
         } else {
             let f1 = ((((((((-8.36313918003957e-08_f64 * x + 1.21222603512827e-06_f64) * x
-                - 1.15662609053481e-05_f64) * x
-                + 9.25197374512647e-05_f64) * x
-                - 6.40994113129432e-04_f64) * x
-                + 3.78787044215009e-03_f64) * x
-                - 1.85185172458485e-02_f64) * x
-                + 7.14285713298222e-02_f64) * x
-                - 1.99999999997023e-01_f64) * x
+                - 1.15662609053481e-05_f64)
+                * x
+                + 9.25197374512647e-05_f64)
+                * x
+                - 6.40994113129432e-04_f64)
+                * x
+                + 3.78787044215009e-03_f64)
+                * x
+                - 1.85185172458485e-02_f64)
+                * x
+                + 7.14285713298222e-02_f64)
+                * x
+                - 1.99999999997023e-01_f64)
+                * x
                 + 3.33333333333318e-01_f64;
             ww1 = 2.0_f64 * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
@@ -1772,187 +4228,301 @@ fn rys_root2_host_f64(x: f64) -> ([f64; 2], [f64; 2]) {
         ww2 = 3.47854845137453e-01_f64 - 2.10619711404725e-01_f64 * x;
     } else if x < 1.0_f64 {
         let f1 = ((((((((-8.36313918003957e-08_f64 * x + 1.21222603512827e-06_f64) * x
-            - 1.15662609053481e-05_f64) * x
-            + 9.25197374512647e-05_f64) * x
-            - 6.40994113129432e-04_f64) * x
-            + 3.78787044215009e-03_f64) * x
-            - 1.85185172458485e-02_f64) * x
-            + 7.14285713298222e-02_f64) * x
-            - 1.99999999997023e-01_f64) * x
+            - 1.15662609053481e-05_f64)
+            * x
+            + 9.25197374512647e-05_f64)
+            * x
+            - 6.40994113129432e-04_f64)
+            * x
+            + 3.78787044215009e-03_f64)
+            * x
+            - 1.85185172458485e-02_f64)
+            * x
+            + 7.14285713298222e-02_f64)
+            * x
+            - 1.99999999997023e-01_f64)
+            * x
             + 3.33333333333318e-01_f64;
         let e = f64::exp(-x);
         ww1 = (x + x) * f1 + e;
         rt1 = (((((((-2.35234358048491e-09_f64 * x + 2.49173650389842e-08_f64) * x
-            - 4.558315364581e-08_f64) * x
-            - 2.447252174587e-06_f64) * x
-            + 4.743292959463e-05_f64) * x
-            - 5.33184749432408e-04_f64) * x
-            + 4.44654947116579e-03_f64) * x
-            - 2.90430236084697e-02_f64) * x
+            - 4.558315364581e-08_f64)
+            * x
+            - 2.447252174587e-06_f64)
+            * x
+            + 4.743292959463e-05_f64)
+            * x
+            - 5.33184749432408e-04_f64)
+            * x
+            + 4.44654947116579e-03_f64)
+            * x
+            - 2.90430236084697e-02_f64)
+            * x
             + 1.30693606237085e-01_f64;
         rt2 = (((((((-2.47404902329170e-08_f64 * x + 2.36809910635906e-07_f64) * x
-            + 1.835367736310e-06_f64) * x
-            - 2.066168802076e-05_f64) * x
-            - 1.345693393936e-04_f64) * x
-            - 5.88154362858038e-05_f64) * x
-            + 5.32735082098139e-02_f64) * x
-            - 6.37623643056745e-01_f64) * x
+            + 1.835367736310e-06_f64)
+            * x
+            - 2.066168802076e-05_f64)
+            * x
+            - 1.345693393936e-04_f64)
+            * x
+            - 5.88154362858038e-05_f64)
+            * x
+            + 5.32735082098139e-02_f64)
+            * x
+            - 6.37623643056745e-01_f64)
+            * x
             + 2.86930639376289e+00_f64;
         ww2 = ((f1 - ww1) * rt1 + f1) * (1.0_f64 + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < 3.0_f64 {
         let y = x - 2.0_f64;
         let f1 = ((((((((((-1.61702782425558e-10_f64 * y + 1.96215250865776e-09_f64) * y
-            - 2.14234468198419e-08_f64) * y
-            + 2.17216556336318e-07_f64) * y
-            - 1.98850171329371e-06_f64) * y
-            + 1.62429321438911e-05_f64) * y
-            - 1.16740298039895e-04_f64) * y
-            + 7.24888732052332e-04_f64) * y
-            - 3.79490003707156e-03_f64) * y
-            + 1.61723488664661e-02_f64) * y
-            - 5.29428148329736e-02_f64) * y
+            - 2.14234468198419e-08_f64)
+            * y
+            + 2.17216556336318e-07_f64)
+            * y
+            - 1.98850171329371e-06_f64)
+            * y
+            + 1.62429321438911e-05_f64)
+            * y
+            - 1.16740298039895e-04_f64)
+            * y
+            + 7.24888732052332e-04_f64)
+            * y
+            - 3.79490003707156e-03_f64)
+            * y
+            + 1.61723488664661e-02_f64)
+            * y
+            - 5.29428148329736e-02_f64)
+            * y
             + 1.15702180856167e-01_f64;
         let e = f64::exp(-x);
         ww1 = (x + x) * f1 + e;
         rt1 = (((((((((-6.36859636616415e-12_f64 * y + 8.47417064776270e-11_f64) * y
-            - 5.152207846962e-10_f64) * y
-            - 3.846389873308e-10_f64) * y
-            + 8.472253388380e-08_f64) * y
-            - 1.85306035634293e-06_f64) * y
-            + 2.47191693238413e-05_f64) * y
-            - 2.49018321709815e-04_f64) * y
-            + 2.19173220020161e-03_f64) * y
-            - 1.63329339286794e-02_f64) * y
+            - 5.152207846962e-10_f64)
+            * y
+            - 3.846389873308e-10_f64)
+            * y
+            + 8.472253388380e-08_f64)
+            * y
+            - 1.85306035634293e-06_f64)
+            * y
+            + 2.47191693238413e-05_f64)
+            * y
+            - 2.49018321709815e-04_f64)
+            * y
+            + 2.19173220020161e-03_f64)
+            * y
+            - 1.63329339286794e-02_f64)
+            * y
             + 8.68085688285261e-02_f64;
-        rt2 = ((((((((( 1.45331350488343e-10_f64 * y + 2.07111465297976e-09_f64) * y
-            - 1.878920917404e-08_f64) * y
-            - 1.725838516261e-07_f64) * y
-            + 2.247389642339e-06_f64) * y
-            + 9.76783813082564e-06_f64) * y
-            - 1.93160765581969e-04_f64) * y
-            - 1.58064140671893e-03_f64) * y
-            + 4.85928174507904e-02_f64) * y
-            - 4.30761584997596e-01_f64) * y
+        rt2 = (((((((((1.45331350488343e-10_f64 * y + 2.07111465297976e-09_f64) * y
+            - 1.878920917404e-08_f64)
+            * y
+            - 1.725838516261e-07_f64)
+            * y
+            + 2.247389642339e-06_f64)
+            * y
+            + 9.76783813082564e-06_f64)
+            * y
+            - 1.93160765581969e-04_f64)
+            * y
+            - 1.58064140671893e-03_f64)
+            * y
+            + 4.85928174507904e-02_f64)
+            * y
+            - 4.30761584997596e-01_f64)
+            * y
             + 1.80400974537950e+00_f64;
         ww2 = ((f1 - ww1) * rt1 + f1) * (1.0_f64 + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < 5.0_f64 {
         let y = x - 4.0_f64;
         let f1 = ((((((((((-2.62453564772299e-11_f64 * y + 3.24031041623823e-10_f64) * y
-            - 3.614965656163e-09_f64) * y
-            + 3.760256799971e-08_f64) * y
-            - 3.553558319675e-07_f64) * y
-            + 3.022556449731e-06_f64) * y
-            - 2.290098979647e-05_f64) * y
-            + 1.526537461148e-04_f64) * y
-            - 8.81947375894379e-04_f64) * y
-            + 4.33207949514611e-03_f64) * y
-            - 1.75257821619926e-02_f64) * y
+            - 3.614965656163e-09_f64)
+            * y
+            + 3.760256799971e-08_f64)
+            * y
+            - 3.553558319675e-07_f64)
+            * y
+            + 3.022556449731e-06_f64)
+            * y
+            - 2.290098979647e-05_f64)
+            * y
+            + 1.526537461148e-04_f64)
+            * y
+            - 8.81947375894379e-04_f64)
+            * y
+            + 4.33207949514611e-03_f64)
+            * y
+            - 1.75257821619926e-02_f64)
+            * y
             + 5.28406320615584e-02_f64;
         let e = f64::exp(-x);
         ww1 = (x + x) * f1 + e;
         rt1 = ((((((((-4.11560117487296e-12_f64 * y + 7.10910223886747e-11_f64) * y
-            - 1.73508862390291e-09_f64) * y
-            + 5.93066856324744e-08_f64) * y
-            - 9.76085576741771e-07_f64) * y
-            + 1.08484384385679e-05_f64) * y
-            - 1.12608004981982e-04_f64) * y
-            + 1.16210907653515e-03_f64) * y
-            - 9.89572595720351e-03_f64) * y
+            - 1.73508862390291e-09_f64)
+            * y
+            + 5.93066856324744e-08_f64)
+            * y
+            - 9.76085576741771e-07_f64)
+            * y
+            + 1.08484384385679e-05_f64)
+            * y
+            - 1.12608004981982e-04_f64)
+            * y
+            + 1.16210907653515e-03_f64)
+            * y
+            - 9.89572595720351e-03_f64)
+            * y
             + 6.12589701086408e-02_f64;
         rt2 = (((((((((-1.80555625241001e-10_f64 * y + 5.44072475994123e-10_f64) * y
-            + 1.603498045240e-08_f64) * y
-            - 1.497986283037e-07_f64) * y
-            - 7.017002532106e-07_f64) * y
-            + 1.85882653064034e-05_f64) * y
-            - 2.04685420150802e-05_f64) * y
-            - 2.49327728643089e-03_f64) * y
-            + 3.56550690684281e-02_f64) * y
-            - 2.60417417692375e-01_f64) * y
+            + 1.603498045240e-08_f64)
+            * y
+            - 1.497986283037e-07_f64)
+            * y
+            - 7.017002532106e-07_f64)
+            * y
+            + 1.85882653064034e-05_f64)
+            * y
+            - 2.04685420150802e-05_f64)
+            * y
+            - 2.49327728643089e-03_f64)
+            * y
+            + 3.56550690684281e-02_f64)
+            * y
+            - 2.60417417692375e-01_f64)
+            * y
             + 1.12155283108289e+00_f64;
         ww2 = ((f1 - ww1) * rt1 + f1) * (1.0_f64 + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < 10.0_f64 {
         let e = f64::exp(-x);
         ww1 = ((((((4.6897511375022e-01_f64 / x - 6.9955602298985e-01_f64) / x
-            + 5.3689283271887e-01_f64) / x
-            - 3.2883030418398e-01_f64) / x
-            + 2.4645596956002e-01_f64) / x
-            - 4.9984072848436e-01_f64) / x
-            - 3.1501078774085e-06_f64) * e
+            + 5.3689283271887e-01_f64)
+            / x
+            - 3.2883030418398e-01_f64)
+            / x
+            + 2.4645596956002e-01_f64)
+            / x
+            - 4.9984072848436e-01_f64)
+            / x
+            - 3.1501078774085e-06_f64)
+            * e
             + f64::sqrt(pie4 / x);
         let f1 = (ww1 - e) / (x + x);
         let y = x - 7.5_f64;
-        rt1 = (((((((((((((-1.43632730148572e-16_f64 * y + 2.38198922570405e-16_f64) * y
-            + 1.358319618800e-14_f64) * y
-            - 7.064522786879e-14_f64) * y
-            - 7.719300212748e-13_f64) * y
-            + 7.802544789997e-12_f64) * y
-            + 6.628721099436e-11_f64) * y
-            - 1.775564159743e-09_f64) * y
-            + 1.713828823990e-08_f64) * y
-            - 1.497500187053e-07_f64) * y
-            + 2.283485114279e-06_f64) * y
-            - 3.76953869614706e-05_f64) * y
-            + 4.74791204651451e-04_f64) * y
-            - 4.60448960876139e-03_f64) * y
+        rt1 = (((((((((((((-1.43632730148572e-16_f64 * y + 2.38198922570405e-16_f64)
+            * y
+            + 1.358319618800e-14_f64)
+            * y
+            - 7.064522786879e-14_f64)
+            * y
+            - 7.719300212748e-13_f64)
+            * y
+            + 7.802544789997e-12_f64)
+            * y
+            + 6.628721099436e-11_f64)
+            * y
+            - 1.775564159743e-09_f64)
+            * y
+            + 1.713828823990e-08_f64)
+            * y
+            - 1.497500187053e-07_f64)
+            * y
+            + 2.283485114279e-06_f64)
+            * y
+            - 3.76953869614706e-05_f64)
+            * y
+            + 4.74791204651451e-04_f64)
+            * y
+            - 4.60448960876139e-03_f64)
+            * y
             + 3.72458587837249e-02_f64;
-        rt2 = (((((((((((( 2.48791622798900e-14_f64 * y - 1.36113510175724e-13_f64) * y
-            - 2.224334349799e-12_f64) * y
-            + 4.190559455515e-11_f64) * y
-            - 2.222722579924e-10_f64) * y
-            - 2.624183464275e-09_f64) * y
-            + 6.128153450169e-08_f64) * y
-            - 4.383376014528e-07_f64) * y
-            - 2.49952200232910e-06_f64) * y
-            + 1.03236647888320e-04_f64) * y
-            - 1.44614664924989e-03_f64) * y
-            + 1.35094294917224e-02_f64) * y
-            - 9.53478510453887e-02_f64) * y
+        rt2 = ((((((((((((2.48791622798900e-14_f64 * y - 1.36113510175724e-13_f64) * y
+            - 2.224334349799e-12_f64)
+            * y
+            + 4.190559455515e-11_f64)
+            * y
+            - 2.222722579924e-10_f64)
+            * y
+            - 2.624183464275e-09_f64)
+            * y
+            + 6.128153450169e-08_f64)
+            * y
+            - 4.383376014528e-07_f64)
+            * y
+            - 2.49952200232910e-06_f64)
+            * y
+            + 1.03236647888320e-04_f64)
+            * y
+            - 1.44614664924989e-03_f64)
+            * y
+            + 1.35094294917224e-02_f64)
+            * y
+            - 9.53478510453887e-02_f64)
+            * y
             + 5.44765245686790e-01_f64;
         ww2 = ((f1 - ww1) * rt1 + f1) * (1.0_f64 + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < 15.0_f64 {
         let e = f64::exp(-x);
         ww1 = (((-1.8784686463512e-01_f64 / x + 2.2991849164985e-01_f64) / x
-            - 4.9893752514047e-01_f64) / x
-            - 2.1916512131607e-05_f64) * e
+            - 4.9893752514047e-01_f64)
+            / x
+            - 2.1916512131607e-05_f64)
+            * e
             + f64::sqrt(pie4 / x);
         let f1 = (ww1 - e) / (x + x);
         rt1 = ((((-1.01041157064226e-05_f64 * x + 1.19483054115173e-03_f64) * x
-            - 6.73760231824074e-02_f64) * x
-            + 1.25705571069895e+00_f64) * x
+            - 6.73760231824074e-02_f64)
+            * x
+            + 1.25705571069895e+00_f64)
+            * x
             + (((-8.57609422987199e+03_f64 / x + 5.91005939591842e+03_f64) / x
-                - 1.70807677109425e+03_f64) / x
-                + 2.64536689959503e+02_f64) / x
-            - 2.38570496490846e+01_f64) * e
+                - 1.70807677109425e+03_f64)
+                / x
+                + 2.64536689959503e+02_f64)
+                / x
+            - 2.38570496490846e+01_f64)
+            * e
             + r12 / (x - r12);
-        rt2 = ((( 3.39024225137123e-04_f64 * x - 9.34976436343509e-02_f64) * x
-            - 4.22216483306320e+00_f64) * x
+        rt2 = (((3.39024225137123e-04_f64 * x - 9.34976436343509e-02_f64) * x
+            - 4.22216483306320e+00_f64)
+            * x
             + (((-2.08457050986847e+03_f64 / x - 1.04999071905664e+03_f64) / x
-                + 3.39891508992661e+02_f64) / x
-                - 1.56184800325063e+02_f64) / x
-            + 8.00839033297501e+00_f64) * e
+                + 3.39891508992661e+02_f64)
+                / x
+                - 1.56184800325063e+02_f64)
+                / x
+            + 8.00839033297501e+00_f64)
+            * e
             + r22 / (x - r22);
         ww2 = ((f1 - ww1) * rt1 + f1) * (1.0_f64 + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
     } else if x < 33.0_f64 {
         let e = f64::exp(-x);
         ww1 = ((1.9623264149430e-01_f64 / x - 4.9695241464490e-01_f64) / x
-            - 6.0156581186481e-05_f64) * e
+            - 6.0156581186481e-05_f64)
+            * e
             + f64::sqrt(pie4 / x);
         let f1 = (ww1 - e) / (x + x);
         rt1 = ((((-1.14906395546354e-06_f64 * x + 1.76003409708332e-04_f64) * x
-            - 1.71984023644904e-02_f64) * x
-            - 1.37292644149838e-01_f64) * x
+            - 1.71984023644904e-02_f64)
+            * x
+            - 1.37292644149838e-01_f64)
+            * x
             + (-4.75742064274859e+01_f64 / x + 9.21005186542857e+00_f64) / x
-            - 2.31080873898939e-02_f64) * e
+            - 2.31080873898939e-02_f64)
+            * e
             + r12 / (x - r12);
-        rt2 = ((( 3.64921633404158e-04_f64 * x - 9.71850973831558e-02_f64) * x
-            - 4.02886174850252e+00_f64) * x
+        rt2 = (((3.64921633404158e-04_f64 * x - 9.71850973831558e-02_f64) * x
+            - 4.02886174850252e+00_f64)
+            * x
             + (-1.35831002139173e+02_f64 / x - 8.66891724287962e+01_f64) / x
-            + 2.98011277766958e+00_f64) * e
+            + 2.98011277766958e+00_f64)
+            * e
             + r22 / (x - r22);
         ww2 = ((f1 - ww1) * rt1 + f1) * (1.0_f64 + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
@@ -2023,263 +4593,523 @@ fn rys_root3_host_f64(x: f64) -> ([f64; 3], [f64; 3]) {
     let mut a2: f64 = 0.0;
     let mut y: f64 = 0.0;
 
+    r13 = 1.90163509193487e-01;
+    r23 = 1.78449274854325e+00;
+    w23 = 1.77231492083829e-01;
+    r33 = 5.52534374226326e+00;
+    w33 = 5.11156880411248e-03;
 
-
-        r13 = 1.90163509193487e-01;
-        r23 = 1.78449274854325e+00;
-        w23 = 1.77231492083829e-01;
-        r33 = 5.52534374226326e+00;
-        w33 = 5.11156880411248e-03;
-
-        if x < 3.0e-7{
-                rt1 = 6.03769246832797e-02 -9.28875764357368e-03 *x;
-                rt2 = 7.76823355931043e-01 -1.19511285527878e-01 *x;
-                rt3 = 6.66279971938567e+00 -1.02504611068957e+00 *x;
-                ww1 = 4.67913934572691e-01 -5.64876917232519e-02 *x;
-                ww2 = 3.60761573048137e-01 -1.49077186455208e-01 *x;
-                ww3 = 1.71324492379169e-01 -1.27768455150979e-01 *x;
-        } else if x < 1.0 {
-                rt1 = ((((((-5.10186691538870e-10*x+2.40134415703450e-08)*x-
-                           5.01081057744427e-07 )*x+7.58291285499256e-06 )*x-
-                         9.55085533670919e-05 )*x+1.02893039315878e-03 )*x-
-                       9.28875764374337e-03 )*x+6.03769246832810e-02;
-                rt2 = ((((((-1.29646524960555e-08*x+7.74602292865683e-08)*x+
-                           1.56022811158727e-06 )*x-1.58051990661661e-05 )*x-
-                         3.30447806384059e-04 )*x+9.74266885190267e-03 )*x-
-                       1.19511285526388e-01 )*x+7.76823355931033e-01;
-                rt3 = ((((((-9.28536484109606e-09*x-3.02786290067014e-07)*x-
-                           2.50734477064200e-06 )*x-7.32728109752881e-06 )*x+
-                         2.44217481700129e-04 )*x+4.94758452357327e-02 )*x-
-                       1.02504611065774e+00 )*x+6.66279971938553e+00;
-                f2 = ((((((((-7.60911486098850e-08*x+1.09552870123182e-06 )*x-
-                            1.03463270693454e-05 )*x+8.16324851790106e-05 )*x-
-                          5.55526624875562e-04 )*x+3.20512054753924e-03 )*x-
-                        1.51515139838540e-02 )*x+5.55555554649585e-02 )*x-
-                      1.42857142854412e-01 )*x+1.99999999999986e-01;
-                e = f64::exp(-x);
-                f1 = ((x+x)*f2+e)/3.0e+00;
-                ww1 = (x+x)*f1+e;
-                t1 = rt1/(rt1+1.0e+00);
-                t2 = rt2/(rt2+1.0e+00);
-                t3 = rt3/(rt3+1.0e+00);
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < 3.0 {
-                y = x-2.0e+00;
-                rt1 = (((((((( 1.44687969563318e-12*y+4.85300143926755e-12)*y-
-                             6.55098264095516e-10 )*y+1.56592951656828e-08 )*y-
-                           2.60122498274734e-07 )*y+3.86118485517386e-06 )*y-
-                         5.13430986707889e-05 )*y+6.03194524398109e-04 )*y-
-                       6.11219349825090e-03 )*y+4.52578254679079e-02;
-                rt2 = ((((((( 6.95964248788138e-10*y-5.35281831445517e-09)*y-
-                            6.745205954533e-08)*y+1.502366784525e-06)*y+
-                          9.923326947376e-07)*y-3.89147469249594e-04 )*y+
-                        7.51549330892401e-03 )*y-8.48778120363400e-02 )*y+
-                        5.73928229597613e-01;
-                rt3 = ((((((((-2.81496588401439e-10*y+3.61058041895031e-09)*y+
-                             4.53631789436255e-08 )*y-1.40971837780847e-07 )*y-
-                           6.05865557561067e-06 )*y-5.15964042227127e-05 )*y+
-                         3.34761560498171e-05 )*y+5.04871005319119e-02 )*y-
-                       8.24708946991557e-01 )*y+4.81234667357205e+00;
-                f2 = ((((((((((-1.48044231072140e-10*y+1.78157031325097e-09 )*y-
-                              1.92514145088973e-08 )*y+1.92804632038796e-07 )*y-
-                            1.73806555021045e-06 )*y+1.39195169625425e-05 )*y-
-                          9.74574633246452e-05 )*y+5.83701488646511e-04 )*y-
-                        2.89955494844975e-03 )*y+1.13847001113810e-02 )*y-
-                      3.23446977320647e-02 )*y+5.29428148329709e-02;
-                e = f64::exp(-x);
-                f1 = ((x+x)*f2+e)/3.0e+00;
-                ww1 = (x+x)*f1+e;
-                t1 = rt1/(rt1+1.0e+00);
-                t2 = rt2/(rt2+1.0e+00);
-                t3 = rt3/(rt3+1.0e+00);
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < 5.0{
-                y = x-4.0e+00;
-                rt1 = ((((((( 1.44265709189601e-11*y-4.66622033006074e-10)*y+
-                            7.649155832025e-09)*y-1.229940017368e-07)*y+
-                          2.026002142457e-06)*y-2.87048671521677e-05 )*y+
-                        3.70326938096287e-04 )*y-4.21006346373634e-03 )*y+
-                        3.50898470729044e-02;
-                rt2 = ((((((((-2.65526039155651e-11*y+1.97549041402552e-10)*y+
-                             2.15971131403034e-09 )*y-7.95045680685193e-08 )*y+
-                           5.15021914287057e-07 )*y+1.11788717230514e-05 )*y-
-                         3.33739312603632e-04 )*y+5.30601428208358e-03 )*y-
-                       5.93483267268959e-02 )*y+4.31180523260239e-01;
-                rt3 = ((((((((-3.92833750584041e-10*y-4.16423229782280e-09)*y+
-                             4.42413039572867e-08 )*y+6.40574545989551e-07 )*y-
-                           3.05512456576552e-06 )*y-1.05296443527943e-04 )*y-
-                         6.14120969315617e-04 )*y+4.89665802767005e-02 )*y-
-                       6.24498381002855e-01 )*y+3.36412312243724e+00;
-                f2 = ((((((((((-2.36788772599074e-11*y+2.89147476459092e-10 )*y-
-                              3.18111322308846e-09 )*y+3.25336816562485e-08 )*y-
-                            3.00873821471489e-07 )*y+2.48749160874431e-06 )*y-
-                          1.81353179793672e-05 )*y+1.14504948737066e-04 )*y-
-                        6.10614987696677e-04 )*y+2.64584212770942e-03 )*y-
-                      8.66415899015349e-03 )*y+1.75257821619922e-02;
-                e = f64::exp(-x);
-                f1 = ((x+x)*f2+e)/3.0e+00;
-                ww1 = (x+x)*f1+e;
-                t1 = rt1/(rt1+1.0e+00);
-                t2 = rt2/(rt2+1.0e+00);
-                t3 = rt3/(rt3+1.0e+00);
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < 10.0 {
-                e = f64::exp(-x);
-                ww1 = (((((( 4.6897511375022e-01/x-6.9955602298985e-01)/x +
-                           5.3689283271887e-01)/x-3.2883030418398e-01)/x +
-                         2.4645596956002e-01)/x-4.9984072848436e-01)/x -
-                       3.1501078774085e-06)*e + f64::sqrt(pie4/x);
-                f1 = (ww1-e)/(x+x);
-                f2 = (f1+f1+f1-e)/(x+x);
-                y = x-7.5e+00;
-                rt1 = ((((((((((( 5.74429401360115e-16*y+7.11884203790984e-16)*y-
-                                6.736701449826e-14)*y-6.264613873998e-13)*y+
-                              1.315418927040e-11)*y-4.23879635610964e-11 )*y+
-                            1.39032379769474e-09 )*y-4.65449552856856e-08 )*y+
-                          7.34609900170759e-07 )*y-1.08656008854077e-05 )*y+
-                        1.77930381549953e-04 )*y-2.39864911618015e-03 )*y+
-                        2.39112249488821e-02;
-                rt2 = ((((((((((( 1.13464096209120e-14*y+6.99375313934242e-15)*y-
-                                8.595618132088e-13)*y-5.293620408757e-12)*y-
-                              2.492175211635e-11)*y+2.73681574882729e-09 )*y-
-                            1.06656985608482e-08 )*y-4.40252529648056e-07 )*y+
-                          9.68100917793911e-06 )*y-1.68211091755327e-04 )*y+
-                        2.69443611274173e-03 )*y-3.23845035189063e-02 )*y+
-                        2.75969447451882e-01;
-                rt3 = (((((((((((( 6.66339416996191e-15*y+1.84955640200794e-13)*y-
-                                 1.985141104444e-12)*y-2.309293727603e-11)*y+
-                               3.917984522103e-10)*y+1.663165279876e-09)*y-
-                             6.205591993923e-08)*y+8.769581622041e-09)*y+
-                           8.97224398620038e-06 )*y-3.14232666170796e-05 )*y-
-                         1.83917335649633e-03 )*y+3.51246831672571e-02 )*y-
-                       3.22335051270860e-01 )*y+1.73582831755430e+00;
-                t1 = rt1/(rt1+1.0e+00);
-                t2 = rt2/(rt2+1.0e+00);
-                t3 = rt3/(rt3+1.0e+00);
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < 15.0 {
-                e = f64::exp(-x);
-                ww1 = (((-1.8784686463512e-01/x+2.2991849164985e-01)/x -
-                        4.9893752514047e-01)/x-2.1916512131607e-05)*e
-                        + f64::sqrt(pie4/x);
-                f1 = (ww1-e)/(x+x);
-                f2 = (f1+f1+f1-e)/(x+x);
-                y = x-12.5e+00;
-                rt1 = ((((((((((( 4.42133001283090e-16*y-2.77189767070441e-15)*y-
-                                4.084026087887e-14)*y+5.379885121517e-13)*y+
-                              1.882093066702e-12)*y-8.67286219861085e-11 )*y+
-                            7.11372337079797e-10 )*y-3.55578027040563e-09 )*y+
-                          1.29454702851936e-07 )*y-4.14222202791434e-06 )*y+
-                        8.04427643593792e-05 )*y-1.18587782909876e-03 )*y+
-                        1.53435577063174e-02;
-                rt2 = ((((((((((( 6.85146742119357e-15*y-1.08257654410279e-14)*y-
-                                8.579165965128e-13)*y+6.642452485783e-12)*y+
-                              4.798806828724e-11)*y-1.13413908163831e-09 )*y+
-                            7.08558457182751e-09 )*y-5.59678576054633e-08 )*y+
-                          2.51020389884249e-06 )*y-6.63678914608681e-05 )*y+
-                        1.11888323089714e-03 )*y-1.45361636398178e-02 )*y+
-                        1.65077877454402e-01;
-                rt3 = (((((((((((( 3.20622388697743e-15*y-2.73458804864628e-14)*y-
-                                 3.157134329361e-13)*y+8.654129268056e-12)*y-
-                               5.625235879301e-11)*y-7.718080513708e-10)*y+
-                             2.064664199164e-08)*y-1.567725007761e-07)*y-
-                           1.57938204115055e-06 )*y+6.27436306915967e-05 )*y-
-                         1.01308723606946e-03 )*y+1.13901881430697e-02 )*y-
-                       1.01449652899450e-01 )*y+7.77203937334739e-01;
-                t1 = rt1/(rt1+1.0e+00);
-                t2 = rt2/(rt2+1.0e+00);
-                t3 = rt3/(rt3+1.0e+00);
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < 33.0 {
-                e = f64::exp(-x);
-                ww1 = (( 1.9623264149430e-01/x-4.9695241464490e-01)/x -
-                       6.0156581186481e-05)*e + f64::sqrt(pie4/x);
-                f1 = (ww1-e)/(x+x);
-                f2 = (f1+f1+f1-e)/(x+x);
-                if x < 20.0 {
-                        rt1 = ((((((-2.43270989903742e-06*x+3.57901398988359e-04)*x -
-                                   2.34112415981143e-02)*x+7.81425144913975e-01)*x -
-                                 1.73209218219175e+01)*x+2.43517435690398e+02)*x +
-                               (-1.97611541576986e+04/x+9.82441363463929e+03)/x -
-                               2.07970687843258e+03)*e + r13/(x-r13);
-                        rt2 = (((((-2.62627010965435e-04*x+3.49187925428138e-02)*x -
-                                  3.09337618731880e+00)*x+1.07037141010778e+02)*x -
-                                2.36659637247087e+03)*x +
-                               ((-2.91669113681020e+06/x +
-                                 1.41129505262758e+06)/x-2.91532335433779e+05)/x +
-                               3.35202872835409e+04)*e + r23/(x-r23);
-                        rt3 = ((((( 9.31856404738601e-05*x-2.87029400759565e-02)*x -
-                                  7.83503697918455e-01)*x-1.84338896480695e+01)*x +
-                                4.04996712650414e+02)*x +
-                               (-1.89829509315154e+05/x +
-                                5.11498390849158e+04)/x-6.88145821789955e+03)*e
-                                + r33/(x-r33);
-                } else {
-                        rt1 = ((((-4.97561537069643e-04*x-5.00929599665316e-02)*x +
-                                 1.31099142238996e+00)*x-1.88336409225481e+01)*x -
-                               6.60344754467191e+02 /x+1.64931462413877e+02)*e
-                                + r13/(x-r13);
-                        rt2 = ((((-4.48218898474906e-03*x-5.17373211334924e-01)*x +
-                                 1.13691058739678e+01)*x-1.65426392885291e+02)*x -
-                               6.30909125686731e+03 /x+1.52231757709236e+03)*e
-                                + r23/(x-r23);
-                        rt3 = ((((-1.38368602394293e-02*x-1.77293428863008e+00)*x +
-                                 1.73639054044562e+01)*x-3.57615122086961e+02)*x -
-                               1.45734701095912e+04 /x+2.69831813951849e+03)*e
-                                + r33/(x-r33);
-                }
-                t1 = rt1/(rt1+1.0e+00);
-                t2 = rt2/(rt2+1.0e+00);
-                t3 = rt3/(rt3+1.0e+00);
-                a2 = f2-t1*f1;
-                a1 = f1-t1*ww1;
-                ww3 = (a2-t2*a1)/((t3-t2)*(t3-t1));
-                ww2 = (t3*a1-a2)/((t3-t2)*(t2-t1));
-                ww1 = ww1-ww2-ww3;
-        } else if x < 47.0 {
-                ww1 = f64::sqrt(pie4/x);
-                e = f64::exp(-x);
-                rt1 = ((-7.39058467995275e+00*x+3.21318352526305e+02)*x -
-                       3.99433696473658e+03)*e + r13/(x-r13);
-                rt2 = ((-7.38726243906513e+01*x+3.13569966333873e+03)*x -
-                       3.86862867311321e+04)*e + r23/(x-r23);
-                rt3 = ((-2.63750565461336e+02*x+1.04412168692352e+04)*x -
-                       1.28094577915394e+05)*e + r33/(x-r33);
-                ww3 = ((( 1.52258947224714e-01*x-8.30661900042651e+00)*x +
-                        1.92977367967984e+02)*x-1.67787926005344e+03)*e
-                        + w33*ww1;
-                ww2 = (( 6.15072615497811e+01*x-2.91980647450269e+03)*x +
-                       3.80794303087338e+04)*e + w23*ww1;
-                ww1 = ww1-ww2-ww3;
+    if x < 3.0e-7 {
+        rt1 = 6.03769246832797e-02 - 9.28875764357368e-03 * x;
+        rt2 = 7.76823355931043e-01 - 1.19511285527878e-01 * x;
+        rt3 = 6.66279971938567e+00 - 1.02504611068957e+00 * x;
+        ww1 = 4.67913934572691e-01 - 5.64876917232519e-02 * x;
+        ww2 = 3.60761573048137e-01 - 1.49077186455208e-01 * x;
+        ww3 = 1.71324492379169e-01 - 1.27768455150979e-01 * x;
+    } else if x < 1.0 {
+        rt1 = ((((((-5.10186691538870e-10 * x + 2.40134415703450e-08) * x
+            - 5.01081057744427e-07)
+            * x
+            + 7.58291285499256e-06)
+            * x
+            - 9.55085533670919e-05)
+            * x
+            + 1.02893039315878e-03)
+            * x
+            - 9.28875764374337e-03)
+            * x
+            + 6.03769246832810e-02;
+        rt2 = ((((((-1.29646524960555e-08 * x + 7.74602292865683e-08) * x
+            + 1.56022811158727e-06)
+            * x
+            - 1.58051990661661e-05)
+            * x
+            - 3.30447806384059e-04)
+            * x
+            + 9.74266885190267e-03)
+            * x
+            - 1.19511285526388e-01)
+            * x
+            + 7.76823355931033e-01;
+        rt3 = ((((((-9.28536484109606e-09 * x - 3.02786290067014e-07) * x
+            - 2.50734477064200e-06)
+            * x
+            - 7.32728109752881e-06)
+            * x
+            + 2.44217481700129e-04)
+            * x
+            + 4.94758452357327e-02)
+            * x
+            - 1.02504611065774e+00)
+            * x
+            + 6.66279971938553e+00;
+        f2 = ((((((((-7.60911486098850e-08 * x + 1.09552870123182e-06) * x
+            - 1.03463270693454e-05)
+            * x
+            + 8.16324851790106e-05)
+            * x
+            - 5.55526624875562e-04)
+            * x
+            + 3.20512054753924e-03)
+            * x
+            - 1.51515139838540e-02)
+            * x
+            + 5.55555554649585e-02)
+            * x
+            - 1.42857142854412e-01)
+            * x
+            + 1.99999999999986e-01;
+        e = f64::exp(-x);
+        f1 = ((x + x) * f2 + e) / 3.0e+00;
+        ww1 = (x + x) * f1 + e;
+        t1 = rt1 / (rt1 + 1.0e+00);
+        t2 = rt2 / (rt2 + 1.0e+00);
+        t3 = rt3 / (rt3 + 1.0e+00);
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < 3.0 {
+        y = x - 2.0e+00;
+        rt1 = ((((((((1.44687969563318e-12 * y + 4.85300143926755e-12) * y
+            - 6.55098264095516e-10)
+            * y
+            + 1.56592951656828e-08)
+            * y
+            - 2.60122498274734e-07)
+            * y
+            + 3.86118485517386e-06)
+            * y
+            - 5.13430986707889e-05)
+            * y
+            + 6.03194524398109e-04)
+            * y
+            - 6.11219349825090e-03)
+            * y
+            + 4.52578254679079e-02;
+        rt2 = (((((((6.95964248788138e-10 * y - 5.35281831445517e-09) * y
+            - 6.745205954533e-08)
+            * y
+            + 1.502366784525e-06)
+            * y
+            + 9.923326947376e-07)
+            * y
+            - 3.89147469249594e-04)
+            * y
+            + 7.51549330892401e-03)
+            * y
+            - 8.48778120363400e-02)
+            * y
+            + 5.73928229597613e-01;
+        rt3 = ((((((((-2.81496588401439e-10 * y + 3.61058041895031e-09) * y
+            + 4.53631789436255e-08)
+            * y
+            - 1.40971837780847e-07)
+            * y
+            - 6.05865557561067e-06)
+            * y
+            - 5.15964042227127e-05)
+            * y
+            + 3.34761560498171e-05)
+            * y
+            + 5.04871005319119e-02)
+            * y
+            - 8.24708946991557e-01)
+            * y
+            + 4.81234667357205e+00;
+        f2 = ((((((((((-1.48044231072140e-10 * y + 1.78157031325097e-09) * y
+            - 1.92514145088973e-08)
+            * y
+            + 1.92804632038796e-07)
+            * y
+            - 1.73806555021045e-06)
+            * y
+            + 1.39195169625425e-05)
+            * y
+            - 9.74574633246452e-05)
+            * y
+            + 5.83701488646511e-04)
+            * y
+            - 2.89955494844975e-03)
+            * y
+            + 1.13847001113810e-02)
+            * y
+            - 3.23446977320647e-02)
+            * y
+            + 5.29428148329709e-02;
+        e = f64::exp(-x);
+        f1 = ((x + x) * f2 + e) / 3.0e+00;
+        ww1 = (x + x) * f1 + e;
+        t1 = rt1 / (rt1 + 1.0e+00);
+        t2 = rt2 / (rt2 + 1.0e+00);
+        t3 = rt3 / (rt3 + 1.0e+00);
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < 5.0 {
+        y = x - 4.0e+00;
+        rt1 = (((((((1.44265709189601e-11 * y - 4.66622033006074e-10) * y
+            + 7.649155832025e-09)
+            * y
+            - 1.229940017368e-07)
+            * y
+            + 2.026002142457e-06)
+            * y
+            - 2.87048671521677e-05)
+            * y
+            + 3.70326938096287e-04)
+            * y
+            - 4.21006346373634e-03)
+            * y
+            + 3.50898470729044e-02;
+        rt2 = ((((((((-2.65526039155651e-11 * y + 1.97549041402552e-10) * y
+            + 2.15971131403034e-09)
+            * y
+            - 7.95045680685193e-08)
+            * y
+            + 5.15021914287057e-07)
+            * y
+            + 1.11788717230514e-05)
+            * y
+            - 3.33739312603632e-04)
+            * y
+            + 5.30601428208358e-03)
+            * y
+            - 5.93483267268959e-02)
+            * y
+            + 4.31180523260239e-01;
+        rt3 = ((((((((-3.92833750584041e-10 * y - 4.16423229782280e-09) * y
+            + 4.42413039572867e-08)
+            * y
+            + 6.40574545989551e-07)
+            * y
+            - 3.05512456576552e-06)
+            * y
+            - 1.05296443527943e-04)
+            * y
+            - 6.14120969315617e-04)
+            * y
+            + 4.89665802767005e-02)
+            * y
+            - 6.24498381002855e-01)
+            * y
+            + 3.36412312243724e+00;
+        f2 = ((((((((((-2.36788772599074e-11 * y + 2.89147476459092e-10) * y
+            - 3.18111322308846e-09)
+            * y
+            + 3.25336816562485e-08)
+            * y
+            - 3.00873821471489e-07)
+            * y
+            + 2.48749160874431e-06)
+            * y
+            - 1.81353179793672e-05)
+            * y
+            + 1.14504948737066e-04)
+            * y
+            - 6.10614987696677e-04)
+            * y
+            + 2.64584212770942e-03)
+            * y
+            - 8.66415899015349e-03)
+            * y
+            + 1.75257821619922e-02;
+        e = f64::exp(-x);
+        f1 = ((x + x) * f2 + e) / 3.0e+00;
+        ww1 = (x + x) * f1 + e;
+        t1 = rt1 / (rt1 + 1.0e+00);
+        t2 = rt2 / (rt2 + 1.0e+00);
+        t3 = rt3 / (rt3 + 1.0e+00);
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < 10.0 {
+        e = f64::exp(-x);
+        ww1 = ((((((4.6897511375022e-01 / x - 6.9955602298985e-01) / x + 5.3689283271887e-01)
+            / x
+            - 3.2883030418398e-01)
+            / x
+            + 2.4645596956002e-01)
+            / x
+            - 4.9984072848436e-01)
+            / x
+            - 3.1501078774085e-06)
+            * e
+            + f64::sqrt(pie4 / x);
+        f1 = (ww1 - e) / (x + x);
+        f2 = (f1 + f1 + f1 - e) / (x + x);
+        y = x - 7.5e+00;
+        rt1 = (((((((((((5.74429401360115e-16 * y + 7.11884203790984e-16) * y
+            - 6.736701449826e-14)
+            * y
+            - 6.264613873998e-13)
+            * y
+            + 1.315418927040e-11)
+            * y
+            - 4.23879635610964e-11)
+            * y
+            + 1.39032379769474e-09)
+            * y
+            - 4.65449552856856e-08)
+            * y
+            + 7.34609900170759e-07)
+            * y
+            - 1.08656008854077e-05)
+            * y
+            + 1.77930381549953e-04)
+            * y
+            - 2.39864911618015e-03)
+            * y
+            + 2.39112249488821e-02;
+        rt2 = (((((((((((1.13464096209120e-14 * y + 6.99375313934242e-15) * y
+            - 8.595618132088e-13)
+            * y
+            - 5.293620408757e-12)
+            * y
+            - 2.492175211635e-11)
+            * y
+            + 2.73681574882729e-09)
+            * y
+            - 1.06656985608482e-08)
+            * y
+            - 4.40252529648056e-07)
+            * y
+            + 9.68100917793911e-06)
+            * y
+            - 1.68211091755327e-04)
+            * y
+            + 2.69443611274173e-03)
+            * y
+            - 3.23845035189063e-02)
+            * y
+            + 2.75969447451882e-01;
+        rt3 = ((((((((((((6.66339416996191e-15 * y + 1.84955640200794e-13) * y
+            - 1.985141104444e-12)
+            * y
+            - 2.309293727603e-11)
+            * y
+            + 3.917984522103e-10)
+            * y
+            + 1.663165279876e-09)
+            * y
+            - 6.205591993923e-08)
+            * y
+            + 8.769581622041e-09)
+            * y
+            + 8.97224398620038e-06)
+            * y
+            - 3.14232666170796e-05)
+            * y
+            - 1.83917335649633e-03)
+            * y
+            + 3.51246831672571e-02)
+            * y
+            - 3.22335051270860e-01)
+            * y
+            + 1.73582831755430e+00;
+        t1 = rt1 / (rt1 + 1.0e+00);
+        t2 = rt2 / (rt2 + 1.0e+00);
+        t3 = rt3 / (rt3 + 1.0e+00);
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < 15.0 {
+        e = f64::exp(-x);
+        ww1 = (((-1.8784686463512e-01 / x + 2.2991849164985e-01) / x - 4.9893752514047e-01) / x
+            - 2.1916512131607e-05)
+            * e
+            + f64::sqrt(pie4 / x);
+        f1 = (ww1 - e) / (x + x);
+        f2 = (f1 + f1 + f1 - e) / (x + x);
+        y = x - 12.5e+00;
+        rt1 = (((((((((((4.42133001283090e-16 * y - 2.77189767070441e-15) * y
+            - 4.084026087887e-14)
+            * y
+            + 5.379885121517e-13)
+            * y
+            + 1.882093066702e-12)
+            * y
+            - 8.67286219861085e-11)
+            * y
+            + 7.11372337079797e-10)
+            * y
+            - 3.55578027040563e-09)
+            * y
+            + 1.29454702851936e-07)
+            * y
+            - 4.14222202791434e-06)
+            * y
+            + 8.04427643593792e-05)
+            * y
+            - 1.18587782909876e-03)
+            * y
+            + 1.53435577063174e-02;
+        rt2 = (((((((((((6.85146742119357e-15 * y - 1.08257654410279e-14) * y
+            - 8.579165965128e-13)
+            * y
+            + 6.642452485783e-12)
+            * y
+            + 4.798806828724e-11)
+            * y
+            - 1.13413908163831e-09)
+            * y
+            + 7.08558457182751e-09)
+            * y
+            - 5.59678576054633e-08)
+            * y
+            + 2.51020389884249e-06)
+            * y
+            - 6.63678914608681e-05)
+            * y
+            + 1.11888323089714e-03)
+            * y
+            - 1.45361636398178e-02)
+            * y
+            + 1.65077877454402e-01;
+        rt3 = ((((((((((((3.20622388697743e-15 * y - 2.73458804864628e-14) * y
+            - 3.157134329361e-13)
+            * y
+            + 8.654129268056e-12)
+            * y
+            - 5.625235879301e-11)
+            * y
+            - 7.718080513708e-10)
+            * y
+            + 2.064664199164e-08)
+            * y
+            - 1.567725007761e-07)
+            * y
+            - 1.57938204115055e-06)
+            * y
+            + 6.27436306915967e-05)
+            * y
+            - 1.01308723606946e-03)
+            * y
+            + 1.13901881430697e-02)
+            * y
+            - 1.01449652899450e-01)
+            * y
+            + 7.77203937334739e-01;
+        t1 = rt1 / (rt1 + 1.0e+00);
+        t2 = rt2 / (rt2 + 1.0e+00);
+        t3 = rt3 / (rt3 + 1.0e+00);
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < 33.0 {
+        e = f64::exp(-x);
+        ww1 = ((1.9623264149430e-01 / x - 4.9695241464490e-01) / x - 6.0156581186481e-05) * e
+            + f64::sqrt(pie4 / x);
+        f1 = (ww1 - e) / (x + x);
+        f2 = (f1 + f1 + f1 - e) / (x + x);
+        if x < 20.0 {
+            rt1 = ((((((-2.43270989903742e-06 * x + 3.57901398988359e-04) * x
+                - 2.34112415981143e-02)
+                * x
+                + 7.81425144913975e-01)
+                * x
+                - 1.73209218219175e+01)
+                * x
+                + 2.43517435690398e+02)
+                * x
+                + (-1.97611541576986e+04 / x + 9.82441363463929e+03) / x
+                - 2.07970687843258e+03)
+                * e
+                + r13 / (x - r13);
+            rt2 = (((((-2.62627010965435e-04 * x + 3.49187925428138e-02) * x
+                - 3.09337618731880e+00)
+                * x
+                + 1.07037141010778e+02)
+                * x
+                - 2.36659637247087e+03)
+                * x
+                + ((-2.91669113681020e+06 / x + 1.41129505262758e+06) / x - 2.91532335433779e+05)
+                    / x
+                + 3.35202872835409e+04)
+                * e
+                + r23 / (x - r23);
+            rt3 = (((((9.31856404738601e-05 * x - 2.87029400759565e-02) * x
+                - 7.83503697918455e-01)
+                * x
+                - 1.84338896480695e+01)
+                * x
+                + 4.04996712650414e+02)
+                * x
+                + (-1.89829509315154e+05 / x + 5.11498390849158e+04) / x
+                - 6.88145821789955e+03)
+                * e
+                + r33 / (x - r33);
         } else {
-                ww1 = f64::sqrt(pie4/x);
-                rt1 = r13/(x-r13);
-                rt2 = r23/(x-r23);
-                rt3 = r33/(x-r33);
-                ww2 = w23*ww1;
-                ww3 = w33*ww1;
-                ww1 = ww1-ww2-ww3;
+            rt1 = ((((-4.97561537069643e-04 * x - 5.00929599665316e-02) * x
+                + 1.31099142238996e+00)
+                * x
+                - 1.88336409225481e+01)
+                * x
+                - 6.60344754467191e+02 / x
+                + 1.64931462413877e+02)
+                * e
+                + r13 / (x - r13);
+            rt2 = ((((-4.48218898474906e-03 * x - 5.17373211334924e-01) * x
+                + 1.13691058739678e+01)
+                * x
+                - 1.65426392885291e+02)
+                * x
+                - 6.30909125686731e+03 / x
+                + 1.52231757709236e+03)
+                * e
+                + r23 / (x - r23);
+            rt3 = ((((-1.38368602394293e-02 * x - 1.77293428863008e+00) * x
+                + 1.73639054044562e+01)
+                * x
+                - 3.57615122086961e+02)
+                * x
+                - 1.45734701095912e+04 / x
+                + 2.69831813951849e+03)
+                * e
+                + r33 / (x - r33);
         }
+        t1 = rt1 / (rt1 + 1.0e+00);
+        t2 = rt2 / (rt2 + 1.0e+00);
+        t3 = rt3 / (rt3 + 1.0e+00);
+        a2 = f2 - t1 * f1;
+        a1 = f1 - t1 * ww1;
+        ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
+        ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
+        ww1 = ww1 - ww2 - ww3;
+    } else if x < 47.0 {
+        ww1 = f64::sqrt(pie4 / x);
+        e = f64::exp(-x);
+        rt1 = ((-7.39058467995275e+00 * x + 3.21318352526305e+02) * x - 3.99433696473658e+03) * e
+            + r13 / (x - r13);
+        rt2 = ((-7.38726243906513e+01 * x + 3.13569966333873e+03) * x - 3.86862867311321e+04) * e
+            + r23 / (x - r23);
+        rt3 = ((-2.63750565461336e+02 * x + 1.04412168692352e+04) * x - 1.28094577915394e+05) * e
+            + r33 / (x - r33);
+        ww3 = (((1.52258947224714e-01 * x - 8.30661900042651e+00) * x + 1.92977367967984e+02) * x
+            - 1.67787926005344e+03)
+            * e
+            + w33 * ww1;
+        ww2 = ((6.15072615497811e+01 * x - 2.91980647450269e+03) * x + 3.80794303087338e+04) * e
+            + w23 * ww1;
+        ww1 = ww1 - ww2 - ww3;
+    } else {
+        ww1 = f64::sqrt(pie4 / x);
+        rt1 = r13 / (x - r13);
+        rt2 = r23 / (x - r23);
+        rt3 = r33 / (x - r33);
+        ww2 = w23 * ww1;
+        ww3 = w33 * ww1;
+        ww1 = ww1 - ww2 - ww3;
+    }
     ([rt1, rt2, rt3], [ww1, ww2, ww3])
 }
 
@@ -2329,358 +5159,946 @@ fn rys_root4_host_f64(x: f64) -> ([f64; 4], [f64; 4]) {
     let mut y: f64 = 0.0;
     let mut e: f64 = 0.0;
 
+    r14 = 1.45303521503316e-01;
+    r24 = 1.33909728812636e+00;
+    w24 = 2.34479815323517e-01;
+    r34 = 3.92696350135829e+00;
+    w34 = 1.92704402415764e-02;
+    r44 = 8.58863568901199e+00;
+    w44 = 2.25229076750736e-04;
 
-        r14 = 1.45303521503316e-01;
-        r24 = 1.33909728812636e+00;
-        w24 = 2.34479815323517e-01;
-        r34 = 3.92696350135829e+00;
-        w34 = 1.92704402415764e-02;
-        r44 = 8.58863568901199e+00;
-        w44 = 2.25229076750736e-04;
-
-        if x <= 3.0e-7 {
-                rt1 = 3.48198973061471e-02 -4.09645850660395e-03 *x;
-                rt2 = 3.81567185080042e-01 -4.48902570656719e-02 *x;
-                rt3 = 1.73730726945891e+00 -2.04389090547327e-01 *x;
-                rt4 = 1.18463056481549e+01 -1.39368301742312e+00 *x;
-                ww1 = 3.62683783378362e-01 -3.13844305713928e-02 *x;
-                ww2 = 3.13706645877886e-01 -8.98046242557724e-02 *x;
-                ww3 = 2.22381034453372e-01 -1.29314370958973e-01 *x;
-                ww4 = 1.01228536290376e-01 -8.28299075414321e-02 *x;
-        } else if x <= 1.0 {
-                rt1 = ((((((-1.95309614628539e-10*x+5.19765728707592e-09)*x-
-                           1.01756452250573e-07 )*x+1.72365935872131e-06 )*x-
-                         2.61203523522184e-05 )*x+3.52921308769880e-04 )*x-
-                       4.09645850658433e-03 )*x+3.48198973061469e-02;
-                rt2 = (((((-1.89554881382342e-08*x+3.07583114342365e-07)*x+
-                          1.270981734393e-06)*x-1.417298563884e-04)*x+
-                        3.226979163176e-03)*x-4.48902570678178e-02 )*x+
-                        3.81567185080039e-01;
-                rt3 = (((((( 1.77280535300416e-09*x+3.36524958870615e-08)*x-
-                           2.58341529013893e-07 )*x-1.13644895662320e-05 )*x-
-                         7.91549618884063e-05 )*x+1.03825827346828e-02 )*x-
-                       2.04389090525137e-01 )*x+1.73730726945889e+00;
-                rt4 = (((((-5.61188882415248e-08*x-2.49480733072460e-07)*x+
-                          3.428685057114e-06)*x+1.679007454539e-04)*x+
-                        4.722855585715e-02)*x-1.39368301737828e+00 )*x+
-                        1.18463056481543e+01;
-                ww1 = ((((((-1.14649303201279e-08*x+1.88015570196787e-07)*x-
-                           2.33305875372323e-06 )*x+2.68880044371597e-05 )*x-
-                         2.94268428977387e-04 )*x+3.06548909776613e-03 )*x-
-                       3.13844305680096e-02 )*x+3.62683783378335e-01;
-                ww2 = ((((((((-4.11720483772634e-09*x+6.54963481852134e-08)*x-
-                             7.20045285129626e-07 )*x+6.93779646721723e-06 )*x-
-                           6.05367572016373e-05 )*x+4.74241566251899e-04 )*x-
-                         3.26956188125316e-03 )*x+1.91883866626681e-02 )*x-
-                       8.98046242565811e-02 )*x+3.13706645877886e-01;
-                ww3 = ((((((((-3.41688436990215e-08*x+5.07238960340773e-07)*x-
-                             5.01675628408220e-06 )*x+4.20363420922845e-05 )*x-
-                           3.08040221166823e-04 )*x+1.94431864731239e-03 )*x-
-                         1.02477820460278e-02 )*x+4.28670143840073e-02 )*x-
-                       1.29314370962569e-01 )*x+2.22381034453369e-01;
-                ww4 = ((((((((( 4.99660550769508e-09*x-7.94585963310120e-08)*x+
-                              8.359072409485e-07)*x-7.422369210610e-06)*x+
-                            5.763374308160e-05)*x-3.86645606718233e-04 )*x+
-                          2.18417516259781e-03 )*x-9.99791027771119e-03 )*x+
-                        3.48791097377370e-02 )*x-8.28299075413889e-02 )*x+
-                        1.01228536290376e-01;
-        } else if x <= 5.0 {
-                y = x-3.0e+00;
-                rt1 = (((((((((-1.48570633747284e-15*y-1.33273068108777e-13)*y+
-                              4.068543696670e-12)*y-9.163164161821e-11)*y+
-                            2.046819017845e-09)*y-4.03076426299031e-08 )*y+
-                          7.29407420660149e-07 )*y-1.23118059980833e-05 )*y+
-                        1.88796581246938e-04 )*y-2.53262912046853e-03 )*y+
-                        2.51198234505021e-02;
-                rt2 = ((((((((( 1.35830583483312e-13*y-2.29772605964836e-12)*y-
-                              3.821500128045e-12)*y+6.844424214735e-10)*y-
-                            1.048063352259e-08)*y+1.50083186233363e-08 )*y+
-                          3.48848942324454e-06 )*y-1.08694174399193e-04 )*y+
-                        2.08048885251999e-03 )*y-2.91205805373793e-02 )*y+
-                        2.72276489515713e-01;
-                rt3 = ((((((((( 5.02799392850289e-13*y+1.07461812944084e-11)*y-
-                              1.482277886411e-10)*y-2.153585661215e-09)*y+
-                            3.654087802817e-08)*y+5.15929575830120e-07 )*y-
-                          9.52388379435709e-06 )*y-2.16552440036426e-04 )*y+
-                        9.03551469568320e-03 )*y-1.45505469175613e-01 )*y+
-                        1.21449092319186e+00;
-                rt4 = (((((((((-1.08510370291979e-12*y+6.41492397277798e-11)*y+
-                              7.542387436125e-10)*y-2.213111836647e-09)*y-
-                            1.448228963549e-07)*y-1.95670833237101e-06 )*y-
-                          1.07481314670844e-05 )*y+1.49335941252765e-04 )*y+
-                        4.87791531990593e-02 )*y-1.10559909038653e+00 )*y+
-                        8.09502028611780e+00;
-                ww1 = ((((((((((-4.65801912689961e-14*y+7.58669507106800e-13)*y-
-                               1.186387548048e-11)*y+1.862334710665e-10)*y-
-                             2.799399389539e-09)*y+4.148972684255e-08)*y-
-                           5.933568079600e-07)*y+8.168349266115e-06)*y-
-                         1.08989176177409e-04 )*y+1.41357961729531e-03 )*y-
-                       1.87588361833659e-02 )*y+2.89898651436026e-01;
-                ww2 = ((((((((((((-1.46345073267549e-14*y+2.25644205432182e-13)*y-
-                                 3.116258693847e-12)*y+4.321908756610e-11)*y-
-                               5.673270062669e-10)*y+7.006295962960e-09)*y-
-                             8.120186517000e-08)*y+8.775294645770e-07)*y-
-                           8.77829235749024e-06 )*y+8.04372147732379e-05 )*y-
-                         6.64149238804153e-04 )*y+4.81181506827225e-03 )*y-
-                       2.88982669486183e-02 )*y+1.56247249979288e-01;
-                ww3 = ((((((((((((( 9.06812118895365e-15*y-1.40541322766087e-13)*
-                                  y+1.919270015269e-12)*y-2.605135739010e-11)*y+
-                                3.299685839012e-10)*y-3.86354139348735e-09 )*y+
-                              4.16265847927498e-08 )*y-4.09462835471470e-07 )*y+
-                            3.64018881086111e-06 )*y-2.88665153269386e-05 )*y+
-                          2.00515819789028e-04 )*y-1.18791896897934e-03 )*y+
-                        5.75223633388589e-03 )*y-2.09400418772687e-02 )*y+
-                        4.85368861938873e-02;
-                ww4 = ((((((((((((((-9.74835552342257e-16*y+1.57857099317175e-14)*
-                                   y-2.249993780112e-13)*y+3.173422008953e-12)*y-
-                                 4.161159459680e-11)*y+5.021343560166e-10)*y-
-                               5.545047534808e-09)*y+5.554146993491e-08)*y-
-                             4.99048696190133e-07 )*y+3.96650392371311e-06 )*y-
-                           2.73816413291214e-05 )*y+1.60106988333186e-04 )*y-
-                         7.64560567879592e-04 )*y+2.81330044426892e-03 )*y-
-                       7.16227030134947e-03 )*y+9.66077262223353e-03;
-        } else if x <= 10.0 {
-                y = x-7.5e+00;
-                rt1 = ((((((((( 4.64217329776215e-15*y-6.27892383644164e-15)*y+
-                              3.462236347446e-13)*y-2.927229355350e-11)*y+
-                            5.090355371676e-10)*y-9.97272656345253e-09 )*y+
-                          2.37835295639281e-07 )*y-4.60301761310921e-06 )*y+
-                        8.42824204233222e-05 )*y-1.37983082233081e-03 )*y+
-                        1.66630865869375e-02;
-                rt2 = ((((((((( 2.93981127919047e-14*y+8.47635639065744e-13)*y-
-                              1.446314544774e-11)*y-6.149155555753e-12)*y+
-                            8.484275604612e-10)*y-6.10898827887652e-08 )*y+
-                          2.39156093611106e-06 )*y-5.35837089462592e-05 )*y+
-                        1.00967602595557e-03 )*y-1.57769317127372e-02 )*y+
-                        1.74853819464285e-01;
-                rt3 = (((((((((( 2.93523563363000e-14*y-6.40041776667020e-14)*y-
-                               2.695740446312e-12)*y+1.027082960169e-10)*y-
-                             5.822038656780e-10)*y-3.159991002539e-08)*y+
-                           4.327249251331e-07)*y+4.856768455119e-06)*y-
-                         2.54617989427762e-04 )*y+5.54843378106589e-03 )*y-
-                       7.95013029486684e-02 )*y+7.20206142703162e-01;
-                rt4 = (((((((((((-1.62212382394553e-14*y+7.68943641360593e-13)*y+
-                                5.764015756615e-12)*y-1.380635298784e-10)*y-
-                              1.476849808675e-09)*y+1.84347052385605e-08 )*y+
-                            3.34382940759405e-07 )*y-1.39428366421645e-06 )*y-
-                          7.50249313713996e-05 )*y-6.26495899187507e-04 )*y+
-                        4.69716410901162e-02 )*y-6.66871297428209e-01 )*y+
-                        4.11207530217806e+00;
-                ww1 = ((((((((((-1.65995045235997e-15*y+6.91838935879598e-14)*y-
-                               9.131223418888e-13)*y+1.403341829454e-11)*y-
-                             3.672235069444e-10)*y+6.366962546990e-09)*y-
-                           1.039220021671e-07)*y+1.959098751715e-06)*y-
-                         3.33474893152939e-05 )*y+5.72164211151013e-04 )*y-
-                       1.05583210553392e-02 )*y+2.26696066029591e-01;
-                ww2 = ((((((((((((-3.57248951192047e-16*y+6.25708409149331e-15)*y-
-                                 9.657033089714e-14)*y+1.507864898748e-12)*y-
-                               2.332522256110e-11)*y+3.428545616603e-10)*y-
-                             4.698730937661e-09)*y+6.219977635130e-08)*y-
-                           7.83008889613661e-07 )*y+9.08621687041567e-06 )*y-
-                         9.86368311253873e-05 )*y+9.69632496710088e-04 )*y-
-                       8.14594214284187e-03 )*y+8.50218447733457e-02;
-                ww3 = ((((((((((((( 1.64742458534277e-16*y-2.68512265928410e-15)*
-                                  y+3.788890667676e-14)*y-5.508918529823e-13)*y+
-                                7.555896810069e-12)*y-9.69039768312637e-11 )*y+
-                              1.16034263529672e-09 )*y-1.28771698573873e-08 )*y+
-                            1.31949431805798e-07 )*y-1.23673915616005e-06 )*y+
-                          1.04189803544936e-05 )*y-7.79566003744742e-05 )*y+
-                        5.03162624754434e-04 )*y-2.55138844587555e-03 )*y+
-                        1.13250730954014e-02;
-                ww4 = ((((((((((((((-1.55714130075679e-17*y+2.57193722698891e-16)*
-                                   y-3.626606654097e-15)*y+5.234734676175e-14)*y-
-                                 7.067105402134e-13)*y+8.793512664890e-12)*y-
-                               1.006088923498e-10)*y+1.050565098393e-09)*y-
-                             9.91517881772662e-09 )*y+8.35835975882941e-08 )*y-
-                           6.19785782240693e-07 )*y+3.95841149373135e-06 )*y-
-                         2.11366761402403e-05 )*y+9.00474771229507e-05 )*y-
-                       2.78777909813289e-04 )*y+5.26543779837487e-04;
-        } else if x <= 15.0 {
-                y = x-12.5e+00;
-                rt1 = ((((((((((( 4.94869622744119e-17*y+8.03568805739160e-16)*y-
-                                5.599125915431e-15)*y-1.378685560217e-13)*y+
-                              7.006511663249e-13)*y+1.30391406991118e-11 )*y+
-                            8.06987313467541e-11 )*y-5.20644072732933e-09 )*y+
-                          7.72794187755457e-08 )*y-1.61512612564194e-06 )*y+
-                        4.15083811185831e-05 )*y-7.87855975560199e-04 )*y+
-                        1.14189319050009e-02;
-                rt2 = ((((((((((( 4.89224285522336e-16*y+1.06390248099712e-14)*y-
-                                5.446260182933e-14)*y-1.613630106295e-12)*y+
-                              3.910179118937e-12)*y+1.90712434258806e-10 )*y+
-                            8.78470199094761e-10 )*y-5.97332993206797e-08 )*y+
-                          9.25750831481589e-07 )*y-2.02362185197088e-05 )*y+
-                        4.92341968336776e-04 )*y-8.68438439874703e-03 )*y+
-                        1.15825965127958e-01;
-                rt3 = (((((((((( 6.12419396208408e-14*y+1.12328861406073e-13)*y-
-                               9.051094103059e-12)*y-4.781797525341e-11)*y+
-                             1.660828868694e-09)*y+4.499058798868e-10)*y-
-                           2.519549641933e-07)*y+4.977444040180e-06)*y-
-                         1.25858350034589e-04 )*y+2.70279176970044e-03 )*y-
-                       3.99327850801083e-02 )*y+4.33467200855434e-01;
-                rt4 = ((((((((((( 4.63414725924048e-14*y-4.72757262693062e-14)*y-
-                                1.001926833832e-11)*y+6.074107718414e-11)*y+
-                              1.576976911942e-09)*y-2.01186401974027e-08 )*y-
-                            1.84530195217118e-07 )*y+5.02333087806827e-06 )*y+
-                          9.66961790843006e-06 )*y-1.58522208889528e-03 )*y+
-                        2.80539673938339e-02 )*y-2.78953904330072e-01 )*y+
-                        1.82835655238235e+00;
-                ww4 = ((((((((((((( 2.90401781000996e-18*y-4.63389683098251e-17)*
-                                  y+6.274018198326e-16)*y-8.936002188168e-15)*y+
-                                1.194719074934e-13)*y-1.45501321259466e-12 )*y+
-                              1.64090830181013e-11 )*y-1.71987745310181e-10 )*y+
-                            1.63738403295718e-09 )*y-1.39237504892842e-08 )*y+
-                          1.06527318142151e-07 )*y-7.27634957230524e-07 )*y+
-                        4.12159381310339e-06 )*y-1.74648169719173e-05 )*y+
-                        8.50290130067818e-05;
-                ww3 = ((((((((((((-4.19569145459480e-17*y+5.94344180261644e-16)*y-
-                                 1.148797566469e-14)*y+1.881303962576e-13)*y-
-                               2.413554618391e-12)*y+3.372127423047e-11)*y-
-                             4.933988617784e-10)*y+6.116545396281e-09)*y-
-                           6.69965691739299e-08 )*y+7.52380085447161e-07 )*y-
-                         8.08708393262321e-06 )*y+6.88603417296672e-05 )*y-
-                       4.67067112993427e-04 )*y+5.42313365864597e-03;
-                ww2 = ((((((((((-6.22272689880615e-15*y+1.04126809657554e-13)*y-
-                               6.842418230913e-13)*y+1.576841731919e-11)*y-
-                             4.203948834175e-10)*y+6.287255934781e-09)*y-
-                           8.307159819228e-08)*y+1.356478091922e-06)*y-
-                         2.08065576105639e-05 )*y+2.52396730332340e-04 )*y-
-                       2.94484050194539e-03 )*y+6.01396183129168e-02;
-                ww1 = (((-1.8784686463512e-01/x+2.2991849164985e-01)/x -
-                        4.9893752514047e-01)/x-2.1916512131607e-05)*f64::exp(-x) +
-                        f64::sqrt(pie4/x)-ww4-ww3-ww2;
-        } else if x <= 20.0 {
-                ww1 = f64::sqrt(pie4/x);
-                y = x-17.5e+00;
-                rt1 = ((((((((((( 4.36701759531398e-17*y-1.12860600219889e-16)*y-
-                                6.149849164164e-15)*y+5.820231579541e-14)*y+
-                              4.396602872143e-13)*y-1.24330365320172e-11 )*y+
-                            6.71083474044549e-11 )*y+2.43865205376067e-10 )*y+
-                          1.67559587099969e-08 )*y-9.32738632357572e-07 )*y+
-                        2.39030487004977e-05 )*y-4.68648206591515e-04 )*y+
-                        8.34977776583956e-03;
-                rt2 = ((((((((((( 4.98913142288158e-16*y-2.60732537093612e-16)*y-
-                                7.775156445127e-14)*y+5.766105220086e-13)*y+
-                              6.432696729600e-12)*y-1.39571683725792e-10 )*y+
-                            5.95451479522191e-10 )*y+2.42471442836205e-09 )*y+
-                          2.47485710143120e-07 )*y-1.14710398652091e-05 )*y+
-                        2.71252453754519e-04 )*y-4.96812745851408e-03 )*y+
-                        8.26020602026780e-02;
-                rt3 = ((((((((((( 1.91498302509009e-15*y+1.48840394311115e-14)*y-
-                                4.316925145767e-13)*y+1.186495793471e-12)*y+
-                              4.615806713055e-11)*y-5.54336148667141e-10 )*y+
-                            3.48789978951367e-10 )*y-2.79188977451042e-09 )*y+
-                          2.09563208958551e-06 )*y-6.76512715080324e-05 )*y+
-                        1.32129867629062e-03 )*y-2.05062147771513e-02 )*y+
-                        2.88068671894324e-01;
-                rt4 = (((((((((((-5.43697691672942e-15*y-1.12483395714468e-13)*y+
-                                2.826607936174e-12)*y-1.266734493280e-11)*y-
-                              4.258722866437e-10)*y+9.45486578503261e-09 )*y-
-                            5.86635622821309e-08 )*y-1.28835028104639e-06 )*y+
-                          4.41413815691885e-05 )*y-7.61738385590776e-04 )*y+
-                        9.66090902985550e-03 )*y-1.01410568057649e-01 )*y+
-                        9.54714798156712e-01;
-                ww4 = ((((((((((((-7.56882223582704e-19*y+7.53541779268175e-18)*y-
-                                 1.157318032236e-16)*y+2.411195002314e-15)*y-
-                               3.601794386996e-14)*y+4.082150659615e-13)*y-
-                             4.289542980767e-12)*y+5.086829642731e-11)*y-
-                           6.35435561050807e-10 )*y+6.82309323251123e-09 )*y-
-                         5.63374555753167e-08 )*y+3.57005361100431e-07 )*y-
-                       2.40050045173721e-06 )*y+4.94171300536397e-05;
-                ww3 = (((((((((((-5.54451040921657e-17*y+2.68748367250999e-16)*y+
-                                1.349020069254e-14)*y-2.507452792892e-13)*y+
-                              1.944339743818e-12)*y-1.29816917658823e-11 )*y+
-                            3.49977768819641e-10 )*y-8.67270669346398e-09 )*y+
-                          1.31381116840118e-07 )*y-1.36790720600822e-06 )*y+
-                        1.19210697673160e-05 )*y-1.42181943986587e-04 )*y+
-                        4.12615396191829e-03;
-                ww2 = (((((((((((-1.86506057729700e-16*y+1.16661114435809e-15)*y+
-                                2.563712856363e-14)*y-4.498350984631e-13)*y+
-                              1.765194089338e-12)*y+9.04483676345625e-12 )*y+
-                            4.98930345609785e-10 )*y-2.11964170928181e-08 )*y+
-                          3.98295476005614e-07 )*y-5.49390160829409e-06 )*y+
-                        7.74065155353262e-05 )*y-1.48201933009105e-03 )*y+
-                        4.97836392625268e-02;
-                ww1 = (( 1.9623264149430e-01/x-4.9695241464490e-01)/x -
-                       6.0156581186481e-05)*f64::exp(-x)+ww1-ww2-ww3-ww4;
-        } else if x <= 35.0 {
-                ww1 = f64::sqrt(pie4/x);
-                e = f64::exp(-x);
-                rt1 = ((((((-4.45711399441838e-05*x+1.27267770241379e-03)*x -
-                           2.36954961381262e-01)*x+1.54330657903756e+01)*x -
-                         5.22799159267808e+02)*x+1.05951216669313e+04)*x +
-                       (-2.51177235556236e+06/x+8.72975373557709e+05)/x -
-                       1.29194382386499e+05)*e + r14/(x-r14);
-                rt2 = (((((-7.85617372254488e-02*x+6.35653573484868e+00)*x -
-                          3.38296938763990e+02)*x+1.25120495802096e+04)*x -
-                        3.16847570511637e+05)*x +
-                       ((-1.02427466127427e+09/x +
-                         3.70104713293016e+08)/x-5.87119005093822e+07)/x +
-                       5.38614211391604e+06)*e + r24/(x-r24);
-                rt3 = (((((-2.37900485051067e-01*x+1.84122184400896e+01)*x -
-                          1.00200731304146e+03)*x+3.75151841595736e+04)*x -
-                        9.50626663390130e+05)*x +
-                       ((-2.88139014651985e+09/x +
-                         1.06625915044526e+09)/x-1.72465289687396e+08)/x +
-                       1.60419390230055e+07)*e + r34/(x-r34);
-                rt4 = ((((((-6.00691586407385e-04*x-3.64479545338439e-01)*x +
-                           1.57496131755179e+01)*x-6.54944248734901e+02)*x +
-                         1.70830039597097e+04)*x-2.90517939780207e+05)*x +
-                       (3.49059698304732e+07/x-1.64944522586065e+07)/x +
-                       2.96817940164703e+06)*e + r44/(x-r44);
-                if x <= 25.0 {
-ww4 = ((((((( 2.33766206773151e-07*x-
-                                      3.81542906607063e-05)*x +3.51416601267000e-03)*x-
-                                   1.66538571864728e-01)*x +4.80006136831847e+00)*x-
-                                 8.73165934223603e+01)*x +9.77683627474638e+02)*x +
-                               1.66000945117640e+04/x -6.14479071209961e+03)*e + w44*ww1;
-        }
-                else {
-ww4 = (((((( 5.74245945342286e-06*x-
-                                     7.58735928102351e-05)*x +2.35072857922892e-04)*x-
-                                  3.78812134013125e-03)*x +3.09871652785805e-01)*x-
-                                7.11108633061306e+00)*x +5.55297573149528e+01)*e + w44*ww1;
-        }
-                ww3 = (((((( 2.36392855180768e-04*x-9.16785337967013e-03)*x +
-                           4.62186525041313e-01)*x-1.96943786006540e+01)*x +
-                         4.99169195295559e+02)*x-6.21419845845090e+03)*x +
-                       ((5.21445053212414e+07/x-1.34113464389309e+07)/x +
-                        1.13673298305631e+06)/x-2.81501182042707e+03)*e + w34*ww1;
-                ww2 = (((((( 7.29841848989391e-04*x-3.53899555749875e-02)*x +
-                           2.07797425718513e+00)*x-1.00464709786287e+02)*x +
-                         3.15206108877819e+03)*x-6.27054715090012e+04)*x +
-                       (1.54721246264919e+07/x-5.26074391316381e+06)/x +
-                       7.67135400969617e+05)*e + w24*ww1;
-                ww1 = (( 1.9623264149430e-01/x-4.9695241464490e-01)/x -
-                       6.0156581186481e-05)*e + ww1-ww2-ww3-ww4;
-        } else if x <= 53.0 {
-                ww1 = f64::sqrt(pie4/x);
-                e = f64::exp(-x)*f64::powi(x, 4);
-                rt4 = ((-2.19135070169653e-03*x-1.19108256987623e-01)*x -
-                       7.50238795695573e-01)*e + r44/(x-r44);
-                rt3 = ((-9.65842534508637e-04*x-4.49822013469279e-02)*x +
-                       6.08784033347757e-01)*e + r34/(x-r34);
-                rt2 = ((-3.62569791162153e-04*x-9.09231717268466e-03)*x +
-                       1.84336760556262e-01)*e + r24/(x-r24);
-                rt1 = ((-4.07557525914600e-05*x-6.88846864931685e-04)*x +
-                       1.74725309199384e-02)*e + r14/(x-r14);
-                ww4 = (( 5.76631982000990e-06*x-7.89187283804890e-05)*x +
-                       3.28297971853126e-04)*e + w44*ww1;
-                ww3 = (( 2.08294969857230e-04*x-3.77489954837361e-03)*x +
-                       2.09857151617436e-02)*e + w34*ww1;
-                ww2 = (( 6.16374517326469e-04*x-1.26711744680092e-02)*x +
-                       8.14504890732155e-02)*e + w24*ww1;
-                ww1 = ww1-ww2-ww3-ww4;
+    if x <= 3.0e-7 {
+        rt1 = 3.48198973061471e-02 - 4.09645850660395e-03 * x;
+        rt2 = 3.81567185080042e-01 - 4.48902570656719e-02 * x;
+        rt3 = 1.73730726945891e+00 - 2.04389090547327e-01 * x;
+        rt4 = 1.18463056481549e+01 - 1.39368301742312e+00 * x;
+        ww1 = 3.62683783378362e-01 - 3.13844305713928e-02 * x;
+        ww2 = 3.13706645877886e-01 - 8.98046242557724e-02 * x;
+        ww3 = 2.22381034453372e-01 - 1.29314370958973e-01 * x;
+        ww4 = 1.01228536290376e-01 - 8.28299075414321e-02 * x;
+    } else if x <= 1.0 {
+        rt1 = ((((((-1.95309614628539e-10 * x + 5.19765728707592e-09) * x
+            - 1.01756452250573e-07)
+            * x
+            + 1.72365935872131e-06)
+            * x
+            - 2.61203523522184e-05)
+            * x
+            + 3.52921308769880e-04)
+            * x
+            - 4.09645850658433e-03)
+            * x
+            + 3.48198973061469e-02;
+        rt2 = (((((-1.89554881382342e-08 * x + 3.07583114342365e-07) * x + 1.270981734393e-06)
+            * x
+            - 1.417298563884e-04)
+            * x
+            + 3.226979163176e-03)
+            * x
+            - 4.48902570678178e-02)
+            * x
+            + 3.81567185080039e-01;
+        rt3 = ((((((1.77280535300416e-09 * x + 3.36524958870615e-08) * x
+            - 2.58341529013893e-07)
+            * x
+            - 1.13644895662320e-05)
+            * x
+            - 7.91549618884063e-05)
+            * x
+            + 1.03825827346828e-02)
+            * x
+            - 2.04389090525137e-01)
+            * x
+            + 1.73730726945889e+00;
+        rt4 = (((((-5.61188882415248e-08 * x - 2.49480733072460e-07) * x + 3.428685057114e-06)
+            * x
+            + 1.679007454539e-04)
+            * x
+            + 4.722855585715e-02)
+            * x
+            - 1.39368301737828e+00)
+            * x
+            + 1.18463056481543e+01;
+        ww1 = ((((((-1.14649303201279e-08 * x + 1.88015570196787e-07) * x
+            - 2.33305875372323e-06)
+            * x
+            + 2.68880044371597e-05)
+            * x
+            - 2.94268428977387e-04)
+            * x
+            + 3.06548909776613e-03)
+            * x
+            - 3.13844305680096e-02)
+            * x
+            + 3.62683783378335e-01;
+        ww2 = ((((((((-4.11720483772634e-09 * x + 6.54963481852134e-08) * x
+            - 7.20045285129626e-07)
+            * x
+            + 6.93779646721723e-06)
+            * x
+            - 6.05367572016373e-05)
+            * x
+            + 4.74241566251899e-04)
+            * x
+            - 3.26956188125316e-03)
+            * x
+            + 1.91883866626681e-02)
+            * x
+            - 8.98046242565811e-02)
+            * x
+            + 3.13706645877886e-01;
+        ww3 = ((((((((-3.41688436990215e-08 * x + 5.07238960340773e-07) * x
+            - 5.01675628408220e-06)
+            * x
+            + 4.20363420922845e-05)
+            * x
+            - 3.08040221166823e-04)
+            * x
+            + 1.94431864731239e-03)
+            * x
+            - 1.02477820460278e-02)
+            * x
+            + 4.28670143840073e-02)
+            * x
+            - 1.29314370962569e-01)
+            * x
+            + 2.22381034453369e-01;
+        ww4 = (((((((((4.99660550769508e-09 * x - 7.94585963310120e-08) * x
+            + 8.359072409485e-07)
+            * x
+            - 7.422369210610e-06)
+            * x
+            + 5.763374308160e-05)
+            * x
+            - 3.86645606718233e-04)
+            * x
+            + 2.18417516259781e-03)
+            * x
+            - 9.99791027771119e-03)
+            * x
+            + 3.48791097377370e-02)
+            * x
+            - 8.28299075413889e-02)
+            * x
+            + 1.01228536290376e-01;
+    } else if x <= 5.0 {
+        y = x - 3.0e+00;
+        rt1 = (((((((((-1.48570633747284e-15 * y - 1.33273068108777e-13) * y
+            + 4.068543696670e-12)
+            * y
+            - 9.163164161821e-11)
+            * y
+            + 2.046819017845e-09)
+            * y
+            - 4.03076426299031e-08)
+            * y
+            + 7.29407420660149e-07)
+            * y
+            - 1.23118059980833e-05)
+            * y
+            + 1.88796581246938e-04)
+            * y
+            - 2.53262912046853e-03)
+            * y
+            + 2.51198234505021e-02;
+        rt2 = (((((((((1.35830583483312e-13 * y - 2.29772605964836e-12) * y
+            - 3.821500128045e-12)
+            * y
+            + 6.844424214735e-10)
+            * y
+            - 1.048063352259e-08)
+            * y
+            + 1.50083186233363e-08)
+            * y
+            + 3.48848942324454e-06)
+            * y
+            - 1.08694174399193e-04)
+            * y
+            + 2.08048885251999e-03)
+            * y
+            - 2.91205805373793e-02)
+            * y
+            + 2.72276489515713e-01;
+        rt3 = (((((((((5.02799392850289e-13 * y + 1.07461812944084e-11) * y
+            - 1.482277886411e-10)
+            * y
+            - 2.153585661215e-09)
+            * y
+            + 3.654087802817e-08)
+            * y
+            + 5.15929575830120e-07)
+            * y
+            - 9.52388379435709e-06)
+            * y
+            - 2.16552440036426e-04)
+            * y
+            + 9.03551469568320e-03)
+            * y
+            - 1.45505469175613e-01)
+            * y
+            + 1.21449092319186e+00;
+        rt4 = (((((((((-1.08510370291979e-12 * y + 6.41492397277798e-11) * y
+            + 7.542387436125e-10)
+            * y
+            - 2.213111836647e-09)
+            * y
+            - 1.448228963549e-07)
+            * y
+            - 1.95670833237101e-06)
+            * y
+            - 1.07481314670844e-05)
+            * y
+            + 1.49335941252765e-04)
+            * y
+            + 4.87791531990593e-02)
+            * y
+            - 1.10559909038653e+00)
+            * y
+            + 8.09502028611780e+00;
+        ww1 = ((((((((((-4.65801912689961e-14 * y + 7.58669507106800e-13) * y
+            - 1.186387548048e-11)
+            * y
+            + 1.862334710665e-10)
+            * y
+            - 2.799399389539e-09)
+            * y
+            + 4.148972684255e-08)
+            * y
+            - 5.933568079600e-07)
+            * y
+            + 8.168349266115e-06)
+            * y
+            - 1.08989176177409e-04)
+            * y
+            + 1.41357961729531e-03)
+            * y
+            - 1.87588361833659e-02)
+            * y
+            + 2.89898651436026e-01;
+        ww2 = ((((((((((((-1.46345073267549e-14 * y + 2.25644205432182e-13) * y
+            - 3.116258693847e-12)
+            * y
+            + 4.321908756610e-11)
+            * y
+            - 5.673270062669e-10)
+            * y
+            + 7.006295962960e-09)
+            * y
+            - 8.120186517000e-08)
+            * y
+            + 8.775294645770e-07)
+            * y
+            - 8.77829235749024e-06)
+            * y
+            + 8.04372147732379e-05)
+            * y
+            - 6.64149238804153e-04)
+            * y
+            + 4.81181506827225e-03)
+            * y
+            - 2.88982669486183e-02)
+            * y
+            + 1.56247249979288e-01;
+        ww3 = (((((((((((((9.06812118895365e-15 * y - 1.40541322766087e-13) * y
+            + 1.919270015269e-12)
+            * y
+            - 2.605135739010e-11)
+            * y
+            + 3.299685839012e-10)
+            * y
+            - 3.86354139348735e-09)
+            * y
+            + 4.16265847927498e-08)
+            * y
+            - 4.09462835471470e-07)
+            * y
+            + 3.64018881086111e-06)
+            * y
+            - 2.88665153269386e-05)
+            * y
+            + 2.00515819789028e-04)
+            * y
+            - 1.18791896897934e-03)
+            * y
+            + 5.75223633388589e-03)
+            * y
+            - 2.09400418772687e-02)
+            * y
+            + 4.85368861938873e-02;
+        ww4 = ((((((((((((((-9.74835552342257e-16 * y + 1.57857099317175e-14) * y
+            - 2.249993780112e-13)
+            * y
+            + 3.173422008953e-12)
+            * y
+            - 4.161159459680e-11)
+            * y
+            + 5.021343560166e-10)
+            * y
+            - 5.545047534808e-09)
+            * y
+            + 5.554146993491e-08)
+            * y
+            - 4.99048696190133e-07)
+            * y
+            + 3.96650392371311e-06)
+            * y
+            - 2.73816413291214e-05)
+            * y
+            + 1.60106988333186e-04)
+            * y
+            - 7.64560567879592e-04)
+            * y
+            + 2.81330044426892e-03)
+            * y
+            - 7.16227030134947e-03)
+            * y
+            + 9.66077262223353e-03;
+    } else if x <= 10.0 {
+        y = x - 7.5e+00;
+        rt1 = (((((((((4.64217329776215e-15 * y - 6.27892383644164e-15) * y
+            + 3.462236347446e-13)
+            * y
+            - 2.927229355350e-11)
+            * y
+            + 5.090355371676e-10)
+            * y
+            - 9.97272656345253e-09)
+            * y
+            + 2.37835295639281e-07)
+            * y
+            - 4.60301761310921e-06)
+            * y
+            + 8.42824204233222e-05)
+            * y
+            - 1.37983082233081e-03)
+            * y
+            + 1.66630865869375e-02;
+        rt2 = (((((((((2.93981127919047e-14 * y + 8.47635639065744e-13) * y
+            - 1.446314544774e-11)
+            * y
+            - 6.149155555753e-12)
+            * y
+            + 8.484275604612e-10)
+            * y
+            - 6.10898827887652e-08)
+            * y
+            + 2.39156093611106e-06)
+            * y
+            - 5.35837089462592e-05)
+            * y
+            + 1.00967602595557e-03)
+            * y
+            - 1.57769317127372e-02)
+            * y
+            + 1.74853819464285e-01;
+        rt3 = ((((((((((2.93523563363000e-14 * y - 6.40041776667020e-14) * y
+            - 2.695740446312e-12)
+            * y
+            + 1.027082960169e-10)
+            * y
+            - 5.822038656780e-10)
+            * y
+            - 3.159991002539e-08)
+            * y
+            + 4.327249251331e-07)
+            * y
+            + 4.856768455119e-06)
+            * y
+            - 2.54617989427762e-04)
+            * y
+            + 5.54843378106589e-03)
+            * y
+            - 7.95013029486684e-02)
+            * y
+            + 7.20206142703162e-01;
+        rt4 = (((((((((((-1.62212382394553e-14 * y + 7.68943641360593e-13) * y
+            + 5.764015756615e-12)
+            * y
+            - 1.380635298784e-10)
+            * y
+            - 1.476849808675e-09)
+            * y
+            + 1.84347052385605e-08)
+            * y
+            + 3.34382940759405e-07)
+            * y
+            - 1.39428366421645e-06)
+            * y
+            - 7.50249313713996e-05)
+            * y
+            - 6.26495899187507e-04)
+            * y
+            + 4.69716410901162e-02)
+            * y
+            - 6.66871297428209e-01)
+            * y
+            + 4.11207530217806e+00;
+        ww1 = ((((((((((-1.65995045235997e-15 * y + 6.91838935879598e-14) * y
+            - 9.131223418888e-13)
+            * y
+            + 1.403341829454e-11)
+            * y
+            - 3.672235069444e-10)
+            * y
+            + 6.366962546990e-09)
+            * y
+            - 1.039220021671e-07)
+            * y
+            + 1.959098751715e-06)
+            * y
+            - 3.33474893152939e-05)
+            * y
+            + 5.72164211151013e-04)
+            * y
+            - 1.05583210553392e-02)
+            * y
+            + 2.26696066029591e-01;
+        ww2 = ((((((((((((-3.57248951192047e-16 * y + 6.25708409149331e-15) * y
+            - 9.657033089714e-14)
+            * y
+            + 1.507864898748e-12)
+            * y
+            - 2.332522256110e-11)
+            * y
+            + 3.428545616603e-10)
+            * y
+            - 4.698730937661e-09)
+            * y
+            + 6.219977635130e-08)
+            * y
+            - 7.83008889613661e-07)
+            * y
+            + 9.08621687041567e-06)
+            * y
+            - 9.86368311253873e-05)
+            * y
+            + 9.69632496710088e-04)
+            * y
+            - 8.14594214284187e-03)
+            * y
+            + 8.50218447733457e-02;
+        ww3 = (((((((((((((1.64742458534277e-16 * y - 2.68512265928410e-15) * y
+            + 3.788890667676e-14)
+            * y
+            - 5.508918529823e-13)
+            * y
+            + 7.555896810069e-12)
+            * y
+            - 9.69039768312637e-11)
+            * y
+            + 1.16034263529672e-09)
+            * y
+            - 1.28771698573873e-08)
+            * y
+            + 1.31949431805798e-07)
+            * y
+            - 1.23673915616005e-06)
+            * y
+            + 1.04189803544936e-05)
+            * y
+            - 7.79566003744742e-05)
+            * y
+            + 5.03162624754434e-04)
+            * y
+            - 2.55138844587555e-03)
+            * y
+            + 1.13250730954014e-02;
+        ww4 = ((((((((((((((-1.55714130075679e-17 * y + 2.57193722698891e-16) * y
+            - 3.626606654097e-15)
+            * y
+            + 5.234734676175e-14)
+            * y
+            - 7.067105402134e-13)
+            * y
+            + 8.793512664890e-12)
+            * y
+            - 1.006088923498e-10)
+            * y
+            + 1.050565098393e-09)
+            * y
+            - 9.91517881772662e-09)
+            * y
+            + 8.35835975882941e-08)
+            * y
+            - 6.19785782240693e-07)
+            * y
+            + 3.95841149373135e-06)
+            * y
+            - 2.11366761402403e-05)
+            * y
+            + 9.00474771229507e-05)
+            * y
+            - 2.78777909813289e-04)
+            * y
+            + 5.26543779837487e-04;
+    } else if x <= 15.0 {
+        y = x - 12.5e+00;
+        rt1 = (((((((((((4.94869622744119e-17 * y + 8.03568805739160e-16) * y
+            - 5.599125915431e-15)
+            * y
+            - 1.378685560217e-13)
+            * y
+            + 7.006511663249e-13)
+            * y
+            + 1.30391406991118e-11)
+            * y
+            + 8.06987313467541e-11)
+            * y
+            - 5.20644072732933e-09)
+            * y
+            + 7.72794187755457e-08)
+            * y
+            - 1.61512612564194e-06)
+            * y
+            + 4.15083811185831e-05)
+            * y
+            - 7.87855975560199e-04)
+            * y
+            + 1.14189319050009e-02;
+        rt2 = (((((((((((4.89224285522336e-16 * y + 1.06390248099712e-14) * y
+            - 5.446260182933e-14)
+            * y
+            - 1.613630106295e-12)
+            * y
+            + 3.910179118937e-12)
+            * y
+            + 1.90712434258806e-10)
+            * y
+            + 8.78470199094761e-10)
+            * y
+            - 5.97332993206797e-08)
+            * y
+            + 9.25750831481589e-07)
+            * y
+            - 2.02362185197088e-05)
+            * y
+            + 4.92341968336776e-04)
+            * y
+            - 8.68438439874703e-03)
+            * y
+            + 1.15825965127958e-01;
+        rt3 = ((((((((((6.12419396208408e-14 * y + 1.12328861406073e-13) * y
+            - 9.051094103059e-12)
+            * y
+            - 4.781797525341e-11)
+            * y
+            + 1.660828868694e-09)
+            * y
+            + 4.499058798868e-10)
+            * y
+            - 2.519549641933e-07)
+            * y
+            + 4.977444040180e-06)
+            * y
+            - 1.25858350034589e-04)
+            * y
+            + 2.70279176970044e-03)
+            * y
+            - 3.99327850801083e-02)
+            * y
+            + 4.33467200855434e-01;
+        rt4 = (((((((((((4.63414725924048e-14 * y - 4.72757262693062e-14) * y
+            - 1.001926833832e-11)
+            * y
+            + 6.074107718414e-11)
+            * y
+            + 1.576976911942e-09)
+            * y
+            - 2.01186401974027e-08)
+            * y
+            - 1.84530195217118e-07)
+            * y
+            + 5.02333087806827e-06)
+            * y
+            + 9.66961790843006e-06)
+            * y
+            - 1.58522208889528e-03)
+            * y
+            + 2.80539673938339e-02)
+            * y
+            - 2.78953904330072e-01)
+            * y
+            + 1.82835655238235e+00;
+        ww4 = (((((((((((((2.90401781000996e-18 * y - 4.63389683098251e-17) * y
+            + 6.274018198326e-16)
+            * y
+            - 8.936002188168e-15)
+            * y
+            + 1.194719074934e-13)
+            * y
+            - 1.45501321259466e-12)
+            * y
+            + 1.64090830181013e-11)
+            * y
+            - 1.71987745310181e-10)
+            * y
+            + 1.63738403295718e-09)
+            * y
+            - 1.39237504892842e-08)
+            * y
+            + 1.06527318142151e-07)
+            * y
+            - 7.27634957230524e-07)
+            * y
+            + 4.12159381310339e-06)
+            * y
+            - 1.74648169719173e-05)
+            * y
+            + 8.50290130067818e-05;
+        ww3 = ((((((((((((-4.19569145459480e-17 * y + 5.94344180261644e-16) * y
+            - 1.148797566469e-14)
+            * y
+            + 1.881303962576e-13)
+            * y
+            - 2.413554618391e-12)
+            * y
+            + 3.372127423047e-11)
+            * y
+            - 4.933988617784e-10)
+            * y
+            + 6.116545396281e-09)
+            * y
+            - 6.69965691739299e-08)
+            * y
+            + 7.52380085447161e-07)
+            * y
+            - 8.08708393262321e-06)
+            * y
+            + 6.88603417296672e-05)
+            * y
+            - 4.67067112993427e-04)
+            * y
+            + 5.42313365864597e-03;
+        ww2 = ((((((((((-6.22272689880615e-15 * y + 1.04126809657554e-13) * y
+            - 6.842418230913e-13)
+            * y
+            + 1.576841731919e-11)
+            * y
+            - 4.203948834175e-10)
+            * y
+            + 6.287255934781e-09)
+            * y
+            - 8.307159819228e-08)
+            * y
+            + 1.356478091922e-06)
+            * y
+            - 2.08065576105639e-05)
+            * y
+            + 2.52396730332340e-04)
+            * y
+            - 2.94484050194539e-03)
+            * y
+            + 6.01396183129168e-02;
+        ww1 = (((-1.8784686463512e-01 / x + 2.2991849164985e-01) / x - 4.9893752514047e-01) / x
+            - 2.1916512131607e-05)
+            * f64::exp(-x)
+            + f64::sqrt(pie4 / x)
+            - ww4
+            - ww3
+            - ww2;
+    } else if x <= 20.0 {
+        ww1 = f64::sqrt(pie4 / x);
+        y = x - 17.5e+00;
+        rt1 = (((((((((((4.36701759531398e-17 * y - 1.12860600219889e-16) * y
+            - 6.149849164164e-15)
+            * y
+            + 5.820231579541e-14)
+            * y
+            + 4.396602872143e-13)
+            * y
+            - 1.24330365320172e-11)
+            * y
+            + 6.71083474044549e-11)
+            * y
+            + 2.43865205376067e-10)
+            * y
+            + 1.67559587099969e-08)
+            * y
+            - 9.32738632357572e-07)
+            * y
+            + 2.39030487004977e-05)
+            * y
+            - 4.68648206591515e-04)
+            * y
+            + 8.34977776583956e-03;
+        rt2 = (((((((((((4.98913142288158e-16 * y - 2.60732537093612e-16) * y
+            - 7.775156445127e-14)
+            * y
+            + 5.766105220086e-13)
+            * y
+            + 6.432696729600e-12)
+            * y
+            - 1.39571683725792e-10)
+            * y
+            + 5.95451479522191e-10)
+            * y
+            + 2.42471442836205e-09)
+            * y
+            + 2.47485710143120e-07)
+            * y
+            - 1.14710398652091e-05)
+            * y
+            + 2.71252453754519e-04)
+            * y
+            - 4.96812745851408e-03)
+            * y
+            + 8.26020602026780e-02;
+        rt3 = (((((((((((1.91498302509009e-15 * y + 1.48840394311115e-14) * y
+            - 4.316925145767e-13)
+            * y
+            + 1.186495793471e-12)
+            * y
+            + 4.615806713055e-11)
+            * y
+            - 5.54336148667141e-10)
+            * y
+            + 3.48789978951367e-10)
+            * y
+            - 2.79188977451042e-09)
+            * y
+            + 2.09563208958551e-06)
+            * y
+            - 6.76512715080324e-05)
+            * y
+            + 1.32129867629062e-03)
+            * y
+            - 2.05062147771513e-02)
+            * y
+            + 2.88068671894324e-01;
+        rt4 = (((((((((((-5.43697691672942e-15 * y - 1.12483395714468e-13) * y
+            + 2.826607936174e-12)
+            * y
+            - 1.266734493280e-11)
+            * y
+            - 4.258722866437e-10)
+            * y
+            + 9.45486578503261e-09)
+            * y
+            - 5.86635622821309e-08)
+            * y
+            - 1.28835028104639e-06)
+            * y
+            + 4.41413815691885e-05)
+            * y
+            - 7.61738385590776e-04)
+            * y
+            + 9.66090902985550e-03)
+            * y
+            - 1.01410568057649e-01)
+            * y
+            + 9.54714798156712e-01;
+        ww4 = ((((((((((((-7.56882223582704e-19 * y + 7.53541779268175e-18) * y
+            - 1.157318032236e-16)
+            * y
+            + 2.411195002314e-15)
+            * y
+            - 3.601794386996e-14)
+            * y
+            + 4.082150659615e-13)
+            * y
+            - 4.289542980767e-12)
+            * y
+            + 5.086829642731e-11)
+            * y
+            - 6.35435561050807e-10)
+            * y
+            + 6.82309323251123e-09)
+            * y
+            - 5.63374555753167e-08)
+            * y
+            + 3.57005361100431e-07)
+            * y
+            - 2.40050045173721e-06)
+            * y
+            + 4.94171300536397e-05;
+        ww3 = (((((((((((-5.54451040921657e-17 * y + 2.68748367250999e-16) * y
+            + 1.349020069254e-14)
+            * y
+            - 2.507452792892e-13)
+            * y
+            + 1.944339743818e-12)
+            * y
+            - 1.29816917658823e-11)
+            * y
+            + 3.49977768819641e-10)
+            * y
+            - 8.67270669346398e-09)
+            * y
+            + 1.31381116840118e-07)
+            * y
+            - 1.36790720600822e-06)
+            * y
+            + 1.19210697673160e-05)
+            * y
+            - 1.42181943986587e-04)
+            * y
+            + 4.12615396191829e-03;
+        ww2 = (((((((((((-1.86506057729700e-16 * y + 1.16661114435809e-15) * y
+            + 2.563712856363e-14)
+            * y
+            - 4.498350984631e-13)
+            * y
+            + 1.765194089338e-12)
+            * y
+            + 9.04483676345625e-12)
+            * y
+            + 4.98930345609785e-10)
+            * y
+            - 2.11964170928181e-08)
+            * y
+            + 3.98295476005614e-07)
+            * y
+            - 5.49390160829409e-06)
+            * y
+            + 7.74065155353262e-05)
+            * y
+            - 1.48201933009105e-03)
+            * y
+            + 4.97836392625268e-02;
+        ww1 = ((1.9623264149430e-01 / x - 4.9695241464490e-01) / x - 6.0156581186481e-05)
+            * f64::exp(-x)
+            + ww1
+            - ww2
+            - ww3
+            - ww4;
+    } else if x <= 35.0 {
+        ww1 = f64::sqrt(pie4 / x);
+        e = f64::exp(-x);
+        rt1 = ((((((-4.45711399441838e-05 * x + 1.27267770241379e-03) * x
+            - 2.36954961381262e-01)
+            * x
+            + 1.54330657903756e+01)
+            * x
+            - 5.22799159267808e+02)
+            * x
+            + 1.05951216669313e+04)
+            * x
+            + (-2.51177235556236e+06 / x + 8.72975373557709e+05) / x
+            - 1.29194382386499e+05)
+            * e
+            + r14 / (x - r14);
+        rt2 = (((((-7.85617372254488e-02 * x + 6.35653573484868e+00) * x - 3.38296938763990e+02)
+            * x
+            + 1.25120495802096e+04)
+            * x
+            - 3.16847570511637e+05)
+            * x
+            + ((-1.02427466127427e+09 / x + 3.70104713293016e+08) / x - 5.87119005093822e+07) / x
+            + 5.38614211391604e+06)
+            * e
+            + r24 / (x - r24);
+        rt3 = (((((-2.37900485051067e-01 * x + 1.84122184400896e+01) * x - 1.00200731304146e+03)
+            * x
+            + 3.75151841595736e+04)
+            * x
+            - 9.50626663390130e+05)
+            * x
+            + ((-2.88139014651985e+09 / x + 1.06625915044526e+09) / x - 1.72465289687396e+08) / x
+            + 1.60419390230055e+07)
+            * e
+            + r34 / (x - r34);
+        rt4 = ((((((-6.00691586407385e-04 * x - 3.64479545338439e-01) * x
+            + 1.57496131755179e+01)
+            * x
+            - 6.54944248734901e+02)
+            * x
+            + 1.70830039597097e+04)
+            * x
+            - 2.90517939780207e+05)
+            * x
+            + (3.49059698304732e+07 / x - 1.64944522586065e+07) / x
+            + 2.96817940164703e+06)
+            * e
+            + r44 / (x - r44);
+        if x <= 25.0 {
+            ww4 = (((((((2.33766206773151e-07 * x - 3.81542906607063e-05) * x
+                + 3.51416601267000e-03)
+                * x
+                - 1.66538571864728e-01)
+                * x
+                + 4.80006136831847e+00)
+                * x
+                - 8.73165934223603e+01)
+                * x
+                + 9.77683627474638e+02)
+                * x
+                + 1.66000945117640e+04 / x
+                - 6.14479071209961e+03)
+                * e
+                + w44 * ww1;
         } else {
-                ww1 = f64::sqrt(pie4/x);
-                rt1 = r14/(x-r14);
-                rt2 = r24/(x-r24);
-                rt3 = r34/(x-r34);
-                rt4 = r44/(x-r44);
-                ww4 = w44*ww1;
-                ww3 = w34*ww1;
-                ww2 = w24*ww1;
-                ww1 = ww1-ww2-ww3-ww4;
+            ww4 = ((((((5.74245945342286e-06 * x - 7.58735928102351e-05) * x
+                + 2.35072857922892e-04)
+                * x
+                - 3.78812134013125e-03)
+                * x
+                + 3.09871652785805e-01)
+                * x
+                - 7.11108633061306e+00)
+                * x
+                + 5.55297573149528e+01)
+                * e
+                + w44 * ww1;
         }
+        ww3 = ((((((2.36392855180768e-04 * x - 9.16785337967013e-03) * x
+            + 4.62186525041313e-01)
+            * x
+            - 1.96943786006540e+01)
+            * x
+            + 4.99169195295559e+02)
+            * x
+            - 6.21419845845090e+03)
+            * x
+            + ((5.21445053212414e+07 / x - 1.34113464389309e+07) / x + 1.13673298305631e+06) / x
+            - 2.81501182042707e+03)
+            * e
+            + w34 * ww1;
+        ww2 = ((((((7.29841848989391e-04 * x - 3.53899555749875e-02) * x
+            + 2.07797425718513e+00)
+            * x
+            - 1.00464709786287e+02)
+            * x
+            + 3.15206108877819e+03)
+            * x
+            - 6.27054715090012e+04)
+            * x
+            + (1.54721246264919e+07 / x - 5.26074391316381e+06) / x
+            + 7.67135400969617e+05)
+            * e
+            + w24 * ww1;
+        ww1 = ((1.9623264149430e-01 / x - 4.9695241464490e-01) / x - 6.0156581186481e-05) * e + ww1
+            - ww2
+            - ww3
+            - ww4;
+    } else if x <= 53.0 {
+        ww1 = f64::sqrt(pie4 / x);
+        e = f64::exp(-x) * f64::powi(x, 4);
+        rt4 = ((-2.19135070169653e-03 * x - 1.19108256987623e-01) * x - 7.50238795695573e-01) * e
+            + r44 / (x - r44);
+        rt3 = ((-9.65842534508637e-04 * x - 4.49822013469279e-02) * x + 6.08784033347757e-01) * e
+            + r34 / (x - r34);
+        rt2 = ((-3.62569791162153e-04 * x - 9.09231717268466e-03) * x + 1.84336760556262e-01) * e
+            + r24 / (x - r24);
+        rt1 = ((-4.07557525914600e-05 * x - 6.88846864931685e-04) * x + 1.74725309199384e-02) * e
+            + r14 / (x - r14);
+        ww4 = ((5.76631982000990e-06 * x - 7.89187283804890e-05) * x + 3.28297971853126e-04) * e
+            + w44 * ww1;
+        ww3 = ((2.08294969857230e-04 * x - 3.77489954837361e-03) * x + 2.09857151617436e-02) * e
+            + w34 * ww1;
+        ww2 = ((6.16374517326469e-04 * x - 1.26711744680092e-02) * x + 8.14504890732155e-02) * e
+            + w24 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4;
+    } else {
+        ww1 = f64::sqrt(pie4 / x);
+        rt1 = r14 / (x - r14);
+        rt2 = r24 / (x - r24);
+        rt3 = r34 / (x - r34);
+        rt4 = r44 / (x - r44);
+        ww4 = w44 * ww1;
+        ww3 = w34 * ww1;
+        ww2 = w24 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4;
+    }
     ([rt1, rt2, rt3, rt4], [ww1, ww2, ww3, ww4])
 }
 
@@ -2735,492 +6153,1406 @@ fn rys_root5_host_f64(x: f64) -> ([f64; 5], [f64; 5]) {
     let mut e: f64 = 0.0;
     let mut xxx: f64 = 0.0;
 
+    r15 = 1.17581320211778e-01;
+    r25 = 1.07456201243690e+00;
+    w25 = 2.70967405960535e-01;
+    r35 = 3.08593744371754e+00;
+    w35 = 3.82231610015404e-02;
+    r45 = 6.41472973366203e+00;
+    w45 = 1.51614186862443e-03;
+    r55 = 1.18071894899717e+01;
+    w55 = 8.62130526143657e-06;
 
-        r15 = 1.17581320211778e-01;
-        r25 = 1.07456201243690e+00;
-        w25 = 2.70967405960535e-01;
-        r35 = 3.08593744371754e+00;
-        w35 = 3.82231610015404e-02;
-        r45 = 6.41472973366203e+00;
-        w45 = 1.51614186862443e-03;
-        r55 = 1.18071894899717e+01;
-        w55 = 8.62130526143657e-06;
-
-        if x < 3.0e-7{
-                rt1 = 2.26659266316985e-02 -2.15865967920897e-03 *x;
-                rt2 = 2.31271692140903e-01 -2.20258754389745e-02 *x;
-                rt3 = 8.57346024118836e-01 -8.16520023025515e-02 *x;
-                rt4 = 2.97353038120346e+00 -2.83193369647137e-01 *x;
-                rt5 = 1.84151859759051e+01 -1.75382723579439e+00 *x;
-                ww1 = 2.95524224714752e-01 -1.96867576909777e-02 *x;
-                ww2 = 2.69266719309995e-01 -5.61737590184721e-02 *x;
-                ww3 = 2.19086362515981e-01 -9.71152726793658e-02 *x;
-                ww4 = 1.49451349150580e-01 -1.02979262193565e-01 *x;
-                ww5 = 6.66713443086877e-02 -5.73782817488315e-02 *x;
-        } else if x < 1.0{
-                rt1 = ((((((-4.46679165328413e-11*x+1.21879111988031e-09)*x-
-                           2.62975022612104e-08 )*x+5.15106194905897e-07 )*x-
-                         9.27933625824749e-06 )*x+1.51794097682482e-04 )*x-
-                       2.15865967920301e-03 )*x+2.26659266316985e-02;
-                rt2 = (((((( 1.93117331714174e-10*x-4.57267589660699e-09)*x+
-                           2.48339908218932e-08 )*x+1.50716729438474e-06 )*x-
-                         6.07268757707381e-05 )*x+1.37506939145643e-03 )*x-
-                       2.20258754419939e-02 )*x+2.31271692140905e-01;
-                rt3 = ((((( 4.84989776180094e-09*x+1.31538893944284e-07)*x-
-                          2.766753852879e-06)*x-7.651163510626e-05)*x+
-                        4.033058545972e-03)*x-8.16520022916145e-02 )*x+
-                        8.57346024118779e-01;
-                rt4 = ((((-2.48581772214623e-07*x-4.34482635782585e-06)*x-
-                         7.46018257987630e-07 )*x+1.01210776517279e-02 )*x-
-                       2.83193369640005e-01 )*x+2.97353038120345e+00;
-                rt5 = (((((-8.92432153868554e-09*x+1.77288899268988e-08)*x+
-                          3.040754680666e-06)*x+1.058229325071e-04)*x+
-                        4.596379534985e-02)*x-1.75382723579114e+00 )*x+
-                        1.84151859759049e+01;
-                ww1 = ((((((-2.03822632771791e-09*x+3.89110229133810e-08)*x-
-                           5.84914787904823e-07 )*x+8.30316168666696e-06 )*x-
-                         1.13218402310546e-04 )*x+1.49128888586790e-03 )*x-
-                       1.96867576904816e-02 )*x+2.95524224714749e-01;
-                ww2 = ((((((( 8.62848118397570e-09*x-1.38975551148989e-07)*x+
-                            1.602894068228e-06)*x-1.646364300836e-05)*x+
-                          1.538445806778e-04)*x-1.28848868034502e-03 )*x+
-                        9.38866933338584e-03 )*x-5.61737590178812e-02 )*x+
-                        2.69266719309991e-01;
-                ww3 = ((((((((-9.41953204205665e-09*x+1.47452251067755e-07)*x-
-                             1.57456991199322e-06 )*x+1.45098401798393e-05 )*x-
-                           1.18858834181513e-04 )*x+8.53697675984210e-04 )*x-
-                         5.22877807397165e-03 )*x+2.60854524809786e-02 )*x-
-                       9.71152726809059e-02 )*x+2.19086362515979e-01;
-                ww4 = ((((((((-3.84961617022042e-08*x+5.66595396544470e-07)*x-
-                             5.52351805403748e-06 )*x+4.53160377546073e-05 )*x-
-                           3.22542784865557e-04 )*x+1.95682017370967e-03 )*x-
-                         9.77232537679229e-03 )*x+3.79455945268632e-02 )*x-
-                       1.02979262192227e-01 )*x+1.49451349150573e-01;
-                ww5 = ((((((((( 4.09594812521430e-09*x-6.47097874264417e-08)*x+
-                              6.743541482689e-07)*x-5.917993920224e-06)*x+
-                            4.531969237381e-05)*x-2.99102856679638e-04 )*x+
-                          1.65695765202643e-03 )*x-7.40671222520653e-03 )*x+
-                        2.50889946832192e-02 )*x-5.73782817487958e-02 )*x+
-                        6.66713443086877e-02;
-        } else if x < 5.0 {
-                y = x-3.0e+00;
-                rt1 = ((((((((-2.58163897135138e-14*y+8.14127461488273e-13)*y-
-                             2.11414838976129e-11 )*y+5.09822003260014e-10 )*y-
-                           1.16002134438663e-08 )*y+2.46810694414540e-07 )*y-
-                         4.92556826124502e-06 )*y+9.02580687971053e-05 )*y-
-                       1.45190025120726e-03 )*y+1.73416786387475e-02;
-                rt2 = ((((((((( 1.04525287289788e-14*y+5.44611782010773e-14)*y-
-                              4.831059411392e-12)*y+1.136643908832e-10)*y-
-                            1.104373076913e-09)*y-2.35346740649916e-08 )*y+
-                          1.43772622028764e-06 )*y-4.23405023015273e-05 )*y+
-                        9.12034574793379e-04 )*y-1.52479441718739e-02 )*y+
-                        1.76055265928744e-01;
-                rt3 = (((((((((-6.89693150857911e-14*y+5.92064260918861e-13)*y+
-                              1.847170956043e-11)*y-3.390752744265e-10)*y-
-                            2.995532064116e-09)*y+1.57456141058535e-07 )*y-
-                          3.95859409711346e-07 )*y-9.58924580919747e-05 )*y+
-                        3.23551502557785e-03 )*y-5.97587007636479e-02 )*y+
-                        6.46432853383057e-01;
-                rt4 = ((((((((-3.61293809667763e-12*y-2.70803518291085e-11)*y+
-                             8.83758848468769e-10 )*y+1.59166632851267e-08 )*y-
-                           1.32581997983422e-07 )*y-7.60223407443995e-06 )*y-
-                         7.41019244900952e-05 )*y+9.81432631743423e-03 )*y-
-                       2.23055570487771e-01 )*y+2.21460798080643e+00;
-                rt5 = ((((((((( 7.12332088345321e-13*y+3.16578501501894e-12)*y-
-                              8.776668218053e-11)*y-2.342817613343e-09)*y-
-                            3.496962018025e-08)*y-3.03172870136802e-07 )*y+
-                          1.50511293969805e-06 )*y+1.37704919387696e-04 )*y+
-                        4.70723869619745e-02 )*y-1.47486623003693e+00 )*y+
-                        1.35704792175847e+01;
-                ww1 = ((((((((( 1.04348658616398e-13*y-1.94147461891055e-12)*y+
-                              3.485512360993e-11)*y-6.277497362235e-10)*y+
-                            1.100758247388e-08)*y-1.88329804969573e-07 )*y+
-                          3.12338120839468e-06 )*y-5.04404167403568e-05 )*y+
-                        8.00338056610995e-04 )*y-1.30892406559521e-02 )*y+
-                        2.47383140241103e-01;
-                ww2 = ((((((((((( 3.23496149760478e-14*y-5.24314473469311e-13)*y+
-                                7.743219385056e-12)*y-1.146022750992e-10)*y+
-                              1.615238462197e-09)*y-2.15479017572233e-08 )*y+
-                            2.70933462557631e-07 )*y-3.18750295288531e-06 )*y+
-                          3.47425221210099e-05 )*y-3.45558237388223e-04 )*y+
-                        3.05779768191621e-03 )*y-2.29118251223003e-02 )*y+
-                        1.59834227924213e-01;
-                ww3 = ((((((((((((-3.42790561802876e-14*y+5.26475736681542e-13)*y-
-                                 7.184330797139e-12)*y+9.763932908544e-11)*y-
-                               1.244014559219e-09)*y+1.472744068942e-08)*y-
-                             1.611749975234e-07)*y+1.616487851917e-06)*y-
-                           1.46852359124154e-05 )*y+1.18900349101069e-04 )*y-
-                         8.37562373221756e-04 )*y+4.93752683045845e-03 )*y-
-                       2.25514728915673e-02 )*y+6.95211812453929e-02;
-                ww4 = ((((((((((((( 1.04072340345039e-14*y-1.60808044529211e-13)*
-                                  y+2.183534866798e-12)*y-2.939403008391e-11)*y+
-                                3.679254029085e-10)*y-4.23775673047899e-09 )*y+
-                              4.46559231067006e-08 )*y-4.26488836563267e-07 )*y+
-                            3.64721335274973e-06 )*y-2.74868382777722e-05 )*y+
-                          1.78586118867488e-04 )*y-9.68428981886534e-04 )*y+
-                        4.16002324339929e-03 )*y-1.28290192663141e-02 )*y+
-                        2.22353727685016e-02;
-                ww5 = ((((((((((((((-8.16770412525963e-16*y+1.31376515047977e-14)*
-                                   y-1.856950818865e-13)*y+2.596836515749e-12)*y-
-                                 3.372639523006e-11)*y+4.025371849467e-10)*y-
-                               4.389453269417e-09)*y+4.332753856271e-08)*y-
-                             3.82673275931962e-07 )*y+2.98006900751543e-06 )*y-
-                           2.00718990300052e-05 )*y+1.13876001386361e-04 )*y-
-                         5.23627942443563e-04 )*y+1.83524565118203e-03 )*y-
-                       4.37785737450783e-03 )*y+5.36963805223095e-03;
-        } else if x < 10.0 {
-                y = x-7.5e+00;
-                rt1 = ((((((((-1.13825201010775e-14*y+1.89737681670375e-13)*y-
-                             4.81561201185876e-12 )*y+1.56666512163407e-10 )*y-
-                           3.73782213255083e-09 )*y+9.15858355075147e-08 )*y-
-                         2.13775073585629e-06 )*y+4.56547356365536e-05 )*y-
-                       8.68003909323740e-04 )*y+1.22703754069176e-02;
-                rt2 = (((((((((-3.67160504428358e-15*y+1.27876280158297e-14)*y-
-                              1.296476623788e-12)*y+1.477175434354e-11)*y+
-                            5.464102147892e-10)*y-2.42538340602723e-08 )*y+
-                          8.20460740637617e-07 )*y-2.20379304598661e-05 )*y+
-                        4.90295372978785e-04 )*y-9.14294111576119e-03 )*y+
-                        1.22590403403690e-01;
-                rt3 = ((((((((( 1.39017367502123e-14*y-6.96391385426890e-13)*y+
-                              1.176946020731e-12)*y+1.725627235645e-10)*y-
-                            3.686383856300e-09)*y+2.87495324207095e-08 )*y+
-                          1.71307311000282e-06 )*y-7.94273603184629e-05 )*y+
-                        2.00938064965897e-03 )*y-3.63329491677178e-02 )*y+
-                        4.34393683888443e-01;
-                rt4 = ((((((((((-1.27815158195209e-14*y+1.99910415869821e-14)*y+
-                               3.753542914426e-12)*y-2.708018219579e-11)*y-
-                             1.190574776587e-09)*y+1.106696436509e-08)*y+
-                           3.954955671326e-07)*y-4.398596059588e-06)*y-
-                         2.01087998907735e-04 )*y+7.89092425542937e-03 )*y-
-                       1.42056749162695e-01 )*y+1.39964149420683e+00;
-                rt5 = ((((((((((-1.19442341030461e-13*y-2.34074833275956e-12)*y+
-                               6.861649627426e-12)*y+6.082671496226e-10)*y+
-                             5.381160105420e-09)*y-6.253297138700e-08)*y-
-                           2.135966835050e-06)*y-2.373394341886e-05)*y+
-                         2.88711171412814e-06 )*y+4.85221195290753e-02 )*y-
-                       1.04346091985269e+00 )*y+7.89901551676692e+00;
-                ww1 = ((((((((( 7.95526040108997e-15*y-2.48593096128045e-13)*y+
-                              4.761246208720e-12)*y-9.535763686605e-11)*y+
-                            2.225273630974e-09)*y-4.49796778054865e-08 )*y+
-                          9.17812870287386e-07 )*y-1.86764236490502e-05 )*y+
-                        3.76807779068053e-04 )*y-8.10456360143408e-03 )*y+
-                        2.01097936411496e-01;
-                ww2 = ((((((((((( 1.25678686624734e-15*y-2.34266248891173e-14)*y+
-                                3.973252415832e-13)*y-6.830539401049e-12)*y+
-                              1.140771033372e-10)*y-1.82546185762009e-09 )*y+
-                            2.77209637550134e-08 )*y-4.01726946190383e-07 )*y+
-                          5.48227244014763e-06 )*y-6.95676245982121e-05 )*y+
-                        8.05193921815776e-04 )*y-8.15528438784469e-03 )*y+
-                        9.71769901268114e-02;
-                ww3 = ((((((((((((-8.20929494859896e-16*y+1.37356038393016e-14)*y-
-                                 2.022863065220e-13)*y+3.058055403795e-12)*y-
-                               4.387890955243e-11)*y+5.923946274445e-10)*y-
-                             7.503659964159e-09)*y+8.851599803902e-08)*y-
-                           9.65561998415038e-07 )*y+9.60884622778092e-06 )*y-
-                         8.56551787594404e-05 )*y+6.66057194311179e-04 )*y-
-                       4.17753183902198e-03 )*y+2.25443826852447e-02;
-                ww4 = ((((((((((((((-1.08764612488790e-17*y+1.85299909689937e-16)*
-                                   y-2.730195628655e-15)*y+4.127368817265e-14)*y-
-                                 5.881379088074e-13)*y+7.805245193391e-12)*y-
-                               9.632707991704e-11)*y+1.099047050624e-09)*y-
-                             1.15042731790748e-08 )*y+1.09415155268932e-07 )*y-
-                           9.33687124875935e-07 )*y+7.02338477986218e-06 )*y-
-                         4.53759748787756e-05 )*y+2.41722511389146e-04 )*y-
-                       9.75935943447037e-04 )*y+2.57520532789644e-03;
-                ww5 = ((((((((((((((( 7.28996979748849e-19*y-1.26518146195173e-17)
-                                    *y+1.886145834486e-16)*y-2.876728287383e-15)*y+
-                                  4.114588668138e-14)*y-5.44436631413933e-13 )*y+
-                                6.64976446790959e-12 )*y-7.44560069974940e-11 )*y+
-                              7.57553198166848e-10 )*y-6.92956101109829e-09 )*y+
-                            5.62222859033624e-08 )*y-3.97500114084351e-07 )*y+
-                          2.39039126138140e-06 )*y-1.18023950002105e-05 )*y+
-                        4.52254031046244e-05 )*y-1.21113782150370e-04 )*y+
-                        1.75013126731224e-04;
-        } else if x < 15.0 {
-                y = x-12.5e+00;
-                rt1 = ((((((((((-4.16387977337393e-17*y+7.20872997373860e-16)*y+
-                               1.395993802064e-14)*y+3.660484641252e-14)*y-
-                             4.154857548139e-12)*y+2.301379846544e-11)*y-
-                           1.033307012866e-09)*y+3.997777641049e-08)*y-
-                         9.35118186333939e-07 )*y+2.38589932752937e-05 )*y-
-                       5.35185183652937e-04 )*y+8.85218988709735e-03;
-                rt2 = ((((((((((-4.56279214732217e-16*y+6.24941647247927e-15)*y+
-                               1.737896339191e-13)*y+8.964205979517e-14)*y-
-                             3.538906780633e-11)*y+9.561341254948e-11)*y-
-                           9.772831891310e-09)*y+4.240340194620e-07)*y-
-                         1.02384302866534e-05 )*y+2.57987709704822e-04 )*y-
-                       5.54735977651677e-03 )*y+8.68245143991948e-02;
-                rt3 = ((((((((((-2.52879337929239e-15*y+2.13925810087833e-14)*y+
-                               7.884307667104e-13)*y-9.023398159510e-13)*y-
-                             5.814101544957e-11)*y-1.333480437968e-09)*y-
-                           2.217064940373e-08)*y+1.643290788086e-06)*y-
-                         4.39602147345028e-05 )*y+1.08648982748911e-03 )*y-
-                       2.13014521653498e-02 )*y+2.94150684465425e-01;
-                rt4 = ((((((((((-6.42391438038888e-15*y+5.37848223438815e-15)*y+
-                               8.960828117859e-13)*y+5.214153461337e-11)*y-
-                             1.106601744067e-10)*y-2.007890743962e-08)*y+
-                           1.543764346501e-07)*y+4.520749076914e-06)*y-
-                         1.88893338587047e-04 )*y+4.73264487389288e-03 )*y-
-                       7.91197893350253e-02 )*y+8.60057928514554e-01;
-                rt5 = (((((((((((-2.24366166957225e-14*y+4.87224967526081e-14)*y+
-                                5.587369053655e-12)*y-3.045253104617e-12)*y-
-                              1.223983883080e-09)*y-2.05603889396319e-09 )*y+
-                            2.58604071603561e-07 )*y+1.34240904266268e-06 )*y-
-                          5.72877569731162e-05 )*y-9.56275105032191e-04 )*y+
-                        4.23367010370921e-02 )*y-5.76800927133412e-01 )*y+
-                        3.87328263873381e+00;
-                ww1 = ((((((((( 8.98007931950169e-15*y+7.25673623859497e-14)*y+
-                              5.851494250405e-14)*y-4.234204823846e-11)*y+
-                            3.911507312679e-10)*y-9.65094802088511e-09 )*y+
-                          3.42197444235714e-07 )*y-7.51821178144509e-06 )*y+
-                        1.94218051498662e-04 )*y-5.38533819142287e-03 )*y+
-                        1.68122596736809e-01;
-                ww2 = ((((((((((-1.05490525395105e-15*y+1.96855386549388e-14)*y-
-                               5.500330153548e-13)*y+1.003849567976e-11)*y-
-                             1.720997242621e-10)*y+3.533277061402e-09)*y-
-                           6.389171736029e-08)*y+1.046236652393e-06)*y-
-                         1.73148206795827e-05 )*y+2.57820531617185e-04 )*y-
-                       3.46188265338350e-03 )*y+7.03302497508176e-02;
-                ww3 = ((((((((((( 3.60020423754545e-16*y-6.24245825017148e-15)*y+
-                                9.945311467434e-14)*y-1.749051512721e-12)*y+
-                              2.768503957853e-11)*y-4.08688551136506e-10 )*y+
-                            6.04189063303610e-09 )*y-8.23540111024147e-08 )*y+
-                          1.01503783870262e-06 )*y-1.20490761741576e-05 )*y+
-                        1.26928442448148e-04 )*y-1.05539461930597e-03 )*y+
-                        1.15543698537013e-02;
-                ww4 = ((((((((((((( 2.51163533058925e-18*y-4.31723745510697e-17)*
-                                  y+6.557620865832e-16)*y-1.016528519495e-14)*y+
-                                1.491302084832e-13)*y-2.06638666222265e-12 )*y+
-                              2.67958697789258e-11 )*y-3.23322654638336e-10 )*y+
-                            3.63722952167779e-09 )*y-3.75484943783021e-08 )*y+
-                          3.49164261987184e-07 )*y-2.92658670674908e-06 )*y+
-                        2.12937256719543e-05 )*y-1.19434130620929e-04 )*y+
-                        6.45524336158384e-04;
-                ww5 = ((((((((((((((-1.29043630202811e-19*y+2.16234952241296e-18)*
-                                   y-3.107631557965e-17)*y+4.570804313173e-16)*y-
-                                 6.301348858104e-15)*y+8.031304476153e-14)*y-
-                               9.446196472547e-13)*y+1.018245804339e-11)*y-
-                             9.96995451348129e-11 )*y+8.77489010276305e-10 )*y-
-                           6.84655877575364e-09 )*y+4.64460857084983e-08 )*y-
-                         2.66924538268397e-07 )*y+1.24621276265907e-06 )*y-
-                       4.30868944351523e-06 )*y+9.94307982432868e-06;
-        } else if x < 20.0{
-                y = x-17.5e+00;
-                rt1 = (((((((((( 1.91875764545740e-16*y+7.8357401095707e-16)*y-
-                               3.260875931644e-14)*y-1.186752035569e-13)*y+
-                             4.275180095653e-12)*y+3.357056136731e-11)*y-
-                           1.123776903884e-09)*y+1.231203269887e-08)*y-
-                         3.99851421361031e-07 )*y+1.45418822817771e-05 )*y-
-                       3.49912254976317e-04 )*y+6.67768703938812e-03;
-                rt2 = (((((((((( 2.02778478673555e-15*y+1.01640716785099e-14)*y-
-                               3.385363492036e-13)*y-1.615655871159e-12)*y+
-                             4.527419140333e-11)*y+3.853670706486e-10)*y-
-                           1.184607130107e-08)*y+1.347873288827e-07)*y-
-                         4.47788241748377e-06 )*y+1.54942754358273e-04 )*y-
-                       3.55524254280266e-03 )*y+6.44912219301603e-02;
-                rt3 = (((((((((( 7.79850771456444e-15*y+6.00464406395001e-14)*y-
-                               1.249779730869e-12)*y-1.020720636353e-11)*y+
-                             1.814709816693e-10)*y+1.766397336977e-09)*y-
-                           4.603559449010e-08)*y+5.863956443581e-07)*y-
-                         2.03797212506691e-05 )*y+6.31405161185185e-04 )*y-
-                       1.30102750145071e-02 )*y+2.10244289044705e-01;
-                rt4 = (((((((((((-2.92397030777912e-15*y+1.94152129078465e-14)*y+
-                                4.859447665850e-13)*y-3.217227223463e-12)*y-
-                              7.484522135512e-11)*y+7.19101516047753e-10 )*y+
-                            6.88409355245582e-09 )*y-1.44374545515769e-07 )*y+
-                          2.74941013315834e-06 )*y-1.02790452049013e-04 )*y+
-                        2.59924221372643e-03 )*y-4.35712368303551e-02 )*y+
-                        5.62170709585029e-01;
-                rt5 = ((((((((((( 1.17976126840060e-14*y+1.24156229350669e-13)*y-
-                                3.892741622280e-12)*y-7.755793199043e-12)*y+
-                              9.492190032313e-10)*y-4.98680128123353e-09 )*y-
-                            1.81502268782664e-07 )*y+2.69463269394888e-06 )*y+
-                          2.50032154421640e-05 )*y-1.33684303917681e-03 )*y+
-                        2.29121951862538e-02 )*y-2.45653725061323e-01 )*y+
-                        1.89999883453047e+00;
-                ww1 = (((((((((( 1.74841995087592e-15*y-6.95671892641256e-16)*y-
-                               3.000659497257e-13)*y+2.021279817961e-13)*y+
-                             3.853596935400e-11)*y+1.461418533652e-10)*y-
-                           1.014517563435e-08)*y+1.132736008979e-07)*y-
-                         2.86605475073259e-06 )*y+1.21958354908768e-04 )*y-
-                       3.86293751153466e-03 )*y+1.45298342081522e-01;
-                ww2 = ((((((((((-1.11199320525573e-15*y+1.85007587796671e-15)*y+
-                               1.220613939709e-13)*y+1.275068098526e-12)*y-
-                             5.341838883262e-11)*y+6.161037256669e-10)*y-
-                           1.009147879750e-08)*y+2.907862965346e-07)*y-
-                         6.12300038720919e-06 )*y+1.00104454489518e-04 )*y-
-                       1.80677298502757e-03 )*y+5.78009914536630e-02;
-                ww3 = ((((((((((-9.49816486853687e-16*y+6.67922080354234e-15)*y+
-                               2.606163540537e-15)*y+1.983799950150e-12)*y-
-                             5.400548574357e-11)*y+6.638043374114e-10)*y-
-                           8.799518866802e-09)*y+1.791418482685e-07)*y-
-                         2.96075397351101e-06 )*y+3.38028206156144e-05 )*y-
-                       3.58426847857878e-04 )*y+8.39213709428516e-03;
-                ww4 = ((((((((((( 1.33829971060180e-17*y-3.44841877844140e-16)*y+
-                                4.745009557656e-15)*y-6.033814209875e-14)*y+
-                              1.049256040808e-12)*y-1.70859789556117e-11 )*y+
-                            2.15219425727959e-10 )*y-2.52746574206884e-09 )*y+
-                          3.27761714422960e-08 )*y-3.90387662925193e-07 )*y+
-                        3.46340204593870e-06 )*y-2.43236345136782e-05 )*y+
-                        3.54846978585226e-04;
-                ww5 = ((((((((((((( 2.69412277020887e-20*y-4.24837886165685e-19)*
-                                  y+6.030500065438e-18)*y-9.069722758289e-17)*y+
-                                1.246599177672e-15)*y-1.56872999797549e-14 )*y+
-                              1.87305099552692e-13 )*y-2.09498886675861e-12 )*y+
-                            2.11630022068394e-11 )*y-1.92566242323525e-10 )*y+
-                          1.62012436344069e-09 )*y-1.23621614171556e-08 )*y+
-                        7.72165684563049e-08 )*y-3.59858901591047e-07 )*y+
-                        2.43682618601000e-06;
-        } else if x < 25.0 {
-                y = x-22.5e+00;
-                rt1 = (((((((((-1.13927848238726e-15*y+7.39404133595713e-15)*y+
-                              1.445982921243e-13)*y-2.676703245252e-12)*y+
-                            5.823521627177e-12)*y+2.17264723874381e-10 )*y+
-                          3.56242145897468e-09 )*y-3.03763737404491e-07 )*y+
-                        9.46859114120901e-06 )*y-2.30896753853196e-04 )*y+
-                        5.24663913001114e-03;
-                rt2 = (((((((((( 2.89872355524581e-16*y-1.22296292045864e-14)*y+
-                               6.184065097200e-14)*y+1.649846591230e-12)*y-
-                             2.729713905266e-11)*y+3.709913790650e-11)*y+
-                           2.216486288382e-09)*y+4.616160236414e-08)*y-
-                         3.32380270861364e-06 )*y+9.84635072633776e-05 )*y-
-                       2.30092118015697e-03 )*y+5.00845183695073e-02;
-                rt3 = (((((((((( 1.97068646590923e-15*y-4.89419270626800e-14)*y+
-                               1.136466605916e-13)*y+7.546203883874e-12)*y-
-                             9.635646767455e-11)*y-8.295965491209e-11)*y+
-                           7.534109114453e-09)*y+2.699970652707e-07)*y-
-                         1.42982334217081e-05 )*y+3.78290946669264e-04 )*y-
-                       8.03133015084373e-03 )*y+1.58689469640791e-01;
-                rt4 = (((((((((( 1.33642069941389e-14*y-1.55850612605745e-13)*y-
-                               7.522712577474e-13)*y+3.209520801187e-11)*y-
-                             2.075594313618e-10)*y-2.070575894402e-09)*y+
-                           7.323046997451e-09)*y+1.851491550417e-06)*y-
-                         6.37524802411383e-05 )*y+1.36795464918785e-03 )*y-
-                       2.42051126993146e-02 )*y+3.97847167557815e-01;
-                rt5 = ((((((((((-6.07053986130526e-14*y+1.04447493138843e-12)*y-
-                               4.286617818951e-13)*y-2.632066100073e-10)*y+
-                             4.804518986559e-09)*y-1.835675889421e-08)*y-
-                           1.068175391334e-06)*y+3.292234974141e-05)*y-
-                         5.94805357558251e-04 )*y+8.29382168612791e-03 )*y-
-                       9.93122509049447e-02 )*y+1.09857804755042e+00;
-                ww1 = (((((((((-9.10338640266542e-15*y+1.00438927627833e-13)*y+
-                              7.817349237071e-13)*y-2.547619474232e-11)*y+
-                            1.479321506529e-10)*y+1.52314028857627e-09 )*y+
-                          9.20072040917242e-09 )*y-2.19427111221848e-06 )*y+
-                        8.65797782880311e-05 )*y-2.82718629312875e-03 )*y+
-                        1.28718310443295e-01;
-                ww2 = ((((((((( 5.52380927618760e-15*y-6.43424400204124e-14)*y-
-                              2.358734508092e-13)*y+8.261326648131e-12)*y+
-                            9.229645304956e-11)*y-5.68108973828949e-09 )*y+
-                          1.22477891136278e-07 )*y-2.11919643127927e-06 )*y+
-                        4.23605032368922e-05 )*y-1.14423444576221e-03 )*y+
-                        5.06607252890186e-02;
-                ww3 = ((((((((( 3.99457454087556e-15*y-5.11826702824182e-14)*y-
-                              4.157593182747e-14)*y+4.214670817758e-12)*y+
-                            6.705582751532e-11)*y-3.36086411698418e-09 )*y+
-                          6.07453633298986e-08 )*y-7.40736211041247e-07 )*y+
-                        8.84176371665149e-06 )*y-1.72559275066834e-04 )*y+
-                        7.16639814253567e-03;
-                ww4 = (((((((((((-2.14649508112234e-18*y-2.45525846412281e-18)*y+
-                                6.126212599772e-16)*y-8.526651626939e-15)*y+
-                              4.826636065733e-14)*y-3.39554163649740e-13 )*y+
-                            1.67070784862985e-11 )*y-4.42671979311163e-10 )*y+
-                          6.77368055908400e-09 )*y-7.03520999708859e-08 )*y+
-                        6.04993294708874e-07 )*y-7.80555094280483e-06 )*y+
-                        2.85954806605017e-04;
-                ww5 = ((((((((((((-5.63938733073804e-21*y+6.92182516324628e-20)*y-
-                                 1.586937691507e-18)*y+3.357639744582e-17)*y-
-                               4.810285046442e-16)*y+5.386312669975e-15)*y-
-                             6.117895297439e-14)*y+8.441808227634e-13)*y-
-                           1.18527596836592e-11 )*y+1.36296870441445e-10 )*y-
-                         1.17842611094141e-09 )*y+7.80430641995926e-09 )*y-
-                       5.97767417400540e-08 )*y+1.65186146094969e-06;
-        } else if x < 40.0 {
-                ww1 = f64::sqrt(pie4/x);
-                e = f64::exp(-x);
-                rt1 = ((((((((-1.73363958895356e-06*x+1.19921331441483e-04)*x -
-                             1.59437614121125e-02)*x+1.13467897349442e+00)*x -
-                           4.47216460864586e+01)*x+1.06251216612604e+03)*x -
-                         1.52073917378512e+04)*x+1.20662887111273e+05)*x -
-                       4.07186366852475e+05)*e + r15/(x-r15);
-                rt2 = ((((((((-1.60102542621710e-05*x+1.10331262112395e-03)*x -
-                             1.50043662589017e-01)*x+1.05563640866077e+01)*x -
-                           4.10468817024806e+02)*x+9.62604416506819e+03)*x -
-                         1.35888069838270e+05)*x+1.06107577038340e+06)*x -
-                       3.51190792816119e+06)*e + r25/(x-r25);
-                rt3 = ((((((((-4.48880032128422e-05*x+2.69025112122177e-03)*x -
-                             4.01048115525954e-01)*x+2.78360021977405e+01)*x -
-                           1.04891729356965e+03)*x+2.36985942687423e+04)*x -
-                         3.19504627257548e+05)*x+2.34879693563358e+06)*x -
-                       7.16341568174085e+06)*e + r35/(x-r35);
-                rt4 = ((((((((-6.38526371092582e-05*x-2.29263585792626e-03)*x -
-                             7.65735935499627e-02)*x+9.12692349152792e+00)*x -
-                           2.32077034386717e+02)*x+2.81839578728845e+02)*x +
-                         9.59529683876419e+04)*x-1.77638956809518e+06)*x +
-                       1.02489759645410e+07)*e + r45/(x-r45);
-                rt5 = ((((((((-3.59049364231569e-05*x-2.25963977930044e-02)*x +
-                             1.12594870794668e+00)*x-4.56752462103909e+01)*x +
-                           1.05804526830637e+03)*x-1.16003199605875e+04)*x -
-                         4.07297627297272e+04)*x+2.22215528319857e+06)*x -
-                       1.61196455032613e+07)*e + r55/(x-r55);
-                ww5 = (((((((((-4.61100906133970e-10*x+1.43069932644286e-07)*x -
-                              1.63960915431080e-05)*x+1.15791154612838e-03)*x -
-                            5.30573476742071e-02)*x+1.61156533367153e+00)*x -
-                          3.23248143316007e+01)*x+4.12007318109157e+02)*x -
-                        3.02260070158372e+03)*x+9.71575094154768e+03)*e + w55*ww1;
-                ww4 = (((((((((-2.40799435809950e-08*x+8.12621667601546e-06)*x -
-                              9.04491430884113e-04)*x+6.37686375770059e-02)*x -
-                            2.96135703135647e+00)*x+9.15142356996330e+01)*x -
-                          1.86971865249111e+03)*x+2.42945528916947e+04)*x -
-                        1.81852473229081e+05)*x+5.96854758661427e+05)*e + w45*ww1;
-                ww3 = (((((((( 1.83574464457207e-05*x-1.54837969489927e-03)*x +
-                             1.18520453711586e-01)*x-6.69649981309161e+00)*x +
-                           2.44789386487321e+02)*x-5.68832664556359e+03)*x +
-                         8.14507604229357e+04)*x-6.55181056671474e+05)*x +
-                       2.26410896607237e+06)*e + w35*ww1;
-                ww2 = (((((((( 2.77778345870650e-05*x-2.22835017655890e-03)*x +
-                             1.61077633475573e-01)*x-8.96743743396132e+00)*x +
-                           3.28062687293374e+02)*x-7.65722701219557e+03)*x +
-                         1.10255055017664e+05)*x-8.92528122219324e+05)*x +
-                       3.10638627744347e+06)*e + w25*ww1;
-                ww1 = ww1-0.01962e+00*e-ww2-ww3-ww4-ww5;
-        } else if x < 59.0 {
-                ww1 = f64::sqrt(pie4/x);
-                xxx = x * x * x;
-                e = xxx*f64::exp(-x);
-                rt1 = (((-2.43758528330205e-02*x+2.07301567989771e+00)*x -
-                        6.45964225381113e+01)*x+7.14160088655470e+02)*e + r15/(x-r15);
-                rt2 = (((-2.28861955413636e-01*x+1.93190784733691e+01)*x -
-                        5.99774730340912e+02)*x+6.61844165304871e+03)*e + r25/(x-r25);
-                rt3 = (((-6.95053039285586e-01*x+5.76874090316016e+01)*x -
-                        1.77704143225520e+03)*x+1.95366082947811e+04)*e + r35/(x-r35);
-                rt4 = (((-1.58072809087018e+00*x+1.27050801091948e+02)*x -
-                        3.86687350914280e+03)*x+4.23024828121420e+04)*e + r45/(x-r45);
-                rt5 = (((-3.33963830405396e+00*x+2.51830424600204e+02)*x -
-                        7.57728527654961e+03)*x+8.21966816595690e+04)*e + r55/(x-r55);
-                e = xxx*e;
-                ww5 = (( 1.35482430510942e-08*x-3.27722199212781e-07)*x +
-                       2.41522703684296e-06)*e + w55*ww1;
-                ww4 = (( 1.23464092261605e-06*x-3.55224564275590e-05)*x +
-                       3.03274662192286e-04)*e + w45*ww1;
-                ww3 = (( 1.34547929260279e-05*x-4.19389884772726e-04)*x +
-                       3.87706687610809e-03)*e + w35*ww1;
-                ww2 = (( 2.09539509123135e-05*x-6.87646614786982e-04)*x +
-                       6.68743788585688e-03)*e + w25*ww1;
-                ww1 = ww1-ww2-ww3-ww4-ww5;
-        } else {
-                ww1 = f64::sqrt(pie4/x);
-                rt1 = r15/(x-r15);
-                rt2 = r25/(x-r25);
-                rt3 = r35/(x-r35);
-                rt4 = r45/(x-r45);
-                rt5 = r55/(x-r55);
-                ww2 = w25*ww1;
-                ww3 = w35*ww1;
-                ww4 = w45*ww1;
-                ww5 = w55*ww1;
-                ww1 = ww1-ww2-ww3-ww4-ww5;
-        }
+    if x < 3.0e-7 {
+        rt1 = 2.26659266316985e-02 - 2.15865967920897e-03 * x;
+        rt2 = 2.31271692140903e-01 - 2.20258754389745e-02 * x;
+        rt3 = 8.57346024118836e-01 - 8.16520023025515e-02 * x;
+        rt4 = 2.97353038120346e+00 - 2.83193369647137e-01 * x;
+        rt5 = 1.84151859759051e+01 - 1.75382723579439e+00 * x;
+        ww1 = 2.95524224714752e-01 - 1.96867576909777e-02 * x;
+        ww2 = 2.69266719309995e-01 - 5.61737590184721e-02 * x;
+        ww3 = 2.19086362515981e-01 - 9.71152726793658e-02 * x;
+        ww4 = 1.49451349150580e-01 - 1.02979262193565e-01 * x;
+        ww5 = 6.66713443086877e-02 - 5.73782817488315e-02 * x;
+    } else if x < 1.0 {
+        rt1 = ((((((-4.46679165328413e-11 * x + 1.21879111988031e-09) * x
+            - 2.62975022612104e-08)
+            * x
+            + 5.15106194905897e-07)
+            * x
+            - 9.27933625824749e-06)
+            * x
+            + 1.51794097682482e-04)
+            * x
+            - 2.15865967920301e-03)
+            * x
+            + 2.26659266316985e-02;
+        rt2 = ((((((1.93117331714174e-10 * x - 4.57267589660699e-09) * x
+            + 2.48339908218932e-08)
+            * x
+            + 1.50716729438474e-06)
+            * x
+            - 6.07268757707381e-05)
+            * x
+            + 1.37506939145643e-03)
+            * x
+            - 2.20258754419939e-02)
+            * x
+            + 2.31271692140905e-01;
+        rt3 = (((((4.84989776180094e-09 * x + 1.31538893944284e-07) * x - 2.766753852879e-06)
+            * x
+            - 7.651163510626e-05)
+            * x
+            + 4.033058545972e-03)
+            * x
+            - 8.16520022916145e-02)
+            * x
+            + 8.57346024118779e-01;
+        rt4 = ((((-2.48581772214623e-07 * x - 4.34482635782585e-06) * x - 7.46018257987630e-07)
+            * x
+            + 1.01210776517279e-02)
+            * x
+            - 2.83193369640005e-01)
+            * x
+            + 2.97353038120345e+00;
+        rt5 = (((((-8.92432153868554e-09 * x + 1.77288899268988e-08) * x + 3.040754680666e-06)
+            * x
+            + 1.058229325071e-04)
+            * x
+            + 4.596379534985e-02)
+            * x
+            - 1.75382723579114e+00)
+            * x
+            + 1.84151859759049e+01;
+        ww1 = ((((((-2.03822632771791e-09 * x + 3.89110229133810e-08) * x
+            - 5.84914787904823e-07)
+            * x
+            + 8.30316168666696e-06)
+            * x
+            - 1.13218402310546e-04)
+            * x
+            + 1.49128888586790e-03)
+            * x
+            - 1.96867576904816e-02)
+            * x
+            + 2.95524224714749e-01;
+        ww2 = (((((((8.62848118397570e-09 * x - 1.38975551148989e-07) * x
+            + 1.602894068228e-06)
+            * x
+            - 1.646364300836e-05)
+            * x
+            + 1.538445806778e-04)
+            * x
+            - 1.28848868034502e-03)
+            * x
+            + 9.38866933338584e-03)
+            * x
+            - 5.61737590178812e-02)
+            * x
+            + 2.69266719309991e-01;
+        ww3 = ((((((((-9.41953204205665e-09 * x + 1.47452251067755e-07) * x
+            - 1.57456991199322e-06)
+            * x
+            + 1.45098401798393e-05)
+            * x
+            - 1.18858834181513e-04)
+            * x
+            + 8.53697675984210e-04)
+            * x
+            - 5.22877807397165e-03)
+            * x
+            + 2.60854524809786e-02)
+            * x
+            - 9.71152726809059e-02)
+            * x
+            + 2.19086362515979e-01;
+        ww4 = ((((((((-3.84961617022042e-08 * x + 5.66595396544470e-07) * x
+            - 5.52351805403748e-06)
+            * x
+            + 4.53160377546073e-05)
+            * x
+            - 3.22542784865557e-04)
+            * x
+            + 1.95682017370967e-03)
+            * x
+            - 9.77232537679229e-03)
+            * x
+            + 3.79455945268632e-02)
+            * x
+            - 1.02979262192227e-01)
+            * x
+            + 1.49451349150573e-01;
+        ww5 = (((((((((4.09594812521430e-09 * x - 6.47097874264417e-08) * x
+            + 6.743541482689e-07)
+            * x
+            - 5.917993920224e-06)
+            * x
+            + 4.531969237381e-05)
+            * x
+            - 2.99102856679638e-04)
+            * x
+            + 1.65695765202643e-03)
+            * x
+            - 7.40671222520653e-03)
+            * x
+            + 2.50889946832192e-02)
+            * x
+            - 5.73782817487958e-02)
+            * x
+            + 6.66713443086877e-02;
+    } else if x < 5.0 {
+        y = x - 3.0e+00;
+        rt1 = ((((((((-2.58163897135138e-14 * y + 8.14127461488273e-13) * y
+            - 2.11414838976129e-11)
+            * y
+            + 5.09822003260014e-10)
+            * y
+            - 1.16002134438663e-08)
+            * y
+            + 2.46810694414540e-07)
+            * y
+            - 4.92556826124502e-06)
+            * y
+            + 9.02580687971053e-05)
+            * y
+            - 1.45190025120726e-03)
+            * y
+            + 1.73416786387475e-02;
+        rt2 = (((((((((1.04525287289788e-14 * y + 5.44611782010773e-14) * y
+            - 4.831059411392e-12)
+            * y
+            + 1.136643908832e-10)
+            * y
+            - 1.104373076913e-09)
+            * y
+            - 2.35346740649916e-08)
+            * y
+            + 1.43772622028764e-06)
+            * y
+            - 4.23405023015273e-05)
+            * y
+            + 9.12034574793379e-04)
+            * y
+            - 1.52479441718739e-02)
+            * y
+            + 1.76055265928744e-01;
+        rt3 = (((((((((-6.89693150857911e-14 * y + 5.92064260918861e-13) * y
+            + 1.847170956043e-11)
+            * y
+            - 3.390752744265e-10)
+            * y
+            - 2.995532064116e-09)
+            * y
+            + 1.57456141058535e-07)
+            * y
+            - 3.95859409711346e-07)
+            * y
+            - 9.58924580919747e-05)
+            * y
+            + 3.23551502557785e-03)
+            * y
+            - 5.97587007636479e-02)
+            * y
+            + 6.46432853383057e-01;
+        rt4 = ((((((((-3.61293809667763e-12 * y - 2.70803518291085e-11) * y
+            + 8.83758848468769e-10)
+            * y
+            + 1.59166632851267e-08)
+            * y
+            - 1.32581997983422e-07)
+            * y
+            - 7.60223407443995e-06)
+            * y
+            - 7.41019244900952e-05)
+            * y
+            + 9.81432631743423e-03)
+            * y
+            - 2.23055570487771e-01)
+            * y
+            + 2.21460798080643e+00;
+        rt5 = (((((((((7.12332088345321e-13 * y + 3.16578501501894e-12) * y
+            - 8.776668218053e-11)
+            * y
+            - 2.342817613343e-09)
+            * y
+            - 3.496962018025e-08)
+            * y
+            - 3.03172870136802e-07)
+            * y
+            + 1.50511293969805e-06)
+            * y
+            + 1.37704919387696e-04)
+            * y
+            + 4.70723869619745e-02)
+            * y
+            - 1.47486623003693e+00)
+            * y
+            + 1.35704792175847e+01;
+        ww1 = (((((((((1.04348658616398e-13 * y - 1.94147461891055e-12) * y
+            + 3.485512360993e-11)
+            * y
+            - 6.277497362235e-10)
+            * y
+            + 1.100758247388e-08)
+            * y
+            - 1.88329804969573e-07)
+            * y
+            + 3.12338120839468e-06)
+            * y
+            - 5.04404167403568e-05)
+            * y
+            + 8.00338056610995e-04)
+            * y
+            - 1.30892406559521e-02)
+            * y
+            + 2.47383140241103e-01;
+        ww2 = (((((((((((3.23496149760478e-14 * y - 5.24314473469311e-13) * y
+            + 7.743219385056e-12)
+            * y
+            - 1.146022750992e-10)
+            * y
+            + 1.615238462197e-09)
+            * y
+            - 2.15479017572233e-08)
+            * y
+            + 2.70933462557631e-07)
+            * y
+            - 3.18750295288531e-06)
+            * y
+            + 3.47425221210099e-05)
+            * y
+            - 3.45558237388223e-04)
+            * y
+            + 3.05779768191621e-03)
+            * y
+            - 2.29118251223003e-02)
+            * y
+            + 1.59834227924213e-01;
+        ww3 = ((((((((((((-3.42790561802876e-14 * y + 5.26475736681542e-13) * y
+            - 7.184330797139e-12)
+            * y
+            + 9.763932908544e-11)
+            * y
+            - 1.244014559219e-09)
+            * y
+            + 1.472744068942e-08)
+            * y
+            - 1.611749975234e-07)
+            * y
+            + 1.616487851917e-06)
+            * y
+            - 1.46852359124154e-05)
+            * y
+            + 1.18900349101069e-04)
+            * y
+            - 8.37562373221756e-04)
+            * y
+            + 4.93752683045845e-03)
+            * y
+            - 2.25514728915673e-02)
+            * y
+            + 6.95211812453929e-02;
+        ww4 = (((((((((((((1.04072340345039e-14 * y - 1.60808044529211e-13) * y
+            + 2.183534866798e-12)
+            * y
+            - 2.939403008391e-11)
+            * y
+            + 3.679254029085e-10)
+            * y
+            - 4.23775673047899e-09)
+            * y
+            + 4.46559231067006e-08)
+            * y
+            - 4.26488836563267e-07)
+            * y
+            + 3.64721335274973e-06)
+            * y
+            - 2.74868382777722e-05)
+            * y
+            + 1.78586118867488e-04)
+            * y
+            - 9.68428981886534e-04)
+            * y
+            + 4.16002324339929e-03)
+            * y
+            - 1.28290192663141e-02)
+            * y
+            + 2.22353727685016e-02;
+        ww5 = ((((((((((((((-8.16770412525963e-16 * y + 1.31376515047977e-14) * y
+            - 1.856950818865e-13)
+            * y
+            + 2.596836515749e-12)
+            * y
+            - 3.372639523006e-11)
+            * y
+            + 4.025371849467e-10)
+            * y
+            - 4.389453269417e-09)
+            * y
+            + 4.332753856271e-08)
+            * y
+            - 3.82673275931962e-07)
+            * y
+            + 2.98006900751543e-06)
+            * y
+            - 2.00718990300052e-05)
+            * y
+            + 1.13876001386361e-04)
+            * y
+            - 5.23627942443563e-04)
+            * y
+            + 1.83524565118203e-03)
+            * y
+            - 4.37785737450783e-03)
+            * y
+            + 5.36963805223095e-03;
+    } else if x < 10.0 {
+        y = x - 7.5e+00;
+        rt1 = ((((((((-1.13825201010775e-14 * y + 1.89737681670375e-13) * y
+            - 4.81561201185876e-12)
+            * y
+            + 1.56666512163407e-10)
+            * y
+            - 3.73782213255083e-09)
+            * y
+            + 9.15858355075147e-08)
+            * y
+            - 2.13775073585629e-06)
+            * y
+            + 4.56547356365536e-05)
+            * y
+            - 8.68003909323740e-04)
+            * y
+            + 1.22703754069176e-02;
+        rt2 = (((((((((-3.67160504428358e-15 * y + 1.27876280158297e-14) * y
+            - 1.296476623788e-12)
+            * y
+            + 1.477175434354e-11)
+            * y
+            + 5.464102147892e-10)
+            * y
+            - 2.42538340602723e-08)
+            * y
+            + 8.20460740637617e-07)
+            * y
+            - 2.20379304598661e-05)
+            * y
+            + 4.90295372978785e-04)
+            * y
+            - 9.14294111576119e-03)
+            * y
+            + 1.22590403403690e-01;
+        rt3 = (((((((((1.39017367502123e-14 * y - 6.96391385426890e-13) * y
+            + 1.176946020731e-12)
+            * y
+            + 1.725627235645e-10)
+            * y
+            - 3.686383856300e-09)
+            * y
+            + 2.87495324207095e-08)
+            * y
+            + 1.71307311000282e-06)
+            * y
+            - 7.94273603184629e-05)
+            * y
+            + 2.00938064965897e-03)
+            * y
+            - 3.63329491677178e-02)
+            * y
+            + 4.34393683888443e-01;
+        rt4 = ((((((((((-1.27815158195209e-14 * y + 1.99910415869821e-14) * y
+            + 3.753542914426e-12)
+            * y
+            - 2.708018219579e-11)
+            * y
+            - 1.190574776587e-09)
+            * y
+            + 1.106696436509e-08)
+            * y
+            + 3.954955671326e-07)
+            * y
+            - 4.398596059588e-06)
+            * y
+            - 2.01087998907735e-04)
+            * y
+            + 7.89092425542937e-03)
+            * y
+            - 1.42056749162695e-01)
+            * y
+            + 1.39964149420683e+00;
+        rt5 = ((((((((((-1.19442341030461e-13 * y - 2.34074833275956e-12) * y
+            + 6.861649627426e-12)
+            * y
+            + 6.082671496226e-10)
+            * y
+            + 5.381160105420e-09)
+            * y
+            - 6.253297138700e-08)
+            * y
+            - 2.135966835050e-06)
+            * y
+            - 2.373394341886e-05)
+            * y
+            + 2.88711171412814e-06)
+            * y
+            + 4.85221195290753e-02)
+            * y
+            - 1.04346091985269e+00)
+            * y
+            + 7.89901551676692e+00;
+        ww1 = (((((((((7.95526040108997e-15 * y - 2.48593096128045e-13) * y
+            + 4.761246208720e-12)
+            * y
+            - 9.535763686605e-11)
+            * y
+            + 2.225273630974e-09)
+            * y
+            - 4.49796778054865e-08)
+            * y
+            + 9.17812870287386e-07)
+            * y
+            - 1.86764236490502e-05)
+            * y
+            + 3.76807779068053e-04)
+            * y
+            - 8.10456360143408e-03)
+            * y
+            + 2.01097936411496e-01;
+        ww2 = (((((((((((1.25678686624734e-15 * y - 2.34266248891173e-14) * y
+            + 3.973252415832e-13)
+            * y
+            - 6.830539401049e-12)
+            * y
+            + 1.140771033372e-10)
+            * y
+            - 1.82546185762009e-09)
+            * y
+            + 2.77209637550134e-08)
+            * y
+            - 4.01726946190383e-07)
+            * y
+            + 5.48227244014763e-06)
+            * y
+            - 6.95676245982121e-05)
+            * y
+            + 8.05193921815776e-04)
+            * y
+            - 8.15528438784469e-03)
+            * y
+            + 9.71769901268114e-02;
+        ww3 = ((((((((((((-8.20929494859896e-16 * y + 1.37356038393016e-14) * y
+            - 2.022863065220e-13)
+            * y
+            + 3.058055403795e-12)
+            * y
+            - 4.387890955243e-11)
+            * y
+            + 5.923946274445e-10)
+            * y
+            - 7.503659964159e-09)
+            * y
+            + 8.851599803902e-08)
+            * y
+            - 9.65561998415038e-07)
+            * y
+            + 9.60884622778092e-06)
+            * y
+            - 8.56551787594404e-05)
+            * y
+            + 6.66057194311179e-04)
+            * y
+            - 4.17753183902198e-03)
+            * y
+            + 2.25443826852447e-02;
+        ww4 = ((((((((((((((-1.08764612488790e-17 * y + 1.85299909689937e-16) * y
+            - 2.730195628655e-15)
+            * y
+            + 4.127368817265e-14)
+            * y
+            - 5.881379088074e-13)
+            * y
+            + 7.805245193391e-12)
+            * y
+            - 9.632707991704e-11)
+            * y
+            + 1.099047050624e-09)
+            * y
+            - 1.15042731790748e-08)
+            * y
+            + 1.09415155268932e-07)
+            * y
+            - 9.33687124875935e-07)
+            * y
+            + 7.02338477986218e-06)
+            * y
+            - 4.53759748787756e-05)
+            * y
+            + 2.41722511389146e-04)
+            * y
+            - 9.75935943447037e-04)
+            * y
+            + 2.57520532789644e-03;
+        ww5 = (((((((((((((((7.28996979748849e-19 * y - 1.26518146195173e-17) * y
+            + 1.886145834486e-16)
+            * y
+            - 2.876728287383e-15)
+            * y
+            + 4.114588668138e-14)
+            * y
+            - 5.44436631413933e-13)
+            * y
+            + 6.64976446790959e-12)
+            * y
+            - 7.44560069974940e-11)
+            * y
+            + 7.57553198166848e-10)
+            * y
+            - 6.92956101109829e-09)
+            * y
+            + 5.62222859033624e-08)
+            * y
+            - 3.97500114084351e-07)
+            * y
+            + 2.39039126138140e-06)
+            * y
+            - 1.18023950002105e-05)
+            * y
+            + 4.52254031046244e-05)
+            * y
+            - 1.21113782150370e-04)
+            * y
+            + 1.75013126731224e-04;
+    } else if x < 15.0 {
+        y = x - 12.5e+00;
+        rt1 = ((((((((((-4.16387977337393e-17 * y + 7.20872997373860e-16) * y
+            + 1.395993802064e-14)
+            * y
+            + 3.660484641252e-14)
+            * y
+            - 4.154857548139e-12)
+            * y
+            + 2.301379846544e-11)
+            * y
+            - 1.033307012866e-09)
+            * y
+            + 3.997777641049e-08)
+            * y
+            - 9.35118186333939e-07)
+            * y
+            + 2.38589932752937e-05)
+            * y
+            - 5.35185183652937e-04)
+            * y
+            + 8.85218988709735e-03;
+        rt2 = ((((((((((-4.56279214732217e-16 * y + 6.24941647247927e-15) * y
+            + 1.737896339191e-13)
+            * y
+            + 8.964205979517e-14)
+            * y
+            - 3.538906780633e-11)
+            * y
+            + 9.561341254948e-11)
+            * y
+            - 9.772831891310e-09)
+            * y
+            + 4.240340194620e-07)
+            * y
+            - 1.02384302866534e-05)
+            * y
+            + 2.57987709704822e-04)
+            * y
+            - 5.54735977651677e-03)
+            * y
+            + 8.68245143991948e-02;
+        rt3 = ((((((((((-2.52879337929239e-15 * y + 2.13925810087833e-14) * y
+            + 7.884307667104e-13)
+            * y
+            - 9.023398159510e-13)
+            * y
+            - 5.814101544957e-11)
+            * y
+            - 1.333480437968e-09)
+            * y
+            - 2.217064940373e-08)
+            * y
+            + 1.643290788086e-06)
+            * y
+            - 4.39602147345028e-05)
+            * y
+            + 1.08648982748911e-03)
+            * y
+            - 2.13014521653498e-02)
+            * y
+            + 2.94150684465425e-01;
+        rt4 = ((((((((((-6.42391438038888e-15 * y + 5.37848223438815e-15) * y
+            + 8.960828117859e-13)
+            * y
+            + 5.214153461337e-11)
+            * y
+            - 1.106601744067e-10)
+            * y
+            - 2.007890743962e-08)
+            * y
+            + 1.543764346501e-07)
+            * y
+            + 4.520749076914e-06)
+            * y
+            - 1.88893338587047e-04)
+            * y
+            + 4.73264487389288e-03)
+            * y
+            - 7.91197893350253e-02)
+            * y
+            + 8.60057928514554e-01;
+        rt5 = (((((((((((-2.24366166957225e-14 * y + 4.87224967526081e-14) * y
+            + 5.587369053655e-12)
+            * y
+            - 3.045253104617e-12)
+            * y
+            - 1.223983883080e-09)
+            * y
+            - 2.05603889396319e-09)
+            * y
+            + 2.58604071603561e-07)
+            * y
+            + 1.34240904266268e-06)
+            * y
+            - 5.72877569731162e-05)
+            * y
+            - 9.56275105032191e-04)
+            * y
+            + 4.23367010370921e-02)
+            * y
+            - 5.76800927133412e-01)
+            * y
+            + 3.87328263873381e+00;
+        ww1 = (((((((((8.98007931950169e-15 * y + 7.25673623859497e-14) * y
+            + 5.851494250405e-14)
+            * y
+            - 4.234204823846e-11)
+            * y
+            + 3.911507312679e-10)
+            * y
+            - 9.65094802088511e-09)
+            * y
+            + 3.42197444235714e-07)
+            * y
+            - 7.51821178144509e-06)
+            * y
+            + 1.94218051498662e-04)
+            * y
+            - 5.38533819142287e-03)
+            * y
+            + 1.68122596736809e-01;
+        ww2 = ((((((((((-1.05490525395105e-15 * y + 1.96855386549388e-14) * y
+            - 5.500330153548e-13)
+            * y
+            + 1.003849567976e-11)
+            * y
+            - 1.720997242621e-10)
+            * y
+            + 3.533277061402e-09)
+            * y
+            - 6.389171736029e-08)
+            * y
+            + 1.046236652393e-06)
+            * y
+            - 1.73148206795827e-05)
+            * y
+            + 2.57820531617185e-04)
+            * y
+            - 3.46188265338350e-03)
+            * y
+            + 7.03302497508176e-02;
+        ww3 = (((((((((((3.60020423754545e-16 * y - 6.24245825017148e-15) * y
+            + 9.945311467434e-14)
+            * y
+            - 1.749051512721e-12)
+            * y
+            + 2.768503957853e-11)
+            * y
+            - 4.08688551136506e-10)
+            * y
+            + 6.04189063303610e-09)
+            * y
+            - 8.23540111024147e-08)
+            * y
+            + 1.01503783870262e-06)
+            * y
+            - 1.20490761741576e-05)
+            * y
+            + 1.26928442448148e-04)
+            * y
+            - 1.05539461930597e-03)
+            * y
+            + 1.15543698537013e-02;
+        ww4 = (((((((((((((2.51163533058925e-18 * y - 4.31723745510697e-17) * y
+            + 6.557620865832e-16)
+            * y
+            - 1.016528519495e-14)
+            * y
+            + 1.491302084832e-13)
+            * y
+            - 2.06638666222265e-12)
+            * y
+            + 2.67958697789258e-11)
+            * y
+            - 3.23322654638336e-10)
+            * y
+            + 3.63722952167779e-09)
+            * y
+            - 3.75484943783021e-08)
+            * y
+            + 3.49164261987184e-07)
+            * y
+            - 2.92658670674908e-06)
+            * y
+            + 2.12937256719543e-05)
+            * y
+            - 1.19434130620929e-04)
+            * y
+            + 6.45524336158384e-04;
+        ww5 = ((((((((((((((-1.29043630202811e-19 * y + 2.16234952241296e-18) * y
+            - 3.107631557965e-17)
+            * y
+            + 4.570804313173e-16)
+            * y
+            - 6.301348858104e-15)
+            * y
+            + 8.031304476153e-14)
+            * y
+            - 9.446196472547e-13)
+            * y
+            + 1.018245804339e-11)
+            * y
+            - 9.96995451348129e-11)
+            * y
+            + 8.77489010276305e-10)
+            * y
+            - 6.84655877575364e-09)
+            * y
+            + 4.64460857084983e-08)
+            * y
+            - 2.66924538268397e-07)
+            * y
+            + 1.24621276265907e-06)
+            * y
+            - 4.30868944351523e-06)
+            * y
+            + 9.94307982432868e-06;
+    } else if x < 20.0 {
+        y = x - 17.5e+00;
+        rt1 = ((((((((((1.91875764545740e-16 * y + 7.8357401095707e-16) * y
+            - 3.260875931644e-14)
+            * y
+            - 1.186752035569e-13)
+            * y
+            + 4.275180095653e-12)
+            * y
+            + 3.357056136731e-11)
+            * y
+            - 1.123776903884e-09)
+            * y
+            + 1.231203269887e-08)
+            * y
+            - 3.99851421361031e-07)
+            * y
+            + 1.45418822817771e-05)
+            * y
+            - 3.49912254976317e-04)
+            * y
+            + 6.67768703938812e-03;
+        rt2 = ((((((((((2.02778478673555e-15 * y + 1.01640716785099e-14) * y
+            - 3.385363492036e-13)
+            * y
+            - 1.615655871159e-12)
+            * y
+            + 4.527419140333e-11)
+            * y
+            + 3.853670706486e-10)
+            * y
+            - 1.184607130107e-08)
+            * y
+            + 1.347873288827e-07)
+            * y
+            - 4.47788241748377e-06)
+            * y
+            + 1.54942754358273e-04)
+            * y
+            - 3.55524254280266e-03)
+            * y
+            + 6.44912219301603e-02;
+        rt3 = ((((((((((7.79850771456444e-15 * y + 6.00464406395001e-14) * y
+            - 1.249779730869e-12)
+            * y
+            - 1.020720636353e-11)
+            * y
+            + 1.814709816693e-10)
+            * y
+            + 1.766397336977e-09)
+            * y
+            - 4.603559449010e-08)
+            * y
+            + 5.863956443581e-07)
+            * y
+            - 2.03797212506691e-05)
+            * y
+            + 6.31405161185185e-04)
+            * y
+            - 1.30102750145071e-02)
+            * y
+            + 2.10244289044705e-01;
+        rt4 = (((((((((((-2.92397030777912e-15 * y + 1.94152129078465e-14) * y
+            + 4.859447665850e-13)
+            * y
+            - 3.217227223463e-12)
+            * y
+            - 7.484522135512e-11)
+            * y
+            + 7.19101516047753e-10)
+            * y
+            + 6.88409355245582e-09)
+            * y
+            - 1.44374545515769e-07)
+            * y
+            + 2.74941013315834e-06)
+            * y
+            - 1.02790452049013e-04)
+            * y
+            + 2.59924221372643e-03)
+            * y
+            - 4.35712368303551e-02)
+            * y
+            + 5.62170709585029e-01;
+        rt5 = (((((((((((1.17976126840060e-14 * y + 1.24156229350669e-13) * y
+            - 3.892741622280e-12)
+            * y
+            - 7.755793199043e-12)
+            * y
+            + 9.492190032313e-10)
+            * y
+            - 4.98680128123353e-09)
+            * y
+            - 1.81502268782664e-07)
+            * y
+            + 2.69463269394888e-06)
+            * y
+            + 2.50032154421640e-05)
+            * y
+            - 1.33684303917681e-03)
+            * y
+            + 2.29121951862538e-02)
+            * y
+            - 2.45653725061323e-01)
+            * y
+            + 1.89999883453047e+00;
+        ww1 = ((((((((((1.74841995087592e-15 * y - 6.95671892641256e-16) * y
+            - 3.000659497257e-13)
+            * y
+            + 2.021279817961e-13)
+            * y
+            + 3.853596935400e-11)
+            * y
+            + 1.461418533652e-10)
+            * y
+            - 1.014517563435e-08)
+            * y
+            + 1.132736008979e-07)
+            * y
+            - 2.86605475073259e-06)
+            * y
+            + 1.21958354908768e-04)
+            * y
+            - 3.86293751153466e-03)
+            * y
+            + 1.45298342081522e-01;
+        ww2 = ((((((((((-1.11199320525573e-15 * y + 1.85007587796671e-15) * y
+            + 1.220613939709e-13)
+            * y
+            + 1.275068098526e-12)
+            * y
+            - 5.341838883262e-11)
+            * y
+            + 6.161037256669e-10)
+            * y
+            - 1.009147879750e-08)
+            * y
+            + 2.907862965346e-07)
+            * y
+            - 6.12300038720919e-06)
+            * y
+            + 1.00104454489518e-04)
+            * y
+            - 1.80677298502757e-03)
+            * y
+            + 5.78009914536630e-02;
+        ww3 = ((((((((((-9.49816486853687e-16 * y + 6.67922080354234e-15) * y
+            + 2.606163540537e-15)
+            * y
+            + 1.983799950150e-12)
+            * y
+            - 5.400548574357e-11)
+            * y
+            + 6.638043374114e-10)
+            * y
+            - 8.799518866802e-09)
+            * y
+            + 1.791418482685e-07)
+            * y
+            - 2.96075397351101e-06)
+            * y
+            + 3.38028206156144e-05)
+            * y
+            - 3.58426847857878e-04)
+            * y
+            + 8.39213709428516e-03;
+        ww4 = (((((((((((1.33829971060180e-17 * y - 3.44841877844140e-16) * y
+            + 4.745009557656e-15)
+            * y
+            - 6.033814209875e-14)
+            * y
+            + 1.049256040808e-12)
+            * y
+            - 1.70859789556117e-11)
+            * y
+            + 2.15219425727959e-10)
+            * y
+            - 2.52746574206884e-09)
+            * y
+            + 3.27761714422960e-08)
+            * y
+            - 3.90387662925193e-07)
+            * y
+            + 3.46340204593870e-06)
+            * y
+            - 2.43236345136782e-05)
+            * y
+            + 3.54846978585226e-04;
+        ww5 = (((((((((((((2.69412277020887e-20 * y - 4.24837886165685e-19) * y
+            + 6.030500065438e-18)
+            * y
+            - 9.069722758289e-17)
+            * y
+            + 1.246599177672e-15)
+            * y
+            - 1.56872999797549e-14)
+            * y
+            + 1.87305099552692e-13)
+            * y
+            - 2.09498886675861e-12)
+            * y
+            + 2.11630022068394e-11)
+            * y
+            - 1.92566242323525e-10)
+            * y
+            + 1.62012436344069e-09)
+            * y
+            - 1.23621614171556e-08)
+            * y
+            + 7.72165684563049e-08)
+            * y
+            - 3.59858901591047e-07)
+            * y
+            + 2.43682618601000e-06;
+    } else if x < 25.0 {
+        y = x - 22.5e+00;
+        rt1 = (((((((((-1.13927848238726e-15 * y + 7.39404133595713e-15) * y
+            + 1.445982921243e-13)
+            * y
+            - 2.676703245252e-12)
+            * y
+            + 5.823521627177e-12)
+            * y
+            + 2.17264723874381e-10)
+            * y
+            + 3.56242145897468e-09)
+            * y
+            - 3.03763737404491e-07)
+            * y
+            + 9.46859114120901e-06)
+            * y
+            - 2.30896753853196e-04)
+            * y
+            + 5.24663913001114e-03;
+        rt2 = ((((((((((2.89872355524581e-16 * y - 1.22296292045864e-14) * y
+            + 6.184065097200e-14)
+            * y
+            + 1.649846591230e-12)
+            * y
+            - 2.729713905266e-11)
+            * y
+            + 3.709913790650e-11)
+            * y
+            + 2.216486288382e-09)
+            * y
+            + 4.616160236414e-08)
+            * y
+            - 3.32380270861364e-06)
+            * y
+            + 9.84635072633776e-05)
+            * y
+            - 2.30092118015697e-03)
+            * y
+            + 5.00845183695073e-02;
+        rt3 = ((((((((((1.97068646590923e-15 * y - 4.89419270626800e-14) * y
+            + 1.136466605916e-13)
+            * y
+            + 7.546203883874e-12)
+            * y
+            - 9.635646767455e-11)
+            * y
+            - 8.295965491209e-11)
+            * y
+            + 7.534109114453e-09)
+            * y
+            + 2.699970652707e-07)
+            * y
+            - 1.42982334217081e-05)
+            * y
+            + 3.78290946669264e-04)
+            * y
+            - 8.03133015084373e-03)
+            * y
+            + 1.58689469640791e-01;
+        rt4 = ((((((((((1.33642069941389e-14 * y - 1.55850612605745e-13) * y
+            - 7.522712577474e-13)
+            * y
+            + 3.209520801187e-11)
+            * y
+            - 2.075594313618e-10)
+            * y
+            - 2.070575894402e-09)
+            * y
+            + 7.323046997451e-09)
+            * y
+            + 1.851491550417e-06)
+            * y
+            - 6.37524802411383e-05)
+            * y
+            + 1.36795464918785e-03)
+            * y
+            - 2.42051126993146e-02)
+            * y
+            + 3.97847167557815e-01;
+        rt5 = ((((((((((-6.07053986130526e-14 * y + 1.04447493138843e-12) * y
+            - 4.286617818951e-13)
+            * y
+            - 2.632066100073e-10)
+            * y
+            + 4.804518986559e-09)
+            * y
+            - 1.835675889421e-08)
+            * y
+            - 1.068175391334e-06)
+            * y
+            + 3.292234974141e-05)
+            * y
+            - 5.94805357558251e-04)
+            * y
+            + 8.29382168612791e-03)
+            * y
+            - 9.93122509049447e-02)
+            * y
+            + 1.09857804755042e+00;
+        ww1 = (((((((((-9.10338640266542e-15 * y + 1.00438927627833e-13) * y
+            + 7.817349237071e-13)
+            * y
+            - 2.547619474232e-11)
+            * y
+            + 1.479321506529e-10)
+            * y
+            + 1.52314028857627e-09)
+            * y
+            + 9.20072040917242e-09)
+            * y
+            - 2.19427111221848e-06)
+            * y
+            + 8.65797782880311e-05)
+            * y
+            - 2.82718629312875e-03)
+            * y
+            + 1.28718310443295e-01;
+        ww2 = (((((((((5.52380927618760e-15 * y - 6.43424400204124e-14) * y
+            - 2.358734508092e-13)
+            * y
+            + 8.261326648131e-12)
+            * y
+            + 9.229645304956e-11)
+            * y
+            - 5.68108973828949e-09)
+            * y
+            + 1.22477891136278e-07)
+            * y
+            - 2.11919643127927e-06)
+            * y
+            + 4.23605032368922e-05)
+            * y
+            - 1.14423444576221e-03)
+            * y
+            + 5.06607252890186e-02;
+        ww3 = (((((((((3.99457454087556e-15 * y - 5.11826702824182e-14) * y
+            - 4.157593182747e-14)
+            * y
+            + 4.214670817758e-12)
+            * y
+            + 6.705582751532e-11)
+            * y
+            - 3.36086411698418e-09)
+            * y
+            + 6.07453633298986e-08)
+            * y
+            - 7.40736211041247e-07)
+            * y
+            + 8.84176371665149e-06)
+            * y
+            - 1.72559275066834e-04)
+            * y
+            + 7.16639814253567e-03;
+        ww4 = (((((((((((-2.14649508112234e-18 * y - 2.45525846412281e-18) * y
+            + 6.126212599772e-16)
+            * y
+            - 8.526651626939e-15)
+            * y
+            + 4.826636065733e-14)
+            * y
+            - 3.39554163649740e-13)
+            * y
+            + 1.67070784862985e-11)
+            * y
+            - 4.42671979311163e-10)
+            * y
+            + 6.77368055908400e-09)
+            * y
+            - 7.03520999708859e-08)
+            * y
+            + 6.04993294708874e-07)
+            * y
+            - 7.80555094280483e-06)
+            * y
+            + 2.85954806605017e-04;
+        ww5 = ((((((((((((-5.63938733073804e-21 * y + 6.92182516324628e-20) * y
+            - 1.586937691507e-18)
+            * y
+            + 3.357639744582e-17)
+            * y
+            - 4.810285046442e-16)
+            * y
+            + 5.386312669975e-15)
+            * y
+            - 6.117895297439e-14)
+            * y
+            + 8.441808227634e-13)
+            * y
+            - 1.18527596836592e-11)
+            * y
+            + 1.36296870441445e-10)
+            * y
+            - 1.17842611094141e-09)
+            * y
+            + 7.80430641995926e-09)
+            * y
+            - 5.97767417400540e-08)
+            * y
+            + 1.65186146094969e-06;
+    } else if x < 40.0 {
+        ww1 = f64::sqrt(pie4 / x);
+        e = f64::exp(-x);
+        rt1 = ((((((((-1.73363958895356e-06 * x + 1.19921331441483e-04) * x
+            - 1.59437614121125e-02)
+            * x
+            + 1.13467897349442e+00)
+            * x
+            - 4.47216460864586e+01)
+            * x
+            + 1.06251216612604e+03)
+            * x
+            - 1.52073917378512e+04)
+            * x
+            + 1.20662887111273e+05)
+            * x
+            - 4.07186366852475e+05)
+            * e
+            + r15 / (x - r15);
+        rt2 = ((((((((-1.60102542621710e-05 * x + 1.10331262112395e-03) * x
+            - 1.50043662589017e-01)
+            * x
+            + 1.05563640866077e+01)
+            * x
+            - 4.10468817024806e+02)
+            * x
+            + 9.62604416506819e+03)
+            * x
+            - 1.35888069838270e+05)
+            * x
+            + 1.06107577038340e+06)
+            * x
+            - 3.51190792816119e+06)
+            * e
+            + r25 / (x - r25);
+        rt3 = ((((((((-4.48880032128422e-05 * x + 2.69025112122177e-03) * x
+            - 4.01048115525954e-01)
+            * x
+            + 2.78360021977405e+01)
+            * x
+            - 1.04891729356965e+03)
+            * x
+            + 2.36985942687423e+04)
+            * x
+            - 3.19504627257548e+05)
+            * x
+            + 2.34879693563358e+06)
+            * x
+            - 7.16341568174085e+06)
+            * e
+            + r35 / (x - r35);
+        rt4 = ((((((((-6.38526371092582e-05 * x - 2.29263585792626e-03) * x
+            - 7.65735935499627e-02)
+            * x
+            + 9.12692349152792e+00)
+            * x
+            - 2.32077034386717e+02)
+            * x
+            + 2.81839578728845e+02)
+            * x
+            + 9.59529683876419e+04)
+            * x
+            - 1.77638956809518e+06)
+            * x
+            + 1.02489759645410e+07)
+            * e
+            + r45 / (x - r45);
+        rt5 = ((((((((-3.59049364231569e-05 * x - 2.25963977930044e-02) * x
+            + 1.12594870794668e+00)
+            * x
+            - 4.56752462103909e+01)
+            * x
+            + 1.05804526830637e+03)
+            * x
+            - 1.16003199605875e+04)
+            * x
+            - 4.07297627297272e+04)
+            * x
+            + 2.22215528319857e+06)
+            * x
+            - 1.61196455032613e+07)
+            * e
+            + r55 / (x - r55);
+        ww5 = (((((((((-4.61100906133970e-10 * x + 1.43069932644286e-07) * x
+            - 1.63960915431080e-05)
+            * x
+            + 1.15791154612838e-03)
+            * x
+            - 5.30573476742071e-02)
+            * x
+            + 1.61156533367153e+00)
+            * x
+            - 3.23248143316007e+01)
+            * x
+            + 4.12007318109157e+02)
+            * x
+            - 3.02260070158372e+03)
+            * x
+            + 9.71575094154768e+03)
+            * e
+            + w55 * ww1;
+        ww4 = (((((((((-2.40799435809950e-08 * x + 8.12621667601546e-06) * x
+            - 9.04491430884113e-04)
+            * x
+            + 6.37686375770059e-02)
+            * x
+            - 2.96135703135647e+00)
+            * x
+            + 9.15142356996330e+01)
+            * x
+            - 1.86971865249111e+03)
+            * x
+            + 2.42945528916947e+04)
+            * x
+            - 1.81852473229081e+05)
+            * x
+            + 5.96854758661427e+05)
+            * e
+            + w45 * ww1;
+        ww3 = ((((((((1.83574464457207e-05 * x - 1.54837969489927e-03) * x
+            + 1.18520453711586e-01)
+            * x
+            - 6.69649981309161e+00)
+            * x
+            + 2.44789386487321e+02)
+            * x
+            - 5.68832664556359e+03)
+            * x
+            + 8.14507604229357e+04)
+            * x
+            - 6.55181056671474e+05)
+            * x
+            + 2.26410896607237e+06)
+            * e
+            + w35 * ww1;
+        ww2 = ((((((((2.77778345870650e-05 * x - 2.22835017655890e-03) * x
+            + 1.61077633475573e-01)
+            * x
+            - 8.96743743396132e+00)
+            * x
+            + 3.28062687293374e+02)
+            * x
+            - 7.65722701219557e+03)
+            * x
+            + 1.10255055017664e+05)
+            * x
+            - 8.92528122219324e+05)
+            * x
+            + 3.10638627744347e+06)
+            * e
+            + w25 * ww1;
+        ww1 = ww1 - 0.01962e+00 * e - ww2 - ww3 - ww4 - ww5;
+    } else if x < 59.0 {
+        ww1 = f64::sqrt(pie4 / x);
+        xxx = x * x * x;
+        e = xxx * f64::exp(-x);
+        rt1 = (((-2.43758528330205e-02 * x + 2.07301567989771e+00) * x - 6.45964225381113e+01) * x
+            + 7.14160088655470e+02)
+            * e
+            + r15 / (x - r15);
+        rt2 = (((-2.28861955413636e-01 * x + 1.93190784733691e+01) * x - 5.99774730340912e+02) * x
+            + 6.61844165304871e+03)
+            * e
+            + r25 / (x - r25);
+        rt3 = (((-6.95053039285586e-01 * x + 5.76874090316016e+01) * x - 1.77704143225520e+03) * x
+            + 1.95366082947811e+04)
+            * e
+            + r35 / (x - r35);
+        rt4 = (((-1.58072809087018e+00 * x + 1.27050801091948e+02) * x - 3.86687350914280e+03) * x
+            + 4.23024828121420e+04)
+            * e
+            + r45 / (x - r45);
+        rt5 = (((-3.33963830405396e+00 * x + 2.51830424600204e+02) * x - 7.57728527654961e+03) * x
+            + 8.21966816595690e+04)
+            * e
+            + r55 / (x - r55);
+        e = xxx * e;
+        ww5 = ((1.35482430510942e-08 * x - 3.27722199212781e-07) * x + 2.41522703684296e-06) * e
+            + w55 * ww1;
+        ww4 = ((1.23464092261605e-06 * x - 3.55224564275590e-05) * x + 3.03274662192286e-04) * e
+            + w45 * ww1;
+        ww3 = ((1.34547929260279e-05 * x - 4.19389884772726e-04) * x + 3.87706687610809e-03) * e
+            + w35 * ww1;
+        ww2 = ((2.09539509123135e-05 * x - 6.87646614786982e-04) * x + 6.68743788585688e-03) * e
+            + w25 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4 - ww5;
+    } else {
+        ww1 = f64::sqrt(pie4 / x);
+        rt1 = r15 / (x - r15);
+        rt2 = r25 / (x - r25);
+        rt3 = r35 / (x - r35);
+        rt4 = r45 / (x - r45);
+        rt5 = r55 / (x - r55);
+        ww2 = w25 * ww1;
+        ww3 = w35 * ww1;
+        ww4 = w45 * ww1;
+        ww5 = w55 * ww1;
+        ww1 = ww1 - ww2 - ww3 - ww4 - ww5;
+    }
     ([rt1, rt2, rt3, rt4, rt5], [ww1, ww2, ww3, ww4, ww5])
 }
 
@@ -3250,11 +7582,26 @@ pub fn rys_roots_host<F: CintFloat>(nroots: usize, x: F) -> (Vec<F>, Vec<F>) {
 ///   clear error; T-25-01 (UnsupportedApi contract, not a silent wrong result).
 fn rys_roots_host_f64(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
     match nroots {
-        1 => { let (u, w) = rys_root1_host(x); (vec![u], vec![w]) }
-        2 => { let (u, w) = rys_root2_host(x); (u.to_vec(), w.to_vec()) }
-        3 => { let (u, w) = rys_root3_host(x); (u.to_vec(), w.to_vec()) }
-        4 => { let (u, w) = rys_root4_host(x); (u.to_vec(), w.to_vec()) }
-        5 => { let (u, w) = rys_root5_host(x); (u.to_vec(), w.to_vec()) }
+        1 => {
+            let (u, w) = rys_root1_host(x);
+            (vec![u], vec![w])
+        }
+        2 => {
+            let (u, w) = rys_root2_host(x);
+            (u.to_vec(), w.to_vec())
+        }
+        3 => {
+            let (u, w) = rys_root3_host(x);
+            (u.to_vec(), w.to_vec())
+        }
+        4 => {
+            let (u, w) = rys_root4_host(x);
+            (u.to_vec(), w.to_vec())
+        }
+        5 => {
+            let (u, w) = rys_root5_host(x);
+            (u.to_vec(), w.to_vec())
+        }
         6..=12 => super::rys_wheeler::rys_roots_host_wheeler(nroots, x),
         _ => panic!(
             "rys_roots_host: nroots={nroots} > 12 not supported — the vendor build \
@@ -3324,8 +7671,14 @@ mod tests_rys_host {
         for x in [0.0_f64, 1e-8_f64, 0.5_f64, 2.0_f64] {
             let (u, w) = rys_root3_host(x);
             for (i, (&r, &wt)) in u.iter().zip(w.iter()).enumerate() {
-                assert!(r.is_finite(), "rys_root3_host at x={x}: root[{i}]={r} not finite");
-                assert!(wt.is_finite(), "rys_root3_host at x={x}: weight[{i}]={wt} not finite");
+                assert!(
+                    r.is_finite(),
+                    "rys_root3_host at x={x}: root[{i}]={r} not finite"
+                );
+                assert!(
+                    wt.is_finite(),
+                    "rys_root3_host at x={x}: weight[{i}]={wt} not finite"
+                );
             }
         }
     }
@@ -3335,8 +7688,14 @@ mod tests_rys_host {
         for x in [0.0_f64, 1e-8_f64, 0.5_f64] {
             let (u, w) = rys_root4_host(x);
             for (i, (&r, &wt)) in u.iter().zip(w.iter()).enumerate() {
-                assert!(r.is_finite(), "rys_root4_host at x={x}: root[{i}]={r} not finite");
-                assert!(wt.is_finite(), "rys_root4_host at x={x}: weight[{i}]={wt} not finite");
+                assert!(
+                    r.is_finite(),
+                    "rys_root4_host at x={x}: root[{i}]={r} not finite"
+                );
+                assert!(
+                    wt.is_finite(),
+                    "rys_root4_host at x={x}: weight[{i}]={wt} not finite"
+                );
             }
         }
     }
@@ -3346,8 +7705,14 @@ mod tests_rys_host {
         for x in [0.0_f64, 1e-8_f64, 0.5_f64] {
             let (u, w) = rys_root5_host(x);
             for (i, (&r, &wt)) in u.iter().zip(w.iter()).enumerate() {
-                assert!(r.is_finite(), "rys_root5_host at x={x}: root[{i}]={r} not finite");
-                assert!(wt.is_finite(), "rys_root5_host at x={x}: weight[{i}]={wt} not finite");
+                assert!(
+                    r.is_finite(),
+                    "rys_root5_host at x={x}: root[{i}]={r} not finite"
+                );
+                assert!(
+                    wt.is_finite(),
+                    "rys_root5_host at x={x}: weight[{i}]={wt} not finite"
+                );
             }
         }
     }
@@ -3357,7 +7722,11 @@ mod tests_rys_host {
         for nroots in 1_usize..=5 {
             let (u, w) = rys_roots_host(nroots, 1.5_f64);
             assert_eq!(u.len(), nroots, "roots length mismatch for nroots={nroots}");
-            assert_eq!(w.len(), nroots, "weights length mismatch for nroots={nroots}");
+            assert_eq!(
+                w.len(),
+                nroots,
+                "weights length mismatch for nroots={nroots}"
+            );
         }
     }
 
@@ -3387,24 +7756,152 @@ mod tests_rys_host {
     fn rys_root3_host_intermediate_x_matches_libcint() {
         // (x, expected_roots, expected_weights) from libcint rys_root3()
         const REF: &[(f64, [f64; 3], [f64; 3])] = &[
-            (2.00000000000000000e+00, [4.52578254679079015e-02, 5.73928229597613027e-01, 4.81234667357205037e+00], [3.78914255252537968e-01, 1.77455180659512213e-01, 4.17745707492242352e-02]),
-            (3.00000000000000000e+00, [3.97010994682378202e-02, 4.96179185991453109e-01, 4.03810055592899264e+00], [3.47298856338415285e-01, 1.34875501930182162e-01, 2.21692019628304607e-02]),
-            (4.00000000000000000e+00, [3.50898470729043982e-02, 4.31180523260238979e-01, 3.36412312243724010e+00], [3.21253599209882890e-01, 1.07305698424567678e-01, 1.24813977467416928e-02]),
-            (6.00000000000000000e+00, [2.79503027162358864e-02, 3.31228580961247243e-01, 2.30434261500047288e+00], [2.80776120391775685e-01, 7.59699581651712003e-02, 4.86206879670553292e-03]),
-            (7.50000000000000000e+00, [2.39112249488820997e-02, 2.75969447451882011e-01, 1.73582831755429989e+00], [2.57426591519846926e-01, 6.32322275333796757e-02, 2.91070862494270015e-03]),
-            (1.20000000000000000e+01, [1.59571333035461969e-02, 1.72634134824953378e-01, 8.30906914943578490e-01], [2.08579269260950995e-01, 4.58597579005675729e-02, 1.39240336787338731e-03]),
-            (1.80000000000000000e+01, [1.06754571679532270e-02, 1.10024008808842888e-01, 4.42762344947203179e-01], [1.70786782904963186e-01, 3.70299114980497460e-02, 1.06899473740200619e-03]),
-            (2.20000000000000000e+01, [8.71908028578368202e-03, 8.82724937006980764e-02, 3.35379010411819112e-01], [1.54491089232005663e-01, 3.34872693538504629e-02, 9.65856768097320519e-04]),
-            (3.00000000000000000e+01, [6.37922004265167528e-03, 6.32451050249919489e-02, 2.25757762032015558e-01], [1.32298657772133343e-01, 2.86764386672843201e-02, 8.27062940222428170e-04]),
-            (4.00000000000000000e+01, [4.77679704203007056e-03, 4.66955138602829778e-02, 1.60272627548066537e-01], [1.14573999043653327e-01, 2.48345239100577000e-02, 7.16257456237203382e-04]),
+            (
+                2.00000000000000000e+00,
+                [
+                    4.52578254679079015e-02,
+                    5.73928229597613027e-01,
+                    4.81234667357205037e+00,
+                ],
+                [
+                    3.78914255252537968e-01,
+                    1.77455180659512213e-01,
+                    4.17745707492242352e-02,
+                ],
+            ),
+            (
+                3.00000000000000000e+00,
+                [
+                    3.97010994682378202e-02,
+                    4.96179185991453109e-01,
+                    4.03810055592899264e+00,
+                ],
+                [
+                    3.47298856338415285e-01,
+                    1.34875501930182162e-01,
+                    2.21692019628304607e-02,
+                ],
+            ),
+            (
+                4.00000000000000000e+00,
+                [
+                    3.50898470729043982e-02,
+                    4.31180523260238979e-01,
+                    3.36412312243724010e+00,
+                ],
+                [
+                    3.21253599209882890e-01,
+                    1.07305698424567678e-01,
+                    1.24813977467416928e-02,
+                ],
+            ),
+            (
+                6.00000000000000000e+00,
+                [
+                    2.79503027162358864e-02,
+                    3.31228580961247243e-01,
+                    2.30434261500047288e+00,
+                ],
+                [
+                    2.80776120391775685e-01,
+                    7.59699581651712003e-02,
+                    4.86206879670553292e-03,
+                ],
+            ),
+            (
+                7.50000000000000000e+00,
+                [
+                    2.39112249488820997e-02,
+                    2.75969447451882011e-01,
+                    1.73582831755429989e+00,
+                ],
+                [
+                    2.57426591519846926e-01,
+                    6.32322275333796757e-02,
+                    2.91070862494270015e-03,
+                ],
+            ),
+            (
+                1.20000000000000000e+01,
+                [
+                    1.59571333035461969e-02,
+                    1.72634134824953378e-01,
+                    8.30906914943578490e-01,
+                ],
+                [
+                    2.08579269260950995e-01,
+                    4.58597579005675729e-02,
+                    1.39240336787338731e-03,
+                ],
+            ),
+            (
+                1.80000000000000000e+01,
+                [
+                    1.06754571679532270e-02,
+                    1.10024008808842888e-01,
+                    4.42762344947203179e-01,
+                ],
+                [
+                    1.70786782904963186e-01,
+                    3.70299114980497460e-02,
+                    1.06899473740200619e-03,
+                ],
+            ),
+            (
+                2.20000000000000000e+01,
+                [
+                    8.71908028578368202e-03,
+                    8.82724937006980764e-02,
+                    3.35379010411819112e-01,
+                ],
+                [
+                    1.54491089232005663e-01,
+                    3.34872693538504629e-02,
+                    9.65856768097320519e-04,
+                ],
+            ),
+            (
+                3.00000000000000000e+01,
+                [
+                    6.37922004265167528e-03,
+                    6.32451050249919489e-02,
+                    2.25757762032015558e-01,
+                ],
+                [
+                    1.32298657772133343e-01,
+                    2.86764386672843201e-02,
+                    8.27062940222428170e-04,
+                ],
+            ),
+            (
+                4.00000000000000000e+01,
+                [
+                    4.77679704203007056e-03,
+                    4.66955138602829778e-02,
+                    1.60272627548066537e-01,
+                ],
+                [
+                    1.14573999043653327e-01,
+                    2.48345239100577000e-02,
+                    7.16257456237203382e-04,
+                ],
+            ),
         ];
         for &(x, er, ew) in REF {
             let (r, w) = rys_root3_host_f64(x);
             for i in 0..3 {
-                assert!((r[i]-er[i]).abs() <= 1e-12*er[i].abs().max(1.0),
-                    "root3 x={x} root[{i}]={} expected {}", r[i], er[i]);
-                assert!((w[i]-ew[i]).abs() <= 1e-12*ew[i].abs().max(1.0),
-                    "root3 x={x} weight[{i}]={} expected {}", w[i], ew[i]);
+                assert!(
+                    (r[i] - er[i]).abs() <= 1e-12 * er[i].abs().max(1.0),
+                    "root3 x={x} root[{i}]={} expected {}",
+                    r[i],
+                    er[i]
+                );
+                assert!(
+                    (w[i] - ew[i]).abs() <= 1e-12 * ew[i].abs().max(1.0),
+                    "root3 x={x} weight[{i}]={} expected {}",
+                    w[i],
+                    ew[i]
+                );
             }
         }
     }
@@ -3412,24 +7909,172 @@ mod tests_rys_host {
     #[test]
     fn rys_root4_host_intermediate_x_matches_libcint() {
         const REF: &[(f64, [f64; 4], [f64; 4])] = &[
-            (2.00000000000000000e+00, [2.78543328159299303e-02, 3.03589715394652182e-01, 1.36923845822581480e+00, 9.24924026041822067e+00], [3.10188862606967541e-01, 1.90711663093641764e-01, 7.66505612089985466e-02, 2.05929197516923242e-02]),
-            (3.00000000000000000e+00, [2.51198234505021004e-02, 2.72276489515712983e-01, 1.21449092319185992e+00, 8.09502028611779956e+00], [2.89898651436026000e-01, 1.56247249979287989e-01, 4.85368861938873034e-02, 9.66077262223353009e-03]),
-            (4.00000000000000000e+00, [2.27643701641816153e-02, 2.45131197352021851e-01, 1.07779544256798876e+00, 7.03833683381307651e+00], [2.72452019551645275e-01, 1.31569110589435739e-01, 3.23360797807110550e-02, 4.68348545941337131e-03]),
-            (6.00000000000000000e+00, [1.89392895301668494e-02, 2.00984413655639904e-01, 8.52822362967763925e-01, 5.21981710013720956e+00], [2.43944251156201580e-01, 9.98080739133398870e-02, 1.66112697296793149e-02, 1.24455255443493059e-03]),
-            (7.50000000000000000e+00, [1.66630865869374992e-02, 1.74853819464284993e-01, 7.20206142703161967e-01, 4.11207530217806028e+00], [2.26696066029590998e-01, 8.50218447733457061e-02, 1.13250730954014001e-02, 5.26543779837486989e-04]),
-            (1.20000000000000000e+01, [1.18234438726533466e-02, 1.20293832085077768e-01, 4.54125342589398240e-01, 1.97504559380890998e+00], [1.88383772188351867e-01, 6.16778260436278356e-02, 5.67494240302713303e-03, 9.48898943850975507e-05]),
-            (1.80000000000000000e+01, [8.12131388821134802e-03, 8.01843912587453522e-02, 2.78137563656942866e-01, 9.06332241818116668e-01], [1.55718190701826381e-01, 4.90613187276157797e-02, 4.05788021463789495e-03, 4.82994963348966575e-05]),
-            (2.20000000000000000e+01, [6.64741352493585392e-03, 6.48000190062734543e-02, 2.17226181556937098e-01, 6.40103169070993960e-01], [1.40947862263044621e-01, 4.43101452931685610e-02, 3.64356173058954028e-03, 4.26460671507199732e-05]),
-            (3.00000000000000000e+01, [4.86702087920493510e-03, 4.67220589365170760e-02, 1.50613846486785191e-01, 4.01124624120848039e-01], [1.20708350677928067e-01, 3.79393598533276644e-02, 3.11800605862915100e-03, 3.64427897551889541e-05]),
-            (4.00000000000000000e+01, [3.64583184190296573e-03, 3.46369896685252837e-02, 1.08861462229075681e-01, 2.73424471503324940e-01], [1.04536521386620257e-01, 3.28564326388722031e-02, 2.70026620946455355e-03, 3.15601749912118517e-05]),
+            (
+                2.00000000000000000e+00,
+                [
+                    2.78543328159299303e-02,
+                    3.03589715394652182e-01,
+                    1.36923845822581480e+00,
+                    9.24924026041822067e+00,
+                ],
+                [
+                    3.10188862606967541e-01,
+                    1.90711663093641764e-01,
+                    7.66505612089985466e-02,
+                    2.05929197516923242e-02,
+                ],
+            ),
+            (
+                3.00000000000000000e+00,
+                [
+                    2.51198234505021004e-02,
+                    2.72276489515712983e-01,
+                    1.21449092319185992e+00,
+                    8.09502028611779956e+00,
+                ],
+                [
+                    2.89898651436026000e-01,
+                    1.56247249979287989e-01,
+                    4.85368861938873034e-02,
+                    9.66077262223353009e-03,
+                ],
+            ),
+            (
+                4.00000000000000000e+00,
+                [
+                    2.27643701641816153e-02,
+                    2.45131197352021851e-01,
+                    1.07779544256798876e+00,
+                    7.03833683381307651e+00,
+                ],
+                [
+                    2.72452019551645275e-01,
+                    1.31569110589435739e-01,
+                    3.23360797807110550e-02,
+                    4.68348545941337131e-03,
+                ],
+            ),
+            (
+                6.00000000000000000e+00,
+                [
+                    1.89392895301668494e-02,
+                    2.00984413655639904e-01,
+                    8.52822362967763925e-01,
+                    5.21981710013720956e+00,
+                ],
+                [
+                    2.43944251156201580e-01,
+                    9.98080739133398870e-02,
+                    1.66112697296793149e-02,
+                    1.24455255443493059e-03,
+                ],
+            ),
+            (
+                7.50000000000000000e+00,
+                [
+                    1.66630865869374992e-02,
+                    1.74853819464284993e-01,
+                    7.20206142703161967e-01,
+                    4.11207530217806028e+00,
+                ],
+                [
+                    2.26696066029590998e-01,
+                    8.50218447733457061e-02,
+                    1.13250730954014001e-02,
+                    5.26543779837486989e-04,
+                ],
+            ),
+            (
+                1.20000000000000000e+01,
+                [
+                    1.18234438726533466e-02,
+                    1.20293832085077768e-01,
+                    4.54125342589398240e-01,
+                    1.97504559380890998e+00,
+                ],
+                [
+                    1.88383772188351867e-01,
+                    6.16778260436278356e-02,
+                    5.67494240302713303e-03,
+                    9.48898943850975507e-05,
+                ],
+            ),
+            (
+                1.80000000000000000e+01,
+                [
+                    8.12131388821134802e-03,
+                    8.01843912587453522e-02,
+                    2.78137563656942866e-01,
+                    9.06332241818116668e-01,
+                ],
+                [
+                    1.55718190701826381e-01,
+                    4.90613187276157797e-02,
+                    4.05788021463789495e-03,
+                    4.82994963348966575e-05,
+                ],
+            ),
+            (
+                2.20000000000000000e+01,
+                [
+                    6.64741352493585392e-03,
+                    6.48000190062734543e-02,
+                    2.17226181556937098e-01,
+                    6.40103169070993960e-01,
+                ],
+                [
+                    1.40947862263044621e-01,
+                    4.43101452931685610e-02,
+                    3.64356173058954028e-03,
+                    4.26460671507199732e-05,
+                ],
+            ),
+            (
+                3.00000000000000000e+01,
+                [
+                    4.86702087920493510e-03,
+                    4.67220589365170760e-02,
+                    1.50613846486785191e-01,
+                    4.01124624120848039e-01,
+                ],
+                [
+                    1.20708350677928067e-01,
+                    3.79393598533276644e-02,
+                    3.11800605862915100e-03,
+                    3.64427897551889541e-05,
+                ],
+            ),
+            (
+                4.00000000000000000e+01,
+                [
+                    3.64583184190296573e-03,
+                    3.46369896685252837e-02,
+                    1.08861462229075681e-01,
+                    2.73424471503324940e-01,
+                ],
+                [
+                    1.04536521386620257e-01,
+                    3.28564326388722031e-02,
+                    2.70026620946455355e-03,
+                    3.15601749912118517e-05,
+                ],
+            ),
         ];
         for &(x, er, ew) in REF {
             let (r, w) = rys_root4_host_f64(x);
             for i in 0..4 {
-                assert!((r[i]-er[i]).abs() <= 1e-12*er[i].abs().max(1.0),
-                    "root4 x={x} root[{i}]={} expected {}", r[i], er[i]);
-                assert!((w[i]-ew[i]).abs() <= 1e-12*ew[i].abs().max(1.0),
-                    "root4 x={x} weight[{i}]={} expected {}", w[i], ew[i]);
+                assert!(
+                    (r[i] - er[i]).abs() <= 1e-12 * er[i].abs().max(1.0),
+                    "root4 x={x} root[{i}]={} expected {}",
+                    r[i],
+                    er[i]
+                );
+                assert!(
+                    (w[i] - ew[i]).abs() <= 1e-12 * ew[i].abs().max(1.0),
+                    "root4 x={x} weight[{i}]={} expected {}",
+                    w[i],
+                    ew[i]
+                );
             }
         }
     }
@@ -3437,24 +8082,192 @@ mod tests_rys_host {
     #[test]
     fn rys_root5_host_intermediate_x_matches_libcint() {
         const REF: &[(f64, [f64; 5], [f64; 5])] = &[
-            (2.00000000000000000e+00, [1.88890214697243972e-02, 1.92259045215694618e-01, 7.09522405676177859e-01, 2.44754452489348573e+00, 1.50922819052330031e+01], [2.61326482753653000e-01, 1.86187633210396580e-01, 9.79831226653429949e-02, 4.04030402127901200e-02, 1.22437278191160851e-02]),
-            (3.00000000000000000e+00, [1.73416786387474986e-02, 1.76055265928743987e-01, 6.46432853383057004e-01, 2.21460798080642984e+00, 1.35704792175846993e+01], [2.47383140241103000e-01, 1.59834227924213007e-01, 6.95211812453929018e-02, 2.22353727685015989e-02, 5.36963805223094996e-03]),
-            (4.00000000000000000e+00, [1.59753465880259002e-02, 1.61678429025433334e-01, 5.89813533468013795e-01, 2.00128491666525932e+00, 1.21428242439728749e+01], [2.35046742689275695e-01, 1.39666448159057072e-01, 5.11753568114786672e-02, 1.27523085275370405e-02, 2.39983919386907180e-03]),
-            (6.00000000000000000e+00, [1.36828132443071338e-02, 1.37486701379521958e-01, 4.93690690677809851e-01, 1.63113474390053903e+00, 9.57326719936293102e+00], [2.14170647347023069e-01, 1.11487548544100201e-01, 3.06555259044110004e-02, 4.78025012667448145e-03, 5.14175431451445496e-04]),
-            (7.50000000000000000e+00, [1.22703754069176003e-02, 1.22590403403689999e-01, 4.34393683888443016e-01, 1.39964149420683004e+00, 7.89901551676692026e+00], [2.01097936411496009e-01, 9.71769901268113995e-02, 2.25443826852446995e-02, 2.57520532789644015e-03, 1.75013126731223998e-04]),
-            (1.20000000000000000e+01, [9.12586664830997152e-03, 8.96639978279628880e-02, 3.05078631409934631e-01, 9.00824873477750532e-01, 4.17238319356480591e+00], [1.70864781817242795e-01, 7.21278780059978197e-02, 1.21153715196249401e-02, 7.10953711848531789e-04, 1.24454746707234275e-05]),
-            (1.80000000000000000e+01, [6.50631713598416508e-03, 6.27517846724327810e-02, 2.03894490602682305e-01, 5.41022220356089489e-01, 1.78273455945346826e+00], [1.43397011422786075e-01, 5.69218835677225213e-02, 8.22101521260177291e-03, 3.43504186142721255e-04, 2.27475116223605569e-06]),
-            (2.20000000000000000e+01, [5.36449284116448811e-03, 5.12600131283744015e-02, 1.62801511370919305e-01, 4.10299797088571616e-01, 1.15038406979607299e+00], [1.30153823348280601e-01, 5.12437053710418852e-02, 7.25498471565160299e-03, 2.90018061865033943e-04, 1.68385711433201633e-06]),
-            (3.00000000000000000e+01, [3.93474542976633441e-03, 3.71488353648107908e-02, 1.14656997935588659e-01, 2.71974428678108504e-01, 6.48979735735693897e-01], [1.11527160628526925e-01, 4.38434439406103910e-02, 6.18482080978649366e-03, 2.45338729634224568e-04, 1.39527108173279258e-06]),
-            (4.00000000000000000e+01, [2.94819930384046958e-03, 2.76056495765317871e-02, 8.35978809319504745e-02, 1.90998303396741148e-01, 4.18801426085350204e-01], [9.65858626182328484e-02, 3.79692484796066293e-02, 5.35601219207284835e-03, 2.12449061338159512e-04, 1.20805869773314568e-06]),
+            (
+                2.00000000000000000e+00,
+                [
+                    1.88890214697243972e-02,
+                    1.92259045215694618e-01,
+                    7.09522405676177859e-01,
+                    2.44754452489348573e+00,
+                    1.50922819052330031e+01,
+                ],
+                [
+                    2.61326482753653000e-01,
+                    1.86187633210396580e-01,
+                    9.79831226653429949e-02,
+                    4.04030402127901200e-02,
+                    1.22437278191160851e-02,
+                ],
+            ),
+            (
+                3.00000000000000000e+00,
+                [
+                    1.73416786387474986e-02,
+                    1.76055265928743987e-01,
+                    6.46432853383057004e-01,
+                    2.21460798080642984e+00,
+                    1.35704792175846993e+01,
+                ],
+                [
+                    2.47383140241103000e-01,
+                    1.59834227924213007e-01,
+                    6.95211812453929018e-02,
+                    2.22353727685015989e-02,
+                    5.36963805223094996e-03,
+                ],
+            ),
+            (
+                4.00000000000000000e+00,
+                [
+                    1.59753465880259002e-02,
+                    1.61678429025433334e-01,
+                    5.89813533468013795e-01,
+                    2.00128491666525932e+00,
+                    1.21428242439728749e+01,
+                ],
+                [
+                    2.35046742689275695e-01,
+                    1.39666448159057072e-01,
+                    5.11753568114786672e-02,
+                    1.27523085275370405e-02,
+                    2.39983919386907180e-03,
+                ],
+            ),
+            (
+                6.00000000000000000e+00,
+                [
+                    1.36828132443071338e-02,
+                    1.37486701379521958e-01,
+                    4.93690690677809851e-01,
+                    1.63113474390053903e+00,
+                    9.57326719936293102e+00,
+                ],
+                [
+                    2.14170647347023069e-01,
+                    1.11487548544100201e-01,
+                    3.06555259044110004e-02,
+                    4.78025012667448145e-03,
+                    5.14175431451445496e-04,
+                ],
+            ),
+            (
+                7.50000000000000000e+00,
+                [
+                    1.22703754069176003e-02,
+                    1.22590403403689999e-01,
+                    4.34393683888443016e-01,
+                    1.39964149420683004e+00,
+                    7.89901551676692026e+00,
+                ],
+                [
+                    2.01097936411496009e-01,
+                    9.71769901268113995e-02,
+                    2.25443826852446995e-02,
+                    2.57520532789644015e-03,
+                    1.75013126731223998e-04,
+                ],
+            ),
+            (
+                1.20000000000000000e+01,
+                [
+                    9.12586664830997152e-03,
+                    8.96639978279628880e-02,
+                    3.05078631409934631e-01,
+                    9.00824873477750532e-01,
+                    4.17238319356480591e+00,
+                ],
+                [
+                    1.70864781817242795e-01,
+                    7.21278780059978197e-02,
+                    1.21153715196249401e-02,
+                    7.10953711848531789e-04,
+                    1.24454746707234275e-05,
+                ],
+            ),
+            (
+                1.80000000000000000e+01,
+                [
+                    6.50631713598416508e-03,
+                    6.27517846724327810e-02,
+                    2.03894490602682305e-01,
+                    5.41022220356089489e-01,
+                    1.78273455945346826e+00,
+                ],
+                [
+                    1.43397011422786075e-01,
+                    5.69218835677225213e-02,
+                    8.22101521260177291e-03,
+                    3.43504186142721255e-04,
+                    2.27475116223605569e-06,
+                ],
+            ),
+            (
+                2.20000000000000000e+01,
+                [
+                    5.36449284116448811e-03,
+                    5.12600131283744015e-02,
+                    1.62801511370919305e-01,
+                    4.10299797088571616e-01,
+                    1.15038406979607299e+00,
+                ],
+                [
+                    1.30153823348280601e-01,
+                    5.12437053710418852e-02,
+                    7.25498471565160299e-03,
+                    2.90018061865033943e-04,
+                    1.68385711433201633e-06,
+                ],
+            ),
+            (
+                3.00000000000000000e+01,
+                [
+                    3.93474542976633441e-03,
+                    3.71488353648107908e-02,
+                    1.14656997935588659e-01,
+                    2.71974428678108504e-01,
+                    6.48979735735693897e-01,
+                ],
+                [
+                    1.11527160628526925e-01,
+                    4.38434439406103910e-02,
+                    6.18482080978649366e-03,
+                    2.45338729634224568e-04,
+                    1.39527108173279258e-06,
+                ],
+            ),
+            (
+                4.00000000000000000e+01,
+                [
+                    2.94819930384046958e-03,
+                    2.76056495765317871e-02,
+                    8.35978809319504745e-02,
+                    1.90998303396741148e-01,
+                    4.18801426085350204e-01,
+                ],
+                [
+                    9.65858626182328484e-02,
+                    3.79692484796066293e-02,
+                    5.35601219207284835e-03,
+                    2.12449061338159512e-04,
+                    1.20805869773314568e-06,
+                ],
+            ),
         ];
         for &(x, er, ew) in REF {
             let (r, w) = rys_root5_host_f64(x);
             for i in 0..5 {
-                assert!((r[i]-er[i]).abs() <= 1e-12*er[i].abs().max(1.0),
-                    "root5 x={x} root[{i}]={} expected {}", r[i], er[i]);
-                assert!((w[i]-ew[i]).abs() <= 1e-12*ew[i].abs().max(1.0),
-                    "root5 x={x} weight[{i}]={} expected {}", w[i], ew[i]);
+                assert!(
+                    (r[i] - er[i]).abs() <= 1e-12 * er[i].abs().max(1.0),
+                    "root5 x={x} root[{i}]={} expected {}",
+                    r[i],
+                    er[i]
+                );
+                assert!(
+                    (w[i] - ew[i]).abs() <= 1e-12 * ew[i].abs().max(1.0),
+                    "root5 x={x} weight[{i}]={} expected {}",
+                    w[i],
+                    ew[i]
+                );
             }
         }
     }
@@ -3475,13 +8288,22 @@ mod tests_rys_host {
         assert_eq!(w.len(), 6, "rys_roots_host(6): weights length must be 6");
         for i in 0..6 {
             assert!(r[i].is_finite(), "rys_roots_host(6): root[{i}] not finite");
-            assert!(w[i].is_finite(), "rys_roots_host(6): weight[{i}] not finite");
-            assert!(r[i] >= 0.0, "rys_roots_host(6): root[{i}]={} is negative", r[i]);
-            assert!(w[i] >= 0.0, "rys_roots_host(6): weight[{i}]={} is negative", w[i]);
+            assert!(
+                w[i].is_finite(),
+                "rys_roots_host(6): weight[{i}] not finite"
+            );
+            assert!(
+                r[i] >= 0.0,
+                "rys_roots_host(6): root[{i}]={} is negative",
+                r[i]
+            );
+            assert!(
+                w[i] >= 0.0,
+                "rys_roots_host(6): weight[{i}]={} is negative",
+                w[i]
+            );
         }
     }
-
-
 
     /// Phase 25 / quick task 260531-aw1 — Wheeler engine reference-table gate.
     ///
@@ -3504,77 +8326,1237 @@ mod tests_rys_host {
     /// largest root r->1 where the documented floor is the known T-25-02 boundary).
     #[test]
     fn rys_roots_host_nroots6to12_matches_libcint() {
-    /// nroots=6 vendor CINTrys_roots gold (libcint 6.1.3 capture, root5 intermediate-x grid).
-    const REF6: &[(f64, [f64; 6], [f64; 6])] = &[
-        (2.00000000000000000e0, [1.36578488309600787e-2, 1.33952878849778884e-1, 4.49726044354436250e-1, 1.23921218965603774e0, 3.80011954471610292e0, 2.23307092156090761e1], [2.25258525863053033e-1, 1.75460461513258947e-1, 1.08800303676243992e-1, 5.58975264865730556e-2, 2.45988055159585585e-2, 8.12838360621653475e-3]),
-        (3.00000000000000000e0, [1.26973612609121451e-2, 1.24362565378616730e-1, 4.16412518723119740e-1, 1.14312948099559097e0, 3.49101219438670851e0, 2.04487128225697603e1], [2.15158294539962575e-1, 1.55408218499807044e-1, 8.31998286413312416e-2, 3.48677660418451121e-2, 1.22854454632879816e-2, 3.42400704520596112e-3]),
-        (4.00000000000000000e0, [1.18340821473735744e-2, 1.15712342383095482e-1, 3.86131345539849846e-1, 1.05467110320445800e0, 3.20154619506372562e0, 1.86585972635558512e1], [2.06040502538436171e-1, 1.39328252659222745e-1, 6.53361390499307554e-2, 2.25518847718843771e-2, 6.32460082401616053e-3, 1.45931553772013956e-3]),
-        (6.00000000000000000e0, [1.03507419854350722e-2, 1.00807600798092159e-1, 3.33596237308092347e-1, 8.99114165941193755e-1, 2.68098993328408364e0, 1.53564490089873900e1], [1.90212721890989478e-1, 1.15502782214355657e-1, 4.32683523246022855e-2, 1.04941990925511760e-2, 1.85352158122923391e-3, 2.76570249931282555e-4]),
-        (7.50000000000000000e0, [9.41303755153684134e-3, 9.13770277726140140e-2, 3.00249599039009274e-1, 7.99474719178131288e-1, 2.34049839532828718e0, 1.31257920313127023e1], [1.80042256828488595e-1, 1.02630883701724698e-1, 3.35374454624274149e-2, 6.46273251292197887e-3, 8.13015304553309053e-4, 8.31938680626439841e-5]),
-        (1.20000000000000000e1, [7.25142307469343970e-3, 6.96976707324476474e-2, 2.23937278748881557e-1, 5.72029723244917410e-1, 1.55437058654329996e0, 7.72056806887726133e0], [1.55761194740607872e-1, 7.83476997590886598e-2, 1.93556404452516588e-2, 2.24583707250382942e-3, 1.17829929926339776e-4, 3.22858201130564417e-6]),
-        (1.80000000000000000e1, [5.35412226822587229e-3, 5.08569755120908892e-2, 1.58994036997697014e-1, 3.84864716341947188e-1, 9.34041202798734371e-1, 3.44145177780901168e0], [1.32769678473706715e-1, 6.20518012813302544e-2, 1.29501745440250646e-2, 1.08443335243164343e-3, 2.94314790385372516e-5, 1.70009880859298580e-7]),
-        (2.20000000000000000e1, [4.47411227331388425e-3, 4.22198400398838825e-2, 1.29999692380522391e-1, 3.05355241434312974e-1, 6.94336802909049533e-1, 2.07424936988239672e0], [1.21175473868114697e-1, 5.56948882143896637e-2, 1.11848958083399768e-2, 8.68766491989162392e-4, 2.01183545739860910e-5, 7.26165461721986237e-8]),
-        (3.00000000000000000e1, [3.30188841555081230e-3, 3.08623043512902019e-2, 9.29810361166252403e-2, 2.09439718299509831e-1, 4.36928231763494990e-1, 1.01682938911233589e0], [1.04085002660763468e-1, 4.75621549360517246e-2, 9.42561211196189276e-3, 7.13657698713582355e-4, 1.56832226335947487e-5, 4.87495178708282051e-8]),
-        (4.00000000000000000e1, [2.47478408335683516e-3, 2.29734930206788590e-2, 6.81646330480941420e-2, 1.49298165627787000e-1, 2.95514866402818988e-1, 6.08360449502958200e-1], [9.01462856528620349e-2, 4.11874551814643414e-2, 8.15994392309088434e-3, 6.17497386033758725e-4, 1.35562308380554088e-5, 4.20356584238724956e-8]),
-    ];
-    /// nroots=7 vendor CINTrys_roots gold (libcint 6.1.3 capture, root5 intermediate-x grid).
-    const REF7: &[(f64, [f64; 7], [f64; 7])] = &[
-        (2.00000000000000000e0, [1.03375964293055140e-2, 9.91384324655783383e-2, 3.15603520368675616e-1, 7.80292229539023663e-1, 1.88496447441744674e0, 5.42244718826964966e0, 3.09594316600638244e1], [1.97701397290812458e-1, 1.63209315696067586e-1, 1.12769831537066018e-1, 6.69380284505808054e-2, 3.52112148259308005e-2, 1.65169039957724258e-2, 5.79731486507393742e-3]),
-        (3.00000000000000000e0, [9.70055414108181996e-3, 9.29554413018857106e-2, 2.95462100200008182e-1, 7.28890928071078248e-1, 1.75622838265838688e0, 5.03939708830136190e0, 2.87215775878088770e1], [1.90079871774337689e-1, 1.47778598179680143e-1, 9.08432258441613377e-2, 4.57231085654332056e-2, 1.98220767468028844e-2, 7.71766839442838189e-3, 2.37901072659530820e-3]),
-        (4.00000000000000000e0, [9.12032905379605435e-3, 8.73090018566291537e-2, 2.76966293123419027e-1, 6.81273853115378136e-1, 1.63555334796068719e0, 4.67558763201489214e0, 2.65741505380581557e1], [1.83096967549298745e-1, 1.34972015155090330e-1, 7.46272768208344761e-2, 3.21617436576664070e-2, 1.15130334353734133e-2, 3.68579417222330988e-3, 9.83864590724072181e-4]),
-        (6.00000000000000000e0, [8.10515428426273297e-3, 7.74062440673142782e-2, 2.44353694444928687e-1, 5.96516015953606260e-1, 1.41758539586889043e0, 4.00583569094302483e0, 2.25522479434800651e1], [1.70740029429597623e-1, 1.15145115364356010e-1, 5.30710950448288615e-2, 1.72966697416206544e-2, 4.27726345902483020e-3, 9.05017430855854614e-4, 1.72956883374791951e-4]),
-        (7.50000000000000000e0, [7.45059811402530147e-3, 7.10130347512492460e-2, 2.23229881019580551e-1, 5.41237672782916124e-1, 1.27357025202946073e0, 3.55401926727796269e0, 1.97765339786111980e1], [1.62640713571549411e-1, 1.03924060294473805e-1, 4.27770132313517737e-2, 1.16227446684427985e-2, 2.21710763572400150e-3, 3.39544848273525695e-4, 4.83434283632744116e-5]),
-        (1.20000000000000000e1, [5.89934227462392182e-3, 5.58740629174560924e-2, 1.73255878000655977e-1, 4.10334979801671218e-1, 9.29932425811609176e-1, 2.45071181340568334e0, 1.27074443704725351e1], [1.42801346259675166e-1, 8.14956617799363903e-2, 2.63009113098343836e-2, 4.73156261766419142e-3, 4.72659654763581897e-4, 2.79778862875415295e-5, 1.31102128692711351e-6]),
-        (1.80000000000000000e1, [4.48236488487040782e-3, 4.21194226596032784e-2, 1.28338309204057088e-1, 2.94519566116178078e-1, 6.31223312687051785e-1, 1.49669987174097452e0, 6.26423394835270653e0], [1.23387308880198665e-1, 6.52162329824216985e-2, 1.77730185366642458e-2, 2.36577353874122378e-3, 1.40121318849354277e-4, 3.20781431240685645e-6, 2.60691959625077406e-8]),
-        (2.20000000000000000e1, [3.80139479724356417e-3, 3.55561336009393852e-2, 1.07232024564880568e-1, 2.41510875887069154e-1, 5.00148249761302677e-1, 1.10414084375529953e0, 3.75883840597873053e0], [1.13341835614637038e-1, 5.85268629499214599e-2, 1.51462130078437313e-2, 1.83595078565310598e-3, 9.18521756127751771e-5, 1.49587275350201874e-6, 4.94752804824317589e-9]),
-        (3.00000000000000000e1, [2.84197788949256801e-3, 2.63860605189298082e-2, 7.82800287491663416e-2, 1.71141826447421763e-1, 3.35874004957339545e-1, 6.63720098826782956e-1, 1.60376854320291407e0], [9.78869027250575535e-2, 4.98765017367609198e-2, 1.25320619793786066e-2, 1.44032460396594474e-3, 6.54882942143943775e-5, 8.78392440555768522e-7, 1.64784095366074018e-9]),
-        (4.00000000000000000e1, [2.13241321939135154e-3, 1.96833061753478832e-2, 5.76576991489161778e-2, 1.23272691641515469e-1, 2.32819368876511446e-1, 4.28056872570049818e-1, 8.62901159497114656e-1], [8.48130489899281276e-2, 4.31818424780840843e-2, 1.08317663443943703e-2, 1.24122808338281566e-3, 5.61473514792494829e-5, 7.45798165080200608e-7, 1.36450647182729664e-9]),
-    ];
-    /// nroots=8 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
-    const REF8: &[(f64, [f64; 8], [f64; 8])] = &[
-        (5.00000000000000028e-2, [9.08207026622278278e-3, 8.58703370864056931e-2, 2.64666481558376687e-1, 6.15655625926594285e-1, 1.32500352924570275e0, 2.98006019144538126e0, 8.25326640483796936e0, 4.62847325636315219e1], [1.89086620093259272e-1, 1.81672912874342007e-1, 1.67301452578974968e-1, 1.46804660993836905e-1, 1.21258227915172809e-1, 9.18352362551326101e-2, 5.96896983663345385e-2, 2.59315767659055556e-2]),
-        (5.00000000000000000e-1, [8.83967642701936722e-3, 8.35759475218567499e-2, 2.57579955479352141e-1, 5.99125202634968046e-1, 1.28931659985265257e0, 2.89955833013653397e0, 8.02978139151875503e0, 4.50295784546777824e1], [1.85880617914861546e-1, 1.73676845381247141e-1, 1.51810848689687000e-1, 1.24280111339309871e-1, 9.50365703007739343e-2, 6.68548529039739853e-2, 4.09368221139647034e-2, 1.71477232483304640e-2]),
-        (5.00000000000000000e0, [6.86794768929531192e-3, 6.47881713150018912e-2, 1.98791326922738154e-1, 4.59400375705831476e-1, 9.80638950504249984e-1, 2.18574359417584629e0, 6.00284543382738445e0, 3.34714212753060991e1], [1.59467810393558979e-1, 1.20068500835148098e-1, 6.88747344884431123e-2, 3.09021716667628003e-2, 1.13510843538425707e-2, 3.65292747432671662e-3, 1.10568489051311378e-3, 2.89395507918302269e-4]),
-        (1.10000000000000000e1, [5.11872094038896136e-3, 4.80290447099573359e-2, 1.45730632918088493e-1, 3.30790122516041174e-1, 6.87965085507791230e-1, 1.48040337787705423e0, 3.89637219707916138e0, 2.09050816958041317e1], [1.34949396385159570e-1, 8.61858798377623664e-2, 3.51407302810548203e-2, 9.17290239369131059e-3, 1.55769109440672391e-3, 1.81703866621340274e-4, 1.68576944569852660e-5, 1.58179870933884613e-6]),
-        (1.50000000000000000e1, [4.29861195312810675e-3, 4.01823632328150854e-2, 1.20941855201998141e-1, 2.70803469505161098e-1, 5.51162410983571438e-1, 1.14652343717079841e0, 2.86424178993623446e0, 1.43745472128445311e1], [1.22753247142588479e-1, 7.36336339377534899e-2, 2.62605402077580735e-2, 5.47528456633260101e-3, 6.53819375854347573e-4, 4.43754020072405469e-5, 1.83366332751387220e-6, 6.40341156312108017e-8]),
-        (3.00000000000000000e1, [2.48743018167906556e-3, 2.29824425314794252e-2, 6.74473912232120831e-2, 1.44565043309927255e-1, 2.73623958440652848e-1, 5.01883114480643155e-1, 9.79509648018068835e-1, 2.60682235095586812e0], [9.25467867424331070e-2, 5.12773665352723312e-2, 1.54048560540225223e-2, 2.39180314232055168e-3, 1.76031829667007021e-4, 5.26739585155291690e-6, 4.76166976110991939e-8, 6.33751932760908284e-11]),
-    ];
-    /// nroots=9 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
-    const REF9: &[(f64, [f64; 9], [f64; 9])] = &[
-        (5.00000000000000028e-2, [7.21930184845440831e-3, 6.75621168502445746e-2, 2.03599725686127386e-1, 4.55100639978317345e-1, 9.14815989596463042e-1, 1.81946819401828863e0, 3.90920293393093621e0, 1.05454409878472344e1, 5.83709889164932108e1], [1.68858499577811738e-1, 1.63578424390461608e-1, 1.53279909354846589e-1, 1.38449143057325696e-1, 1.19732453975874328e-1, 9.78607806707413042e-2, 7.35806674534182498e-2, 4.76070739461702253e-2, 2.06334334163102394e-2]),
-        (5.00000000000000000e-1, [7.04705958209245892e-3, 6.59488836690251407e-2, 1.98730802583987565e-1, 4.44194611839629605e-1, 8.92840465782267612e-1, 1.77565329124183147e0, 3.81485345029143241e0, 1.02904782234734142e1, 5.69582410927400602e1], [1.66351119324674973e-1, 1.57541098168055616e-1, 1.41423603917261470e-1, 1.20474144734157157e-1, 9.73553449501690094e-2, 7.42302335620416975e-2, 5.23984081284885952e-2, 3.22708836236961435e-2, 1.35795554836052410e-2]),
-        (5.00000000000000000e0, [5.61675535719353882e-3, 5.24860215823858001e-2, 1.57701316315675993e-1, 3.50990473048264418e-1, 7.01705016646670843e-1, 1.38697976044966431e0, 2.96122611095916932e0, 7.94448089202471674e0, 4.38176973435816279e1], [1.45211610298035365e-1, 1.14960802023768890e-1, 7.26878783808271312e-2, 3.74067823499877744e-2, 1.61677577999920184e-2, 6.14432517834006143e-3, 2.17312082101168806e-3, 7.44540196092598346e-4, 2.15492562458800309e-4]),
-        (1.10000000000000000e1, [4.29812803042495858e-3, 4.00168781067393314e-2, 1.19330980744059040e-1, 2.62459788686918549e-1, 5.16011819063824650e-1, 9.97694432167350542e-1, 2.07325587077066409e0, 5.40241667502493517e0, 2.91131059373493493e1], [1.24807233044625765e-1, 8.55356537960872687e-2, 4.02451942472036583e-2, 1.30740275548316392e-2, 2.97773490866900126e-3, 4.93463914684921746e-4, 6.46014427599650172e-5, 7.82194970532270326e-6, 1.01249329490611696e-6]),
-        (1.50000000000000000e1, [3.66083409056471715e-3, 3.39923920242088881e-2, 1.00796624771113147e-1, 2.19663286699506466e-1, 4.25924275710313160e-1, 8.07000473499581927e-1, 1.62907380933282964e0, 4.08275551434215345e0, 2.11279866667667235e1], [1.14378774073961242e-1, 7.39388702237117473e-2, 3.07728345621882428e-2, 8.18818195017429612e-3, 1.38383488963721244e-3, 1.49044010858576955e-4, 1.06426292192792250e-5, 5.82141010631729991e-7, 3.38489760706623470e-8]),
-        (3.00000000000000000e1, [2.19999419624932260e-3, 2.02504858441812374e-2, 5.89431448091172691e-2, 1.24521956260129560e-1, 2.29936344521685793e-1, 4.03331474190292860e-1, 7.16214352825974676e-1, 1.41637978109806051e0, 4.34013844859317288e0], [8.77836197974490307e-2, 5.20538321085658173e-2, 1.80360530861570847e-2, 3.53727804137867917e-3, 3.71802580439801328e-4, 1.91543866874753952e-5, 4.16460882087666674e-7, 2.91430501414593298e-9, 3.77503455952595100e-12]),
-    ];
-    /// nroots=10 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
-    const REF10: &[(f64, [f64; 10], [f64; 10])] = &[
-        (5.00000000000000028e-2, [5.87646512964301246e-3, 5.45926823365208633e-2, 1.61930831154402571e-1, 3.52292630535563978e-1, 6.77787457662635040e-1, 1.25433070890349296e0, 2.37391906063033487e0, 4.94638496924978632e0, 1.31006443502529049e1, 7.18406892178515335e1], [1.52526027950163179e-1, 1.48634280944979436e-1, 1.41009366997542435e-1, 1.29949841097640906e-1, 1.15861067094475981e-1, 9.92144397932148009e-2, 8.05070028224456613e-2, 6.02286851313784052e-2, 3.88430833320064992e-2, 1.68065906791109269e-2]),
-        (5.00000000000000000e-1, [5.74970456052056184e-3, 5.34143676419542648e-2, 1.58431769094437930e-1, 3.44668085829430482e-1, 6.63090619257134528e-1, 1.22707736316460214e0, 2.32223852959405397e0, 4.83851584415892866e0, 1.28145742628252925e1, 7.02707347368940844e1], [1.50513511556979701e-1, 1.43951575339713089e-1, 1.31759627734140655e-1, 1.15526334203522651e-1, 9.70670076010963917e-2, 7.80072403115498747e-2, 5.95080949982604579e-2, 4.21726627550716160e-2, 2.60981184849253083e-2, 1.10202189068916521e-2]),
-        (5.00000000000000000e0, [4.67915126033617568e-3, 4.34251025752471556e-2, 1.28546091761384651e-1, 2.78837452154807930e-1, 5.34449663576085809e-1, 9.84753773335848570e-1, 1.85507302356807591e0, 3.84806089355690695e0, 1.01540772111337123e1, 5.55535002540945939e1], [1.33230378231341817e-1, 1.09554103400780645e-1, 7.45693748466080414e-2, 4.26050251345711575e-2, 2.08977310101302431e-2, 9.08762071350589784e-3, 3.65097391555868536e-3, 1.41441235554531377e-3, 5.35727660219694401e-4, 1.66962342252171690e-4]),
-        (1.10000000000000000e1, [3.66032431141269593e-3, 3.38815334929266840e-2, 9.97643848773193537e-2, 2.14635475504920570e-1, 4.06742905329839810e-1, 7.38484416333869187e-1, 1.36631174022097723e0, 2.77704451200076186e0, 7.18253882680138123e0, 3.87267931200124380e1], [1.16008945696183127e-1, 8.40045909122521112e-2, 4.41570271458582853e-2, 1.69567330128744531e-2, 4.82206186712608263e-3, 1.04358630699753524e-3, 1.81120051145999790e-4, 2.76849063630157287e-5, 4.28749651194518858e-6, 7.05956549745156409e-7]),
-        (1.50000000000000000e1, [3.15518818163619931e-3, 2.91487005031378886e-2, 8.54804076688407688e-2, 1.82713593199092000e-1, 3.42986550956609959e-1, 6.14538608246276041e-1, 1.11666909619749743e0, 2.21653048870011871e0, 5.57344638147383975e0, 2.93060048765762922e1], [1.07004164329802184e-1, 7.34054637732394488e-2, 3.44927500156077191e-2, 1.10786322708255457e-2, 2.43163625145737233e-3, 3.67395481148677610e-4, 3.92860009938115289e-5, 3.21005057750264857e-6, 2.39312335385034063e-7, 2.08437497175439640e-8]),
-        (3.00000000000000000e1, [1.95989763989966965e-3, 1.79860501651107375e-2, 5.20121372134499937e-2, 1.08661033315480202e-1, 1.97036411290206381e-1, 3.35306335446313664e-1, 5.63494932765406631e-1, 9.87897917425933136e-1, 2.00824636448287031e0, 7.14836904885972135e0], [8.34509268240039570e-2, 5.23696778965937471e-2, 2.04158193135068299e-2, 4.83885921557290159e-3, 6.72843331197913288e-4, 5.19486093765091645e-5, 2.04776958883611164e-6, 3.61856064885426808e-8, 2.33754659166628583e-10, 4.38169373684554859e-13]),
-    ];
-    /// nroots=11 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
-    const REF11: &[(f64, [f64; 11], [f64; 11])] = &[
-        (5.00000000000000028e-2, [4.87649339231614916e-3, 4.50568220327598537e-2, 1.32106599445576456e-1, 2.81909217282772406e-1, 5.26296055428163156e-1, 9.29599456837774341e-1, 1.63249273026136521e0, 2.98746336216922170e0, 6.09118163720013772e0, 1.59187121609288127e1, 8.66937945843010169e1], [1.39065821841276666e-1, 1.36115803321843754e-1, 1.30316310958490750e-1, 1.21858517928438742e-1, 1.11006204035315220e-1, 9.80728174645454503e-2, 8.33974628172054200e-2, 6.73235161546897470e-2, 5.01828303494531586e-2, 3.22881258349575970e-2, 1.39529751367404656e-2]),
-        (5.00000000000000000e-1, [4.78050646495781044e-3, 4.41695393097231853e-2, 1.29502810732281370e-1, 2.76346009730133790e-1, 5.15894546895335870e-1, 9.11196867435363989e-1, 1.60012121693015441e0, 2.92813012826168428e0, 5.97004336032461413e0, 1.56018096133904400e1, 8.49669168574788216e1], [1.37416067207227155e-1, 1.32400433186220273e-1, 1.22970906022489279e-1, 1.10180126154213923e-1, 9.52863991498699714e-2, 7.94978574869372179e-2, 6.37781454988834290e-2, 4.87481912520326410e-2, 3.46788210575617803e-2, 2.15452659980481971e-2, 9.12217887866494798e-3]),
-        (5.00000000000000000e0, [3.95835793309086154e-3, 3.65471624871548384e-2, 1.07003281595521027e-1, 2.27862690645363047e-1, 4.24257168233403592e-1, 7.47007681820735403e-1, 1.30732269461860739e0, 2.38406087980682235e0, 4.84529908394321662e0, 1.26302660558951043e1, 6.86770307399200135e1], [1.23033697950569926e-1, 1.04186755392736682e-1, 7.50923802168075166e-2, 4.65530214792200456e-2, 2.52400728313583456e-2, 1.22511061685103406e-2, 5.48602115369359929e-3, 2.34545807849726807e-3, 9.85826110153832213e-4, 4.04650943016119291e-4, 1.33319285949974489e-4]),
-        (1.10000000000000000e1, [3.15475418615168701e-3, 2.90723420529306990e-2, 8.47915784649527771e-2, 1.79502154207159759e-1, 3.31532324141848078e-1, 5.77750134723442610e-1, 9.98501546485893954e-1, 1.79484010206413025e0, 3.59263679485316034e0, 9.23512360492454931e0, 4.97391851019832245e1], [1.08319510424421547e-1, 8.19474530320541544e-2, 4.70249597094232683e-2, 2.05944742737193681e-2, 6.96448897319015738e-3, 1.85720343155254411e-3, 4.04972019635743252e-4, 7.66879342383437155e-5, 1.38242215073695960e-5, 2.64737906862490167e-6, 5.21953051170124862e-7]),
-        (1.50000000000000000e1, [2.74755955705924390e-3, 2.52828330096878592e-2, 7.35172616543998680e-2, 1.54898035835307452e-1, 2.84162142388343031e-1, 4.90674873872654072e-1, 8.37815487409992010e-1, 1.48287992292045367e0, 2.91302540232471419e0, 7.33860839212731264e0, 3.88961211008102055e1], [1.00474853811724968e-1, 7.23149561071273483e-2, 3.74539115160488420e-2, 1.39644348049716722e-2, 3.75788627704926612e-3, 7.36061400386572732e-4, 1.07195171595536953e-4, 1.21756578506951315e-5, 1.19018603173242695e-6, 1.19241590465346003e-7, 1.41553601743912549e-8]),
-        (3.00000000000000000e1, [1.75667044302713245e-3, 1.60812632550179704e-2, 4.62596258627736637e-2, 9.57939087294882446e-2, 1.71308632432081581e-1, 2.85205710825582381e-1, 4.62210101006837182e-1, 7.58061703712814672e-1, 1.32717710805529632e0, 2.79076294098990996e0, 1.12741031692998472e1], [7.94874871028017072e-2, 5.23332730783934857e-2, 2.25247982930749137e-2, 6.24495979902686595e-3, 1.08902908387836675e-3, 1.15323026166043514e-4, 7.05301822703451512e-6, 2.32208519928918971e-7, 3.74276740372077946e-9, 2.66886884142302685e-11, 9.55918447969798322e-14]),
-    ];
-    /// nroots=12 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
-    const REF12: &[(f64, [f64; 12], [f64; 12])] = &[
-        (5.00000000000000028e-2, [4.11179610790214992e-3, 3.78339269097001385e-2, 1.09963732593527902e-1, 2.31322889190357733e-1, 4.22593165243158486e-1, 7.22737026393849957e-1, 1.20886204746404768e0, 2.04834809336682389e0, 3.65958472422061343e0, 7.34334057901881110e0, 1.89995445924895883e1, 1.02930280632670971e2], [1.27783214535309914e-1, 1.25494252896844932e-1, 1.20982525514801806e-1, 1.14374863061003515e-1, 1.05848473178419444e-1, 9.56175384174761944e-2, 8.39186056599288549e-2, 7.09967331434037258e-2, 5.70940800435066481e-2, 4.24421825400700531e-2, 2.72592677017665409e-2, 1.17686491504283095e-2]),
-        (5.00000000000000000e-1, [4.03737249908252271e-3, 3.71488900223342355e-2, 1.07971319689134343e-1, 2.27127508474679662e-1, 4.14919598302064152e-1, 7.09595575846797555e-1, 1.18685020926777418e0, 2.01099831111112692e0, 3.59277049590187181e0, 7.20912758897595918e0, 1.86520187740342820e1, 1.01046693334056030e2], [1.26406994506786746e-1, 1.22488939411491568e-1, 1.15054883162379371e-1, 1.04822382847744255e-1, 9.26794046416094530e-2, 7.95241397800239419e-2, 6.61307584742963916e-2, 5.30659035474979057e-2, 4.06603198735517590e-2, 2.90244378776869753e-2, 1.80905554050600527e-2, 7.67567236401884255e-3]),
-        (5.00000000000000000e0, [3.39227829421821000e-3, 3.11969965498246210e-2, 9.05793783907762051e-2, 1.90255000049117828e-1, 3.46886234741646315e-1, 5.91879021723503596e-1, 9.87424513403218906e-1, 1.66860871298854163e0, 2.97328071389509274e0, 5.95218967645119257e0, 1.53720712701404558e1, 8.31871162881793680e1], [1.14258815154595503e-1, 9.90299608549460586e-2, 7.46850741810234919e-2, 4.94091184007525441e-2, 2.90375064213682470e-2, 1.54269108255666275e-2, 7.57692139500428050e-3, 3.53225430244682916e-3, 1.60555270791609521e-3, 7.24147603056519073e-4, 3.17044233246326654e-4, 1.09003530590542598e-4]),
-        (1.10000000000000000e1, [2.74721170651410227e-3, 2.52288917254653022e-2, 7.30420052868102354e-2, 1.52752984915371731e-1, 2.76871464351173713e-1, 4.68889489159364514e-1, 7.75186572307883681e-1, 1.29632760087050780e0, 2.28374401939254446e0, 4.51997439953213576e0, 1.15583116930802632e1, 6.21458160967765636e1], [1.01551354631619170e-1, 7.95971611067508023e-2, 4.90236728610829384e-2, 2.38581878816825840e-2, 9.26671610208757227e-3, 2.92063826696975590e-3, 7.67126351071326876e-4, 1.75026093467609792e-4, 3.68851071239013667e-5, 7.79079764167682446e-6, 1.78155717987610313e-6, 4.02595185195750395e-7]),
-        (1.50000000000000000e1, [2.41415584908878482e-3, 2.21455121798813347e-2, 6.39686377022743724e-2, 1.33302574958927472e-1, 2.40413833209809413e-1, 4.04452633506465209e-1, 6.62963220845185552e-1, 1.09684991560593947e0, 1.90750675736207387e0, 3.72056197832023772e0, 9.37756158396652317e0, 4.98897574393397818e1], [9.46624630918150856e-2, 7.08653911220168686e-2, 3.97353840445608258e-2, 1.67144460769891590e-2, 5.29466364031375755e-3, 1.27364783737360051e-3, 2.36665523886756999e-4, 3.51119996590432774e-5, 4.42137582495463250e-6, 5.24980482714853543e-7, 6.83632879025655227e-8, 1.02735265731440126e-8]),
-        (3.00000000000000000e1, [1.58327659986061691e-3, 1.44643902846057354e-2, 4.14294484151521286e-2, 8.51838830589258245e-2, 1.50684206348619315e-1, 2.46762340172160671e-1, 3.89773321307823717e-1, 6.12673030032184540e-1, 9.91563010025078406e-1, 1.74499218125313127e0, 3.79713932050829550e0, 1.68237052342071465e1], [7.58556180672251973e-2, 5.20289380987655273e-2, 2.43556386336431403e-2, 7.70194573638842851e-3, 1.61894858929201172e-3, 2.21050460951193915e-4, 1.90023886714269745e-5, 9.87405991105788580e-7, 2.95107138928604603e-8, 4.83552128670736396e-10, 4.41308463886815013e-12, 3.29405468291230207e-14]),
-    ];
+        /// nroots=6 vendor CINTrys_roots gold (libcint 6.1.3 capture, root5 intermediate-x grid).
+        const REF6: &[(f64, [f64; 6], [f64; 6])] = &[
+            (
+                2.00000000000000000e0,
+                [
+                    1.36578488309600787e-2,
+                    1.33952878849778884e-1,
+                    4.49726044354436250e-1,
+                    1.23921218965603774e0,
+                    3.80011954471610292e0,
+                    2.23307092156090761e1,
+                ],
+                [
+                    2.25258525863053033e-1,
+                    1.75460461513258947e-1,
+                    1.08800303676243992e-1,
+                    5.58975264865730556e-2,
+                    2.45988055159585585e-2,
+                    8.12838360621653475e-3,
+                ],
+            ),
+            (
+                3.00000000000000000e0,
+                [
+                    1.26973612609121451e-2,
+                    1.24362565378616730e-1,
+                    4.16412518723119740e-1,
+                    1.14312948099559097e0,
+                    3.49101219438670851e0,
+                    2.04487128225697603e1,
+                ],
+                [
+                    2.15158294539962575e-1,
+                    1.55408218499807044e-1,
+                    8.31998286413312416e-2,
+                    3.48677660418451121e-2,
+                    1.22854454632879816e-2,
+                    3.42400704520596112e-3,
+                ],
+            ),
+            (
+                4.00000000000000000e0,
+                [
+                    1.18340821473735744e-2,
+                    1.15712342383095482e-1,
+                    3.86131345539849846e-1,
+                    1.05467110320445800e0,
+                    3.20154619506372562e0,
+                    1.86585972635558512e1,
+                ],
+                [
+                    2.06040502538436171e-1,
+                    1.39328252659222745e-1,
+                    6.53361390499307554e-2,
+                    2.25518847718843771e-2,
+                    6.32460082401616053e-3,
+                    1.45931553772013956e-3,
+                ],
+            ),
+            (
+                6.00000000000000000e0,
+                [
+                    1.03507419854350722e-2,
+                    1.00807600798092159e-1,
+                    3.33596237308092347e-1,
+                    8.99114165941193755e-1,
+                    2.68098993328408364e0,
+                    1.53564490089873900e1,
+                ],
+                [
+                    1.90212721890989478e-1,
+                    1.15502782214355657e-1,
+                    4.32683523246022855e-2,
+                    1.04941990925511760e-2,
+                    1.85352158122923391e-3,
+                    2.76570249931282555e-4,
+                ],
+            ),
+            (
+                7.50000000000000000e0,
+                [
+                    9.41303755153684134e-3,
+                    9.13770277726140140e-2,
+                    3.00249599039009274e-1,
+                    7.99474719178131288e-1,
+                    2.34049839532828718e0,
+                    1.31257920313127023e1,
+                ],
+                [
+                    1.80042256828488595e-1,
+                    1.02630883701724698e-1,
+                    3.35374454624274149e-2,
+                    6.46273251292197887e-3,
+                    8.13015304553309053e-4,
+                    8.31938680626439841e-5,
+                ],
+            ),
+            (
+                1.20000000000000000e1,
+                [
+                    7.25142307469343970e-3,
+                    6.96976707324476474e-2,
+                    2.23937278748881557e-1,
+                    5.72029723244917410e-1,
+                    1.55437058654329996e0,
+                    7.72056806887726133e0,
+                ],
+                [
+                    1.55761194740607872e-1,
+                    7.83476997590886598e-2,
+                    1.93556404452516588e-2,
+                    2.24583707250382942e-3,
+                    1.17829929926339776e-4,
+                    3.22858201130564417e-6,
+                ],
+            ),
+            (
+                1.80000000000000000e1,
+                [
+                    5.35412226822587229e-3,
+                    5.08569755120908892e-2,
+                    1.58994036997697014e-1,
+                    3.84864716341947188e-1,
+                    9.34041202798734371e-1,
+                    3.44145177780901168e0,
+                ],
+                [
+                    1.32769678473706715e-1,
+                    6.20518012813302544e-2,
+                    1.29501745440250646e-2,
+                    1.08443335243164343e-3,
+                    2.94314790385372516e-5,
+                    1.70009880859298580e-7,
+                ],
+            ),
+            (
+                2.20000000000000000e1,
+                [
+                    4.47411227331388425e-3,
+                    4.22198400398838825e-2,
+                    1.29999692380522391e-1,
+                    3.05355241434312974e-1,
+                    6.94336802909049533e-1,
+                    2.07424936988239672e0,
+                ],
+                [
+                    1.21175473868114697e-1,
+                    5.56948882143896637e-2,
+                    1.11848958083399768e-2,
+                    8.68766491989162392e-4,
+                    2.01183545739860910e-5,
+                    7.26165461721986237e-8,
+                ],
+            ),
+            (
+                3.00000000000000000e1,
+                [
+                    3.30188841555081230e-3,
+                    3.08623043512902019e-2,
+                    9.29810361166252403e-2,
+                    2.09439718299509831e-1,
+                    4.36928231763494990e-1,
+                    1.01682938911233589e0,
+                ],
+                [
+                    1.04085002660763468e-1,
+                    4.75621549360517246e-2,
+                    9.42561211196189276e-3,
+                    7.13657698713582355e-4,
+                    1.56832226335947487e-5,
+                    4.87495178708282051e-8,
+                ],
+            ),
+            (
+                4.00000000000000000e1,
+                [
+                    2.47478408335683516e-3,
+                    2.29734930206788590e-2,
+                    6.81646330480941420e-2,
+                    1.49298165627787000e-1,
+                    2.95514866402818988e-1,
+                    6.08360449502958200e-1,
+                ],
+                [
+                    9.01462856528620349e-2,
+                    4.11874551814643414e-2,
+                    8.15994392309088434e-3,
+                    6.17497386033758725e-4,
+                    1.35562308380554088e-5,
+                    4.20356584238724956e-8,
+                ],
+            ),
+        ];
+        /// nroots=7 vendor CINTrys_roots gold (libcint 6.1.3 capture, root5 intermediate-x grid).
+        const REF7: &[(f64, [f64; 7], [f64; 7])] = &[
+            (
+                2.00000000000000000e0,
+                [
+                    1.03375964293055140e-2,
+                    9.91384324655783383e-2,
+                    3.15603520368675616e-1,
+                    7.80292229539023663e-1,
+                    1.88496447441744674e0,
+                    5.42244718826964966e0,
+                    3.09594316600638244e1,
+                ],
+                [
+                    1.97701397290812458e-1,
+                    1.63209315696067586e-1,
+                    1.12769831537066018e-1,
+                    6.69380284505808054e-2,
+                    3.52112148259308005e-2,
+                    1.65169039957724258e-2,
+                    5.79731486507393742e-3,
+                ],
+            ),
+            (
+                3.00000000000000000e0,
+                [
+                    9.70055414108181996e-3,
+                    9.29554413018857106e-2,
+                    2.95462100200008182e-1,
+                    7.28890928071078248e-1,
+                    1.75622838265838688e0,
+                    5.03939708830136190e0,
+                    2.87215775878088770e1,
+                ],
+                [
+                    1.90079871774337689e-1,
+                    1.47778598179680143e-1,
+                    9.08432258441613377e-2,
+                    4.57231085654332056e-2,
+                    1.98220767468028844e-2,
+                    7.71766839442838189e-3,
+                    2.37901072659530820e-3,
+                ],
+            ),
+            (
+                4.00000000000000000e0,
+                [
+                    9.12032905379605435e-3,
+                    8.73090018566291537e-2,
+                    2.76966293123419027e-1,
+                    6.81273853115378136e-1,
+                    1.63555334796068719e0,
+                    4.67558763201489214e0,
+                    2.65741505380581557e1,
+                ],
+                [
+                    1.83096967549298745e-1,
+                    1.34972015155090330e-1,
+                    7.46272768208344761e-2,
+                    3.21617436576664070e-2,
+                    1.15130334353734133e-2,
+                    3.68579417222330988e-3,
+                    9.83864590724072181e-4,
+                ],
+            ),
+            (
+                6.00000000000000000e0,
+                [
+                    8.10515428426273297e-3,
+                    7.74062440673142782e-2,
+                    2.44353694444928687e-1,
+                    5.96516015953606260e-1,
+                    1.41758539586889043e0,
+                    4.00583569094302483e0,
+                    2.25522479434800651e1,
+                ],
+                [
+                    1.70740029429597623e-1,
+                    1.15145115364356010e-1,
+                    5.30710950448288615e-2,
+                    1.72966697416206544e-2,
+                    4.27726345902483020e-3,
+                    9.05017430855854614e-4,
+                    1.72956883374791951e-4,
+                ],
+            ),
+            (
+                7.50000000000000000e0,
+                [
+                    7.45059811402530147e-3,
+                    7.10130347512492460e-2,
+                    2.23229881019580551e-1,
+                    5.41237672782916124e-1,
+                    1.27357025202946073e0,
+                    3.55401926727796269e0,
+                    1.97765339786111980e1,
+                ],
+                [
+                    1.62640713571549411e-1,
+                    1.03924060294473805e-1,
+                    4.27770132313517737e-2,
+                    1.16227446684427985e-2,
+                    2.21710763572400150e-3,
+                    3.39544848273525695e-4,
+                    4.83434283632744116e-5,
+                ],
+            ),
+            (
+                1.20000000000000000e1,
+                [
+                    5.89934227462392182e-3,
+                    5.58740629174560924e-2,
+                    1.73255878000655977e-1,
+                    4.10334979801671218e-1,
+                    9.29932425811609176e-1,
+                    2.45071181340568334e0,
+                    1.27074443704725351e1,
+                ],
+                [
+                    1.42801346259675166e-1,
+                    8.14956617799363903e-2,
+                    2.63009113098343836e-2,
+                    4.73156261766419142e-3,
+                    4.72659654763581897e-4,
+                    2.79778862875415295e-5,
+                    1.31102128692711351e-6,
+                ],
+            ),
+            (
+                1.80000000000000000e1,
+                [
+                    4.48236488487040782e-3,
+                    4.21194226596032784e-2,
+                    1.28338309204057088e-1,
+                    2.94519566116178078e-1,
+                    6.31223312687051785e-1,
+                    1.49669987174097452e0,
+                    6.26423394835270653e0,
+                ],
+                [
+                    1.23387308880198665e-1,
+                    6.52162329824216985e-2,
+                    1.77730185366642458e-2,
+                    2.36577353874122378e-3,
+                    1.40121318849354277e-4,
+                    3.20781431240685645e-6,
+                    2.60691959625077406e-8,
+                ],
+            ),
+            (
+                2.20000000000000000e1,
+                [
+                    3.80139479724356417e-3,
+                    3.55561336009393852e-2,
+                    1.07232024564880568e-1,
+                    2.41510875887069154e-1,
+                    5.00148249761302677e-1,
+                    1.10414084375529953e0,
+                    3.75883840597873053e0,
+                ],
+                [
+                    1.13341835614637038e-1,
+                    5.85268629499214599e-2,
+                    1.51462130078437313e-2,
+                    1.83595078565310598e-3,
+                    9.18521756127751771e-5,
+                    1.49587275350201874e-6,
+                    4.94752804824317589e-9,
+                ],
+            ),
+            (
+                3.00000000000000000e1,
+                [
+                    2.84197788949256801e-3,
+                    2.63860605189298082e-2,
+                    7.82800287491663416e-2,
+                    1.71141826447421763e-1,
+                    3.35874004957339545e-1,
+                    6.63720098826782956e-1,
+                    1.60376854320291407e0,
+                ],
+                [
+                    9.78869027250575535e-2,
+                    4.98765017367609198e-2,
+                    1.25320619793786066e-2,
+                    1.44032460396594474e-3,
+                    6.54882942143943775e-5,
+                    8.78392440555768522e-7,
+                    1.64784095366074018e-9,
+                ],
+            ),
+            (
+                4.00000000000000000e1,
+                [
+                    2.13241321939135154e-3,
+                    1.96833061753478832e-2,
+                    5.76576991489161778e-2,
+                    1.23272691641515469e-1,
+                    2.32819368876511446e-1,
+                    4.28056872570049818e-1,
+                    8.62901159497114656e-1,
+                ],
+                [
+                    8.48130489899281276e-2,
+                    4.31818424780840843e-2,
+                    1.08317663443943703e-2,
+                    1.24122808338281566e-3,
+                    5.61473514792494829e-5,
+                    7.45798165080200608e-7,
+                    1.36450647182729664e-9,
+                ],
+            ),
+        ];
+        /// nroots=8 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
+        const REF8: &[(f64, [f64; 8], [f64; 8])] = &[
+            (
+                5.00000000000000028e-2,
+                [
+                    9.08207026622278278e-3,
+                    8.58703370864056931e-2,
+                    2.64666481558376687e-1,
+                    6.15655625926594285e-1,
+                    1.32500352924570275e0,
+                    2.98006019144538126e0,
+                    8.25326640483796936e0,
+                    4.62847325636315219e1,
+                ],
+                [
+                    1.89086620093259272e-1,
+                    1.81672912874342007e-1,
+                    1.67301452578974968e-1,
+                    1.46804660993836905e-1,
+                    1.21258227915172809e-1,
+                    9.18352362551326101e-2,
+                    5.96896983663345385e-2,
+                    2.59315767659055556e-2,
+                ],
+            ),
+            (
+                5.00000000000000000e-1,
+                [
+                    8.83967642701936722e-3,
+                    8.35759475218567499e-2,
+                    2.57579955479352141e-1,
+                    5.99125202634968046e-1,
+                    1.28931659985265257e0,
+                    2.89955833013653397e0,
+                    8.02978139151875503e0,
+                    4.50295784546777824e1,
+                ],
+                [
+                    1.85880617914861546e-1,
+                    1.73676845381247141e-1,
+                    1.51810848689687000e-1,
+                    1.24280111339309871e-1,
+                    9.50365703007739343e-2,
+                    6.68548529039739853e-2,
+                    4.09368221139647034e-2,
+                    1.71477232483304640e-2,
+                ],
+            ),
+            (
+                5.00000000000000000e0,
+                [
+                    6.86794768929531192e-3,
+                    6.47881713150018912e-2,
+                    1.98791326922738154e-1,
+                    4.59400375705831476e-1,
+                    9.80638950504249984e-1,
+                    2.18574359417584629e0,
+                    6.00284543382738445e0,
+                    3.34714212753060991e1,
+                ],
+                [
+                    1.59467810393558979e-1,
+                    1.20068500835148098e-1,
+                    6.88747344884431123e-2,
+                    3.09021716667628003e-2,
+                    1.13510843538425707e-2,
+                    3.65292747432671662e-3,
+                    1.10568489051311378e-3,
+                    2.89395507918302269e-4,
+                ],
+            ),
+            (
+                1.10000000000000000e1,
+                [
+                    5.11872094038896136e-3,
+                    4.80290447099573359e-2,
+                    1.45730632918088493e-1,
+                    3.30790122516041174e-1,
+                    6.87965085507791230e-1,
+                    1.48040337787705423e0,
+                    3.89637219707916138e0,
+                    2.09050816958041317e1,
+                ],
+                [
+                    1.34949396385159570e-1,
+                    8.61858798377623664e-2,
+                    3.51407302810548203e-2,
+                    9.17290239369131059e-3,
+                    1.55769109440672391e-3,
+                    1.81703866621340274e-4,
+                    1.68576944569852660e-5,
+                    1.58179870933884613e-6,
+                ],
+            ),
+            (
+                1.50000000000000000e1,
+                [
+                    4.29861195312810675e-3,
+                    4.01823632328150854e-2,
+                    1.20941855201998141e-1,
+                    2.70803469505161098e-1,
+                    5.51162410983571438e-1,
+                    1.14652343717079841e0,
+                    2.86424178993623446e0,
+                    1.43745472128445311e1,
+                ],
+                [
+                    1.22753247142588479e-1,
+                    7.36336339377534899e-2,
+                    2.62605402077580735e-2,
+                    5.47528456633260101e-3,
+                    6.53819375854347573e-4,
+                    4.43754020072405469e-5,
+                    1.83366332751387220e-6,
+                    6.40341156312108017e-8,
+                ],
+            ),
+            (
+                3.00000000000000000e1,
+                [
+                    2.48743018167906556e-3,
+                    2.29824425314794252e-2,
+                    6.74473912232120831e-2,
+                    1.44565043309927255e-1,
+                    2.73623958440652848e-1,
+                    5.01883114480643155e-1,
+                    9.79509648018068835e-1,
+                    2.60682235095586812e0,
+                ],
+                [
+                    9.25467867424331070e-2,
+                    5.12773665352723312e-2,
+                    1.54048560540225223e-2,
+                    2.39180314232055168e-3,
+                    1.76031829667007021e-4,
+                    5.26739585155291690e-6,
+                    4.76166976110991939e-8,
+                    6.33751932760908284e-11,
+                ],
+            ),
+        ];
+        /// nroots=9 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
+        const REF9: &[(f64, [f64; 9], [f64; 9])] = &[
+            (
+                5.00000000000000028e-2,
+                [
+                    7.21930184845440831e-3,
+                    6.75621168502445746e-2,
+                    2.03599725686127386e-1,
+                    4.55100639978317345e-1,
+                    9.14815989596463042e-1,
+                    1.81946819401828863e0,
+                    3.90920293393093621e0,
+                    1.05454409878472344e1,
+                    5.83709889164932108e1,
+                ],
+                [
+                    1.68858499577811738e-1,
+                    1.63578424390461608e-1,
+                    1.53279909354846589e-1,
+                    1.38449143057325696e-1,
+                    1.19732453975874328e-1,
+                    9.78607806707413042e-2,
+                    7.35806674534182498e-2,
+                    4.76070739461702253e-2,
+                    2.06334334163102394e-2,
+                ],
+            ),
+            (
+                5.00000000000000000e-1,
+                [
+                    7.04705958209245892e-3,
+                    6.59488836690251407e-2,
+                    1.98730802583987565e-1,
+                    4.44194611839629605e-1,
+                    8.92840465782267612e-1,
+                    1.77565329124183147e0,
+                    3.81485345029143241e0,
+                    1.02904782234734142e1,
+                    5.69582410927400602e1,
+                ],
+                [
+                    1.66351119324674973e-1,
+                    1.57541098168055616e-1,
+                    1.41423603917261470e-1,
+                    1.20474144734157157e-1,
+                    9.73553449501690094e-2,
+                    7.42302335620416975e-2,
+                    5.23984081284885952e-2,
+                    3.22708836236961435e-2,
+                    1.35795554836052410e-2,
+                ],
+            ),
+            (
+                5.00000000000000000e0,
+                [
+                    5.61675535719353882e-3,
+                    5.24860215823858001e-2,
+                    1.57701316315675993e-1,
+                    3.50990473048264418e-1,
+                    7.01705016646670843e-1,
+                    1.38697976044966431e0,
+                    2.96122611095916932e0,
+                    7.94448089202471674e0,
+                    4.38176973435816279e1,
+                ],
+                [
+                    1.45211610298035365e-1,
+                    1.14960802023768890e-1,
+                    7.26878783808271312e-2,
+                    3.74067823499877744e-2,
+                    1.61677577999920184e-2,
+                    6.14432517834006143e-3,
+                    2.17312082101168806e-3,
+                    7.44540196092598346e-4,
+                    2.15492562458800309e-4,
+                ],
+            ),
+            (
+                1.10000000000000000e1,
+                [
+                    4.29812803042495858e-3,
+                    4.00168781067393314e-2,
+                    1.19330980744059040e-1,
+                    2.62459788686918549e-1,
+                    5.16011819063824650e-1,
+                    9.97694432167350542e-1,
+                    2.07325587077066409e0,
+                    5.40241667502493517e0,
+                    2.91131059373493493e1,
+                ],
+                [
+                    1.24807233044625765e-1,
+                    8.55356537960872687e-2,
+                    4.02451942472036583e-2,
+                    1.30740275548316392e-2,
+                    2.97773490866900126e-3,
+                    4.93463914684921746e-4,
+                    6.46014427599650172e-5,
+                    7.82194970532270326e-6,
+                    1.01249329490611696e-6,
+                ],
+            ),
+            (
+                1.50000000000000000e1,
+                [
+                    3.66083409056471715e-3,
+                    3.39923920242088881e-2,
+                    1.00796624771113147e-1,
+                    2.19663286699506466e-1,
+                    4.25924275710313160e-1,
+                    8.07000473499581927e-1,
+                    1.62907380933282964e0,
+                    4.08275551434215345e0,
+                    2.11279866667667235e1,
+                ],
+                [
+                    1.14378774073961242e-1,
+                    7.39388702237117473e-2,
+                    3.07728345621882428e-2,
+                    8.18818195017429612e-3,
+                    1.38383488963721244e-3,
+                    1.49044010858576955e-4,
+                    1.06426292192792250e-5,
+                    5.82141010631729991e-7,
+                    3.38489760706623470e-8,
+                ],
+            ),
+            (
+                3.00000000000000000e1,
+                [
+                    2.19999419624932260e-3,
+                    2.02504858441812374e-2,
+                    5.89431448091172691e-2,
+                    1.24521956260129560e-1,
+                    2.29936344521685793e-1,
+                    4.03331474190292860e-1,
+                    7.16214352825974676e-1,
+                    1.41637978109806051e0,
+                    4.34013844859317288e0,
+                ],
+                [
+                    8.77836197974490307e-2,
+                    5.20538321085658173e-2,
+                    1.80360530861570847e-2,
+                    3.53727804137867917e-3,
+                    3.71802580439801328e-4,
+                    1.91543866874753952e-5,
+                    4.16460882087666674e-7,
+                    2.91430501414593298e-9,
+                    3.77503455952595100e-12,
+                ],
+            ),
+        ];
+        /// nroots=10 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
+        const REF10: &[(f64, [f64; 10], [f64; 10])] = &[
+            (
+                5.00000000000000028e-2,
+                [
+                    5.87646512964301246e-3,
+                    5.45926823365208633e-2,
+                    1.61930831154402571e-1,
+                    3.52292630535563978e-1,
+                    6.77787457662635040e-1,
+                    1.25433070890349296e0,
+                    2.37391906063033487e0,
+                    4.94638496924978632e0,
+                    1.31006443502529049e1,
+                    7.18406892178515335e1,
+                ],
+                [
+                    1.52526027950163179e-1,
+                    1.48634280944979436e-1,
+                    1.41009366997542435e-1,
+                    1.29949841097640906e-1,
+                    1.15861067094475981e-1,
+                    9.92144397932148009e-2,
+                    8.05070028224456613e-2,
+                    6.02286851313784052e-2,
+                    3.88430833320064992e-2,
+                    1.68065906791109269e-2,
+                ],
+            ),
+            (
+                5.00000000000000000e-1,
+                [
+                    5.74970456052056184e-3,
+                    5.34143676419542648e-2,
+                    1.58431769094437930e-1,
+                    3.44668085829430482e-1,
+                    6.63090619257134528e-1,
+                    1.22707736316460214e0,
+                    2.32223852959405397e0,
+                    4.83851584415892866e0,
+                    1.28145742628252925e1,
+                    7.02707347368940844e1,
+                ],
+                [
+                    1.50513511556979701e-1,
+                    1.43951575339713089e-1,
+                    1.31759627734140655e-1,
+                    1.15526334203522651e-1,
+                    9.70670076010963917e-2,
+                    7.80072403115498747e-2,
+                    5.95080949982604579e-2,
+                    4.21726627550716160e-2,
+                    2.60981184849253083e-2,
+                    1.10202189068916521e-2,
+                ],
+            ),
+            (
+                5.00000000000000000e0,
+                [
+                    4.67915126033617568e-3,
+                    4.34251025752471556e-2,
+                    1.28546091761384651e-1,
+                    2.78837452154807930e-1,
+                    5.34449663576085809e-1,
+                    9.84753773335848570e-1,
+                    1.85507302356807591e0,
+                    3.84806089355690695e0,
+                    1.01540772111337123e1,
+                    5.55535002540945939e1,
+                ],
+                [
+                    1.33230378231341817e-1,
+                    1.09554103400780645e-1,
+                    7.45693748466080414e-2,
+                    4.26050251345711575e-2,
+                    2.08977310101302431e-2,
+                    9.08762071350589784e-3,
+                    3.65097391555868536e-3,
+                    1.41441235554531377e-3,
+                    5.35727660219694401e-4,
+                    1.66962342252171690e-4,
+                ],
+            ),
+            (
+                1.10000000000000000e1,
+                [
+                    3.66032431141269593e-3,
+                    3.38815334929266840e-2,
+                    9.97643848773193537e-2,
+                    2.14635475504920570e-1,
+                    4.06742905329839810e-1,
+                    7.38484416333869187e-1,
+                    1.36631174022097723e0,
+                    2.77704451200076186e0,
+                    7.18253882680138123e0,
+                    3.87267931200124380e1,
+                ],
+                [
+                    1.16008945696183127e-1,
+                    8.40045909122521112e-2,
+                    4.41570271458582853e-2,
+                    1.69567330128744531e-2,
+                    4.82206186712608263e-3,
+                    1.04358630699753524e-3,
+                    1.81120051145999790e-4,
+                    2.76849063630157287e-5,
+                    4.28749651194518858e-6,
+                    7.05956549745156409e-7,
+                ],
+            ),
+            (
+                1.50000000000000000e1,
+                [
+                    3.15518818163619931e-3,
+                    2.91487005031378886e-2,
+                    8.54804076688407688e-2,
+                    1.82713593199092000e-1,
+                    3.42986550956609959e-1,
+                    6.14538608246276041e-1,
+                    1.11666909619749743e0,
+                    2.21653048870011871e0,
+                    5.57344638147383975e0,
+                    2.93060048765762922e1,
+                ],
+                [
+                    1.07004164329802184e-1,
+                    7.34054637732394488e-2,
+                    3.44927500156077191e-2,
+                    1.10786322708255457e-2,
+                    2.43163625145737233e-3,
+                    3.67395481148677610e-4,
+                    3.92860009938115289e-5,
+                    3.21005057750264857e-6,
+                    2.39312335385034063e-7,
+                    2.08437497175439640e-8,
+                ],
+            ),
+            (
+                3.00000000000000000e1,
+                [
+                    1.95989763989966965e-3,
+                    1.79860501651107375e-2,
+                    5.20121372134499937e-2,
+                    1.08661033315480202e-1,
+                    1.97036411290206381e-1,
+                    3.35306335446313664e-1,
+                    5.63494932765406631e-1,
+                    9.87897917425933136e-1,
+                    2.00824636448287031e0,
+                    7.14836904885972135e0,
+                ],
+                [
+                    8.34509268240039570e-2,
+                    5.23696778965937471e-2,
+                    2.04158193135068299e-2,
+                    4.83885921557290159e-3,
+                    6.72843331197913288e-4,
+                    5.19486093765091645e-5,
+                    2.04776958883611164e-6,
+                    3.61856064885426808e-8,
+                    2.33754659166628583e-10,
+                    4.38169373684554859e-13,
+                ],
+            ),
+        ];
+        /// nroots=11 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
+        const REF11: &[(f64, [f64; 11], [f64; 11])] = &[
+            (
+                5.00000000000000028e-2,
+                [
+                    4.87649339231614916e-3,
+                    4.50568220327598537e-2,
+                    1.32106599445576456e-1,
+                    2.81909217282772406e-1,
+                    5.26296055428163156e-1,
+                    9.29599456837774341e-1,
+                    1.63249273026136521e0,
+                    2.98746336216922170e0,
+                    6.09118163720013772e0,
+                    1.59187121609288127e1,
+                    8.66937945843010169e1,
+                ],
+                [
+                    1.39065821841276666e-1,
+                    1.36115803321843754e-1,
+                    1.30316310958490750e-1,
+                    1.21858517928438742e-1,
+                    1.11006204035315220e-1,
+                    9.80728174645454503e-2,
+                    8.33974628172054200e-2,
+                    6.73235161546897470e-2,
+                    5.01828303494531586e-2,
+                    3.22881258349575970e-2,
+                    1.39529751367404656e-2,
+                ],
+            ),
+            (
+                5.00000000000000000e-1,
+                [
+                    4.78050646495781044e-3,
+                    4.41695393097231853e-2,
+                    1.29502810732281370e-1,
+                    2.76346009730133790e-1,
+                    5.15894546895335870e-1,
+                    9.11196867435363989e-1,
+                    1.60012121693015441e0,
+                    2.92813012826168428e0,
+                    5.97004336032461413e0,
+                    1.56018096133904400e1,
+                    8.49669168574788216e1,
+                ],
+                [
+                    1.37416067207227155e-1,
+                    1.32400433186220273e-1,
+                    1.22970906022489279e-1,
+                    1.10180126154213923e-1,
+                    9.52863991498699714e-2,
+                    7.94978574869372179e-2,
+                    6.37781454988834290e-2,
+                    4.87481912520326410e-2,
+                    3.46788210575617803e-2,
+                    2.15452659980481971e-2,
+                    9.12217887866494798e-3,
+                ],
+            ),
+            (
+                5.00000000000000000e0,
+                [
+                    3.95835793309086154e-3,
+                    3.65471624871548384e-2,
+                    1.07003281595521027e-1,
+                    2.27862690645363047e-1,
+                    4.24257168233403592e-1,
+                    7.47007681820735403e-1,
+                    1.30732269461860739e0,
+                    2.38406087980682235e0,
+                    4.84529908394321662e0,
+                    1.26302660558951043e1,
+                    6.86770307399200135e1,
+                ],
+                [
+                    1.23033697950569926e-1,
+                    1.04186755392736682e-1,
+                    7.50923802168075166e-2,
+                    4.65530214792200456e-2,
+                    2.52400728313583456e-2,
+                    1.22511061685103406e-2,
+                    5.48602115369359929e-3,
+                    2.34545807849726807e-3,
+                    9.85826110153832213e-4,
+                    4.04650943016119291e-4,
+                    1.33319285949974489e-4,
+                ],
+            ),
+            (
+                1.10000000000000000e1,
+                [
+                    3.15475418615168701e-3,
+                    2.90723420529306990e-2,
+                    8.47915784649527771e-2,
+                    1.79502154207159759e-1,
+                    3.31532324141848078e-1,
+                    5.77750134723442610e-1,
+                    9.98501546485893954e-1,
+                    1.79484010206413025e0,
+                    3.59263679485316034e0,
+                    9.23512360492454931e0,
+                    4.97391851019832245e1,
+                ],
+                [
+                    1.08319510424421547e-1,
+                    8.19474530320541544e-2,
+                    4.70249597094232683e-2,
+                    2.05944742737193681e-2,
+                    6.96448897319015738e-3,
+                    1.85720343155254411e-3,
+                    4.04972019635743252e-4,
+                    7.66879342383437155e-5,
+                    1.38242215073695960e-5,
+                    2.64737906862490167e-6,
+                    5.21953051170124862e-7,
+                ],
+            ),
+            (
+                1.50000000000000000e1,
+                [
+                    2.74755955705924390e-3,
+                    2.52828330096878592e-2,
+                    7.35172616543998680e-2,
+                    1.54898035835307452e-1,
+                    2.84162142388343031e-1,
+                    4.90674873872654072e-1,
+                    8.37815487409992010e-1,
+                    1.48287992292045367e0,
+                    2.91302540232471419e0,
+                    7.33860839212731264e0,
+                    3.88961211008102055e1,
+                ],
+                [
+                    1.00474853811724968e-1,
+                    7.23149561071273483e-2,
+                    3.74539115160488420e-2,
+                    1.39644348049716722e-2,
+                    3.75788627704926612e-3,
+                    7.36061400386572732e-4,
+                    1.07195171595536953e-4,
+                    1.21756578506951315e-5,
+                    1.19018603173242695e-6,
+                    1.19241590465346003e-7,
+                    1.41553601743912549e-8,
+                ],
+            ),
+            (
+                3.00000000000000000e1,
+                [
+                    1.75667044302713245e-3,
+                    1.60812632550179704e-2,
+                    4.62596258627736637e-2,
+                    9.57939087294882446e-2,
+                    1.71308632432081581e-1,
+                    2.85205710825582381e-1,
+                    4.62210101006837182e-1,
+                    7.58061703712814672e-1,
+                    1.32717710805529632e0,
+                    2.79076294098990996e0,
+                    1.12741031692998472e1,
+                ],
+                [
+                    7.94874871028017072e-2,
+                    5.23332730783934857e-2,
+                    2.25247982930749137e-2,
+                    6.24495979902686595e-3,
+                    1.08902908387836675e-3,
+                    1.15323026166043514e-4,
+                    7.05301822703451512e-6,
+                    2.32208519928918971e-7,
+                    3.74276740372077946e-9,
+                    2.66886884142302685e-11,
+                    9.55918447969798322e-14,
+                ],
+            ),
+        ];
+        /// nroots=12 vendor CINTrys_roots gold (libcint 6.1.3 capture, rys_nroots_sweep_parity.rs:19 grid).
+        const REF12: &[(f64, [f64; 12], [f64; 12])] = &[
+            (
+                5.00000000000000028e-2,
+                [
+                    4.11179610790214992e-3,
+                    3.78339269097001385e-2,
+                    1.09963732593527902e-1,
+                    2.31322889190357733e-1,
+                    4.22593165243158486e-1,
+                    7.22737026393849957e-1,
+                    1.20886204746404768e0,
+                    2.04834809336682389e0,
+                    3.65958472422061343e0,
+                    7.34334057901881110e0,
+                    1.89995445924895883e1,
+                    1.02930280632670971e2,
+                ],
+                [
+                    1.27783214535309914e-1,
+                    1.25494252896844932e-1,
+                    1.20982525514801806e-1,
+                    1.14374863061003515e-1,
+                    1.05848473178419444e-1,
+                    9.56175384174761944e-2,
+                    8.39186056599288549e-2,
+                    7.09967331434037258e-2,
+                    5.70940800435066481e-2,
+                    4.24421825400700531e-2,
+                    2.72592677017665409e-2,
+                    1.17686491504283095e-2,
+                ],
+            ),
+            (
+                5.00000000000000000e-1,
+                [
+                    4.03737249908252271e-3,
+                    3.71488900223342355e-2,
+                    1.07971319689134343e-1,
+                    2.27127508474679662e-1,
+                    4.14919598302064152e-1,
+                    7.09595575846797555e-1,
+                    1.18685020926777418e0,
+                    2.01099831111112692e0,
+                    3.59277049590187181e0,
+                    7.20912758897595918e0,
+                    1.86520187740342820e1,
+                    1.01046693334056030e2,
+                ],
+                [
+                    1.26406994506786746e-1,
+                    1.22488939411491568e-1,
+                    1.15054883162379371e-1,
+                    1.04822382847744255e-1,
+                    9.26794046416094530e-2,
+                    7.95241397800239419e-2,
+                    6.61307584742963916e-2,
+                    5.30659035474979057e-2,
+                    4.06603198735517590e-2,
+                    2.90244378776869753e-2,
+                    1.80905554050600527e-2,
+                    7.67567236401884255e-3,
+                ],
+            ),
+            (
+                5.00000000000000000e0,
+                [
+                    3.39227829421821000e-3,
+                    3.11969965498246210e-2,
+                    9.05793783907762051e-2,
+                    1.90255000049117828e-1,
+                    3.46886234741646315e-1,
+                    5.91879021723503596e-1,
+                    9.87424513403218906e-1,
+                    1.66860871298854163e0,
+                    2.97328071389509274e0,
+                    5.95218967645119257e0,
+                    1.53720712701404558e1,
+                    8.31871162881793680e1,
+                ],
+                [
+                    1.14258815154595503e-1,
+                    9.90299608549460586e-2,
+                    7.46850741810234919e-2,
+                    4.94091184007525441e-2,
+                    2.90375064213682470e-2,
+                    1.54269108255666275e-2,
+                    7.57692139500428050e-3,
+                    3.53225430244682916e-3,
+                    1.60555270791609521e-3,
+                    7.24147603056519073e-4,
+                    3.17044233246326654e-4,
+                    1.09003530590542598e-4,
+                ],
+            ),
+            (
+                1.10000000000000000e1,
+                [
+                    2.74721170651410227e-3,
+                    2.52288917254653022e-2,
+                    7.30420052868102354e-2,
+                    1.52752984915371731e-1,
+                    2.76871464351173713e-1,
+                    4.68889489159364514e-1,
+                    7.75186572307883681e-1,
+                    1.29632760087050780e0,
+                    2.28374401939254446e0,
+                    4.51997439953213576e0,
+                    1.15583116930802632e1,
+                    6.21458160967765636e1,
+                ],
+                [
+                    1.01551354631619170e-1,
+                    7.95971611067508023e-2,
+                    4.90236728610829384e-2,
+                    2.38581878816825840e-2,
+                    9.26671610208757227e-3,
+                    2.92063826696975590e-3,
+                    7.67126351071326876e-4,
+                    1.75026093467609792e-4,
+                    3.68851071239013667e-5,
+                    7.79079764167682446e-6,
+                    1.78155717987610313e-6,
+                    4.02595185195750395e-7,
+                ],
+            ),
+            (
+                1.50000000000000000e1,
+                [
+                    2.41415584908878482e-3,
+                    2.21455121798813347e-2,
+                    6.39686377022743724e-2,
+                    1.33302574958927472e-1,
+                    2.40413833209809413e-1,
+                    4.04452633506465209e-1,
+                    6.62963220845185552e-1,
+                    1.09684991560593947e0,
+                    1.90750675736207387e0,
+                    3.72056197832023772e0,
+                    9.37756158396652317e0,
+                    4.98897574393397818e1,
+                ],
+                [
+                    9.46624630918150856e-2,
+                    7.08653911220168686e-2,
+                    3.97353840445608258e-2,
+                    1.67144460769891590e-2,
+                    5.29466364031375755e-3,
+                    1.27364783737360051e-3,
+                    2.36665523886756999e-4,
+                    3.51119996590432774e-5,
+                    4.42137582495463250e-6,
+                    5.24980482714853543e-7,
+                    6.83632879025655227e-8,
+                    1.02735265731440126e-8,
+                ],
+            ),
+            (
+                3.00000000000000000e1,
+                [
+                    1.58327659986061691e-3,
+                    1.44643902846057354e-2,
+                    4.14294484151521286e-2,
+                    8.51838830589258245e-2,
+                    1.50684206348619315e-1,
+                    2.46762340172160671e-1,
+                    3.89773321307823717e-1,
+                    6.12673030032184540e-1,
+                    9.91563010025078406e-1,
+                    1.74499218125313127e0,
+                    3.79713932050829550e0,
+                    1.68237052342071465e1,
+                ],
+                [
+                    7.58556180672251973e-2,
+                    5.20289380987655273e-2,
+                    2.43556386336431403e-2,
+                    7.70194573638842851e-3,
+                    1.61894858929201172e-3,
+                    2.21050460951193915e-4,
+                    1.90023886714269745e-5,
+                    9.87405991105788580e-7,
+                    2.95107138928604603e-8,
+                    4.83552128670736396e-10,
+                    4.41308463886815013e-12,
+                    3.29405468291230207e-14,
+                ],
+            ),
+        ];
 
         const ATOL: f64 = 1e-12;
         const RTOL: f64 = 1e-9;
@@ -3585,12 +9567,18 @@ mod tests_rys_host {
                 for i in 0..nroots {
                     let dr = (r[i] - er[i]).abs();
                     let dw = (w[i] - ew[i]).abs();
-                    assert!(dr <= ATOL,
+                    assert!(
+                        dr <= ATOL,
                         "nroots={nroots} x={x} root[{i}]={} expected {} |d|={dr:e} (atol=1e-12)",
-                        r[i], er[i]);
-                    assert!(dw <= ATOL,
+                        r[i],
+                        er[i]
+                    );
+                    assert!(
+                        dw <= ATOL,
                         "nroots={nroots} x={x} weight[{i}]={} expected {} |d|={dw:e} (atol=1e-12)",
-                        w[i], ew[i]);
+                        w[i],
+                        ew[i]
+                    );
                 }
             }
         }
@@ -3602,19 +9590,27 @@ mod tests_rys_host {
                     let dw = (w[i] - ew[i]).abs();
                     let tr = ATOL.max(RTOL * er[i].abs());
                     let tw = ATOL.max(RTOL * ew[i].abs());
-                    assert!(dr <= tr,
+                    assert!(
+                        dr <= tr,
                         "nroots={nroots} x={x} root[{i}]={} expected {} |d|={dr:e} tol={tr:e}",
-                        r[i], er[i]);
-                    assert!(dw <= tw,
+                        r[i],
+                        er[i]
+                    );
+                    assert!(
+                        dw <= tw,
                         "nroots={nroots} x={x} weight[{i}]={} expected {} |d|={dw:e} tol={tw:e}",
-                        w[i], ew[i]);
+                        w[i],
+                        ew[i]
+                    );
                 }
             }
         }
 
         macro_rules! rows {
             ($t:ident) => {
-                &$t.iter().map(|(x, r, w)| (*x, &r[..], &w[..])).collect::<Vec<_>>()[..]
+                &$t.iter()
+                    .map(|(x, r, w)| (*x, &r[..], &w[..]))
+                    .collect::<Vec<_>>()[..]
             };
         }
         check_f64(6, rows!(REF6));
@@ -3625,7 +9621,6 @@ mod tests_rys_host {
         check_dd(11, rows!(REF11));
         check_dd(12, rows!(REF12));
     }
-
 }
 
 /// Tests for the generic rys host wrappers (Phase 20 Plan 03 — Wave 1 math leaves).
@@ -3651,8 +9646,14 @@ mod tests_rys_generic {
         let (rt1, ww1) = rys_root1_host::<f64>(x);
         let rt1_expected = 0.5_f64 / (x - 0.5_f64);
         let ww1_expected = f64::sqrt(PIE4 / x);
-        assert_eq!(rt1, rt1_expected, "rys_root1_host::<f64> rt1 mismatch at x={x}");
-        assert_eq!(ww1, ww1_expected, "rys_root1_host::<f64> ww1 mismatch at x={x}");
+        assert_eq!(
+            rt1, rt1_expected,
+            "rys_root1_host::<f64> rt1 mismatch at x={x}"
+        );
+        assert_eq!(
+            ww1, ww1_expected,
+            "rys_root1_host::<f64> ww1 mismatch at x={x}"
+        );
     }
 
     /// f32 path: in the large-x asymptotic regime (x > 33), `ww1 ≈ sqrt(PIE4/x)`
@@ -3676,10 +9677,26 @@ mod tests_rys_generic {
     /// f32 path: rys_root1_host::<f32> returns finite values across all branches.
     #[test]
     fn rys_root1_host_f32_returns_finite() {
-        for x_f32 in [1.0e-10_f32, 1.0e-6_f32, 0.5_f32, 2.0_f32, 7.0_f32, 12.0_f32, 18.0_f32, 40.0_f32, 100.0_f32] {
+        for x_f32 in [
+            1.0e-10_f32,
+            1.0e-6_f32,
+            0.5_f32,
+            2.0_f32,
+            7.0_f32,
+            12.0_f32,
+            18.0_f32,
+            40.0_f32,
+            100.0_f32,
+        ] {
             let (rt1, ww1) = rys_root1_host::<f32>(x_f32);
-            assert!(rt1.is_finite(), "rys_root1_host::<f32> rt1 not finite at x={x_f32}");
-            assert!(ww1.is_finite(), "rys_root1_host::<f32> ww1 not finite at x={x_f32}");
+            assert!(
+                rt1.is_finite(),
+                "rys_root1_host::<f32> rt1 not finite at x={x_f32}"
+            );
+            assert!(
+                ww1.is_finite(),
+                "rys_root1_host::<f32> ww1 not finite at x={x_f32}"
+            );
         }
     }
 }

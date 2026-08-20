@@ -1,171 +1,92 @@
+mod support;
+
+use cintx_rs::EvaluationContext;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use serde::Serialize;
-use std::fs::{OpenOptions, create_dir_all};
 use std::hint::black_box;
-use std::io::Write;
-use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-#[derive(Clone, Copy)]
-struct CrossoverCase {
-    case_id: &'static str,
-    profile: &'static str,
-    transfer_bytes: usize,
-    workspace_bytes: usize,
-    payload: usize,
-    not0: i32,
-}
-
-#[derive(Serialize)]
-struct BenchSummaryRow<'a> {
-    suite_id: &'a str,
-    case_id: &'a str,
-    profile: &'a str,
-    throughput: f64,
-    workspace_bytes: usize,
-    transfer_bytes: usize,
-    not0: i32,
-    cpu_micros: f64,
-    gpu_micros: f64,
-    crossover_shift_pct: f64,
-    timestamp_unix_secs: u64,
-}
-
-fn artifact_file() -> PathBuf {
-    let dir = std::env::var_os("CINTX_ARTIFACT_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp/cintx_artifacts"));
-    dir.join("cintx_phase_04_bench_rows.jsonl")
-}
-
-fn append_summary_row(row: &BenchSummaryRow<'_>) {
-    let output = artifact_file();
-    if let Some(parent) = output.parent() {
-        if let Err(error) = create_dir_all(parent) {
-            eprintln!(
-                "crossover_cpu_gpu: failed to create artifact dir {}: {error}",
-                parent.display()
-            );
-            return;
-        }
-    }
-
-    let encoded = match serde_json::to_string(row) {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("crossover_cpu_gpu: failed to serialize summary row: {error}");
-            return;
-        }
-    };
-
-    let mut file = match OpenOptions::new().create(true).append(true).open(&output) {
-        Ok(file) => file,
-        Err(error) => {
-            eprintln!(
-                "crossover_cpu_gpu: failed to open artifact {}: {error}",
-                output.display()
-            );
-            return;
-        }
-    };
-
-    if let Err(error) = writeln!(file, "{encoded}") {
-        eprintln!(
-            "crossover_cpu_gpu: failed to append summary row to {}: {error}",
-            output.display()
-        );
-    }
-}
-
-fn cpu_model(case: CrossoverCase) -> f64 {
-    let mut accum = 0.0f64;
-    for idx in 0..case.payload {
-        let ratio = (idx + case.transfer_bytes) as f64 / (case.workspace_bytes + 1) as f64;
-        accum += ratio.sin().abs();
-    }
-    black_box(accum)
-}
-
-fn gpu_model(case: CrossoverCase) -> f64 {
-    let transfer_penalty = (case.transfer_bytes as f64 / 1024.0) * 0.15;
-    let compute_gain = (case.payload as f64 / 1024.0) * 0.08;
-    black_box((transfer_penalty - compute_gain).abs())
-}
 
 fn benchmark_crossover_cpu_gpu(c: &mut Criterion) {
-    let suite_id = "crossover_cpu_gpu";
+    // CI records a CPU curve; each configured CubeCL backend produces its own
+    // real curve. No modeled GPU duration is emitted.
+    let fixture = support::fixture();
     let cases = [
-        CrossoverCase {
-            case_id: "small_payload",
-            profile: "base",
-            transfer_bytes: 96 * 1024,
-            workspace_bytes: 512 * 1024,
-            payload: 8_192,
-            not0: 1,
-        },
-        CrossoverCase {
-            case_id: "medium_payload",
-            profile: "with-f12",
-            transfer_bytes: 256 * 1024,
-            workspace_bytes: 1024 * 1024,
-            payload: 24_576,
-            not0: 1,
-        },
-        CrossoverCase {
-            case_id: "large_payload",
-            profile: "with-f12+with-4c1e",
-            transfer_bytes: 768 * 1024,
-            workspace_bytes: 3 * 1024 * 1024,
-            payload: 98_304,
-            not0: 1,
-        },
+        &support::OVERLAP_CART,
+        &support::KINETIC_CART,
+        &support::TWO_ELECTRON_CART,
     ];
-
+    // This name is part of the benchmark artifact contract consumed by xtask.
     let mut group = c.benchmark_group("crossover_cpu_gpu");
     group.sample_size(12);
-
     for case in cases {
-        group.throughput(Throughput::Bytes(case.transfer_bytes as u64));
+        let context = EvaluationContext::new();
+        let warm = support::evaluate_in(&fixture, case, &context);
+        support::record_measurement("crossover_cpu_gpu", case.id, warm);
+        black_box((
+            warm.workspace_bytes,
+            warm.transfer_bytes,
+            warm.not0,
+            warm.kernel_launch_count,
+            warm.readback_count,
+        ));
+        group.throughput(Throughput::Elements(warm.output_elements as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(case.id), case, |bench, case| {
+            bench.iter(|| black_box(support::evaluate_in(&fixture, case, &context)));
+        });
+    }
+    for item_count in support::BATCH_SIZES {
+        let scalar_context = EvaluationContext::new();
+        let scalar_warm =
+            support::evaluate_overlap_ss_scalar_batch_in(&fixture, item_count, &scalar_context);
+        let scalar_case_id = format!("int1e_ovlp_cart_ss_scalar/{item_count}");
+        support::record_measurement("crossover_cpu_gpu", &scalar_case_id, scalar_warm);
+        black_box((
+            scalar_warm.workspace_bytes,
+            scalar_warm.transfer_bytes,
+            scalar_warm.not0,
+            scalar_warm.kernel_launch_count,
+            scalar_warm.readback_count,
+        ));
+        group.throughput(Throughput::Elements(scalar_warm.output_elements as u64));
         group.bench_with_input(
-            BenchmarkId::new(case.case_id, case.payload),
-            &case,
-            |bench, &benchmark_case| {
+            BenchmarkId::new("int1e_ovlp_cart_ss_scalar", item_count),
+            &item_count,
+            |bench, &item_count| {
                 bench.iter(|| {
-                    let cpu = cpu_model(benchmark_case);
-                    let gpu = gpu_model(benchmark_case);
-                    black_box(cpu + gpu);
+                    black_box(support::evaluate_overlap_ss_scalar_batch_in(
+                        &fixture,
+                        item_count,
+                        &scalar_context,
+                    ))
                 });
             },
         );
 
-        let cpu_micros = (case.payload as f64 / 512.0) + 40.0;
-        let gpu_micros = (case.payload as f64 / 1024.0) + (case.transfer_bytes as f64 / 8192.0);
-        let crossover_shift_pct = if cpu_micros == 0.0 {
-            0.0
-        } else {
-            ((gpu_micros - cpu_micros) / cpu_micros) * 100.0
-        };
-        let throughput = case.payload as f64 / Duration::from_micros(cpu_micros as u64 + 1).as_secs_f64();
-        let timestamp_unix_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs())
-            .unwrap_or_default();
-        let row = BenchSummaryRow {
-            suite_id,
-            case_id: case.case_id,
-            profile: case.profile,
-            throughput,
-            workspace_bytes: case.workspace_bytes,
-            transfer_bytes: case.transfer_bytes,
-            not0: case.not0,
-            cpu_micros,
-            gpu_micros,
-            crossover_shift_pct,
-            timestamp_unix_secs,
-        };
-        append_summary_row(&row);
+        let batch_context = EvaluationContext::new();
+        let batch_warm =
+            support::evaluate_overlap_ss_batch_in(&fixture, item_count, &batch_context);
+        let batch_case_id = format!("int1e_ovlp_cart_ss_batch/{item_count}");
+        support::record_measurement("crossover_cpu_gpu", &batch_case_id, batch_warm);
+        black_box((
+            batch_warm.workspace_bytes,
+            batch_warm.transfer_bytes,
+            batch_warm.not0,
+            batch_warm.kernel_launch_count,
+            batch_warm.readback_count,
+        ));
+        group.throughput(Throughput::Elements(batch_warm.output_elements as u64));
+        group.bench_with_input(
+            BenchmarkId::new("int1e_ovlp_cart_ss_batch", item_count),
+            &item_count,
+            |bench, &item_count| {
+                bench.iter(|| {
+                    black_box(support::evaluate_overlap_ss_batch_in(
+                        &fixture,
+                        item_count,
+                        &batch_context,
+                    ))
+                });
+            },
+        );
     }
-
     group.finish();
 }
 

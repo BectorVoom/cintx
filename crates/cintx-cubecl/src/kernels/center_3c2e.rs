@@ -12,13 +12,13 @@
 //! the 2e `ll` angular channel, with only one real "ket-side" angular axis.
 
 use crate::backend::ResolvedBackend;
-use crate::kernels::two_electron::{build_2e_shape, two_e_shape_as_f12};
 use crate::kernels::two_electron::fill_g_tensor_2e;
+use crate::kernels::two_electron::{build_2e_shape, two_e_shape_as_f12};
 // Phase 25 HESS-03: verbatim Hessian gout helpers (bra-i ∇² + ket-k ∇²).
 use crate::kernels::f12::{gout_ipip1, gout_ipip2_l};
-use crate::math::pdata::compute_pdata_host;
 #[cfg(test)]
 use crate::math::pdata::PairData;
+use crate::math::pdata::compute_pdata_host;
 #[cfg(test)]
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
@@ -202,8 +202,9 @@ fn fill_g_tensor_3c2e(
                         let mut s_prev = s0_k0;
                         for m in 1..mmax {
                             let prev_i_km = g[axis_off + irys + (n - 1) * dn + m * dm];
-                            let s2 =
-                                c0p_axis * s1 + m as f64 * b01 * s_prev + n as f64 * b00 * prev_i_km;
+                            let s2 = c0p_axis * s1
+                                + m as f64 * b01 * s_prev
+                                + n as f64 * b00 * prev_i_km;
                             g[axis_off + i_off + (m + 1) * dm] = s2;
                             s_prev = s1;
                             s1 = s2;
@@ -566,19 +567,15 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                     while n <= nmax {
                                         let i_off = irys + n * dn;
                                         let s0_k0 = g[(base + i_off) as usize];
-                                        let prev_i_k0 =
-                                            g[(base + irys + (n - 1u32) * dn) as usize];
+                                        let prev_i_k0 = g[(base + irys + (n - 1u32) * dn) as usize];
                                         let mut s1 =
                                             c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
                                         g[(base + i_off + dm) as usize] = s1;
                                         let mut s_prev = s0_k0;
                                         let mut m = 1u32;
                                         while m < mmax {
-                                            let prev_i_km = g[(base
-                                                + irys
-                                                + (n - 1u32) * dn
-                                                + m * dm)
-                                                as usize];
+                                            let prev_i_km = g
+                                                [(base + irys + (n - 1u32) * dn + m * dm) as usize];
                                             let s2 = c0pa * s1
                                                 + F::cast_from(m) * b01 * s_prev
                                                 + F::cast_from(n) * b00 * prev_i_km;
@@ -712,29 +709,15 @@ fn center_3c2e_scalar_kernel<F: Float + CubeElement>(
                                             let mut val = F::new(0.0);
                                             #[unroll]
                                             for root2 in 0..nroots {
-                                                let idx_x = ((root2 * nk + kx) * nj
-                                                    + jx)
-                                                    * ni
-                                                    + ix;
-                                                let idx_y = ((root2 * nk + ky) * nj
-                                                    + jy)
-                                                    * ni
-                                                    + iy;
-                                                let idx_z = ((root2 * nk + kz) * nj
-                                                    + jz)
-                                                    * ni
-                                                    + iz;
-                                                val += g_split
-                                                    [(gx_off + idx_x) as usize]
-                                                    * g_split
-                                                        [(gy_off + idx_y) as usize]
-                                                    * g_split
-                                                        [(gz_off + idx_z) as usize];
+                                                let idx_x = ((root2 * nk + kx) * nj + jx) * ni + ix;
+                                                let idx_y = ((root2 * nk + ky) * nj + jy) * ni + iy;
+                                                let idx_z = ((root2 * nk + kz) * nj + jz) * ni + iz;
+                                                val += g_split[(gx_off + idx_x) as usize]
+                                                    * g_split[(gy_off + idx_y) as usize]
+                                                    * g_split[(gz_off + idx_z) as usize];
                                             }
-                                            let out_idx =
-                                                (k_idx * ncj + j_idx) * nci + i_idx;
-                                            cart_out[out_idx as usize] +=
-                                                prim_coeff * val;
+                                            let out_idx = (k_idx * ncj + j_idx) * nci + i_idx;
+                                            cart_out[out_idx as usize] += prim_coeff * val;
 
                                             i_idx += 1u32;
                                             ib += 1u32;
@@ -1154,7 +1137,9 @@ fn center_3c2e_ip1_kernel<F: Float + CubeElement>(
                                     while n2 < nmax {
                                         let s2 = c00 * s1
                                             + F::cast_from(n2) * b10 * s0
-                                            + F::cast_from(m3) * b00 * g[(j + n2 * dn - dm) as usize];
+                                            + F::cast_from(m3)
+                                                * b00
+                                                * g[(j + n2 * dn - dm) as usize];
                                         g[(j + (n2 + 1u32) * dn) as usize] = s2;
                                         s0 = s1;
                                         s1 = s2;
@@ -1369,8 +1354,7 @@ fn center_3c2e_ip1_kernel<F: Float + CubeElement>(
                             while cck < nctr_k {
                                 let coeff_k_val = coeff_k[(kp * nctr_k + cck) as usize];
                                 let weight = coeff_i_val * coeff_j_val * coeff_k_val;
-                                let ctr_base =
-                                    ((cci * nctr_j + ccj) * nctr_k + cck) * total_len;
+                                let ctr_base = ((cci * nctr_j + ccj) * nctr_k + cck) * total_len;
 
                                 // n walk: cl(real k, ll) slowest → ck(phantom) →
                                 // cj → ci fastest. Reproduce cart_comps ordering.
@@ -1410,36 +1394,30 @@ fn center_3c2e_ip1_kernel<F: Float + CubeElement>(
                                                         let iy = li_minus_ix - ib;
                                                         let iz = li - ix - iy;
 
-                                                        let ix_base = ix * di
-                                                            + kx * dk
-                                                            + lx * dl
-                                                            + jx * dj;
-                                                        let iy_base = iy * di
-                                                            + ky * dk
-                                                            + ly * dl
-                                                            + jy * dj;
-                                                        let iz_base = iz * di
-                                                            + kz * dk
-                                                            + lz * dl
-                                                            + jz * dj;
+                                                        let ix_base =
+                                                            ix * di + kx * dk + lx * dl + jx * dj;
+                                                        let iy_base =
+                                                            iy * di + ky * dk + ly * dl + jy * dj;
+                                                        let iz_base =
+                                                            iz * di + kz * dk + lz * dl + jz * dj;
 
                                                         let mut s0 = F::new(0.0);
                                                         let mut s1 = F::new(0.0);
                                                         let mut s2 = F::new(0.0);
                                                         let mut r = 0u32;
                                                         while r < nrys {
-                                                            let g1x = g1
-                                                                [(gx_off + ix_base + r) as usize];
-                                                            let g0x = g
-                                                                [(gx_off + ix_base + r) as usize];
-                                                            let g1y = g1
-                                                                [(gy_off + iy_base + r) as usize];
-                                                            let g0y = g
-                                                                [(gy_off + iy_base + r) as usize];
-                                                            let g1z = g1
-                                                                [(gz_off + iz_base + r) as usize];
-                                                            let g0z = g
-                                                                [(gz_off + iz_base + r) as usize];
+                                                            let g1x =
+                                                                g1[(gx_off + ix_base + r) as usize];
+                                                            let g0x =
+                                                                g[(gx_off + ix_base + r) as usize];
+                                                            let g1y =
+                                                                g1[(gy_off + iy_base + r) as usize];
+                                                            let g0y =
+                                                                g[(gy_off + iy_base + r) as usize];
+                                                            let g1z =
+                                                                g1[(gz_off + iz_base + r) as usize];
+                                                            let g0z =
+                                                                g[(gz_off + iz_base + r) as usize];
                                                             s0 += g1x * g0y * g0z;
                                                             s1 += g0x * g1y * g0z;
                                                             s2 += g0x * g0y * g1z;
@@ -1882,7 +1860,9 @@ fn center_3c2e_ip2_kernel<F: Float + CubeElement>(
                                     while n2 < nmax {
                                         let s2 = c00 * s1
                                             + F::cast_from(n2) * b10 * s0
-                                            + F::cast_from(m3) * b00 * g[(j + n2 * dn - dm) as usize];
+                                            + F::cast_from(m3)
+                                                * b00
+                                                * g[(j + n2 * dn - dm) as usize];
                                         g[(j + (n2 + 1u32) * dn) as usize] = s2;
                                         s0 = s1;
                                         s1 = s2;
@@ -2108,8 +2088,7 @@ fn center_3c2e_ip2_kernel<F: Float + CubeElement>(
                             while cck < nctr_k {
                                 let coeff_k_val = coeff_k[(kp * nctr_k + cck) as usize];
                                 let weight = coeff_i_val * coeff_j_val * coeff_k_val;
-                                let ctr_base =
-                                    ((cci * nctr_j + ccj) * nctr_k + cck) * total_len;
+                                let ctr_base = ((cci * nctr_j + ccj) * nctr_k + cck) * total_len;
 
                                 let mut n = 0u32;
                                 // l = real k (ll slot), BASE lk Cartesian comps.
@@ -2147,36 +2126,30 @@ fn center_3c2e_ip2_kernel<F: Float + CubeElement>(
                                                         let iy = li_minus_ix - ib;
                                                         let iz = li - ix - iy;
 
-                                                        let ix_base = ix * di
-                                                            + kx * dk
-                                                            + lx * dl
-                                                            + jx * dj;
-                                                        let iy_base = iy * di
-                                                            + ky * dk
-                                                            + ly * dl
-                                                            + jy * dj;
-                                                        let iz_base = iz * di
-                                                            + kz * dk
-                                                            + lz * dl
-                                                            + jz * dj;
+                                                        let ix_base =
+                                                            ix * di + kx * dk + lx * dl + jx * dj;
+                                                        let iy_base =
+                                                            iy * di + ky * dk + ly * dl + jy * dj;
+                                                        let iz_base =
+                                                            iz * di + kz * dk + lz * dl + jz * dj;
 
                                                         let mut s0 = F::new(0.0);
                                                         let mut s1 = F::new(0.0);
                                                         let mut s2 = F::new(0.0);
                                                         let mut r = 0u32;
                                                         while r < nrys {
-                                                            let g1x = g1
-                                                                [(gx_off + ix_base + r) as usize];
-                                                            let g0x = g
-                                                                [(gx_off + ix_base + r) as usize];
-                                                            let g1y = g1
-                                                                [(gy_off + iy_base + r) as usize];
-                                                            let g0y = g
-                                                                [(gy_off + iy_base + r) as usize];
-                                                            let g1z = g1
-                                                                [(gz_off + iz_base + r) as usize];
-                                                            let g0z = g
-                                                                [(gz_off + iz_base + r) as usize];
+                                                            let g1x =
+                                                                g1[(gx_off + ix_base + r) as usize];
+                                                            let g0x =
+                                                                g[(gx_off + ix_base + r) as usize];
+                                                            let g1y =
+                                                                g1[(gy_off + iy_base + r) as usize];
+                                                            let g0y =
+                                                                g[(gy_off + iy_base + r) as usize];
+                                                            let g1z =
+                                                                g1[(gz_off + iz_base + r) as usize];
+                                                            let g0z =
+                                                                g[(gz_off + iz_base + r) as usize];
                                                             s0 += g1x * g0y * g0z;
                                                             s1 += g0x * g1y * g0z;
                                                             s2 += g0x * g0y * g1z;
@@ -2439,43 +2412,163 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
     let cart_blocks: Vec<f64> = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_3c2e_ip1_device::<cubecl::cpu::CpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_3c2e_ip1_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_3c2e_ip1_device::<cubecl_cuda::CudaRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_3c2e_ip1_device::<cubecl_hip::HipRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_3c2e_ip1_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
     };
 
@@ -2493,14 +2586,10 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                 for ci in 0..n_ctr_i {
                     for cj in 0..n_ctr_j {
                         for ck in 0..n_ctr_k {
-                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
-                                + comp * block_len;
-                            let sph = cart_to_sph_3c2e(
-                                &cart_blocks[base..base + block_len],
-                                li,
-                                lj,
-                                lk,
-                            );
+                            let base =
+                                ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len + comp * block_len;
+                            let sph =
+                                cart_to_sph_3c2e(&cart_blocks[base..base + block_len], li, lj, lk);
                             for mk in 0..nsk {
                                 let kidx = ck * nsk + mk;
                                 for mj in 0..nsj {
@@ -2508,9 +2597,8 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                                     for mi in 0..nsi {
                                         let iidx = ci * nsi + mi;
                                         let src = mi + nsi * (mj + nsj * mk);
-                                        let dst = staging_comp_base
-                                            + iidx
-                                            + di * (jidx + dj * kidx);
+                                        let dst =
+                                            staging_comp_base + iidx + di * (jidx + dj * kidx);
                                         staging[dst] = F::from_f64_lossy(sph[src]);
                                     }
                                 }
@@ -2530,8 +2618,8 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                 for ci in 0..n_ctr_i {
                     for cj in 0..n_ctr_j {
                         for ck in 0..n_ctr_k {
-                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
-                                + comp * block_len;
+                            let base =
+                                ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len + comp * block_len;
                             let block = &cart_blocks[base..base + block_len];
                             for kc in 0..nck {
                                 let kidx = ck * nck + kc;
@@ -2540,9 +2628,8 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
                                     for ic in 0..nci {
                                         let iidx = ci * nci + ic;
                                         let src = ic + nci * (jc + ncj * kc);
-                                        let dst = staging_comp_base
-                                            + iidx
-                                            + di * (jidx + dj * kidx);
+                                        let dst =
+                                            staging_comp_base + iidx + di * (jidx + dj * kidx);
                                         staging[dst] = F::from_f64_lossy(block[src]);
                                     }
                                 }
@@ -2564,8 +2651,9 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
             // fail closed for n_ctr_k > 1 rather than silently producing wrong data.
             if n_ctr_k > 1 {
                 return Err(cintxRsError::UnsupportedApi {
-                    requested: "spinor int3c2e_ip1 gradient with general-contracted aux-k (nctr_k>1)"
-                        .to_owned(),
+                    requested:
+                        "spinor int3c2e_ip1 gradient with general-contracted aux-k (nctr_k>1)"
+                            .to_owned(),
                 });
             }
             cart_to_spinor_sf_derivative_3c2e::<F>(
@@ -2584,8 +2672,11 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
     }
 
     // Per-symbol nonzero sentinel (precision-aware; matches the scalar path).
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -2703,43 +2794,163 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
     let cart_blocks: Vec<f64> = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_3c2e_ip2_device::<cubecl::cpu::CpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_3c2e_ip2_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_3c2e_ip2_device::<cubecl_cuda::CudaRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_3c2e_ip2_device::<cubecl_hip::HipRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_3c2e_ip2_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nroots_u as u32,
-            grad_shape.di as u32, grad_shape.dk as u32, grad_shape.dl as u32, grad_shape.dj as u32,
-            grad_shape.g_size as u32, grad_shape.nmax as u32, grad_shape.mmax as u32, ibase_u,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nroots_u as u32,
+            grad_shape.di as u32,
+            grad_shape.dk as u32,
+            grad_shape.dl as u32,
+            grad_shape.dj as u32,
+            grad_shape.g_size as u32,
+            grad_shape.nmax as u32,
+            grad_shape.mmax as u32,
+            ibase_u,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
     };
 
@@ -2757,14 +2968,10 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                 for ci in 0..n_ctr_i {
                     for cj in 0..n_ctr_j {
                         for ck in 0..n_ctr_k {
-                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
-                                + comp * block_len;
-                            let sph = cart_to_sph_3c2e(
-                                &cart_blocks[base..base + block_len],
-                                li,
-                                lj,
-                                lk,
-                            );
+                            let base =
+                                ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len + comp * block_len;
+                            let sph =
+                                cart_to_sph_3c2e(&cart_blocks[base..base + block_len], li, lj, lk);
                             for mk in 0..nsk {
                                 let kidx = ck * nsk + mk;
                                 for mj in 0..nsj {
@@ -2772,9 +2979,8 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                                     for mi in 0..nsi {
                                         let iidx = ci * nsi + mi;
                                         let src = mi + nsi * (mj + nsj * mk);
-                                        let dst = staging_comp_base
-                                            + iidx
-                                            + di * (jidx + dj * kidx);
+                                        let dst =
+                                            staging_comp_base + iidx + di * (jidx + dj * kidx);
                                         staging[dst] = F::from_f64_lossy(sph[src]);
                                     }
                                 }
@@ -2794,8 +3000,8 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                 for ci in 0..n_ctr_i {
                     for cj in 0..n_ctr_j {
                         for ck in 0..n_ctr_k {
-                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
-                                + comp * block_len;
+                            let base =
+                                ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len + comp * block_len;
                             let block = &cart_blocks[base..base + block_len];
                             for kc in 0..nck {
                                 let kidx = ck * nck + kc;
@@ -2804,9 +3010,8 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
                                     for ic in 0..nci {
                                         let iidx = ci * nci + ic;
                                         let src = ic + nci * (jc + ncj * kc);
-                                        let dst = staging_comp_base
-                                            + iidx
-                                            + di * (jidx + dj * kidx);
+                                        let dst =
+                                            staging_comp_base + iidx + di * (jidx + dj * kidx);
                                         staging[dst] = F::from_f64_lossy(block[src]);
                                     }
                                 }
@@ -2824,8 +3029,9 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
             // transpose lives here (D-06: it is owned inside the wrapper).
             if n_ctr_k > 1 {
                 return Err(cintxRsError::UnsupportedApi {
-                    requested: "spinor int3c2e_ip2 gradient with general-contracted aux-k (nctr_k>1)"
-                        .to_owned(),
+                    requested:
+                        "spinor int3c2e_ip2 gradient with general-contracted aux-k (nctr_k>1)"
+                            .to_owned(),
                 });
             }
             cart_to_spinor_sf_derivative_3c2e::<F>(
@@ -2844,8 +3050,11 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
     }
 
     // Per-symbol nonzero sentinel (precision-aware; matches the scalar path).
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -2962,12 +3171,19 @@ fn launch_center_3c2e_hess<F: CintFloat>(
                 // Per-primitive Gaussian-overlap prefactors (the `pdata.fac`
                 // exp(-mu*r²) terms) — same as the device ip1/ip2 host bridge
                 // (host_ip1_cart_blocks): bra pair (i,j) and ket pair (phantom-k, aux-l).
-                let pdata_ij = compute_pdata_host(
-                    ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-                );
+                let pdata_ij =
+                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
                 let pdata_kl = compute_pdata_host(
-                    0.0, ak, rk_phantom[0], rk_phantom[1], rk_phantom[2], rl[0], rl[1], rl[2],
-                    1.0, 1.0,
+                    0.0,
+                    ak,
+                    rk_phantom[0],
+                    rk_phantom[1],
+                    rk_phantom[2],
+                    rl[0],
+                    rl[1],
+                    rl[2],
+                    1.0,
+                    1.0,
                 );
                 let fac_env = common_factor * pdata_ij.fac * pdata_kl.fac;
 
@@ -2975,16 +3191,37 @@ fn launch_center_3c2e_hess<F: CintFloat>(
                 // phantom s in the `lk` slot (ak_2e = 0). Mirrors the 3c2e ip1/ip2
                 // host bridge (host_ip1_cart_blocks in the test module).
                 let g = fill_g_tensor_2e(
-                    ai, aj, 0.0, ak, &ri, &rj, &rk_phantom, &rl, hess_shape, fac_env,
+                    ai,
+                    aj,
+                    0.0,
+                    ak,
+                    &ri,
+                    &rj,
+                    &rk_phantom,
+                    &rl,
+                    hess_shape,
+                    fac_env,
                 );
 
                 // Verbatim Hessian gout: ipip1 nabla²_i (bra), ipip2 nabla²_l (ket aux).
                 let gout = match kind {
                     HessKind::Ipip1 => gout_ipip1(
-                        &g, &hess_f12_shape, li as usize, lj as usize, 0, lk as usize, ai,
+                        &g,
+                        &hess_f12_shape,
+                        li as usize,
+                        lj as usize,
+                        0,
+                        lk as usize,
+                        ai,
                     ),
                     HessKind::Ipip2 => gout_ipip2_l(
-                        &g, &hess_f12_shape, li as usize, lj as usize, 0, lk as usize, ak,
+                        &g,
+                        &hess_f12_shape,
+                        li as usize,
+                        lj as usize,
+                        0,
+                        lk as usize,
+                        ak,
                     ),
                 };
 
@@ -3021,8 +3258,8 @@ fn launch_center_3c2e_hess<F: CintFloat>(
                 for ci in 0..n_ctr_i {
                     for cj in 0..n_ctr_j {
                         for ck in 0..n_ctr_k {
-                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
-                                + comp * block_len;
+                            let base =
+                                ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len + comp * block_len;
                             let sph =
                                 cart_to_sph_3c2e(&cart_blocks[base..base + block_len], li, lj, lk);
                             for mk in 0..nsk {
@@ -3053,8 +3290,8 @@ fn launch_center_3c2e_hess<F: CintFloat>(
                 for ci in 0..n_ctr_i {
                     for cj in 0..n_ctr_j {
                         for ck in 0..n_ctr_k {
-                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len
-                                + comp * block_len;
+                            let base =
+                                ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len + comp * block_len;
                             let block = &cart_blocks[base..base + block_len];
                             for kc in 0..nck {
                                 let kidx = ck * nck + kc;
@@ -3077,9 +3314,15 @@ fn launch_center_3c2e_hess<F: CintFloat>(
         Representation::Spinor => unreachable!("spinor int3c2e Hessian rejected above"),
     }
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
@@ -3107,7 +3350,17 @@ fn launch_center_3c2e_hess1<F: CintFloat>(
     lk: u8,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    launch_center_3c2e_hess::<F>(plan, shell_i, shell_j, shell_k, li, lj, lk, HessKind::Ipip1, staging)
+    launch_center_3c2e_hess::<F>(
+        plan,
+        shell_i,
+        shell_j,
+        shell_k,
+        li,
+        lj,
+        lk,
+        HessKind::Ipip1,
+        staging,
+    )
 }
 
 /// `int3c2e_ipip2` — ∇² on the auxiliary k center (KET headroom, HESS-03). Thin
@@ -3123,7 +3376,17 @@ fn launch_center_3c2e_hess2<F: CintFloat>(
     lk: u8,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
-    launch_center_3c2e_hess::<F>(plan, shell_i, shell_j, shell_k, li, lj, lk, HessKind::Ipip2, staging)
+    launch_center_3c2e_hess::<F>(
+        plan,
+        shell_i,
+        shell_j,
+        shell_k,
+        li,
+        lj,
+        lk,
+        HessKind::Ipip2,
+        staging,
+    )
 }
 
 fn launch_center_3c2e_typed<F: CintFloat>(
@@ -3258,33 +3521,123 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     let cart_buf: Vec<f64> = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_3c2e_device::<cubecl::cpu::CpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_3c2e_device::<cubecl_cuda::CudaRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_3c2e_device::<cubecl_hip::HipRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
-            client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-            n_prim_k as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32, nrys_roots as u32,
-            ri, rj, rk, common_factor, &exps_i, &exps_j, &exps_k, &coeff_i, &coeff_j, &coeff_k,
+            client,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            nrys_roots as u32,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            &exps_i,
+            &exps_j,
+            &exps_k,
+            &coeff_i,
+            &coeff_j,
+            &coeff_k,
         ),
     };
 
@@ -3310,14 +3663,14 @@ fn launch_center_3c2e_typed<F: CintFloat>(
             // cart_to_spinor_sf_3c2e is generic over F: CintFloat (Plan 04).
             let kappa_i = shell_i_in.kappa;
             let kappa_j = shell_j_in.kappa;
-            cart_to_spinor_sf_3c2e::<F>(
-                staging, &cart_out,
-                li_in, kappa_i, lj_in, kappa_j, lk,
-            )?;
+            cart_to_spinor_sf_3c2e::<F>(staging, &cart_out, li_in, kappa_i, lj_in, kappa_j, lk)?;
         }
         Representation::Cart => {
             let copy_len = staging.len().min(cart_out.len());
-            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_out[..copy_len].iter()) {
+            for (dst, &src) in staging[..copy_len]
+                .iter_mut()
+                .zip(cart_out[..copy_len].iter())
+            {
                 *dst = F::from_f64_lossy(src);
             }
         }
@@ -3327,7 +3680,11 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     // WR-06: precision-aware sentinel so f32 stale lanes (< f32 noise floor ~1e-7)
     // are not counted. The outer F32 arm already bounds staging to out_elems, so this
     // scan cannot touch stale upper-half lanes.
-    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -3375,7 +3732,12 @@ pub fn launch_center_3c2e(
                     provided: staging_f32.len(),
                 });
             }
-            launch_center_3c2e_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
+            launch_center_3c2e_typed::<f32>(
+                backend,
+                plan,
+                specialization,
+                &mut staging_f32[..out_elems],
+            )
         }
     }
 }
@@ -3391,31 +3753,59 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_center_3c2e_parity_f64() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Cart,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a = make_s_shell(0);
         let shell_b = make_s_shell(1);
         let shell_c = make_s_shell(2);
-        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
+        let all_shells =
+            Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b, shell_c]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(OperatorId::new(22), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(OperatorId::new(22), Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            OperatorId::new(22),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan = ExecutionPlan::new(
+            OperatorId::new(22),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .unwrap();
         plan.precision = PrecisionKind::F64;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -3427,17 +3817,34 @@ mod tests {
 
         // Call outer dispatcher
         let result_outer = launch_center_3c2e(&backend, &plan, &spec, &mut staging_outer);
-        assert!(result_outer.is_ok(), "outer f64 3c2e should succeed: {:?}", result_outer);
+        assert!(
+            result_outer.is_ok(),
+            "outer f64 3c2e should succeed: {:?}",
+            result_outer
+        );
 
         // Call typed inner directly (RED: compile fails until launch_center_3c2e_typed defined)
-        let result_typed = launch_center_3c2e_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
-        assert!(result_typed.is_ok(), "typed f64 3c2e should succeed: {:?}", result_typed);
+        let result_typed =
+            launch_center_3c2e_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
+        assert!(
+            result_typed.is_ok(),
+            "typed f64 3c2e should succeed: {:?}",
+            result_typed
+        );
 
         // Byte-identical check
-        assert_eq!(staging_outer[0].to_bits(), staging_typed[0].to_bits(),
-            "f64 outer and typed 3c2e should be byte-identical: outer={} typed={}", staging_outer[0], staging_typed[0]);
-        assert!(staging_outer[0].is_finite() && staging_outer[0].abs() > 1e-30,
-            "3c2e s-s-s value should be finite and nonzero: {}", staging_outer[0]);
+        assert_eq!(
+            staging_outer[0].to_bits(),
+            staging_typed[0].to_bits(),
+            "f64 outer and typed 3c2e should be byte-identical: outer={} typed={}",
+            staging_outer[0],
+            staging_typed[0]
+        );
+        assert!(
+            staging_outer[0].is_finite() && staging_outer[0].abs() > 1e-30,
+            "3c2e s-s-s value should be finite and nonzero: {}",
+            staging_outer[0]
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -3446,31 +3853,59 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_center_3c2e_f32_smoke() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Cart,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a = make_s_shell(0);
         let shell_b = make_s_shell(1);
         let shell_c = make_s_shell(2);
-        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
+        let all_shells =
+            Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b, shell_c]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(OperatorId::new(22), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(OperatorId::new(22), Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            OperatorId::new(22),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan = ExecutionPlan::new(
+            OperatorId::new(22),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .unwrap();
         plan.precision = PrecisionKind::F32;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -3479,11 +3914,23 @@ mod tests {
 
         let mut staging = vec![0.0_f64; 1];
         let result = launch_center_3c2e(&backend, &plan, &spec, &mut staging);
-        assert!(result.is_ok(), "F32 3c2e should succeed without panic: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "F32 3c2e should succeed without panic: {:?}",
+            result
+        );
 
         let staging_f32 = bytemuck::cast_slice::<f64, f32>(&staging);
-        assert!(staging_f32[0].is_finite(), "F32 3c2e result should be finite: {}", staging_f32[0]);
-        assert!(staging_f32[0] > 0.0, "F32 3c2e result should be positive: {}", staging_f32[0]);
+        assert!(
+            staging_f32[0].is_finite(),
+            "F32 3c2e result should be finite: {}",
+            staging_f32[0]
+        );
+        assert!(
+            staging_f32[0] > 0.0,
+            "F32 3c2e result should be positive: {}",
+            staging_f32[0]
+        );
     }
 
     #[test]
@@ -3491,13 +3938,14 @@ mod tests {
         let ri = [0.0_f64, 0.0, 0.0];
         let rj = [0.0_f64, 0.0, 0.5];
         let rk = [0.0_f64, 0.1, 0.2];
-        let pair = compute_pdata_host(
-            1.0, 1.0, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-        );
+        let pair = compute_pdata_host(1.0, 1.0, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
         let g = fill_g_tensor_3c2e(&pair, 1.0, ri, rk, 0, 0, 0, 1, 1.0);
         assert_eq!(g.len(), 3, "s-s-s should produce one root x one n x one m");
-        assert!(g[2].abs() > 1e-20, "gz root must be non-zero for s-s-s primitive");
+        assert!(
+            g[2].abs() > 1e-20,
+            "gz root must be non-zero for s-s-s primitive"
+        );
     }
 
     #[test]
@@ -3505,15 +3953,23 @@ mod tests {
         let ri = [0.0_f64, 0.0, 0.0];
         let rj = [0.0_f64, 0.0, 0.5];
         let rk = [0.0_f64, 0.1, 0.2];
-        let pair = compute_pdata_host(
-            1.0, 1.0, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
-        );
+        let pair = compute_pdata_host(1.0, 1.0, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
         let g2d = fill_g_tensor_3c2e(&pair, 1.0, ri, rk, 0, 0, 0, 1, 1.0);
-        let g_split = split_ij_hrr(&g2d, 0, 0, 0, 1, [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]]);
+        let g_split = split_ij_hrr(
+            &g2d,
+            0,
+            0,
+            0,
+            1,
+            [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]],
+        );
         let out = contract_3c2e(&g_split, 0, 0, 0, 1);
         assert_eq!(out.len(), 1);
-        assert!(out[0].abs() > 1e-20, "contracted s-s-s 3c2e value must be non-zero");
+        assert!(
+            out[0].abs() > 1e-20,
+            "contracted s-s-s 3c2e value must be non-zero"
+        );
     }
 }
 
@@ -3574,7 +4030,19 @@ mod scalar_device_tests {
         let nrys = (li as usize + lj as usize + lk as usize) / 2 + 1;
 
         let host = host_cart_3c2e(
-            ai, aj, ak, ri, rj, rk, li, lj, lk, common_factor, coeff_i, coeff_j, coeff_k,
+            ai,
+            aj,
+            ak,
+            ri,
+            rj,
+            rk,
+            li,
+            lj,
+            lk,
+            common_factor,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         );
         let dev = run_3c2e_device::<cubecl::cpu::CpuRuntime>(
             &cpu_client(),
@@ -3600,7 +4068,11 @@ mod scalar_device_tests {
             &[coeff_k],
         );
 
-        assert_eq!(host.len(), dev.len(), "length mismatch li={li} lj={lj} lk={lk}");
+        assert_eq!(
+            host.len(),
+            dev.len(),
+            "length mismatch li={li} lj={lj} lk={lk}"
+        );
         for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
             let diff = (h - d).abs();
             let thr = 1e-12 + 1e-10 * h.abs();
@@ -3693,9 +4165,10 @@ mod scalar_device_tests {
         let work_h = mk(&work_zero);
         let out_h = mk(&out_zero);
 
-        let common_factor =
-            ((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0) * common_fac_sp(0))
-                as f32;
+        let common_factor = ((PI * PI * PI) * 2.0 / SQRTPI
+            * common_fac_sp(0)
+            * common_fac_sp(0)
+            * common_fac_sp(0)) as f32;
 
         center_3c2e_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
@@ -3822,7 +4295,19 @@ mod ip1_device_tests {
         let ibase_u = if grad_shape.ibase { 1u32 } else { 0u32 };
 
         let host = host_ip1_cart_blocks(
-            ai, aj, ak, ri, rj, rk, li, lj, lk, common_factor, coeff_i, coeff_j, coeff_k,
+            ai,
+            aj,
+            ak,
+            ri,
+            rj,
+            rk,
+            li,
+            lj,
+            lk,
+            common_factor,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         );
         let dev = run_3c2e_ip1_device::<cubecl::cpu::CpuRuntime>(
             &cpu_client(),
@@ -3856,7 +4341,11 @@ mod ip1_device_tests {
             &[coeff_k],
         );
 
-        assert_eq!(host.len(), dev.len(), "length mismatch li={li} lj={lj} lk={lk}");
+        assert_eq!(
+            host.len(),
+            dev.len(),
+            "length mismatch li={li} lj={lj} lk={lk}"
+        );
         for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
             let diff = (h - d).abs();
             let thr = 1e-12 + 1e-10 * h.abs();
@@ -4026,11 +4515,27 @@ mod ip2_device_tests {
             * common_fac_sp(lk);
 
         let host = host_ip2_cart_blocks(
-            ai, aj, ak, ri, rj, rk, li, lj, lk, common_factor, coeff_i, coeff_j, coeff_k,
+            ai,
+            aj,
+            ak,
+            ri,
+            rj,
+            rk,
+            li,
+            lj,
+            lk,
+            common_factor,
+            coeff_i,
+            coeff_j,
+            coeff_k,
         );
         let dev = device_ip2(li, lj, lk, ai, aj, ak);
 
-        assert_eq!(host.len(), dev.len(), "length mismatch li={li} lj={lj} lk={lk}");
+        assert_eq!(
+            host.len(),
+            dev.len(),
+            "length mismatch li={li} lj={lj} lk={lk}"
+        );
         for (idx, (&h, &d)) in host.iter().zip(dev.iter()).enumerate() {
             let diff = (h - d).abs();
             let thr = 1e-12 + 1e-10 * h.abs();
@@ -4093,7 +4598,19 @@ mod ip2_device_tests {
             * common_fac_sp(lj)
             * common_fac_sp(lk);
         let ip1 = ip1_device_tests::host_ip1_cart_blocks(
-            ai, aj, ak, ri, rj, rk, li, lj, lk, common_factor, 0.9, 1.1, 0.8,
+            ai,
+            aj,
+            ak,
+            ri,
+            rj,
+            rk,
+            li,
+            lj,
+            lk,
+            common_factor,
+            0.9,
+            1.1,
+            0.8,
         );
 
         assert_eq!(ip2.len(), ip1.len(), "ip1/ip2 length mismatch");
@@ -4139,11 +4656,7 @@ mod ip1_tests {
     use std::sync::Arc;
 
     /// Build a 3-shell (li, lj, lk) triple plan for the int3c2e_ip1 sph operator.
-    fn build_ip1_plan(
-        li: u8,
-        lj: u8,
-        lk: u8,
-    ) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
+    fn build_ip1_plan(li: u8, lj: u8, lk: u8) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
         let atom0 = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom1 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom2 = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
@@ -4181,11 +4694,7 @@ mod ip1_tests {
 
     /// Build a plain int3c2e_sph triple plan (same shells/centers) for the
     /// NOT-equal-to-plain regression comparison.
-    fn build_plain_plan(
-        li: u8,
-        lj: u8,
-        lk: u8,
-    ) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
+    fn build_plain_plan(li: u8, lj: u8, lk: u8) -> (BasisSet, ShellTuple, cintx_core::OperatorId) {
         let atom0 = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom1 = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom2 = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
@@ -4267,9 +4776,7 @@ mod ip1_tests {
             nonzero >= 2,
             "(s,s,s) int3c2e_ip1 must fill ≥2 component lanes (in-plane ∇_i): {staging:?}"
         );
-        let all_equal = staging
-            .iter()
-            .all(|v| (v - staging[0]).abs() <= 1e-15);
+        let all_equal = staging.iter().all(|v| (v - staging[0]).abs() <= 1e-15);
         assert!(
             !all_equal,
             "(s,s,s) int3c2e_ip1 lanes are all identical — the scalar stub (R1) is \
@@ -4311,11 +4818,21 @@ mod ip1_tests {
         let (ip1, _) = run(&basis_ip1, shells_ip1, op_ip1, Representation::Spheric).unwrap();
 
         let (basis_plain, shells_plain, op_plain) = build_plain_plan(1, 0, 0);
-        let (plain, _) = run(&basis_plain, shells_plain, op_plain, Representation::Spheric).unwrap();
+        let (plain, _) = run(
+            &basis_plain,
+            shells_plain,
+            op_plain,
+            Representation::Spheric,
+        )
+        .unwrap();
 
         // plain has 3 AOs (p,s,s); ip1 has 9 (3 comps × 3 AO).
         assert_eq!(plain.len(), 3, "plain (p,s,s) 3c2e should be 3 AOs");
-        assert_eq!(ip1.len(), 9, "ip1 (p,s,s) 3c2e should be 9 (3 comps × 3 AO)");
+        assert_eq!(
+            ip1.len(),
+            9,
+            "ip1 (p,s,s) 3c2e should be 9 (3 comps × 3 AO)"
+        );
 
         // The FIRST component block (lanes 0..3) is what the scalar stub wrote `plain`
         // into. A real ∇_i derivative differs from the plain integral value. If the
@@ -4364,7 +4881,8 @@ mod ip1_tests {
     fn test_int3c2e_ip1_spinor_supported() {
         let (basis, shells, op) = build_ip1_plan(0, 0, 0);
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let q =
+            query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
         let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &q).unwrap();
         plan.representation = Representation::Spinor;
         plan.precision = PrecisionKind::F64;

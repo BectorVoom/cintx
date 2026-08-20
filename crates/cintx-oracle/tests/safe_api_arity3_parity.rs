@@ -39,8 +39,8 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF,
-    NUC_MOD_OF, POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA,
 };
 use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
 use cintx_rs::SessionRequest;
@@ -82,34 +82,34 @@ fn build_h2o_sto3g() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
 
     let mut env = vec![0.0_f64; PTR_ENV_START]; // zeros for reserved slots
 
-    let o_coord_ptr = env.len() as i32;   // 20
+    let o_coord_ptr = env.len() as i32; // 20
     env.extend_from_slice(&o_coord);
 
-    let h1_coord_ptr = env.len() as i32;  // 23
+    let h1_coord_ptr = env.len() as i32; // 23
     env.extend_from_slice(&h1_coord);
 
-    let h2_coord_ptr = env.len() as i32;  // 26
+    let h2_coord_ptr = env.len() as i32; // 26
     env.extend_from_slice(&h2_coord);
 
-    let zeta_ptr = env.len() as i32;      // 29
+    let zeta_ptr = env.len() as i32; // 29
     env.push(0.0);
 
-    let o1s_exp_ptr = env.len() as i32;   // 30
+    let o1s_exp_ptr = env.len() as i32; // 30
     env.extend_from_slice(&o_1s_exp);
     let o1s_coeff_ptr = env.len() as i32; // 33
     env.extend_from_slice(&o_1s_coeff);
 
-    let o2s_exp_ptr = env.len() as i32;   // 36
+    let o2s_exp_ptr = env.len() as i32; // 36
     env.extend_from_slice(&o_2s_exp);
     let o2s_coeff_ptr = env.len() as i32; // 39
     env.extend_from_slice(&o_2s_coeff);
 
-    let o2p_exp_ptr = env.len() as i32;   // 42
+    let o2p_exp_ptr = env.len() as i32; // 42
     env.extend_from_slice(&o_2p_exp);
     let o2p_coeff_ptr = env.len() as i32; // 45
     env.extend_from_slice(&o_2p_coeff);
 
-    let h1s_exp_ptr = env.len() as i32;   // 48
+    let h1s_exp_ptr = env.len() as i32; // 48
     env.extend_from_slice(&h_1s_exp);
     let h1s_coeff_ptr = env.len() as i32; // 51
     env.extend_from_slice(&h_1s_coeff);
@@ -188,48 +188,89 @@ fn arc_f64(values: &[f64]) -> Arc<[f64]> {
 }
 
 fn build_h2o_sto3g_safe_basis(rep: Representation) -> (BasisSet, Vec<Arc<Shell>>) {
-    let atom_o  = Atom::try_new(8, [0.0, 0.0, 0.0],        NuclearModel::Point, None, None).unwrap();
-    let atom_h1 = Atom::try_new(1, [0.0, 1.4307, 1.1078],  NuclearModel::Point, None, None).unwrap();
-    let atom_h2 = Atom::try_new(1, [0.0, -1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
+    let atom_o = Atom::try_new(8, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+    let atom_h1 = Atom::try_new(1, [0.0, 1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
+    let atom_h2 =
+        Atom::try_new(1, [0.0, -1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
     let atoms = Arc::from(vec![atom_o, atom_h1, atom_h2].into_boxed_slice());
 
     // STO-3G exponents and coefficients (Hehre, Stewart & Pople, J. Chem. Phys. 51, 2657, 1969)
     // These values must match build_h2o_sto3g() exactly so vendor comparisons are valid.
 
     // O 1s: atom_idx=0, l=0, nprim=3, nctr=1, kappa=0
-    let shell_o1s = Arc::new(Shell::try_new(
-        0, 0, 3, 1, 0, rep,
-        arc_f64(&[130.7093200, 23.8088610, 6.4436083]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_o1s = Arc::new(
+        Shell::try_new(
+            0,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[130.7093200, 23.8088610, 6.4436083]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
     // O 2s: atom_idx=0, l=0, nprim=3, nctr=1, kappa=0
-    let shell_o2s = Arc::new(Shell::try_new(
-        0, 0, 3, 1, 0, rep,
-        arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
-        arc_f64(&[-0.09996723, 0.39951283, 0.70011547]),
-    ).unwrap());
+    let shell_o2s = Arc::new(
+        Shell::try_new(
+            0,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
+            arc_f64(&[-0.09996723, 0.39951283, 0.70011547]),
+        )
+        .unwrap(),
+    );
 
     // O 2p: atom_idx=0, l=1, nprim=3, nctr=1, kappa=0
-    let shell_o2p = Arc::new(Shell::try_new(
-        0, 1, 3, 1, 0, rep,
-        arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
-        arc_f64(&[0.15591627, 0.60768372, 0.39195739]),
-    ).unwrap());
+    let shell_o2p = Arc::new(
+        Shell::try_new(
+            0,
+            1,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
+            arc_f64(&[0.15591627, 0.60768372, 0.39195739]),
+        )
+        .unwrap(),
+    );
 
     // H1 1s: atom_idx=1, l=0, nprim=3, nctr=1, kappa=0
-    let shell_h1_1s = Arc::new(Shell::try_new(
-        1, 0, 3, 1, 0, rep,
-        arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_h1_1s = Arc::new(
+        Shell::try_new(
+            1,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
     // H2 1s: atom_idx=2, l=0, nprim=3, nctr=1, kappa=0
-    let shell_h2_1s = Arc::new(Shell::try_new(
-        2, 0, 3, 1, 0, rep,
-        arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_h2_1s = Arc::new(
+        Shell::try_new(
+            2,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
     let shells = vec![shell_o1s, shell_o2s, shell_o2p, shell_h1_1s, shell_h2_1s];
     let basis = BasisSet::try_new(atoms, Arc::from(shells.clone().into_boxed_slice())).unwrap();
@@ -345,12 +386,22 @@ fn test_int3c1e_cart_safe_api_parity() {
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let shls = [i as i32, j as i32, k as i32];
                 cintx_oracle::vendor_ffi::vendor_int3c1e_cart(
-                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    &mut vendor_out,
+                    &shls,
+                    &atm,
+                    natm,
+                    &bas,
+                    nbas,
+                    &env,
                 );
 
-                assert_eq!(safe_out.len(), vendor_out.len(),
+                assert_eq!(
+                    safe_out.len(),
+                    vendor_out.len(),
                     "int3c1e_cart buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
-                    safe_out.len(), vendor_out.len());
+                    safe_out.len(),
+                    vendor_out.len()
+                );
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -411,12 +462,22 @@ fn test_int3c1e_p2_cart_safe_api_parity() {
                 // computes plain int3c1e_cart, so compare against the plain
                 // vendor reference (mirrors the int3c2e_ip1 disposition above).
                 cintx_oracle::vendor_ffi::vendor_int3c1e_cart(
-                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    &mut vendor_out,
+                    &shls,
+                    &atm,
+                    natm,
+                    &bas,
+                    nbas,
+                    &env,
                 );
 
-                assert_eq!(safe_out.len(), vendor_out.len(),
+                assert_eq!(
+                    safe_out.len(),
+                    vendor_out.len(),
                     "int3c1e_p2_cart buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
-                    safe_out.len(), vendor_out.len());
+                    safe_out.len(),
+                    vendor_out.len()
+                );
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -478,11 +539,20 @@ fn test_int3c2e_ip1_cart_safe_api_parity() {
                 let shls = [i as i32, j as i32, k as i32];
                 // REAL derivative reference vendor_int3c2e_ip1_cart (3-component, R1 flip).
                 cintx_oracle::vendor_ffi::vendor_int3c2e_ip1_cart(
-                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    &mut vendor_out,
+                    &shls,
+                    &atm,
+                    natm,
+                    &bas,
+                    nbas,
+                    &env,
                 );
 
-                assert_eq!(safe_out.len(), vendor_out.len(),
-                    "int3c2e_ip1 buffer length mismatch — kernel must emit 3 * ni*nj*nk (GRAD-08)");
+                assert_eq!(
+                    safe_out.len(),
+                    vendor_out.len(),
+                    "int3c2e_ip1 buffer length mismatch — kernel must emit 3 * ni*nj*nk (GRAD-08)"
+                );
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -537,12 +607,22 @@ fn test_int3c2e_cart_safe_api_parity() {
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let shls = [i as i32, j as i32, k as i32];
                 cintx_oracle::vendor_ffi::vendor_int3c2e_cart(
-                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    &mut vendor_out,
+                    &shls,
+                    &atm,
+                    natm,
+                    &bas,
+                    nbas,
+                    &env,
                 );
 
-                assert_eq!(safe_out.len(), vendor_out.len(),
+                assert_eq!(
+                    safe_out.len(),
+                    vendor_out.len(),
                     "int3c2e_cart buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
-                    safe_out.len(), vendor_out.len());
+                    safe_out.len(),
+                    vendor_out.len()
+                );
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -606,12 +686,22 @@ fn test_int3c1e_sph_safe_api_parity() {
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let shls = [i as i32, j as i32, k as i32];
                 cintx_oracle::vendor_ffi::vendor_int3c1e_sph(
-                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    &mut vendor_out,
+                    &shls,
+                    &atm,
+                    natm,
+                    &bas,
+                    nbas,
+                    &env,
                 );
 
-                assert_eq!(safe_out.len(), vendor_out.len(),
+                assert_eq!(
+                    safe_out.len(),
+                    vendor_out.len(),
                     "int3c1e_sph buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
-                    safe_out.len(), vendor_out.len());
+                    safe_out.len(),
+                    vendor_out.len()
+                );
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -672,12 +762,22 @@ fn test_int3c1e_p2_sph_safe_api_parity() {
                 // computes plain int3c1e_sph, so compare against the plain
                 // vendor reference (mirrors the int3c2e_ip1 disposition above).
                 cintx_oracle::vendor_ffi::vendor_int3c1e_sph(
-                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    &mut vendor_out,
+                    &shls,
+                    &atm,
+                    natm,
+                    &bas,
+                    nbas,
+                    &env,
                 );
 
-                assert_eq!(safe_out.len(), vendor_out.len(),
+                assert_eq!(
+                    safe_out.len(),
+                    vendor_out.len(),
                     "int3c1e_p2_sph buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
-                    safe_out.len(), vendor_out.len());
+                    safe_out.len(),
+                    vendor_out.len()
+                );
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -739,11 +839,20 @@ fn test_int3c2e_ip1_sph_safe_api_parity() {
                 let shls = [i as i32, j as i32, k as i32];
                 // REAL derivative reference vendor_int3c2e_ip1_sph (3-component, R1 flip).
                 cintx_oracle::vendor_ffi::vendor_int3c2e_ip1_sph(
-                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    &mut vendor_out,
+                    &shls,
+                    &atm,
+                    natm,
+                    &bas,
+                    nbas,
+                    &env,
                 );
 
-                assert_eq!(safe_out.len(), vendor_out.len(),
-                    "int3c2e_ip1 buffer length mismatch — kernel must emit 3 * ni*nj*nk (GRAD-08)");
+                assert_eq!(
+                    safe_out.len(),
+                    vendor_out.len(),
+                    "int3c2e_ip1 buffer length mismatch — kernel must emit 3 * ni*nj*nk (GRAD-08)"
+                );
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)
@@ -798,12 +907,22 @@ fn test_int3c2e_sph_safe_api_parity() {
                 let mut vendor_out = vec![0.0_f64; n_elem];
                 let shls = [i as i32, j as i32, k as i32];
                 cintx_oracle::vendor_ffi::vendor_int3c2e_sph(
-                    &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                    &mut vendor_out,
+                    &shls,
+                    &atm,
+                    natm,
+                    &bas,
+                    nbas,
+                    &env,
                 );
 
-                assert_eq!(safe_out.len(), vendor_out.len(),
+                assert_eq!(
+                    safe_out.len(),
+                    vendor_out.len(),
                     "int3c2e_sph buffer length mismatch — safe={} vendor={} for triple ({i},{j},{k})",
-                    safe_out.len(), vendor_out.len());
+                    safe_out.len(),
+                    vendor_out.len()
+                );
 
                 if safe_out.iter().any(|&v| v.abs() > 1e-18)
                     || vendor_out.iter().any(|&v| v.abs() > 1e-18)

@@ -278,8 +278,18 @@ fn collect_1e_grad_matrix_once(
             let mut out = vec![0.0_f64; 3 * ni * nj];
             // SAFETY: atm/bas/env are well-formed by construction; shls in range.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
             result.extend_from_slice(&out);
         }

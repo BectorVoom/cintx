@@ -66,9 +66,7 @@ const CROSSCHECK_RTOL: f64 = 0.0;
 mod crosscheck {
     use super::{CROSSCHECK_ATOL, CROSSCHECK_RTOL};
 
-    use cintx_compat::raw::{
-        ANG_OF, AS_ECPBAS_OFFSET, AS_NECPBAS, ATM_SLOTS, BAS_SLOTS,
-    };
+    use cintx_compat::raw::{ANG_OF, AS_ECPBAS_OFFSET, AS_NECPBAS, ATM_SLOTS, BAS_SLOTS};
     use cintx_core::ecp::{EcpChannel, EcpShell};
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
     use cintx_oracle::{fixtures::build_cu_lanl2dz, libecpint_ffi};
@@ -152,8 +150,17 @@ mod crosscheck {
                 .collect();
             let nprim = exps.len() as u16;
             ecp_shells.push(Arc::new(
-                EcpShell::try_new(0, channel, radial_power, nprim, 1, 0, arc_f64(&exps), arc_f64(&coeffs))
-                    .expect("typed ECP shell"),
+                EcpShell::try_new(
+                    0,
+                    channel,
+                    radial_power,
+                    nprim,
+                    1,
+                    0,
+                    arc_f64(&exps),
+                    arc_f64(&coeffs),
+                )
+                .expect("typed ECP shell"),
             ));
         }
 
@@ -269,10 +276,22 @@ mod crosscheck {
 
                 let _ret = match rep {
                     "sph" => libecpint_ffi::libecpint_ecp_sph(
-                        &mut out, &shls, atm, natm, &combined_bas, combined_nbas, &env_with_ecp,
+                        &mut out,
+                        &shls,
+                        atm,
+                        natm,
+                        &combined_bas,
+                        combined_nbas,
+                        &env_with_ecp,
                     ),
                     "cart" => libecpint_ffi::libecpint_ecp_cart(
-                        &mut out, &shls, atm, natm, &combined_bas, combined_nbas, &env_with_ecp,
+                        &mut out,
+                        &shls,
+                        atm,
+                        natm,
+                        &combined_bas,
+                        combined_nbas,
+                        &env_with_ecp,
                     ),
                     _ => unreachable!(),
                 };

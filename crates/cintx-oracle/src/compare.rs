@@ -485,15 +485,21 @@ unsafe fn eval_legacy_symbol(
         // Phase 21 Coulomb-gradient families. int1e_ip* are ALL_CINT1E wrappers (no opt arg,
         // like int1e_kin); int2e_ip1 is an ALL_CINT wrapper (opt arg, like int2e). Spinor
         // gradients are excluded from the parity matrix (R5/D-03), so only cart/sph proxy here.
-        "int1e_ipovlp_cart" => unsafe { legacy::cint1e_ipovlp_cart(Some(out), shls, atm, bas, env) },
+        "int1e_ipovlp_cart" => unsafe {
+            legacy::cint1e_ipovlp_cart(Some(out), shls, atm, bas, env)
+        },
         "int1e_ipovlp_sph" => unsafe { legacy::cint1e_ipovlp_sph(Some(out), shls, atm, bas, env) },
         "int1e_ipkin_cart" => unsafe { legacy::cint1e_ipkin_cart(Some(out), shls, atm, bas, env) },
         "int1e_ipkin_sph" => unsafe { legacy::cint1e_ipkin_sph(Some(out), shls, atm, bas, env) },
         "int1e_ipnuc_cart" => unsafe { legacy::cint1e_ipnuc_cart(Some(out), shls, atm, bas, env) },
         "int1e_ipnuc_sph" => unsafe { legacy::cint1e_ipnuc_sph(Some(out), shls, atm, bas, env) },
-        "int1e_iprinv_cart" => unsafe { legacy::cint1e_iprinv_cart(Some(out), shls, atm, bas, env) },
+        "int1e_iprinv_cart" => unsafe {
+            legacy::cint1e_iprinv_cart(Some(out), shls, atm, bas, env)
+        },
         "int1e_iprinv_sph" => unsafe { legacy::cint1e_iprinv_sph(Some(out), shls, atm, bas, env) },
-        "int2e_ip1_cart" => unsafe { legacy::cint2e_ip1_cart(Some(out), shls, atm, bas, env, None) },
+        "int2e_ip1_cart" => unsafe {
+            legacy::cint2e_ip1_cart(Some(out), shls, atm, bas, env, None)
+        },
         "int2e_ip1_sph" => unsafe { legacy::cint2e_ip1_sph(Some(out), shls, atm, bas, env, None) },
         // Optional families currently lack dedicated legacy wrapper entry points.
         // Use the raw symbol path as the upstream proxy until wrappers land.
@@ -1640,25 +1646,46 @@ mod tests {
     #[test]
     fn f32_tolerance_f32_unified_constants_exist() {
         // F32_UNIFIED_RTOL and F32_UNIFIED_ATOL must exist and be distinct from f64 ones.
-        assert!(F32_UNIFIED_RTOL > UNIFIED_RTOL, "f32 rtol must be looser than f64 rtol");
-        assert!(F32_UNIFIED_ATOL > UNIFIED_ATOL, "f32 atol must be looser than f64 atol");
+        assert!(
+            F32_UNIFIED_RTOL > UNIFIED_RTOL,
+            "f32 rtol must be looser than f64 rtol"
+        );
+        assert!(
+            F32_UNIFIED_ATOL > UNIFIED_ATOL,
+            "f32 atol must be looser than f64 atol"
+        );
         // Sanity: f32 rtol should be around 1e-4 (single precision limit)
-        assert!(F32_UNIFIED_RTOL <= 1e-3, "f32 rtol should be <= 1e-3 for physical integrals");
+        assert!(
+            F32_UNIFIED_RTOL <= 1e-3,
+            "f32 rtol should be <= 1e-3 for physical integrals"
+        );
     }
 
     #[test]
     fn f32_tolerance_for_family_returns_f32_constants() {
         let tol = f32_tolerance_for_family("1e");
-        assert_eq!(tol.atol, F32_UNIFIED_ATOL, "f32 tolerance for '1e' must use F32_UNIFIED_ATOL");
-        assert_eq!(tol.rtol, F32_UNIFIED_RTOL, "f32 tolerance for '1e' must use F32_UNIFIED_RTOL");
-        assert_eq!(tol.zero_threshold, ZERO_THRESHOLD, "zero_threshold must be shared");
+        assert_eq!(
+            tol.atol, F32_UNIFIED_ATOL,
+            "f32 tolerance for '1e' must use F32_UNIFIED_ATOL"
+        );
+        assert_eq!(
+            tol.rtol, F32_UNIFIED_RTOL,
+            "f32 tolerance for '1e' must use F32_UNIFIED_RTOL"
+        );
+        assert_eq!(
+            tol.zero_threshold, ZERO_THRESHOLD,
+            "zero_threshold must be shared"
+        );
 
         let tol2e = f32_tolerance_for_family("2e");
         assert!(tol2e.atol.is_finite());
         assert!(tol2e.rtol.is_finite());
 
         let tol2c2e = f32_tolerance_for_family("2c2e");
-        assert!(tol2c2e.rtol > UNIFIED_RTOL, "f32 2c2e rtol must be looser than f64 unified rtol");
+        assert!(
+            tol2c2e.rtol > UNIFIED_RTOL,
+            "f32 2c2e rtol must be looser than f64 unified rtol"
+        );
 
         let tol3c1e = f32_tolerance_for_family("3c1e");
         assert!(tol3c1e.rtol.is_finite());
@@ -1677,7 +1704,10 @@ mod tests {
         let tol = tolerance_for_family("1e");
         assert_eq!(tol.atol, 1e-12_f64, "PREC-04: f64 atol must be 1e-12");
         assert_eq!(tol.rtol, 1e-12_f64, "PREC-04: f64 rtol must be 1e-12");
-        assert_eq!(tol.zero_threshold, 1e-18_f64, "PREC-04: zero_threshold must be 1e-18");
+        assert_eq!(
+            tol.zero_threshold, 1e-18_f64,
+            "PREC-04: zero_threshold must be 1e-18"
+        );
 
         // Check other families
         let tol2e = tolerance_for_family("2e");
@@ -1685,7 +1715,10 @@ mod tests {
         assert_eq!(tol2e.rtol, 1e-12_f64);
 
         let tol_unk = tolerance_for_family("some_new_family");
-        assert_eq!(tol_unk.atol, 1e-12_f64, "catch-all must also return UNIFIED_ATOL");
+        assert_eq!(
+            tol_unk.atol, 1e-12_f64,
+            "catch-all must also return UNIFIED_ATOL"
+        );
     }
 
     #[test]
@@ -1766,7 +1799,10 @@ mod tests {
         // interleaved buffer passes, and a real-only (half-sized) buffer fails.
         let fixture = complex_fixture("cart", vec![2, 2]);
         let required = fixture.required_elements();
-        assert_eq!(required, 8, "complex cart 2x2 must require 8 interleaved doubles");
+        assert_eq!(
+            required, 8,
+            "complex cart 2x2 must require 8 interleaved doubles"
+        );
 
         let good = vec![1.0_f64; required];
         assert!(

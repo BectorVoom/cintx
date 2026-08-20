@@ -2,16 +2,147 @@
 
 use crate::error::FacadeError;
 use cintx_compat::raw::enforce_safe_facade_policy_gate;
-use cintx_core::{BasisSet, CintFloat, OperatorId, Representation, ShellTuple};
-use cintx_cubecl::CubeClExecutor;
+use cintx_core::{BasisSet, CintFloat, OperatorId, PrecisionKind, Representation, ShellTuple};
+use cintx_cubecl::{CubeClExecutor, EriSsssInput, OverlapSsInput};
 use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
-    BackendExecutor, ExecutionIo, ExecutionOptions, ExecutionPlan, ExecutionStats,
-    HostWorkspaceAllocator, WorkspaceAllocator,
-    WorkspaceQuery as RuntimeWorkspaceQuery, schedule_chunks,
-    query_workspace as runtime_query_workspace,
+    BackendExecutor, BatchExecutionPlan, BatchItemRequest, ExecutionIo, ExecutionOptions,
+    ExecutionPlan, ExecutionStats, KernelClass, ReusableWorkspaceAllocator, WorkspaceAllocator,
+    WorkspaceQuery as RuntimeWorkspaceQuery, query_workspace as runtime_query_workspace,
+    schedule_chunks,
 };
 use std::mem::size_of;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
+/// Reusable safe-API execution state.
+///
+/// A context owns the backend-client cache and a reusable host workspace without exposing
+/// CubeCL types in the public API. Reuse one context for related requests to avoid repeated
+/// backend bootstrap and host scratch allocation. Device-resident basis uploads are not yet
+/// implemented; the executor currently retains content-addressed basis metadata only.
+#[derive(Clone, Debug)]
+pub struct EvaluationContext {
+    executor: Arc<CubeClExecutor>,
+    workspace_allocator: Arc<Mutex<ReusableWorkspaceAllocator>>,
+}
+
+/// Measured reusable state held by an [`EvaluationContext`].
+///
+/// `resident_metadata_entries` counts content-addressed basis metadata. It is not a
+/// device-upload count until persistent device buffers are implemented.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EvaluationContextStats {
+    pub backend_cache_entries: usize,
+    pub resident_metadata_entries: usize,
+    pub host_workspace_allocations: usize,
+    pub host_workspace_reuses: usize,
+    pub host_workspace_peak_bytes: usize,
+    /// Total output-only device staging allocations made by the verified
+    /// Cartesian s-s batch pilot. Dynamic descriptor tables are uploaded for
+    /// each request and are not counted as reusable device residency.
+    pub pilot_output_staging_allocations: usize,
+    /// Total same-or-smaller pilot chunks served by retained output storage.
+    pub pilot_output_staging_reuses: usize,
+    /// Total retained output slots replaced because a larger chunk was needed.
+    pub pilot_output_staging_growths: usize,
+    /// Bytes currently retained in the output-only pilot arena.
+    pub pilot_output_staging_retained_bytes: usize,
+    /// High-water mark for retained output-only pilot staging bytes.
+    pub pilot_output_staging_peak_bytes: usize,
+}
+
+impl EvaluationContext {
+    pub fn new() -> Self {
+        Self {
+            executor: Arc::new(CubeClExecutor::new()),
+            workspace_allocator: Arc::new(Mutex::new(ReusableWorkspaceAllocator::default())),
+        }
+    }
+
+    pub fn stats(&self) -> EvaluationContextStats {
+        let arena = self
+            .workspace_allocator
+            .lock()
+            .expect("evaluation context workspace arena poisoned");
+        let pilot_arena = self.executor.pilot_output_arena_stats();
+        EvaluationContextStats {
+            backend_cache_entries: self.executor.backend_cache_entries(),
+            resident_metadata_entries: self.executor.resident_cache().len(),
+            host_workspace_allocations: arena.allocations(),
+            host_workspace_reuses: arena.reuses(),
+            host_workspace_peak_bytes: arena.peak_bytes(),
+            pilot_output_staging_allocations: pilot_arena.allocations,
+            pilot_output_staging_reuses: pilot_arena.reuses,
+            pilot_output_staging_growths: pilot_arena.growths,
+            pilot_output_staging_retained_bytes: pilot_arena.retained_bytes,
+            pilot_output_staging_peak_bytes: pilot_arena.peak_retained_bytes,
+        }
+    }
+}
+
+impl Default for EvaluationContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Reusable safe-API execution session.
+///
+/// A session owns the backend-client cache and host workspace arena used by its
+/// queries. It exposes no CubeCL types; callers supply ordinary
+/// [`SessionRequest`] or [`BatchRequest`] values and can inspect only the
+/// portable [`EvaluationContextStats`] counters. Clones intentionally share
+/// the same retained context, which makes it suitable for handing the safe
+/// facade to adjacent planning code without creating another backend client.
+#[derive(Clone, Debug, Default)]
+pub struct Session {
+    context: EvaluationContext,
+}
+
+impl Session {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Inspect reusable host/backend state accumulated by this session.
+    pub fn stats(&self) -> EvaluationContextStats {
+        self.context.stats()
+    }
+
+    /// Validate and plan a request using this session's retained context.
+    pub fn query<'basis>(
+        &self,
+        request: &SessionRequest<'basis>,
+    ) -> Result<SessionQuery<'basis>, FacadeError> {
+        request.query_workspace_in(&self.context)
+    }
+
+    /// Evaluate a single request using this session's retained context.
+    pub fn evaluate<'basis>(
+        &self,
+        request: &SessionRequest<'basis>,
+    ) -> Result<TypedEvaluationOutput<f64>, FacadeError> {
+        self.query(request)?.evaluate()
+    }
+
+    /// Transactionally evaluate a batch using this session's retained context.
+    pub fn evaluate_batch<'basis>(
+        &self,
+        batch: BatchRequest<'basis>,
+    ) -> Result<BatchEvaluationOutput<f64>, FacadeError> {
+        batch.evaluate_batch_in(&self.context)
+    }
+
+    /// Transactionally commit a batch into caller-owned output storage.
+    pub fn evaluate_batch_into<'basis>(
+        &self,
+        batch: BatchRequest<'basis>,
+        destination: &mut [TypedEvaluationOutput<f64>],
+    ) -> Result<BatchExecutionPlan, FacadeError> {
+        batch.evaluate_batch_into_in(&self.context, destination)
+    }
+}
 
 /// Typed safe request object that keeps `query_workspace()` and `evaluate()` connected.
 #[derive(Clone, Debug)]
@@ -21,6 +152,755 @@ pub struct SessionRequest<'basis> {
     basis: &'basis BasisSet,
     shells: ShellTuple,
     options: ExecutionOptions,
+}
+
+/// A safe multi-request submission with transactional caller-visible results.
+///
+/// The plan is built before evaluation, so invalid requests and impossible
+/// chunk limits fail without writing an `evaluate_batch_into` destination.
+/// Current kernels use the scalar compatibility route per planned item; the
+/// public contract and offsets are already the same ones consumed by the
+/// batched CubeCL launchers.
+#[derive(Clone, Debug)]
+pub struct BatchRequest<'basis> {
+    requests: Vec<SessionRequest<'basis>>,
+    max_items_per_chunk: usize,
+    max_chunk_bytes: usize,
+}
+
+/// Results from a batch request, ordered exactly like its input requests.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BatchEvaluationOutput<F = f64> {
+    pub plan: BatchExecutionPlan,
+    /// Submission-level counters for the complete transactional batch.
+    pub stats: BatchExecutionStats,
+    pub outputs: Vec<TypedEvaluationOutput<F>>,
+}
+
+/// Counters that describe one complete batch submission rather than one item.
+///
+/// The counters are intentionally separate from [`EvaluationStats`]: one batch
+/// may contain several launches but only one collective readback. This makes
+/// launch-amortization measurements attributable without changing scalar API
+/// semantics.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BatchExecutionStats {
+    pub items_planned: usize,
+    pub items_executed: usize,
+    pub bucket_count: usize,
+    pub chunk_count: usize,
+    pub kernel_launch_count: usize,
+    pub readback_count: usize,
+    pub transfer_bytes: usize,
+    /// Host time spent arranging the planned descriptors into chunk-local tables.
+    pub pack_ns: u64,
+    /// Host time spent creating buffers and encoding all pilot launches.
+    ///
+    /// This includes host-to-device work where the backend performs it eagerly;
+    /// it is not a device kernel timestamp.
+    pub submit_ns: u64,
+    /// Host time in the pilot's one collective readback/synchronization call.
+    /// This is not a device transfer timestamp.
+    pub readback_ns: u64,
+    /// Output-only pilot staging allocations made during this batch.
+    pub pilot_output_staging_allocations: usize,
+    /// Output chunks that reused a same-or-larger retained staging slot.
+    pub pilot_output_staging_reuses: usize,
+    /// Output slots replaced because the current chunk exceeded capacity.
+    pub pilot_output_staging_growths: usize,
+}
+
+impl<'basis> BatchRequest<'basis> {
+    pub fn new(requests: impl IntoIterator<Item = SessionRequest<'basis>>) -> Self {
+        Self {
+            requests: requests.into_iter().collect(),
+            max_items_per_chunk: usize::MAX,
+            max_chunk_bytes: usize::MAX,
+        }
+    }
+
+    pub fn max_items_per_chunk(mut self, value: usize) -> Self {
+        self.max_items_per_chunk = value.max(1);
+        self
+    }
+
+    pub fn max_chunk_bytes(mut self, value: usize) -> Self {
+        self.max_chunk_bytes = value.max(1);
+        self
+    }
+
+    pub fn len(&self) -> usize {
+        self.requests.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.requests.is_empty()
+    }
+
+    /// Evaluate every item and return results only after the whole batch succeeds.
+    pub fn evaluate_batch(self) -> Result<BatchEvaluationOutput<f64>, FacadeError> {
+        self.evaluate_batch_in(&EvaluationContext::new())
+    }
+
+    /// Evaluate with a reusable context that retains backend and resident-basis state.
+    pub fn evaluate_batch_in(
+        self,
+        context: &EvaluationContext,
+    ) -> Result<BatchEvaluationOutput<f64>, FacadeError> {
+        let mut queries = Vec::with_capacity(self.requests.len());
+        let mut items = Vec::with_capacity(self.requests.len());
+        for request in &self.requests {
+            let query = request.query_workspace_in(context)?;
+            let descriptor = Resolver::descriptor(request.operator).map_err(|error| {
+                FacadeError::UnsupportedApi {
+                    requested: error.to_string(),
+                }
+            })?;
+            let plan = ExecutionPlan::new(
+                request.operator,
+                request.representation,
+                request.basis,
+                request.shells.clone(),
+                &query.runtime_workspace,
+            )
+            .map_err(FacadeError::from)?;
+            items.push(BatchItemRequest {
+                kernel_class: KernelClass {
+                    family: descriptor.family(),
+                    representation: request.representation,
+                    precision: request.options.precision,
+                    arity: request.shells.len() as u8,
+                    angular_momenta: request
+                        .shells
+                        .iter()
+                        .map(|shell| shell.ang_momentum)
+                        .collect(),
+                    nroots: 0,
+                    component_rank: plan.component_count.min(u8::MAX as usize) as u8,
+                },
+                output_elements: plan.output_layout.staging_elements,
+                scratch_bytes: query.runtime_workspace.bytes,
+            });
+            queries.push(query);
+        }
+        let plan = BatchExecutionPlan::build(items, self.max_items_per_chunk, self.max_chunk_bytes)
+            .map_err(FacadeError::from)?;
+
+        if let Some((intent, inputs, kinetic)) = ss_batch_inputs(&self.requests) {
+            let execution = execute_ss_batch_chunks(context, &plan, &intent, &inputs, kinetic)?;
+            let stats = BatchExecutionStats {
+                items_planned: plan.items.len(),
+                items_executed: execution.values.len(),
+                bucket_count: plan.buckets.len(),
+                chunk_count: plan.chunks.len(),
+                kernel_launch_count: plan.chunks.len(),
+                readback_count: usize::from(!execution.values.is_empty()),
+                transfer_bytes: execution.per_item_transfer_bytes.iter().sum(),
+                pack_ns: execution.pack_ns,
+                submit_ns: execution.submit_ns,
+                readback_ns: execution.readback_ns,
+                pilot_output_staging_allocations: execution.output_staging_allocations,
+                pilot_output_staging_reuses: execution.output_staging_reuses,
+                pilot_output_staging_growths: execution.output_staging_growths,
+            };
+            let outputs = execution
+                .values
+                .into_iter()
+                .zip(execution.per_item_transfer_bytes)
+                .map(|(value, transfer_bytes)| overlap_ss_batch_output(value, transfer_bytes))
+                .collect();
+            return Ok(BatchEvaluationOutput {
+                plan,
+                stats,
+                outputs,
+            });
+        }
+
+        if let Some((intent, inputs)) = eri_ssss_batch_inputs(&self.requests) {
+            let execution = execute_eri_ssss_batch_chunks(context, &plan, &intent, &inputs)?;
+            let stats = BatchExecutionStats {
+                items_planned: plan.items.len(),
+                items_executed: execution.values.len(),
+                bucket_count: plan.buckets.len(),
+                chunk_count: plan.chunks.len(),
+                kernel_launch_count: plan.chunks.len(),
+                readback_count: usize::from(!execution.values.is_empty()),
+                transfer_bytes: execution.per_item_transfer_bytes.iter().sum(),
+                pack_ns: execution.pack_ns,
+                submit_ns: execution.submit_ns,
+                readback_ns: execution.readback_ns,
+                pilot_output_staging_allocations: 0,
+                pilot_output_staging_reuses: 0,
+                pilot_output_staging_growths: 0,
+            };
+            let outputs = execution
+                .values
+                .into_iter()
+                .zip(execution.per_item_transfer_bytes)
+                .map(|(value, transfer_bytes)| eri_ssss_batch_output(value, transfer_bytes))
+                .collect();
+            return Ok(BatchEvaluationOutput {
+                plan,
+                stats,
+                outputs,
+            });
+        }
+
+        // Keep the compatibility route transactional while the per-class
+        // batched launchers are migrated: no destination is exposed until all
+        // planned items have completed.
+        let mut outputs = Vec::with_capacity(queries.len());
+        for query in queries {
+            outputs.push(query.evaluate()?);
+        }
+        let stats = BatchExecutionStats {
+            items_planned: plan.items.len(),
+            items_executed: outputs.len(),
+            bucket_count: plan.buckets.len(),
+            chunk_count: plan.chunks.len(),
+            kernel_launch_count: outputs.iter().map(|output| output.stats.chunk_count).sum(),
+            readback_count: outputs.iter().map(|output| output.stats.chunk_count).sum(),
+            transfer_bytes: outputs
+                .iter()
+                .map(|output| output.stats.transfer_bytes)
+                .sum(),
+            pack_ns: 0,
+            submit_ns: 0,
+            readback_ns: 0,
+            pilot_output_staging_allocations: 0,
+            pilot_output_staging_reuses: 0,
+            pilot_output_staging_growths: 0,
+        };
+        Ok(BatchEvaluationOutput {
+            plan,
+            stats,
+            outputs,
+        })
+    }
+
+    /// Transactionally commit a batch into a caller-provided result slice.
+    pub fn evaluate_batch_into(
+        self,
+        destination: &mut [TypedEvaluationOutput<f64>],
+    ) -> Result<BatchExecutionPlan, FacadeError> {
+        self.evaluate_batch_into_in(&EvaluationContext::new(), destination)
+    }
+
+    /// Transactionally commit a context-backed batch into a caller-provided result slice.
+    pub fn evaluate_batch_into_in(
+        self,
+        context: &EvaluationContext,
+        destination: &mut [TypedEvaluationOutput<f64>],
+    ) -> Result<BatchExecutionPlan, FacadeError> {
+        if destination.len() != self.requests.len() {
+            return Err(FacadeError::Layout {
+                detail: format!(
+                    "batch destination length mismatch: expected {}, provided {}",
+                    self.requests.len(),
+                    destination.len()
+                ),
+            });
+        }
+        let batch = self.evaluate_batch_in(context)?;
+        for (slot, output) in destination.iter_mut().zip(batch.outputs) {
+            *slot = output;
+        }
+        Ok(batch.plan)
+    }
+}
+
+/// Execute the overlap pilot according to the plan's real, disjoint item ranges.
+///
+/// The staging vector is private until every chunk succeeds. This keeps chunking
+/// computational rather than merely advisory and retains the safe API's
+/// transactional result contract.
+struct SsBatchExecution {
+    values: Vec<f64>,
+    per_item_transfer_bytes: Vec<usize>,
+    pack_ns: u64,
+    submit_ns: u64,
+    readback_ns: u64,
+    output_staging_allocations: usize,
+    output_staging_reuses: usize,
+    output_staging_growths: usize,
+}
+
+fn execute_ss_batch_chunks(
+    context: &EvaluationContext,
+    plan: &BatchExecutionPlan,
+    intent: &cintx_runtime::BackendIntent,
+    inputs: &[OverlapSsInput],
+    kinetic: bool,
+) -> Result<SsBatchExecution, FacadeError> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(inputs.len())
+        .map_err(|_| FacadeError::Memory {
+            detail: format!(
+                "failed to allocate {} scalar batch result elements",
+                inputs.len()
+            ),
+        })?;
+    values.resize(inputs.len(), 0.0);
+    let mut per_item_transfer_bytes = vec![0; inputs.len()];
+
+    let mut executed = Vec::new();
+    executed
+        .try_reserve_exact(inputs.len())
+        .map_err(|_| FacadeError::Memory {
+            detail: format!(
+                "failed to allocate {} scalar batch execution markers",
+                inputs.len()
+            ),
+        })?;
+    executed.resize(inputs.len(), false);
+
+    let mut packed_chunks = Vec::new();
+    packed_chunks
+        .try_reserve_exact(plan.chunks.len())
+        .map_err(|_| FacadeError::Memory {
+            detail: format!(
+                "failed to allocate {} scalar batch chunk descriptors",
+                plan.chunks.len()
+            ),
+        })?;
+    let pack_started = Instant::now();
+    for chunk in &plan.chunks {
+        let item_indices = plan.chunk_items(chunk);
+        let mut chunk_inputs = Vec::new();
+        chunk_inputs
+            .try_reserve_exact(item_indices.len())
+            .map_err(|_| FacadeError::Memory {
+                detail: format!(
+                    "failed to allocate {} scalar batch chunk descriptors",
+                    item_indices.len()
+                ),
+            })?;
+        for &item_index in item_indices {
+            let input = inputs
+                .get(item_index)
+                .cloned()
+                .ok_or_else(|| FacadeError::Validation {
+                    detail: format!(
+                        "scalar batch plan referenced input {item_index}, but only {} inputs exist",
+                        inputs.len()
+                    ),
+                })?;
+            chunk_inputs.push(input);
+        }
+        packed_chunks.push(chunk_inputs);
+    }
+
+    let chunk_refs: Vec<_> = packed_chunks.iter().map(Vec::as_slice).collect();
+    let pack_ns = elapsed_ns(pack_started);
+    let submission = context
+        .executor
+        .execute_ss_batch_chunks(intent, &chunk_refs, kinetic)
+        .map_err(FacadeError::from)?;
+    let chunk_results = submission.chunks;
+    let chunk_transfer_bytes = submission.chunk_transfer_bytes;
+    if chunk_results.len() != plan.chunks.len() {
+        return Err(FacadeError::Validation {
+            detail: format!(
+                "scalar batch chunk result count mismatch: expected {}, provided {}",
+                plan.chunks.len(),
+                chunk_results.len()
+            ),
+        });
+    }
+    if chunk_transfer_bytes.len() != plan.chunks.len() {
+        return Err(FacadeError::Validation {
+            detail: format!(
+                "scalar batch transfer count mismatch: expected {}, provided {}",
+                plan.chunks.len(),
+                chunk_transfer_bytes.len()
+            ),
+        });
+    }
+
+    for ((chunk, chunk_values), chunk_bytes) in plan
+        .chunks
+        .iter()
+        .zip(chunk_results)
+        .zip(chunk_transfer_bytes)
+    {
+        let item_indices = plan.chunk_items(chunk);
+        if chunk_values.len() != item_indices.len() {
+            return Err(FacadeError::Validation {
+                detail: format!(
+                    "scalar batch chunk {} result length mismatch: expected {}, provided {}",
+                    chunk.index,
+                    item_indices.len(),
+                    chunk_values.len()
+                ),
+            });
+        }
+        let bytes_per_item = chunk_bytes / item_indices.len();
+        if bytes_per_item.saturating_mul(item_indices.len()) != chunk_bytes {
+            return Err(FacadeError::Validation {
+                detail: format!(
+                    "scalar batch chunk {} transfer bytes are not item-aligned",
+                    chunk.index
+                ),
+            });
+        }
+
+        for (&item_index, value) in item_indices.iter().zip(chunk_values) {
+            let output_len = values.len();
+            let slot = values
+                .get_mut(item_index)
+                .ok_or_else(|| FacadeError::Validation {
+                    detail: format!(
+                        "scalar batch plan wrote output {item_index}, but only {output_len} output slots exist"
+                    ),
+                })?;
+            let was_executed = executed
+                .get_mut(item_index)
+                .expect("input and execution marker lengths are identical");
+            if *was_executed {
+                return Err(FacadeError::Validation {
+                    detail: format!("scalar batch plan executed input {item_index} more than once"),
+                });
+            }
+            *slot = value;
+            per_item_transfer_bytes[item_index] = bytes_per_item;
+            *was_executed = true;
+        }
+    }
+
+    if let Some((item_index, _)) = executed.iter().enumerate().find(|(_, done)| !**done) {
+        return Err(FacadeError::Validation {
+            detail: format!("scalar batch plan did not execute input {item_index}"),
+        });
+    }
+    Ok(SsBatchExecution {
+        values,
+        per_item_transfer_bytes,
+        pack_ns,
+        submit_ns: submission.submit_ns,
+        readback_ns: submission.readback_ns,
+        output_staging_allocations: submission.output_staging_allocations,
+        output_staging_reuses: submission.output_staging_reuses,
+        output_staging_growths: submission.output_staging_growths,
+    })
+}
+
+/// Execute primitive `(s s | s s)` chunks while retaining private staging
+/// until every chunk has completed.  This mirrors the 1e pilot's transactional
+/// contract but remains a distinct 2e path and descriptor type.
+fn execute_eri_ssss_batch_chunks(
+    context: &EvaluationContext,
+    plan: &BatchExecutionPlan,
+    intent: &cintx_runtime::BackendIntent,
+    inputs: &[EriSsssInput],
+) -> Result<SsBatchExecution, FacadeError> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(inputs.len())
+        .map_err(|_| FacadeError::Memory {
+            detail: format!(
+                "failed to allocate {} primitive ERI batch result elements",
+                inputs.len()
+            ),
+        })?;
+    values.resize(inputs.len(), 0.0);
+    let mut per_item_transfer_bytes = Vec::new();
+    per_item_transfer_bytes
+        .try_reserve_exact(inputs.len())
+        .map_err(|_| FacadeError::Memory {
+            detail: format!(
+                "failed to allocate {} primitive ERI transfer counters",
+                inputs.len()
+            ),
+        })?;
+    per_item_transfer_bytes.resize(inputs.len(), 0);
+    let mut executed = Vec::new();
+    executed
+        .try_reserve_exact(inputs.len())
+        .map_err(|_| FacadeError::Memory {
+            detail: format!(
+                "failed to allocate {} primitive ERI execution markers",
+                inputs.len()
+            ),
+        })?;
+    executed.resize(inputs.len(), false);
+    let mut packed_chunks = Vec::new();
+    packed_chunks
+        .try_reserve_exact(plan.chunks.len())
+        .map_err(|_| FacadeError::Memory {
+            detail: format!(
+                "failed to allocate {} primitive ERI batch chunk descriptors",
+                plan.chunks.len()
+            ),
+        })?;
+    let pack_started = Instant::now();
+    for chunk in &plan.chunks {
+        let item_indices = plan.chunk_items(chunk);
+        let mut chunk_inputs = Vec::new();
+        chunk_inputs
+            .try_reserve_exact(item_indices.len())
+            .map_err(|_| FacadeError::Memory {
+                detail: format!(
+                    "failed to allocate {} primitive ERI chunk descriptors",
+                    item_indices.len()
+                ),
+            })?;
+        for &item_index in item_indices {
+            chunk_inputs.push(inputs.get(item_index).cloned().ok_or_else(|| {
+                FacadeError::Validation {
+                    detail: format!(
+                        "primitive ERI batch plan referenced input {item_index}, but only {} inputs exist",
+                        inputs.len()
+                    ),
+                }
+            })?);
+        }
+        packed_chunks.push(chunk_inputs);
+    }
+    let chunk_refs: Vec<_> = packed_chunks.iter().map(Vec::as_slice).collect();
+    let pack_ns = elapsed_ns(pack_started);
+    let submission = context
+        .executor
+        .execute_eri_ssss_batch_chunks(intent, &chunk_refs)
+        .map_err(FacadeError::from)?;
+    if submission.chunks.len() != plan.chunks.len()
+        || submission.chunk_transfer_bytes.len() != plan.chunks.len()
+    {
+        return Err(FacadeError::Validation {
+            detail: "primitive ERI batch submission did not return one result and transfer count per planned chunk".to_owned(),
+        });
+    }
+    for ((chunk, chunk_values), chunk_bytes) in plan
+        .chunks
+        .iter()
+        .zip(submission.chunks)
+        .zip(submission.chunk_transfer_bytes)
+    {
+        let item_indices = plan.chunk_items(chunk);
+        if chunk_values.len() != item_indices.len() || chunk_bytes % item_indices.len().max(1) != 0
+        {
+            return Err(FacadeError::Validation {
+                detail: format!(
+                    "primitive ERI batch chunk {} violated its output or transfer layout",
+                    chunk.index
+                ),
+            });
+        }
+        let bytes_per_item = chunk_bytes / item_indices.len();
+        for (&item_index, value) in item_indices.iter().zip(chunk_values) {
+            let slot = values
+                .get_mut(item_index)
+                .ok_or_else(|| FacadeError::Validation {
+                    detail: format!("primitive ERI batch wrote output {item_index} out of bounds"),
+                })?;
+            let was_executed = executed.get_mut(item_index).expect("matched marker length");
+            if *was_executed {
+                return Err(FacadeError::Validation {
+                    detail: format!(
+                        "primitive ERI batch executed input {item_index} more than once"
+                    ),
+                });
+            }
+            *slot = value;
+            per_item_transfer_bytes[item_index] = bytes_per_item;
+            *was_executed = true;
+        }
+    }
+    if let Some((item_index, _)) = executed.iter().enumerate().find(|(_, done)| !**done) {
+        return Err(FacadeError::Validation {
+            detail: format!("primitive ERI batch did not execute input {item_index}"),
+        });
+    }
+    Ok(SsBatchExecution {
+        values,
+        per_item_transfer_bytes,
+        pack_ns,
+        submit_ns: submission.submit_ns,
+        readback_ns: submission.readback_ns,
+        output_staging_allocations: 0,
+        output_staging_reuses: 0,
+        output_staging_growths: 0,
+    })
+}
+
+fn elapsed_ns(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
+/// Build the descriptor table for the first safe-API batch kernels.
+///
+/// The fast paths are deliberately exact: `int1e_ovlp_cart` and `int1e_kin_cart`, two
+/// Cartesian `s` shells, arbitrary primitive counts and one contraction on each shell, and f64
+/// precision. Keeping this predicate narrow preserves the established compatibility
+/// implementation for multi-contraction, angular, derivative, and non-overlap requests
+/// until their batch kernels carry equivalent descriptors and output transforms.
+fn ss_batch_inputs(
+    requests: &[SessionRequest<'_>],
+) -> Option<(cintx_runtime::BackendIntent, Vec<OverlapSsInput>, bool)> {
+    let first = requests.first()?;
+    let intent = first.options.backend_intent.clone();
+    let mut inputs = Vec::with_capacity(requests.len());
+
+    for request in requests {
+        if !matches!(request.operator.raw(), 0 | 3)
+            || request.representation != Representation::Cart
+            || request.options.precision != PrecisionKind::F64
+            || request.options.backend_intent != intent
+        {
+            return None;
+        }
+        let [shell_i, shell_j] = request.shells.as_slice() else {
+            return None;
+        };
+        if shell_i.ang_momentum != 0
+            || shell_j.ang_momentum != 0
+            || shell_i.nctr != 1
+            || shell_j.nctr != 1
+            || shell_i.representation != Representation::Cart
+            || shell_j.representation != Representation::Cart
+        {
+            return None;
+        }
+        let atom_i = request.basis.atoms().get(shell_i.atom_index as usize)?;
+        let atom_j = request.basis.atoms().get(shell_j.atom_index as usize)?;
+        inputs.push(OverlapSsInput {
+            exponents_i: Arc::clone(&shell_i.exponents),
+            exponents_j: Arc::clone(&shell_j.exponents),
+            coefficients_i: Arc::clone(&shell_i.coefficients),
+            coefficients_j: Arc::clone(&shell_j.coefficients),
+            center_i: atom_i.coord_bohr,
+            center_j: atom_j.coord_bohr,
+        });
+    }
+
+    let kinetic = first.operator.raw() == 3;
+    if requests
+        .iter()
+        .any(|request| (request.operator.raw() == 3) != kinetic)
+    {
+        return None;
+    }
+    Some((intent, inputs, kinetic))
+}
+
+/// Build descriptors for the primitive Cartesian `int2e_cart` pilot only.
+///
+/// The predicate is intentionally narrower than the 1e pilot: all four
+/// shells must be uncontracted s shells with exactly one primitive.  Any
+/// other two-electron input keeps the scalar compatibility execution path.
+fn eri_ssss_batch_inputs(
+    requests: &[SessionRequest<'_>],
+) -> Option<(cintx_runtime::BackendIntent, Vec<EriSsssInput>)> {
+    let first = requests.first()?;
+    let intent = first.options.backend_intent.clone();
+    let mut inputs = Vec::with_capacity(requests.len());
+
+    for request in requests {
+        if Resolver::descriptor(request.operator)
+            .ok()?
+            .entry
+            .symbol_name
+            != "int2e_cart"
+            || request.representation != Representation::Cart
+            || request.options.precision != PrecisionKind::F64
+            || request.options.backend_intent != intent
+        {
+            return None;
+        }
+        let [shell_a, shell_b, shell_c, shell_d] = request.shells.as_slice() else {
+            return None;
+        };
+        for shell in [shell_a, shell_b, shell_c, shell_d] {
+            if shell.ang_momentum != 0
+                || shell.nprim != 1
+                || shell.nctr != 1
+                || shell.representation != Representation::Cart
+                || shell.exponents.len() != 1
+                || shell.coefficients.len() != 1
+            {
+                return None;
+            }
+        }
+        let center_a = request
+            .basis
+            .atoms()
+            .get(shell_a.atom_index as usize)?
+            .coord_bohr;
+        let center_b = request
+            .basis
+            .atoms()
+            .get(shell_b.atom_index as usize)?
+            .coord_bohr;
+        let center_c = request
+            .basis
+            .atoms()
+            .get(shell_c.atom_index as usize)?
+            .coord_bohr;
+        let center_d = request
+            .basis
+            .atoms()
+            .get(shell_d.atom_index as usize)?
+            .coord_bohr;
+        inputs.push(EriSsssInput {
+            exponents: [
+                shell_a.exponents[0],
+                shell_b.exponents[0],
+                shell_c.exponents[0],
+                shell_d.exponents[0],
+            ],
+            coefficients: [
+                shell_a.coefficients[0],
+                shell_b.coefficients[0],
+                shell_c.coefficients[0],
+                shell_d.coefficients[0],
+            ],
+            centers: [center_a, center_b, center_c, center_d],
+        });
+    }
+    Some((intent, inputs))
+}
+
+fn overlap_ss_batch_output(value: f64, transfer_bytes: usize) -> TypedEvaluationOutput<f64> {
+    const OUTPUT_BYTES_PER_ITEM: usize = size_of::<f64>();
+    TypedEvaluationOutput {
+        tensor: IntegralTensor {
+            extents: vec![1, 1],
+            component_axis_leading: false,
+            complex_interleaved: false,
+            owned_values: vec![value],
+        },
+        stats: EvaluationStats {
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes,
+            not0: i32::from(value != 0.0),
+            ..EvaluationStats::default()
+        },
+        workspace_bytes: 0,
+        chunk_count: 1,
+        bytes_written: OUTPUT_BYTES_PER_ITEM,
+    }
+}
+
+fn eri_ssss_batch_output(value: f64, transfer_bytes: usize) -> TypedEvaluationOutput<f64> {
+    TypedEvaluationOutput {
+        tensor: IntegralTensor {
+            extents: vec![1, 1, 1, 1],
+            component_axis_leading: false,
+            complex_interleaved: false,
+            owned_values: vec![value],
+        },
+        stats: EvaluationStats {
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes,
+            not0: i32::from(value != 0.0),
+            ..EvaluationStats::default()
+        },
+        workspace_bytes: 0,
+        chunk_count: 1,
+        bytes_written: size_of::<f64>(),
+    }
 }
 
 impl<'basis> SessionRequest<'basis> {
@@ -61,6 +941,14 @@ impl<'basis> SessionRequest<'basis> {
     }
 
     pub fn query_workspace(&self) -> Result<SessionQuery<'basis>, FacadeError> {
+        self.query_workspace_in(&EvaluationContext::new())
+    }
+
+    /// Validate and plan this request using a reusable execution context.
+    pub fn query_workspace_in(
+        &self,
+        context: &EvaluationContext,
+    ) -> Result<SessionQuery<'basis>, FacadeError> {
         // Phase 18 D-04: aosym preflight — only S1 (and None ≡ S1) is implemented.
         // Non-S1 packings return a typed FacadeError::UnsupportedAoSymmetry so callers
         // can pattern-match programmatically. Fails fast before any runtime work.
@@ -101,6 +989,8 @@ impl<'basis> SessionRequest<'basis> {
             request: self.clone(),
             workspace,
             runtime_workspace,
+            executor: Arc::clone(&context.executor),
+            workspace_allocator: Arc::clone(&context.workspace_allocator),
         })
     }
 }
@@ -111,6 +1001,8 @@ pub struct SessionQuery<'basis> {
     request: SessionRequest<'basis>,
     workspace: WorkspacePlan,
     runtime_workspace: RuntimeWorkspaceQuery,
+    executor: Arc<CubeClExecutor>,
+    workspace_allocator: Arc<Mutex<ReusableWorkspaceAllocator>>,
 }
 
 impl<'basis> SessionQuery<'basis> {
@@ -218,8 +1110,13 @@ impl<'basis> SessionQuery<'basis> {
         .map_err(FacadeError::from)?;
 
         let output_layout = plan.output_layout.clone();
-        let mut allocator = HostWorkspaceAllocator::default();
-        let executor = CubeClExecutor::new();
+        // A context serializes host scratch reuse. This avoids repeated allocations
+        // while preserving the fallible, no-partial-write allocation boundary.
+        let mut allocator = self
+            .workspace_allocator
+            .lock()
+            .expect("evaluation context workspace arena poisoned");
+        let executor = &self.executor;
 
         if !executor.supports(&plan) {
             return Err(FacadeError::UnsupportedApi {
@@ -232,24 +1129,28 @@ impl<'basis> SessionQuery<'basis> {
             });
         }
 
-        let backend_workspace = executor.query_workspace(&plan)
+        let backend_workspace = executor
+            .query_workspace(&plan)
             .map_err(FacadeError::from)?
             .get();
         if backend_workspace > plan.workspace.bytes {
-            return Err(FacadeError::from(cintx_core::cintxRsError::MemoryLimitExceeded {
-                requested: backend_workspace,
-                limit: plan.workspace.bytes,
-            }));
+            return Err(FacadeError::from(
+                cintx_core::cintxRsError::MemoryLimitExceeded {
+                    requested: backend_workspace,
+                    limit: plan.workspace.bytes,
+                },
+            ));
         }
 
         // Allocate the output accumulator as Vec<F>.
         // Buffer is sized in elements; each element is size_of::<F>() bytes (T-20-20 mitigation).
         let staging_elements = output_layout.staging_elements;
-        let staging_bytes = staging_elements
-            .checked_mul(size_of::<F>())
-            .ok_or(FacadeError::Memory {
-                detail: "staging element byte count overflowed usize".to_owned(),
-            })?;
+        let staging_bytes =
+            staging_elements
+                .checked_mul(size_of::<F>())
+                .ok_or(FacadeError::Memory {
+                    detail: "staging element byte count overflowed usize".to_owned(),
+                })?;
         let mut owned_values: Vec<F> = Vec::new();
         owned_values
             .try_reserve_exact(staging_elements)
@@ -285,11 +1186,12 @@ impl<'basis> SessionQuery<'basis> {
             // f32 precision. A Vec<f64> of `staging_elements` elements gives
             // `staging_elements * 2` f32 lanes; the f32 dispatcher bounds its writes to
             // `out_elems = staging.len()` pre-cast == `staging_elements`.
-            let chunk_staging_bytes = staging_elements.checked_mul(size_of::<f64>()).ok_or(
-                FacadeError::Memory {
-                    detail: "chunk staging byte count overflowed usize".to_owned(),
-                },
-            )?;
+            let chunk_staging_bytes =
+                staging_elements
+                    .checked_mul(size_of::<f64>())
+                    .ok_or(FacadeError::Memory {
+                        detail: "chunk staging byte count overflowed usize".to_owned(),
+                    })?;
             let mut chunk_staging: Vec<f64> = Vec::new();
             chunk_staging
                 .try_reserve_exact(staging_elements)
@@ -305,14 +1207,12 @@ impl<'basis> SessionQuery<'basis> {
                 .map_err(FacadeError::from)?;
 
             {
-                let mut io = ExecutionIo::new(
-                    chunk,
-                    &mut chunk_staging,
-                    &mut workspace,
-                    plan.dispatch,
-                )
-                .map_err(FacadeError::from)?;
-                let chunk_stats = executor.execute(&plan, &mut io).map_err(FacadeError::from)?;
+                let mut io =
+                    ExecutionIo::new(chunk, &mut chunk_staging, &mut workspace, plan.dispatch)
+                        .map_err(FacadeError::from)?;
+                let chunk_stats = executor
+                    .execute(&plan, &mut io)
+                    .map_err(FacadeError::from)?;
                 // Each chunk recomputes the same full block, so `not0` is the SAME
                 // full-block nonzero count every chunk — take the representative
                 // value (max), not a sum, to avoid N× over-counting under multi-chunk.
@@ -320,8 +1220,7 @@ impl<'basis> SessionQuery<'basis> {
                 total_transfer_bytes = total_transfer_bytes
                     .saturating_add(io.transfer_bytes())
                     .saturating_add(chunk_stats.transfer_bytes);
-                total_peak_workspace_bytes =
-                    total_peak_workspace_bytes.max(io.workspace().len());
+                total_peak_workspace_bytes = total_peak_workspace_bytes.max(io.workspace().len());
             }
             allocator.release(workspace);
 
@@ -347,12 +1246,13 @@ impl<'basis> SessionQuery<'basis> {
             });
         }
 
-        let bytes_written = owned_values
-            .len()
-            .checked_mul(size_of::<F>())
-            .ok_or(FacadeError::Memory {
-                detail: "owned output byte size overflowed usize".to_owned(),
-            })?;
+        let bytes_written =
+            owned_values
+                .len()
+                .checked_mul(size_of::<F>())
+                .ok_or(FacadeError::Memory {
+                    detail: "owned output byte size overflowed usize".to_owned(),
+                })?;
 
         let chunk_count = schedule_chunks(&plan.workspace).len();
         let runtime_stats = ExecutionStats {
@@ -360,7 +1260,12 @@ impl<'basis> SessionQuery<'basis> {
             required_workspace_bytes: plan.workspace.required_bytes,
             peak_workspace_bytes: total_peak_workspace_bytes,
             chunk_count: chunk_count.max(plan.workspace.chunks.len()),
-            planned_batches: plan.workspace.chunks.iter().map(|c| c.work_unit_count).sum(),
+            planned_batches: plan
+                .workspace
+                .chunks
+                .iter()
+                .map(|c| c.work_unit_count)
+                .sum(),
             transfer_bytes: total_transfer_bytes,
             not0: total_not0,
             fallback_reason: plan.workspace.fallback_reason,
@@ -631,8 +1536,6 @@ pub fn unsupported_unstable_request(symbol: &str) -> FacadeError {
     }
 }
 
-
-
 #[cfg(feature = "unstable-source-api")]
 pub mod unstable {
     //! Source-only namespace that remains opt-in until manifest/oracle release gates and
@@ -654,15 +1557,18 @@ pub mod unstable {
 
 #[cfg(test)]
 mod tests {
-    use super::{EvaluationStats, IntegralTensor, SessionRequest, TypedEvaluationOutput, unsupported_unstable_request};
+    use super::{
+        BatchRequest, EvaluationContext, EvaluationStats, IntegralTensor, Session, SessionRequest,
+        TypedEvaluationOutput, ss_batch_inputs, unsupported_unstable_request,
+    };
     use crate::error::{FacadeError, FacadeErrorKind};
     #[cfg(feature = "with-f12")]
     use cintx_compat::raw::enforce_safe_facade_policy_gate;
     use cintx_core::ecp::{EcpChannel, EcpShell};
     use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
+    use cintx_runtime::ExecutionOptions;
     #[cfg(feature = "with-f12")]
     use cintx_runtime::{ExecutionPlan, query_workspace as runtime_query_workspace};
-    use cintx_runtime::ExecutionOptions;
     use std::sync::Arc;
 
     #[cfg(feature = "with-4c1e")]
@@ -679,7 +1585,10 @@ mod tests {
         Arc::from(values.to_vec().into_boxed_slice())
     }
 
-    fn sample_basis_with_shells(rep: Representation, shell_l_values: &[u8]) -> (BasisSet, ShellTuple) {
+    fn sample_basis_with_shells(
+        rep: Representation,
+        shell_l_values: &[u8],
+    ) -> (BasisSet, ShellTuple) {
         let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom].into_boxed_slice());
 
@@ -687,8 +1596,17 @@ mod tests {
         for (idx, shell_l) in shell_l_values.iter().copied().enumerate() {
             let exponent = 1.0 - (idx as f64 * 0.05);
             let shell = Arc::new(
-                Shell::try_new(0, shell_l, 1, 1, 0, rep, arc_f64(&[exponent]), arc_f64(&[1.0]))
-                    .unwrap(),
+                Shell::try_new(
+                    0,
+                    shell_l,
+                    1,
+                    1,
+                    0,
+                    rep,
+                    arc_f64(&[exponent]),
+                    arc_f64(&[1.0]),
+                )
+                .unwrap(),
             );
             shells.push(shell);
         }
@@ -709,7 +1627,7 @@ mod tests {
             OperatorId::new(0),
             Representation::Cart,
             &basis,
-            shells,
+            shells.clone(),
             ExecutionOptions::default(),
         );
 
@@ -734,7 +1652,7 @@ mod tests {
     fn evaluate_returns_deterministic_nonzero_real_values() {
         let (basis, shells) = sample_basis(Representation::Cart);
         let request = SessionRequest::new(
-            OperatorId::new(0),                       // int1e_ovlp_cart
+            OperatorId::new(0), // int1e_ovlp_cart
             Representation::Cart,
             &basis,
             shells,
@@ -742,7 +1660,10 @@ mod tests {
         );
 
         // Capture expected workspace metadata before consuming the first query.
-        let query1 = request.clone().query_workspace().expect("query should succeed");
+        let query1 = request
+            .clone()
+            .query_workspace()
+            .expect("query should succeed");
         let expected_workspace_bytes = query1.workspace().bytes;
         let expected_chunk_count = query1.workspace().chunk_count;
 
@@ -750,8 +1671,12 @@ mod tests {
         let output1 = query1.evaluate().expect("safe evaluate should succeed");
 
         // Second independent evaluation from the same request — idempotency check.
-        let query2 = request.query_workspace().expect("query should succeed (2nd)");
-        let output2 = query2.evaluate().expect("safe evaluate should succeed (2nd)");
+        let query2 = request
+            .query_workspace()
+            .expect("query should succeed (2nd)");
+        let output2 = query2
+            .evaluate()
+            .expect("safe evaluate should succeed (2nd)");
 
         // (1) Idempotency: real, deterministic kernel must return identical values across runs.
         assert_eq!(
@@ -920,7 +1845,12 @@ mod tests {
         use cintx_core::AoSymmetry;
         let (basis, shells) = sample_basis_with_shells(Representation::Cart, &[0, 0]);
 
-        for non_s1 in [AoSymmetry::S2ij, AoSymmetry::S2kl, AoSymmetry::S4, AoSymmetry::S8] {
+        for non_s1 in [
+            AoSymmetry::S2ij,
+            AoSymmetry::S2kl,
+            AoSymmetry::S4,
+            AoSymmetry::S8,
+        ] {
             let options = ExecutionOptions {
                 aosym: Some(non_s1),
                 ..Default::default()
@@ -943,9 +1873,9 @@ mod tests {
                         "requested field must carry the lowercase pyscf form"
                     );
                 }
-                other => panic!(
-                    "expected UnsupportedAoSymmetry for aosym={non_s1:?}, got {other:?}"
-                ),
+                other => {
+                    panic!("expected UnsupportedAoSymmetry for aosym={non_s1:?}, got {other:?}")
+                }
             }
         }
     }
@@ -956,7 +1886,10 @@ mod tests {
         let (basis, shells) = sample_basis_with_shells(Representation::Cart, &[0, 0]);
 
         for aosym in [None, Some(AoSymmetry::S1)] {
-            let options = ExecutionOptions { aosym, ..Default::default() };
+            let options = ExecutionOptions {
+                aosym,
+                ..Default::default()
+            };
             let request = SessionRequest::new(
                 OperatorId::new(0),
                 Representation::Cart,
@@ -987,8 +1920,17 @@ mod tests {
         for (idx, shell_l) in shell_l_values.iter().copied().enumerate() {
             let exponent = 1.0 - (idx as f64 * 0.05);
             let shell = Arc::new(
-                Shell::try_new(0, shell_l, 1, 1, 0, rep, arc_f64(&[exponent]), arc_f64(&[1.0]))
-                    .unwrap(),
+                Shell::try_new(
+                    0,
+                    shell_l,
+                    1,
+                    1,
+                    0,
+                    rep,
+                    arc_f64(&[exponent]),
+                    arc_f64(&[1.0]),
+                )
+                .unwrap(),
             );
             shells.push(shell);
         }
@@ -1011,9 +1953,12 @@ mod tests {
         }
         let ecp_arc = Arc::from(ecp_shells.into_boxed_slice());
 
-        let basis =
-            BasisSet::try_new_with_ecp(atoms, Arc::from(shells.clone().into_boxed_slice()), ecp_arc)
-                .unwrap();
+        let basis = BasisSet::try_new_with_ecp(
+            atoms,
+            Arc::from(shells.clone().into_boxed_slice()),
+            ecp_arc,
+        )
+        .unwrap();
         let shell_tuple = ShellTuple::try_from_iter(shells).unwrap();
         (basis, shell_tuple)
     }
@@ -1117,9 +2062,7 @@ mod tests {
         match request.query_workspace() {
             Ok(_) => {}
             Err(FacadeError::MissingEcpBasis { .. }) => {
-                panic!(
-                    "ECP op with ecp_shells attached must NOT return MissingEcpBasis"
-                );
+                panic!("ECP op with ecp_shells attached must NOT return MissingEcpBasis");
             }
             Err(_) => {
                 // Plan 04 wires the kernel; until then a downstream error
@@ -1196,13 +2139,15 @@ mod tests {
             OperatorId::new(0),
             Representation::Cart,
             &basis,
-            shells,
+            shells.clone(),
             ExecutionOptions::default(),
         );
         let q1 = request.clone().query_workspace().expect("q1");
         let out1 = q1.evaluate().expect("evaluate f64 unparameterized");
         let q2 = request.query_workspace().expect("q2");
-        let out2 = q2.evaluate_generic::<f64>().expect("evaluate_generic::<f64>");
+        let out2 = q2
+            .evaluate_generic::<f64>()
+            .expect("evaluate_generic::<f64>");
         // Must be byte-identical (same f64 values)
         assert_eq!(
             out1.tensor.owned_values, out2.tensor.owned_values,
@@ -1250,7 +2195,10 @@ mod tests {
             owned_values: vec![1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64],
         };
         let cv = t.complex_values();
-        assert!(cv.is_some(), "complex_values() must return Some when complex_interleaved == true");
+        assert!(
+            cv.is_some(),
+            "complex_values() must return Some when complex_interleaved == true"
+        );
         let v = cv.unwrap();
         assert_eq!(v.len(), 2, "len must be owned_values.len() / 2");
         assert_eq!(v[0], num_complex::Complex::new(1.0_f64, 2.0_f64));
@@ -1266,7 +2214,10 @@ mod tests {
             complex_interleaved: false,
             owned_values: vec![1.0_f64, 2.0_f64],
         };
-        assert!(t.complex_values().is_none(), "complex_values() must return None when complex_interleaved == false");
+        assert!(
+            t.complex_values().is_none(),
+            "complex_values() must return None when complex_interleaved == false"
+        );
     }
 
     #[test]
@@ -1341,7 +2292,9 @@ mod tests {
             shells,
             ExecutionOptions::default(),
         );
-        let query = request.query_workspace().expect("spinor query_workspace must succeed");
+        let query = request
+            .query_workspace()
+            .expect("spinor query_workspace must succeed");
         let output = query.evaluate().expect("spinor evaluate must succeed");
 
         // PREC-02: complex_values() must return Some for Spinor output.
@@ -1411,5 +2364,381 @@ mod tests {
         query
             .evaluate()
             .expect("finite gauge origin must be accepted on the safe path");
+    }
+
+    #[test]
+    fn batch_evaluation_matches_scalar_order_and_offsets() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let first = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            ExecutionOptions::default(),
+        );
+        let scalar = first.clone().query_workspace().unwrap().evaluate().unwrap();
+        let second = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+
+        let batch = BatchRequest::new([first, second])
+            .max_items_per_chunk(1)
+            .evaluate_batch()
+            .unwrap();
+
+        assert_eq!(batch.outputs.len(), 2);
+        assert_eq!(
+            batch.outputs[0].tensor.owned_values,
+            scalar.tensor.owned_values
+        );
+        assert_eq!(batch.plan.items.len(), 2);
+        assert_eq!(batch.plan.items[0].output_offset, 0);
+        assert_eq!(
+            batch.plan.items[1].output_offset,
+            batch.plan.items[0].output_elements
+        );
+        assert_eq!(batch.plan.chunks.len(), 2);
+        assert_eq!(batch.stats.items_planned, 2);
+        assert_eq!(batch.stats.items_executed, 2);
+        assert_eq!(batch.stats.kernel_launch_count, 2);
+        assert_eq!(batch.stats.readback_count, 2);
+    }
+
+    #[test]
+    fn batch_ss_pilots_match_compatibility_and_use_one_cached_client() {
+        let atoms = Arc::from(
+            vec![
+                Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap(),
+                Atom::try_new(1, [0.0, 0.0, 1.4], NuclearModel::Point, None, None).unwrap(),
+            ]
+            .into_boxed_slice(),
+        );
+        let shell_i = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                3,
+                1,
+                0,
+                Representation::Cart,
+                arc_f64(&[1.24, 0.58, 0.17]),
+                arc_f64(&[0.41, -0.26, 0.09]),
+            )
+            .unwrap(),
+        );
+        let shell_j = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                2,
+                1,
+                0,
+                Representation::Cart,
+                arc_f64(&[0.78, 0.31]),
+                arc_f64(&[0.72, 0.18]),
+            )
+            .unwrap(),
+        );
+        let basis = BasisSet::try_new(
+            atoms,
+            Arc::from(vec![shell_i.clone(), shell_j.clone()].into_boxed_slice()),
+        )
+        .unwrap();
+        let shells = ShellTuple::try_from_iter([shell_i, shell_j]).unwrap();
+        let request = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            ExecutionOptions::default(),
+        );
+        let scalar = request
+            .clone()
+            .query_workspace()
+            .unwrap()
+            .evaluate()
+            .unwrap();
+        let context = EvaluationContext::new();
+        let batch = BatchRequest::new(vec![request; 65])
+            .max_items_per_chunk(13)
+            .evaluate_batch_in(&context)
+            .unwrap();
+
+        assert_eq!(batch.outputs.len(), 65);
+        assert_eq!(batch.plan.chunks.len(), 5);
+        assert_eq!(batch.stats.items_planned, 65);
+        assert_eq!(batch.stats.items_executed, 65);
+        assert_eq!(batch.stats.bucket_count, 1);
+        assert_eq!(batch.stats.kernel_launch_count, 5);
+        assert_eq!(batch.stats.readback_count, 1);
+        // Every item carries padded 3/2 primitive descriptor rows: four f64
+        // primitive tables, two f64 centers, two u32 counts, and one f64 result.
+        assert_eq!(batch.stats.transfer_bytes, 65 * 144);
+        assert_eq!(
+            batch
+                .plan
+                .chunks
+                .iter()
+                .flat_map(|chunk| batch.plan.chunk_items(chunk))
+                .copied()
+                .collect::<Vec<_>>(),
+            (0..65).collect::<Vec<_>>(),
+            "the pilot must submit each planned input exactly once"
+        );
+        for output in &batch.outputs {
+            assert_eq!(output.tensor.extents, vec![1, 1]);
+            assert_eq!(output.tensor.owned_values.len(), 1);
+            assert!(
+                (output.tensor.owned_values[0] - scalar.tensor.owned_values[0]).abs()
+                    <= 1e-14 * scalar.tensor.owned_values[0].abs().max(1.0),
+                "batched s-s overlap must remain within the f64 parity tolerance"
+            );
+            assert_eq!(output.stats.planned_batches, 1);
+            assert_eq!(output.stats.transfer_bytes, 144);
+            assert_eq!(output.workspace_bytes, 0);
+        }
+
+        let kinetic_request = SessionRequest::new(
+            OperatorId::new(3),
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let kinetic_scalar = kinetic_request
+            .clone()
+            .query_workspace()
+            .unwrap()
+            .evaluate()
+            .unwrap();
+        let kinetic_batch = BatchRequest::new(vec![kinetic_request; 65])
+            .max_items_per_chunk(13)
+            .evaluate_batch_in(&context)
+            .unwrap();
+
+        assert_eq!(kinetic_batch.stats.kernel_launch_count, 5);
+        assert_eq!(kinetic_batch.stats.readback_count, 1);
+        for output in &kinetic_batch.outputs {
+            assert!(
+                (output.tensor.owned_values[0] - kinetic_scalar.tensor.owned_values[0]).abs()
+                    <= 1e-14 * kinetic_scalar.tensor.owned_values[0].abs().max(1.0),
+                "batched s-s kinetic must remain within the f64 parity tolerance"
+            );
+        }
+        assert_eq!(context.stats().backend_cache_entries, 1);
+    }
+
+    #[test]
+    fn batch_primitive_eri_ssss_matches_scalar_compatibility_including_coincident_centers() {
+        let atoms = Arc::from(
+            vec![
+                Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap(),
+                Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap(),
+                Atom::try_new(1, [0.3, -0.4, 0.7], NuclearModel::Point, None, None).unwrap(),
+                Atom::try_new(1, [-0.2, 0.8, -0.1], NuclearModel::Point, None, None).unwrap(),
+                Atom::try_new(1, [1.1, -0.6, 0.2], NuclearModel::Point, None, None).unwrap(),
+                Atom::try_new(1, [-0.7, 0.5, 0.4], NuclearModel::Point, None, None).unwrap(),
+                Atom::try_new(1, [0.2, 0.1, -1.0], NuclearModel::Point, None, None).unwrap(),
+                Atom::try_new(1, [0.9, 0.3, 0.6], NuclearModel::Point, None, None).unwrap(),
+            ]
+            .into_boxed_slice(),
+        );
+        let shells: Vec<_> = [0u32, 1, 2, 3, 4, 5, 6, 7]
+            .into_iter()
+            .enumerate()
+            .map(|(index, atom_index)| {
+                Arc::new(
+                    Shell::try_new(
+                        atom_index,
+                        0,
+                        1,
+                        1,
+                        0,
+                        Representation::Cart,
+                        arc_f64(&[0.31 + index as f64 * 0.17]),
+                        arc_f64(&[if index % 2 == 0 { 0.73 } else { -0.41 }]),
+                    )
+                    .unwrap(),
+                )
+            })
+            .collect();
+        let basis = BasisSet::try_new(atoms, Arc::from(shells.clone().into_boxed_slice())).unwrap();
+        let make_request = |indices: [usize; 4]| {
+            SessionRequest::new(
+                cintx_ops::resolver::Resolver::descriptor_by_symbol("int2e_cart")
+                    .unwrap()
+                    .id,
+                Representation::Cart,
+                &basis,
+                ShellTuple::try_from_iter(indices.map(|index| shells[index].clone())).unwrap(),
+                ExecutionOptions::default(),
+            )
+        };
+        let first = make_request([0, 1, 2, 3]); // A == B exercises T=0 on one pair.
+        let second = make_request([4, 5, 6, 7]);
+        let third = make_request([0, 3, 5, 6]);
+        let expected = [first.clone(), second.clone(), third.clone()].map(|request| {
+            request
+                .query_workspace()
+                .unwrap()
+                .evaluate()
+                .unwrap()
+                .tensor
+                .owned_values[0]
+        });
+        let context = EvaluationContext::new();
+        let batch = BatchRequest::new([first, second, third])
+            .max_items_per_chunk(1)
+            .evaluate_batch_in(&context)
+            .unwrap();
+
+        assert_eq!(batch.outputs.len(), expected.len());
+        assert_eq!(batch.stats.kernel_launch_count, 3);
+        assert_eq!(batch.stats.readback_count, 1);
+        assert_eq!(batch.stats.transfer_bytes, expected.len() * 168);
+        for (index, (output, expected)) in batch.outputs.iter().zip(expected).enumerate() {
+            let actual = output.tensor.owned_values[0];
+            let difference = (actual - expected).abs();
+            assert!(
+                difference <= 1e-12 + 1e-12 * expected.abs(),
+                "item {index}: actual={actual:.17e}, expected={expected:.17e}, difference={difference:.3e}"
+            );
+            assert_eq!(output.tensor.extents, vec![1, 1, 1, 1]);
+            assert_eq!(output.stats.transfer_bytes, 168);
+        }
+        assert_eq!(context.stats().backend_cache_entries, 1);
+    }
+
+    #[test]
+    fn ss_batch_pilot_keeps_multi_contraction_shells_on_the_compatibility_route() {
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atoms = Arc::from(vec![atom].into_boxed_slice());
+        let shell_i = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                2,
+                2,
+                0,
+                Representation::Cart,
+                arc_f64(&[1.0, 0.4]),
+                arc_f64(&[0.6, 0.2, 0.1, 0.7]),
+            )
+            .unwrap(),
+        );
+        let shell_j = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                arc_f64(&[0.8]),
+                arc_f64(&[1.0]),
+            )
+            .unwrap(),
+        );
+        let basis = BasisSet::try_new(
+            atoms,
+            Arc::from(vec![shell_i.clone(), shell_j.clone()].into_boxed_slice()),
+        )
+        .unwrap();
+        let request = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            ShellTuple::try_from_iter([shell_i, shell_j]).unwrap(),
+            ExecutionOptions::default(),
+        );
+
+        assert!(ss_batch_inputs(&[request]).is_none());
+    }
+
+    #[test]
+    fn batch_into_leaves_destination_unchanged_when_preflight_fails() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let valid = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let invalid_tuple = ShellTuple::try_from_iter([basis.shells()[0].clone()]).unwrap();
+        let invalid = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            invalid_tuple,
+            ExecutionOptions::default(),
+        );
+        let mut destination = vec![TypedEvaluationOutput::default(); 2];
+        destination[0].bytes_written = 41;
+        destination[1].bytes_written = 43;
+
+        let error = BatchRequest::new([valid, invalid])
+            .evaluate_batch_into(&mut destination)
+            .unwrap_err();
+
+        assert_eq!(error.kind(), FacadeErrorKind::Validation);
+        assert_eq!(destination[0].bytes_written, 41);
+        assert_eq!(destination[1].bytes_written, 43);
+    }
+
+    #[test]
+    fn evaluation_context_is_shared_by_queries_and_preserves_results() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let request = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let context = EvaluationContext::new();
+        let first = request.query_workspace_in(&context).unwrap();
+        let second = request.query_workspace_in(&context).unwrap();
+
+        assert!(Arc::ptr_eq(&first.executor, &second.executor));
+        assert!(Arc::ptr_eq(
+            &first.workspace_allocator,
+            &second.workspace_allocator
+        ));
+        assert_eq!(
+            first.evaluate().unwrap().tensor.owned_values,
+            second.evaluate().unwrap().tensor.owned_values
+        );
+        let stats = context.stats();
+        assert_eq!(stats.backend_cache_entries, 1);
+        assert_eq!(stats.resident_metadata_entries, 1);
+        assert!(stats.host_workspace_allocations >= 1);
+        assert!(stats.host_workspace_reuses >= 1);
+    }
+
+    #[test]
+    fn reusable_session_keeps_backend_and_workspace_state_private_but_reused() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let request = SessionRequest::new(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            ExecutionOptions::default(),
+        );
+        let session = Session::new();
+
+        let first = session.evaluate(&request).unwrap();
+        let second = session.evaluate(&request).unwrap();
+
+        assert_eq!(first.tensor.owned_values, second.tensor.owned_values);
+        let stats = session.stats();
+        assert_eq!(stats.backend_cache_entries, 1);
+        assert!(stats.host_workspace_allocations >= 1);
+        assert!(stats.host_workspace_reuses >= 1);
     }
 }

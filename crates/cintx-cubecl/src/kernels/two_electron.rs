@@ -821,10 +821,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                         let rklrxy = rkly - rx_kl_y;
                         let rklrxz = rklz - rx_kl_z;
 
-                        let fac1 = F::sqrt(a0 / (a1 * a1 * a1))
-                            * common_factor
-                            * fac_ij
-                            * fac_kl;
+                        let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor * fac_ij * fac_kl;
 
                         // ── Build the [gx|gy|gz] tensor ───────────────────────
                         #[unroll]
@@ -1194,18 +1191,12 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                         let iy = li_minus_ix - ib;
                                                         let iz = li - ix - iy;
 
-                                                        let base_x = ix * di
-                                                            + kx * dk
-                                                            + lx * dl
-                                                            + jx * dj;
-                                                        let base_y = iy * di
-                                                            + ky * dk
-                                                            + ly * dl
-                                                            + jy * dj;
-                                                        let base_z = iz * di
-                                                            + kz * dk
-                                                            + lz * dl
-                                                            + jz * dj;
+                                                        let base_x =
+                                                            ix * di + kx * dk + lx * dl + jx * dj;
+                                                        let base_y =
+                                                            iy * di + ky * dk + ly * dl + jy * dj;
+                                                        let base_z =
+                                                            iz * di + kz * dk + lz * dl + jz * dj;
 
                                                         let mut sum = F::new(0.0);
                                                         #[unroll]
@@ -1216,8 +1207,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                         }
 
                                                         let q_elem = i_idx
-                                                            + (j_idx
-                                                                + (k_idx + l_idx * nfk) * nfj)
+                                                            + (j_idx + (k_idx + l_idx * nfk) * nfj)
                                                                 * nfi;
 
                                                         if is_uncontracted {
@@ -1228,8 +1218,8 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                             // contraction quad block.
                                                             let mut ci = 0u32;
                                                             while ci < nctr_i {
-                                                                let cvi = coeff_i[(pi * nctr_i + ci)
-                                                                    as usize];
+                                                                let cvi = coeff_i
+                                                                    [(pi * nctr_i + ci) as usize];
                                                                 let mut cj = 0u32;
                                                                 while cj < nctr_j {
                                                                     let cvj = coeff_j[(pj * nctr_j
@@ -1261,7 +1251,8 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                                                 * block_len;
                                                                             let oidx =
                                                                                 qbase + q_elem;
-                                                                            cart_out[oidx as usize] +=
+                                                                            cart_out
+                                                                                [oidx as usize] +=
                                                                                 weight * sum;
                                                                             cl += 1u32;
                                                                         }
@@ -1532,7 +1523,16 @@ fn launch_two_electron_ip1<F: CintFloat>(
 
                     // Plain Coulomb G-tensor at the elevated li (li+1 headroom).
                     let g = fill_g_tensor_2e(
-                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                        ai,
+                        aj,
+                        ak,
+                        al,
+                        &ri,
+                        &rj,
+                        &rk,
+                        &rl,
+                        grad_shape,
+                        quartet_fac,
                     );
 
                     // Reuse gout_ip1 verbatim (f12.rs). It returns interleaved
@@ -1668,9 +1668,15 @@ fn launch_two_electron_ip1<F: CintFloat>(
         Representation::Spinor => unreachable!("spinor int2e_ip1 rejected above"),
     }
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
@@ -1778,7 +1784,16 @@ fn launch_two_electron_ip2<F: CintFloat>(
 
                     // Plain Coulomb G-tensor at the elevated lk (lk+1 headroom).
                     let g = fill_g_tensor_2e(
-                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                        ai,
+                        aj,
+                        ak,
+                        al,
+                        &ri,
+                        &rj,
+                        &rk,
+                        &rl,
+                        grad_shape,
+                        quartet_fac,
                     );
 
                     // ∇ on the ket bra-center k (Nabla1Center::K, exponent ak).
@@ -1910,9 +1925,15 @@ fn launch_two_electron_ip2<F: CintFloat>(
         Representation::Spinor => unreachable!("spinor int2e_ip2 rejected above"),
     }
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
@@ -2062,7 +2083,16 @@ fn launch_two_electron_hess2e<F: CintFloat>(
 
                     // Plain Coulomb G-tensor at the elevated headroom.
                     let g = fill_g_tensor_2e(
-                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                        ai,
+                        aj,
+                        ak,
+                        al,
+                        &ri,
+                        &rj,
+                        &rk,
+                        &rl,
+                        grad_shape,
+                        quartet_fac,
                     );
 
                     // Reuse the verbatim hess.c gout permutation. gout is called at
@@ -2074,16 +2104,43 @@ fn launch_two_electron_hess2e<F: CintFloat>(
                     let ll_b = ll as usize;
                     let gout = match kind {
                         Hess2eKind::Ipip1 => crate::kernels::f12::gout_ipip1(
-                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai,
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            ai,
                         ),
                         Hess2eKind::Ipvip1 => crate::kernels::f12::gout_ipvip1(
-                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, aj,
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            ai,
+                            aj,
                         ),
                         Hess2eKind::Ip1ip2 => crate::kernels::f12::gout_ip1ip2(
-                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, ak,
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            ai,
+                            ak,
                         ),
                         Hess2eKind::Ipip1ipip2 => crate::kernels::f12::gout_ipip1ipip2(
-                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, ai, ak,
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            ai,
+                            ak,
                         ),
                     };
 
@@ -2205,9 +2262,15 @@ fn launch_two_electron_hess2e<F: CintFloat>(
         Representation::Spinor => unreachable!("spinor 2e Hessian rejected above"),
     }
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
@@ -2362,7 +2425,16 @@ fn launch_two_electron_giao2e<F: CintFloat>(
 
                     // Plain Coulomb G-tensor at the elevated headroom.
                     let g = fill_g_tensor_2e(
-                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                        ai,
+                        aj,
+                        ak,
+                        al,
+                        &ri,
+                        &rj,
+                        &rk,
+                        &rl,
+                        grad_shape,
+                        quartet_fac,
                     );
 
                     let li_b = li as usize;
@@ -2374,16 +2446,46 @@ fn launch_two_electron_giao2e<F: CintFloat>(
                     // [cl,ck,cj,ci] (matching the Hess2e / ip1 convention).
                     let gout = match kind {
                         Giao2eKind::G1 => crate::kernels::f12::gout_g1(
-                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, &ri, &rj,
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            &ri,
+                            &rj,
                         ),
                         Giao2eKind::Ig1 => crate::kernels::f12::gout_ig1(
-                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, &ri, &rj,
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            &ri,
+                            &rj,
                         ),
                         Giao2eKind::Gg1 => crate::kernels::f12::gout_gg1(
-                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, &ri, &rj,
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            &ri,
+                            &rj,
                         ),
                         Giao2eKind::G1g2 => crate::kernels::f12::gout_g1g2(
-                            &g, &grad_f12_shape, li_b, lj_b, lk_b, ll_b, &ri, &rj, &rk, &rl,
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            &ri,
+                            &rj,
+                            &rk,
+                            &rl,
                         ),
                     };
 
@@ -2516,7 +2618,8 @@ fn launch_two_electron_giao2e<F: CintFloat>(
                                                 let dst = staging_comp_base
                                                     + iidx
                                                     + di * (jidx + dj * (kidx + dk * lidx));
-                                                staging[2 * dst + 1] = F::from_f64_lossy(block[src]);
+                                                staging[2 * dst + 1] =
+                                                    F::from_f64_lossy(block[src]);
                                             }
                                         }
                                     }
@@ -2530,8 +2633,11 @@ fn launch_two_electron_giao2e<F: CintFloat>(
         Representation::Spinor => unreachable!("spinor 2e GIAO rejected above"),
     }
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     // WR-04: GIAO output is [re=0, im=v] interleaved; count
     // the imaginary component only so not0 matches libcint's real double* semantics.
     let not0 = staging
@@ -2589,17 +2695,47 @@ fn launch_int2e_spsp1_spinor<F: CintFloat>(
         shell_l.coefficients[..shell_l.nprim as usize * shell_l.nctr as usize].to_vec();
 
     launch_int2e_spsp1_spinor_quartet::<F>(
-        li, shell_i.kappa, lj, shell_j.kappa, lk, shell_k.kappa, ll, shell_l.kappa,
-        shell_i.nprim as usize, shell_j.nprim as usize, shell_k.nprim as usize,
-        shell_l.nprim as usize, shell_i.nctr as usize, shell_j.nctr as usize,
-        shell_k.nctr as usize, shell_l.nctr as usize, ri, rj, rk, rl, common_factor,
-        &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j, &coeff_k, &coeff_l,
+        li,
+        shell_i.kappa,
+        lj,
+        shell_j.kappa,
+        lk,
+        shell_k.kappa,
+        ll,
+        shell_l.kappa,
+        shell_i.nprim as usize,
+        shell_j.nprim as usize,
+        shell_k.nprim as usize,
+        shell_l.nprim as usize,
+        shell_i.nctr as usize,
+        shell_j.nctr as usize,
+        shell_k.nctr as usize,
+        shell_l.nctr as usize,
+        ri,
+        rj,
+        rk,
+        rl,
+        common_factor,
+        &exps_i,
+        &exps_j,
+        &exps_k,
+        &exps_l,
+        &coeff_i,
+        &coeff_j,
+        &coeff_k,
+        &coeff_l,
         staging,
     )?;
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
@@ -2643,16 +2779,35 @@ fn launch_int2e_spsp1_spinor<F: CintFloat>(
 /// `coeff_*` are ROW-major `[ip*nctr + ic]` (the cintx `Shell` convention).
 #[allow(clippy::too_many_arguments)]
 pub fn launch_int2e_spsp1_spinor_quartet<F: CintFloat>(
-    li: u8, kappa_i: i16,
-    lj: u8, kappa_j: i16,
-    lk: u8, kappa_k: i16,
-    ll: u8, kappa_l: i16,
-    nprim_i: usize, nprim_j: usize, nprim_k: usize, nprim_l: usize,
-    nctr_i: usize, nctr_j: usize, nctr_k: usize, nctr_l: usize,
-    ri: [f64; 3], rj: [f64; 3], rk: [f64; 3], rl: [f64; 3],
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+    kappa_k: i16,
+    ll: u8,
+    kappa_l: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nprim_k: usize,
+    nprim_l: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    nctr_k: usize,
+    nctr_l: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
     common_factor: f64,
-    exps_i: &[f64], exps_j: &[f64], exps_k: &[f64], exps_l: &[f64],
-    coeff_i: &[f64], coeff_j: &[f64], coeff_k: &[f64], coeff_l: &[f64],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    exps_k: &[f64],
+    exps_l: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    coeff_k: &[f64],
+    coeff_l: &[f64],
     staging: &mut [F],
 ) -> Result<(), cintxRsError> {
     let nfi = ncart(li);
@@ -2683,9 +2838,7 @@ pub fn launch_int2e_spsp1_spinor_quartet<F: CintFloat>(
     // ── σ·p₁ assembler: 4 component-leading cart blocks per contraction quad. ──
     // headroom = Hess2eKind::Ipvip1 = (i_inc=1, j_inc=1, k_inc=0) so gout_spsp1's
     // nabla1j(g,li+1) + nabla1i compositions can read the elevated indices.
-    let grad_shape = build_2e_shape(
-        li as usize + 1, lj as usize + 1, lk as usize, ll as usize,
-    );
+    let grad_shape = build_2e_shape(li as usize + 1, lj as usize + 1, lk as usize, ll as usize);
     if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
@@ -2706,19 +2859,35 @@ pub fn launch_int2e_spsp1_spinor_quartet<F: CintFloat>(
                 let ak = exps_k[pk];
                 for pl in 0..nprim_l {
                     let al = exps_l[pl];
-                    let pdata_kl =
-                        compute_pdata_host(ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0);
+                    let pdata_kl = compute_pdata_host(
+                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                    );
                     let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
                     let g = fill_g_tensor_2e(
-                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                        ai,
+                        aj,
+                        ak,
+                        al,
+                        &ri,
+                        &rj,
+                        &rk,
+                        &rl,
+                        grad_shape,
+                        quartet_fac,
                     );
 
                     // gout called at BASE (li,lj,lk,ll); G-tensor carries headroom.
                     // Returns interleaved out[n*4+comp]; n walks [cl,ck,cj,ci].
                     let gout = crate::kernels::f12::gout_spsp1(
-                        &g, &grad_f12_shape, li as usize, lj as usize, lk as usize, ll as usize,
-                        ai, aj,
+                        &g,
+                        &grad_f12_shape,
+                        li as usize,
+                        lj as usize,
+                        lk as usize,
+                        ll as usize,
+                        ai,
+                        aj,
                     );
 
                     for ci in 0..nctr_i {
@@ -2772,8 +2941,7 @@ pub fn launch_int2e_spsp1_spinor_quartet<F: CintFloat>(
                         *v = 0.0;
                     }
                     cart_to_spinor_si_2e1(
-                        &mut opij, gc_x, gc_y, gc_z, gc_1,
-                        li, kappa_i, lj, kappa_j, lk, ll,
+                        &mut opij, gc_x, gc_y, gc_z, gc_1, li, kappa_i, lj, kappa_j, lk, ll,
                     )?;
 
                     // Electron 2 (spin-free) — apply_2d_spinor_zf + a_ket1 + zcopy_iklj.
@@ -2781,8 +2949,7 @@ pub fn launch_int2e_spsp1_spinor_quartet<F: CintFloat>(
                         *v = F::from_f64_lossy(0.0);
                     }
                     cart_to_spinor_sf_2e2::<F>(
-                        &mut sub, &opij,
-                        li, kappa_i, lj, kappa_j, lk, kappa_k, ll, kappa_l,
+                        &mut sub, &opij, li, kappa_i, lj, kappa_j, lk, kappa_k, ll, kappa_l,
                     )?;
 
                     // Scatter the (di×dj×dk×dl) sub-block into the contraction-major
@@ -2797,7 +2964,8 @@ pub fn launch_int2e_spsp1_spinor_quartet<F: CintFloat>(
                                 for i in 0..di {
                                     let i_g = ci * di + i;
                                     let src = (((l * dk + k) * dj + j) * di + i) * 2;
-                                    let dst = (((l_g * nk_sp + k_g) * nj_sp + j_g) * ni_sp + i_g) * 2;
+                                    let dst =
+                                        (((l_g * nk_sp + k_g) * nj_sp + j_g) * ni_sp + i_g) * 2;
                                     staging[dst] = sub[src];
                                     staging[dst + 1] = sub[src + 1];
                                 }
@@ -2883,18 +3051,50 @@ fn launch_rel2e_sigma_spinor<F: CintFloat>(
         shell_l.coefficients[..shell_l.nprim as usize * shell_l.nctr as usize].to_vec();
 
     launch_rel2e_sigma_spinor_quartet::<F>(
-        gout_kind, e1, e2,
-        li, shell_i.kappa, lj, shell_j.kappa, lk, shell_k.kappa, ll, shell_l.kappa,
-        shell_i.nprim as usize, shell_j.nprim as usize, shell_k.nprim as usize,
-        shell_l.nprim as usize, shell_i.nctr as usize, shell_j.nctr as usize,
-        shell_k.nctr as usize, shell_l.nctr as usize, ri, rj, rk, rl, common_factor,
-        &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j, &coeff_k, &coeff_l,
+        gout_kind,
+        e1,
+        e2,
+        li,
+        shell_i.kappa,
+        lj,
+        shell_j.kappa,
+        lk,
+        shell_k.kappa,
+        ll,
+        shell_l.kappa,
+        shell_i.nprim as usize,
+        shell_j.nprim as usize,
+        shell_k.nprim as usize,
+        shell_l.nprim as usize,
+        shell_i.nctr as usize,
+        shell_j.nctr as usize,
+        shell_k.nctr as usize,
+        shell_l.nctr as usize,
+        ri,
+        rj,
+        rk,
+        rl,
+        common_factor,
+        &exps_i,
+        &exps_j,
+        &exps_k,
+        &exps_l,
+        &coeff_i,
+        &coeff_j,
+        &coeff_k,
+        &coeff_l,
         staging,
     )?;
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
@@ -3000,16 +3200,35 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
     gout_kind: Rel2eGout,
     e1: E1Transform,
     e2: E2Transform,
-    li: u8, kappa_i: i16,
-    lj: u8, kappa_j: i16,
-    lk: u8, kappa_k: i16,
-    ll: u8, kappa_l: i16,
-    nprim_i: usize, nprim_j: usize, nprim_k: usize, nprim_l: usize,
-    nctr_i: usize, nctr_j: usize, nctr_k: usize, nctr_l: usize,
-    ri: [f64; 3], rj: [f64; 3], rk: [f64; 3], rl: [f64; 3],
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+    kappa_k: i16,
+    ll: u8,
+    kappa_l: i16,
+    nprim_i: usize,
+    nprim_j: usize,
+    nprim_k: usize,
+    nprim_l: usize,
+    nctr_i: usize,
+    nctr_j: usize,
+    nctr_k: usize,
+    nctr_l: usize,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
     common_factor: f64,
-    exps_i: &[f64], exps_j: &[f64], exps_k: &[f64], exps_l: &[f64],
-    coeff_i: &[f64], coeff_j: &[f64], coeff_k: &[f64], coeff_l: &[f64],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    exps_k: &[f64],
+    exps_l: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    coeff_k: &[f64],
+    coeff_l: &[f64],
     staging: &mut [F],
 ) -> Result<(), cintxRsError> {
     let nfi = ncart(li);
@@ -3040,7 +3259,10 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
     // ── G-tensor headroom per family. ──
     let (ii, ji, ki, li_inc) = gout_kind.headroom();
     let grad_shape = build_2e_shape(
-        li as usize + ii, lj as usize + ji, lk as usize + ki, ll as usize + li_inc,
+        li as usize + ii,
+        lj as usize + ji,
+        lk as usize + ki,
+        ll as usize + li_inc,
     );
     if grad_shape.nroots > HOST_RYS_NROOTS_CEILING {
         return Err(cintxRsError::UnsupportedApi {
@@ -3062,34 +3284,174 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
                 let ak = exps_k[pk];
                 for pl in 0..nprim_l {
                     let al = exps_l[pl];
-                    let pdata_kl =
-                        compute_pdata_host(ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0);
+                    let pdata_kl = compute_pdata_host(
+                        ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                    );
                     let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
                     let g = fill_g_tensor_2e(
-                        ai, aj, ak, al, &ri, &rj, &rk, &rl, grad_shape, quartet_fac,
+                        ai,
+                        aj,
+                        ak,
+                        al,
+                        &ri,
+                        &rj,
+                        &rk,
+                        &rl,
+                        grad_shape,
+                        quartet_fac,
                     );
 
-                    use crate::kernels::f12 as f12;
-                    let (gli, glj, glk, gll) =
-                        (li as usize, lj as usize, lk as usize, ll as usize);
+                    use crate::kernels::f12;
+                    let (gli, glj, glk, gll) = (li as usize, lj as usize, lk as usize, ll as usize);
                     let gout = match gout_kind {
-                        Rel2eGout::Spsp1 => f12::gout_spsp1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj),
-                        Rel2eGout::Srsr1 => f12::gout_srsr1(&g, &grad_f12_shape, gli, glj, glk, gll),
-                        Rel2eGout::Spsp1spsp2 => f12::gout_spsp1spsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Srsr1srsr2 => f12::gout_srsr1srsr2(&g, &grad_f12_shape, gli, glj, glk, gll),
-                        Rel2eGout::Ssp1ssp2 => f12::gout_ssp1ssp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Ssp1sps2 => f12::gout_ssp1sps2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Sps1ssp2 => f12::gout_sps1ssp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Sps1sps2 => f12::gout_sps1sps2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Spv1 => f12::gout_spv1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Vsp1 => f12::gout_vsp1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Spv1spv2 => f12::gout_spv1spv2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Vsp1spv2 => f12::gout_vsp1spv2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Spv1vsp2 => f12::gout_spv1vsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Vsp1vsp2 => f12::gout_vsp1vsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Spv1spsp2 => f12::gout_spv1spsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
-                        Rel2eGout::Vsp1spsp2 => f12::gout_vsp1spsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al),
+                        Rel2eGout::Spsp1 => {
+                            f12::gout_spsp1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj)
+                        }
+                        Rel2eGout::Srsr1 => {
+                            f12::gout_srsr1(&g, &grad_f12_shape, gli, glj, glk, gll)
+                        }
+                        Rel2eGout::Spsp1spsp2 => f12::gout_spsp1spsp2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Srsr1srsr2 => {
+                            f12::gout_srsr1srsr2(&g, &grad_f12_shape, gli, glj, glk, gll)
+                        }
+                        Rel2eGout::Ssp1ssp2 => f12::gout_ssp1ssp2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Ssp1sps2 => f12::gout_ssp1sps2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Sps1ssp2 => f12::gout_sps1ssp2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Sps1sps2 => f12::gout_sps1sps2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Spv1 => {
+                            f12::gout_spv1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al)
+                        }
+                        Rel2eGout::Vsp1 => {
+                            f12::gout_vsp1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al)
+                        }
+                        Rel2eGout::Spv1spv2 => f12::gout_spv1spv2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Vsp1spv2 => f12::gout_vsp1spv2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Spv1vsp2 => f12::gout_spv1vsp2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Vsp1vsp2 => f12::gout_vsp1vsp2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Spv1spsp2 => f12::gout_spv1spsp2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Vsp1spsp2 => f12::gout_vsp1spsp2(
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
                     };
 
                     for ci in 0..nctr_i {
@@ -3143,12 +3505,12 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
         let gz = cb(comp0 + 2);
         let g1 = cb(comp0 + 3);
         match e1 {
-            E1Transform::Si => cart_to_spinor_si_2e1(
-                opij_slot, gx, gy, gz, g1, li, kappa_i, lj, kappa_j, lk, ll,
-            ),
-            E1Transform::SiI => cart_to_spinor_si_2e1i(
-                opij_slot, gx, gy, gz, g1, li, kappa_i, lj, kappa_j, lk, ll,
-            ),
+            E1Transform::Si => {
+                cart_to_spinor_si_2e1(opij_slot, gx, gy, gz, g1, li, kappa_i, lj, kappa_j, lk, ll)
+            }
+            E1Transform::SiI => {
+                cart_to_spinor_si_2e1i(opij_slot, gx, gy, gz, g1, li, kappa_i, lj, kappa_j, lk, ll)
+            }
         }
     };
 
@@ -3167,8 +3529,16 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
                                 *v = F::from_f64_lossy(0.0);
                             }
                             cart_to_spinor_sf_2e2::<F>(
-                                &mut sub, &opij_buf[..opij_len],
-                                li, kappa_i, lj, kappa_j, lk, kappa_k, ll, kappa_l,
+                                &mut sub,
+                                &opij_buf[..opij_len],
+                                li,
+                                kappa_i,
+                                lj,
+                                kappa_j,
+                                lk,
+                                kappa_k,
+                                ll,
+                                kappa_l,
                             )?;
                         }
                         E2Transform::Si | E2Transform::SiI => {
@@ -3189,13 +3559,13 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
                             let o1 = &o1[..opij_len];
                             if e2 == E2Transform::Si {
                                 cart_to_spinor_si_2e2::<F>(
-                                    &mut sub, ox, oy, oz, o1,
-                                    li, kappa_i, lj, kappa_j, lk, kappa_k, ll, kappa_l,
+                                    &mut sub, ox, oy, oz, o1, li, kappa_i, lj, kappa_j, lk,
+                                    kappa_k, ll, kappa_l,
                                 )?;
                             } else {
                                 cart_to_spinor_si_2e2i::<F>(
-                                    &mut sub, ox, oy, oz, o1,
-                                    li, kappa_i, lj, kappa_j, lk, kappa_k, ll, kappa_l,
+                                    &mut sub, ox, oy, oz, o1, li, kappa_i, lj, kappa_j, lk,
+                                    kappa_k, ll, kappa_l,
                                 )?;
                             }
                         }
@@ -3212,7 +3582,8 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
                                 for i in 0..di {
                                     let i_g = ci * di + i;
                                     let src = (((l * dk + k) * dj + j) * di + i) * 2;
-                                    let dst = (((l_g * nk_sp + k_g) * nj_sp + j_g) * ni_sp + i_g) * 2;
+                                    let dst =
+                                        (((l_g * nk_sp + k_g) * nj_sp + j_g) * ni_sp + i_g) * 2;
                                     staging[dst] = sub[src];
                                     staging[dst + 1] = sub[src + 1];
                                 }
@@ -3432,7 +3803,17 @@ fn launch_two_electron_typed<F: CintFloat>(
             });
         }
         return launch_int2e_spsp1_spinor::<F>(
-            plan, li, lj, lk, ll, ri, rj, rk, rl, common_factor, staging,
+            plan,
+            li,
+            lj,
+            lk,
+            ll,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            staging,
         );
     }
 
@@ -3454,7 +3835,20 @@ fn launch_two_electron_typed<F: CintFloat>(
             });
         }
         return launch_rel2e_sigma_spinor::<F>(
-            plan, gout_kind, e1, e2, li, lj, lk, ll, ri, rj, rk, rl, common_factor, staging,
+            plan,
+            gout_kind,
+            e1,
+            e2,
+            li,
+            lj,
+            lk,
+            ll,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            staging,
         );
     }
 
@@ -3508,7 +3902,18 @@ fn launch_two_electron_typed<F: CintFloat>(
                     let ak = exps_k[pk];
                     for pl in 0..n_prim_l {
                         let al = exps_l[pl];
-                        let g = fill_g_tensor_2e(ai, aj, ak, al, &ri, &rj, &rk, &rl, shape, common_factor);
+                        let g = fill_g_tensor_2e(
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                            &ri,
+                            &rj,
+                            &rk,
+                            &rl,
+                            shape,
+                            common_factor,
+                        );
                         let cart_prim = contract_2e_cart(&g, shape, li, lj, lk, ll);
                         for ci in 0..n_ctr_i {
                             let ci_coeff = coeff_i[ci * n_prim_i + pi];
@@ -3519,9 +3924,12 @@ fn launch_two_electron_typed<F: CintFloat>(
                                     for cl in 0..n_ctr_l {
                                         let cl_coeff = coeff_l[cl * n_prim_l + pl];
                                         let quad_weight = ci_coeff * cj_coeff * ck_coeff * cl_coeff;
-                                        let block_offset = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl) * block_len;
+                                        let block_offset =
+                                            (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
+                                                * block_len;
                                         for idx in 0..block_len {
-                                            cart_accum[block_offset + idx] += quad_weight * cart_prim[idx];
+                                            cart_accum[block_offset + idx] +=
+                                                quad_weight * cart_prim[idx];
                                         }
                                     }
                                 }
@@ -3536,53 +3944,213 @@ fn launch_two_electron_typed<F: CintFloat>(
         match backend {
             #[cfg(feature = "cpu")]
             ResolvedBackend::Cpu(client) => run_2e_scalar_device::<cubecl::cpu::CpuRuntime>(
-                client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
-                n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
-                n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
-                shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
-                shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
-                ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
-                &coeff_k, &coeff_l, out_len,
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                ll as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_prim_l as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                n_ctr_l as u32,
+                shape.di as u32,
+                shape.dk as u32,
+                shape.dl as u32,
+                shape.dj as u32,
+                shape.g_size as u32,
+                shape.nmax as u32,
+                shape.mmax as u32,
+                shape.g2d_ijmax as u32,
+                shape.g2d_klmax as u32,
+                shape.ibase as u32,
+                shape.kbase as u32,
+                shape.nroots as u32,
+                ri,
+                rj,
+                rk,
+                rl,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &exps_l,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+                &coeff_l,
+                out_len,
             ),
             #[cfg(feature = "wgpu")]
             ResolvedBackend::Wgpu(client, _) => run_2e_scalar_device::<cubecl_wgpu::WgpuRuntime>(
-                client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
-                n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
-                n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
-                shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
-                shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
-                ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
-                &coeff_k, &coeff_l, out_len,
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                ll as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_prim_l as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                n_ctr_l as u32,
+                shape.di as u32,
+                shape.dk as u32,
+                shape.dl as u32,
+                shape.dj as u32,
+                shape.g_size as u32,
+                shape.nmax as u32,
+                shape.mmax as u32,
+                shape.g2d_ijmax as u32,
+                shape.g2d_klmax as u32,
+                shape.ibase as u32,
+                shape.kbase as u32,
+                shape.nroots as u32,
+                ri,
+                rj,
+                rk,
+                rl,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &exps_l,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+                &coeff_l,
+                out_len,
             ),
             #[cfg(feature = "cuda")]
             ResolvedBackend::Cuda(client) => run_2e_scalar_device::<cubecl_cuda::CudaRuntime>(
-                client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
-                n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
-                n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
-                shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
-                shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
-                ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
-                &coeff_k, &coeff_l, out_len,
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                ll as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_prim_l as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                n_ctr_l as u32,
+                shape.di as u32,
+                shape.dk as u32,
+                shape.dl as u32,
+                shape.dj as u32,
+                shape.g_size as u32,
+                shape.nmax as u32,
+                shape.mmax as u32,
+                shape.g2d_ijmax as u32,
+                shape.g2d_klmax as u32,
+                shape.ibase as u32,
+                shape.kbase as u32,
+                shape.nroots as u32,
+                ri,
+                rj,
+                rk,
+                rl,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &exps_l,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+                &coeff_l,
+                out_len,
             ),
             #[cfg(feature = "rocm")]
             ResolvedBackend::Rocm(client) => run_2e_scalar_device::<cubecl_hip::HipRuntime>(
-                client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
-                n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
-                n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
-                shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
-                shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
-                ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
-                &coeff_k, &coeff_l, out_len,
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                ll as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_prim_l as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                n_ctr_l as u32,
+                shape.di as u32,
+                shape.dk as u32,
+                shape.dl as u32,
+                shape.dj as u32,
+                shape.g_size as u32,
+                shape.nmax as u32,
+                shape.mmax as u32,
+                shape.g2d_ijmax as u32,
+                shape.g2d_klmax as u32,
+                shape.ibase as u32,
+                shape.kbase as u32,
+                shape.nroots as u32,
+                ri,
+                rj,
+                rk,
+                rl,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &exps_l,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+                &coeff_l,
+                out_len,
             ),
             #[cfg(feature = "metal")]
             ResolvedBackend::Metal(client, _) => run_2e_scalar_device::<cubecl_wgpu::WgpuRuntime>(
-                client, li as u32, lj as u32, lk as u32, ll as u32, n_prim_i as u32, n_prim_j as u32,
-                n_prim_k as u32, n_prim_l as u32, n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32,
-                n_ctr_l as u32, shape.di as u32, shape.dk as u32, shape.dl as u32, shape.dj as u32,
-                shape.g_size as u32, shape.nmax as u32, shape.mmax as u32, shape.g2d_ijmax as u32,
-                shape.g2d_klmax as u32, shape.ibase as u32, shape.kbase as u32, shape.nroots as u32,
-                ri, rj, rk, rl, common_factor, &exps_i, &exps_j, &exps_k, &exps_l, &coeff_i, &coeff_j,
-                &coeff_k, &coeff_l, out_len,
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                ll as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_prim_l as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                n_ctr_l as u32,
+                shape.di as u32,
+                shape.dk as u32,
+                shape.dl as u32,
+                shape.dj as u32,
+                shape.g_size as u32,
+                shape.nmax as u32,
+                shape.mmax as u32,
+                shape.g2d_ijmax as u32,
+                shape.g2d_klmax as u32,
+                shape.ibase as u32,
+                shape.kbase as u32,
+                shape.nroots as u32,
+                ri,
+                rj,
+                rk,
+                rl,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &exps_l,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+                &coeff_l,
+                out_len,
             ),
         }
     };
@@ -3605,10 +4173,15 @@ fn launch_two_electron_typed<F: CintFloat>(
                 for cj in 0..n_ctr_j {
                     for ck in 0..n_ctr_k {
                         for cl in 0..n_ctr_l {
-                            let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
-                                * block_len;
-                            let sph =
-                                cart_to_sph_2e(&cart_blocks[base..base + block_len], li, lj, lk, ll);
+                            let base =
+                                (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl) * block_len;
+                            let sph = cart_to_sph_2e(
+                                &cart_blocks[base..base + block_len],
+                                li,
+                                lj,
+                                lk,
+                                ll,
+                            );
                             for ml in 0..nsl {
                                 let lidx = cl * nsl + ml;
                                 for mk in 0..nsk {
@@ -3671,13 +4244,19 @@ fn launch_two_electron_typed<F: CintFloat>(
                 for cj in 0..n_ctr_j {
                     for ck in 0..n_ctr_k {
                         for cl in 0..n_ctr_l {
-                            let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
-                                * block_len;
+                            let base =
+                                (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl) * block_len;
                             cart_to_spinor_sf_4d::<F>(
                                 &mut tmp,
                                 &cart_blocks[base..base + block_len],
-                                li, kappa_i, lj, kappa_j,
-                                lk, kappa_k, ll, kappa_l,
+                                li,
+                                kappa_i,
+                                lj,
+                                kappa_j,
+                                lk,
+                                kappa_k,
+                                ll,
+                                kappa_l,
                             )?;
                             // tmp: staging[(((l_sp*dk+k_sp)*dj+j_sp)*di+i_sp)*2 +{re,im}].
                             // Scatter contraction-major in all four indices.
@@ -3689,9 +4268,8 @@ fn launch_two_electron_typed<F: CintFloat>(
                                         let jidx = cj * dj + j_sp;
                                         for i_sp in 0..di {
                                             let iidx = ci * di + i_sp;
-                                            let src = (((l_sp * dk + k_sp) * dj + j_sp) * di
-                                                + i_sp)
-                                                * 2;
+                                            let src =
+                                                (((l_sp * dk + k_sp) * dj + j_sp) * di + i_sp) * 2;
                                             let dst = (((lidx * n2c_k + kidx) * n2c_j + jidx)
                                                 * n2c_i
                                                 + iidx)
@@ -3718,8 +4296,8 @@ fn launch_two_electron_typed<F: CintFloat>(
                 for cj in 0..n_ctr_j {
                     for ck in 0..n_ctr_k {
                         for cl in 0..n_ctr_l {
-                            let base = (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl)
-                                * block_len;
+                            let base =
+                                (((ci * n_ctr_j + cj) * n_ctr_k + ck) * n_ctr_l + cl) * block_len;
                             let block = &cart_blocks[base..base + block_len];
                             for lc in 0..nfl {
                                 let lidx = cl * nfl + lc;
@@ -3746,7 +4324,11 @@ fn launch_two_electron_typed<F: CintFloat>(
     // WR-06: precision-aware sentinel so f32 stale lanes (< f32 noise floor ~1e-7)
     // are not counted. The outer F32 arm already bounds staging to out_elems, so this
     // scan cannot touch stale upper-half lanes.
-    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -3791,7 +4373,12 @@ pub fn launch_two_electron(
                     provided: staging_f32.len(),
                 });
             }
-            launch_two_electron_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
+            launch_two_electron_typed::<f32>(
+                backend,
+                plan,
+                specialization,
+                &mut staging_f32[..out_elems],
+            )
         }
     }
 }
@@ -3878,7 +4465,23 @@ mod device_tests {
         let out_len = nfi * nfj * nfk * nfl;
 
         let host = host_cart_2e(
-            li, lj, lk, ll, ai, aj, ak, al, ri, rj, rk, rl, common_factor, ci, cj, ck, cl,
+            li,
+            lj,
+            lk,
+            ll,
+            ai,
+            aj,
+            ak,
+            al,
+            ri,
+            rj,
+            rk,
+            rl,
+            common_factor,
+            ci,
+            cj,
+            ck,
+            cl,
         );
         let dev = run_2e_scalar_device::<cubecl::cpu::CpuRuntime>(
             &cpu_client(),
@@ -4010,9 +4613,11 @@ mod device_tests {
         let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
         let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
 
-        let common_factor =
-            ((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0)
-                * common_fac_sp(0) * common_fac_sp(0)) as f32;
+        let common_factor = ((PI * PI * PI) * 2.0 / SQRTPI
+            * common_fac_sp(0)
+            * common_fac_sp(0)
+            * common_fac_sp(0)
+            * common_fac_sp(0)) as f32;
 
         two_electron_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
@@ -4072,7 +4677,10 @@ mod device_tests {
 
         let raw = client.read_one_unchecked(out_h);
         let out = f32::from_bytes(&raw)[0];
-        assert!(out.is_finite(), "f32 scalar 2e kernel result must be finite");
+        assert!(
+            out.is_finite(),
+            "f32 scalar 2e kernel result must be finite"
+        );
     }
 }
 
@@ -4289,7 +4897,8 @@ mod ip1_tests {
         // Build with sph for a valid workspace query, then force Spinor on the plan.
         let (basis, shells, op) = build_ip1_plan(0, Representation::Spheric);
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let q =
+            query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
         let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &q).unwrap();
         plan.representation = Representation::Spinor;
         plan.precision = cintx_core::PrecisionKind::F64;
@@ -4429,11 +5038,19 @@ mod ip2_tests {
     fn test_int2e_ip2_component_count() {
         let (basis, shells, op) = build_ip2_plan_lll(0, 0, 0, 0);
         let (staging, _stats) = run_ip2(&basis, shells, op, Representation::Spheric).unwrap();
-        assert_eq!(staging.len(), 3, "(s,s,s,s) int2e_ip2 should produce 3 components");
+        assert_eq!(
+            staging.len(),
+            3,
+            "(s,s,s,s) int2e_ip2 should produce 3 components"
+        );
 
         let (basis, shells, op) = build_ip2_plan_lll(0, 0, 1, 0);
         let (staging, _stats) = run_ip2(&basis, shells, op, Representation::Spheric).unwrap();
-        assert_eq!(staging.len(), 9, "(s,s,p,s) int2e_ip2 should produce 9 outputs");
+        assert_eq!(
+            staging.len(),
+            9,
+            "(s,s,p,s) int2e_ip2 should produce 9 outputs"
+        );
     }
 
     // Determinism: repeated evaluation is bit-identical on a NON-SQUARE quartet.
@@ -4446,9 +5063,16 @@ mod ip2_tests {
         let (out2, _) = run_ip2(&basis, shells, op, Representation::Spheric).unwrap();
         assert_eq!(out1.len(), out2.len());
         let any_nonzero = out1.iter().any(|v| v.abs() > 1e-14);
-        assert!(any_nonzero, "int2e_ip2 (p,s,p,s) output is all-zero (regression)");
+        assert!(
+            any_nonzero,
+            "int2e_ip2 (p,s,p,s) output is all-zero (regression)"
+        );
         for (a, b) in out1.iter().zip(out2.iter()) {
-            assert_eq!(a.to_bits(), b.to_bits(), "int2e_ip2 output not bit-identical");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "int2e_ip2 output not bit-identical"
+            );
         }
     }
 
@@ -4503,13 +5127,19 @@ mod ip2_tests {
         launch_two_electron_typed::<f64>(&backend, &plan, &spec, &mut ip1).unwrap();
 
         assert_eq!(ip2.len(), ip1.len());
-        assert!(ip2.iter().any(|v| v.abs() > 1e-14), "ip2 swap-check is all-zero");
+        assert!(
+            ip2.iter().any(|v| v.abs() > 1e-14),
+            "ip2 swap-check is all-zero"
+        );
         let round = |v: &f64| (v * 1e10).round() / 1e10;
         let mut a: Vec<f64> = ip2.iter().map(round).collect();
         let mut b: Vec<f64> = ip1.iter().map(round).collect();
         a.sort_by(|x, y| x.partial_cmp(y).unwrap());
         b.sort_by(|x, y| x.partial_cmp(y).unwrap());
-        assert_eq!(a, b, "int2e_ip2 vs electron-swapped int2e_ip1 value multiset differs");
+        assert_eq!(
+            a, b,
+            "int2e_ip2 vs electron-swapped int2e_ip1 value multiset differs"
+        );
     }
 
     // Spinor: int2e_ip2 with Representation::Spinor returns UnsupportedApi.
@@ -4517,7 +5147,8 @@ mod ip2_tests {
     fn test_int2e_ip2_spinor_unsupported() {
         let (basis, shells, op) = build_ip2_plan_lll(0, 0, 0, 0);
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let q =
+            query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
         let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &q).unwrap();
         plan.representation = Representation::Spinor;
         plan.precision = cintx_core::PrecisionKind::F64;

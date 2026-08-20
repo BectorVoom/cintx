@@ -245,8 +245,18 @@ fn collect_1e_matrix_once(api_id: RawApiId, atm: &[i32], bas: &[i32], env: &[f64
             let mut out = vec![0.0_f64; ni * nj];
             // SAFETY: atm/bas/env are well-formed by construction; shls in range.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
             for ii in 0..ni {
                 for jj in 0..nj {

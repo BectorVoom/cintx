@@ -11,10 +11,10 @@
 
 #[cfg(feature = "cpu")]
 mod rys_cpu_tests {
-    use cubecl::cpu::CpuRuntime;
-    use cubecl::prelude::*;
     use cintx_cubecl::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
     use cintx_cubecl::math::rys::{rys_root3_host, rys_root4_host, rys_root5_host};
+    use cubecl::cpu::CpuRuntime;
+    use cubecl::prelude::*;
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Host-side reference evaluators (pure Rust, not #[cube])
@@ -44,34 +44,105 @@ mod rys_cpu_tests {
         let f1;
         if x > 15.0 {
             let y = 1.0 / x;
-            f1 = (horner(y, &[1.9623264149430e-01, -4.9695241464490e-01, -6.0156581186481e-05])
-                * e + f64::sqrt(PIE4 / x) - e) * y * 0.5;
+            f1 = (horner(
+                y,
+                &[
+                    1.9623264149430e-01,
+                    -4.9695241464490e-01,
+                    -6.0156581186481e-05,
+                ],
+            ) * e
+                + f64::sqrt(PIE4 / x)
+                - e)
+                * y
+                * 0.5;
         } else if x > 10.0 {
             let y = 1.0 / x;
-            f1 = (horner(y, &[-1.8784686463512e-01, 2.2991849164985e-01, -4.9893752514047e-01, -2.1916512131607e-05])
-                * e + f64::sqrt(PIE4 / x) - e) * y * 0.5;
+            f1 = (horner(
+                y,
+                &[
+                    -1.8784686463512e-01,
+                    2.2991849164985e-01,
+                    -4.9893752514047e-01,
+                    -2.1916512131607e-05,
+                ],
+            ) * e
+                + f64::sqrt(PIE4 / x)
+                - e)
+                * y
+                * 0.5;
         } else if x > 5.0 {
             let y = 1.0 / x;
-            f1 = (horner(y, &[4.6897511375022e-01, -6.9955602298985e-01, 5.3689283271887e-01,
-                -3.2883030418398e-01, 2.4645596956002e-01, -4.9984072848436e-01, -3.1501078774085e-06])
-                * e + f64::sqrt(PIE4 / x) - e) * y * 0.5;
+            f1 = (horner(
+                y,
+                &[
+                    4.6897511375022e-01,
+                    -6.9955602298985e-01,
+                    5.3689283271887e-01,
+                    -3.2883030418398e-01,
+                    2.4645596956002e-01,
+                    -4.9984072848436e-01,
+                    -3.1501078774085e-06,
+                ],
+            ) * e
+                + f64::sqrt(PIE4 / x)
+                - e)
+                * y
+                * 0.5;
         } else if x > 3.0 {
             let y = x - 4.0;
-            f1 = horner(y, &[-2.62453564772299e-11, 3.24031041623823e-10, -3.614965656163e-09,
-                3.760256799971e-08, -3.553558319675e-07, 3.022556449731e-06, -2.290098979647e-05,
-                1.526537461148e-04, -8.81947375894379e-04, 4.33207949514611e-03,
-                -1.75257821619926e-02, 5.28406320615584e-02]);
+            f1 = horner(
+                y,
+                &[
+                    -2.62453564772299e-11,
+                    3.24031041623823e-10,
+                    -3.614965656163e-09,
+                    3.760256799971e-08,
+                    -3.553558319675e-07,
+                    3.022556449731e-06,
+                    -2.290098979647e-05,
+                    1.526537461148e-04,
+                    -8.81947375894379e-04,
+                    4.33207949514611e-03,
+                    -1.75257821619926e-02,
+                    5.28406320615584e-02,
+                ],
+            );
         } else if x > 1.0 {
             let y = x - 2.0;
-            f1 = horner(y, &[-1.61702782425558e-10, 1.96215250865776e-09, -2.14234468198419e-08,
-                2.17216556336318e-07, -1.98850171329371e-06, 1.62429321438911e-05,
-                -1.16740298039895e-04, 7.24888732052332e-04, -3.79490003707156e-03,
-                1.61723488664661e-02, -5.29428148329736e-02, 1.15702180856167e-01]);
+            f1 = horner(
+                y,
+                &[
+                    -1.61702782425558e-10,
+                    1.96215250865776e-09,
+                    -2.14234468198419e-08,
+                    2.17216556336318e-07,
+                    -1.98850171329371e-06,
+                    1.62429321438911e-05,
+                    -1.16740298039895e-04,
+                    7.24888732052332e-04,
+                    -3.79490003707156e-03,
+                    1.61723488664661e-02,
+                    -5.29428148329736e-02,
+                    1.15702180856167e-01,
+                ],
+            );
         } else {
-            f1 = horner(x, &[-8.36313918003957e-08, 1.21222603512827e-06, -1.15662609053481e-05,
-                9.25197374512647e-05, -6.40994113129432e-04, 3.78787044215009e-03,
-                -1.85185172458485e-02, 7.14285713298222e-02, -1.99999999997023e-01,
-                3.33333333333318e-01]);
+            f1 = horner(
+                x,
+                &[
+                    -8.36313918003957e-08,
+                    1.21222603512827e-06,
+                    -1.15662609053481e-05,
+                    9.25197374512647e-05,
+                    -6.40994113129432e-04,
+                    3.78787044215009e-03,
+                    -1.85185172458485e-02,
+                    7.14285713298222e-02,
+                    -1.99999999997023e-01,
+                    3.33333333333318e-01,
+                ],
+            );
         }
         let ww1 = 2.0 * x * f1 + e;
         (f1 / (ww1 - f1), ww1)
@@ -97,39 +168,116 @@ mod rys_cpu_tests {
             return ([rt1, rt2], [ww1, ww2]);
         }
 
-        let (y, is_mid) = if x < 3.0 { (x - 2.0, true) } else { (x - 4.0, false) };
-        let f1 = if is_mid {
-            horner(y, &[-1.61702782425558e-10, 1.96215250865776e-09, -2.14234468198419e-08,
-                2.17216556336318e-07, -1.98850171329371e-06, 1.62429321438911e-05,
-                -1.16740298039895e-04, 7.24888732052332e-04, -3.79490003707156e-03,
-                1.61723488664661e-02, -5.29428148329736e-02, 1.15702180856167e-01])
+        let (y, is_mid) = if x < 3.0 {
+            (x - 2.0, true)
         } else {
-            horner(y, &[-2.62453564772299e-11, 3.24031041623823e-10, -3.614965656163e-09,
-                3.760256799971e-08, -3.553558319675e-07, 3.022556449731e-06, -2.290098979647e-05,
-                1.526537461148e-04, -8.81947375894379e-04, 4.33207949514611e-03,
-                -1.75257821619926e-02, 5.28406320615584e-02])
+            (x - 4.0, false)
+        };
+        let f1 = if is_mid {
+            horner(
+                y,
+                &[
+                    -1.61702782425558e-10,
+                    1.96215250865776e-09,
+                    -2.14234468198419e-08,
+                    2.17216556336318e-07,
+                    -1.98850171329371e-06,
+                    1.62429321438911e-05,
+                    -1.16740298039895e-04,
+                    7.24888732052332e-04,
+                    -3.79490003707156e-03,
+                    1.61723488664661e-02,
+                    -5.29428148329736e-02,
+                    1.15702180856167e-01,
+                ],
+            )
+        } else {
+            horner(
+                y,
+                &[
+                    -2.62453564772299e-11,
+                    3.24031041623823e-10,
+                    -3.614965656163e-09,
+                    3.760256799971e-08,
+                    -3.553558319675e-07,
+                    3.022556449731e-06,
+                    -2.290098979647e-05,
+                    1.526537461148e-04,
+                    -8.81947375894379e-04,
+                    4.33207949514611e-03,
+                    -1.75257821619926e-02,
+                    5.28406320615584e-02,
+                ],
+            )
         };
         let e = (-x).exp();
         let ww1 = (x + x) * f1 + e;
         let (rt1, rt2) = if is_mid {
-            let rt1 = horner(y, &[-6.36859636616415e-12, 8.47417064776270e-11, -5.152207846962e-10,
-                -3.846389873308e-10, 8.472253388380e-08, -1.85306035634293e-06,
-                2.47191693238413e-05, -2.49018321709815e-04, 2.19173220020161e-03,
-                -1.63329339286794e-02, 8.68085688285261e-02]);
-            let rt2 = horner(y, &[1.45331350488343e-10, 2.07111465297976e-09, -1.878920917404e-08,
-                -1.725838516261e-07, 2.247389642339e-06, 9.76783813082564e-06,
-                -1.93160765581969e-04, -1.58064140671893e-03, 4.85928174507904e-02,
-                -4.30761584997596e-01, 1.80400974537950e+00]);
+            let rt1 = horner(
+                y,
+                &[
+                    -6.36859636616415e-12,
+                    8.47417064776270e-11,
+                    -5.152207846962e-10,
+                    -3.846389873308e-10,
+                    8.472253388380e-08,
+                    -1.85306035634293e-06,
+                    2.47191693238413e-05,
+                    -2.49018321709815e-04,
+                    2.19173220020161e-03,
+                    -1.63329339286794e-02,
+                    8.68085688285261e-02,
+                ],
+            );
+            let rt2 = horner(
+                y,
+                &[
+                    1.45331350488343e-10,
+                    2.07111465297976e-09,
+                    -1.878920917404e-08,
+                    -1.725838516261e-07,
+                    2.247389642339e-06,
+                    9.76783813082564e-06,
+                    -1.93160765581969e-04,
+                    -1.58064140671893e-03,
+                    4.85928174507904e-02,
+                    -4.30761584997596e-01,
+                    1.80400974537950e+00,
+                ],
+            );
             (rt1, rt2)
         } else {
-            let rt1 = horner(y, &[-4.11560117487296e-12, 7.10910223886747e-11, -1.73508862390291e-09,
-                5.93066856324744e-08, -9.76085576741771e-07, 1.08484384385679e-05,
-                -1.12608004981982e-04, 1.16210907653515e-03, -9.89572595720351e-03,
-                6.12589701086408e-02]);
-            let rt2 = horner(y, &[-1.80555625241001e-10, 5.44072475994123e-10, 1.603498045240e-08,
-                -1.497986283037e-07, -7.017002532106e-07, 1.85882653064034e-05,
-                -2.04685420150802e-05, -2.49327728643089e-03, 3.56550690684281e-02,
-                -2.60417417692375e-01, 1.12155283108289e+00]);
+            let rt1 = horner(
+                y,
+                &[
+                    -4.11560117487296e-12,
+                    7.10910223886747e-11,
+                    -1.73508862390291e-09,
+                    5.93066856324744e-08,
+                    -9.76085576741771e-07,
+                    1.08484384385679e-05,
+                    -1.12608004981982e-04,
+                    1.16210907653515e-03,
+                    -9.89572595720351e-03,
+                    6.12589701086408e-02,
+                ],
+            );
+            let rt2 = horner(
+                y,
+                &[
+                    -1.80555625241001e-10,
+                    5.44072475994123e-10,
+                    1.603498045240e-08,
+                    -1.497986283037e-07,
+                    -7.017002532106e-07,
+                    1.85882653064034e-05,
+                    -2.04685420150802e-05,
+                    -2.49327728643089e-03,
+                    3.56550690684281e-02,
+                    -2.60417417692375e-01,
+                    1.12155283108289e+00,
+                ],
+            );
             (rt1, rt2)
         };
         let ww2 = ((f1 - ww1) * rt1 + f1) * (1.0 + rt2) / (rt2 - rt1);
@@ -148,7 +296,10 @@ mod rys_cpu_tests {
         let ww3 = w33 * ww1_b;
         let ww2 = w23 * ww1_b;
         let ww1 = ww1_b - ww2 - ww3;
-        ([r13 / (x - r13), r23 / (x - r23), r33 / (x - r33)], [ww1, ww2, ww3])
+        (
+            [r13 / (x - r13), r23 / (x - r23), r33 / (x - r33)],
+            [ww1, ww2, ww3],
+        )
     }
 
     /// Host-side rys_root5 asymptotic reference (x >= 1).
@@ -170,7 +321,13 @@ mod rys_cpu_tests {
         let ww2 = w25 * ww1_b;
         let ww1 = ww1_b - ww2 - ww3 - ww4 - ww5;
         (
-            [r15 / (x - r15), r25 / (x - r25), r35 / (x - r35), r45 / (x - r45), r55 / (x - r55)],
+            [
+                r15 / (x - r15),
+                r25 / (x - r25),
+                r35 / (x - r35),
+                r45 / (x - r45),
+                r55 / (x - r55),
+            ],
             [ww1, ww2, ww3, ww4, ww5],
         )
     }
@@ -240,35 +397,45 @@ mod rys_cpu_tests {
         //   `read_one_unchecked` which returns `Bytes` directly.
         match nroots {
             1 => rys_root1_kernel::launch::<CpuRuntime>(
-                &client, cube_count, cube_dim,
+                &client,
+                cube_count,
+                cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
                 PIE4,
             ),
             2 => rys_root2_kernel::launch::<CpuRuntime>(
-                &client, cube_count, cube_dim,
+                &client,
+                cube_count,
+                cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
                 PIE4,
             ),
             3 => rys_root3_kernel::launch::<CpuRuntime>(
-                &client, cube_count, cube_dim,
+                &client,
+                cube_count,
+                cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
                 PIE4,
             ),
             4 => rys_root4_kernel::launch::<CpuRuntime>(
-                &client, cube_count, cube_dim,
+                &client,
+                cube_count,
+                cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
                 PIE4,
             ),
             5 => rys_root5_kernel::launch::<CpuRuntime>(
-                &client, cube_count, cube_dim,
+                &client,
+                cube_count,
+                cube_dim,
                 unsafe { ArrayArg::from_raw_parts(u_handle.clone(), n) },
                 unsafe { ArrayArg::from_raw_parts(w_handle.clone(), n) },
                 x,
@@ -317,10 +484,16 @@ mod rys_cpu_tests {
         for &x in &[15.0_f64, 30.0, 50.0] {
             let (roots, weights) = eval_rys_cpu(1, x);
             let (ref_rt, ref_ww) = ref_rys_root1(x);
-            assert!((roots[0] - ref_rt).abs() < atol,
-                "rys_nroots1_large_x: x={x}: root diff={}", (roots[0] - ref_rt).abs());
-            assert!((weights[0] - ref_ww).abs() < atol,
-                "rys_nroots1_large_x: x={x}: weight diff={}", (weights[0] - ref_ww).abs());
+            assert!(
+                (roots[0] - ref_rt).abs() < atol,
+                "rys_nroots1_large_x: x={x}: root diff={}",
+                (roots[0] - ref_rt).abs()
+            );
+            assert!(
+                (weights[0] - ref_ww).abs() < atol,
+                "rys_nroots1_large_x: x={x}: weight diff={}",
+                (weights[0] - ref_ww).abs()
+            );
         }
     }
 
@@ -333,10 +506,16 @@ mod rys_cpu_tests {
             let (roots, weights) = eval_rys_cpu(2, x);
             let (ref_roots, ref_weights) = ref_rys_root2(x);
             for i in 0..2 {
-                assert!((roots[i] - ref_roots[i]).abs() < atol,
-                    "rys_nroots2_range: x={x}: root[{i}] diff={}", (roots[i] - ref_roots[i]).abs());
-                assert!((weights[i] - ref_weights[i]).abs() < atol,
-                    "rys_nroots2_range: x={x}: weight[{i}] diff={}", (weights[i] - ref_weights[i]).abs());
+                assert!(
+                    (roots[i] - ref_roots[i]).abs() < atol,
+                    "rys_nroots2_range: x={x}: root[{i}] diff={}",
+                    (roots[i] - ref_roots[i]).abs()
+                );
+                assert!(
+                    (weights[i] - ref_weights[i]).abs() < atol,
+                    "rys_nroots2_range: x={x}: weight[{i}] diff={}",
+                    (weights[i] - ref_weights[i]).abs()
+                );
             }
         }
     }
@@ -353,10 +532,16 @@ mod rys_cpu_tests {
             let (roots, weights) = eval_rys_cpu(3, x);
             let (ref_roots, ref_weights) = ref_rys_root3_asym(x);
             for i in 0..3 {
-                assert!((roots[i] - ref_roots[i]).abs() < atol,
-                    "rys_nroots3_range: x={x}: root[{i}] diff={}", (roots[i] - ref_roots[i]).abs());
-                assert!((weights[i] - ref_weights[i]).abs() < atol,
-                    "rys_nroots3_range: x={x}: weight[{i}] diff={}", (weights[i] - ref_weights[i]).abs());
+                assert!(
+                    (roots[i] - ref_roots[i]).abs() < atol,
+                    "rys_nroots3_range: x={x}: root[{i}] diff={}",
+                    (roots[i] - ref_roots[i]).abs()
+                );
+                assert!(
+                    (weights[i] - ref_weights[i]).abs() < atol,
+                    "rys_nroots3_range: x={x}: weight[{i}] diff={}",
+                    (weights[i] - ref_weights[i]).abs()
+                );
             }
         }
     }
@@ -373,10 +558,16 @@ mod rys_cpu_tests {
             let (roots, weights) = eval_rys_cpu(5, x);
             let (ref_roots, ref_weights) = ref_rys_root5_asym(x);
             for i in 0..5 {
-                assert!((roots[i] - ref_roots[i]).abs() < atol,
-                    "rys_nroots5_range: x={x}: root[{i}] diff={}", (roots[i] - ref_roots[i]).abs());
-                assert!((weights[i] - ref_weights[i]).abs() < atol,
-                    "rys_nroots5_range: x={x}: weight[{i}] diff={}", (weights[i] - ref_weights[i]).abs());
+                assert!(
+                    (roots[i] - ref_roots[i]).abs() < atol,
+                    "rys_nroots5_range: x={x}: root[{i}] diff={}",
+                    (roots[i] - ref_roots[i]).abs()
+                );
+                assert!(
+                    (weights[i] - ref_weights[i]).abs() < atol,
+                    "rys_nroots5_range: x={x}: weight[{i}] diff={}",
+                    (weights[i] - ref_weights[i]).abs()
+                );
             }
         }
     }
@@ -399,9 +590,11 @@ mod rys_cpu_tests {
             for &nroots in &[1u32, 2, 3, 4, 5] {
                 let (_, weights) = eval_rys_cpu(nroots, x);
                 let wsum: f64 = weights.iter().sum();
-                assert!((wsum - f0).abs() < atol,
+                assert!(
+                    (wsum - f0).abs() < atol,
                     "rys_weight_sum_identity: nroots={nroots}, x={x}: sum(w)={wsum} vs F_0={f0}, diff={}",
-                    (wsum - f0).abs());
+                    (wsum - f0).abs()
+                );
             }
         }
     }
@@ -414,12 +607,16 @@ mod rys_cpu_tests {
         for &nroots in &[1u32, 2, 3, 4, 5] {
             let (roots, weights) = eval_rys_cpu(nroots, x);
             for (i, &r) in roots.iter().enumerate() {
-                assert!(r.is_finite(),
-                    "rys_small_x_stability: nroots={nroots}, x=1e-10: root[{i}]={r} not finite");
+                assert!(
+                    r.is_finite(),
+                    "rys_small_x_stability: nroots={nroots}, x=1e-10: root[{i}]={r} not finite"
+                );
             }
             for (i, &w) in weights.iter().enumerate() {
-                assert!(w.is_finite(),
-                    "rys_small_x_stability: nroots={nroots}, x=1e-10: weight[{i}]={w} not finite");
+                assert!(
+                    w.is_finite(),
+                    "rys_small_x_stability: nroots={nroots}, x=1e-10: weight[{i}]={w} not finite"
+                );
             }
         }
     }
@@ -432,12 +629,16 @@ mod rys_cpu_tests {
         for &nroots in &[1u32, 2, 3, 4, 5] {
             let (roots, weights) = eval_rys_cpu(nroots, x);
             for (i, &r) in roots.iter().enumerate() {
-                assert!(r.is_finite(),
-                    "rys_large_x_stability: nroots={nroots}, x=45: root[{i}]={r} not finite");
+                assert!(
+                    r.is_finite(),
+                    "rys_large_x_stability: nroots={nroots}, x=45: root[{i}]={r} not finite"
+                );
             }
             for (i, &w) in weights.iter().enumerate() {
-                assert!(w.is_finite(),
-                    "rys_large_x_stability: nroots={nroots}, x=45: weight[{i}]={w} not finite");
+                assert!(
+                    w.is_finite(),
+                    "rys_large_x_stability: nroots={nroots}, x=45: weight[{i}]={w} not finite"
+                );
             }
         }
     }
@@ -457,28 +658,51 @@ mod rys_cpu_tests {
             let (cr, cw) = eval_rys_cpu(3, x);
             let (hr, hw) = rys_root3_host::<f64>(x);
             for i in 0..3 {
-                assert!((cr[i] - hr[i]).abs() <= atol,
-                    "root3 #[cube] vs host x={x} root[{i}] cube={} host={}", cr[i], hr[i]);
-                assert!((cw[i] - hw[i]).abs() <= atol,
-                    "root3 #[cube] vs host x={x} weight[{i}] cube={} host={}", cw[i], hw[i]);
+                assert!(
+                    (cr[i] - hr[i]).abs() <= atol,
+                    "root3 #[cube] vs host x={x} root[{i}] cube={} host={}",
+                    cr[i],
+                    hr[i]
+                );
+                assert!(
+                    (cw[i] - hw[i]).abs() <= atol,
+                    "root3 #[cube] vs host x={x} weight[{i}] cube={} host={}",
+                    cw[i],
+                    hw[i]
+                );
             }
             let (cr, cw) = eval_rys_cpu(4, x);
             let (hr, hw) = rys_root4_host::<f64>(x);
             for i in 0..4 {
-                assert!((cr[i] - hr[i]).abs() <= atol,
-                    "root4 #[cube] vs host x={x} root[{i}] cube={} host={}", cr[i], hr[i]);
-                assert!((cw[i] - hw[i]).abs() <= atol,
-                    "root4 #[cube] vs host x={x} weight[{i}] cube={} host={}", cw[i], hw[i]);
+                assert!(
+                    (cr[i] - hr[i]).abs() <= atol,
+                    "root4 #[cube] vs host x={x} root[{i}] cube={} host={}",
+                    cr[i],
+                    hr[i]
+                );
+                assert!(
+                    (cw[i] - hw[i]).abs() <= atol,
+                    "root4 #[cube] vs host x={x} weight[{i}] cube={} host={}",
+                    cw[i],
+                    hw[i]
+                );
             }
             let (cr, cw) = eval_rys_cpu(5, x);
             let (hr, hw) = rys_root5_host::<f64>(x);
             for i in 0..5 {
-                assert!((cr[i] - hr[i]).abs() <= atol,
-                    "root5 #[cube] vs host x={x} root[{i}] cube={} host={}", cr[i], hr[i]);
-                assert!((cw[i] - hw[i]).abs() <= atol,
-                    "root5 #[cube] vs host x={x} weight[{i}] cube={} host={}", cw[i], hw[i]);
+                assert!(
+                    (cr[i] - hr[i]).abs() <= atol,
+                    "root5 #[cube] vs host x={x} root[{i}] cube={} host={}",
+                    cr[i],
+                    hr[i]
+                );
+                assert!(
+                    (cw[i] - hw[i]).abs() <= atol,
+                    "root5 #[cube] vs host x={x} weight[{i}] cube={} host={}",
+                    cw[i],
+                    hw[i]
+                );
             }
         }
     }
-
 }

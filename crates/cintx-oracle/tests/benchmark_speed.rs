@@ -205,11 +205,21 @@ fn test_benchmark_speed_all_families() {
     let atoms = get_atoms(&atm, &env);
     let nbas = 5;
 
-    println!("\n========================================================================================================================");
-    println!("                                   3-WAY PERFORMANCE BENCHMARK (RELEASE MODE)                                           ");
-    println!("========================================================================================================================");
-    println!("| Integral Family  | SIMD (wide f64x4)           | CubeCL CPU Backend          | libcint (C Reference)       | vs libcint| vs CubeCL |");
-    println!("|------------------|-----------------------------|-----------------------------|-----------------------------|-----------|-----------|");
+    println!(
+        "\n========================================================================================================================"
+    );
+    println!(
+        "                                   3-WAY PERFORMANCE BENCHMARK (RELEASE MODE)                                           "
+    );
+    println!(
+        "========================================================================================================================"
+    );
+    println!(
+        "| Integral Family  | SIMD (wide f64x4)           | CubeCL CPU Backend          | libcint (C Reference)       | vs libcint| vs CubeCL |"
+    );
+    println!(
+        "|------------------|-----------------------------|-----------------------------|-----------------------------|-----------|-----------|"
+    );
 
     // 1. Overlap (int1e_ovlp_cart)
     {
@@ -273,7 +283,10 @@ fn test_benchmark_speed_all_families() {
                     unsafe {
                         eval_raw(
                             RawApiId::INT1E_OVLP_CART,
-                            Some(&mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF]) * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])]),
+                            Some(
+                                &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF])
+                                    * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
+                            ),
                             None,
                             &shls,
                             &atm,
@@ -297,7 +310,8 @@ fn test_benchmark_speed_all_families() {
                 for sj in 0..nbas {
                     let shls = [si as i32, sj as i32];
                     vendor_ffi::vendor_int1e_ovlp_cart(
-                        &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF]) * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
+                        &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF])
+                            * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
                         &shls,
                         &atm,
                         3,
@@ -359,7 +373,10 @@ fn test_benchmark_speed_all_families() {
                     unsafe {
                         eval_raw(
                             RawApiId::INT1E_KIN_CART,
-                            Some(&mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF]) * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])]),
+                            Some(
+                                &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF])
+                                    * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
+                            ),
                             None,
                             &shls,
                             &atm,
@@ -382,7 +399,8 @@ fn test_benchmark_speed_all_families() {
                 for sj in 0..nbas {
                     let shls = [si as i32, sj as i32];
                     vendor_ffi::vendor_int1e_kin_cart(
-                        &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF]) * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
+                        &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF])
+                            * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
                         &shls,
                         &atm,
                         3,
@@ -444,7 +462,10 @@ fn test_benchmark_speed_all_families() {
                     unsafe {
                         eval_raw(
                             RawApiId::INT1E_NUC_CART,
-                            Some(&mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF]) * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])]),
+                            Some(
+                                &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF])
+                                    * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
+                            ),
                             None,
                             &shls,
                             &atm,
@@ -467,7 +488,8 @@ fn test_benchmark_speed_all_families() {
                 for sj in 0..nbas {
                     let shls = [si as i32, sj as i32];
                     vendor_ffi::vendor_int1e_nuc_cart(
-                        &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF]) * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
+                        &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF])
+                            * ncart_l(bas[sj * BAS_SLOTS + ANG_OF])],
                         &shls,
                         &atm,
                         3,
@@ -528,7 +550,10 @@ fn test_benchmark_speed_all_families() {
                     unsafe {
                         eval_raw(
                             RawApiId::INT2C2E_CART,
-                            Some(&mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF]) * ncart_l(bas[sk * BAS_SLOTS + ANG_OF])]),
+                            Some(
+                                &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF])
+                                    * ncart_l(bas[sk * BAS_SLOTS + ANG_OF])],
+                            ),
                             None,
                             &shls,
                             &atm,
@@ -551,7 +576,8 @@ fn test_benchmark_speed_all_families() {
                 for sk in 0..nbas {
                     let shls = [si as i32, sk as i32];
                     vendor_ffi::vendor_int2c2e_cart(
-                        &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF]) * ncart_l(bas[sk * BAS_SLOTS + ANG_OF])],
+                        &mut out[..ncart_l(bas[si * BAS_SLOTS + ANG_OF])
+                            * ncart_l(bas[sk * BAS_SLOTS + ANG_OF])],
                         &shls,
                         &atm,
                         3,
@@ -825,7 +851,12 @@ fn test_benchmark_speed_all_families() {
         let t0 = Instant::now();
         for _ in 0..repeats {
             for &shls in &quartets {
-                let shls_i32 = [shls[0] as i32, shls[1] as i32, shls[2] as i32, shls[3] as i32];
+                let shls_i32 = [
+                    shls[0] as i32,
+                    shls[1] as i32,
+                    shls[2] as i32,
+                    shls[3] as i32,
+                ];
                 let len = ncart_l(bas[shls[0] * BAS_SLOTS + ANG_OF])
                     * ncart_l(bas[shls[1] * BAS_SLOTS + ANG_OF])
                     * ncart_l(bas[shls[2] * BAS_SLOTS + ANG_OF])
@@ -852,20 +883,17 @@ fn test_benchmark_speed_all_families() {
         let t0 = Instant::now();
         for _ in 0..repeats {
             for &shls in &quartets {
-                let shls_i32 = [shls[0] as i32, shls[1] as i32, shls[2] as i32, shls[3] as i32];
+                let shls_i32 = [
+                    shls[0] as i32,
+                    shls[1] as i32,
+                    shls[2] as i32,
+                    shls[3] as i32,
+                ];
                 let len = ncart_l(bas[shls[0] * BAS_SLOTS + ANG_OF])
                     * ncart_l(bas[shls[1] * BAS_SLOTS + ANG_OF])
                     * ncart_l(bas[shls[2] * BAS_SLOTS + ANG_OF])
                     * ncart_l(bas[shls[3] * BAS_SLOTS + ANG_OF]);
-                vendor_ffi::vendor_int2e_cart(
-                    &mut out[..len],
-                    &shls_i32,
-                    &atm,
-                    3,
-                    &bas,
-                    5,
-                    &env,
-                );
+                vendor_ffi::vendor_int2e_cart(&mut out[..len], &shls_i32, &atm, 3, &bas, 5, &env);
                 black_box(&out);
             }
         }
@@ -881,5 +909,7 @@ fn test_benchmark_speed_all_families() {
         res.print_summary();
     }
 
-    println!("========================================================================================================================\n");
+    println!(
+        "========================================================================================================================\n"
+    );
 }

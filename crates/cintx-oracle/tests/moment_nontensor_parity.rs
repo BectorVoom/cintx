@@ -83,14 +83,22 @@ macro_rules! moment_common_orig_test_cross {
 }
 
 moment_common_orig_test_cross!(
-    test_int1e_p4_parity, 1,
-    INT1E_P4_SPH, INT1E_P4_CART,
-    vendor_int1e_p4_sph, vendor_int1e_p4_cart, "int1e_p4"
+    test_int1e_p4_parity,
+    1,
+    INT1E_P4_SPH,
+    INT1E_P4_CART,
+    vendor_int1e_p4_sph,
+    vendor_int1e_p4_cart,
+    "int1e_p4"
 );
 moment_common_orig_test!(
-    test_int1e_irp_parity, 9,
-    INT1E_IRP_SPH, INT1E_IRP_CART,
-    vendor_int1e_irp_sph, vendor_int1e_irp_cart, "int1e_irp"
+    test_int1e_irp_parity,
+    9,
+    INT1E_IRP_SPH,
+    INT1E_IRP_CART,
+    vendor_int1e_irp_sph,
+    vendor_int1e_irp_cart,
+    "int1e_irp"
 );
 
 // ── rinv / drinv: NON-ZERO rinv center (reads PTR_RINV_ORIG, D-04/OQ-1) ──────────
@@ -125,12 +133,20 @@ macro_rules! moment_rinv_test {
 }
 
 moment_rinv_test!(
-    test_int1e_rinv_parity, 1,
-    INT1E_RINV_SPH, INT1E_RINV_CART,
-    vendor_int1e_rinv_sph, vendor_int1e_rinv_cart, "int1e_rinv"
+    test_int1e_rinv_parity,
+    1,
+    INT1E_RINV_SPH,
+    INT1E_RINV_CART,
+    vendor_int1e_rinv_sph,
+    vendor_int1e_rinv_cart,
+    "int1e_rinv"
 );
 moment_rinv_test!(
-    test_int1e_drinv_parity, 3,
-    INT1E_DRINV_SPH, INT1E_DRINV_CART,
-    vendor_int1e_drinv_sph, vendor_int1e_drinv_cart, "int1e_drinv"
+    test_int1e_drinv_parity,
+    3,
+    INT1E_DRINV_SPH,
+    INT1E_DRINV_CART,
+    vendor_int1e_drinv_sph,
+    vendor_int1e_drinv_cart,
+    "int1e_drinv"
 );

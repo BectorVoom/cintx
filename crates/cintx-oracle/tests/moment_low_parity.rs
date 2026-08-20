@@ -73,43 +73,75 @@ macro_rules! moment_origj_parity_test {
 }
 
 moment_parity_test!(
-    test_int1e_rr_parity, 9,
-    INT1E_RR_SPH, INT1E_RR_CART,
-    vendor_int1e_rr_sph, vendor_int1e_rr_cart, "int1e_rr"
+    test_int1e_rr_parity,
+    9,
+    INT1E_RR_SPH,
+    INT1E_RR_CART,
+    vendor_int1e_rr_sph,
+    vendor_int1e_rr_cart,
+    "int1e_rr"
 );
 moment_parity_test!(
-    test_int1e_r2_parity, 1,
-    INT1E_R2_SPH, INT1E_R2_CART,
-    vendor_int1e_r2_sph, vendor_int1e_r2_cart, "int1e_r2"
+    test_int1e_r2_parity,
+    1,
+    INT1E_R2_SPH,
+    INT1E_R2_CART,
+    vendor_int1e_r2_sph,
+    vendor_int1e_r2_cart,
+    "int1e_r2"
 );
 moment_parity_test!(
-    test_int1e_z_parity, 1,
-    INT1E_Z_SPH, INT1E_Z_CART,
-    vendor_int1e_z_sph, vendor_int1e_z_cart, "int1e_z"
+    test_int1e_z_parity,
+    1,
+    INT1E_Z_SPH,
+    INT1E_Z_CART,
+    vendor_int1e_z_sph,
+    vendor_int1e_z_cart,
+    "int1e_z"
 );
 moment_parity_test!(
-    test_int1e_zz_parity, 1,
-    INT1E_ZZ_SPH, INT1E_ZZ_CART,
-    vendor_int1e_zz_sph, vendor_int1e_zz_cart, "int1e_zz"
+    test_int1e_zz_parity,
+    1,
+    INT1E_ZZ_SPH,
+    INT1E_ZZ_CART,
+    vendor_int1e_zz_sph,
+    vendor_int1e_zz_cart,
+    "int1e_zz"
 );
 
 moment_origj_parity_test!(
-    test_int1e_rr_origj_parity, 9,
-    INT1E_RR_ORIGJ_SPH, INT1E_RR_ORIGJ_CART,
-    vendor_int1e_rr_origj_sph, vendor_int1e_rr_origj_cart, "int1e_rr_origj"
+    test_int1e_rr_origj_parity,
+    9,
+    INT1E_RR_ORIGJ_SPH,
+    INT1E_RR_ORIGJ_CART,
+    vendor_int1e_rr_origj_sph,
+    vendor_int1e_rr_origj_cart,
+    "int1e_rr_origj"
 );
 moment_origj_parity_test!(
-    test_int1e_r2_origj_parity, 1,
-    INT1E_R2_ORIGJ_SPH, INT1E_R2_ORIGJ_CART,
-    vendor_int1e_r2_origj_sph, vendor_int1e_r2_origj_cart, "int1e_r2_origj"
+    test_int1e_r2_origj_parity,
+    1,
+    INT1E_R2_ORIGJ_SPH,
+    INT1E_R2_ORIGJ_CART,
+    vendor_int1e_r2_origj_sph,
+    vendor_int1e_r2_origj_cart,
+    "int1e_r2_origj"
 );
 moment_origj_parity_test!(
-    test_int1e_z_origj_parity, 1,
-    INT1E_Z_ORIGJ_SPH, INT1E_Z_ORIGJ_CART,
-    vendor_int1e_z_origj_sph, vendor_int1e_z_origj_cart, "int1e_z_origj"
+    test_int1e_z_origj_parity,
+    1,
+    INT1E_Z_ORIGJ_SPH,
+    INT1E_Z_ORIGJ_CART,
+    vendor_int1e_z_origj_sph,
+    vendor_int1e_z_origj_cart,
+    "int1e_z_origj"
 );
 moment_origj_parity_test!(
-    test_int1e_zz_origj_parity, 1,
-    INT1E_ZZ_ORIGJ_SPH, INT1E_ZZ_ORIGJ_CART,
-    vendor_int1e_zz_origj_sph, vendor_int1e_zz_origj_cart, "int1e_zz_origj"
+    test_int1e_zz_origj_parity,
+    1,
+    INT1E_ZZ_ORIGJ_SPH,
+    INT1E_ZZ_ORIGJ_CART,
+    vendor_int1e_zz_origj_sph,
+    vendor_int1e_zz_origj_cart,
+    "int1e_zz_origj"
 );

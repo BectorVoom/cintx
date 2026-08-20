@@ -130,15 +130,31 @@ fn assert_any_nonzero(matrix: &[f64], label: &str) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[allow(dead_code)]
-fn collect_cintx_2c(api_id: RawApiId, ncomp: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+fn collect_cintx_2c(
+    api_id: RawApiId,
+    ncomp: usize,
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+) -> Vec<f64> {
     let ni = shell_nsp_full(bas, SI);
     let nj = shell_nsp_full(bas, SJ);
     let shls = [SI as i32, SJ as i32];
     let mut out = vec![0.0_f64; ncomp * ni * nj * 2];
     // SAFETY: atm/bas/env are well-formed by construction; shls are valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for {api_id:?} ({SI},{SJ}): {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for {api_id:?} ({SI},{SJ}): {e:?}"));
     }
     out
 }
@@ -148,7 +164,13 @@ fn collect_cintx_2c(api_id: RawApiId, ncomp: usize, atm: &[i32], bas: &[i32], en
 /// CORRECTION NOTICE (libcint CINT3c2e_spinor_drv is_ssc=0, cint3c2e.c:631-636).
 /// Only bra i and ket j are spinor-sized (4l+2).
 #[allow(dead_code)]
-fn collect_cintx_3c(api_id: RawApiId, ncomp: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+fn collect_cintx_3c(
+    api_id: RawApiId,
+    ncomp: usize,
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+) -> Vec<f64> {
     let ni = shell_nsp_full(bas, SI);
     let nj = shell_nsp_full(bas, SJ);
     let nk = shell_nsph_full(bas, SK);
@@ -156,8 +178,18 @@ fn collect_cintx_3c(api_id: RawApiId, ncomp: usize, atm: &[i32], bas: &[i32], en
     let mut out = vec![0.0_f64; ncomp * ni * nj * nk * 2];
     // SAFETY: atm/bas/env are well-formed by construction; shls are valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for {api_id:?} ({SI},{SJ},{SK}): {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for {api_id:?} ({SI},{SJ},{SK}): {e:?}"));
     }
     out
 }
@@ -167,7 +199,13 @@ fn collect_cintx_3c(api_id: RawApiId, ncomp: usize, atm: &[i32], bas: &[i32], en
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(has_vendor_libcint)]
-fn collect_vendor_2c<F>(vendor_fn: F, ncomp: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64>
+fn collect_vendor_2c<F>(
+    vendor_fn: F,
+    ncomp: usize,
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+) -> Vec<f64>
 where
     F: Fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32,
 {
@@ -183,7 +221,13 @@ where
 }
 
 #[cfg(has_vendor_libcint)]
-fn collect_vendor_3c<F>(vendor_fn: F, ncomp: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64>
+fn collect_vendor_3c<F>(
+    vendor_fn: F,
+    ncomp: usize,
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+) -> Vec<f64>
 where
     F: Fn(&mut [f64], &[i32; 3], &[i32], i32, &[i32], i32, &[f64]) -> i32,
 {
@@ -235,7 +279,13 @@ fn test_int1e_ipovlpip_spinor_adversarial_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_adversarial_spinor_fixture();
 
-    let vendor = collect_vendor_2c(vendor_ffi::vendor_int1e_ipovlpip_spinor, 9, &atm, &bas, &env);
+    let vendor = collect_vendor_2c(
+        vendor_ffi::vendor_int1e_ipovlpip_spinor,
+        9,
+        &atm,
+        &bas,
+        &env,
+    );
     let cintx = collect_cintx_2c(RawApiId::INT1E_IPOVLPIP_SPINOR, 9, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipovlpip_spinor cintx");
@@ -256,7 +306,13 @@ fn test_int1e_ipipipiprinv_spinor_adversarial_parity() {
     // center path is exercised, not a zero-origin shortcut (Phase 25-03 landmine).
     let (atm, bas, env) = build_adversarial_spinor_fixture();
 
-    let vendor = collect_vendor_2c(vendor_ffi::vendor_int1e_ipipipiprinv_spinor, 81, &atm, &bas, &env);
+    let vendor = collect_vendor_2c(
+        vendor_ffi::vendor_int1e_ipipipiprinv_spinor,
+        81,
+        &atm,
+        &bas,
+        &env,
+    );
     let cintx = collect_cintx_2c(RawApiId::INT1E_IPIPIPIPRINV_SPINOR, 81, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipipipiprinv_spinor cintx");
@@ -367,8 +423,8 @@ fn relayout_3c1e_grad_to_blocked(
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int2c2e_ip1_spinor_adversarial_parity() {
-    use cintx_oracle::vendor_ffi;
     use cintx_compat::raw::{ATM_SLOTS, KAPPA_OF};
+    use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_adversarial_spinor_fixture();
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -405,7 +461,8 @@ fn test_int2c2e_ip1_spinor_adversarial_parity() {
         kappa_j,
         nctr_i,
         nctr_j,
-    ).unwrap();
+    )
+    .unwrap();
 
     let cintx = collect_cintx_2c(RawApiId::INT2C2E_IP1_SPINOR, 3, &atm, &bas, &env);
 
@@ -422,8 +479,8 @@ fn test_int2c2e_ip1_spinor_adversarial_parity() {
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int3c1e_ip1_spinor_adversarial_parity() {
-    use cintx_oracle::vendor_ffi;
     use cintx_compat::raw::{ATM_SLOTS, KAPPA_OF};
+    use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_adversarial_spinor_fixture();
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -465,7 +522,8 @@ fn test_int3c1e_ip1_spinor_adversarial_parity() {
         lk,
         nctr_i,
         nctr_j,
-    ).unwrap();
+    )
+    .unwrap();
 
     let cintx = collect_cintx_3c(RawApiId::INT3C1E_IP1_SPINOR, 3, &atm, &bas, &env);
 
@@ -482,8 +540,8 @@ fn test_int3c1e_ip1_spinor_adversarial_parity() {
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int3c1e_iprinv_spinor_adversarial_parity() {
-    use cintx_oracle::vendor_ffi;
     use cintx_compat::raw::{ATM_SLOTS, KAPPA_OF};
+    use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_adversarial_spinor_fixture();
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -525,7 +583,8 @@ fn test_int3c1e_iprinv_spinor_adversarial_parity() {
         lk,
         nctr_i,
         nctr_j,
-    ).unwrap();
+    )
+    .unwrap();
 
     let cintx = collect_cintx_3c(RawApiId::INT3C1E_IPRINV_SPINOR, 3, &atm, &bas, &env);
 
@@ -706,9 +765,9 @@ fn test_no_silent_skip() {
                 "no-silent-skip: flipped family `{symbol}` reads oracle_covered=false in \
                  MANIFEST_ENTRIES — the Plan-05 flip did not propagate (rebuild cintx-ops?)"
             ),
-            None => panic!(
-                "no-silent-skip: flipped family `{symbol}` is MISSING from MANIFEST_ENTRIES"
-            ),
+            None => {
+                panic!("no-silent-skip: flipped family `{symbol}` is MISSING from MANIFEST_ENTRIES")
+            }
         }
     }
 
@@ -743,7 +802,11 @@ fn test_fixture_builds_without_vendor() {
     // aux k = s(nctr=1) SPHERICAL aux-k = (2*0+1)*1 = 1 (NOT spinor 2).
     assert_eq!(shell_nsp_full(&bas, SI), 12);
     assert_eq!(shell_nsp_full(&bas, SJ), 10);
-    assert_eq!(shell_nsph_full(&bas, SK), 1, "aux-k (s, nctr=1) spherical count = (2*0+1)*1 = 1");
+    assert_eq!(
+        shell_nsph_full(&bas, SK),
+        1,
+        "aux-k (s, nctr=1) spherical count = (2*0+1)*1 = 1"
+    );
 
     // Canonical 27-SPIKE-FINDINGS figure: single-contraction p×d×s kappa=0 rank-3 buffer.
     // nctr_i=1 -> ni_sp=6, nj_sp=10, nk_sph=1, ncomp=3, complex -> 3*6*10*1*2 = 360 (NOT 720).

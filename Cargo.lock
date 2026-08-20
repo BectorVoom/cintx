@@ -336,6 +336,7 @@ dependencies = [
  "anyhow",
  "cc",
  "cintx-capi",
+ "cintx-core",
  "cintx-rs",
  "criterion",
  "cubecl",

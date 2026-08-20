@@ -50,9 +50,7 @@ impl FacadeError {
 
     fn unsupported_representation(operator: String, representation: Representation) -> Self {
         Self::UnsupportedApi {
-            requested: format!(
-                "{operator} does not support representation {representation}"
-            ),
+            requested: format!("{operator} does not support representation {representation}"),
         }
     }
 }

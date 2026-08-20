@@ -38,7 +38,10 @@ fn nsph(l: i32) -> usize {
     (2 * l + 1) as usize
 }
 fn mismatches(a: &[f64], b: &[f64]) -> usize {
-    a.iter().zip(b.iter()).filter(|(x, y)| (**x - **y).abs() > ATOL).count()
+    a.iter()
+        .zip(b.iter())
+        .filter(|(x, y)| (**x - **y).abs() > ATOL)
+        .count()
 }
 
 /// p-shell (bra, nctr=2) × d-shell (ket, nctr=1), two centers, NON-ZERO gauge origin.
@@ -133,15 +136,46 @@ struct Tier {
 
 fn ladder() -> Vec<Tier> {
     vec![
-        Tier { label: "int1e_r   ", rank: 3, cart: RawApiId::INT1E_R_CART, sph: RawApiId::INT1E_R_SPH, vcart: "r", vsph: "r" },
-        Tier { label: "int1e_rr  ", rank: 9, cart: RawApiId::INT1E_RR_CART, sph: RawApiId::INT1E_RR_SPH, vcart: "rr", vsph: "rr" },
-        Tier { label: "int1e_rrr ", rank: 27, cart: RawApiId::INT1E_RRR_CART, sph: RawApiId::INT1E_RRR_SPH, vcart: "rrr", vsph: "rrr" },
-        Tier { label: "int1e_rrrr", rank: 81, cart: RawApiId::INT1E_RRRR_CART, sph: RawApiId::INT1E_RRRR_SPH, vcart: "rrrr", vsph: "rrrr" },
+        Tier {
+            label: "int1e_r   ",
+            rank: 3,
+            cart: RawApiId::INT1E_R_CART,
+            sph: RawApiId::INT1E_R_SPH,
+            vcart: "r",
+            vsph: "r",
+        },
+        Tier {
+            label: "int1e_rr  ",
+            rank: 9,
+            cart: RawApiId::INT1E_RR_CART,
+            sph: RawApiId::INT1E_RR_SPH,
+            vcart: "rr",
+            vsph: "rr",
+        },
+        Tier {
+            label: "int1e_rrr ",
+            rank: 27,
+            cart: RawApiId::INT1E_RRR_CART,
+            sph: RawApiId::INT1E_RRR_SPH,
+            vcart: "rrr",
+            vsph: "rrr",
+        },
+        Tier {
+            label: "int1e_rrrr",
+            rank: 81,
+            cart: RawApiId::INT1E_RRRR_CART,
+            sph: RawApiId::INT1E_RRRR_SPH,
+            vcart: "rrrr",
+            vsph: "rrrr",
+        },
     ]
 }
 
 #[cfg(has_vendor_libcint)]
-fn vendor_fn(key: &str, cart: bool) -> fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32 {
+fn vendor_fn(
+    key: &str,
+    cart: bool,
+) -> fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32 {
     use cintx_oracle::vendor_ffi as v;
     match (key, cart) {
         ("r", true) => v::vendor_int1e_r_cart,
@@ -166,10 +200,15 @@ fn spike_005_nctr_axisfold_composition() {
     let lj = bas[BAS_SLOTS + ANG_OF]; // d
     let nctr_j = bas[BAS_SLOTS + NCTR_OF] as usize; // 1
     #[cfg(has_vendor_libcint)]
-    let (natm, nbas) = ((atm.len() / ATM_SLOTS) as i32, (bas.len() / BAS_SLOTS) as i32);
+    let (natm, nbas) = (
+        (atm.len() / ATM_SLOTS) as i32,
+        (bas.len() / BAS_SLOTS) as i32,
+    );
 
     println!("\n================ SPIKE 005 : nctr>1 × axis-fold composition ================");
-    println!("  bra p nctr={nctr_i}, ket d nctr={nctr_j}  (i_global = ci*di + ic, contraction-major)");
+    println!(
+        "  bra p nctr={nctr_i}, ket d nctr={nctr_j}  (i_global = ci*di + ic, contraction-major)"
+    );
     #[cfg(has_vendor_libcint)]
     println!("vendor: LINKED");
     #[cfg(not(has_vendor_libcint))]
@@ -182,15 +221,32 @@ fn spike_005_nctr_axisfold_composition() {
         let ni_full = nctr_i * di;
         let nj_full = nctr_j * dj;
         let block = ni_full * nj_full;
-        println!("\n  ---- {rep}: ni_full={ni_full} (={nctr_i}×{di}) nj_full={nj_full} block={block} ----");
+        println!(
+            "\n  ---- {rep}: ni_full={ni_full} (={nctr_i}×{di}) nj_full={nj_full} block={block} ----"
+        );
         for t in ladder() {
             let api = if rep == "cart" { t.cart } else { t.sph };
             let mut cintx = vec![0.0_f64; t.rank * block];
             unsafe {
-                eval_raw(api, Some(&mut cintx), None, &shls, &atm, &bas, &env, None, None)
-                    .unwrap_or_else(|e| panic!("{} {rep} nctr>1 eval_raw failed: {e:?}", t.label));
+                eval_raw(
+                    api,
+                    Some(&mut cintx),
+                    None,
+                    &shls,
+                    &atm,
+                    &bas,
+                    &env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("{} {rep} nctr>1 eval_raw failed: {e:?}", t.label));
             }
-            assert_eq!(cintx.len() / t.rank, block, "{} {rep}: comp_stride != ni_full*nj_full", t.label);
+            assert_eq!(
+                cintx.len() / t.rank,
+                block,
+                "{} {rep}: comp_stride != ni_full*nj_full",
+                t.label
+            );
 
             // negative control: contraction-minor reinterpretation must differ.
             let minor = i_axis_contraction_minor(&cintx, t.rank, nctr_i, di, nj_full);
@@ -207,13 +263,27 @@ fn spike_005_nctr_axisfold_composition() {
                 let mut vendor = vec![0.0_f64; t.rank * block];
                 vfn(&mut vendor, &shls, &atm, natm, &bas, nbas, &env);
                 let mm = mismatches(&vendor, &cintx);
-                assert_eq!(mm, 0, "{} {rep}: cintx != vendor at nctr>1 (composition broken)", t.label);
+                assert_eq!(
+                    mm, 0,
+                    "{} {rep}: cintx != vendor at nctr>1 (composition broken)",
+                    t.label
+                );
                 let mm_minor = mismatches(&vendor, &minor);
-                assert!(mm_minor > 0, "{} {rep}: contraction-MINOR also matches vendor — order not pinned", t.label);
-                println!("    {}  rank={:>2}  mm(vendor,cintx)=0  mm(vendor,ctr-minor)={mm_minor}", t.label, t.rank);
+                assert!(
+                    mm_minor > 0,
+                    "{} {rep}: contraction-MINOR also matches vendor — order not pinned",
+                    t.label
+                );
+                println!(
+                    "    {}  rank={:>2}  mm(vendor,cintx)=0  mm(vendor,ctr-minor)={mm_minor}",
+                    t.label, t.rank
+                );
             }
             #[cfg(not(has_vendor_libcint))]
-            println!("    {}  rank={:>2}  comp_stride={block} ✓  ctr-order-sensitive ✓", t.label, t.rank);
+            println!(
+                "    {}  rank={:>2}  comp_stride={block} ✓  ctr-order-sensitive ✓",
+                t.label, t.rank
+            );
         }
     }
     println!("\n================ SPIKE 005 : done ================\n");

@@ -392,16 +392,11 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                         let vy0 = g[(gy + ny) as usize];
                                         let vz0 = g[(gz + nz) as usize];
 
-                                        let g3x =
-                                            one_electron_kin_d2::<F>(g, gx, nx, dj, jx, aj);
-                                        let g3y =
-                                            one_electron_kin_d2::<F>(g, gy, ny, dj, jy, aj);
-                                        let g3z =
-                                            one_electron_kin_d2::<F>(g, gz, nz, dj, jz, aj);
+                                        let g3x = one_electron_kin_d2::<F>(g, gx, nx, dj, jx, aj);
+                                        let g3y = one_electron_kin_d2::<F>(g, gy, ny, dj, jy, aj);
+                                        let g3z = one_electron_kin_d2::<F>(g, gz, nz, dj, jz, aj);
                                         val = F::new(-0.5)
-                                            * (g3x * vy0 * vz0
-                                                + vx0 * g3y * vz0
-                                                + vx0 * vy0 * g3z);
+                                            * (g3x * vy0 * vz0 + vx0 * g3y * vz0 + vx0 * vy0 * g3z);
                                     }
 
                                     if is_uncontracted_1e {
@@ -413,9 +408,11 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                             let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
                                             let mut cj = 0u32;
                                             while cj < nctr_j {
-                                                let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                                                let coeff_j_val =
+                                                    coeff_j[(pj * nctr_j + cj) as usize];
                                                 let base = (ci * nctr_j + cj) * block_len;
-                                                cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
+                                                cart_out
+                                                    [(base + cj_idx * nci + ci_idx) as usize] +=
                                                     coeff_i_val * coeff_j_val * val;
                                                 cj += 1u32;
                                             }
@@ -447,10 +444,7 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                         let crijx = rcx - px;
                         let crijy = rcy - py;
                         let crijz = rcz - pz;
-                        let x_boys = zeta
-                            * (crijx * crijx
-                                + crijy * crijy
-                                + crijz * crijz);
+                        let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
                         // Rys roots/weights (comptime nroots).
                         if comptime!(nroots == 1u32) {
@@ -467,8 +461,7 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
 
                         // fac1 = 2*PI*(-Z_C)*fac/zeta
                         let neg_z = F::new(0.0) - z_c;
-                        let fac1 =
-                            F::new(2.0) * pi_const * neg_z * fac / zeta;
+                        let fac1 = F::new(2.0) * pi_const * neg_z * fac / zeta;
 
                         #[unroll]
                         for irys in 0..nroots {
@@ -486,25 +479,13 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                             g[gy as usize] = F::new(1.0);
                             g[gz as usize] = fac1 * w_n;
 
-                            one_electron_vrr2e_axis::<F>(
-                                g, gx, c00x, rt, nmax,
-                            );
-                            one_electron_vrr2e_axis::<F>(
-                                g, gy, c00y, rt, nmax,
-                            );
-                            one_electron_vrr2e_axis::<F>(
-                                g, gz, c00z, rt, nmax,
-                            );
+                            one_electron_vrr2e_axis::<F>(g, gx, c00x, rt, nmax);
+                            one_electron_vrr2e_axis::<F>(g, gy, c00y, rt, nmax);
+                            one_electron_vrr2e_axis::<F>(g, gz, c00z, rt, nmax);
                             if lj >= 1u32 {
-                                one_electron_hrr_axis::<F>(
-                                    g, gx, rirjx, dj, nmax, lj,
-                                );
-                                one_electron_hrr_axis::<F>(
-                                    g, gy, rirjy, dj, nmax, lj,
-                                );
-                                one_electron_hrr_axis::<F>(
-                                    g, gz, rirjz, dj, nmax, lj,
-                                );
+                                one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj);
+                                one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
+                                one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
                             }
 
                             // Accumulate over Cartesian triples and contractions
@@ -535,12 +516,15 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
 
                                             let mut ci = 0u32;
                                             while ci < nctr_i {
-                                                let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
+                                                let coeff_i_val =
+                                                    coeff_i[(pi * nctr_i + ci) as usize];
                                                 let mut cj = 0u32;
                                                 while cj < nctr_j {
-                                                    let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
+                                                    let coeff_j_val =
+                                                        coeff_j[(pj * nctr_j + cj) as usize];
                                                     let base = (ci * nctr_j + cj) * block_len;
-                                                    cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
+                                                    cart_out[(base + cj_idx * nci + ci_idx)
+                                                        as usize] +=
                                                         coeff_i_val * coeff_j_val * val;
                                                     cj += 1u32;
                                                 }
@@ -11157,14 +11141,7 @@ fn launch_one_electron_typed<F: CintFloat>(
                             cart_bra_major[ic * ncj + jc] = block[jc * nci + ic];
                         }
                     }
-                    cart_to_spinor_sf_2d::<F>(
-                        &mut tmp,
-                        &cart_bra_major,
-                        li,
-                        kappa_i,
-                        lj,
-                        kappa_j,
-                    )?;
+                    cart_to_spinor_sf_2d::<F>(&mut tmp, &cart_bra_major, li, kappa_i, lj, kappa_j)?;
                     // tmp is column-major interleaved: tmp[(j_sp*di + i_sp)*2 + {re,im}].
                     // Scatter contraction-major into the dense spinor AO grid.
                     for j_sp in 0..dj {

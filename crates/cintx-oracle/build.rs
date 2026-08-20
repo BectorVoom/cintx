@@ -88,7 +88,10 @@ fn main() {
         "src/breit.c",
         "src/cint3c1e_a.c",
     ] {
-        println!("cargo:rerun-if-changed={}", libcint_root.join(src).display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            libcint_root.join(src).display()
+        );
     }
 
     // Keep bindgen and cc wiring in place for oracle-harness parity work.
@@ -145,7 +148,10 @@ fn main() {
     let cint_h_processed = cint_h_src
         .replace("@cint_VERSION@", "6.1.3")
         .replace("@cint_SOVERSION@", "6")
-        .replace("#cmakedefine I8", "/* #cmakedefine I8 disabled — use FINT=int */")
+        .replace(
+            "#cmakedefine I8",
+            "/* #cmakedefine I8 disabled — use FINT=int */",
+        )
         .replace(
             "#cmakedefine CACHE_SIZE_I8",
             "/* #cmakedefine CACHE_SIZE_I8 disabled — use CACHE_SIZE_T=FINT */",
@@ -171,12 +177,21 @@ fn main() {
     // We keep the rest of the file (constants, #defines) intact.
     // Note: We include our processed cint.h by redirecting its path.
     let cint_config_processed = cint_config_src
-        .replace("#include \"cint.h\"", &format!("#include \"{}\"", processed_cint_h.display()))
+        .replace(
+            "#include \"cint.h\"",
+            &format!("#include \"{}\"", processed_cint_h.display()),
+        )
         .replace("#cmakedefine HAVE_EXPL", "/* #cmakedefine HAVE_EXPL */")
         .replace("#cmakedefine HAVE_SQRTL", "/* #cmakedefine HAVE_SQRTL */")
         .replace("#cmakedefine HAVE_FABSL", "/* #cmakedefine HAVE_FABSL */")
-        .replace("#cmakedefine HAVE_QUADMATH_H", "/* #cmakedefine HAVE_QUADMATH_H */")
-        .replace("#cmakedefine WITH_RANGE_COULOMB", "/* #cmakedefine WITH_RANGE_COULOMB */");
+        .replace(
+            "#cmakedefine HAVE_QUADMATH_H",
+            "/* #cmakedefine HAVE_QUADMATH_H */",
+        )
+        .replace(
+            "#cmakedefine WITH_RANGE_COULOMB",
+            "/* #cmakedefine WITH_RANGE_COULOMB */",
+        );
 
     // Write to src/ search path location (OUT_DIR, which is on the include path)
     let processed_cint_config_h = out_dir.join("cint_config.h");

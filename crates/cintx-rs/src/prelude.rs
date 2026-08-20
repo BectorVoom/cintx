@@ -7,9 +7,14 @@
 pub use crate::builder::SessionBuilder;
 
 // Typed request/query/evaluate entry points.
+pub use crate::api::Session;
 pub use crate::api::SessionQuery;
 pub use crate::api::SessionRequest;
 pub use crate::api::TypedEvaluationOutput;
+pub use crate::api::{
+    BatchEvaluationOutput, BatchExecutionStats, BatchRequest, EvaluationContext,
+    EvaluationContextStats,
+};
 
 // Structured workspace metadata and execution-token contracts.
 pub use crate::api::WorkspaceChunk;

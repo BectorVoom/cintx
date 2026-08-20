@@ -187,17 +187,35 @@ fn test_int3c1e_origk_scalar_random_rocm_parity() {
                     match op_name {
                         "int3c1e_r2_origk_sph" => {
                             cintx_oracle::vendor_ffi::vendor_int3c1e_r2_origk_sph(
-                                &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                                &mut vendor_out,
+                                &shls,
+                                &atm,
+                                natm,
+                                &bas,
+                                nbas,
+                                &env,
                             );
                         }
                         "int3c1e_r4_origk_sph" => {
                             cintx_oracle::vendor_ffi::vendor_int3c1e_r4_origk_sph(
-                                &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                                &mut vendor_out,
+                                &shls,
+                                &atm,
+                                natm,
+                                &bas,
+                                nbas,
+                                &env,
                             );
                         }
                         _ => {
                             cintx_oracle::vendor_ffi::vendor_int3c1e_r6_origk_sph(
-                                &mut vendor_out, &shls, &atm, natm, &bas, nbas, &env,
+                                &mut vendor_out,
+                                &shls,
+                                &atm,
+                                natm,
+                                &bas,
+                                nbas,
+                                &env,
                             );
                         }
                     }

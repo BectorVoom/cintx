@@ -49,9 +49,7 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64) -> usize {
     for (i, (r, o)) in reference.iter().zip(observed.iter()).enumerate() {
         let diff = (o - r).abs();
         if diff > atol {
-            eprintln!(
-                "  MISMATCH[{i}] ref={r:.15e} obs={o:.15e} diff={diff:.3e} atol={atol:.1e}"
-            );
+            eprintln!("  MISMATCH[{i}] ref={r:.15e} obs={o:.15e} diff={diff:.3e} atol={atol:.1e}");
             count += 1;
         }
     }
@@ -59,7 +57,14 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64) -> usize {
 }
 
 /// Evaluate a 1e (2-shell) integral via cintx eval_raw.
-fn eval_1e_sph(symbol: &'static str, shls: &[i32; 2], atm: &[i32], bas: &[i32], env: &[f64], ncomp: usize) -> Vec<f64> {
+fn eval_1e_sph(
+    symbol: &'static str,
+    shls: &[i32; 2],
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+    ncomp: usize,
+) -> Vec<f64> {
     let ni = nsph_for_l(bas[shls[0] as usize * BAS_SLOTS + ANG_OF]);
     let nj = nsph_for_l(bas[shls[1] as usize * BAS_SLOTS + ANG_OF]);
     let n = ncomp * ni * nj;
@@ -82,7 +87,15 @@ fn eval_1e_sph(symbol: &'static str, shls: &[i32; 2], atm: &[i32], bas: &[i32], 
 }
 
 /// Evaluate a 3-shell integral via cintx eval_raw.
-fn eval_3c_sph(symbol: &'static str, shls: &[i32; 3], atm: &[i32], bas: &[i32], env: &[f64], ncomp: usize, k_cartesian: bool) -> Vec<f64> {
+fn eval_3c_sph(
+    symbol: &'static str,
+    shls: &[i32; 3],
+    atm: &[i32],
+    bas: &[i32],
+    env: &[f64],
+    ncomp: usize,
+    k_cartesian: bool,
+) -> Vec<f64> {
     let ni = nsph_for_l(bas[shls[0] as usize * BAS_SLOTS + ANG_OF]);
     let nj = nsph_for_l(bas[shls[1] as usize * BAS_SLOTS + ANG_OF]);
     let nk = if k_cartesian {
@@ -125,9 +138,20 @@ mod origi_parity {
         for shls in [SHLS_2_01, SHLS_2_02] {
             let cintx_out = eval_1e_sph("int1e_r2_origi_sph", &shls, &atm, &bas, &env, 1);
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int1e_r2_origi_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int1e_r2_origi_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int1e_r2_origi_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int1e_r2_origi_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 
@@ -142,9 +166,20 @@ mod origi_parity {
         for shls in [SHLS_2_01, SHLS_2_02] {
             let cintx_out = eval_1e_sph("int1e_r4_origi_sph", &shls, &atm, &bas, &env, 1);
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int1e_r4_origi_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int1e_r4_origi_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int1e_r4_origi_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int1e_r4_origi_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 
@@ -160,9 +195,20 @@ mod origi_parity {
         for shls in [SHLS_2_01, SHLS_2_02] {
             let cintx_out = eval_1e_sph("int1e_r2_origi_ip2_sph", &shls, &atm, &bas, &env, ncomp);
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int1e_r2_origi_ip2_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int1e_r2_origi_ip2_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int1e_r2_origi_ip2_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int1e_r2_origi_ip2_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 
@@ -178,9 +224,20 @@ mod origi_parity {
         for shls in [SHLS_2_01, SHLS_2_02] {
             let cintx_out = eval_1e_sph("int1e_r4_origi_ip2_sph", &shls, &atm, &bas, &env, ncomp);
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int1e_r4_origi_ip2_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int1e_r4_origi_ip2_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int1e_r4_origi_ip2_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int1e_r4_origi_ip2_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 }
@@ -192,9 +249,9 @@ mod origi_parity {
 /// Implementation added in Phase 14 Plan 02.
 mod grids_parity {
     use cintx_compat::raw::{
-        ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF,
-        NGRIDS, POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_GRIDS, PTR_ZETA,
-        RawApiId, eval_raw,
+        ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NGRIDS, NPRIM_OF, NUC_MOD_OF,
+        POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_GRIDS, PTR_ZETA, RawApiId,
+        eval_raw,
     };
 
     /// Absolute tolerance for grids oracle parity comparisons.
@@ -262,7 +319,7 @@ mod grids_parity {
         // and near the H1/H2 positions to exercise range
         let grid_points: Vec<[f64; 3]> = if ngrids == 3 {
             vec![
-                [0.0, 0.0, 0.0],      // at O
+                [0.0, 0.0, 0.0],       // at O
                 [0.0, 1.4307, 1.1078], // at H1
                 [0.5, -0.5, 0.5],      // off-center
             ]
@@ -416,7 +473,10 @@ mod grids_parity {
         let shls_4: [i32; 4] = [0, 1, 0, ngrids as i32];
         let out = eval_grids("int1e_grids_sph", &shls_4, 1, ngrids, &atm, &bas, &env);
         let nonzero = out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "int1e_grids_sph output is all zeros — kernel not computing");
+        assert!(
+            nonzero > 0,
+            "int1e_grids_sph output is all zeros — kernel not computing"
+        );
         println!("  PASS: int1e_grids_sph nonzero={nonzero}/{}", out.len());
     }
 
@@ -428,8 +488,14 @@ mod grids_parity {
         let shls_4: [i32; 4] = [0, 1, 0, ngrids as i32];
         let out = eval_grids("int1e_grids_ip_sph", &shls_4, 3, ngrids, &atm, &bas, &env);
         let nonzero = out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "int1e_grids_ip_sph output is all zeros — kernel not computing");
-        println!("  PASS: int1e_grids_ip_sph ncomp=3 nonzero={nonzero}/{}", out.len());
+        assert!(
+            nonzero > 0,
+            "int1e_grids_ip_sph output is all zeros — kernel not computing"
+        );
+        println!(
+            "  PASS: int1e_grids_ip_sph ncomp=3 nonzero={nonzero}/{}",
+            out.len()
+        );
     }
 
     /// int1e_grids_ipvip_sph: ipvip variant (ncomp=9) produces non-zero output.
@@ -438,10 +504,24 @@ mod grids_parity {
         let ngrids = 3;
         let (atm, bas, env) = build_h2o_sto3g_grids(ngrids);
         let shls_4: [i32; 4] = [0, 1, 0, ngrids as i32];
-        let out = eval_grids("int1e_grids_ipvip_sph", &shls_4, 9, ngrids, &atm, &bas, &env);
+        let out = eval_grids(
+            "int1e_grids_ipvip_sph",
+            &shls_4,
+            9,
+            ngrids,
+            &atm,
+            &bas,
+            &env,
+        );
         let nonzero = out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "int1e_grids_ipvip_sph output is all zeros — kernel not computing");
-        println!("  PASS: int1e_grids_ipvip_sph ncomp=9 nonzero={nonzero}/{}", out.len());
+        assert!(
+            nonzero > 0,
+            "int1e_grids_ipvip_sph output is all zeros — kernel not computing"
+        );
+        println!(
+            "  PASS: int1e_grids_ipvip_sph ncomp=9 nonzero={nonzero}/{}",
+            out.len()
+        );
     }
 
     /// int1e_grids_spvsp_sph: spvsp variant (ncomp=4) produces non-zero output.
@@ -450,10 +530,24 @@ mod grids_parity {
         let ngrids = 3;
         let (atm, bas, env) = build_h2o_sto3g_grids(ngrids);
         let shls_4: [i32; 4] = [0, 1, 0, ngrids as i32];
-        let out = eval_grids("int1e_grids_spvsp_sph", &shls_4, 4, ngrids, &atm, &bas, &env);
+        let out = eval_grids(
+            "int1e_grids_spvsp_sph",
+            &shls_4,
+            4,
+            ngrids,
+            &atm,
+            &bas,
+            &env,
+        );
         let nonzero = out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "int1e_grids_spvsp_sph output is all zeros — kernel not computing");
-        println!("  PASS: int1e_grids_spvsp_sph ncomp=4 nonzero={nonzero}/{}", out.len());
+        assert!(
+            nonzero > 0,
+            "int1e_grids_spvsp_sph output is all zeros — kernel not computing"
+        );
+        println!(
+            "  PASS: int1e_grids_spvsp_sph ncomp=4 nonzero={nonzero}/{}",
+            out.len()
+        );
     }
 
     /// int1e_grids_ipip_sph: ipip variant (ncomp=9) produces non-zero output.
@@ -464,8 +558,14 @@ mod grids_parity {
         let shls_4: [i32; 4] = [0, 1, 0, ngrids as i32];
         let out = eval_grids("int1e_grids_ipip_sph", &shls_4, 9, ngrids, &atm, &bas, &env);
         let nonzero = out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "int1e_grids_ipip_sph output is all zeros — kernel not computing");
-        println!("  PASS: int1e_grids_ipip_sph ncomp=9 nonzero={nonzero}/{}", out.len());
+        assert!(
+            nonzero > 0,
+            "int1e_grids_ipip_sph output is all zeros — kernel not computing"
+        );
+        println!(
+            "  PASS: int1e_grids_ipip_sph ncomp=9 nonzero={nonzero}/{}",
+            out.len()
+        );
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -493,7 +593,13 @@ mod grids_parity {
             let n = 1 * ngrids * ni * nj;
             let mut vendor_out = vec![0.0_f64; n];
             vendor_ffi::vendor_int1e_grids_sph(
-                &mut vendor_out, &shls_4, &atm, natm, &bas, nbas, &env,
+                &mut vendor_out,
+                &shls_4,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
             );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
             assert_eq!(
@@ -517,13 +623,27 @@ mod grids_parity {
         for (si, sj) in [(0i32, 1i32), (0, 2), (3, 4)] {
             let shls_4: [i32; 4] = [si, sj, 0, ngrids as i32];
             let ncomp = 3;
-            let cintx_out = eval_grids("int1e_grids_ip_sph", &shls_4, ncomp, ngrids, &atm, &bas, &env);
+            let cintx_out = eval_grids(
+                "int1e_grids_ip_sph",
+                &shls_4,
+                ncomp,
+                ngrids,
+                &atm,
+                &bas,
+                &env,
+            );
             let ni = nsph(bas[si as usize * BAS_SLOTS + ANG_OF]);
             let nj = nsph(bas[sj as usize * BAS_SLOTS + ANG_OF]);
             let n = ncomp * ngrids * ni * nj;
             let mut vendor_out = vec![0.0_f64; n];
             vendor_ffi::vendor_int1e_grids_ip_sph(
-                &mut vendor_out, &shls_4, &atm, natm, &bas, nbas, &env,
+                &mut vendor_out,
+                &shls_4,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
             );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
             assert_eq!(
@@ -547,13 +667,27 @@ mod grids_parity {
         for (si, sj) in [(0i32, 1i32), (0, 2), (3, 4)] {
             let shls_4: [i32; 4] = [si, sj, 0, ngrids as i32];
             let ncomp = 9;
-            let cintx_out = eval_grids("int1e_grids_ipvip_sph", &shls_4, ncomp, ngrids, &atm, &bas, &env);
+            let cintx_out = eval_grids(
+                "int1e_grids_ipvip_sph",
+                &shls_4,
+                ncomp,
+                ngrids,
+                &atm,
+                &bas,
+                &env,
+            );
             let ni = nsph(bas[si as usize * BAS_SLOTS + ANG_OF]);
             let nj = nsph(bas[sj as usize * BAS_SLOTS + ANG_OF]);
             let n = ncomp * ngrids * ni * nj;
             let mut vendor_out = vec![0.0_f64; n];
             vendor_ffi::vendor_int1e_grids_ipvip_sph(
-                &mut vendor_out, &shls_4, &atm, natm, &bas, nbas, &env,
+                &mut vendor_out,
+                &shls_4,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
             );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
             assert_eq!(
@@ -577,13 +711,27 @@ mod grids_parity {
         for (si, sj) in [(0i32, 1i32), (0, 2), (3, 4)] {
             let shls_4: [i32; 4] = [si, sj, 0, ngrids as i32];
             let ncomp = 4;
-            let cintx_out = eval_grids("int1e_grids_spvsp_sph", &shls_4, ncomp, ngrids, &atm, &bas, &env);
+            let cintx_out = eval_grids(
+                "int1e_grids_spvsp_sph",
+                &shls_4,
+                ncomp,
+                ngrids,
+                &atm,
+                &bas,
+                &env,
+            );
             let ni = nsph(bas[si as usize * BAS_SLOTS + ANG_OF]);
             let nj = nsph(bas[sj as usize * BAS_SLOTS + ANG_OF]);
             let n = ncomp * ngrids * ni * nj;
             let mut vendor_out = vec![0.0_f64; n];
             vendor_ffi::vendor_int1e_grids_spvsp_sph(
-                &mut vendor_out, &shls_4, &atm, natm, &bas, nbas, &env,
+                &mut vendor_out,
+                &shls_4,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
             );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
             assert_eq!(
@@ -607,13 +755,27 @@ mod grids_parity {
         for (si, sj) in [(0i32, 1i32), (0, 2), (3, 4)] {
             let shls_4: [i32; 4] = [si, sj, 0, ngrids as i32];
             let ncomp = 9;
-            let cintx_out = eval_grids("int1e_grids_ipip_sph", &shls_4, ncomp, ngrids, &atm, &bas, &env);
+            let cintx_out = eval_grids(
+                "int1e_grids_ipip_sph",
+                &shls_4,
+                ncomp,
+                ngrids,
+                &atm,
+                &bas,
+                &env,
+            );
             let ni = nsph(bas[si as usize * BAS_SLOTS + ANG_OF]);
             let nj = nsph(bas[sj as usize * BAS_SLOTS + ANG_OF]);
             let n = ncomp * ngrids * ni * nj;
             let mut vendor_out = vec![0.0_f64; n];
             vendor_ffi::vendor_int1e_grids_ipip_sph(
-                &mut vendor_out, &shls_4, &atm, natm, &bas, nbas, &env,
+                &mut vendor_out,
+                &shls_4,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
             );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
             assert_eq!(
@@ -630,8 +792,8 @@ mod grids_parity {
 /// Implementation added in Phase 14 Plan 04.
 mod breit_parity {
     use cintx_compat::raw::{
-        ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF,
-        POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
+        ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+        PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
     };
 
     /// Count of mismatches between reference and observed f64 slices at given atol.
@@ -827,8 +989,8 @@ mod breit_parity {
         let mismatches = count_mismatches_atol(&vendor_out, &cintx_out, epsilon);
 
         // Verify at least one non-zero element (kernel is not a stub)
-        let any_nonzero = cintx_out.iter().any(|v| v.abs() > 1e-18)
-            || vendor_out.iter().any(|v| v.abs() > 1e-18);
+        let any_nonzero =
+            cintx_out.iter().any(|v| v.abs() > 1e-18) || vendor_out.iter().any(|v| v.abs() > 1e-18);
 
         println!(
             "int2e_breit_r1p2_spinor: vendor parity PASS, n_elem={n_elem}, mismatches={mismatches}, any_nonzero={any_nonzero} (atol={atol:.1e})"
@@ -893,8 +1055,8 @@ mod breit_parity {
         let mismatches = count_mismatches_atol(&vendor_out, &cintx_out, epsilon);
 
         // Verify at least one non-zero element (kernel is not a stub)
-        let any_nonzero = cintx_out.iter().any(|v| v.abs() > 1e-18)
-            || vendor_out.iter().any(|v| v.abs() > 1e-18);
+        let any_nonzero =
+            cintx_out.iter().any(|v| v.abs() > 1e-18) || vendor_out.iter().any(|v| v.abs() > 1e-18);
 
         println!(
             "int2e_breit_r2p2_spinor: vendor parity PASS, n_elem={n_elem}, mismatches={mismatches}, any_nonzero={any_nonzero} (atol={atol:.1e})"
@@ -927,9 +1089,20 @@ mod origk_parity {
         for shls in [SHLS_3_340, SHLS_3_012] {
             let cintx_out = eval_3c_sph("int3c1e_r2_origk_sph", &shls, &atm, &bas, &env, 1, false);
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int3c1e_r2_origk_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int3c1e_r2_origk_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int3c1e_r2_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int3c1e_r2_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 
@@ -944,9 +1117,20 @@ mod origk_parity {
         for shls in [SHLS_3_340, SHLS_3_012] {
             let cintx_out = eval_3c_sph("int3c1e_r4_origk_sph", &shls, &atm, &bas, &env, 1, false);
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int3c1e_r4_origk_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int3c1e_r4_origk_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int3c1e_r4_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int3c1e_r4_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 
@@ -961,9 +1145,20 @@ mod origk_parity {
         for shls in [SHLS_3_340, SHLS_3_012] {
             let cintx_out = eval_3c_sph("int3c1e_r6_origk_sph", &shls, &atm, &bas, &env, 1, false);
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int3c1e_r6_origk_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int3c1e_r6_origk_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int3c1e_r6_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int3c1e_r6_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 
@@ -977,11 +1172,30 @@ mod origk_parity {
         let ncomp = 3;
 
         for shls in [SHLS_3_340, SHLS_3_012] {
-            let cintx_out = eval_3c_sph("int3c1e_ip1_r2_origk_sph", &shls, &atm, &bas, &env, ncomp, false);
+            let cintx_out = eval_3c_sph(
+                "int3c1e_ip1_r2_origk_sph",
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                ncomp,
+                false,
+            );
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int3c1e_ip1_r2_origk_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int3c1e_ip1_r2_origk_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int3c1e_ip1_r2_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int3c1e_ip1_r2_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 
@@ -995,11 +1209,30 @@ mod origk_parity {
         let ncomp = 3;
 
         for shls in [SHLS_3_340, SHLS_3_012] {
-            let cintx_out = eval_3c_sph("int3c1e_ip1_r4_origk_sph", &shls, &atm, &bas, &env, ncomp, false);
+            let cintx_out = eval_3c_sph(
+                "int3c1e_ip1_r4_origk_sph",
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                ncomp,
+                false,
+            );
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int3c1e_ip1_r4_origk_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int3c1e_ip1_r4_origk_sph(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int3c1e_ip1_r4_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int3c1e_ip1_r4_origk_sph parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 
@@ -1035,7 +1268,15 @@ mod origk_parity {
         for shls in [[3i32, 4, 0], [3i32, 0, 4]] {
             // cintx ip1: comp-slowest, ncomp=3, each comp block = ni*nj*nk (same AO
             // ordering as the scalar r6 block, since ip1 == d/dR of that scalar).
-            let cintx_ip1 = eval_3c_sph("int3c1e_ip1_r6_origk_sph", &shls, &atm, &bas, &env, 3, false);
+            let cintx_ip1 = eval_3c_sph(
+                "int3c1e_ip1_r6_origk_sph",
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                3,
+                false,
+            );
             let block = cintx_ip1.len() / 3;
 
             // ip1 differentiates the bra shell's atom center.
@@ -1049,8 +1290,12 @@ mod origk_parity {
                 em[coord_ptr + axis] -= eps;
                 let mut sp = vec![0.0_f64; block];
                 let mut sm = vec![0.0_f64; block];
-                vendor_ffi::vendor_int3c1e_r6_origk_sph(&mut sp, &shls, &atm, natm, &bas, nbas, &ep);
-                vendor_ffi::vendor_int3c1e_r6_origk_sph(&mut sm, &shls, &atm, natm, &bas, nbas, &em);
+                vendor_ffi::vendor_int3c1e_r6_origk_sph(
+                    &mut sp, &shls, &atm, natm, &bas, nbas, &ep,
+                );
+                vendor_ffi::vendor_int3c1e_r6_origk_sph(
+                    &mut sm, &shls, &atm, natm, &bas, nbas, &em,
+                );
                 for e in 0..block {
                     let fd = -(sp[e] - sm[e]) / (2.0 * eps);
                     let got = cintx_ip1[axis * block + e];
@@ -1082,10 +1327,20 @@ mod ssc_parity {
             // SSC: k stays Cartesian
             let cintx_out = eval_3c_sph("int3c2e_sph_ssc", &shls, &atm, &bas, &env, 1, true);
             let mut vendor_out = vec![0.0_f64; cintx_out.len()];
-            vendor_ffi::vendor_int3c2e_sph_ssc(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+            vendor_ffi::vendor_int3c2e_sph_ssc(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            );
             let mc = count_mismatches(&vendor_out, &cintx_out, ATOL);
-            assert_eq!(mc, 0, "int3c2e_sph_ssc parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}");
+            assert_eq!(
+                mc, 0,
+                "int3c2e_sph_ssc parity FAIL: {mc} mismatches for shls {shls:?} at epsilon={ATOL:.1e}"
+            );
         }
     }
 }
-

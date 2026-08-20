@@ -30,9 +30,7 @@ pub enum CoreError {
     ShellTupleArityExceeded { limit: usize },
     /// Phase 19 ECP-shell validation: projected angular momentum exceeds
     /// PySCF `ECP_LMAX = 5` (see `vendor/pyscf-nr-ecp/include/nr_ecp.h`).
-    #[error(
-        "ECP projected angular momentum {requested} exceeds ECP_LMAX={max}"
-    )]
+    #[error("ECP projected angular momentum {requested} exceeds ECP_LMAX={max}")]
     EcpAngularMomentumTooHigh { requested: u8, max: u8 },
 }
 
@@ -74,9 +72,7 @@ pub enum cintxRsError {
     ChunkPlanFailed { from: &'static str, detail: String },
     #[error("invalid env parameter {param}: {reason}")]
     InvalidEnvParam { param: &'static str, reason: String },
-    #[error(
-        "requested {requested:?} is not compiled in; compiled-in backends: {compiled_in:?}"
-    )]
+    #[error("requested {requested:?} is not compiled in; compiled-in backends: {compiled_in:?}")]
     BackendNotCompiled {
         requested: String,
         compiled_in: Vec<String>,

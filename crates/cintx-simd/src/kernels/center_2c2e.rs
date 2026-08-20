@@ -1,5 +1,5 @@
 use crate::boys::rys_roots_simd;
-use crate::kernels::one_electron::{common_fac_sp, ncart, SQRTPI};
+use crate::kernels::one_electron::{SQRTPI, common_fac_sp, ncart};
 use crate::kernels::recurrence::vrr_2e_2d_axis;
 use crate::vector::SimdFloat;
 use std::f64::consts::PI;

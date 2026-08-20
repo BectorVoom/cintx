@@ -124,15 +124,15 @@ fn assert_any_nonzero(matrix: &[f64], label: &str) {
 // ─────────────────────────────────────────────────────────────────────────────
 #[cfg(has_vendor_libcint)]
 fn collect_vendor_family(symbol: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
+    use cintx_compat::raw::ATM_SLOTS;
     use cintx_oracle::vendor_ffi::{
         vendor_CINTcgto_spinor, vendor_int2e_sps1sps2_spinor, vendor_int2e_sps1ssp2_spinor,
-        vendor_int2e_spsp1spsp2_spinor, vendor_int2e_spv1spsp2_spinor, vendor_int2e_spv1spv2_spinor,
-        vendor_int2e_spv1vsp2_spinor, vendor_int2e_spv1_spinor, vendor_int2e_srsr1srsr2_spinor,
-        vendor_int2e_srsr1_spinor, vendor_int2e_ssp1sps2_spinor, vendor_int2e_ssp1ssp2_spinor,
-        vendor_int2e_vsp1spsp2_spinor, vendor_int2e_vsp1spv2_spinor, vendor_int2e_vsp1vsp2_spinor,
-        vendor_int2e_vsp1_spinor,
+        vendor_int2e_spsp1spsp2_spinor, vendor_int2e_spv1_spinor, vendor_int2e_spv1spsp2_spinor,
+        vendor_int2e_spv1spv2_spinor, vendor_int2e_spv1vsp2_spinor, vendor_int2e_srsr1_spinor,
+        vendor_int2e_srsr1srsr2_spinor, vendor_int2e_ssp1sps2_spinor, vendor_int2e_ssp1ssp2_spinor,
+        vendor_int2e_vsp1_spinor, vendor_int2e_vsp1spsp2_spinor, vendor_int2e_vsp1spv2_spinor,
+        vendor_int2e_vsp1vsp2_spinor,
     };
-    use cintx_compat::raw::ATM_SLOTS;
 
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
@@ -216,7 +216,15 @@ fn extract_shell(s: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> ShellData {
             coeff_row_major[ip * nctr + ic] = col_major[ic * nprim + ip];
         }
     }
-    ShellData { l, kappa, nprim, nctr, coord, exps, coeff_row_major }
+    ShellData {
+        l,
+        kappa,
+        nprim,
+        nctr,
+        coord,
+        exps,
+        coeff_row_major,
+    }
 }
 
 /// Drive a REL-03/04 2e σ family on the quartet (0,1,2,3) through the cintx launcher.
@@ -255,14 +263,38 @@ fn collect_cintx_family(symbol: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> 
 
     let mut staging = vec![0.0_f64; ni_sp * nj_sp * nk_sp * nl_sp * 2];
     launch_rel2e_sigma_spinor_quartet::<f64>(
-        gout_kind, e1, e2,
-        si.l, si.kappa, sj.l, sj.kappa, sk.l, sk.kappa, sl.l, sl.kappa,
-        si.nprim, sj.nprim, sk.nprim, sl.nprim,
-        si.nctr, sj.nctr, sk.nctr, sl.nctr,
-        si.coord, sj.coord, sk.coord, sl.coord,
+        gout_kind,
+        e1,
+        e2,
+        si.l,
+        si.kappa,
+        sj.l,
+        sj.kappa,
+        sk.l,
+        sk.kappa,
+        sl.l,
+        sl.kappa,
+        si.nprim,
+        sj.nprim,
+        sk.nprim,
+        sl.nprim,
+        si.nctr,
+        sj.nctr,
+        sk.nctr,
+        sl.nctr,
+        si.coord,
+        sj.coord,
+        sk.coord,
+        sl.coord,
         common_factor,
-        &si.exps, &sj.exps, &sk.exps, &sl.exps,
-        &si.coeff_row_major, &sj.coeff_row_major, &sk.coeff_row_major, &sl.coeff_row_major,
+        &si.exps,
+        &sj.exps,
+        &sk.exps,
+        &sl.exps,
+        &si.coeff_row_major,
+        &sj.coeff_row_major,
+        &sk.coeff_row_major,
+        &sl.coeff_row_major,
         &mut staging,
     )
     .unwrap_or_else(|e| panic!("{symbol} cintx launch failed: {e:?}"));
@@ -280,22 +312,45 @@ fn test_kappa_sizing_2e_non_4l_plus_2() {
     assert_eq!(spinor_len(0, -1), 2, "k: s kappa=−1 (GT) → dk = 2*0+2 = 2");
     assert_eq!(spinor_len(1, -1), 4, "l: p kappa=−1 (GT) → dl = 2*1+2 = 4");
     // Contrast: the kappa=0 sizing the fixture deliberately does NOT use.
-    assert_eq!(spinor_len(1, 0), 6, "p kappa=0 would be 4l+2 = 6 (NOT used)");
-    assert_eq!(spinor_len(2, 0), 10, "d kappa=0 would be 4l+2 = 10 (NOT used)");
+    assert_eq!(
+        spinor_len(1, 0),
+        6,
+        "p kappa=0 would be 4l+2 = 6 (NOT used)"
+    );
+    assert_eq!(
+        spinor_len(2, 0),
+        10,
+        "d kappa=0 would be 4l+2 = 10 (NOT used)"
+    );
 
     let (_atm, bas, _env) = cintx_oracle::fixtures::build_kappa_spinor_2e_fixture();
     assert_eq!(bas[ANG_OF], 1, "shell 0 (i) = p");
     assert_eq!(bas[KAPPA_OF], 1, "shell 0 (i) kappa = +1 (LT)");
-    assert_eq!(bas[NCTR_OF], 2, "shell 0 (i) nctr = 2 (general contraction)");
+    assert_eq!(
+        bas[NCTR_OF], 2,
+        "shell 0 (i) nctr = 2 (general contraction)"
+    );
     assert_eq!(bas[BAS_SLOTS + ANG_OF], 2, "shell 1 (j) = d");
     assert_eq!(bas[BAS_SLOTS + KAPPA_OF], -1, "shell 1 (j) kappa = −1 (GT)");
     assert_eq!(bas[2 * BAS_SLOTS + ANG_OF], 0, "shell 2 (k) = s");
-    assert_eq!(bas[2 * BAS_SLOTS + KAPPA_OF], -1, "shell 2 (k) kappa = −1 (GT)");
+    assert_eq!(
+        bas[2 * BAS_SLOTS + KAPPA_OF],
+        -1,
+        "shell 2 (k) kappa = −1 (GT)"
+    );
     assert_eq!(bas[3 * BAS_SLOTS + ANG_OF], 1, "shell 3 (l) = p");
-    assert_eq!(bas[3 * BAS_SLOTS + KAPPA_OF], -1, "shell 3 (l) kappa = −1 (GT)");
+    assert_eq!(
+        bas[3 * BAS_SLOTS + KAPPA_OF],
+        -1,
+        "shell 3 (l) kappa = −1 (GT)"
+    );
 
     // Total spinor block = (2*2)*(1*6)*(1*2)*(1*4)*2 = 384.
-    assert_eq!(2 * 2 * 6 * 2 * 4 * 2, 384, "non-square 2e spinor block = 384 f64");
+    assert_eq!(
+        2 * 2 * 6 * 2 * 4 * 2,
+        384,
+        "non-square 2e spinor block = 384 f64"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -311,14 +366,22 @@ fn test_all_rel_2e_rows_registered() {
         let entry = MANIFEST_ENTRIES
             .iter()
             .find(|e| e.symbol_name == sym)
-            .unwrap_or_else(|| panic!("REL-2e family {sym} MISSING from MANIFEST_ENTRIES (29-05 row absent?)"));
+            .unwrap_or_else(|| {
+                panic!("REL-2e family {sym} MISSING from MANIFEST_ENTRIES (29-05 row absent?)")
+            });
         assert_eq!(entry.arity, 4, "{sym}: arity must be 4 (2e quartet)");
-        assert_eq!(entry.canonical_family, "2e", "{sym}: canonical_family must be 2e");
+        assert_eq!(
+            entry.canonical_family, "2e",
+            "{sym}: canonical_family must be 2e"
+        );
         assert_eq!(
             entry.component_rank, "1",
             "{sym}: component_rank must be 1 (σ fold is internal to c2s, NOT an output axis)"
         );
-        assert!(entry.complex_output, "{sym}: complex_output must be true (spinor)");
+        assert!(
+            entry.complex_output,
+            "{sym}: complex_output must be true (spinor)"
+        );
         assert_eq!(
             entry.forms,
             &["spinor"],
@@ -433,8 +496,13 @@ rel_2e_byte_identity_gate_live!(test_vsp1spsp2_byte_identity, "int2e_vsp1spsp2_s
 fn test_2e_fixture_builds_without_vendor() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_kappa_spinor_2e_fixture();
     assert_eq!(bas.len() % BAS_SLOTS, 0, "kappa 2e bas rows well-formed");
-    assert!(!atm.is_empty() && !env.is_empty(), "kappa 2e fixture populated");
-    assert_eq!(bas.len() / BAS_SLOTS, 4, "exactly 4 shells (a 2-electron quartet)");
+    assert!(
+        !atm.is_empty() && !env.is_empty(),
+        "kappa 2e fixture populated"
+    );
+    assert_eq!(
+        bas.len() / BAS_SLOTS,
+        4,
+        "exactly 4 shells (a 2-electron quartet)"
+    );
 }
-
-

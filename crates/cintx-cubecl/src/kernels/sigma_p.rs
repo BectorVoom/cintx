@@ -44,8 +44,8 @@
 
 use crate::backend::ResolvedBackend;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
-use crate::transform::c2spinor::{cart_to_spinor_si_2d, cart_to_spinor_si_2di, spinor_len};
 use crate::transform::c2s::ncart;
+use crate::transform::c2spinor::{cart_to_spinor_si_2d, cart_to_spinor_si_2di, spinor_len};
 use cintx_core::CintFloat;
 use cintx_core::cintxRsError;
 use cubecl::Runtime;
@@ -575,14 +575,7 @@ fn sigma_p_x1i<F: Float>(g: &Array<F>, idx0: u32, origin: F) -> F {
 /// bra-stencil points `idx0` and `idx0+1`, then the bra raise + origin shift.
 #[cube]
 #[allow(clippy::too_many_arguments)]
-fn sigma_p_x1i_of_j<F: Float>(
-    g: &Array<F>,
-    idx0: u32,
-    dj: u32,
-    aj2: F,
-    jexp: u32,
-    origin: F,
-) -> F {
+fn sigma_p_x1i_of_j<F: Float>(g: &Array<F>, idx0: u32, dj: u32, aj2: F, jexp: u32, origin: F) -> F {
     let g1_i = sigma_p_nabla_j::<F>(g, idx0, dj, aj2, jexp);
     let g1_ip = sigma_p_nabla_j::<F>(g, idx0 + 1u32, dj, aj2, jexp);
     g1_ip + origin * g1_i
@@ -759,8 +752,7 @@ fn sigma_p_cg_sa10sp_kernel<F: Float + CubeElement>(
                                         //   s8+s4, -s3, -s6, s7-s5
                                         let gp0 = base;
                                         gc_out[(gp0 + elem) as usize] += weight * (s8 + s4);
-                                        gc_out[(gp0 + block_len + elem) as usize] +=
-                                            weight * (-s3);
+                                        gc_out[(gp0 + block_len + elem) as usize] += weight * (-s3);
                                         gc_out[(gp0 + 2u32 * block_len + elem) as usize] +=
                                             weight * (-s6);
                                         gc_out[(gp0 + 3u32 * block_len + elem) as usize] +=
@@ -779,8 +771,7 @@ fn sigma_p_cg_sa10sp_kernel<F: Float + CubeElement>(
                                         //   -s2, -s5, s4+s0, s3-s1
                                         let gp2 = base + 2u32 * N_GC * block_len;
                                         gc_out[(gp2 + elem) as usize] += weight * (-s2);
-                                        gc_out[(gp2 + block_len + elem) as usize] +=
-                                            weight * (-s5);
+                                        gc_out[(gp2 + block_len + elem) as usize] += weight * (-s5);
                                         gc_out[(gp2 + 2u32 * block_len + elem) as usize] +=
                                             weight * (s4 + s0);
                                         gc_out[(gp2 + 3u32 * block_len + elem) as usize] +=
@@ -1168,8 +1159,22 @@ pub fn launch_int1e_sa10nucsp_spinor_pair<F: CintFloat>(
     // Rys+gauge nuclear cart gc blocks. The fail-closed nroots guard (never clamp,
     // T-30-01b-03) is inside run_sigma_nuc_gauge_on_backend.
     let mut gc = super::sigma_1e_nuc::run_sigma_nuc_gauge_on_backend(
-        backend, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, gauge, exps_i, exps_j, coeff_i,
-        coeff_j, origin_coords, origin_charges,
+        backend,
+        li,
+        lj,
+        nprim_i,
+        nprim_j,
+        nctr_i,
+        nctr_j,
+        ri,
+        rj,
+        gauge,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+        origin_coords,
+        origin_charges,
     )?;
 
     // s/p normalization × the cg/giao nucsp common_factor (0.5, intor3.c:1239).
@@ -2690,28 +2695,98 @@ fn run_sa01_rys_on_backend(
     let out = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_sa01_rys_device::<cubecl::cpu::CpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, origin, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            origin,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_sa01_rys_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, origin, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            origin,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_sa01_rys_device::<cubecl_cuda::CudaRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, origin, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            origin,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_sa01_rys_device::<cubecl_hip::HipRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, origin, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            origin,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_sa01_rys_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, origin, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            origin,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
     };
     Ok(out)
@@ -3115,9 +3190,8 @@ fn spgnucsp_rys_kernel<F: Float + CubeElement>(
                                                         rix,
                                                     )
                                                 };
-                                                let g3x = sigma_p_x1i_of_j::<F>(
-                                                    g, bx, dj, aj2, jx, rix,
-                                                );
+                                                let g3x =
+                                                    sigma_p_x1i_of_j::<F>(g, bx, dj, aj2, jx, rix);
                                                 let g3xp = sigma_p_x1i_of_j::<F>(
                                                     g,
                                                     bx + 1u32,
@@ -3174,9 +3248,8 @@ fn spgnucsp_rys_kernel<F: Float + CubeElement>(
                                                         riy,
                                                     )
                                                 };
-                                                let g3y = sigma_p_x1i_of_j::<F>(
-                                                    g, by, dj, aj2, jy, riy,
-                                                );
+                                                let g3y =
+                                                    sigma_p_x1i_of_j::<F>(g, by, dj, aj2, jy, riy);
                                                 let g3yp = sigma_p_x1i_of_j::<F>(
                                                     g,
                                                     by + 1u32,
@@ -3233,9 +3306,8 @@ fn spgnucsp_rys_kernel<F: Float + CubeElement>(
                                                         riz,
                                                     )
                                                 };
-                                                let g3z = sigma_p_x1i_of_j::<F>(
-                                                    g, bz, dj, aj2, jz, riz,
-                                                );
+                                                let g3z =
+                                                    sigma_p_x1i_of_j::<F>(g, bz, dj, aj2, jz, riz);
                                                 let g3zp = sigma_p_x1i_of_j::<F>(
                                                     g,
                                                     bz + 1u32,
@@ -3471,28 +3543,98 @@ fn run_spgnucsp_rys_on_backend(
     let out = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_spgnucsp_rys_device::<cubecl::cpu::CpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            origin_coords,
+            origin_charges,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_spgnucsp_rys_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            origin_coords,
+            origin_charges,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_spgnucsp_rys_device::<cubecl_cuda::CudaRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            origin_coords,
+            origin_charges,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_spgnucsp_rys_device::<cubecl_hip::HipRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            origin_coords,
+            origin_charges,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_spgnucsp_rys_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, origin_coords, origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            origin_coords,
+            origin_charges,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
     };
     Ok(out)
@@ -3562,8 +3704,22 @@ pub fn launch_int1e_spgnucsp_spinor_pair<F: CintFloat>(
     }
 
     let mut gc = run_spgnucsp_rys_on_backend(
-        backend, nroots, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, origin_coords,
-        origin_charges, exps_i, exps_j, coeff_i, coeff_j,
+        backend,
+        nroots,
+        li,
+        lj,
+        nprim_i,
+        nprim_j,
+        nctr_i,
+        nctr_j,
+        ri,
+        rj,
+        origin_coords,
+        origin_charges,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
     )?;
 
     // s/p normalization × spgnucsp common_factor (0.5, intor3.c:1976).
@@ -3807,9 +3963,8 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                                                     jx,
                                                 )
                                             };
-                                            let g1x = sa01_g1_bothside::<F>(
-                                                g, bx, dj, ai2, aj2, ix, jx,
-                                            );
+                                            let g1x =
+                                                sa01_g1_bothside::<F>(g, bx, dj, ai2, aj2, ix, jx);
                                             let g1xp = sa01_g1_bothside::<F>(
                                                 g,
                                                 bx + 1u32,
@@ -3853,18 +4008,14 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                                                 jx,
                                                 rix,
                                             );
-                                            let g4x = sigma_p_nabla_i_combine::<F>(
-                                                g0xm, g0xp, ai2, ix,
-                                            );
-                                            let g5x = sigma_p_nabla_i_combine::<F>(
-                                                g1xm, g1xp, ai2, ix,
-                                            );
-                                            let g6x = sigma_p_nabla_i_combine::<F>(
-                                                g2xm, g2xp, ai2, ix,
-                                            );
-                                            let g7x = sigma_p_nabla_i_combine::<F>(
-                                                g3xm, g3xp, ai2, ix,
-                                            );
+                                            let g4x =
+                                                sigma_p_nabla_i_combine::<F>(g0xm, g0xp, ai2, ix);
+                                            let g5x =
+                                                sigma_p_nabla_i_combine::<F>(g1xm, g1xp, ai2, ix);
+                                            let g6x =
+                                                sigma_p_nabla_i_combine::<F>(g2xm, g2xp, ai2, ix);
+                                            let g7x =
+                                                sigma_p_nabla_i_combine::<F>(g3xm, g3xp, ai2, ix);
 
                                             // Y axis.
                                             let g0ym = if iy == 0u32 {
@@ -3887,9 +4038,8 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                                                     jy,
                                                 )
                                             };
-                                            let g1y = sa01_g1_bothside::<F>(
-                                                g, by, dj, ai2, aj2, iy, jy,
-                                            );
+                                            let g1y =
+                                                sa01_g1_bothside::<F>(g, by, dj, ai2, aj2, iy, jy);
                                             let g1yp = sa01_g1_bothside::<F>(
                                                 g,
                                                 by + 1u32,
@@ -3933,18 +4083,14 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                                                 jy,
                                                 riy,
                                             );
-                                            let g4y = sigma_p_nabla_i_combine::<F>(
-                                                g0ym, g0yp, ai2, iy,
-                                            );
-                                            let g5y = sigma_p_nabla_i_combine::<F>(
-                                                g1ym, g1yp, ai2, iy,
-                                            );
-                                            let g6y = sigma_p_nabla_i_combine::<F>(
-                                                g2ym, g2yp, ai2, iy,
-                                            );
-                                            let g7y = sigma_p_nabla_i_combine::<F>(
-                                                g3ym, g3yp, ai2, iy,
-                                            );
+                                            let g4y =
+                                                sigma_p_nabla_i_combine::<F>(g0ym, g0yp, ai2, iy);
+                                            let g5y =
+                                                sigma_p_nabla_i_combine::<F>(g1ym, g1yp, ai2, iy);
+                                            let g6y =
+                                                sigma_p_nabla_i_combine::<F>(g2ym, g2yp, ai2, iy);
+                                            let g7y =
+                                                sigma_p_nabla_i_combine::<F>(g3ym, g3yp, ai2, iy);
 
                                             // Z axis.
                                             let g0zm = if iz == 0u32 {
@@ -3967,9 +4113,8 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                                                     jz,
                                                 )
                                             };
-                                            let g1z = sa01_g1_bothside::<F>(
-                                                g, bz, dj, ai2, aj2, iz, jz,
-                                            );
+                                            let g1z =
+                                                sa01_g1_bothside::<F>(g, bz, dj, ai2, aj2, iz, jz);
                                             let g1zp = sa01_g1_bothside::<F>(
                                                 g,
                                                 bz + 1u32,
@@ -4013,18 +4158,14 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                                                 jz,
                                                 riz,
                                             );
-                                            let g4z = sigma_p_nabla_i_combine::<F>(
-                                                g0zm, g0zp, ai2, iz,
-                                            );
-                                            let g5z = sigma_p_nabla_i_combine::<F>(
-                                                g1zm, g1zp, ai2, iz,
-                                            );
-                                            let g6z = sigma_p_nabla_i_combine::<F>(
-                                                g2zm, g2zp, ai2, iz,
-                                            );
-                                            let g7z = sigma_p_nabla_i_combine::<F>(
-                                                g3zm, g3zp, ai2, iz,
-                                            );
+                                            let g4z =
+                                                sigma_p_nabla_i_combine::<F>(g0zm, g0zp, ai2, iz);
+                                            let g5z =
+                                                sigma_p_nabla_i_combine::<F>(g1zm, g1zp, ai2, iz);
+                                            let g6z =
+                                                sigma_p_nabla_i_combine::<F>(g2zm, g2zp, ai2, iz);
+                                            let g7z =
+                                                sigma_p_nabla_i_combine::<F>(g3zm, g3zp, ai2, iz);
 
                                             // 27 cart products (intor3.c:2071-2097).
                                             let s0 = g7x * g0y * g0z;
@@ -4064,118 +4205,100 @@ fn spgsa01_rys_kernel<F: Float + CubeElement>(
                                                 as usize] += weight
                                                 * (-cy * s16 + cz * s13 - cy * s26 + cz * s23);
                                             gc_out[(base + 0u32 * nb + 1u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cy * s7 - cz * s4);
+                                                as usize] += weight * (cy * s7 - cz * s4);
                                             gc_out[(base + 0u32 * nb + 2u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cy * s8 - cz * s5);
+                                                as usize] += weight * (cy * s8 - cz * s5);
                                             gc_out[(base + 0u32 * nb + 3u32 * block_len + elem)
                                                 as usize] += weight
                                                 * (cy * s17 - cz * s14 - cy * s25 + cz * s22);
                                             // group 1: gout 4..7
                                             gc_out[(base + 1u32 * nb + 0u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cy * s15 - cz * s12);
+                                                as usize] += weight * (cy * s15 - cz * s12);
                                             gc_out[(base + 1u32 * nb + 1u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cy * s26 + cz * s23 - cy * s6 + cz * s3);
-                                            gc_out[(base + 1u32 * nb + 2u32 * block_len + elem)
                                                 as usize] +=
-                                                weight * (cy * s17 - cz * s14);
+                                                weight * (-cy * s26 + cz * s23 - cy * s6 + cz * s3);
+                                            gc_out[(base + 1u32 * nb + 2u32 * block_len + elem)
+                                                as usize] += weight * (cy * s17 - cz * s14);
                                             gc_out[(base + 1u32 * nb + 3u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cy * s8 + cz * s5 + cy * s24 - cz * s21);
+                                                as usize] +=
+                                                weight * (-cy * s8 + cz * s5 + cy * s24 - cz * s21);
                                             // group 2: gout 8..11
                                             gc_out[(base + 2u32 * nb + 0u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cy * s24 - cz * s21);
+                                                as usize] += weight * (cy * s24 - cz * s21);
                                             gc_out[(base + 2u32 * nb + 1u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cy * s25 - cz * s22);
+                                                as usize] += weight * (cy * s25 - cz * s22);
                                             gc_out[(base + 2u32 * nb + 2u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cy * s6 + cz * s3 - cy * s16 + cz * s13);
+                                                as usize] +=
+                                                weight * (-cy * s6 + cz * s3 - cy * s16 + cz * s13);
                                             gc_out[(base + 2u32 * nb + 3u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (cy * s7 - cz * s4 - cy * s15 + cz * s12);
+                                                as usize] +=
+                                                weight * (cy * s7 - cz * s4 - cy * s15 + cz * s12);
                                             // group 3: gout 12..15
                                             gc_out[(base + 3u32 * nb + 0u32 * block_len + elem)
                                                 as usize] += weight
                                                 * (-cz * s10 + cx * s16 - cz * s20 + cx * s26);
                                             gc_out[(base + 3u32 * nb + 1u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cz * s1 - cx * s7);
+                                                as usize] += weight * (cz * s1 - cx * s7);
                                             gc_out[(base + 3u32 * nb + 2u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cz * s2 - cx * s8);
+                                                as usize] += weight * (cz * s2 - cx * s8);
                                             gc_out[(base + 3u32 * nb + 3u32 * block_len + elem)
                                                 as usize] += weight
                                                 * (cz * s11 - cx * s17 - cz * s19 + cx * s25);
                                             // group 4: gout 16..19
                                             gc_out[(base + 4u32 * nb + 0u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cz * s9 - cx * s15);
+                                                as usize] += weight * (cz * s9 - cx * s15);
                                             gc_out[(base + 4u32 * nb + 1u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cz * s20 + cx * s26 - cz * s0 + cx * s6);
-                                            gc_out[(base + 4u32 * nb + 2u32 * block_len + elem)
                                                 as usize] +=
-                                                weight * (cz * s11 - cx * s17);
+                                                weight * (-cz * s20 + cx * s26 - cz * s0 + cx * s6);
+                                            gc_out[(base + 4u32 * nb + 2u32 * block_len + elem)
+                                                as usize] += weight * (cz * s11 - cx * s17);
                                             gc_out[(base + 4u32 * nb + 3u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cz * s2 + cx * s8 + cz * s18 - cx * s24);
+                                                as usize] +=
+                                                weight * (-cz * s2 + cx * s8 + cz * s18 - cx * s24);
                                             // group 5: gout 20..23
                                             gc_out[(base + 5u32 * nb + 0u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cz * s18 - cx * s24);
+                                                as usize] += weight * (cz * s18 - cx * s24);
                                             gc_out[(base + 5u32 * nb + 1u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cz * s19 - cx * s25);
+                                                as usize] += weight * (cz * s19 - cx * s25);
                                             gc_out[(base + 5u32 * nb + 2u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cz * s0 + cx * s6 - cz * s10 + cx * s16);
+                                                as usize] +=
+                                                weight * (-cz * s0 + cx * s6 - cz * s10 + cx * s16);
                                             gc_out[(base + 5u32 * nb + 3u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (cz * s1 - cx * s7 - cz * s9 + cx * s15);
+                                                as usize] +=
+                                                weight * (cz * s1 - cx * s7 - cz * s9 + cx * s15);
                                             // group 6: gout 24..27
                                             gc_out[(base + 6u32 * nb + 0u32 * block_len + elem)
                                                 as usize] += weight
                                                 * (-cx * s13 + cy * s10 - cx * s23 + cy * s20);
                                             gc_out[(base + 6u32 * nb + 1u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cx * s4 - cy * s1);
+                                                as usize] += weight * (cx * s4 - cy * s1);
                                             gc_out[(base + 6u32 * nb + 2u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cx * s5 - cy * s2);
+                                                as usize] += weight * (cx * s5 - cy * s2);
                                             gc_out[(base + 6u32 * nb + 3u32 * block_len + elem)
                                                 as usize] += weight
                                                 * (cx * s14 - cy * s11 - cx * s22 + cy * s19);
                                             // group 7: gout 28..31
                                             gc_out[(base + 7u32 * nb + 0u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cx * s12 - cy * s9);
+                                                as usize] += weight * (cx * s12 - cy * s9);
                                             gc_out[(base + 7u32 * nb + 1u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cx * s23 + cy * s20 - cx * s3 + cy * s0);
-                                            gc_out[(base + 7u32 * nb + 2u32 * block_len + elem)
                                                 as usize] +=
-                                                weight * (cx * s14 - cy * s11);
+                                                weight * (-cx * s23 + cy * s20 - cx * s3 + cy * s0);
+                                            gc_out[(base + 7u32 * nb + 2u32 * block_len + elem)
+                                                as usize] += weight * (cx * s14 - cy * s11);
                                             gc_out[(base + 7u32 * nb + 3u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cx * s5 + cy * s2 + cx * s21 - cy * s18);
+                                                as usize] +=
+                                                weight * (-cx * s5 + cy * s2 + cx * s21 - cy * s18);
                                             // group 8: gout 32..35
                                             gc_out[(base + 8u32 * nb + 0u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cx * s21 - cy * s18);
+                                                as usize] += weight * (cx * s21 - cy * s18);
                                             gc_out[(base + 8u32 * nb + 1u32 * block_len + elem)
-                                                as usize] +=
-                                                weight * (cx * s22 - cy * s19);
+                                                as usize] += weight * (cx * s22 - cy * s19);
                                             gc_out[(base + 8u32 * nb + 2u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (-cx * s3 + cy * s0 - cx * s13 + cy * s10);
+                                                as usize] +=
+                                                weight * (-cx * s3 + cy * s0 - cx * s13 + cy * s10);
                                             gc_out[(base + 8u32 * nb + 3u32 * block_len + elem)
-                                                as usize] += weight
-                                                * (cx * s4 - cy * s1 - cx * s12 + cy * s9);
+                                                as usize] +=
+                                                weight * (cx * s4 - cy * s1 - cx * s12 + cy * s9);
 
                                             ci_idx += 1u32;
                                             ib += 1u32;
@@ -4310,28 +4433,93 @@ fn run_spgsa01_rys_on_backend(
     let out = match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_spgsa01_rys_device::<cubecl::cpu::CpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_spgsa01_rys_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_spgsa01_rys_device::<cubecl_cuda::CudaRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_spgsa01_rys_device::<cubecl_hip::HipRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_spgsa01_rys_device::<cubecl_wgpu::WgpuRuntime>(
-            client, nroots, li as u32, lj as u32, nprim_i as u32, nprim_j as u32, nctr_i as u32,
-            nctr_j as u32, ri, rj, rinv, exps_i, exps_j, coeff_i, coeff_j,
+            client,
+            nroots,
+            li as u32,
+            lj as u32,
+            nprim_i as u32,
+            nprim_j as u32,
+            nctr_i as u32,
+            nctr_j as u32,
+            ri,
+            rj,
+            rinv,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
         ),
     };
     Ok(out)

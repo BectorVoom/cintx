@@ -283,24 +283,12 @@ mod tests {
 
     #[test]
     fn zero_nprim_is_rejected() {
-        let err = EcpShell::try_new(
-            0,
-            EcpChannel::Local,
-            0,
-            0,
-            1,
-            0,
-            arc_f64(&[]),
-            arc_f64(&[]),
-        )
-        .unwrap_err();
+        let err = EcpShell::try_new(0, EcpChannel::Local, 0, 0, 1, 0, arc_f64(&[]), arc_f64(&[]))
+            .unwrap_err();
 
         assert!(matches!(
             err,
-            CoreError::InvalidShellCounts {
-                nprim: 0,
-                nctr: 1,
-            }
+            CoreError::InvalidShellCounts { nprim: 0, nctr: 1 }
         ));
     }
 

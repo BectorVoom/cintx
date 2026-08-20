@@ -177,14 +177,15 @@ mod tests {
     fn builder_clear_helpers_remove_optional_overrides() {
         let (basis, shells) = sample_basis(Representation::Spheric);
 
-        let request = SessionBuilder::new(OperatorId::new(1), Representation::Spheric, &basis, shells)
-            .profile_label("temporary")
-            .memory_limit(1024)
-            .chunk_size(2)
-            .clear_profile_label()
-            .clear_memory_limit()
-            .clear_chunk_size()
-            .build();
+        let request =
+            SessionBuilder::new(OperatorId::new(1), Representation::Spheric, &basis, shells)
+                .profile_label("temporary")
+                .memory_limit(1024)
+                .chunk_size(2)
+                .clear_profile_label()
+                .clear_memory_limit()
+                .clear_chunk_size()
+                .build();
 
         assert_eq!(request.options().profile_label, None);
         assert_eq!(request.options().memory_limit_bytes, None);
@@ -194,11 +195,12 @@ mod tests {
     #[test]
     fn builder_from_request_rebuilds_without_mutating_original_contract() {
         let (basis, shells) = sample_basis(Representation::Cart);
-        let original = SessionBuilder::new(OperatorId::new(2), Representation::Cart, &basis, shells)
-            .profile_label("original")
-            .memory_limit(256)
-            .chunk_size(4)
-            .build();
+        let original =
+            SessionBuilder::new(OperatorId::new(2), Representation::Cart, &basis, shells)
+                .profile_label("original")
+                .memory_limit(256)
+                .chunk_size(4)
+                .build();
 
         let rebuilt = SessionBuilder::from_request(&original)
             .memory_limit(512)
@@ -220,9 +222,10 @@ mod tests {
     fn builder_f12_zeta_propagates_into_options() {
         let (basis, shells) = sample_basis(Representation::Spheric);
 
-        let request = SessionBuilder::new(OperatorId::new(3), Representation::Spheric, &basis, shells)
-            .f12_zeta(1.5)
-            .build();
+        let request =
+            SessionBuilder::new(OperatorId::new(3), Representation::Spheric, &basis, shells)
+                .f12_zeta(1.5)
+                .build();
 
         assert_eq!(
             request.options().f12_zeta,

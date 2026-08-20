@@ -1,5 +1,5 @@
-use anyhow::{Context, Result, anyhow};
-use serde_json::{Value, json};
+use anyhow::{anyhow, Context, Result};
+use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -9,11 +9,39 @@ const FALLBACK_ARTIFACT_DIR_ENV: &str = "CINTX_ARTIFACT_DIR";
 const FALLBACK_ARTIFACT_DIR_DEFAULT: &str = "/tmp/cintx_artifacts";
 const REQUIRED_BENCH_REPORT_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json";
 const BENCH_REPORT_FALLBACK_NAME: &str = "cintx_phase_04_bench_report.json";
-const REQUIRED_RUNTIME_DIAGNOSTICS_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json";
+const REQUIRED_RUNTIME_DIAGNOSTICS_PATH: &str =
+    "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json";
 const RUNTIME_DIAGNOSTICS_FALLBACK_NAME: &str = "cintx_phase_04_runtime_diagnostics.json";
 const REQUIRED_BENCH_ROWS_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_bench_rows.jsonl";
 const BENCH_ROWS_FILE_NAME: &str = "cintx_phase_04_bench_rows.jsonl";
 const SUITE_IDS: [&str; 3] = ["micro_families", "macro_molecules", "crossover_cpu_gpu"];
+const PHASE0_ARTIFACTS: [(&str, &str); 7] = [
+    (
+        "baseline",
+        "/tmp/cintx_artifacts/cintx_cubecl_baseline.json",
+    ),
+    ("profile", "/tmp/cintx_artifacts/cintx_cubecl_profile.jsonl"),
+    (
+        "autotune",
+        "/tmp/cintx_artifacts/cintx_cubecl_autotune.json",
+    ),
+    (
+        "speed_report",
+        "/tmp/cintx_artifacts/cintx_cubecl_speed_report.json",
+    ),
+    (
+        "memory_report",
+        "/tmp/cintx_artifacts/cintx_cubecl_memory_report.json",
+    ),
+    (
+        "oracle_summary",
+        "/tmp/cintx_artifacts/cintx_cubecl_oracle_summary.json",
+    ),
+    (
+        "unverified_matrix",
+        "/tmp/cintx_artifacts/cintx_cubecl_unverified_matrix.json",
+    ),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ReportMode {
@@ -60,10 +88,13 @@ struct BenchRow {
     suite_id: String,
     case_id: String,
     profile: String,
-    throughput: f64,
-    workspace_bytes: usize,
-    transfer_bytes: usize,
-    not0: i32,
+    throughput: Option<f64>,
+    workspace_bytes: Option<usize>,
+    transfer_bytes: Option<usize>,
+    not0: Option<i32>,
+    pack_ns: Option<u64>,
+    submit_ns: Option<u64>,
+    readback_ns: Option<u64>,
     crossover_shift_pct: Option<f64>,
     source: String,
 }
@@ -72,9 +103,17 @@ struct BenchRow {
 struct SuiteAggregate {
     row_count: usize,
     throughput_sum: f64,
+    throughput_count: usize,
     workspace_peak: usize,
     transfer_sum: usize,
+    transfer_count: usize,
     not0_sum: i64,
+    pack_ns_sum: u128,
+    pack_ns_count: usize,
+    submit_ns_sum: u128,
+    submit_ns_count: usize,
+    readback_ns_sum: u128,
+    readback_ns_count: usize,
     crossover_shift_sum: f64,
     crossover_shift_count: usize,
     profiles: BTreeSet<String>,
@@ -91,9 +130,20 @@ struct SuiteMeasurement {
     workspace_bytes: usize,
     transfer_bytes: usize,
     not0: i32,
+    host_timing_ns: Option<HostTimingNs>,
     chunk_count: usize,
     fallback_reason: Option<String>,
     crossover_shift_pct: Option<f64>,
+}
+
+/// Mean control-plane timings from warm batch-pilot metric rows.
+///
+/// They are portable host wall-clock intervals, not GPU timestamps.
+#[derive(Clone, Copy, Debug)]
+struct HostTimingNs {
+    pack: u64,
+    submit: u64,
+    readback: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -138,6 +188,12 @@ pub fn run_bench_report(thresholds_path: &str, mode: &str) -> Result<()> {
                 "workspace_bytes": measurement.workspace_bytes,
                 "transfer_bytes": measurement.transfer_bytes,
                 "not0": measurement.not0,
+                "host_timing_ns": measurement.host_timing_ns.map(|timing| json!({
+                    "kind": "host_wall_clock_not_device_timestamp",
+                    "pack": timing.pack,
+                    "submit": timing.submit,
+                    "readback": timing.readback,
+                })),
                 "crossover_shift_pct": measurement.crossover_shift_pct,
             },
             "baseline": {
@@ -169,6 +225,12 @@ pub fn run_bench_report(thresholds_path: &str, mode: &str) -> Result<()> {
             "fallback_reason": measurement.fallback_reason,
             "transfer_bytes": measurement.transfer_bytes,
             "not0": measurement.not0,
+            "host_timing_ns": measurement.host_timing_ns.map(|timing| json!({
+                "kind": "host_wall_clock_not_device_timestamp",
+                "pack": timing.pack,
+                "submit": timing.submit,
+                "readback": timing.readback,
+            })),
             "workspace_bytes": measurement.workspace_bytes,
             "source": measurement.source,
         }));
@@ -217,11 +279,27 @@ pub fn run_bench_report(thresholds_path: &str, mode: &str) -> Result<()> {
     diagnostics_report["artifact_write"] = diagnostics_write.to_json();
     rewrite_json(&diagnostics_write.actual_path, &diagnostics_report)?;
 
-    println!("bench report artifact: {}", bench_write.actual_path.display());
+    let phase0_writes = write_phase0_artifacts(
+        mode,
+        thresholds_path,
+        &row_sources,
+        &suite_reports,
+        &diagnostics_rows,
+        &bench_write,
+        &diagnostics_write,
+    )?;
+
+    println!(
+        "bench report artifact: {}",
+        bench_write.actual_path.display()
+    );
     println!(
         "runtime diagnostics artifact: {}",
         diagnostics_write.actual_path.display()
     );
+    for (kind, path) in phase0_writes {
+        println!("phase 0 {kind} artifact: {}", path.display());
+    }
 
     if mode == ReportMode::Enforce && !threshold_exceedances.is_empty() {
         anyhow::bail!(
@@ -231,6 +309,216 @@ pub fn run_bench_report(thresholds_path: &str, mode: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Emits the Phase 0 artifact set from the benchmark rows already consumed by
+/// this command.  These artifacts intentionally do not manufacture GPU
+/// adapter information, device timestamps, tuning choices, or oracle results:
+/// the current benchmark contract has none of those inputs.
+fn write_phase0_artifacts(
+    mode: ReportMode,
+    thresholds_path: &str,
+    row_sources: &[String],
+    suite_reports: &[Value],
+    diagnostics_rows: &[Value],
+    bench_write: &ArtifactWrite,
+    diagnostics_write: &ArtifactWrite,
+) -> Result<Vec<(&'static str, PathBuf)>> {
+    let provenance = phase0_provenance(
+        mode,
+        thresholds_path,
+        row_sources,
+        bench_write,
+        diagnostics_write,
+    );
+    let suite_rows = phase0_suite_rows(suite_reports);
+    let profile_rows = suite_rows
+        .iter()
+        .map(|suite| {
+            json!({
+                "schema_version": 1,
+                "artifact": "cintx_cubecl_profile",
+                "provenance": provenance,
+                "suite": suite,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let artifacts = [
+        (
+            "baseline",
+            json!({
+                "schema_version": 1,
+                "artifact": "cintx_cubecl_baseline",
+                "provenance": provenance,
+                "measurement_scope": "aggregate benchmark rows; threshold fallbacks are labelled per suite",
+                "suites": suite_rows,
+            }),
+        ),
+        (
+            "autotune",
+            json!({
+                "schema_version": 1,
+                "artifact": "cintx_cubecl_autotune",
+                "provenance": provenance,
+                "status": "not_collected",
+                "reason": "the current benchmark/report contract records no tuner candidates, selected configuration, or device identity",
+                "device_timing": { "status": "not_collected", "reason": "host wall-clock metrics are not device timestamps" },
+            }),
+        ),
+        (
+            "speed_report",
+            json!({
+                "schema_version": 1,
+                "artifact": "cintx_cubecl_speed_report",
+                "provenance": provenance,
+                "metric_kind": "benchmark throughput derived from Criterion elapsed-time estimates when present",
+                "not_device_timing": true,
+                "suites": suite_rows,
+            }),
+        ),
+        (
+            "memory_report",
+            json!({
+                "schema_version": 1,
+                "artifact": "cintx_cubecl_memory_report",
+                "provenance": provenance,
+                "metric_kind": "reported workspace and transfer byte counters",
+                "not_device_memory_telemetry": true,
+                "diagnostics": diagnostics_rows,
+            }),
+        ),
+        (
+            "oracle_summary",
+            json!({
+                "schema_version": 1,
+                "artifact": "cintx_cubecl_oracle_summary",
+                "provenance": provenance,
+                "status": "not_run",
+                "reason": "bench-report consumes benchmark rows only; no oracle-comparison result was supplied to this command",
+                "verified_scope": [],
+                "unverified_scope": ["all benchmarked suites require a separate oracle-compare invocation"],
+            }),
+        ),
+        (
+            "unverified_matrix",
+            json!({
+                "schema_version": 1,
+                "artifact": "cintx_cubecl_unverified_matrix",
+                "provenance": provenance,
+                "backend_matrix": unverified_backend_matrix(),
+            }),
+        ),
+    ];
+
+    let mut writes = Vec::new();
+    for ((kind, required_path), (_, value)) in PHASE0_ARTIFACTS
+        .iter()
+        .filter(|(kind, _)| *kind != "profile")
+        .zip(artifacts)
+    {
+        debug_assert_eq!(*kind, artifacts_kind(&value));
+        let write = write_json_with_fallback(
+            required_path,
+            &format!("{}.json", value["artifact"].as_str().unwrap_or(kind)),
+            &value,
+        )?;
+        writes.push((*kind, write.actual_path));
+    }
+
+    let profile_path = PHASE0_ARTIFACTS
+        .iter()
+        .find_map(|(kind, path)| (*kind == "profile").then_some(*path))
+        .expect("Phase 0 profile artifact path is declared");
+    write_jsonl(profile_path, &profile_rows)?;
+    writes.push(("profile", PathBuf::from(profile_path)));
+    Ok(writes)
+}
+
+fn phase0_provenance(
+    mode: ReportMode,
+    thresholds_path: &str,
+    row_sources: &[String],
+    bench_write: &ArtifactWrite,
+    diagnostics_write: &ArtifactWrite,
+) -> Value {
+    json!({
+        "report_mode": mode.as_str(),
+        "command": format!(
+            "cargo run --locked --manifest-path xtask/Cargo.toml -- bench-report --thresholds {thresholds_path} --mode {}",
+            mode.as_str(),
+        ),
+        "xtask_version": env!("CARGO_PKG_VERSION"),
+        "git_revision": env::var("CINTX_GIT_REVISION").ok(),
+        "benchmark_row_sources": row_sources,
+        "bench_report": bench_write.to_json(),
+        "runtime_diagnostics": diagnostics_write.to_json(),
+        "limitations": [
+            "No GPU adapter/device identity was recorded by benchmark rows.",
+            "pack_ns, submit_ns, and readback_ns are host wall-clock intervals, not device timestamps.",
+            "No device-memory telemetry, autotuning output, or oracle-comparison result was supplied to bench-report.",
+        ],
+    })
+}
+
+fn phase0_suite_rows(suite_reports: &[Value]) -> Vec<Value> {
+    suite_reports
+        .iter()
+        .map(|suite| {
+            let source = suite
+                .get("source")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
+            json!({
+                "suite_id": suite.get("suite_id").cloned().unwrap_or(Value::Null),
+                "profile": suite.get("profile").cloned().unwrap_or(Value::Null),
+                "metric_origin": if source == "threshold_baseline" {
+                    "threshold_configuration_fallback_not_a_measurement"
+                } else {
+                    "observed_benchmark_rows"
+                },
+                "source": source,
+                "sample_count": suite.get("sample_count").cloned().unwrap_or(Value::Null),
+                "measured": suite.get("measured").cloned().unwrap_or(Value::Null),
+                "baseline": suite.get("baseline").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect()
+}
+
+fn unverified_backend_matrix() -> Vec<Value> {
+    ["cpu", "cuda", "rocm", "wgpu", "metal"]
+        .into_iter()
+        .map(|backend| {
+            json!({
+                "backend": backend,
+                "status": "unverified",
+                "reason": "bench-report has no backend-specific adapter provenance, device timing, or oracle result",
+            })
+        })
+        .collect()
+}
+
+fn artifacts_kind(value: &Value) -> &str {
+    value
+        .get("artifact")
+        .and_then(Value::as_str)
+        .and_then(|artifact| artifact.strip_prefix("cintx_cubecl_"))
+        .unwrap_or("unknown")
+}
+
+fn write_jsonl(path: &str, values: &[Value]) -> Result<()> {
+    let payload = values
+        .iter()
+        .map(serde_json::to_string)
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .join("\n");
+    let payload = if payload.is_empty() {
+        payload
+    } else {
+        format!("{payload}\n")
+    };
+    try_write_payload(Path::new(path), payload.as_bytes())
 }
 
 fn read_thresholds(path: &Path) -> Result<ThresholdConfig> {
@@ -288,11 +576,7 @@ fn parse_suite_thresholds(suite_id: &str, value: &Value) -> Result<SuiteThreshol
     })
 }
 
-fn required_f64(
-    object: &serde_json::Map<String, Value>,
-    suite_id: &str,
-    key: &str,
-) -> Result<f64> {
+fn required_f64(object: &serde_json::Map<String, Value>, suite_id: &str, key: &str) -> Result<f64> {
     object
         .get(key)
         .and_then(Value::as_f64)
@@ -360,8 +644,8 @@ fn bench_row_candidates() -> Vec<PathBuf> {
 }
 
 fn parse_jsonl_rows(path: &Path, source: &str) -> Result<Vec<BenchRow>> {
-    let content =
-        fs::read_to_string(path).with_context(|| format!("read benchmark rows `{}`", path.display()))?;
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("read benchmark rows `{}`", path.display()))?;
     let mut rows = Vec::new();
 
     for (line_index, raw_line) in content.lines().enumerate() {
@@ -401,20 +685,22 @@ fn parse_bench_row(value: &Value, source: &str) -> Result<Option<BenchRow>> {
         .get("profile")
         .and_then(Value::as_str)
         .unwrap_or("base");
-    let throughput = value
-        .get("throughput")
-        .and_then(Value::as_f64)
-        .unwrap_or_default();
+    let throughput = value.get("throughput").and_then(Value::as_f64);
     let workspace_bytes = value
         .get("workspace_bytes")
         .and_then(Value::as_u64)
-        .unwrap_or_default();
+        .and_then(|value| usize::try_from(value).ok());
     let transfer_bytes = value
         .get("transfer_bytes")
         .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let not0 = value.get("not0").and_then(Value::as_i64).unwrap_or_default();
-    let not0 = i32::try_from(not0).unwrap_or(i32::MAX);
+        .and_then(|value| usize::try_from(value).ok());
+    let not0 = value
+        .get("not0")
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok());
+    let pack_ns = value.get("pack_ns").and_then(Value::as_u64);
+    let submit_ns = value.get("submit_ns").and_then(Value::as_u64);
+    let readback_ns = value.get("readback_ns").and_then(Value::as_u64);
     let crossover_shift_pct = value.get("crossover_shift_pct").and_then(Value::as_f64);
 
     Ok(Some(BenchRow {
@@ -422,9 +708,12 @@ fn parse_bench_row(value: &Value, source: &str) -> Result<Option<BenchRow>> {
         case_id: case_id.to_owned(),
         profile: profile.to_owned(),
         throughput,
-        workspace_bytes: usize::try_from(workspace_bytes).unwrap_or(usize::MAX),
-        transfer_bytes: usize::try_from(transfer_bytes).unwrap_or(usize::MAX),
+        workspace_bytes,
+        transfer_bytes,
         not0,
+        pack_ns,
+        submit_ns,
+        readback_ns,
         crossover_shift_pct,
         source: source.to_owned(),
     }))
@@ -452,6 +741,15 @@ fn collect_criterion_rows() -> Result<Vec<BenchRow>> {
         if components.len() < 3 {
             continue;
         }
+        // Criterion also writes `base/` and `change/` estimate files. The
+        // latter are percentage-change statistics, not elapsed nanoseconds;
+        // only `new/estimates.json` is a measurement for this invocation.
+        if components
+            .get(components.len().saturating_sub(2))
+            .is_none_or(|run_kind| run_kind != "new")
+        {
+            continue;
+        }
         let suite_id = components[0].clone();
         if !SUITE_IDS.contains(&suite_id.as_str()) {
             continue;
@@ -477,15 +775,19 @@ fn collect_criterion_rows() -> Result<Vec<BenchRow>> {
             continue;
         }
 
-        let throughput = 1_000_000_000.0 / point_estimate_ns;
+        let throughput =
+            criterion_work_units(&estimate_path)? * 1_000_000_000.0 / point_estimate_ns;
         rows.push(BenchRow {
             suite_id,
             case_id,
             profile: env::var("CINTX_BENCH_PROFILE").unwrap_or_else(|_| "criterion".to_owned()),
-            throughput,
-            workspace_bytes: 0,
-            transfer_bytes: 0,
-            not0: 1,
+            throughput: Some(throughput),
+            workspace_bytes: None,
+            transfer_bytes: None,
+            not0: None,
+            pack_ns: None,
+            submit_ns: None,
+            readback_ns: None,
             crossover_shift_pct: None,
             source: format!("criterion:{}", estimate_path.display()),
         });
@@ -494,13 +796,43 @@ fn collect_criterion_rows() -> Result<Vec<BenchRow>> {
     Ok(rows)
 }
 
+/// Criterion stores elapsed time in `estimates.json` and the work unit selected
+/// by the benchmark in its adjacent `benchmark.json`. Respect the latter so an
+/// `Elements` benchmark reports elements/second rather than invocations/second.
+fn criterion_work_units(estimate_path: &Path) -> Result<f64> {
+    let Some(benchmark_path) = estimate_path
+        .parent()
+        .map(|parent| parent.join("benchmark.json"))
+    else {
+        return Ok(1.0);
+    };
+    if !benchmark_path.is_file() {
+        return Ok(1.0);
+    }
+
+    let content = fs::read_to_string(&benchmark_path)
+        .with_context(|| format!("read criterion metadata `{}`", benchmark_path.display()))?;
+    let value: Value = serde_json::from_str(&content)
+        .with_context(|| format!("parse criterion metadata `{}`", benchmark_path.display()))?;
+    let Some(throughput) = value.get("throughput").and_then(Value::as_object) else {
+        return Ok(1.0);
+    };
+    let Some(work_units) = throughput.values().next().and_then(Value::as_u64) else {
+        return Ok(1.0);
+    };
+    Ok(work_units as f64)
+}
+
 fn collect_named_files(root: &Path, name: &str, out: &mut Vec<PathBuf>) -> Result<()> {
     if !root.is_dir() {
         return Ok(());
     }
 
-    for entry in fs::read_dir(root).with_context(|| format!("read directory `{}`", root.display()))? {
-        let entry = entry.with_context(|| format!("list directory entry under `{}`", root.display()))?;
+    for entry in
+        fs::read_dir(root).with_context(|| format!("read directory `{}`", root.display()))?
+    {
+        let entry =
+            entry.with_context(|| format!("list directory entry under `{}`", root.display()))?;
         let path = entry.path();
         if path.is_dir() {
             collect_named_files(&path, name, out)?;
@@ -522,12 +854,40 @@ fn aggregate_rows(rows: &[BenchRow]) -> BTreeMap<String, SuiteAggregate> {
         if !SUITE_IDS.contains(&row.suite_id.as_str()) {
             continue;
         }
-        let aggregate = aggregates.entry(row.suite_id.clone()).or_insert_with(SuiteAggregate::default);
+        let aggregate = aggregates
+            .entry(row.suite_id.clone())
+            .or_insert_with(SuiteAggregate::default);
         aggregate.row_count = aggregate.row_count.saturating_add(1);
-        aggregate.throughput_sum += row.throughput;
-        aggregate.workspace_peak = aggregate.workspace_peak.max(row.workspace_bytes);
-        aggregate.transfer_sum = aggregate.transfer_sum.saturating_add(row.transfer_bytes);
-        aggregate.not0_sum = aggregate.not0_sum.saturating_add(i64::from(row.not0));
+        if let Some(throughput) = row.throughput.filter(|throughput| *throughput > 0.0) {
+            aggregate.throughput_sum += throughput;
+            aggregate.throughput_count = aggregate.throughput_count.saturating_add(1);
+        }
+        if let Some(workspace_bytes) = row.workspace_bytes {
+            aggregate.workspace_peak = aggregate.workspace_peak.max(workspace_bytes);
+        }
+        if let Some(transfer_bytes) = row.transfer_bytes {
+            aggregate.transfer_sum = aggregate.transfer_sum.saturating_add(transfer_bytes);
+            aggregate.transfer_count = aggregate.transfer_count.saturating_add(1);
+        }
+        if let Some(not0) = row.not0 {
+            aggregate.not0_sum = aggregate.not0_sum.saturating_add(i64::from(not0));
+        }
+        if let Some(pack_ns) = row.pack_ns.filter(|value| *value > 0) {
+            aggregate.pack_ns_sum = aggregate.pack_ns_sum.saturating_add(u128::from(pack_ns));
+            aggregate.pack_ns_count = aggregate.pack_ns_count.saturating_add(1);
+        }
+        if let Some(submit_ns) = row.submit_ns.filter(|value| *value > 0) {
+            aggregate.submit_ns_sum = aggregate
+                .submit_ns_sum
+                .saturating_add(u128::from(submit_ns));
+            aggregate.submit_ns_count = aggregate.submit_ns_count.saturating_add(1);
+        }
+        if let Some(readback_ns) = row.readback_ns.filter(|value| *value > 0) {
+            aggregate.readback_ns_sum = aggregate
+                .readback_ns_sum
+                .saturating_add(u128::from(readback_ns));
+            aggregate.readback_ns_count = aggregate.readback_ns_count.saturating_add(1);
+        }
         if let Some(shift) = row.crossover_shift_pct {
             aggregate.crossover_shift_sum += shift;
             aggregate.crossover_shift_count = aggregate.crossover_shift_count.saturating_add(1);
@@ -563,13 +923,29 @@ fn build_suite_measurement(
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(",");
-            let throughput = aggregate.throughput_sum / aggregate.row_count as f64;
-            let transfer_bytes = aggregate.transfer_sum / aggregate.row_count.max(1);
+            let throughput = if aggregate.throughput_count > 0 {
+                aggregate.throughput_sum / aggregate.throughput_count as f64
+            } else {
+                thresholds.baseline_throughput
+            };
+            let transfer_bytes = if aggregate.transfer_count > 0 {
+                aggregate.transfer_sum / aggregate.transfer_count
+            } else {
+                thresholds.baseline_transfer_bytes
+            };
             let crossover_shift_pct = if aggregate.crossover_shift_count > 0 {
                 Some(aggregate.crossover_shift_sum / aggregate.crossover_shift_count as f64)
             } else {
                 thresholds.baseline_crossover_shift_pct
             };
+            let host_timing_ns = (aggregate.pack_ns_count > 0
+                && aggregate.submit_ns_count > 0
+                && aggregate.readback_ns_count > 0)
+                .then(|| HostTimingNs {
+                    pack: average_ns(aggregate.pack_ns_sum, aggregate.pack_ns_count),
+                    submit: average_ns(aggregate.submit_ns_sum, aggregate.submit_ns_count),
+                    readback: average_ns(aggregate.readback_ns_sum, aggregate.readback_ns_count),
+                });
 
             return SuiteMeasurement {
                 suite_id: suite_id.to_owned(),
@@ -579,7 +955,10 @@ fn build_suite_measurement(
                 throughput,
                 workspace_bytes: aggregate.workspace_peak,
                 transfer_bytes,
-                not0: aggregate.not0_sum.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+                not0: aggregate
+                    .not0_sum
+                    .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
+                host_timing_ns,
                 chunk_count: aggregate.row_count,
                 fallback_reason: None,
                 crossover_shift_pct,
@@ -596,10 +975,16 @@ fn build_suite_measurement(
         workspace_bytes: thresholds.baseline_workspace_bytes,
         transfer_bytes: thresholds.baseline_transfer_bytes,
         not0: 0,
+        host_timing_ns: None,
         chunk_count: 0,
         fallback_reason: Some("missing_bench_rows".to_owned()),
         crossover_shift_pct: thresholds.baseline_crossover_shift_pct,
     }
+}
+
+fn average_ns(sum: u128, count: usize) -> u64 {
+    let count = u128::try_from(count).unwrap_or(u128::MAX).max(1);
+    u64::try_from(sum / count).unwrap_or(u64::MAX)
 }
 
 fn evaluate_suite_regression(
@@ -641,7 +1026,9 @@ fn evaluate_suite_regression(
             memory_regression_pct, thresholds.memory_regression_pct
         ));
     }
-    if let (Some(limit), Some(actual)) = (thresholds.transfer_regression_pct, transfer_regression_pct) {
+    if let (Some(limit), Some(actual)) =
+        (thresholds.transfer_regression_pct, transfer_regression_pct)
+    {
         if actual > limit {
             exceeded_reasons.push(format!(
                 "transfer regression {:.3}% exceeded threshold {:.3}%",
@@ -649,7 +1036,8 @@ fn evaluate_suite_regression(
             ));
         }
     }
-    if let (Some(limit), Some(actual)) = (thresholds.crossover_shift_pct, crossover_shift_delta_pct) {
+    if let (Some(limit), Some(actual)) = (thresholds.crossover_shift_pct, crossover_shift_delta_pct)
+    {
         if actual > limit {
             exceeded_reasons.push(format!(
                 "crossover shift {:.3}% exceeded threshold {:.3}%",
@@ -681,12 +1069,21 @@ fn percent_regression_when_higher_is_worse(baseline: f64, measured: f64) -> f64 
     ((measured - baseline) / baseline) * 100.0
 }
 
-fn write_json_with_fallback(required_path: &str, fallback_name: &str, value: &Value) -> Result<ArtifactWrite> {
-    let payload = serde_json::to_vec_pretty(value).context("serialize bench-report artifact json")?;
+fn write_json_with_fallback(
+    required_path: &str,
+    fallback_name: &str,
+    value: &Value,
+) -> Result<ArtifactWrite> {
+    let payload =
+        serde_json::to_vec_pretty(value).context("serialize bench-report artifact json")?;
     write_bytes_with_fallback(required_path, fallback_name, &payload)
 }
 
-fn write_bytes_with_fallback(required_path: &str, fallback_name: &str, payload: &[u8]) -> Result<ArtifactWrite> {
+fn write_bytes_with_fallback(
+    required_path: &str,
+    fallback_name: &str,
+    payload: &[u8],
+) -> Result<ArtifactWrite> {
     let required = PathBuf::from(required_path);
     match try_write_payload(&required, payload) {
         Ok(()) => Ok(ArtifactWrite {
@@ -751,5 +1148,73 @@ impl ArtifactWrite {
             "fallback_reason": self.fallback_reason,
             "fallback_env_var": FALLBACK_ARTIFACT_DIR_ENV,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn phase0_suite_rows_label_threshold_fallbacks_as_unmeasured() {
+        let rows = phase0_suite_rows(&[
+            json!({
+                "suite_id": "micro_families",
+                "profile": "base",
+                "source": "threshold_baseline",
+                "sample_count": 0,
+                "measured": { "throughput": 1.0 },
+                "baseline": { "throughput": 1.0 },
+            }),
+            json!({
+                "suite_id": "macro_molecules",
+                "profile": "criterion",
+                "source": "jsonl:/tmp/rows.jsonl#case",
+                "sample_count": 2,
+                "measured": { "throughput": 2.0 },
+                "baseline": { "throughput": 1.0 },
+            }),
+        ]);
+
+        assert_eq!(
+            rows[0]["metric_origin"],
+            "threshold_configuration_fallback_not_a_measurement"
+        );
+        assert_eq!(rows[1]["metric_origin"], "observed_benchmark_rows");
+        assert_eq!(rows[1]["measured"]["throughput"], 2.0);
+    }
+
+    #[test]
+    fn phase0_backend_matrix_makes_no_verified_backend_claim() {
+        let matrix = unverified_backend_matrix();
+        let backends = matrix
+            .iter()
+            .map(|entry| entry["backend"].as_str().unwrap_or_default())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            backends,
+            BTreeSet::from(["cpu", "cuda", "metal", "rocm", "wgpu"])
+        );
+        assert!(matrix.iter().all(|entry| entry["status"] == "unverified"));
+        assert!(matrix.iter().all(|entry| {
+            entry["reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("device timing"))
+        }));
+    }
+
+    #[test]
+    fn phase0_artifact_manifest_has_all_required_names() {
+        let paths = PHASE0_ARTIFACTS
+            .iter()
+            .map(|(_, path)| *path)
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(paths.len(), 7);
+        assert!(paths
+            .iter()
+            .all(|path| path.starts_with("/tmp/cintx_artifacts/cintx_cubecl_")));
+        assert!(paths.contains("/tmp/cintx_artifacts/cintx_cubecl_profile.jsonl"));
     }
 }

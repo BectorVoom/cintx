@@ -1,5 +1,5 @@
 use crate::boys::rys_roots_simd;
-use crate::kernels::one_electron::{cart_comps, common_fac_sp, ncart, SQRTPI};
+use crate::kernels::one_electron::{SQRTPI, cart_comps, common_fac_sp, ncart};
 use crate::kernels::recurrence::vrr_2e_2d_axis;
 use crate::vector::SimdFloat;
 use std::f64::consts::PI;
@@ -225,11 +225,17 @@ impl SimdCenter3c2eKernel {
                             for (i_idx, &(ix, iy, iz)) in ci_comps.iter().enumerate() {
                                 let mut sum = V::splat(V::Scalar::default());
                                 for r in 0..nroots {
-                                    let x_idx = ((r * nk + kx as usize) * nj + jx as usize) * ni + ix as usize;
-                                    let y_idx = ((r * nk + ky as usize) * nj + jy as usize) * ni + iy as usize;
-                                    let z_idx = ((r * nk + kz as usize) * nj + jz as usize) * ni + iz as usize;
+                                    let x_idx = ((r * nk + kx as usize) * nj + jx as usize) * ni
+                                        + ix as usize;
+                                    let y_idx = ((r * nk + ky as usize) * nj + jy as usize) * ni
+                                        + iy as usize;
+                                    let z_idx = ((r * nk + kz as usize) * nj + jz as usize) * ni
+                                        + iz as usize;
 
-                                    sum = sum + g_split[gx_off + x_idx] * g_split[gy_off + y_idx] * g_split[gz_off + z_idx];
+                                    sum = sum
+                                        + g_split[gx_off + x_idx]
+                                            * g_split[gy_off + y_idx]
+                                            * g_split[gz_off + z_idx];
                                 }
 
                                 let out_idx = (k_idx * nfj + j_idx) * nfi + i_idx;

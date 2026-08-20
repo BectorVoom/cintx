@@ -43,12 +43,12 @@
 //!         libcint-master/src/g2e.c (CINTg0_2e, CINTg0_2e_2d).
 
 use crate::backend::ResolvedBackend;
-use crate::math::rys::rys_roots_host;
-use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::kernels::f12::{Nabla1Center, gout_ipip1, gout_ipn};
 use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
+use crate::math::rys::rys_roots_host;
+use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
-use crate::transform::c2s::{cart_to_sph_2e, cart_to_sph_2c2e, ncart, nsph};
+use crate::transform::c2s::{cart_to_sph_2c2e, cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::{cart_to_spinor_sf_2d, cart_to_spinor_sf_derivative_2d};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
@@ -284,20 +284,15 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                                 while n <= li {
                                     let i_off = irys + n * dn;
                                     let s0_k0 = g[(base + i_off) as usize];
-                                    let prev_i_k0 =
-                                        g[(base + irys + (n - 1u32) * dn) as usize];
+                                    let prev_i_k0 = g[(base + irys + (n - 1u32) * dn) as usize];
                                     // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
-                                    let mut s1 =
-                                        c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
+                                    let mut s1 = c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
                                     g[(base + i_off + dm) as usize] = s1;
                                     let mut s_prev = s0_k0;
                                     let mut m = 1u32;
                                     while m < lk {
-                                        let prev_i_km = g[(base
-                                            + irys
-                                            + (n - 1u32) * dn
-                                            + m * dm)
-                                            as usize];
+                                        let prev_i_km =
+                                            g[(base + irys + (n - 1u32) * dn + m * dm) as usize];
                                         let s2 = c0pa * s1
                                             + F::cast_from(m) * b01 * s_prev
                                             + F::cast_from(n) * b00 * prev_i_km;
@@ -353,13 +348,9 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                                 #[unroll]
                                 for irys2 in 0..nroots {
                                     let vx = g[(kx * dm + ix * dn + irys2) as usize];
-                                    let vy =
-                                        g[(g_size + ky * dm + iy * dn + irys2) as usize];
-                                    let vz = g[(2u32 * g_size
-                                        + kz * dm
-                                        + iz * dn
-                                        + irys2)
-                                        as usize];
+                                    let vy = g[(g_size + ky * dm + iy * dn + irys2) as usize];
+                                    let vz =
+                                        g[(2u32 * g_size + kz * dm + iz * dn + irys2) as usize];
                                     val += vx * vy * vz;
                                 }
 
@@ -680,7 +671,16 @@ fn launch_center_2c2e_grad<F: CintFloat>(
             // 2c2e G-tensor via the 2e builder with phantom j,l (aj=al=0). No
             // Gaussian-overlap prefactor (Rys weights encode it): fac_env = common_factor.
             let g = fill_g_tensor_2e(
-                ai, 0.0, ak, 0.0, &ri, &rj, &rk, &rl, grad_shape, common_factor,
+                ai,
+                0.0,
+                ak,
+                0.0,
+                &ri,
+                &rj,
+                &rk,
+                &rl,
+                grad_shape,
+                common_factor,
             );
 
             let exponent = match center {
@@ -689,7 +689,16 @@ fn launch_center_2c2e_grad<F: CintFloat>(
                 _ => unreachable!(),
             };
             // gout_ipn at BASE li/lk (the G-tensor carries the +1 headroom).
-            let gout = gout_ipn(&g, &grad_f12_shape, li as usize, 0, lk as usize, 0, center, exponent);
+            let gout = gout_ipn(
+                &g,
+                &grad_f12_shape,
+                li as usize,
+                0,
+                lk as usize,
+                0,
+                center,
+                exponent,
+            );
 
             for ci in 0..n_ctr_i {
                 let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
@@ -720,7 +729,8 @@ fn launch_center_2c2e_grad<F: CintFloat>(
                         let base = (ci * n_ctr_k + ck) * total_len + comp * block_len;
                         // Transform the (i, j=s, k, l=s) Cartesian block; s slots are
                         // cart==sph identities so this reduces to the 2c2e transform.
-                        let sph = cart_to_sph_2e(&cart_blocks[base..base + block_len], li, 0, lk, 0);
+                        let sph =
+                            cart_to_sph_2e(&cart_blocks[base..base + block_len], li, 0, lk, 0);
                         for mk in 0..nsk {
                             let kidx = ck * nsk + mk;
                             for mi in 0..nsi {
@@ -764,15 +774,28 @@ fn launch_center_2c2e_grad<F: CintFloat>(
         // the wrapper's expected device-native layout. No aux-k axis (D-06).
         Representation::Spinor => {
             cart_to_spinor_sf_derivative_2d::<F>(
-                staging, &cart_blocks, 3, li, shell_i.kappa, lk, shell_k.kappa, n_ctr_i,
+                staging,
+                &cart_blocks,
+                3,
+                li,
+                shell_i.kappa,
+                lk,
+                shell_k.kappa,
+                n_ctr_i,
                 n_ctr_k,
             )?;
         }
     }
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
@@ -854,7 +877,16 @@ fn launch_center_2c2e_hess1<F: CintFloat>(
             let ak = shell_k.exponents[pk];
 
             let g = fill_g_tensor_2e(
-                ai, 0.0, ak, 0.0, &ri, &rj, &rk, &rl, hess_shape, common_factor,
+                ai,
+                0.0,
+                ak,
+                0.0,
+                &ri,
+                &rj,
+                &rk,
+                &rl,
+                hess_shape,
+                common_factor,
             );
 
             // gout_ipip1 at BASE li/lk (the G-tensor carries the +2 headroom).
@@ -868,7 +900,8 @@ fn launch_center_2c2e_hess1<F: CintFloat>(
                     let base = (ci * n_ctr_k + ck) * total_len;
                     for n in 0..block_len {
                         for comp in 0..NCOMP {
-                            cart_blocks[base + comp * block_len + n] += weight * gout[n * NCOMP + comp];
+                            cart_blocks[base + comp * block_len + n] +=
+                                weight * gout[n * NCOMP + comp];
                         }
                     }
                 }
@@ -887,7 +920,8 @@ fn launch_center_2c2e_hess1<F: CintFloat>(
                 for ci in 0..n_ctr_i {
                     for ck in 0..n_ctr_k {
                         let base = (ci * n_ctr_k + ck) * total_len + comp * block_len;
-                        let sph = cart_to_sph_2e(&cart_blocks[base..base + block_len], li, 0, lk, 0);
+                        let sph =
+                            cart_to_sph_2e(&cart_blocks[base..base + block_len], li, 0, lk, 0);
                         for mk in 0..nsk {
                             let kidx = ck * nsk + mk;
                             for mi in 0..nsi {
@@ -931,15 +965,28 @@ fn launch_center_2c2e_hess1<F: CintFloat>(
         // no aux-k) so that a future registration folds correctly without a panic.
         Representation::Spinor => {
             cart_to_spinor_sf_derivative_2d::<F>(
-                staging, &cart_blocks, NCOMP, li, shell_i.kappa, lk, shell_k.kappa, n_ctr_i,
+                staging,
+                &cart_blocks,
+                NCOMP,
+                li,
+                shell_i.kappa,
+                lk,
+                shell_k.kappa,
+                n_ctr_i,
                 n_ctr_k,
             )?;
         }
     }
 
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
 
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     Ok(ExecutionStats {
@@ -1033,8 +1080,7 @@ fn launch_center_2c2e_typed<F: CintFloat>(
 
     // common_factor (g2c2e.c CINTinit_int2c2e_EnvVars line 44-45):
     //   common_factor = (M_PI^3)*2/SQRTPI * fac_sp_i * fac_sp_k
-    let common_factor =
-        (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lk);
+    let common_factor = (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lk);
 
     // Flatten the f64 primitive data the kernel reads.
     let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
@@ -1089,32 +1135,92 @@ fn launch_center_2c2e_typed<F: CintFloat>(
         match backend {
             #[cfg(feature = "cpu")]
             ResolvedBackend::Cpu(client) => run_2c2e_device::<cubecl::cpu::CpuRuntime>(
-                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                client,
+                li as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_k as u32,
+                nroots as u32,
+                ri,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_k,
+                &coeff_i,
                 &coeff_k,
             ),
             #[cfg(feature = "wgpu")]
             ResolvedBackend::Wgpu(client, _) => run_2c2e_device::<cubecl_wgpu::WgpuRuntime>(
-                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                client,
+                li as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_k as u32,
+                nroots as u32,
+                ri,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_k,
+                &coeff_i,
                 &coeff_k,
             ),
             #[cfg(feature = "cuda")]
             ResolvedBackend::Cuda(client) => run_2c2e_device::<cubecl_cuda::CudaRuntime>(
-                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                client,
+                li as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_k as u32,
+                nroots as u32,
+                ri,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_k,
+                &coeff_i,
                 &coeff_k,
             ),
             #[cfg(feature = "rocm")]
             ResolvedBackend::Rocm(client) => run_2c2e_device::<cubecl_hip::HipRuntime>(
-                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                client,
+                li as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_k as u32,
+                nroots as u32,
+                ri,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_k,
+                &coeff_i,
                 &coeff_k,
             ),
             #[cfg(feature = "metal")]
             ResolvedBackend::Metal(client, _) => run_2c2e_device::<cubecl_wgpu::WgpuRuntime>(
-                client, li as u32, lk as u32, n_prim_i as u32, n_prim_k as u32, n_ctr_i as u32,
-                n_ctr_k as u32, nroots as u32, ri, rk, common_factor, &exps_i, &exps_k, &coeff_i,
+                client,
+                li as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_k as u32,
+                nroots as u32,
+                ri,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_k,
+                &coeff_i,
                 &coeff_k,
             ),
         }
@@ -1137,15 +1243,21 @@ fn launch_center_2c2e_typed<F: CintFloat>(
         }
         Representation::Cart => {
             let copy_len = staging.len().min(cart_buf.len());
-            for (dst, &src) in staging[..copy_len].iter_mut().zip(cart_buf[..copy_len].iter()) {
+            for (dst, &src) in staging[..copy_len]
+                .iter_mut()
+                .zip(cart_buf[..copy_len].iter())
+            {
                 *dst = F::from_f64_lossy(src);
             }
         }
     }
 
     // WR-06: precision-aware sentinel so f32 stale lanes are not counted.
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -1189,7 +1301,12 @@ pub fn launch_center_2c2e(
                     provided: staging_f32.len(),
                 });
             }
-            launch_center_2c2e_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
+            launch_center_2c2e_typed::<f32>(
+                backend,
+                plan,
+                specialization,
+                &mut staging_f32[..out_elems],
+            )
         }
     }
 }
@@ -1326,9 +1443,6 @@ mod tests {
         }
     }
 
-
-
-
     // ── libcint byte-parity harness (DF-01 regression) ───────────────────────
     // Reference values are upstream PySCF `auxmol.intor('int2c2e_cart')`
     // (= libcint), normalized by the (xy|xy) [d] / [1][1] [f] element, at a
@@ -1338,7 +1452,17 @@ mod tests {
     // order matches libcint (xx,xy,xz,yy,yz,zz / xxx,xxy,...,zzz).
     fn parity_norm_matrix(li: u8, ai: f64, ak: f64) -> (Vec<f64>, usize) {
         let cf = (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(li);
-        let out = host_cart_2c2e(ai, ak, [0.0, 0.0, 0.0], [0.0, 0.0, 1.7], li, li, cf, 1.0, 1.0);
+        let out = host_cart_2c2e(
+            ai,
+            ak,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.7],
+            li,
+            li,
+            cf,
+            1.0,
+            1.0,
+        );
         let nc = ncart(li);
         // ref element = position [1][1] (the second cart comp self-term) = out[1 + 1*nc]
         let refv = out[1 + 1 * nc];
@@ -1438,9 +1562,8 @@ mod tests {
         let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
         let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
 
-        let common_factor = ((PI * PI * PI) * 2.0 / SQRTPI
-            * common_fac_sp(0)
-            * common_fac_sp(0)) as f32;
+        let common_factor =
+            ((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0)) as f32;
 
         center_2c2e_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
@@ -1483,21 +1606,43 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_2c2e_precision_dispatch_f64_positive() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
         let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
 
@@ -1508,7 +1653,8 @@ mod tests {
             Ok(q) => q,
             Err(_) => return,
         };
-        let mut plan = ExecutionPlan::new(op, Representation::Cart, &basis, shells, &query).unwrap();
+        let mut plan =
+            ExecutionPlan::new(op, Representation::Cart, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F64;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -1517,7 +1663,11 @@ mod tests {
         let mut staging = vec![0.0_f64; 1];
 
         let result = launch_center_2c2e_typed::<f64>(&backend, &plan, &spec, &mut staging);
-        assert!(result.is_ok(), "f64 2c2e typed inner should succeed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "f64 2c2e typed inner should succeed: {:?}",
+            result
+        );
         assert!(staging[0].is_finite(), "2c2e f64 result should be finite");
         assert!(staging[0] > 0.0, "s-s 2c2e integral should be positive");
     }
@@ -1527,21 +1677,43 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_2c2e_precision_dispatch_f32_positive() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b].into_boxed_slice());
-        let shell_a = Arc::new(Shell::try_new(0, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
-        let shell_b = Arc::new(Shell::try_new(1, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                1,
+                0,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+            .unwrap(),
+        );
         let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
 
@@ -1552,7 +1724,8 @@ mod tests {
             Ok(q) => q,
             Err(_) => return,
         };
-        let mut plan = ExecutionPlan::new(op, Representation::Cart, &basis, shells, &query).unwrap();
+        let mut plan =
+            ExecutionPlan::new(op, Representation::Cart, &basis, shells, &query).unwrap();
         plan.precision = PrecisionKind::F32;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -1561,9 +1734,19 @@ mod tests {
         let mut staging_f32 = vec![0.0_f32; 1];
 
         let result = launch_center_2c2e_typed::<f32>(&backend, &plan, &spec, &mut staging_f32);
-        assert!(result.is_ok(), "f32 2c2e typed inner should succeed: {:?}", result);
-        assert!(staging_f32[0].is_finite(), "2c2e f32 result should be finite");
-        assert!(staging_f32[0] > 0.0, "s-s 2c2e f32 integral should be positive");
+        assert!(
+            result.is_ok(),
+            "f32 2c2e typed inner should succeed: {:?}",
+            result
+        );
+        assert!(
+            staging_f32[0].is_finite(),
+            "2c2e f32 result should be finite"
+        );
+        assert!(
+            staging_f32[0] > 0.0,
+            "s-s 2c2e f32 integral should be positive"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1578,9 +1761,9 @@ mod tests {
         lk: u8,
         symbol: &str,
     ) -> (BasisSet, cintx_core::ShellTuple, cintx_core::OperatorId) {
-        use std::sync::Arc;
         use cintx_core::{Atom, BasisSet, NuclearModel, Representation, Shell};
         use cintx_ops::resolver::Resolver;
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
@@ -1605,7 +1788,9 @@ mod tests {
         let all: Arc<[Arc<Shell>]> = Arc::from(vec![s0.clone(), s1.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([s0, s1]).unwrap();
-        let op = Resolver::descriptor_by_symbol(symbol).expect("symbol in manifest").id;
+        let op = Resolver::descriptor_by_symbol(symbol)
+            .expect("symbol in manifest")
+            .id;
         (basis, shells, op)
     }
 
@@ -1615,9 +1800,9 @@ mod tests {
         op: cintx_core::OperatorId,
         rep: cintx_core::Representation,
     ) -> Result<Vec<f64>, cintxRsError> {
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
 
         let opts = ExecutionOptions::default();
         let q = query_workspace(op, rep, basis, shells.clone(), &opts)?;
@@ -1637,7 +1822,10 @@ mod tests {
         let (basis, shells, op) = build_2c2e_grad_plan(1, 0, "int2c2e_ip1_sph");
         let out = run_2c2e_grad(&basis, shells, op, Representation::Spheric).unwrap();
         assert_eq!(out.len(), 9, "(p,s) int2c2e_ip1 should produce 9 outputs");
-        assert!(out.iter().any(|v| v.abs() > 1e-14), "int2c2e_ip1 (p,s) all-zero");
+        assert!(
+            out.iter().any(|v| v.abs() > 1e-14),
+            "int2c2e_ip1 (p,s) all-zero"
+        );
     }
 
     #[test]
@@ -1645,7 +1833,10 @@ mod tests {
         let (basis, shells, op) = build_2c2e_grad_plan(0, 1, "int2c2e_ip2_sph");
         let out = run_2c2e_grad(&basis, shells, op, Representation::Spheric).unwrap();
         assert_eq!(out.len(), 9, "(s,p) int2c2e_ip2 should produce 9 outputs");
-        assert!(out.iter().any(|v| v.abs() > 1e-14), "int2c2e_ip2 (s,p) all-zero");
+        assert!(
+            out.iter().any(|v| v.abs() > 1e-14),
+            "int2c2e_ip2 (s,p) all-zero"
+        );
     }
 
     #[test]
@@ -1658,7 +1849,11 @@ mod tests {
         // hypothetical nroots>5 path is covered by the launcher guard.
         let (basis, shells, op) = build_2c2e_grad_plan(3, 3, "int2c2e_ip1_sph");
         let res = run_2c2e_grad(&basis, shells, op, Representation::Spheric);
-        assert!(res.is_ok(), "(f,f) int2c2e_ip1 (nroots=4) must be allowed: {:?}", res.err());
+        assert!(
+            res.is_ok(),
+            "(f,f) int2c2e_ip1 (nroots=4) must be allowed: {:?}",
+            res.err()
+        );
     }
 
     // 27-03 (FND-04): int2c2e_ip1/ip2 spinor gradients now EVALUATE via the
@@ -1666,13 +1861,14 @@ mod tests {
     // KET→BRA transpose (D-06) and there is no aux-k axis for 2c2e.
     #[test]
     fn test_int2c2e_grad_spinor_evaluates() {
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::{ResolvedBackend, cpu_backend::resolve_cpu_client};
+        use crate::specialization::SpecializationKey;
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
 
         let (basis, shells, op) = build_2c2e_grad_plan(1, 0, "int2c2e_ip1_sph");
         let opts = ExecutionOptions::default();
-        let q = query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
+        let q =
+            query_workspace(op, Representation::Spheric, &basis, shells.clone(), &opts).unwrap();
         let mut plan = ExecutionPlan::new(op, Representation::Spheric, &basis, shells, &q).unwrap();
         plan.representation = Representation::Spinor;
         plan.precision = PrecisionKind::F64;

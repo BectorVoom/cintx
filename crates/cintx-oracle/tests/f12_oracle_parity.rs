@@ -27,10 +27,10 @@
 #![cfg(feature = "cpu")]
 #![cfg(feature = "with-f12")]
 
-use cintx_compat::raw::{ANG_OF, BAS_SLOTS, RawApiId, eval_raw};
 #[cfg(has_vendor_libcint)]
 use cintx_compat::raw::ATM_SLOTS;
-use cintx_oracle::fixtures::{build_h2o_sto3g_f12};
+use cintx_compat::raw::{ANG_OF, BAS_SLOTS, RawApiId, eval_raw};
+use cintx_oracle::fixtures::build_h2o_sto3g_f12;
 
 /// Absolute tolerance for F12 base operator oracle parity (per D-10, F12-03).
 const ATOL_F12: f64 = 1e-12;
@@ -115,9 +115,7 @@ fn count_mismatches_atol(reference: &[f64], observed: &[f64], atol: f64) -> usiz
     for (i, (r, o)) in reference.iter().zip(observed.iter()).enumerate() {
         let diff = (o - r).abs();
         if diff > atol {
-            eprintln!(
-                "  MISMATCH[{i}] ref={r:.15e} obs={o:.15e} diff={diff:.3e} atol={atol:.1e}"
-            );
+            eprintln!("  MISMATCH[{i}] ref={r:.15e} obs={o:.15e} diff={diff:.3e} atol={atol:.1e}");
             count += 1;
         }
     }
@@ -188,7 +186,10 @@ fn f12_stg_base_nonzero() {
     let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
     let out = eval_f12_sph("int2e_stg_sph", &SHLS_4_SS, &atm, &bas, &env);
     let nonzero = out.iter().filter(|&&v| v.abs() > 1e-18).count();
-    assert!(nonzero > 0, "int2e_stg_sph output is all zeros — kernel not computing");
+    assert!(
+        nonzero > 0,
+        "int2e_stg_sph output is all zeros — kernel not computing"
+    );
 }
 
 /// Assert base YP integral produces non-zero output.
@@ -197,7 +198,10 @@ fn f12_yp_base_nonzero() {
     let (atm, bas, env) = build_h2o_sto3g_f12(1.2);
     let out = eval_f12_sph("int2e_yp_sph", &SHLS_4_SS, &atm, &bas, &env);
     let nonzero = out.iter().filter(|&&v| v.abs() > 1e-18).count();
-    assert!(nonzero > 0, "int2e_yp_sph output is all zeros — kernel not computing");
+    assert!(
+        nonzero > 0,
+        "int2e_yp_sph output is all zeros — kernel not computing"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,7 +228,10 @@ fn oracle_parity_int2e_stg_ip1_sph() {
         let mut vendor_out = vec![0.0_f64; n];
         vendor_ffi::vendor_int2e_stg_ip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
-        assert_eq!(mc, 0, "int2e_stg_ip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        assert_eq!(
+            mc, 0,
+            "int2e_stg_ip1_sph parity FAIL: {mc} mismatches for shls {shls:?}"
+        );
         println!("  PASS: int2e_stg_ip1_sph shls {shls:?}: n={n}");
     }
 }
@@ -244,9 +251,20 @@ fn oracle_parity_int2e_stg_ipip1_sph() {
         let n = ncomp * n_sph_elements(&shls, &bas);
         let cintx_out = eval_f12_sph_ncomp("int2e_stg_ipip1_sph", &shls, &atm, &bas, &env, ncomp);
         let mut vendor_out = vec![0.0_f64; n];
-        vendor_ffi::vendor_int2e_stg_ipip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int2e_stg_ipip1_sph(
+            &mut vendor_out,
+            &shls,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
-        assert_eq!(mc, 0, "int2e_stg_ipip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        assert_eq!(
+            mc, 0,
+            "int2e_stg_ipip1_sph parity FAIL: {mc} mismatches for shls {shls:?}"
+        );
         println!("  PASS: int2e_stg_ipip1_sph shls {shls:?}: n={n}");
     }
 }
@@ -266,9 +284,20 @@ fn oracle_parity_int2e_stg_ipvip1_sph() {
         let n = ncomp * n_sph_elements(&shls, &bas);
         let cintx_out = eval_f12_sph_ncomp("int2e_stg_ipvip1_sph", &shls, &atm, &bas, &env, ncomp);
         let mut vendor_out = vec![0.0_f64; n];
-        vendor_ffi::vendor_int2e_stg_ipvip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int2e_stg_ipvip1_sph(
+            &mut vendor_out,
+            &shls,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
-        assert_eq!(mc, 0, "int2e_stg_ipvip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        assert_eq!(
+            mc, 0,
+            "int2e_stg_ipvip1_sph parity FAIL: {mc} mismatches for shls {shls:?}"
+        );
         println!("  PASS: int2e_stg_ipvip1_sph shls {shls:?}: n={n}");
     }
 }
@@ -288,9 +317,20 @@ fn oracle_parity_int2e_stg_ip1ip2_sph() {
         let n = ncomp * n_sph_elements(&shls, &bas);
         let cintx_out = eval_f12_sph_ncomp("int2e_stg_ip1ip2_sph", &shls, &atm, &bas, &env, ncomp);
         let mut vendor_out = vec![0.0_f64; n];
-        vendor_ffi::vendor_int2e_stg_ip1ip2_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int2e_stg_ip1ip2_sph(
+            &mut vendor_out,
+            &shls,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
-        assert_eq!(mc, 0, "int2e_stg_ip1ip2_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        assert_eq!(
+            mc, 0,
+            "int2e_stg_ip1ip2_sph parity FAIL: {mc} mismatches for shls {shls:?}"
+        );
         println!("  PASS: int2e_stg_ip1ip2_sph shls {shls:?}: n={n}");
     }
 }
@@ -312,7 +352,10 @@ fn oracle_parity_int2e_yp_ip1_sph() {
         let mut vendor_out = vec![0.0_f64; n];
         vendor_ffi::vendor_int2e_yp_ip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
-        assert_eq!(mc, 0, "int2e_yp_ip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        assert_eq!(
+            mc, 0,
+            "int2e_yp_ip1_sph parity FAIL: {mc} mismatches for shls {shls:?}"
+        );
         println!("  PASS: int2e_yp_ip1_sph shls {shls:?}: n={n}");
     }
 }
@@ -334,7 +377,10 @@ fn oracle_parity_int2e_yp_ipip1_sph() {
         let mut vendor_out = vec![0.0_f64; n];
         vendor_ffi::vendor_int2e_yp_ipip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
-        assert_eq!(mc, 0, "int2e_yp_ipip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        assert_eq!(
+            mc, 0,
+            "int2e_yp_ipip1_sph parity FAIL: {mc} mismatches for shls {shls:?}"
+        );
         println!("  PASS: int2e_yp_ipip1_sph shls {shls:?}: n={n}");
     }
 }
@@ -354,9 +400,20 @@ fn oracle_parity_int2e_yp_ipvip1_sph() {
         let n = ncomp * n_sph_elements(&shls, &bas);
         let cintx_out = eval_f12_sph_ncomp("int2e_yp_ipvip1_sph", &shls, &atm, &bas, &env, ncomp);
         let mut vendor_out = vec![0.0_f64; n];
-        vendor_ffi::vendor_int2e_yp_ipvip1_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int2e_yp_ipvip1_sph(
+            &mut vendor_out,
+            &shls,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
-        assert_eq!(mc, 0, "int2e_yp_ipvip1_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        assert_eq!(
+            mc, 0,
+            "int2e_yp_ipvip1_sph parity FAIL: {mc} mismatches for shls {shls:?}"
+        );
         println!("  PASS: int2e_yp_ipvip1_sph shls {shls:?}: n={n}");
     }
 }
@@ -376,9 +433,20 @@ fn oracle_parity_int2e_yp_ip1ip2_sph() {
         let n = ncomp * n_sph_elements(&shls, &bas);
         let cintx_out = eval_f12_sph_ncomp("int2e_yp_ip1ip2_sph", &shls, &atm, &bas, &env, ncomp);
         let mut vendor_out = vec![0.0_f64; n];
-        vendor_ffi::vendor_int2e_yp_ip1ip2_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int2e_yp_ip1ip2_sph(
+            &mut vendor_out,
+            &shls,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_F12);
-        assert_eq!(mc, 0, "int2e_yp_ip1ip2_sph parity FAIL: {mc} mismatches for shls {shls:?}");
+        assert_eq!(
+            mc, 0,
+            "int2e_yp_ip1ip2_sph parity FAIL: {mc} mismatches for shls {shls:?}"
+        );
         println!("  PASS: int2e_yp_ip1ip2_sph shls {shls:?}: n={n}");
     }
 }
@@ -496,8 +564,7 @@ fn f12_sph_only_enforcement() {
         .iter()
         .filter(|entry| {
             matches!(entry.helper_kind, HelperKind::Operator)
-                && (entry.operator_name.starts_with("stg")
-                    || entry.operator_name.starts_with("yp"))
+                && (entry.operator_name.starts_with("stg") || entry.operator_name.starts_with("yp"))
         })
         .collect();
 

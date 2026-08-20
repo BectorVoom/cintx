@@ -14,7 +14,7 @@ pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 /// only). `Wgpu`, `Cuda`, `Rocm`, `Metal` are each gated on their own feature
 /// flag and the cintx-cubecl feature wiring forwards every backend feature
 /// to the matching flag here so the enum stays in lockstep.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BackendKind {
     /// CPU execution profile. Always available — `cpu` feature is default-on (D-06).
     Cpu,
@@ -51,7 +51,7 @@ impl Default for BackendKind {
 /// `selector` is an advisory hint that lets callers express device preference
 /// (e.g. `"auto"`, `"device:0"`).  The runtime MAY use it for adapter selection
 /// but must fail closed if the requested adapter is unavailable.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BackendIntent {
     pub backend: BackendKind,
     /// Adapter selection hint.  `"auto"` means the runtime picks the best

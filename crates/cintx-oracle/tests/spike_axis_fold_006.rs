@@ -39,7 +39,10 @@ fn spinor_len_kappa0(l: i32) -> usize {
     (4 * l + 2) as usize
 }
 fn mismatches(a: &[f64], b: &[f64]) -> usize {
-    a.iter().zip(b.iter()).filter(|(x, y)| (**x - **y).abs() > ATOL).count()
+    a.iter()
+        .zip(b.iter())
+        .filter(|(x, y)| (**x - **y).abs() > ATOL)
+        .count()
 }
 
 /// One atom, s (l=0) + p (l=1) spinor shells (KAPPA_OF=0 → both GT+LT, ni_sp = 4l+2).
@@ -121,29 +124,66 @@ fn spike_006_spinor_layout_divergence() {
 
     let mut cintx = vec![0.0_f64; RANK * complex_block];
     unsafe {
-        eval_raw(RawApiId::INT1E_IPOVLP_SPINOR, Some(&mut cintx), None, &shls, &atm, &bas, &env, None, None)
-            .unwrap_or_else(|e| panic!("int1e_ipovlp_spinor eval_raw failed: {e:?}"));
+        eval_raw(
+            RawApiId::INT1E_IPOVLP_SPINOR,
+            Some(&mut cintx),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("int1e_ipovlp_spinor eval_raw failed: {e:?}"));
     }
 
     println!("\n================ SPIKE 006 : spinor layout DIVERGENCE ================");
-    println!("  int1e_ipovlp_spinor  s×p  ni_sp={ni} nj_sp={nj}  complex_block={complex_block}  len={}", cintx.len());
+    println!(
+        "  int1e_ipovlp_spinor  s×p  ni_sp={ni} nj_sp={nj}  complex_block={complex_block}  len={}",
+        cintx.len()
+    );
 
     // A. complex-interleaved length.
-    assert_eq!(cintx.len(), RANK * ni * nj * 2, "A: len != rank*ni_sp*nj_sp*2 (not complex-interleaved)");
+    assert_eq!(
+        cintx.len(),
+        RANK * ni * nj * 2,
+        "A: len != rank*ni_sp*nj_sp*2 (not complex-interleaved)"
+    );
     // B. component axis still outermost.
-    assert_eq!(cintx.len() / RANK, complex_block, "B: comp_stride != ni_sp*nj_sp*2");
+    assert_eq!(
+        cintx.len() / RANK,
+        complex_block,
+        "B: comp_stride != ni_sp*nj_sp*2"
+    );
 
     // C. genuinely complex — imaginary lane non-trivially non-zero.
-    let im_nnz = cintx.iter().skip(1).step_by(2).filter(|v| v.abs() > 1e-14).count();
+    let im_nnz = cintx
+        .iter()
+        .skip(1)
+        .step_by(2)
+        .filter(|v| v.abs() > 1e-14)
+        .count();
     let re_nnz = cintx.iter().step_by(2).filter(|v| v.abs() > 1e-14).count();
-    assert!(im_nnz > 0, "C: imaginary lane all-zero — not genuinely complex (would read fine as real?!)");
-    println!("  C. complex: re_nnz={re_nnz} im_nnz={im_nnz}  → buffer is genuinely interleaved-complex");
+    assert!(
+        im_nnz > 0,
+        "C: imaginary lane all-zero — not genuinely complex (would read fine as real?!)"
+    );
+    println!(
+        "  C. complex: re_nnz={re_nnz} im_nnz={im_nnz}  → buffer is genuinely interleaved-complex"
+    );
 
     // D/E. misreads must change the buffer (vendor-free negative controls).
     let deint = deinterleave(&cintx, RANK, complex_block);
     let transp = transpose_ij(&cintx, RANK, ni, nj);
-    assert!(mismatches(&cintx, &deint) > 0, "D: de-interleave was a no-op?");
-    assert!(mismatches(&cintx, &transp) > 0, "E: i/j transpose was a no-op (block square?)");
+    assert!(
+        mismatches(&cintx, &deint) > 0,
+        "D: de-interleave was a no-op?"
+    );
+    assert!(
+        mismatches(&cintx, &transp) > 0,
+        "E: i/j transpose was a no-op (block square?)"
+    );
 
     #[cfg(has_vendor_libcint)]
     {
@@ -154,15 +194,28 @@ fn spike_006_spinor_layout_divergence() {
         vendor_ffi::vendor_int1e_ipovlp_spinor(&mut vendor, &shls, &atm, natm, &bas, nbas, &env);
 
         let mm = mismatches(&vendor, &cintx);
-        assert_eq!(mm, 0, "F: cintx spinor != vendor (interleaved-complex layout divergence)");
+        assert_eq!(
+            mm, 0,
+            "F: cintx spinor != vendor (interleaved-complex layout divergence)"
+        );
         let mm_deint = mismatches(&vendor, &deint);
         let mm_transp = mismatches(&vendor, &transp);
-        assert!(mm_deint > 0, "F: block-separated complex ALSO matches vendor — interleave not pinned");
-        assert!(mm_transp > 0, "F: i/j-transposed ALSO matches vendor — orientation not pinned");
-        println!("  F. vendor: mm(vendor,cintx)=0  mm(vendor,deinterleaved)={mm_deint}  mm(vendor,transposed)={mm_transp}");
+        assert!(
+            mm_deint > 0,
+            "F: block-separated complex ALSO matches vendor — interleave not pinned"
+        );
+        assert!(
+            mm_transp > 0,
+            "F: i/j-transposed ALSO matches vendor — orientation not pinned"
+        );
+        println!(
+            "  F. vendor: mm(vendor,cintx)=0  mm(vendor,deinterleaved)={mm_deint}  mm(vendor,transposed)={mm_transp}"
+        );
     }
     #[cfg(not(has_vendor_libcint))]
-    println!("  vendor: NOT linked — structure + misread-sensitivity only (set CINTX_ORACLE_BUILD_VENDOR=1 to pin)");
+    println!(
+        "  vendor: NOT linked — structure + misread-sensitivity only (set CINTX_ORACLE_BUILD_VENDOR=1 to pin)"
+    );
 
     println!("\n  DIVERGENCE SUMMARY vs the real-family contract (spikes 001-005):");
     println!("    • block dims are spinor lengths (ni_sp=4l+2 @ kappa=0), NOT ncart/nsph");

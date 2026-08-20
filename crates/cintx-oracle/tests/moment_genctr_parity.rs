@@ -156,8 +156,18 @@ fn collect_cintx(
     let shls = [si as i32, sj as i32];
     // SAFETY: atm/bas/env well-formed by construction; shls valid; out sized exactly.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for {api_id:?} pair {pair:?}: {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for {api_id:?} pair {pair:?}: {e:?}"));
     }
     out
 }
@@ -206,15 +216,27 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 #[allow(dead_code)]
 fn assert_any_nonzero(buf: &[f64], label: &str) {
     let any_nonzero = buf.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: buffer is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: buffer is all-zero (zero-fill regression)"
+    );
 }
 
 /// Per-component stuck-at-zero gate (WR-04 applied to the nctr>1 block): every
 /// vendor-populated component must be populated by cintx too.
 #[allow(dead_code)]
-fn assert_components_match_vendor_support(vendor: &[f64], observed: &[f64], rank: usize, label: &str) {
+fn assert_components_match_vendor_support(
+    vendor: &[f64],
+    observed: &[f64],
+    rank: usize,
+    label: &str,
+) {
     assert_eq!(vendor.len(), observed.len(), "{label}: length mismatch");
-    assert_eq!(vendor.len() % rank, 0, "{label}: not divisible by rank {rank}");
+    assert_eq!(
+        vendor.len() % rank,
+        0,
+        "{label}: not divisible by rank {rank}"
+    );
     let comp_len = vendor.len() / rank;
     for comp in 0..rank {
         let lo = comp * comp_len;
@@ -249,7 +271,11 @@ fn determinism(api_sph: RawApiId, api_cart: RawApiId, rank: usize, label: &str) 
             "{label}_{rep}: element count = rank*(di*nctr_i)*(dj*nctr_j)"
         );
         for (a, b) in m1.iter().zip(m2.iter()) {
-            assert_eq!(a.to_bits(), b.to_bits(), "{label}_{rep} must be bit-identical");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "{label}_{rep} must be bit-identical"
+            );
         }
         assert_any_nonzero(&m1, &format!("{label}_{rep}"));
     }
@@ -258,7 +284,12 @@ fn determinism(api_sph: RawApiId, api_cart: RawApiId, rank: usize, label: &str) 
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int1e_rr_genctr_determinism() {
-    determinism(RawApiId::INT1E_RR_SPH, RawApiId::INT1E_RR_CART, 9, "int1e_rr");
+    determinism(
+        RawApiId::INT1E_RR_SPH,
+        RawApiId::INT1E_RR_CART,
+        9,
+        "int1e_rr",
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,7 +319,10 @@ fn vendor_parity<FS, FC>(
     assert_any_nonzero(&vendor_s, &format!("{label}_sph vendor"));
     assert_components_match_vendor_support(&vendor_s, &cintx_s, rank, &format!("{label}_sph"));
     let mm = count_mismatches(&vendor_s, &cintx_s, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_sph (nctr>1): {mm} mismatches vs vendored libcint at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_sph (nctr>1): {mm} mismatches vs vendored libcint at atol={ATOL}"
+    );
 
     let vendor_c = collect_vendor(&vendor_cart, &atm, &bas, &env, PAIR, ncart, rank);
     let cintx_c = collect_cintx(api_cart, &atm, &bas, &env, PAIR, ncart, rank);
@@ -296,7 +330,10 @@ fn vendor_parity<FS, FC>(
     assert_any_nonzero(&vendor_c, &format!("{label}_cart vendor"));
     assert_components_match_vendor_support(&vendor_c, &cintx_c, rank, &format!("{label}_cart"));
     let mm = count_mismatches(&vendor_c, &cintx_c, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_cart (nctr>1): {mm} mismatches vs vendored libcint at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_cart (nctr>1): {mm} mismatches vs vendored libcint at atol={ATOL}"
+    );
 }
 
 #[cfg(has_vendor_libcint)]

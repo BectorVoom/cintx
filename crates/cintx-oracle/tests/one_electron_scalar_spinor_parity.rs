@@ -250,8 +250,18 @@ fn collect_cintx_spinor_nctr(api_id: RawApiId, atm: &[i32], bas: &[i32], env: &[
 
             // SAFETY: atm/bas/env are well-formed by construction; shls are valid.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
 
             stitch_block(&mut matrix, &out, ni, nj, n_sp, row_offset, col_offset);
@@ -289,8 +299,18 @@ fn collect_cintx_spinor(api_id: RawApiId, atm: &[i32], bas: &[i32], env: &[f64])
 
             // SAFETY: atm/bas/env are well-formed by construction; shls are valid.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
 
             stitch_block(&mut matrix, &out, ni, nj, n_sp, row_offset, col_offset);
@@ -587,7 +607,11 @@ fn test_int1e_ovlp_spinor_nctr2_evaluates() {
     let (atm, bas, env) = build_two_p_spinor_nctr2();
     assert_fixture_nctr_gt1(&bas);
     let mat = collect_cintx_spinor_nctr(RawApiId::INT1E_OVLP_SPINOR, &atm, &bas, &env);
-    assert_eq!(mat.len(), 32 * 32 * 2, "ovlp_spinor nctr2 matrix size 32*32*2");
+    assert_eq!(
+        mat.len(),
+        32 * 32 * 2,
+        "ovlp_spinor nctr2 matrix size 32*32*2"
+    );
     assert_any_nonzero(&mat, "int1e_ovlp_spinor nctr2 cintx");
 }
 
@@ -619,8 +643,7 @@ fn test_int1e_ovlp_spinor_nctr2_parity() {
     let (atm, bas, env) = build_two_p_spinor_nctr2();
     assert_fixture_nctr_gt1(&bas);
 
-    let vendor =
-        collect_vendor_spinor_nctr(vendor_ffi::vendor_int1e_ovlp_spinor, &atm, &bas, &env);
+    let vendor = collect_vendor_spinor_nctr(vendor_ffi::vendor_int1e_ovlp_spinor, &atm, &bas, &env);
     let cintx = collect_cintx_spinor_nctr(RawApiId::INT1E_OVLP_SPINOR, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ovlp_spinor nctr2 cintx");
@@ -740,4 +763,3 @@ fn test_int1e_ipovlp_spinor_grad_nctr2_parity() {
          at atol={ATOL}"
     );
 }
-

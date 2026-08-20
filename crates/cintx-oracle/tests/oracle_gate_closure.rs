@@ -25,8 +25,8 @@
 #![cfg(feature = "cpu")]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF,
-    POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,31 +83,31 @@ fn build_h2o_sto3g() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     // User data starts at PTR_ENV_START (=20).
     let mut env = vec![0.0_f64; PTR_ENV_START];
 
-    let o_coord_ptr = env.len() as i32;   // 20
+    let o_coord_ptr = env.len() as i32; // 20
     env.extend_from_slice(&o_coord);
-    let h1_coord_ptr = env.len() as i32;  // 23
+    let h1_coord_ptr = env.len() as i32; // 23
     env.extend_from_slice(&h1_coord);
-    let h2_coord_ptr = env.len() as i32;  // 26
+    let h2_coord_ptr = env.len() as i32; // 26
     env.extend_from_slice(&h2_coord);
-    let zeta_ptr = env.len() as i32;      // 29
+    let zeta_ptr = env.len() as i32; // 29
     env.push(0.0);
 
-    let o1s_exp_ptr = env.len() as i32;   // 30
+    let o1s_exp_ptr = env.len() as i32; // 30
     env.extend_from_slice(&o_1s_exp);
     let o1s_coeff_ptr = env.len() as i32; // 33
     env.extend_from_slice(&o_1s_coeff);
 
-    let o2s_exp_ptr = env.len() as i32;   // 36
+    let o2s_exp_ptr = env.len() as i32; // 36
     env.extend_from_slice(&o_2s_exp);
     let o2s_coeff_ptr = env.len() as i32; // 39
     env.extend_from_slice(&o_2s_coeff);
 
-    let o2p_exp_ptr = env.len() as i32;   // 42
+    let o2p_exp_ptr = env.len() as i32; // 42
     env.extend_from_slice(&o_2p_exp);
     let o2p_coeff_ptr = env.len() as i32; // 45
     env.extend_from_slice(&o_2p_coeff);
 
-    let h1s_exp_ptr = env.len() as i32;   // 48
+    let h1s_exp_ptr = env.len() as i32; // 48
     env.extend_from_slice(&h_1s_exp);
     let h1s_coeff_ptr = env.len() as i32; // 51
     env.extend_from_slice(&h_1s_coeff);
@@ -188,9 +188,7 @@ fn count_mismatches_atol(reference: &[f64], observed: &[f64], atol: f64) -> usiz
     for (i, (r, o)) in reference.iter().zip(observed.iter()).enumerate() {
         let diff = (o - r).abs();
         if diff > atol {
-            eprintln!(
-                "  MISMATCH[{i}] ref={r:.15e} obs={o:.15e} diff={diff:.3e} atol={atol:.1e}"
-            );
+            eprintln!("  MISMATCH[{i}] ref={r:.15e} obs={o:.15e} diff={diff:.3e} atol={atol:.1e}");
             count += 1;
         }
     }
@@ -199,12 +197,7 @@ fn count_mismatches_atol(reference: &[f64], observed: &[f64], atol: f64) -> usiz
 
 /// Count mismatches using absolute + relative tolerance.
 #[cfg(has_vendor_libcint)]
-fn count_mismatches_atol_rtol(
-    reference: &[f64],
-    observed: &[f64],
-    atol: f64,
-    rtol: f64,
-) -> usize {
+fn count_mismatches_atol_rtol(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -> usize {
     assert_eq!(reference.len(), observed.len(), "length mismatch");
     let mut count = 0usize;
     for (i, (r, o)) in reference.iter().zip(observed.iter()).enumerate() {
@@ -240,8 +233,18 @@ fn eval_1e(
     let mut out = vec![0.0_f64; ni * nj];
     let shls = [si as i32, sj as i32];
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw 1e failed for ({si},{sj}): {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw 1e failed for ({si},{sj}): {e:?}"));
     }
     out
 }
@@ -280,13 +283,7 @@ fn eval_2e(
 }
 
 #[cfg(has_vendor_libcint)]
-fn eval_2c2e(
-    si: usize,
-    sk: usize,
-    atm: &[i32],
-    bas: &[i32],
-    env: &[f64],
-) -> Vec<f64> {
+fn eval_2c2e(si: usize, sk: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
     let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
     let nk = nsph(bas[sk * BAS_SLOTS + ANG_OF]);
     let mut out = vec![0.0_f64; ni * nk];
@@ -309,14 +306,7 @@ fn eval_2c2e(
 }
 
 #[cfg(has_vendor_libcint)]
-fn eval_3c1e(
-    si: usize,
-    sj: usize,
-    sk: usize,
-    atm: &[i32],
-    bas: &[i32],
-    env: &[f64],
-) -> Vec<f64> {
+fn eval_3c1e(si: usize, sj: usize, sk: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
     let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
     let nj = nsph(bas[sj * BAS_SLOTS + ANG_OF]);
     let nk = nsph(bas[sk * BAS_SLOTS + ANG_OF]);
@@ -340,14 +330,7 @@ fn eval_3c1e(
 }
 
 #[cfg(has_vendor_libcint)]
-fn eval_3c2e(
-    si: usize,
-    sj: usize,
-    sk: usize,
-    atm: &[i32],
-    bas: &[i32],
-    env: &[f64],
-) -> Vec<f64> {
+fn eval_3c2e(si: usize, sj: usize, sk: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
     let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
     let nj = nsph(bas[sj * BAS_SLOTS + ANG_OF]);
     let nk = nsph(bas[sk * BAS_SLOTS + ANG_OF]);
@@ -423,7 +406,10 @@ fn oracle_gate_all_five_families() {
 
         let mc = count_mismatches_atol(&vendor_row, &cintx_out, ATOL_1E);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "1e output is all zeros — kernel not implemented");
+        assert!(
+            nonzero > 0,
+            "1e output is all zeros — kernel not implemented"
+        );
         if mc > 0 {
             eprintln!("FAIL: 1e family: {mc} mismatches at atol={ATOL_1E:.1e}");
             all_passed = false;
@@ -449,14 +435,15 @@ fn oracle_gate_all_five_families() {
 
         let mc = count_mismatches_atol_rtol(&vendor_out, &cintx_out, ATOL_2E, RTOL_2E);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "2e output is all zeros — kernel not implemented");
+        assert!(
+            nonzero > 0,
+            "2e output is all zeros — kernel not implemented"
+        );
         if mc > 0 {
             eprintln!("FAIL: 2e family: {mc} mismatches at atol={ATOL_2E:.1e}/rtol={RTOL_2E:.1e}");
             all_passed = false;
         } else {
-            println!(
-                "  PASS: 2e (int2e_sph) shells ({si},{sj},{sk},{sl}): mismatch_count=0"
-            );
+            println!("  PASS: 2e (int2e_sph) shells ({si},{sj},{sk},{sl}): mismatch_count=0");
         }
         family_results.push(("2e", mc));
     }
@@ -476,7 +463,10 @@ fn oracle_gate_all_five_families() {
         // 2c2e output: column-major (i fastest, k slowest) = same as cintx.
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_2C2E);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "2c2e output is all zeros — kernel not implemented");
+        assert!(
+            nonzero > 0,
+            "2c2e output is all zeros — kernel not implemented"
+        );
         if mc > 0 {
             eprintln!("FAIL: 2c2e family: {mc} mismatches at atol={ATOL_2C2E:.1e}");
             all_passed = false;
@@ -504,7 +494,10 @@ fn oracle_gate_all_five_families() {
         // Note: libcint 3c1e output is column-major (i fastest = same order as cintx).
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_3C1E);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "3c1e output is all zeros for shells ({si},{sj},{sk}) — kernel not implemented or symmetry issue");
+        assert!(
+            nonzero > 0,
+            "3c1e output is all zeros for shells ({si},{sj},{sk}) — kernel not implemented or symmetry issue"
+        );
         if mc > 0 {
             eprintln!("FAIL: 3c1e family: {mc} mismatches at atol={ATOL_3C1E:.1e}");
             all_passed = false;
@@ -532,7 +525,10 @@ fn oracle_gate_all_five_families() {
 
         let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_3C2E);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
-        assert!(nonzero > 0, "3c2e output is all zeros — kernel not implemented");
+        assert!(
+            nonzero > 0,
+            "3c2e output is all zeros — kernel not implemented"
+        );
         if mc > 0 {
             eprintln!("FAIL: 3c2e family: {mc} mismatches at atol={ATOL_3C2E:.1e}");
             all_passed = false;
@@ -564,15 +560,35 @@ fn oracle_gate_all_five_families() {
          \n\
          GATE: {gate_status}\n\
          v1.1 Milestone: COMPLETE\n",
-        f1 = if family_results[0].1 == 0 { "PASS" } else { "FAIL" },
+        f1 = if family_results[0].1 == 0 {
+            "PASS"
+        } else {
+            "FAIL"
+        },
         m1 = family_results[0].1,
-        f2 = if family_results[1].1 == 0 { "PASS" } else { "FAIL" },
+        f2 = if family_results[1].1 == 0 {
+            "PASS"
+        } else {
+            "FAIL"
+        },
         m2 = family_results[1].1,
-        f3 = if family_results[2].1 == 0 { "PASS" } else { "FAIL" },
+        f3 = if family_results[2].1 == 0 {
+            "PASS"
+        } else {
+            "FAIL"
+        },
         m3 = family_results[2].1,
-        f4 = if family_results[3].1 == 0 { "PASS" } else { "FAIL" },
+        f4 = if family_results[3].1 == 0 {
+            "PASS"
+        } else {
+            "FAIL"
+        },
         m4 = family_results[3].1,
-        f5 = if family_results[4].1 == 0 { "PASS" } else { "FAIL" },
+        f5 = if family_results[4].1 == 0 {
+            "PASS"
+        } else {
+            "FAIL"
+        },
         m5 = family_results[4].1,
         gate_status = gate_status,
     );
@@ -584,13 +600,15 @@ fn oracle_gate_all_five_families() {
         .parent()
         .unwrap()
         .join("artifacts");
-    std::fs::create_dir_all(&artifacts_dir)
-        .expect("failed to create artifacts directory");
+    std::fs::create_dir_all(&artifacts_dir).expect("failed to create artifacts directory");
     let artifact_path = artifacts_dir.join("oracle_gate_closure_report.txt");
     std::fs::write(&artifact_path, &report)
         .unwrap_or_else(|e| panic!("failed to write gate closure artifact: {e}"));
 
-    println!("Gate closure artifact written to: {}", artifact_path.display());
+    println!(
+        "Gate closure artifact written to: {}",
+        artifact_path.display()
+    );
     println!("{report}");
 
     // Final assertion: all five families passed
@@ -630,8 +648,18 @@ fn uat_eval_raw_returns_nonzero() {
     // SAFETY: atm/bas/env are well-formed by build_h2o_sto3g().
     // shls = [0, 0] are valid shell indices.
     let summary = unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, &atm, &bas, &env, None, None)
-            .expect("eval_raw failed for H2O STO-3G int1e_ovlp_sph s-s overlap")
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+        .expect("eval_raw failed for H2O STO-3G int1e_ovlp_sph s-s overlap")
     };
 
     // UAT check 1: output buffer is not all zeros
@@ -692,8 +720,18 @@ fn uat_cabi_returns_status_zero() {
 
     // SAFETY: atm/bas/env are well-formed by build_h2o_sto3g().
     let summary = unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, &atm, &bas, &env, None, None)
-            .expect("eval_raw failed for H2O STO-3G int1e_ovlp_sph (0,1) overlap")
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+            None,
+            None,
+        )
+        .expect("eval_raw failed for H2O STO-3G int1e_ovlp_sph (0,1) overlap")
     };
 
     // not0 > 0 is the success indicator (C ABI cintrs_eval maps this to status=0)
@@ -720,9 +758,7 @@ fn uat_cabi_returns_status_zero() {
     println!(
         "uat_cabi_returns_status_zero: PASS — not0={} (status==0), bytes_written={}, \
          S[0,1]={:.10e}",
-        summary.not0,
-        summary.bytes_written,
-        out[0]
+        summary.not0, summary.bytes_written, out[0]
     );
 }
 
@@ -743,8 +779,8 @@ fn uat_cabi_returns_status_zero() {
 #[cfg(feature = "with-4c1e")]
 #[cfg(has_vendor_libcint)]
 fn oracle_gate_4c1e_parity() {
-    use cintx_oracle::vendor_ffi;
     use cintx_compat::helpers::CINTcgto_spheric;
+    use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_h2o_sto3g();
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -891,8 +927,8 @@ fn oracle_gate_1e_spinor() {
     // Test each of the three 1e spinor operators
     let operators: &[(&str, RawApiId)] = &[
         ("int1e_ovlp_spinor", RawApiId::INT1E_OVLP_SPINOR),
-        ("int1e_kin_spinor",  RawApiId::INT1E_KIN_SPINOR),
-        ("int1e_nuc_spinor",  RawApiId::INT1E_NUC_SPINOR),
+        ("int1e_kin_spinor", RawApiId::INT1E_KIN_SPINOR),
+        ("int1e_nuc_spinor", RawApiId::INT1E_NUC_SPINOR),
     ];
 
     for &(name, api_id) in operators {
@@ -901,20 +937,48 @@ fn oracle_gate_1e_spinor() {
 
         // Vendor call
         let vendor_status = match name {
-            "int1e_ovlp_spinor" => {
-                vendor_ffi::vendor_int1e_ovlp_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env)
-            }
-            "int1e_kin_spinor" => {
-                vendor_ffi::vendor_int1e_kin_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env)
-            }
-            _ => {
-                vendor_ffi::vendor_int1e_nuc_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env)
-            }
+            "int1e_ovlp_spinor" => vendor_ffi::vendor_int1e_ovlp_spinor(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            ),
+            "int1e_kin_spinor" => vendor_ffi::vendor_int1e_kin_spinor(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            ),
+            _ => vendor_ffi::vendor_int1e_nuc_spinor(
+                &mut vendor_out,
+                &shls,
+                &atm,
+                natm,
+                &bas,
+                nbas,
+                &env,
+            ),
         };
 
         // cintx call via eval_raw with spinor RawApiId
         let eval_result = unsafe {
-            eval_raw(api_id, Some(&mut cintx_out), None, &shls, &atm, &bas, &env, None, None)
+            eval_raw(
+                api_id,
+                Some(&mut cintx_out),
+                None,
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                None,
+                None,
+            )
         };
 
         match eval_result {
@@ -925,16 +989,21 @@ fn oracle_gate_1e_spinor() {
                 let _vendor_nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
 
                 if mc > 0 || nonzero == 0 {
-                    eprintln!("FAIL: {name} shells ({si},{sj}): {mc} mismatches, nonzero={nonzero}/{nelems}");
+                    eprintln!(
+                        "FAIL: {name} shells ({si},{sj}): {mc} mismatches, nonzero={nonzero}/{nelems}"
+                    );
                     if nonzero == 0 {
-                        eprintln!("  ERROR: cintx output is all zeros — spinor transform not running");
+                        eprintln!(
+                            "  ERROR: cintx output is all zeros — spinor transform not running"
+                        );
                     }
                     all_passed = false;
                 } else {
                     println!(
                         "  PASS: {name} shells ({si},{sj}): mismatch_count=0, \
                          nonzero={nonzero}/{nelems}, vendor_status={vendor_status}, \
-                         not0={}", summary.not0
+                         not0={}",
+                        summary.not0
                     );
                 }
                 total_mismatches += mc;
@@ -952,7 +1021,9 @@ fn oracle_gate_1e_spinor() {
         "1e spinor oracle parity FAILED: total_mismatches={total_mismatches}"
     );
 
-    println!("oracle_gate_1e_spinor: PASS — all three 1e spinor operators match vendored libcint at atol=1e-12");
+    println!(
+        "oracle_gate_1e_spinor: PASS — all three 1e spinor operators match vendored libcint at atol=1e-12"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -997,7 +1068,8 @@ fn vendor_ffi_2e_spinor_nonzero() {
     let nelems = ni_sp * nj_sp * nk_sp * nl_sp * 2;
 
     let mut vendor_out = vec![0.0f64; nelems];
-    let status = vendor_ffi::vendor_int2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+    let status =
+        vendor_ffi::vendor_int2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
 
     let nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
     println!(
@@ -1009,7 +1081,9 @@ fn vendor_ffi_2e_spinor_nonzero() {
         "vendor int2e_spinor returned all zeros for shells ({si},{sj},{sk},{sl}) — \
          unexpected (physically non-zero integral)"
     );
-    println!("vendor_ffi_2e_spinor_nonzero: PASS — vendor libcint produces non-zero 2e spinor output");
+    println!(
+        "vendor_ffi_2e_spinor_nonzero: PASS — vendor libcint produces non-zero 2e spinor output"
+    );
 }
 
 /// Oracle parity gate for 2e spinor (4-center integral) vs vendored libcint.
@@ -1102,7 +1176,8 @@ fn vendor_ffi_2c2e_spinor_nonzero() {
     let nelems = ni_sp * nk_sp * 2;
 
     let mut vendor_out = vec![0.0f64; nelems];
-    let status = vendor_ffi::vendor_int2c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+    let status =
+        vendor_ffi::vendor_int2c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
 
     let nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
     println!(
@@ -1114,7 +1189,9 @@ fn vendor_ffi_2c2e_spinor_nonzero() {
         "vendor int2c2e_spinor returned all zeros for shells ({si},{sk}) — \
          unexpected (physically non-zero integral)"
     );
-    println!("vendor_ffi_2c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 2c2e spinor output");
+    println!(
+        "vendor_ffi_2c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 2c2e spinor output"
+    );
 }
 
 /// Oracle parity gate for 2c2e spinor (2-center integral) vs vendored libcint.
@@ -1158,9 +1235,8 @@ fn oracle_gate_2c2e_spinor() {
         )
     };
 
-    let summary = eval_result.unwrap_or_else(|e| {
-        panic!("eval_raw INT2C2E_SPINOR failed for shells ({si},{sk}): {e:?}")
-    });
+    let summary = eval_result
+        .unwrap_or_else(|e| panic!("eval_raw INT2C2E_SPINOR failed for shells ({si},{sk}): {e:?}"));
 
     let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_SPINOR);
     let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
@@ -1200,8 +1276,10 @@ fn vendor_ffi_3c1e_spinor_not_implemented() {
     // NOTE: Do NOT un-ignore this test without verifying that libcint's
     // int3c1e_spinor no longer calls exit/abort. The unimplemented stub in
     // libcint 6.1.3 terminates the process rather than returning an error.
-    println!("vendor_ffi_3c1e_spinor_not_implemented: DOCUMENTED — int3c1e_spinor is \
-              not implemented in vendored libcint 6.1.3 (aborts process if called)");
+    println!(
+        "vendor_ffi_3c1e_spinor_not_implemented: DOCUMENTED — int3c1e_spinor is \
+              not implemented in vendored libcint 6.1.3 (aborts process if called)"
+    );
 }
 
 /// Oracle parity gate for 3c1e spinor (3-center 1-electron integral) vs vendored libcint.
@@ -1227,8 +1305,8 @@ fn vendor_ffi_3c1e_spinor_not_implemented() {
 #[test]
 #[cfg(has_vendor_libcint)]
 fn oracle_gate_3c1e_spinor() {
-    use cintx_oracle::vendor_ffi;
     use cintx_compat::raw::{ANG_OF, KAPPA_OF};
+    use cintx_oracle::vendor_ffi;
 
     let (atm, bas, env) = build_h2o_sto3g();
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -1330,7 +1408,8 @@ fn vendor_ffi_3c2e_spinor_nonzero() {
     let nelems = ni_sp * nj_sp * nk_sp * 2;
 
     let mut vendor_out = vec![0.0f64; nelems];
-    let status = vendor_ffi::vendor_int3c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
+    let status =
+        vendor_ffi::vendor_int3c2e_spinor(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
 
     let nonzero = vendor_out.iter().filter(|&&v| v.abs() > 1e-18).count();
     println!(
@@ -1342,7 +1421,9 @@ fn vendor_ffi_3c2e_spinor_nonzero() {
         "vendor int3c2e_spinor returned all zeros for shells ({si},{sj},{sk}) — \
          unexpected (physically non-zero integral for three different centers)"
     );
-    println!("vendor_ffi_3c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 3c2e spinor output");
+    println!(
+        "vendor_ffi_3c2e_spinor_nonzero: PASS — vendor libcint produces non-zero 3c2e spinor output"
+    );
 }
 
 /// Vendor byte-identity gate for `int3c2e_ip1_spinor` (quick task 260601-d7e, Sub-problem A).
@@ -1483,20 +1564,36 @@ fn build_two_center_spinor_nctr2() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let exp_set = [3.4252509_f64, 0.6239137, 0.1688554];
     // Distinct per-shell, per-column coefficient blocks (column 0 then column 1).
     let s_coeff = [
-        0.15432897_f64, 0.53532814, 0.44463454, // col 0
-        0.41098730, 0.22072503, 0.81763176, // col 1
+        0.15432897_f64,
+        0.53532814,
+        0.44463454, // col 0
+        0.41098730,
+        0.22072503,
+        0.81763176, // col 1
     ];
     let p_coeff = [
-        0.15591627_f64, 0.60768372, 0.39195739, // col 0
-        0.70211493, 0.39850911, 0.12300719, // col 1
+        0.15591627_f64,
+        0.60768372,
+        0.39195739, // col 0
+        0.70211493,
+        0.39850911,
+        0.12300719, // col 1
     ];
     let q_coeff = [
-        0.09996723_f64, 0.39951283, 0.70011547, // col 0
-        0.31093210, 0.51220034, 0.27718845, // col 1
+        0.09996723_f64,
+        0.39951283,
+        0.70011547, // col 0
+        0.31093210,
+        0.51220034,
+        0.27718845, // col 1
     ];
     let d_coeff = [
-        0.21956727_f64, 0.48030318, 0.38128727, // col 0
-        0.60331847, 0.18887512, 0.44102906, // col 1
+        0.21956727_f64,
+        0.48030318,
+        0.38128727, // col 0
+        0.60331847,
+        0.18887512,
+        0.44102906, // col 1
     ];
 
     let mut env = vec![0.0_f64; PTR_ENV_START];

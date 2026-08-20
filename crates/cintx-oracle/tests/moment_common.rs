@@ -31,9 +31,9 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 #![allow(dead_code)]
 
-use cintx_compat::raw::{ANG_OF, BAS_SLOTS, PTR_RINV_ORIG, RawApiId, eval_raw};
 #[cfg(has_vendor_libcint)]
 use cintx_compat::raw::ATM_SLOTS;
+use cintx_compat::raw::{ANG_OF, BAS_SLOTS, PTR_RINV_ORIG, RawApiId, eval_raw};
 
 /// Unified byte-identity tolerance (Phase 24 D-10): atol = 1e-12, rtol = 0.
 pub const ATOL: f64 = 1e-12;
@@ -114,8 +114,18 @@ fn collect_cintx_block(
 
     // SAFETY: atm/bas/env are well-formed by construction; shls indices are valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
     }
     out
 }
@@ -169,7 +179,10 @@ pub fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f6
 /// Assert at least one element is meaningfully non-zero (zero-fill regression guard).
 pub fn assert_any_nonzero(block: &[f64], label: &str) {
     let any_nonzero = block.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: block is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: block is all-zero (zero-fill regression)"
+    );
 }
 
 /// Per-component stuck-at-zero gate (WR-04): for EVERY component the vendor populates,
@@ -297,7 +310,10 @@ pub fn vendor_parity_at<FS, FC>(
     // be populated by cintx too, so a dropped trailing component cannot slip through.
     assert_components_match_vendor_support(&vendor_s, &cintx_s, rank, &format!("{label}_sph"));
     let mm = count_mismatches(&vendor_s, &cintx_s, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}"
+    );
 
     // ── cart ─────────────────────────────────────────────────────────────────
     let vendor_c = collect_vendor_block(rank, &vendor_cart, atm, bas, env, shls_pair, ncart);
@@ -307,5 +323,8 @@ pub fn vendor_parity_at<FS, FC>(
     // WR-04: per-component stuck-at-zero gate (cart side).
     assert_components_match_vendor_support(&vendor_c, &cintx_c, rank, &format!("{label}_cart"));
     let mm = count_mismatches(&vendor_c, &cintx_c, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_cart: {mm} mismatches vs vendored libcint at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_cart: {mm} mismatches vs vendored libcint at atol={ATOL}"
+    );
 }

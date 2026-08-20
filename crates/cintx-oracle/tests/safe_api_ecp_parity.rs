@@ -93,8 +93,8 @@ fn arc_f64(values: &[f64]) -> Arc<[f64]> {
 }
 
 fn build_cu_lanl2dz_safe_basis(rep: Representation) -> (BasisSet, Vec<Arc<Shell>>) {
-    let raw = std::fs::read_to_string("data/cu_lanl2dz.json")
-        .expect("Cu/LANL2DZ fixture JSON missing");
+    let raw =
+        std::fs::read_to_string("data/cu_lanl2dz.json").expect("Cu/LANL2DZ fixture JSON missing");
     let parsed: serde_json::Value = serde_json::from_str(&raw).expect("Cu/LANL2DZ JSON invalid");
 
     let coord_arr = parsed["atom"]["coord"].as_array().unwrap();
@@ -235,10 +235,30 @@ fn collect_safe_api_ecp_matrix(
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(all(has_vendor_libcint, has_vendor_pyscf_nr_ecp))]
-fn collect_ecp_matrix_vendor(rep: &str, atm: &[i32], bas: &[i32], ecpbas: &[i32], env: &[f64]) -> Vec<f64> {
+fn collect_ecp_matrix_vendor(
+    rep: &str,
+    atm: &[i32],
+    bas: &[i32],
+    ecpbas: &[i32],
+    env: &[f64],
+) -> Vec<f64> {
     use cintx_oracle::vendor_ffi;
 
-    let _ = (ATM_SLOTS, ATOM_OF, ANG_OF, NPRIM_OF, NCTR_OF, PTR_EXP, PTR_COEFF, PTR_COORD, PTR_ENV_START, NUC_MOD_OF, POINT_NUC, CHARGE_OF, PTR_ZETA);
+    let _ = (
+        ATM_SLOTS,
+        ATOM_OF,
+        ANG_OF,
+        NPRIM_OF,
+        NCTR_OF,
+        PTR_EXP,
+        PTR_COEFF,
+        PTR_COORD,
+        PTR_ENV_START,
+        NUC_MOD_OF,
+        POINT_NUC,
+        CHARGE_OF,
+        PTR_ZETA,
+    );
 
     let nbas_ao = (bas.len() / BAS_SLOTS) as i32;
     let necpbas = (ecpbas.len() / BAS_SLOTS) as i32;
@@ -435,9 +455,8 @@ fn collect_safe_api_ecp_ipnuc_matrix(
                     for jj in 0..nj {
                         // F-order [axis, ao_j, ao_i]: axis slowest, ao_i fastest.
                         let v = pair[axis * ni * nj + jj * ni + ii];
-                        comp_matrix[axis * n_ao * n_ao
-                            + (row_offset + ii) * n_ao
-                            + (col_offset + jj)] = v;
+                        comp_matrix
+                            [axis * n_ao * n_ao + (row_offset + ii) * n_ao + (col_offset + jj)] = v;
                     }
                 }
             }
@@ -532,9 +551,8 @@ fn collect_ecp_ipnuc_matrix_vendor(
                 for ii in 0..ni {
                     for jj in 0..nj {
                         let v = out[axis * ni * nj + jj * ni + ii];
-                        comp_matrix[axis * n_ao * n_ao
-                            + (row_offset + ii) * n_ao
-                            + (col_offset + jj)] = v;
+                        comp_matrix
+                            [axis * n_ao * n_ao + (row_offset + ii) * n_ao + (col_offset + jj)] = v;
                     }
                 }
             }

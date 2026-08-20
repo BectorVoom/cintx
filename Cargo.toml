@@ -41,6 +41,8 @@ cc = "1.2.15"
 
 [dev-dependencies]
 criterion = "0.8.2"
+cintx-core = { path = "crates/cintx-core" }
+cintx-rs = { path = "crates/cintx-rs" }
 
 [[bench]]
 name = "micro_families"
@@ -77,4 +79,3 @@ default-members = [
     "crates/cintx-capi",
     "crates/cintx-simd",
 ]
-

@@ -67,7 +67,11 @@ fn build_random_h2o_breit(rng: &mut Lcg) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let h1_coord = [0.0_f64, 1.4307 + dh(rng), 1.1078 + dh(rng)];
     let h2_coord = [0.0_f64, -1.4307 + dh(rng), 1.1078 + dh(rng)];
 
-    let o_1s_exp = [130.7093200 * j(rng), 23.8088610 * j(rng), 6.4436083 * j(rng)];
+    let o_1s_exp = [
+        130.7093200 * j(rng),
+        23.8088610 * j(rng),
+        6.4436083 * j(rng),
+    ];
     let o_1s_coeff = [0.15432897_f64, 0.53532814, 0.44463454];
     let o_2s_exp = [5.0331513 * j(rng), 1.1695961 * j(rng), 0.3803890 * j(rng)];
     let o_2s_coeff = [-0.09996723_f64, 0.39951283, 0.70011547];
@@ -233,11 +237,23 @@ fn test_int2e_breit_spinor_random_rocm_parity() {
                     let mut vendor_out = vec![0.0_f64; n_elem];
                     if sym == "int2e_breit_r1p2_spinor" {
                         vendor_ffi::vendor_int2e_breit_r1p2_spinor(
-                            &mut vendor_out, shls, &atm, _natm, &bas, _nbas, &env,
+                            &mut vendor_out,
+                            shls,
+                            &atm,
+                            _natm,
+                            &bas,
+                            _nbas,
+                            &env,
                         );
                     } else {
                         vendor_ffi::vendor_int2e_breit_r2p2_spinor(
-                            &mut vendor_out, shls, &atm, _natm, &bas, _nbas, &env,
+                            &mut vendor_out,
+                            shls,
+                            &atm,
+                            _natm,
+                            &bas,
+                            _nbas,
+                            &env,
                         );
                     }
                     for (idx, (&r, &o)) in vendor_out.iter().zip(cintx_out.iter()).enumerate() {

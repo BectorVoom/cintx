@@ -35,8 +35,8 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, PTR_COEFF, PTR_COORD,
-    PTR_EXP, PTR_ZETA, NUC_MOD_OF, POINT_NUC, RawApiId, eval_raw,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -211,16 +211,9 @@ fn nsph(l: i32) -> usize {
 ///
 /// Returns a matrix of shape (n_ao, n_ao) packed row-major, where n_ao is the
 /// total number of spherical AOs (7 for H2O STO-3G: 1+1+3+1+1 = 7).
-fn collect_1e_sph_matrix(
-    api_id: RawApiId,
-    atm: &[i32],
-    bas: &[i32],
-    env: &[f64],
-) -> Vec<f64> {
+fn collect_1e_sph_matrix(api_id: RawApiId, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
     // Determine AO count per shell from angular momenta
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
@@ -241,8 +234,18 @@ fn collect_1e_sph_matrix(
             // SAFETY: atm/bas/env are well-formed by construction in build_h2o_sto3g().
             // shls are valid shell indices in [0, N_SHELLS).
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
 
             // Copy into the full matrix: out layout is (nj, ni) column-major per libcint convention.
@@ -486,9 +489,7 @@ fn collect_1e_sph_matrix_vendor(
     let nbas = (bas.len() / BAS_SLOTS) as i32;
 
     // Determine AO count per shell from angular momenta
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
@@ -505,15 +506,15 @@ fn collect_1e_sph_matrix_vendor(
             let mut out = vec![0.0_f64; n_elem];
 
             let _ret = match operator {
-                "ovlp" => vendor_ffi::vendor_int1e_ovlp_sph(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
-                "kin" => vendor_ffi::vendor_int1e_kin_sph(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
-                "nuc" => vendor_ffi::vendor_int1e_nuc_sph(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
+                "ovlp" => {
+                    vendor_ffi::vendor_int1e_ovlp_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "kin" => {
+                    vendor_ffi::vendor_int1e_kin_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "nuc" => {
+                    vendor_ffi::vendor_int1e_nuc_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
                 _ => panic!("unknown operator: {operator}"),
             };
 
@@ -548,7 +549,10 @@ fn test_int1e_ovlp_sph_h2o_sto3g_vendor_parity() {
     let vendor_matrix = collect_1e_sph_matrix_vendor("ovlp", &atm, &bas, &env);
 
     let n_ao = (cintx_matrix.len() as f64).sqrt() as usize;
-    println!("int1e_ovlp_sph vendor parity: {n_ao} AOs, {} elements", cintx_matrix.len());
+    println!(
+        "int1e_ovlp_sph vendor parity: {n_ao} AOs, {} elements",
+        cintx_matrix.len()
+    );
 
     // Print comparison for diagnostic purposes
     for i in 0..n_ao {
@@ -586,7 +590,10 @@ fn test_int1e_kin_sph_h2o_sto3g_vendor_parity() {
     let vendor_matrix = collect_1e_sph_matrix_vendor("kin", &atm, &bas, &env);
 
     let n_ao = (cintx_matrix.len() as f64).sqrt() as usize;
-    println!("int1e_kin_sph vendor parity: {n_ao} AOs, {} elements", cintx_matrix.len());
+    println!(
+        "int1e_kin_sph vendor parity: {n_ao} AOs, {} elements",
+        cintx_matrix.len()
+    );
 
     for i in 0..n_ao {
         for j in 0..n_ao {
@@ -623,7 +630,10 @@ fn test_int1e_nuc_sph_h2o_sto3g_vendor_parity() {
     let vendor_matrix = collect_1e_sph_matrix_vendor("nuc", &atm, &bas, &env);
 
     let n_ao = (cintx_matrix.len() as f64).sqrt() as usize;
-    println!("int1e_nuc_sph vendor parity: {n_ao} AOs, {} elements", cintx_matrix.len());
+    println!(
+        "int1e_nuc_sph vendor parity: {n_ao} AOs, {} elements",
+        cintx_matrix.len()
+    );
 
     for i in 0..n_ao {
         for j in 0..n_ao {
@@ -705,9 +715,7 @@ fn test_int1e_ovlp_sph_h2o_sto3g_rocm_parity() {
         mismatch_count, 0,
         "rocm oracle parity failed: {mismatch_count} mismatches in int1e_ovlp_sph"
     );
-    println!(
-        "  PASS: rocm int1e_ovlp_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}"
-    );
+    println!("  PASS: rocm int1e_ovlp_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}");
 }
 
 /// int1e_kin_sph H2O STO-3G ROCm oracle parity (atol=1e-12 / rtol=1e-10).
@@ -729,9 +737,7 @@ fn test_int1e_kin_sph_h2o_sto3g_rocm_parity() {
         mismatch_count, 0,
         "rocm oracle parity failed: {mismatch_count} mismatches in int1e_kin_sph"
     );
-    println!(
-        "  PASS: rocm int1e_kin_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}"
-    );
+    println!("  PASS: rocm int1e_kin_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}");
 }
 
 /// int1e_nuc_sph H2O STO-3G ROCm oracle parity (atol=1e-12 / rtol=1e-10).
@@ -753,7 +759,5 @@ fn test_int1e_nuc_sph_h2o_sto3g_rocm_parity() {
         mismatch_count, 0,
         "rocm oracle parity failed: {mismatch_count} mismatches in int1e_nuc_sph"
     );
-    println!(
-        "  PASS: rocm int1e_nuc_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}"
-    );
+    println!("  PASS: rocm int1e_nuc_sph mismatch_count=0 at atol={atol:.0e}/rtol={rtol:.0e}");
 }

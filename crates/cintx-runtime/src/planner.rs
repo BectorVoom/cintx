@@ -307,10 +307,7 @@ fn build_output_layout(
             // ao_per_shell() over-sizes the aux-k as spinor (the disproven 720); this
             // positional override mirrors the oracle fixtures' dims_for_arity so the
             // compat output-length contract matches the vendor buffer (spherical k).
-            if arity == 3
-                && axis == arity - 1
-                && shell.representation == Representation::Spinor
-            {
+            if arity == 3 && axis == arity - 1 && shell.representation == Representation::Spinor {
                 let l = shell.ang_momentum as usize;
                 (2 * l + 1) * shell.nctr as usize
             } else {
@@ -425,10 +422,7 @@ fn try_alloc_staging(elements: usize) -> Result<Vec<f64>, cintxRsError> {
 /// buffer is undersized — a typed fail-closed stop with NO partial write, per
 /// the CLAUDE.md "fallible allocation + typed failure + no partial writes"
 /// non-negotiable.
-fn assert_staging_size(
-    staging_len: usize,
-    required_elements: usize,
-) -> Result<(), cintxRsError> {
+fn assert_staging_size(staging_len: usize, required_elements: usize) -> Result<(), cintxRsError> {
     if staging_len < required_elements {
         return Err(cintxRsError::BufferTooSmall {
             required: required_elements,
@@ -1029,14 +1023,16 @@ mod tests {
             &basis,
             shells.clone(),
             &opts,
-        ).expect("workspace query should succeed");
+        )
+        .expect("workspace query should succeed");
         let mut plan = ExecutionPlan::new(
             OperatorId::new(0),
             Representation::Cart,
             &basis,
             shells,
             &query,
-        ).expect("plan should build");
+        )
+        .expect("plan should build");
         // Thread precision via the f12_zeta "caller populates after new" precedent.
         // RED: plan.precision is already on ExecutionPlan (from Plan 01), but the
         // planner does not yet set it from opts. After GREEN, this should be F32.
@@ -1064,14 +1060,16 @@ mod tests {
             &basis,
             shells.clone(),
             &opts,
-        ).expect("workspace query should succeed");
+        )
+        .expect("workspace query should succeed");
         let plan = ExecutionPlan::new(
             OperatorId::new(0),
             Representation::Cart,
             &basis,
             shells,
             &query,
-        ).expect("plan should build");
+        )
+        .expect("plan should build");
         assert_eq!(
             plan.precision,
             PrecisionKind::F64,
@@ -1090,7 +1088,11 @@ mod tests {
         let elements = 16usize;
         let staging = try_alloc_staging(elements).expect("allocation should succeed");
         // Buffer holds `elements` f64 = `elements * 8` bytes.
-        assert_eq!(staging.len(), elements, "staging Vec<f64> must have exactly `elements` entries");
+        assert_eq!(
+            staging.len(),
+            elements,
+            "staging Vec<f64> must have exactly `elements` entries"
+        );
         // Byte capacity of the buffer.
         let total_bytes = staging.len() * std::mem::size_of::<f64>();
         // How many f32 lanes fit in those bytes (size_of::<f32>() == 4; size_of::<f64>() == 8).
@@ -1107,9 +1109,16 @@ mod tests {
         );
         // Verify the OOM-safe fallible alloc still works for larger sizes.
         let large = try_alloc_staging(1024).expect("large staging alloc should succeed");
-        assert_eq!(large.len(), 1024, "large staging alloc must have 1024 f64 entries");
+        assert_eq!(
+            large.len(),
+            1024,
+            "large staging alloc must have 1024 f64 entries"
+        );
         // All entries initialized to 0.0 (no partial writes).
-        assert!(large.iter().all(|&v| v == 0.0), "staging buffer must be zero-initialized");
+        assert!(
+            large.iter().all(|&v| v == 0.0),
+            "staging buffer must be zero-initialized"
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1232,18 +1241,15 @@ mod tests {
             | Err(cintxRsError::ChunkPlanFailed { .. })
             | Err(cintxRsError::BufferTooSmall { .. })
             | Err(cintxRsError::HostAllocationFailed { .. }) => { /* typed OOM-safe stop */ }
-            Err(other) => panic!("rank-81 under 1-byte limit produced an unexpected error: {other:?}"),
+            Err(other) => {
+                panic!("rank-81 under 1-byte limit produced an unexpected error: {other:?}")
+            }
             Ok(query) => {
                 // If the planner accepted the limit by chunking down, evaluate must
                 // still stop fail-closed (or succeed without ever partial-writing).
-                let plan = ExecutionPlan::new(
-                    rank81.id,
-                    Representation::Cart,
-                    &basis,
-                    shells,
-                    &query,
-                )
-                .expect("rank-81 plan should build");
+                let plan =
+                    ExecutionPlan::new(rank81.id, Representation::Cart, &basis, shells, &query)
+                        .expect("rank-81 plan should build");
                 let mut allocator = HostWorkspaceAllocator::default();
                 let backend = MockBackend { supports: true };
                 // Either a typed stop or a clean success — never a panic / silent truncation.
@@ -1275,10 +1281,7 @@ mod tests {
 
         let layout = build_output_layout(descriptor, &validated, component_count).unwrap();
         assert!(layout.complex_interleaved);
-        assert_eq!(
-            layout.staging_elements,
-            base_elements * component_count * 2
-        );
+        assert_eq!(layout.staging_elements, base_elements * component_count * 2);
     }
 
     #[test]
@@ -1368,13 +1371,8 @@ mod tests {
         );
         let mut baseline_alloc = HostWorkspaceAllocator::default();
         let backend = MockBackend { supports: true };
-        let baseline_stats = evaluate(
-            baseline_plan,
-            &baseline_opts,
-            &mut baseline_alloc,
-            &backend,
-        )
-        .expect("baseline GIAO evaluation should succeed");
+        let baseline_stats = evaluate(baseline_plan, &baseline_opts, &mut baseline_alloc, &backend)
+            .expect("baseline GIAO evaluation should succeed");
         assert_eq!(baseline_stats.chunk_count, 1);
 
         // Chunk-forcing run: a memory_limit_bytes small enough to split the workspace

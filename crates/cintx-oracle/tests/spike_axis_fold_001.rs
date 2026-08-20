@@ -54,10 +54,26 @@ struct Tier {
 
 fn ladder() -> Vec<Tier> {
     vec![
-        Tier { label: "int1e_r   ", rank: 3, cart: RawApiId::INT1E_R_CART },
-        Tier { label: "int1e_rr  ", rank: 9, cart: RawApiId::INT1E_RR_CART },
-        Tier { label: "int1e_rrr ", rank: 27, cart: RawApiId::INT1E_RRR_CART },
-        Tier { label: "int1e_rrrr", rank: 81, cart: RawApiId::INT1E_RRRR_CART },
+        Tier {
+            label: "int1e_r   ",
+            rank: 3,
+            cart: RawApiId::INT1E_R_CART,
+        },
+        Tier {
+            label: "int1e_rr  ",
+            rank: 9,
+            cart: RawApiId::INT1E_RR_CART,
+        },
+        Tier {
+            label: "int1e_rrr ",
+            rank: 27,
+            cart: RawApiId::INT1E_RRR_CART,
+        },
+        Tier {
+            label: "int1e_rrrr",
+            rank: 81,
+            cart: RawApiId::INT1E_RRRR_CART,
+        },
     ]
 }
 
@@ -99,7 +115,9 @@ fn component_report(buf: &[f64], rank: usize, block: usize) -> Vec<(usize, f64, 
 }
 
 #[cfg(has_vendor_libcint)]
-fn vendor_cart_fn(label: &str) -> fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32 {
+fn vendor_cart_fn(
+    label: &str,
+) -> fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32 {
     use cintx_oracle::vendor_ffi;
     match label.trim() {
         "int1e_r" => vendor_ffi::vendor_int1e_r_cart,
@@ -143,7 +161,12 @@ fn spike_001_axis_fold_stride_probe() {
             );
 
             // ---- B. comp_stride recovered empirically, clean partition ----
-            assert_eq!(buf.len() % t.rank, 0, "{}: len not divisible by rank", t.label);
+            assert_eq!(
+                buf.len() % t.rank,
+                0,
+                "{}: len not divisible by rank",
+                t.label
+            );
             let comp_stride = buf.len() / t.rank;
             assert_eq!(
                 comp_stride, block,
@@ -164,7 +187,11 @@ fn spike_001_axis_fold_stride_probe() {
             // ---- D. populated-component report + no whole-buffer zero ----
             let report = component_report(&buf, t.rank, block);
             let populated = report.iter().filter(|(nnz, _, _)| *nnz > 0).count();
-            assert!(populated >= 1, "{}: whole buffer all-zero (zero-fill regression)", t.label);
+            assert!(
+                populated >= 1,
+                "{}: whole buffer all-zero (zero-fill regression)",
+                t.label
+            );
 
             let amax = buf.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
             println!(
@@ -193,7 +220,11 @@ fn spike_001_axis_fold_stride_probe() {
                     let v_nz = vendor[lo..lo + block].iter().any(|v| v.abs() > 1e-14);
                     if v_nz {
                         let o_nz = buf[lo..lo + block].iter().any(|v| v.abs() > 1e-14);
-                        assert!(o_nz, "{}: comp {c}/{} stuck-at-zero vs vendor", t.label, t.rank);
+                        assert!(
+                            o_nz,
+                            "{}: comp {c}/{} stuck-at-zero vs vendor",
+                            t.label, t.rank
+                        );
                     }
                 }
                 // E. element-wise byte identity: pins component-OUTERMOST + stride ni*nj.
@@ -202,11 +233,17 @@ fn spike_001_axis_fold_stride_probe() {
                     .zip(buf.iter())
                     .filter(|(v, o)| (**o - **v).abs() > ATOL)
                     .count();
-                assert_eq!(mm, 0, "{}: {mm} mismatches vs vendor (layout/stride divergence)", t.label);
+                assert_eq!(
+                    mm, 0,
+                    "{}: {mm} mismatches vs vendor (layout/stride divergence)",
+                    t.label
+                );
             }
             checked_tiers += 1;
         }
     }
 
-    println!("\n================ SPIKE 001 : PASS ({checked_tiers} tier x pair probes) ================\n");
+    println!(
+        "\n================ SPIKE 001 : PASS ({checked_tiers} tier x pair probes) ================\n"
+    );
 }

@@ -9,8 +9,8 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, PTR_COEFF, PTR_COORD,
-    PTR_EXP, PTR_ZETA, NUC_MOD_OF, POINT_NUC, RawApiId, eval_raw,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
 #[allow(dead_code)]
@@ -160,8 +160,18 @@ fn collect_9c_matrix(
 
             // SAFETY: atm/bas/env well-formed by construction; shls valid.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
 
             for comp in 0..NCOMP {
@@ -256,7 +266,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: matrix is all-zero (zero-fill regression)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -272,9 +285,17 @@ fn determinism(api_sph: RawApiId, api_cart: RawApiId, label: &str) {
     ] {
         let m1 = collect_9c_matrix(api, &atm, &bas, &env, nf);
         let m2 = collect_9c_matrix(api, &atm, &bas, &env, nf);
-        assert_eq!(m1.len(), NCOMP * 7 * 7, "{label}_{rep} size should be 9*7*7=441");
+        assert_eq!(
+            m1.len(),
+            NCOMP * 7 * 7,
+            "{label}_{rep} size should be 9*7*7=441"
+        );
         for (a, b) in m1.iter().zip(m2.iter()) {
-            assert_eq!(a.to_bits(), b.to_bits(), "{label}_{rep} must be bit-identical");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "{label}_{rep} must be bit-identical"
+            );
         }
         assert_any_nonzero(&m1, &format!("{label}_{rep}"));
     }
@@ -283,19 +304,31 @@ fn determinism(api_sph: RawApiId, api_cart: RawApiId, label: &str) {
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int1e_ipovlpip_determinism() {
-    determinism(RawApiId::INT1E_IPOVLPIP_SPH, RawApiId::INT1E_IPOVLPIP_CART, "int1e_ipovlpip");
+    determinism(
+        RawApiId::INT1E_IPOVLPIP_SPH,
+        RawApiId::INT1E_IPOVLPIP_CART,
+        "int1e_ipovlpip",
+    );
 }
 
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int1e_ipkinip_determinism() {
-    determinism(RawApiId::INT1E_IPKINIP_SPH, RawApiId::INT1E_IPKINIP_CART, "int1e_ipkinip");
+    determinism(
+        RawApiId::INT1E_IPKINIP_SPH,
+        RawApiId::INT1E_IPKINIP_CART,
+        "int1e_ipkinip",
+    );
 }
 
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int1e_ipnucip_determinism() {
-    determinism(RawApiId::INT1E_IPNUCIP_SPH, RawApiId::INT1E_IPNUCIP_CART, "int1e_ipnucip");
+    determinism(
+        RawApiId::INT1E_IPNUCIP_SPH,
+        RawApiId::INT1E_IPNUCIP_CART,
+        "int1e_ipnucip",
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -321,14 +354,20 @@ fn vendor_parity<FS, FC>(
     assert_any_nonzero(&cintx_s, &format!("{label}_sph cintx"));
     assert_any_nonzero(&vendor_s, &format!("{label}_sph vendor"));
     let mm = count_mismatches(&vendor_s, &cintx_s, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}"
+    );
 
     let vendor_c = collect_vendor_9c_matrix(vendor_cart, &atm, &bas, &env, ncart);
     let cintx_c = collect_9c_matrix(api_cart, &atm, &bas, &env, ncart);
     assert_any_nonzero(&cintx_c, &format!("{label}_cart cintx"));
     assert_any_nonzero(&vendor_c, &format!("{label}_cart vendor"));
     let mm = count_mismatches(&vendor_c, &cintx_c, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_cart: {mm} mismatches vs vendored libcint at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_cart: {mm} mismatches vs vendored libcint at atol={ATOL}"
+    );
 }
 
 #[cfg(has_vendor_libcint)]

@@ -498,11 +498,7 @@ impl SimdFloat for f64 {
 
     #[inline(always)]
     fn from_f64_slice(slice: &[f64], pad_val: f64) -> Self {
-        if !slice.is_empty() {
-            slice[0]
-        } else {
-            pad_val
-        }
+        if !slice.is_empty() { slice[0] } else { pad_val }
     }
 
     #[inline(always)]

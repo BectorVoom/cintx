@@ -1,8 +1,6 @@
-use crate::specialization::hash_shell_tuple;
-use cintx_core::{BasisSet, Representation};
+use cintx_core::{BasisSet, EcpChannel, Representation};
 use smallvec::SmallVec;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -44,11 +42,49 @@ impl DeviceResidentCache {
     }
 
     pub fn basis_hash(basis: &BasisSet) -> u64 {
-        let mut state = std::collections::hash_map::DefaultHasher::new();
-        basis.atoms().len().hash(&mut state);
-        basis.shells().len().hash(&mut state);
-        basis.meta().total_ao.hash(&mut state);
-        hash_shell_tuple(basis.shells()).hash(&mut state);
+        // Device-resident values must never alias on structural similarity
+        // alone. Hash all result-affecting fields as exact IEEE bytes.
+        let mut state = StableBasisHasher::new();
+        state.usize(basis.atoms().len());
+        for atom in basis.atoms() {
+            state.u16(atom.atomic_number);
+            for coordinate in atom.coord_bohr {
+                state.f64(coordinate);
+            }
+            state.u8(atom.nuclear_model as u8);
+            state.option_f64(atom.zeta);
+            state.option_f64(atom.fractional_charge);
+        }
+
+        state.usize(basis.shells().len());
+        for shell in basis.shells() {
+            state.u32(shell.atom_index);
+            state.u8(shell.ang_momentum);
+            state.u16(shell.nprim);
+            state.u16(shell.nctr);
+            state.i16(shell.kappa);
+            state.u8(shell.representation as u8);
+            state.f64_slice(&shell.exponents);
+            state.f64_slice(&shell.coefficients);
+        }
+
+        state.usize(basis.ecp_shells().len());
+        for shell in basis.ecp_shells() {
+            state.u32(shell.atom_index);
+            match shell.channel {
+                EcpChannel::Local => state.u8(0),
+                EcpChannel::Projected(l) => {
+                    state.u8(1);
+                    state.u8(l);
+                }
+            }
+            state.i16(shell.radial_power);
+            state.u16(shell.nprim);
+            state.u16(shell.nctr);
+            state.i16(shell.so_type);
+            state.f64_slice(&shell.exponents);
+            state.f64_slice(&shell.coefficients);
+        }
         state.finish()
     }
 
@@ -88,6 +124,61 @@ impl DeviceResidentCache {
 
     pub fn len(&self) -> usize {
         self.entries.read().expect("resident cache poisoned").len()
+    }
+}
+
+/// Fixed byte-wise FNV-1a state. This is deliberately stable across processes,
+/// unlike `DefaultHasher`, because cache identity is an execution contract.
+struct StableBasisHasher(u64);
+
+impl StableBasisHasher {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+
+    const fn new() -> Self {
+        Self(Self::OFFSET)
+    }
+    fn bytes(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 ^= u64::from(*byte);
+            self.0 = self.0.wrapping_mul(Self::PRIME);
+        }
+    }
+    fn u8(&mut self, value: u8) {
+        self.bytes(&value.to_le_bytes());
+    }
+    fn u16(&mut self, value: u16) {
+        self.bytes(&value.to_le_bytes());
+    }
+    fn u32(&mut self, value: u32) {
+        self.bytes(&value.to_le_bytes());
+    }
+    fn i16(&mut self, value: i16) {
+        self.bytes(&value.to_le_bytes());
+    }
+    fn usize(&mut self, value: usize) {
+        self.bytes(&(value as u64).to_le_bytes());
+    }
+    fn f64(&mut self, value: f64) {
+        self.bytes(&value.to_bits().to_le_bytes());
+    }
+    fn option_f64(&mut self, value: Option<f64>) {
+        match value {
+            Some(value) => {
+                self.u8(1);
+                self.f64(value);
+            }
+            None => self.u8(0),
+        }
+    }
+    fn f64_slice(&mut self, values: &[f64]) {
+        self.usize(values.len());
+        for value in values {
+            self.f64(*value);
+        }
+    }
+    const fn finish(self) -> u64 {
+        self.0
     }
 }
 
@@ -136,5 +227,47 @@ mod tests {
 
         assert!(!Arc::ptr_eq(&cart, &spinor));
         assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn resident_cache_hash_includes_numeric_basis_content() {
+        let left = sample_basis(Representation::Cart);
+        let atom = Atom::try_new(1, [0.125, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let shell_a = Arc::new(
+            Shell::try_new(
+                0,
+                1,
+                1,
+                2,
+                0,
+                Representation::Cart,
+                arc_f64(&[1.0]),
+                arc_f64(&[1.0, 0.25]),
+            )
+            .unwrap(),
+        );
+        let shell_b = Arc::new(
+            Shell::try_new(
+                0,
+                2,
+                1,
+                1,
+                0,
+                Representation::Cart,
+                arc_f64(&[0.8]),
+                arc_f64(&[0.7]),
+            )
+            .unwrap(),
+        );
+        let right = BasisSet::try_new(
+            Arc::from(vec![atom].into_boxed_slice()),
+            Arc::from(vec![shell_a, shell_b].into_boxed_slice()),
+        )
+        .unwrap();
+
+        assert_ne!(
+            DeviceResidentCache::basis_hash(&left),
+            DeviceResidentCache::basis_hash(&right)
+        );
     }
 }

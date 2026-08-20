@@ -58,8 +58,18 @@ mod parity {
 
         // SAFETY: atm/bas/env well-formed; shls valid.
         unsafe {
-            eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+            eval_raw(
+                api_id,
+                Some(&mut out),
+                None,
+                &shls,
+                atm,
+                bas,
+                env,
+                None,
+                None,
+            )
+            .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
         }
         let mut re = vec![0.0_f64; n];
         let mut im = vec![0.0_f64; n];
@@ -129,10 +139,16 @@ mod parity {
         assert_any_nonzero(&vendor_s, &format!("{label}_sph vendor"));
         // D-07: real half exactly zero.
         for (i, &v) in re_s.iter().enumerate() {
-            assert_eq!(v, 0.0, "{label}_sph: real part at {i} must be exactly 0.0, got {v}");
+            assert_eq!(
+                v, 0.0,
+                "{label}_sph: real part at {i} must be exactly 0.0, got {v}"
+            );
         }
         let mm = count_mismatches(&vendor_s, &im_s, ATOL, RTOL);
-        assert_eq!(mm, 0, "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}");
+        assert_eq!(
+            mm, 0,
+            "{label}_sph: {mm} mismatches vs vendored libcint at atol={ATOL}"
+        );
 
         // ── cart ──
         let vendor_c = collect_vendor_real(rank, &vendor_cart, &atm, &bas, &env, pair, ncart);
@@ -140,10 +156,16 @@ mod parity {
         assert_any_nonzero(&im_c, &format!("{label}_cart cintx imag"));
         assert_any_nonzero(&vendor_c, &format!("{label}_cart vendor"));
         for (i, &v) in re_c.iter().enumerate() {
-            assert_eq!(v, 0.0, "{label}_cart: real part at {i} must be exactly 0.0, got {v}");
+            assert_eq!(
+                v, 0.0,
+                "{label}_cart: real part at {i} must be exactly 0.0, got {v}"
+            );
         }
         let mm = count_mismatches(&vendor_c, &im_c, ATOL, RTOL);
-        assert_eq!(mm, 0, "{label}_cart: {mm} mismatches vs vendored libcint at atol={ATOL}");
+        assert_eq!(
+            mm, 0,
+            "{label}_cart: {mm} mismatches vs vendored libcint at atol={ATOL}"
+        );
     }
 
     #[test]

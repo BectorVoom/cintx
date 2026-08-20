@@ -192,8 +192,7 @@ mod tests {
     }
 
     fn sample_h_atom() -> Arc<[Atom]> {
-        let atom =
-            Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+        let atom = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         Arc::from(vec![atom].into_boxed_slice())
     }
 

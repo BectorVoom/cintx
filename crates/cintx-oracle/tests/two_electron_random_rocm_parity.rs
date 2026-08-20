@@ -271,7 +271,17 @@ fn test_int2e_scalar_random_rocm_parity() {
                 // cintx ROCm device path (eval_raw resolves CINTX_BACKEND=rocm).
                 let mut cintx_out = vec![0.0_f64; n_elem];
                 let summary = unsafe {
-                    eval_raw(api, Some(&mut cintx_out), None, &shls, &atm, &bas, &env, None, None)
+                    eval_raw(
+                        api,
+                        Some(&mut cintx_out),
+                        None,
+                        &shls,
+                        &atm,
+                        &bas,
+                        &env,
+                        None,
+                        None,
+                    )
                 }
                 .unwrap_or_else(|err| {
                     panic!("eval_raw failed for quartet {shls:?} sph={is_sph}: {err:?}")

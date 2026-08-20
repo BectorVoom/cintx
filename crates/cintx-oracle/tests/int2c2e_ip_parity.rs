@@ -119,8 +119,18 @@ fn collect_3c_pair(
 
     // SAFETY: atm/bas/env well-formed by construction; shls valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for pair {shls:?}: {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for pair {shls:?}: {e:?}"));
     }
     out
 }
@@ -166,7 +176,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: matrix is all-zero (zero-fill regression)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,9 +205,17 @@ fn determinism_and_shape(api_sph: RawApiId, api_cart: RawApiId, label: &str) {
                 let (ni, nk) = (nf(li), nf(lk));
                 let m1 = collect_3c_pair(api, &atm, &bas, &env, &shls, nf);
                 let m2 = collect_3c_pair(api, &atm, &bas, &env, &shls, nf);
-                assert_eq!(m1.len(), NCOMP * ni * nk, "{label}_{rep} {shls:?} size must be 3*ni*nk");
+                assert_eq!(
+                    m1.len(),
+                    NCOMP * ni * nk,
+                    "{label}_{rep} {shls:?} size must be 3*ni*nk"
+                );
                 for (a, b) in m1.iter().zip(m2.iter()) {
-                    assert_eq!(a.to_bits(), b.to_bits(), "{label}_{rep} {shls:?} not bit-identical");
+                    assert_eq!(
+                        a.to_bits(),
+                        b.to_bits(),
+                        "{label}_{rep} {shls:?} not bit-identical"
+                    );
                 }
                 tested += 1;
             }
@@ -209,13 +230,21 @@ fn determinism_and_shape(api_sph: RawApiId, api_cart: RawApiId, label: &str) {
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int2c2e_ip1_determinism_and_shape() {
-    determinism_and_shape(RawApiId::INT2C2E_IP1_SPH, RawApiId::INT2C2E_IP1_CART, "int2c2e_ip1");
+    determinism_and_shape(
+        RawApiId::INT2C2E_IP1_SPH,
+        RawApiId::INT2C2E_IP1_CART,
+        "int2c2e_ip1",
+    );
 }
 
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int2c2e_ip2_determinism_and_shape() {
-    determinism_and_shape(RawApiId::INT2C2E_IP2_SPH, RawApiId::INT2C2E_IP2_CART, "int2c2e_ip2");
+    determinism_and_shape(
+        RawApiId::INT2C2E_IP2_SPH,
+        RawApiId::INT2C2E_IP2_CART,
+        "int2c2e_ip2",
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,8 +295,14 @@ fn vendor_parity(
             mismatches, 0,
             "{label}_{rep}: {mismatches} parity mismatches vs vendored libcint (component-leading F-order)"
         );
-        assert!(any_nonzero, "{label}_{rep}: all outputs zero — kernel appears stubbed");
-        assert!(nonsquare, "{label}_{rep}: no non-square (ni!=nk) pair exercised");
+        assert!(
+            any_nonzero,
+            "{label}_{rep}: all outputs zero — kernel appears stubbed"
+        );
+        assert!(
+            nonsquare,
+            "{label}_{rep}: no non-square (ni!=nk) pair exercised"
+        );
         assert!(tested > 0, "{label}_{rep}: no pairs tested");
         println!("{label}_{rep}: vendor parity PASS over {tested} pairs, atol={ATOL:.0e}");
     }

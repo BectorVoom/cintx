@@ -113,7 +113,15 @@ fn extract_shell(s: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> ShellData {
         }
     }
 
-    ShellData { l, kappa, nprim, nctr, coord, exps, coeff_row_major }
+    ShellData {
+        l,
+        kappa,
+        nprim,
+        nctr,
+        coord,
+        exps,
+        coeff_row_major,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,7 +191,11 @@ fn collect_cintx_cg_sa10sp(atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
     .expect("CPU backend must initialise");
 
     // dri = ri − common_orig (bra-side gauge fold for the cg_sa10* arms).
-    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    let common_orig = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
     let dri = [
         si.coord[0] - common_orig[0],
         si.coord[1] - common_orig[1],
@@ -253,8 +265,16 @@ fn collect_vendor_giao_1e(family: &str, atm: &[i32], bas: &[i32], env: &[f64]) -
 fn test_kappa_sizing_non_4l_plus_2() {
     assert_eq!(spinor_len(1, 1), 2, "p kappa=+1 (LT) → di = 2*1 = 2");
     assert_eq!(spinor_len(2, -1), 6, "d kappa=−1 (GT) → dj = 2*2+2 = 6");
-    assert_eq!(spinor_len(1, 0), 6, "p kappa=0 would be 4l+2 = 6 (NOT used)");
-    assert_eq!(spinor_len(2, 0), 10, "d kappa=0 would be 4l+2 = 10 (NOT used)");
+    assert_eq!(
+        spinor_len(1, 0),
+        6,
+        "p kappa=0 would be 4l+2 = 6 (NOT used)"
+    );
+    assert_eq!(
+        spinor_len(2, 0),
+        10,
+        "d kappa=0 would be 4l+2 = 10 (NOT used)"
+    );
 
     let (_atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
     assert_eq!(bas[ANG_OF], 1, "shell 0 = p");
@@ -263,7 +283,11 @@ fn test_kappa_sizing_non_4l_plus_2() {
     assert_eq!(bas[BAS_SLOTS + ANG_OF], 2, "shell 1 = d");
     assert_eq!(bas[BAS_SLOTS + KAPPA_OF], -1, "shell 1 kappa = −1 (GT)");
     // D-02 constraint (1): the gauge origin is genuinely non-zero.
-    let origin = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    let origin = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
     assert!(
         origin.iter().any(|&c| c != 0.0),
         "build_gauge_kappa_spinor_fixture must set a non-zero gauge origin"
@@ -291,7 +315,11 @@ fn giao_sigma_micro() {
     // Sanity: the Wave-0 fixture's bra (i) shell is at the coordinate origin, so
     // the common_orig=[0,0,0] collapse arm gives dri=0 → cg must equal giao.
     let si = extract_shell(0, &atm, &bas, &env);
-    assert_eq!(si.coord, [0.0, 0.0, 0.0], "Wave-0 collapse requires bra at origin");
+    assert_eq!(
+        si.coord,
+        [0.0, 0.0, 0.0],
+        "Wave-0 collapse requires bra at origin"
+    );
 
     // ── (A) Byte-identity vs vendor at the genuine non-zero gauge origin. ──
     let vendor_cg = collect_vendor_giao_1e("int1e_cg_sa10sp_spinor", &atm, &bas, &env);
@@ -359,10 +387,18 @@ fn collect_cintx_sa10sa01(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Ve
     })
     .expect("CPU backend must initialise");
 
-    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    let common_orig = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
     // 30-01c root cause: sa01 evaluates at the SINGLE rinv center env[PTR_RINV_ORIG]
     // (intor3.c int1e_type=1, charge +1) — must be threaded, not assumed [0,0,0].
-    let rinv_orig = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
+    let rinv_orig = [
+        env[PTR_RINV_ORIG],
+        env[PTR_RINV_ORIG + 1],
+        env[PTR_RINV_ORIG + 2],
+    ];
 
     let mut staging = vec![0.0_f64; ni_sp * nj_sp * 2 * 9];
     launch_int1e_giao_sigma_family_spinor_pair::<f64>(
@@ -397,8 +433,7 @@ fn collect_cintx_sa10sa01(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Ve
 #[cfg(has_vendor_libcint)]
 fn collect_vendor_sa10sa01(family: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64> {
     use cintx_oracle::vendor_ffi::{
-        vendor_CINTcgto_spinor, vendor_int1e_cg_sa10sa01_spinor,
-        vendor_int1e_giao_sa10sa01_spinor,
+        vendor_CINTcgto_spinor, vendor_int1e_cg_sa10sa01_spinor, vendor_int1e_giao_sa10sa01_spinor,
     };
 
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -425,7 +460,11 @@ fn collect_vendor_sa10sa01(family: &str, atm: &[i32], bas: &[i32], env: &[f64]) 
 /// (Pitfall 3: a rank-3 truncation would leave 6 of the 9 slices all-zero).
 #[cfg(has_vendor_libcint)]
 fn assert_all_components_nonzero(matrix: &[f64], rank: usize, label: &str) {
-    assert_eq!(matrix.len() % rank, 0, "{label}: length not divisible by rank {rank}");
+    assert_eq!(
+        matrix.len() % rank,
+        0,
+        "{label}: length not divisible by rank {rank}"
+    );
     let comp_len = matrix.len() / rank;
     for c in 0..rank {
         let slice = &matrix[c * comp_len..(c + 1) * comp_len];
@@ -491,7 +530,11 @@ fn giao_sigma_1e_giao_sa10sa01() {
 fn giao_sigma_1e_sa10sa01_cg_giao_collapse() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
     let si = extract_shell(0, &atm, &bas, &env);
-    assert_eq!(si.coord, [0.0, 0.0, 0.0], "collapse witness requires bra at origin");
+    assert_eq!(
+        si.coord,
+        [0.0, 0.0, 0.0],
+        "collapse witness requires bra at origin"
+    );
 
     let mut env0 = env.clone();
     env0[PTR_COMMON_ORIG] = 0.0;
@@ -559,7 +602,10 @@ fn collect_cintx_sa10nucsp(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> V
     let ni_sp = si.nctr * di;
     let nj_sp = sj.nctr * dj;
     // NON-SQUARE block (Pitfall 6 / T-30-01b-05): p(LT,nctr=2)×d(GT).
-    assert_ne!(ni_sp, nj_sp, "nucsp gate requires a NON-SQUARE spinor block");
+    assert_ne!(
+        ni_sp, nj_sp,
+        "nucsp gate requires a NON-SQUARE spinor block"
+    );
 
     let backend = ResolvedBackend::from_intent(&BackendIntent {
         backend: BackendKind::Cpu,
@@ -567,11 +613,19 @@ fn collect_cintx_sa10nucsp(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> V
     })
     .expect("CPU backend must initialise");
 
-    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    let common_orig = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
     // nucsp uses atom-summed nuclear origins (origin_coords/charges), not the single
     // rinv center; pass env[PTR_RINV_ORIG] for signature consistency (ignored by the
     // nucsp arms).
-    let rinv_orig = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
+    let rinv_orig = [
+        env[PTR_RINV_ORIG],
+        env[PTR_RINV_ORIG + 1],
+        env[PTR_RINV_ORIG + 2],
+    ];
     let (origin_coords, origin_charges) = nucsp_nuclear_origins(atm, env);
 
     let mut staging = vec![0.0_f64; ni_sp * nj_sp * 2 * 3];
@@ -676,7 +730,11 @@ fn giao_sigma_1e_giao_sa10nucsp() {
 fn giao_sigma_1e_sa10nucsp_cg_giao_collapse() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
     let si = extract_shell(0, &atm, &bas, &env);
-    assert_eq!(si.coord, [0.0, 0.0, 0.0], "collapse witness requires bra at origin");
+    assert_eq!(
+        si.coord,
+        [0.0, 0.0, 0.0],
+        "collapse witness requires bra at origin"
+    );
 
     let mut env0 = env.clone();
     env0[PTR_COMMON_ORIG] = 0.0;
@@ -735,11 +793,19 @@ fn collect_cintx_spg(op: &str, atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<f64
 
     // spg families do NOT read PTR_COMMON_ORIG (London origin is ri). common_orig
     // is threaded only for signature consistency (ignored by the spg arms).
-    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    let common_orig = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
     // spgsa01 evaluates at the SINGLE rinv center env[PTR_RINV_ORIG] (int1e_type 1,
     // charge +1) — threaded, not assumed [0,0,0] (the 30-01c lesson). spgnucsp uses
     // the atom-summed nuclear origins instead (int1e_type 2).
-    let rinv_orig = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
+    let rinv_orig = [
+        env[PTR_RINV_ORIG],
+        env[PTR_RINV_ORIG + 1],
+        env[PTR_RINV_ORIG + 2],
+    ];
     let (origin_coords, origin_charges) = if op == "spgnucsp" {
         nucsp_nuclear_origins(atm, env)
     } else {
@@ -876,10 +942,15 @@ fn manifest_lock_entry(symbol: &str) -> (bool, Option<u32>) {
     // arity (or file end). That window holds exactly this entry's component_rank and
     // its single oracle_covered.
     let needle = format!("\"symbol\": \"{symbol}\"");
-    let sym_pos = lock.find(&needle).unwrap_or_else(|| panic!("{symbol} not in lock"));
+    let sym_pos = lock
+        .find(&needle)
+        .unwrap_or_else(|| panic!("{symbol} not in lock"));
     let lo = lock[..sym_pos].rfind("\"arity\":").unwrap_or(0);
     let after = sym_pos + needle.len();
-    let hi = lock[after..].find("\"arity\":").map(|p| after + p).unwrap_or(lock.len());
+    let hi = lock[after..]
+        .find("\"arity\":")
+        .map(|p| after + p)
+        .unwrap_or(lock.len());
     let block = &lock[lo..hi];
     let covered = block.contains("\"oracle_covered\": true");
     let rank = if let Some(p) = block.find("\"component_rank\": \"") {
@@ -950,7 +1021,11 @@ fn test_no_silent_skip() {
     {
         let vendor = collect_vendor_spg("int1e_spgnucsp_spinor", &atm, &bas, &env);
         let cintx = collect_cintx_spg("spgnucsp", &atm, &bas, &env);
-        assert_eq!(cintx.len(), vendor.len(), "int1e_spgnucsp_spinor rank-3 length");
+        assert_eq!(
+            cintx.len(),
+            vendor.len(),
+            "int1e_spgnucsp_spinor rank-3 length"
+        );
         assert_all_components_nonzero(&cintx, 3, "int1e_spgnucsp_spinor");
         assert_all_components_nonzero(&vendor, 3, "int1e_spgnucsp_spinor");
         assert_eq!(
@@ -964,7 +1039,11 @@ fn test_no_silent_skip() {
     {
         let vendor = collect_vendor_spg("int1e_spgsa01_spinor", &atm, &bas, &env);
         let cintx = collect_cintx_spg("spgsa01", &atm, &bas, &env);
-        assert_eq!(cintx.len(), vendor.len(), "int1e_spgsa01_spinor rank-9 length");
+        assert_eq!(
+            cintx.len(),
+            vendor.len(),
+            "int1e_spgsa01_spinor rank-9 length"
+        );
         assert_all_components_nonzero(&cintx, 9, "int1e_spgsa01_spinor cintx");
         assert_all_components_nonzero(&vendor, 9, "int1e_spgsa01_spinor vendor");
     }
@@ -984,19 +1063,33 @@ fn test_no_silent_skip() {
     for sym in covered_rank3 {
         let (covered, rank) = manifest_lock_entry(sym);
         assert_eq!(rank, Some(3), "{sym} must carry component_rank 3");
-        assert!(covered, "{sym} must be oracle_covered=true (Wave-1 byte-identity green)");
+        assert!(
+            covered,
+            "{sym} must be oracle_covered=true (Wave-1 byte-identity green)"
+        );
     }
     for sym in covered_rank9 {
         let (covered, rank) = manifest_lock_entry(sym);
-        assert_eq!(rank, Some(9), "{sym} must carry component_rank 9 (Pitfall 3 truncation guard)");
-        assert!(covered, "{sym} must be oracle_covered=true (rank-9 byte-identity green)");
+        assert_eq!(
+            rank,
+            Some(9),
+            "{sym} must carry component_rank 9 (Pitfall 3 truncation guard)"
+        );
+        assert!(
+            covered,
+            "{sym} must be oracle_covered=true (rank-9 byte-identity green)"
+        );
     }
 
     // (E) spgsa01 stays oracle_covered=FALSE (rank 9) — NOT yet byte-identical
     //     (T-30-01d-06: never over-claim coverage on a non-byte-identical family).
     {
         let (covered, rank) = manifest_lock_entry("int1e_spgsa01_spinor");
-        assert_eq!(rank, Some(9), "int1e_spgsa01_spinor must carry component_rank 9");
+        assert_eq!(
+            rank,
+            Some(9),
+            "int1e_spgsa01_spinor must carry component_rank 9"
+        );
         assert!(
             !covered,
             "int1e_spgsa01_spinor must stay oracle_covered=false (rank-9 both-side-g1 WIP)"

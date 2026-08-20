@@ -7,15 +7,15 @@ pub mod errors;
 pub mod shim;
 
 pub use errors::{
+    CINTX_STATUS_ALLOCATION_FAILED, CINTX_STATUS_BUFFER_TOO_SMALL, CINTX_STATUS_EXECUTION_FAILED,
+    CINTX_STATUS_INVALID_INPUT, CINTX_STATUS_MEMORY_LIMIT_EXCEEDED, CINTX_STATUS_NULL_POINTER,
+    CINTX_STATUS_PANIC, CINTX_STATUS_SUCCESS, CINTX_STATUS_UNSUPPORTED_API,
+    CINTX_STATUS_UNSUPPORTED_REPRESENTATION, CintxErrorReport, CintxStatus,
     cintrs_clear_last_error, cintrs_copy_last_error_api, cintrs_copy_last_error_family,
-    cintrs_copy_last_error_message, cintrs_copy_last_error_representation,
-    cintrs_last_error_code, CintxErrorReport, CintxStatus, CINTX_STATUS_ALLOCATION_FAILED,
-    CINTX_STATUS_BUFFER_TOO_SMALL, CINTX_STATUS_EXECUTION_FAILED, CINTX_STATUS_INVALID_INPUT,
-    CINTX_STATUS_MEMORY_LIMIT_EXCEEDED, CINTX_STATUS_NULL_POINTER, CINTX_STATUS_PANIC,
-    CINTX_STATUS_SUCCESS, CINTX_STATUS_UNSUPPORTED_API, CINTX_STATUS_UNSUPPORTED_REPRESENTATION,
+    cintrs_copy_last_error_message, cintrs_copy_last_error_representation, cintrs_last_error_code,
 };
 pub use shim::{
-    cintrs_eval, cintrs_query_workspace, CintxEvalSummary, CintxRawApi, CintxWorkspaceQuery,
+    CintxEvalSummary, CintxRawApi, CintxWorkspaceQuery, cintrs_eval, cintrs_query_workspace,
 };
 
 /// Phase 3 keeps the C ABI boundary stable-only.

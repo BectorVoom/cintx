@@ -13,8 +13,8 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF,
-    NUC_MOD_OF, POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA,
 };
 use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
 use cintx_rs::SessionRequest;
@@ -65,34 +65,34 @@ fn build_h2o_sto3g() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     //   [51..53]  H 1s coefficients
     let mut env = vec![0.0_f64; PTR_ENV_START]; // zeros for reserved slots
 
-    let o_coord_ptr = env.len() as i32;   // 20
+    let o_coord_ptr = env.len() as i32; // 20
     env.extend_from_slice(&o_coord);
 
-    let h1_coord_ptr = env.len() as i32;  // 23
+    let h1_coord_ptr = env.len() as i32; // 23
     env.extend_from_slice(&h1_coord);
 
-    let h2_coord_ptr = env.len() as i32;  // 26
+    let h2_coord_ptr = env.len() as i32; // 26
     env.extend_from_slice(&h2_coord);
 
-    let zeta_ptr = env.len() as i32;      // 29
+    let zeta_ptr = env.len() as i32; // 29
     env.push(0.0);
 
-    let o1s_exp_ptr = env.len() as i32;   // 30
+    let o1s_exp_ptr = env.len() as i32; // 30
     env.extend_from_slice(&o_1s_exp);
     let o1s_coeff_ptr = env.len() as i32; // 33
     env.extend_from_slice(&o_1s_coeff);
 
-    let o2s_exp_ptr = env.len() as i32;   // 36
+    let o2s_exp_ptr = env.len() as i32; // 36
     env.extend_from_slice(&o_2s_exp);
     let o2s_coeff_ptr = env.len() as i32; // 39
     env.extend_from_slice(&o_2s_coeff);
 
-    let o2p_exp_ptr = env.len() as i32;   // 42
+    let o2p_exp_ptr = env.len() as i32; // 42
     env.extend_from_slice(&o_2p_exp);
     let o2p_coeff_ptr = env.len() as i32; // 45
     env.extend_from_slice(&o_2p_coeff);
 
-    let h1s_exp_ptr = env.len() as i32;   // 48
+    let h1s_exp_ptr = env.len() as i32; // 48
     env.extend_from_slice(&h_1s_exp);
     let h1s_coeff_ptr = env.len() as i32; // 51
     env.extend_from_slice(&h_1s_coeff);
@@ -171,48 +171,89 @@ fn arc_f64(values: &[f64]) -> Arc<[f64]> {
 }
 
 fn build_h2o_sto3g_safe_basis(rep: Representation) -> (BasisSet, Vec<Arc<Shell>>) {
-    let atom_o  = Atom::try_new(8, [0.0, 0.0, 0.0],        NuclearModel::Point, None, None).unwrap();
-    let atom_h1 = Atom::try_new(1, [0.0, 1.4307, 1.1078],  NuclearModel::Point, None, None).unwrap();
-    let atom_h2 = Atom::try_new(1, [0.0, -1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
+    let atom_o = Atom::try_new(8, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
+    let atom_h1 = Atom::try_new(1, [0.0, 1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
+    let atom_h2 =
+        Atom::try_new(1, [0.0, -1.4307, 1.1078], NuclearModel::Point, None, None).unwrap();
     let atoms = Arc::from(vec![atom_o, atom_h1, atom_h2].into_boxed_slice());
 
     // STO-3G exponents and coefficients (Hehre, Stewart & Pople, J. Chem. Phys. 51, 2657, 1969)
     // These values must match build_h2o_sto3g() exactly so vendor comparisons are valid.
 
     // O 1s: atom_idx=0, l=0, nprim=3, nctr=1, kappa=0
-    let shell_o1s = Arc::new(Shell::try_new(
-        0, 0, 3, 1, 0, rep,
-        arc_f64(&[130.7093200, 23.8088610, 6.4436083]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_o1s = Arc::new(
+        Shell::try_new(
+            0,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[130.7093200, 23.8088610, 6.4436083]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
     // O 2s: atom_idx=0, l=0, nprim=3, nctr=1, kappa=0
-    let shell_o2s = Arc::new(Shell::try_new(
-        0, 0, 3, 1, 0, rep,
-        arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
-        arc_f64(&[-0.09996723, 0.39951283, 0.70011547]),
-    ).unwrap());
+    let shell_o2s = Arc::new(
+        Shell::try_new(
+            0,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
+            arc_f64(&[-0.09996723, 0.39951283, 0.70011547]),
+        )
+        .unwrap(),
+    );
 
     // O 2p: atom_idx=0, l=1, nprim=3, nctr=1, kappa=0
-    let shell_o2p = Arc::new(Shell::try_new(
-        0, 1, 3, 1, 0, rep,
-        arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
-        arc_f64(&[0.15591627, 0.60768372, 0.39195739]),
-    ).unwrap());
+    let shell_o2p = Arc::new(
+        Shell::try_new(
+            0,
+            1,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[5.0331513, 1.1695961, 0.3803890]),
+            arc_f64(&[0.15591627, 0.60768372, 0.39195739]),
+        )
+        .unwrap(),
+    );
 
     // H1 1s: atom_idx=1, l=0, nprim=3, nctr=1, kappa=0
-    let shell_h1_1s = Arc::new(Shell::try_new(
-        1, 0, 3, 1, 0, rep,
-        arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_h1_1s = Arc::new(
+        Shell::try_new(
+            1,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
     // H2 1s: atom_idx=2, l=0, nprim=3, nctr=1, kappa=0
-    let shell_h2_1s = Arc::new(Shell::try_new(
-        2, 0, 3, 1, 0, rep,
-        arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
-        arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
-    ).unwrap());
+    let shell_h2_1s = Arc::new(
+        Shell::try_new(
+            2,
+            0,
+            3,
+            1,
+            0,
+            rep,
+            arc_f64(&[3.4252509, 0.6239137, 0.1688554]),
+            arc_f64(&[0.15432897, 0.53532814, 0.44463454]),
+        )
+        .unwrap(),
+    );
 
     let shells = vec![shell_o1s, shell_o2s, shell_o2p, shell_h1_1s, shell_h2_1s];
     let basis = BasisSet::try_new(atoms, Arc::from(shells.clone().into_boxed_slice())).unwrap();
@@ -240,10 +281,7 @@ fn collect_safe_api_matrix(
     shells: &[Arc<Shell>],
 ) -> Vec<f64> {
     // Compute the total number of AOs from shell angular momenta.
-    let shell_nao: Vec<usize> = shells
-        .iter()
-        .map(|s| s.ao_per_shell())
-        .collect();
+    let shell_nao: Vec<usize> = shells.iter().map(|s| s.ao_per_shell()).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
     let mut matrix = vec![0.0_f64; n_ao * n_ao];
@@ -279,7 +317,8 @@ fn collect_safe_api_matrix(
             let pair_values = &output.tensor.owned_values;
             for ii in 0..ni {
                 for jj in 0..nj {
-                    matrix[(row_offset + ii) * n_ao + (col_offset + jj)] = pair_values[ii * nj + jj];
+                    matrix[(row_offset + ii) * n_ao + (col_offset + jj)] =
+                        pair_values[ii * nj + jj];
                 }
             }
 
@@ -360,9 +399,7 @@ fn collect_1e_sph_matrix_vendor(
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
 
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
@@ -379,15 +416,15 @@ fn collect_1e_sph_matrix_vendor(
             let mut out = vec![0.0_f64; n_elem];
 
             let _ret = match operator {
-                "ovlp" => vendor_ffi::vendor_int1e_ovlp_sph(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
-                "kin" => vendor_ffi::vendor_int1e_kin_sph(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
-                "nuc" => vendor_ffi::vendor_int1e_nuc_sph(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
+                "ovlp" => {
+                    vendor_ffi::vendor_int1e_ovlp_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "kin" => {
+                    vendor_ffi::vendor_int1e_kin_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "nuc" => {
+                    vendor_ffi::vendor_int1e_nuc_sph(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
                 _ => panic!("unknown operator: {operator}"),
             };
 
@@ -424,9 +461,7 @@ fn collect_1e_cart_matrix_vendor(
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
 
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| ncart(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
@@ -443,15 +478,15 @@ fn collect_1e_cart_matrix_vendor(
             let mut out = vec![0.0_f64; n_elem];
 
             let _ret = match operator {
-                "ovlp" => vendor_ffi::vendor_int1e_ovlp_cart(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
-                "kin" => vendor_ffi::vendor_int1e_kin_cart(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
-                "nuc" => vendor_ffi::vendor_int1e_nuc_cart(
-                    &mut out, &shls, atm, natm, bas, nbas, env,
-                ),
+                "ovlp" => {
+                    vendor_ffi::vendor_int1e_ovlp_cart(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "kin" => {
+                    vendor_ffi::vendor_int1e_kin_cart(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
+                "nuc" => {
+                    vendor_ffi::vendor_int1e_nuc_cart(&mut out, &shls, atm, natm, bas, nbas, env)
+                }
                 _ => panic!("unknown operator: {operator}"),
             };
 
@@ -483,9 +518,7 @@ fn collect_2c2e_sph_matrix_vendor(atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
 
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
@@ -501,9 +534,7 @@ fn collect_2c2e_sph_matrix_vendor(atm: &[i32], bas: &[i32], env: &[f64]) -> Vec<
             let n_elem = ni * nj;
             let mut out = vec![0.0_f64; n_elem];
 
-            let _ret = vendor_ffi::vendor_int2c2e_sph(
-                &mut out, &shls, atm, natm, bas, nbas, env,
-            );
+            let _ret = vendor_ffi::vendor_int2c2e_sph(&mut out, &shls, atm, natm, bas, nbas, env);
 
             // libcint 2c2e output is column-major: out[j*ni + i]
             // Convert to row-major for our matrix layout
@@ -533,9 +564,7 @@ fn collect_2c2e_cart_matrix_vendor(atm: &[i32], bas: &[i32], env: &[f64]) -> Vec
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
 
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| ncart(l)).collect();
     let n_ao: usize = shell_nao.iter().sum();
 
@@ -551,9 +580,7 @@ fn collect_2c2e_cart_matrix_vendor(atm: &[i32], bas: &[i32], env: &[f64]) -> Vec
             let n_elem = ni * nj;
             let mut out = vec![0.0_f64; n_elem];
 
-            let _ret = vendor_ffi::vendor_int2c2e_cart(
-                &mut out, &shls, atm, natm, bas, nbas, env,
-            );
+            let _ret = vendor_ffi::vendor_int2c2e_cart(&mut out, &shls, atm, natm, bas, nbas, env);
 
             // libcint 2c2e output is column-major: out[j*ni + i]
             // Convert to row-major for our matrix layout
@@ -596,12 +623,8 @@ fn test_int1e_ovlp_cart_safe_api_parity() {
     let atol = 1e-12_f64;
     let rtol = 0.0_f64;
 
-    let safe_matrix = collect_safe_api_matrix(
-        OperatorId::new(0),
-        Representation::Cart,
-        &basis,
-        &shells,
-    );
+    let safe_matrix =
+        collect_safe_api_matrix(OperatorId::new(0), Representation::Cart, &basis, &shells);
     let vendor_matrix = collect_1e_cart_matrix_vendor("ovlp", &atm, &bas, &env);
 
     let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, atol, rtol);
@@ -619,12 +642,8 @@ fn test_int1e_ovlp_sph_safe_api_parity() {
     let atol = 1e-12_f64;
     let rtol = 0.0_f64;
 
-    let safe_matrix = collect_safe_api_matrix(
-        OperatorId::new(1),
-        Representation::Spheric,
-        &basis,
-        &shells,
-    );
+    let safe_matrix =
+        collect_safe_api_matrix(OperatorId::new(1), Representation::Spheric, &basis, &shells);
     let vendor_matrix = collect_1e_sph_matrix_vendor("ovlp", &atm, &bas, &env);
 
     let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, atol, rtol);
@@ -642,12 +661,8 @@ fn test_int1e_kin_cart_safe_api_parity() {
     let atol = 1e-12_f64;
     let rtol = 0.0_f64;
 
-    let safe_matrix = collect_safe_api_matrix(
-        OperatorId::new(3),
-        Representation::Cart,
-        &basis,
-        &shells,
-    );
+    let safe_matrix =
+        collect_safe_api_matrix(OperatorId::new(3), Representation::Cart, &basis, &shells);
     let vendor_matrix = collect_1e_cart_matrix_vendor("kin", &atm, &bas, &env);
 
     let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, atol, rtol);
@@ -665,12 +680,8 @@ fn test_int1e_kin_sph_safe_api_parity() {
     let atol = 1e-12_f64;
     let rtol = 0.0_f64;
 
-    let safe_matrix = collect_safe_api_matrix(
-        OperatorId::new(4),
-        Representation::Spheric,
-        &basis,
-        &shells,
-    );
+    let safe_matrix =
+        collect_safe_api_matrix(OperatorId::new(4), Representation::Spheric, &basis, &shells);
     let vendor_matrix = collect_1e_sph_matrix_vendor("kin", &atm, &bas, &env);
 
     let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, atol, rtol);
@@ -688,12 +699,8 @@ fn test_int1e_nuc_cart_safe_api_parity() {
     let atol = 1e-12_f64;
     let rtol = 0.0_f64;
 
-    let safe_matrix = collect_safe_api_matrix(
-        OperatorId::new(6),
-        Representation::Cart,
-        &basis,
-        &shells,
-    );
+    let safe_matrix =
+        collect_safe_api_matrix(OperatorId::new(6), Representation::Cart, &basis, &shells);
     let vendor_matrix = collect_1e_cart_matrix_vendor("nuc", &atm, &bas, &env);
 
     let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, atol, rtol);
@@ -711,12 +718,8 @@ fn test_int1e_nuc_sph_safe_api_parity() {
     let atol = 1e-12_f64;
     let rtol = 0.0_f64;
 
-    let safe_matrix = collect_safe_api_matrix(
-        OperatorId::new(7),
-        Representation::Spheric,
-        &basis,
-        &shells,
-    );
+    let safe_matrix =
+        collect_safe_api_matrix(OperatorId::new(7), Representation::Spheric, &basis, &shells);
     let vendor_matrix = collect_1e_sph_matrix_vendor("nuc", &atm, &bas, &env);
 
     let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, atol, rtol);
@@ -734,12 +737,8 @@ fn test_int2c2e_cart_safe_api_parity() {
     let atol = 1e-12_f64;
     let rtol = 0.0_f64;
 
-    let safe_matrix = collect_safe_api_matrix(
-        OperatorId::new(12),
-        Representation::Cart,
-        &basis,
-        &shells,
-    );
+    let safe_matrix =
+        collect_safe_api_matrix(OperatorId::new(12), Representation::Cart, &basis, &shells);
     let vendor_matrix = collect_2c2e_cart_matrix_vendor(&atm, &bas, &env);
 
     let mismatches = count_mismatches(&vendor_matrix, &safe_matrix, atol, rtol);
@@ -803,7 +802,8 @@ fn assert_safe_api_idempotent(operator_id: OperatorId, rep: Representation) {
     let (basis2, shells2) = build_h2o_sto3g_safe_basis(rep);
     let second = collect_safe_api_matrix(operator_id, rep, &basis2, &shells2);
     assert_eq!(
-        first.len(), second.len(),
+        first.len(),
+        second.len(),
         "spinor safe API must return the same number of elements across runs (operator={operator_id:?})"
     );
     assert_eq!(

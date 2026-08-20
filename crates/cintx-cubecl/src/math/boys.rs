@@ -35,6 +35,56 @@ pub const MMAX: u32 = 39;
 /// FROZEN: stays f64; injected as F via `F::from_f64_lossy(SQRTPIE4)` at boundary.
 pub const SQRTPIE4: f64 = 0.886226925452758013649083741670572591398774728061193564106903894926;
 
+/// W. J. Cody rational-Chebyshev coefficients for `erf`/`erfc` in f64.
+///
+/// Layout is `[A(5), B(4), C(9), D(8), P(6), Q(5)]`, following the three
+/// rational regions in Cody's algorithm.  The device F0 path materializes this
+/// exact table with `Array::from_data(comptime![...])`: the coefficients become
+/// a CubeCL compile-time constant array rather than lossy `F::new` literals.
+///
+/// These values match the f64 host implementation used by the Wheeler root
+/// engine.  Keep them f64-only: this is a precision prerequisite for future
+/// two-electron device work, not a generic float helper.
+pub const BOYS_F0_CODY_COEFFICIENTS: [f64; 37] = [
+    3.161_123_743_870_565_6e0,
+    1.138_641_541_510_501_6e2,
+    3.774_852_376_853_020_2e2,
+    3.209_377_589_138_469_5e3,
+    1.857_777_061_846_031_5e-1,
+    2.360_129_095_234_412_2e1,
+    2.440_246_379_344_441_7e2,
+    1.282_616_526_077_372_3e3,
+    2.844_236_833_439_170_6e3,
+    5.641_884_969_886_701e-1,
+    8.883_149_794_388_376e0,
+    6.611_919_063_714_163e1,
+    2.986_351_381_974_001_3e2,
+    8.819_522_212_417_691e2,
+    1.712_047_612_634_070_5e3,
+    2.051_078_377_826_072e3,
+    1.230_339_354_797_997_2e3,
+    2.153_115_354_744_038_5e-8,
+    1.574_492_611_070_983_5e1,
+    1.176_939_508_913_125e2,
+    5.371_811_018_620_098e2,
+    1.621_389_574_566_690_2e3,
+    3.290_799_235_733_459_7e3,
+    4.362_619_090_143_247e3,
+    3.439_367_674_143_721e3,
+    1.230_339_354_803_749_5e3,
+    3.053_266_349_612_323_5e-1,
+    3.603_448_999_498_044_5e-1,
+    1.257_817_261_112_292_4e-1,
+    1.608_378_514_874_227_6e-2,
+    6.587_491_615_298_379e-4,
+    1.631_538_713_730_209_8e-2,
+    2.568_520_192_289_822_4e0,
+    1.872_952_849_923_460_5e0,
+    5.279_051_029_514_284e-1,
+    6.051_834_131_244_132e-2,
+    2.335_204_976_268_691_8e-3,
+];
+
 /// Turn-over points for switching from power series to erfc branch.
 /// TURNOVER_POINT[m]: threshold t value for order m.
 /// Source: fmt.c lines 42-83.
@@ -256,6 +306,84 @@ pub fn boys_gamma_inc<F: Float>(f: &mut Array<F>, t: F, m: u32, turnover: F, sqr
     }
 }
 
+/// High-accuracy f64-only device implementation of the zeroth Boys function.
+///
+/// `F_0(t) = sqrt(pi)/2 * erf(sqrt(t)) / sqrt(t)` for `t > 0`, with its
+/// analytic `F_0(0) = 1` limit.  The Cody coefficients are injected as a
+/// CubeCL compile-time constant array, so their f64 bits are preserved without
+/// routing precision-critical values through `F::new`.
+///
+/// This is intentionally not wired into the generic Boys recurrence yet.  It
+/// is the f64 accuracy prerequisite for a future dedicated two-electron device
+/// path, whose descriptor and output-layout contract is still separate.
+#[cube]
+pub fn boys_f0_f64(t: f64) -> f64 {
+    let mut result = 1.0;
+    if t == 0.0 {
+        result = 1.0;
+    } else {
+        let coefficients = Array::<f64>::from_data(comptime![BOYS_F0_CODY_COEFFICIENTS.to_vec()]);
+        let sqrt_t = f64::sqrt(t);
+        let erf = boys_erf_cody_f64(sqrt_t, &coefficients);
+        result = SQRTPIE4 * erf / sqrt_t;
+    }
+    result
+}
+
+/// Cody's f64 `erf` rational approximation for a non-negative input.
+///
+/// The caller is `boys_f0_f64`, whose input is `sqrt(t)`; keeping this helper
+/// non-negative avoids an unnecessary sign branch in the device F0 path.
+#[cube]
+fn boys_erf_cody_f64(x: f64, coefficients: &Array<f64>) -> f64 {
+    let mut result = 0.0;
+    if x < 0.5 {
+        let z = x * x;
+        let mut numerator = coefficients[4usize] * z;
+        let mut denominator = z;
+        let mut i = 0usize;
+        while i < 3usize {
+            numerator = (numerator + coefficients[i]) * z;
+            denominator = (denominator + coefficients[i + 5usize]) * z;
+            i += 1usize;
+        }
+        result = x * (numerator + coefficients[3usize]) / (denominator + coefficients[8usize]);
+    } else {
+        result = 1.0 - boys_erfc_cody_f64(x, coefficients);
+    }
+    result
+}
+
+/// Cody's f64 `erfc` rational approximation for non-negative input.
+#[cube]
+fn boys_erfc_cody_f64(x: f64, coefficients: &Array<f64>) -> f64 {
+    if x < 4.0 {
+        let mut numerator = coefficients[17usize] * x;
+        let mut denominator = x;
+        let mut i = 0usize;
+        while i < 7usize {
+            numerator = (numerator + coefficients[i + 9usize]) * x;
+            denominator = (denominator + coefficients[i + 18usize]) * x;
+            i += 1usize;
+        }
+        let rational = (numerator + coefficients[16usize]) / (denominator + coefficients[25usize]);
+        f64::exp(-(x * x)) * rational
+    } else {
+        let z = 1.0 / (x * x);
+        let mut numerator = coefficients[31usize] * z;
+        let mut denominator = z;
+        let mut i = 0usize;
+        while i < 4usize {
+            numerator = (numerator + coefficients[i + 26usize]) * z;
+            denominator = (denominator + coefficients[i + 32usize]) * z;
+            i += 1usize;
+        }
+        let rational =
+            z * (numerator + coefficients[30usize]) / (denominator + coefficients[36usize]);
+        (0.564_189_583_547_756_3 - rational) / x * f64::exp(-(x * x))
+    }
+}
+
 /// High-accuracy erf approximation for use inside `#[cube]` kernels.
 ///
 /// Generic over `F: Float`. Uses the Abramowitz & Stegun 7.1.26 rational
@@ -280,4 +408,96 @@ pub fn boys_erf_approx<F: Float>(x: F) -> F {
     let t_val = F::new(1.0) / (F::new(1.0) + p * x);
     let poly = t_val * (a1 + t_val * (a2 + t_val * (a3 + t_val * (a4 + t_val * a5))));
     F::new(1.0) - poly * F::exp(-(x * x))
+}
+
+#[cfg(all(test, feature = "cpu"))]
+mod tests {
+    use super::*;
+    use cubecl::Runtime;
+    use cubecl::client::ComputeClient;
+
+    /// F0-only sweep kernel: intentionally keeps the high-accuracy primitive
+    /// independent from every integral family while validating the actual
+    /// CubeCL f64 lowering and comptime coefficient materialization.
+    #[cube(launch)]
+    fn boys_f0_sweep_kernel(input: &Array<f64>, output: &mut Array<f64>) {
+        let index = ABSOLUTE_POS as usize;
+        if index < input.len() {
+            output[index] = boys_f0_f64(input[index]);
+        }
+    }
+
+    fn cpu_client() -> ComputeClient<cubecl::cpu::CpuRuntime> {
+        cubecl::cpu::CpuRuntime::client(&Default::default())
+    }
+
+    fn device_f0_sweep(input: &[f64]) -> Vec<f64> {
+        let client = cpu_client();
+        let input_handle = client.create_from_slice(f64::as_bytes(input));
+        let output_handle = client.empty(std::mem::size_of_val(input));
+        let cube_dim = 32u32;
+        let cube_count = ((input.len() as u32).div_ceil(cube_dim)).max(1);
+
+        boys_f0_sweep_kernel::launch::<cubecl::cpu::CpuRuntime>(
+            &client,
+            CubeCount::Static(cube_count, 1, 1),
+            CubeDim::new_1d(cube_dim),
+            // SAFETY: both handles contain exactly `input.len()` f64 elements.
+            unsafe { ArrayArg::from_raw_parts(input_handle, input.len()) },
+            // SAFETY: output allocation is exactly `input.len()` f64 elements.
+            unsafe { ArrayArg::from_raw_parts(output_handle.clone(), input.len()) },
+        );
+
+        let raw = client.read_one_unchecked(output_handle);
+        f64::from_bytes(&raw)[..input.len()].to_vec()
+    }
+
+    #[test]
+    fn boys_f0_f64_device_sweep_matches_trusted_host() {
+        // Exact zero, subnormal-scale values, both Cody region boundaries
+        // (`sqrt(t)=0.5` and `4`), and the broad 0..32 integral range.
+        let mut inputs = vec![
+            0.0,
+            1.0e-300,
+            1.0e-200,
+            1.0e-100,
+            1.0e-32,
+            1.0e-16,
+            1.0e-8,
+            1.0e-4,
+            0.249_999_999_999,
+            0.25,
+            0.250_000_000_001,
+            15.999_999_999_999,
+            16.0,
+            16.000_000_000_001,
+            64.0,
+            256.0,
+            4096.0,
+        ];
+        for i in 0..=128u32 {
+            inputs.push(f64::from(i) * 0.25);
+        }
+
+        let device = device_f0_sweep(&inputs);
+        assert_eq!(device.len(), inputs.len());
+
+        let mut max_abs = 0.0_f64;
+        let mut max_rel = 0.0_f64;
+        for (&t, &actual) in inputs.iter().zip(&device) {
+            // Host `erf` is the libc/libm oracle used by the existing host
+            // Boys implementation; this avoids validating device Cody against
+            // a second copy of Cody.
+            let expected = boys_gamma_inc_host::<f64>(t, 0)[0];
+            let abs = (actual - expected).abs();
+            let rel = abs / expected.abs().max(f64::MIN_POSITIVE);
+            max_abs = max_abs.max(abs);
+            max_rel = max_rel.max(rel);
+            assert!(
+                abs <= 3.0e-15 + 3.0e-15 * expected.abs(),
+                "F0 device mismatch at t={t:.17e}: actual={actual:.17e}, expected={expected:.17e}, abs={abs:.3e}, rel={rel:.3e}",
+            );
+        }
+        eprintln!("Boys F0 f64 CPU-device sweep: max_abs={max_abs:.3e}, max_rel={max_rel:.3e}");
+    }
 }

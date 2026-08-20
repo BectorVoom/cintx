@@ -5,7 +5,13 @@
 
 #![cfg(has_vendor_libcint)]
 
-#[allow(non_camel_case_types, non_upper_case_globals, dead_code, non_snake_case, improper_ctypes)]
+#[allow(
+    non_camel_case_types,
+    non_upper_case_globals,
+    dead_code,
+    non_snake_case,
+    improper_ctypes
+)]
 mod ffi {
     include!(concat!(env!("OUT_DIR"), "/oracle_bindings.rs"));
 }
@@ -2530,7 +2536,6 @@ pub fn vendor_int1e_zz_origj_cart(
         )
     }
 }
-
 
 /// Evaluate int2e_cart for a single shell quartet using vendored libcint.
 ///
@@ -5203,94 +5208,472 @@ pub fn vendor_int3c1e_iprinv_spinor(
 // -------------------------------------------------------------------------
 
 /// Evaluate int1e_r2_origi_sph for a single shell pair using vendored libcint.
-pub fn vendor_int1e_r2_origi_sph(out: &mut [f64], shls: &[i32; 2], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_r2_origi_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_r2_origi_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r2_origi_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int1e_r4_origi_sph for a single shell pair using vendored libcint.
-pub fn vendor_int1e_r4_origi_sph(out: &mut [f64], shls: &[i32; 2], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_r4_origi_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_r4_origi_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r4_origi_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int1e_r2_origi_ip2_sph for a single shell pair using vendored libcint.
-pub fn vendor_int1e_r2_origi_ip2_sph(out: &mut [f64], shls: &[i32; 2], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_r2_origi_ip2_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_r2_origi_ip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r2_origi_ip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int1e_r4_origi_ip2_sph for a single shell pair using vendored libcint.
-pub fn vendor_int1e_r4_origi_ip2_sph(out: &mut [f64], shls: &[i32; 2], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_r4_origi_ip2_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_r4_origi_ip2_sph(
+    out: &mut [f64],
+    shls: &[i32; 2],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_r4_origi_ip2_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int1e_grids_sph for a shell pair + grid range using vendored libcint.
 /// `shls` is `[i, j, grid_start, grid_end]` where grid indices come from env.
-pub fn vendor_int1e_grids_sph(out: &mut [f64], shls: &[i32; 4], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_grids_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_grids_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_grids_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int1e_grids_ip_sph using vendored libcint. `shls` is `[i, j, grid_start, grid_end]`.
-pub fn vendor_int1e_grids_ip_sph(out: &mut [f64], shls: &[i32; 4], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_grids_ip_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_grids_ip_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_grids_ip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int1e_grids_ipvip_sph using vendored libcint. `shls` is `[i, j, grid_start, grid_end]`.
-pub fn vendor_int1e_grids_ipvip_sph(out: &mut [f64], shls: &[i32; 4], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_grids_ipvip_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_grids_ipvip_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_grids_ipvip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int1e_grids_spvsp_sph using vendored libcint. `shls` is `[i, j, grid_start, grid_end]`.
-pub fn vendor_int1e_grids_spvsp_sph(out: &mut [f64], shls: &[i32; 4], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_grids_spvsp_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_grids_spvsp_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_grids_spvsp_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int1e_grids_ipip_sph using vendored libcint. `shls` is `[i, j, grid_start, grid_end]`.
-pub fn vendor_int1e_grids_ipip_sph(out: &mut [f64], shls: &[i32; 4], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int1e_grids_ipip_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int1e_grids_ipip_sph(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int1e_grids_ipip_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int2e_breit_r1p2_spinor (spinor-only Breit 2e) using vendored libcint.
-pub fn vendor_int2e_breit_r1p2_spinor(out: &mut [f64], shls: &[i32; 4], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int2e_breit_r1p2_spinor(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int2e_breit_r1p2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_breit_r1p2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int2e_breit_r2p2_spinor (spinor-only Breit 2e) using vendored libcint.
-pub fn vendor_int2e_breit_r2p2_spinor(out: &mut [f64], shls: &[i32; 4], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int2e_breit_r2p2_spinor(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int2e_breit_r2p2_spinor(
+    out: &mut [f64],
+    shls: &[i32; 4],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int2e_breit_r2p2_spinor(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int3c1e_r2_origk_sph for a shell triple using vendored libcint.
-pub fn vendor_int3c1e_r2_origk_sph(out: &mut [f64], shls: &[i32; 3], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int3c1e_r2_origk_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int3c1e_r2_origk_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_r2_origk_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int3c1e_r4_origk_sph for a shell triple using vendored libcint.
-pub fn vendor_int3c1e_r4_origk_sph(out: &mut [f64], shls: &[i32; 3], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int3c1e_r4_origk_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int3c1e_r4_origk_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_r4_origk_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int3c1e_r6_origk_sph for a shell triple using vendored libcint.
-pub fn vendor_int3c1e_r6_origk_sph(out: &mut [f64], shls: &[i32; 3], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int3c1e_r6_origk_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int3c1e_r6_origk_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_r6_origk_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int3c1e_ip1_r2_origk_sph for a shell triple using vendored libcint.
-pub fn vendor_int3c1e_ip1_r2_origk_sph(out: &mut [f64], shls: &[i32; 3], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int3c1e_ip1_r2_origk_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int3c1e_ip1_r2_origk_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_r2_origk_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int3c1e_ip1_r4_origk_sph for a shell triple using vendored libcint.
-pub fn vendor_int3c1e_ip1_r4_origk_sph(out: &mut [f64], shls: &[i32; 3], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int3c1e_ip1_r4_origk_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int3c1e_ip1_r4_origk_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_r4_origk_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int3c1e_ip1_r6_origk_sph for a shell triple using vendored libcint.
-pub fn vendor_int3c1e_ip1_r6_origk_sph(out: &mut [f64], shls: &[i32; 3], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int3c1e_ip1_r6_origk_sph(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int3c1e_ip1_r6_origk_sph(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c1e_ip1_r6_origk_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 /// Evaluate int3c2e_sph_ssc (spin-spin contact 3c2e) for a shell triple using vendored libcint.
-pub fn vendor_int3c2e_sph_ssc(out: &mut [f64], shls: &[i32; 3], atm: &[i32], natm: i32, bas: &[i32], nbas: i32, env: &[f64]) -> i32 {
-    unsafe { ffi::int3c2e_sph_ssc(out.as_mut_ptr(), ptr::null_mut(), shls.as_ptr() as *mut i32, atm.as_ptr() as *mut i32, natm, bas.as_ptr() as *mut i32, nbas, env.as_ptr() as *mut f64, ptr::null_mut(), ptr::null_mut()) }
+pub fn vendor_int3c2e_sph_ssc(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    unsafe {
+        ffi::int3c2e_sph_ssc(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

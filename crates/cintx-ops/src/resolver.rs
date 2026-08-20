@@ -461,9 +461,11 @@ mod tests {
                 && !entry.supports_representation(Representation::Cart)
                 && !entry.supports_representation(Representation::Spinor)
         }));
-        assert!(f12_entries
-            .iter()
-            .all(|entry| entry.compiled_in_profiles == ["with-f12", "with-f12+with-4c1e"]));
+        assert!(
+            f12_entries
+                .iter()
+                .all(|entry| entry.compiled_in_profiles == ["with-f12", "with-f12+with-4c1e"])
+        );
 
         let cart_spinor_symbols = [
             "int2e_stg_cart",

@@ -721,8 +721,8 @@ fn fill_g_tensor_3c1e_nuc(
         g[off + dj_local] = -rjr0[d] * g[off];
         let mut j = 1usize;
         while j < nmax {
-            g[off + (j + 1) * dj_local] = aijk1 * j as f64 * g[off + (j - 1) * dj_local]
-                - rjr0[d] * g[off + j * dj_local];
+            g[off + (j + 1) * dj_local] =
+                aijk1 * j as f64 * g[off + (j - 1) * dj_local] - rjr0[d] * g[off + j * dj_local];
             j += 1;
         }
     }
@@ -793,7 +793,8 @@ fn nabla1i_3c1e(g: &[f64], li: u32, lj: u32, lk: u32, ai: f64) -> Vec<f64> {
                 let ptr = dj_h * j + dk_h * k;
                 g1[off + ptr] = ai2 * g[off + ptr + 1];
                 for i in 1..=(li as usize) {
-                    g1[off + ptr + i] = i as f64 * g[off + ptr + i - 1] + ai2 * g[off + ptr + i + 1];
+                    g1[off + ptr + i] =
+                        i as f64 * g[off + ptr + i - 1] + ai2 * g[off + ptr + i + 1];
                 }
             }
         }
@@ -970,9 +971,15 @@ fn scatter_3c1e_grad_block<F: CintFloat>(
 
 /// Build `ExecutionStats` for a completed 3c1e gradient launch.
 fn grad_stats<F: CintFloat>(plan: &ExecutionPlan<'_>, staging: &[F]) -> ExecutionStats {
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
-    let not0 = staging.iter().filter(|&&v| v.abs() > nonzero_threshold).count() as i32;
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
+    let not0 = staging
+        .iter()
+        .filter(|&&v| v.abs() > nonzero_threshold)
+        .count() as i32;
     let staging_bytes = staging.len() * std::mem::size_of::<F>();
     ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
@@ -1017,11 +1024,8 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
     let rk = atoms[shell_k.atom_index as usize].coord_bohr;
 
     // common_factor = SQRTPI * PI * fac_sp(li) * fac_sp(lj) * fac_sp(lk).
-    let common_factor = SQRTPI
-        * std::f64::consts::PI
-        * common_fac_sp(li)
-        * common_fac_sp(lj)
-        * common_fac_sp(lk);
+    let common_factor =
+        SQRTPI * std::f64::consts::PI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
 
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -1068,8 +1072,7 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
                         for ip in 0..n_prim_i {
                             let ai = shell_i.exponents[ip];
                             let aijk = ai + aj + ak;
-                            let eijk =
-                                (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
+                            let eijk = (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
                             if eijk > 60.0 {
                                 continue;
                             }
@@ -1083,7 +1086,16 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
 
                             // Build the OVERLAP base at li+1 headroom (ng {1,0,0,...}).
                             let g = fill_g_tensor_3c1e(
-                                fac, ai, aj, ak, ri, rj, rk, rirj, li as u32 + 1, lj as u32,
+                                fac,
+                                ai,
+                                aj,
+                                ak,
+                                ri,
+                                rj,
+                                rk,
+                                rirj,
+                                li as u32 + 1,
+                                lj as u32,
                                 lk as u32,
                             );
                             let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
@@ -1095,8 +1107,18 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
                     }
                 }
                 scatter_3c1e_grad_block::<F>(
-                    &cart_grad, li, lj, lk, plan.representation, ci, cj, ck, n_ctr_i, n_ctr_j,
-                    n_ctr_k, &mut out_buf,
+                    &cart_grad,
+                    li,
+                    lj,
+                    lk,
+                    plan.representation,
+                    ci,
+                    cj,
+                    ck,
+                    n_ctr_i,
+                    n_ctr_j,
+                    n_ctr_k,
+                    &mut out_buf,
                 );
             }
         }
@@ -1107,17 +1129,28 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
         // THIN SIBLING. Aux-k is SPHERICAL nsph(lk); only bra i / ket j are
         // spinor-sized (4l+2). The sibling owns the cart→sph(k) + KET→BRA + sf_2d
         // fold per (comp,k); no transpose lives here.
-        let blocked = relayout_3c1e_grad_to_blocked(
-            &out_buf, li, lj, lk, n_ctr_i, n_ctr_j, n_ctr_k,
-        )?;
+        let blocked =
+            relayout_3c1e_grad_to_blocked(&out_buf, li, lj, lk, n_ctr_i, n_ctr_j, n_ctr_k)?;
         cart_to_spinor_sf_derivative_3c1e::<F>(
-            staging, &blocked, 3, li, shell_i.kappa, lj, shell_j.kappa, lk, n_ctr_i, n_ctr_j,
+            staging,
+            &blocked,
+            3,
+            li,
+            shell_i.kappa,
+            lj,
+            shell_j.kappa,
+            lk,
+            n_ctr_i,
+            n_ctr_j,
         )?;
         return Ok(grad_stats::<F>(plan, staging));
     }
 
     let copy_len = staging.len().min(out_buf.len());
-    for (dst, &src) in staging[..copy_len].iter_mut().zip(out_buf[..copy_len].iter()) {
+    for (dst, &src) in staging[..copy_len]
+        .iter_mut()
+        .zip(out_buf[..copy_len].iter())
+    {
         *dst = F::from_f64_lossy(src);
     }
     Ok(grad_stats::<F>(plan, staging))
@@ -1171,8 +1204,7 @@ fn relayout_3c1e_grad_to_blocked(
                         let j_global = cj * ncj + j;
                         for i in 0..nci {
                             let i_global = ci * nci + i;
-                            let src =
-                                comp_base + (k * nj_full + j_global) * ni_full + i_global;
+                            let src = comp_base + (k * nj_full + j_global) * ni_full + i_global;
                             let dst = dst_base + comp * kblock + (k * ncj + j) * nci + i;
                             blocked[dst] = out_buf[src];
                         }
@@ -1233,11 +1265,8 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
     let rj = atoms[shell_j.atom_index as usize].coord_bohr;
     let rk = atoms[shell_k.atom_index as usize].coord_bohr;
 
-    let common_factor = SQRTPI
-        * std::f64::consts::PI
-        * common_fac_sp(li)
-        * common_fac_sp(lj)
-        * common_fac_sp(lk);
+    let common_factor =
+        SQRTPI * std::f64::consts::PI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
 
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -1282,8 +1311,7 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
                         for ip in 0..n_prim_i {
                             let ai = shell_i.exponents[ip];
                             let aijk = ai + aj + ak;
-                            let eijk =
-                                (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
+                            let eijk = (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
                             if eijk > 60.0 {
                                 continue;
                             }
@@ -1314,8 +1342,19 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
                                 let t2 = u[root] / (1.0 + u[root]);
                                 let fac = dijk * w[root];
                                 let g = fill_g_tensor_3c1e_nuc(
-                                    fac, t2, ai, aj, ak, ri, rj, rk, rijk, cr, li as u32 + 1,
-                                    lj as u32, lk as u32,
+                                    fac,
+                                    t2,
+                                    ai,
+                                    aj,
+                                    ak,
+                                    ri,
+                                    rj,
+                                    rk,
+                                    rijk,
+                                    cr,
+                                    li as u32 + 1,
+                                    lj as u32,
+                                    lk as u32,
                                 );
                                 let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
                                 let gout = contract_3c1e_grad(&g, &g1, li, lj, lk);
@@ -1327,8 +1366,18 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
                     }
                 }
                 scatter_3c1e_grad_block::<F>(
-                    &cart_grad, li, lj, lk, plan.representation, ci, cj, ck, n_ctr_i, n_ctr_j,
-                    n_ctr_k, &mut out_buf,
+                    &cart_grad,
+                    li,
+                    lj,
+                    lk,
+                    plan.representation,
+                    ci,
+                    cj,
+                    ck,
+                    n_ctr_i,
+                    n_ctr_j,
+                    n_ctr_k,
+                    &mut out_buf,
                 );
             }
         }
@@ -1338,17 +1387,28 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
         // 27-04 (spike D3): fold the host-side cartesian out_buf (Rys-driven nuclear
         // base, non-zero rinv origin already applied above) to spinor via the THIN
         // SIBLING. Aux-k SPHERICAL nsph(lk); only bra i / ket j spinor-sized.
-        let blocked = relayout_3c1e_grad_to_blocked(
-            &out_buf, li, lj, lk, n_ctr_i, n_ctr_j, n_ctr_k,
-        )?;
+        let blocked =
+            relayout_3c1e_grad_to_blocked(&out_buf, li, lj, lk, n_ctr_i, n_ctr_j, n_ctr_k)?;
         cart_to_spinor_sf_derivative_3c1e::<F>(
-            staging, &blocked, 3, li, shell_i.kappa, lj, shell_j.kappa, lk, n_ctr_i, n_ctr_j,
+            staging,
+            &blocked,
+            3,
+            li,
+            shell_i.kappa,
+            lj,
+            shell_j.kappa,
+            lk,
+            n_ctr_i,
+            n_ctr_j,
         )?;
         return Ok(grad_stats::<F>(plan, staging));
     }
 
     let copy_len = staging.len().min(out_buf.len());
-    for (dst, &src) in staging[..copy_len].iter_mut().zip(out_buf[..copy_len].iter()) {
+    for (dst, &src) in staging[..copy_len]
+        .iter_mut()
+        .zip(out_buf[..copy_len].iter())
+    {
         *dst = F::from_f64_lossy(src);
     }
     Ok(grad_stats::<F>(plan, staging))
@@ -1419,11 +1479,8 @@ fn launch_center_3c1e_typed<F: CintFloat>(
     let rk = atoms[shell_k.atom_index as usize].coord_bohr;
 
     // common_factor = sqrt(pi) * pi * fac_sp(li) * fac_sp(lj) * fac_sp(lk)
-    let common_factor = SQRTPI
-        * std::f64::consts::PI
-        * common_fac_sp(li)
-        * common_fac_sp(lj)
-        * common_fac_sp(lk);
+    let common_factor =
+        SQRTPI * std::f64::consts::PI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
 
     // Output size in Cartesian / spherical.
     let nci = ncart(li);
@@ -1490,34 +1547,113 @@ fn launch_center_3c1e_typed<F: CintFloat>(
                 let prim_buf: Vec<f64> = match backend {
                     #[cfg(feature = "cpu")]
                     ResolvedBackend::Cpu(client) => run_3c1e_device::<cubecl::cpu::CpuRuntime>(
-                        client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-                        n_prim_k as u32, ri, rj, rk, common_factor, expcutoff, &exps_i, &exps_j,
-                        &exps_k, &coeff_i, &coeff_j, &coeff_k,
+                        client,
+                        li as u32,
+                        lj as u32,
+                        lk as u32,
+                        n_prim_i as u32,
+                        n_prim_j as u32,
+                        n_prim_k as u32,
+                        ri,
+                        rj,
+                        rk,
+                        common_factor,
+                        expcutoff,
+                        &exps_i,
+                        &exps_j,
+                        &exps_k,
+                        &coeff_i,
+                        &coeff_j,
+                        &coeff_k,
                     ),
                     #[cfg(feature = "wgpu")]
-                    ResolvedBackend::Wgpu(client, _) => run_3c1e_device::<cubecl_wgpu::WgpuRuntime>(
-                        client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-                        n_prim_k as u32, ri, rj, rk, common_factor, expcutoff, &exps_i, &exps_j,
-                        &exps_k, &coeff_i, &coeff_j, &coeff_k,
-                    ),
+                    ResolvedBackend::Wgpu(client, _) => {
+                        run_3c1e_device::<cubecl_wgpu::WgpuRuntime>(
+                            client,
+                            li as u32,
+                            lj as u32,
+                            lk as u32,
+                            n_prim_i as u32,
+                            n_prim_j as u32,
+                            n_prim_k as u32,
+                            ri,
+                            rj,
+                            rk,
+                            common_factor,
+                            expcutoff,
+                            &exps_i,
+                            &exps_j,
+                            &exps_k,
+                            &coeff_i,
+                            &coeff_j,
+                            &coeff_k,
+                        )
+                    }
                     #[cfg(feature = "cuda")]
                     ResolvedBackend::Cuda(client) => run_3c1e_device::<cubecl_cuda::CudaRuntime>(
-                        client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-                        n_prim_k as u32, ri, rj, rk, common_factor, expcutoff, &exps_i, &exps_j,
-                        &exps_k, &coeff_i, &coeff_j, &coeff_k,
+                        client,
+                        li as u32,
+                        lj as u32,
+                        lk as u32,
+                        n_prim_i as u32,
+                        n_prim_j as u32,
+                        n_prim_k as u32,
+                        ri,
+                        rj,
+                        rk,
+                        common_factor,
+                        expcutoff,
+                        &exps_i,
+                        &exps_j,
+                        &exps_k,
+                        &coeff_i,
+                        &coeff_j,
+                        &coeff_k,
                     ),
                     #[cfg(feature = "rocm")]
                     ResolvedBackend::Rocm(client) => run_3c1e_device::<cubecl_hip::HipRuntime>(
-                        client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-                        n_prim_k as u32, ri, rj, rk, common_factor, expcutoff, &exps_i, &exps_j,
-                        &exps_k, &coeff_i, &coeff_j, &coeff_k,
+                        client,
+                        li as u32,
+                        lj as u32,
+                        lk as u32,
+                        n_prim_i as u32,
+                        n_prim_j as u32,
+                        n_prim_k as u32,
+                        ri,
+                        rj,
+                        rk,
+                        common_factor,
+                        expcutoff,
+                        &exps_i,
+                        &exps_j,
+                        &exps_k,
+                        &coeff_i,
+                        &coeff_j,
+                        &coeff_k,
                     ),
                     #[cfg(feature = "metal")]
-                    ResolvedBackend::Metal(client, _) => run_3c1e_device::<cubecl_wgpu::WgpuRuntime>(
-                        client, li as u32, lj as u32, lk as u32, n_prim_i as u32, n_prim_j as u32,
-                        n_prim_k as u32, ri, rj, rk, common_factor, expcutoff, &exps_i, &exps_j,
-                        &exps_k, &coeff_i, &coeff_j, &coeff_k,
-                    ),
+                    ResolvedBackend::Metal(client, _) => {
+                        run_3c1e_device::<cubecl_wgpu::WgpuRuntime>(
+                            client,
+                            li as u32,
+                            lj as u32,
+                            lk as u32,
+                            n_prim_i as u32,
+                            n_prim_j as u32,
+                            n_prim_k as u32,
+                            ri,
+                            rj,
+                            rk,
+                            common_factor,
+                            expcutoff,
+                            &exps_i,
+                            &exps_j,
+                            &exps_k,
+                            &coeff_i,
+                            &coeff_j,
+                            &coeff_k,
+                        )
+                    }
                 };
 
                 // `prim_buf` is the fully-contracted Cartesian block for THIS
@@ -1589,13 +1725,19 @@ fn launch_center_3c1e_typed<F: CintFloat>(
 
     // Copy the assembled interleaved output into staging (cast to F).
     let copy_len = staging.len().min(out_buf.len());
-    for (dst, &src) in staging[..copy_len].iter_mut().zip(out_buf[..copy_len].iter()) {
+    for (dst, &src) in staging[..copy_len]
+        .iter_mut()
+        .zip(out_buf[..copy_len].iter())
+    {
         *dst = F::from_f64_lossy(src);
     }
 
     // WR-06: precision-aware nonzero sentinel.
-    let nonzero_threshold =
-        F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 { 1e-12 } else { 1e-18 });
+    let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+        1e-12
+    } else {
+        1e-18
+    });
     let not0 = staging
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
@@ -1642,7 +1784,12 @@ pub fn launch_center_3c1e(
                     provided: staging_f32.len(),
                 });
             }
-            launch_center_3c1e_typed::<f32>(backend, plan, specialization, &mut staging_f32[..out_elems])
+            launch_center_3c1e_typed::<f32>(
+                backend,
+                plan,
+                specialization,
+                &mut staging_f32[..out_elems],
+            )
         }
     }
 }
@@ -1712,8 +1859,11 @@ mod tests {
         let ri = [0.0_f64, 0.0, 0.0];
         let rj = [0.0_f64, 1.2, 0.3];
         let rk = [0.4_f64, -0.5, 1.1];
-        let common_factor =
-            SQRTPI * std::f64::consts::PI * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+        let common_factor = SQRTPI
+            * std::f64::consts::PI
+            * common_fac_sp(li)
+            * common_fac_sp(lj)
+            * common_fac_sp(lk);
 
         let host = host_cart_3c1e(ai, aj, ak, ri, rj, rk, li, lj, lk, common_factor);
         let dev = run_3c1e_device::<cubecl::cpu::CpuRuntime>(
@@ -1854,31 +2004,59 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_center_3c1e_parity_f64() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Cart,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a = make_s_shell(0);
         let shell_b = make_s_shell(1);
         let shell_c = make_s_shell(2);
-        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
+        let all_shells =
+            Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b, shell_c]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(OperatorId::new(15), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(OperatorId::new(15), Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            OperatorId::new(15),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan = ExecutionPlan::new(
+            OperatorId::new(15),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .unwrap();
         plan.precision = PrecisionKind::F64;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -1889,15 +2067,32 @@ mod tests {
         let mut staging_typed = vec![0.0_f64; 1];
 
         let result_outer = launch_center_3c1e(&backend, &plan, &spec, &mut staging_outer);
-        assert!(result_outer.is_ok(), "outer f64 should succeed: {:?}", result_outer);
+        assert!(
+            result_outer.is_ok(),
+            "outer f64 should succeed: {:?}",
+            result_outer
+        );
 
-        let result_typed = launch_center_3c1e_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
-        assert!(result_typed.is_ok(), "typed f64 should succeed: {:?}", result_typed);
+        let result_typed =
+            launch_center_3c1e_typed::<f64>(&backend, &plan, &spec, &mut staging_typed);
+        assert!(
+            result_typed.is_ok(),
+            "typed f64 should succeed: {:?}",
+            result_typed
+        );
 
-        assert_eq!(staging_outer[0].to_bits(), staging_typed[0].to_bits(),
-            "f64 outer and typed should be byte-identical: outer={} typed={}", staging_outer[0], staging_typed[0]);
-        assert!(staging_outer[0].is_finite() && staging_outer[0].abs() > 1e-20,
-            "3c1e s-s-s overlap should be finite and nonzero: {}", staging_outer[0]);
+        assert_eq!(
+            staging_outer[0].to_bits(),
+            staging_typed[0].to_bits(),
+            "f64 outer and typed should be byte-identical: outer={} typed={}",
+            staging_outer[0],
+            staging_typed[0]
+        );
+        assert!(
+            staging_outer[0].is_finite() && staging_outer[0].abs() > 1e-20,
+            "3c1e s-s-s overlap should be finite and nonzero: {}",
+            staging_outer[0]
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1905,31 +2100,59 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
     #[test]
     fn test_center_3c1e_f32_smoke() {
-        use std::sync::Arc;
-        use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell};
-        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
-        use crate::specialization::SpecializationKey;
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
+        use crate::specialization::SpecializationKey;
+        use cintx_core::{
+            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
+        };
+        use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
+        use std::sync::Arc;
 
         let atom_a = Atom::try_new(1, [0.0, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_b = Atom::try_new(1, [1.4, 0.0, 0.0], NuclearModel::Point, None, None).unwrap();
         let atom_c = Atom::try_new(8, [0.7, 0.7, 0.0], NuclearModel::Point, None, None).unwrap();
         let atoms = Arc::from(vec![atom_a, atom_b, atom_c].into_boxed_slice());
-        let make_s_shell = |atom_idx: u32| Arc::new(Shell::try_new(
-            atom_idx, 0, 1, 1, 0, Representation::Cart,
-            Arc::from(vec![1.0_f64].into_boxed_slice()),
-            Arc::from(vec![1.0_f64].into_boxed_slice())).unwrap());
+        let make_s_shell = |atom_idx: u32| {
+            Arc::new(
+                Shell::try_new(
+                    atom_idx,
+                    0,
+                    1,
+                    1,
+                    0,
+                    Representation::Cart,
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                    Arc::from(vec![1.0_f64].into_boxed_slice()),
+                )
+                .unwrap(),
+            )
+        };
         let shell_a = make_s_shell(0);
         let shell_b = make_s_shell(1);
         let shell_c = make_s_shell(2);
-        let all_shells = Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
+        let all_shells =
+            Arc::from(vec![shell_a.clone(), shell_b.clone(), shell_c.clone()].into_boxed_slice());
         let basis = BasisSet::try_new(atoms, all_shells).unwrap();
         let shells = cintx_core::ShellTuple::try_from_iter([shell_a, shell_b, shell_c]).unwrap();
 
         let opts = ExecutionOptions::default();
-        let query = query_workspace(OperatorId::new(15), Representation::Cart, &basis, shells.clone(), &opts).unwrap();
-        let mut plan = ExecutionPlan::new(OperatorId::new(15), Representation::Cart, &basis, shells, &query).unwrap();
+        let query = query_workspace(
+            OperatorId::new(15),
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &opts,
+        )
+        .unwrap();
+        let mut plan = ExecutionPlan::new(
+            OperatorId::new(15),
+            Representation::Cart,
+            &basis,
+            shells,
+            &query,
+        )
+        .unwrap();
         plan.precision = PrecisionKind::F32;
 
         let spec = SpecializationKey::from_plan(&plan);
@@ -1938,11 +2161,23 @@ mod tests {
 
         let mut staging = vec![0.0_f64; 1];
         let result = launch_center_3c1e(&backend, &plan, &spec, &mut staging);
-        assert!(result.is_ok(), "F32 3c1e should succeed without panic: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "F32 3c1e should succeed without panic: {:?}",
+            result
+        );
 
         let staging_f32 = bytemuck::cast_slice::<f64, f32>(&staging);
-        assert!(staging_f32[0].is_finite(), "F32 3c1e result should be finite: {}", staging_f32[0]);
-        assert!(staging_f32[0] > 0.0, "F32 3c1e result should be positive: {}", staging_f32[0]);
+        assert!(
+            staging_f32[0].is_finite(),
+            "F32 3c1e result should be finite: {}",
+            staging_f32[0]
+        );
+        assert!(
+            staging_f32[0] > 0.0,
+            "F32 3c1e result should be positive: {}",
+            staging_f32[0]
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1973,7 +2208,11 @@ mod tests {
         let g = vec![1.0_f64, 1.0, fac]; // [gx|gy|gz] each of size 1
         let out = contract_3c1e_ovlp(&g, 0, 0, 0, 1);
         assert_eq!(out.len(), 1);
-        assert!((out[0] - fac).abs() < 1e-14, "s-s-s overlap should equal gz[0] = {}", fac);
+        assert!(
+            (out[0] - fac).abs() < 1e-14,
+            "s-s-s overlap should equal gz[0] = {}",
+            fac
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1984,16 +2223,42 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
 
     /// Single-primitive overlap cart block (i fastest, k slowest) at center i = ri.
-    fn ovlp_block(li: u8, lj: u8, lk: u8, ai: f64, aj: f64, ak: f64, ri: [f64; 3], rj: [f64; 3], rk: [f64; 3]) -> Vec<f64> {
-        let common_factor = SQRTPI * std::f64::consts::PI
-            * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+    fn ovlp_block(
+        li: u8,
+        lj: u8,
+        lk: u8,
+        ai: f64,
+        aj: f64,
+        ak: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        rk: [f64; 3],
+    ) -> Vec<f64> {
+        let common_factor = SQRTPI
+            * std::f64::consts::PI
+            * common_fac_sp(li)
+            * common_fac_sp(lj)
+            * common_fac_sp(lk);
         host_cart_3c1e(ai, aj, ak, ri, rj, rk, li, lj, lk, common_factor)
     }
 
     /// Single-primitive int3c1e_ip1 cart gradient (component-leading).
-    fn ip1_block(li: u8, lj: u8, lk: u8, ai: f64, aj: f64, ak: f64, ri: [f64; 3], rj: [f64; 3], rk: [f64; 3]) -> Vec<f64> {
-        let common_factor = SQRTPI * std::f64::consts::PI
-            * common_fac_sp(li) * common_fac_sp(lj) * common_fac_sp(lk);
+    fn ip1_block(
+        li: u8,
+        lj: u8,
+        lk: u8,
+        ai: f64,
+        aj: f64,
+        ak: f64,
+        ri: [f64; 3],
+        rj: [f64; 3],
+        rk: [f64; 3],
+    ) -> Vec<f64> {
+        let common_factor = SQRTPI
+            * std::f64::consts::PI
+            * common_fac_sp(li)
+            * common_fac_sp(lj)
+            * common_fac_sp(lk);
         let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
         let rirk = [ri[0] - rk[0], ri[1] - rk[1], ri[2] - rk[2]];
         let rjrk = [rj[0] - rk[0], rj[1] - rk[1], rj[2] - rk[2]];
@@ -2004,7 +2269,19 @@ mod tests {
         let eijk = (ai * aj * rr_ij + ai * ak * rr_ik + aj * ak * rr_jk) / aijk;
         let dijk = f64::exp(-eijk) / (aijk * aijk.sqrt());
         let fac = common_factor * dijk;
-        let g = fill_g_tensor_3c1e(fac, ai, aj, ak, ri, rj, rk, rirj, li as u32 + 1, lj as u32, lk as u32);
+        let g = fill_g_tensor_3c1e(
+            fac,
+            ai,
+            aj,
+            ak,
+            ri,
+            rj,
+            rk,
+            rirj,
+            li as u32 + 1,
+            lj as u32,
+            lk as u32,
+        );
         let g1 = nabla1i_3c1e(&g, li as u32, lj as u32, lk as u32, ai);
         contract_3c1e_grad(&g, &g1, li, lj, lk)
     }

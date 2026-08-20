@@ -21,7 +21,7 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
     PTR_COEFF, PTR_COORD, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 // Only the random-4-shell builder uses PTR_ENV_START; gate it so neither the
@@ -175,9 +175,7 @@ fn test_int4c1e_sph_cpu_self_consistency() {
         nonzero > 0,
         "int4c1e_sph cpu output is all zeros — kernel not running"
     );
-    println!(
-        "int4c1e_sph cpu self-consistency: PASS. Nonzero elements: {nonzero}/{n_elem}"
-    );
+    println!("int4c1e_sph cpu self-consistency: PASS. Nonzero elements: {nonzero}/{n_elem}");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

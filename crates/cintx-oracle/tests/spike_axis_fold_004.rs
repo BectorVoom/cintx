@@ -42,7 +42,10 @@ fn ang(bas: &[i32], s: usize) -> i32 {
 }
 
 fn mismatches(a: &[f64], b: &[f64]) -> usize {
-    a.iter().zip(b.iter()).filter(|(x, y)| (**x - **y).abs() > ATOL).count()
+    a.iter()
+        .zip(b.iter())
+        .filter(|(x, y)| (**x - **y).abs() > ATOL)
+        .count()
 }
 
 /// s/p/d shells on two atoms — shells (atom,l): 0=(0,s) 1=(0,p) 2=(0,d) 3=(1,s) 4=(1,p) 5=(1,d).
@@ -132,7 +135,10 @@ const RANK: usize = 3; // all probed families are first-derivative gradients
 fn spike_004_multi_index_block_ordering() {
     let (atm, bas, env) = build_spd_fixture();
     #[cfg(has_vendor_libcint)]
-    let (natm, nbas) = ((atm.len() / ATM_SLOTS) as i32, (bas.len() / BAS_SLOTS) as i32);
+    let (natm, nbas) = (
+        (atm.len() / ATM_SLOTS) as i32,
+        (bas.len() / BAS_SLOTS) as i32,
+    );
 
     println!("\n================ SPIKE 004 : multi-index inner-block ordering ================");
     #[cfg(has_vendor_libcint)]
@@ -154,10 +160,25 @@ fn spike_004_multi_index_block_ordering() {
                 nf(ang(&bas, 5)), // nl (slowest within block)
             ];
             let block: usize = ext.iter().product();
-            let api = if rep == "cart" { RawApiId::INT2E_IP1_CART } else { RawApiId::INT2E_IP1_SPH };
+            let api = if rep == "cart" {
+                RawApiId::INT2E_IP1_CART
+            } else {
+                RawApiId::INT2E_IP1_SPH
+            };
             let mut cintx = vec![0.0_f64; RANK * block];
             unsafe {
-                eval_raw(api, Some(&mut cintx), None, &shls, &atm, &bas, &env, None, None).unwrap();
+                eval_raw(
+                    api,
+                    Some(&mut cintx),
+                    None,
+                    &shls,
+                    &atm,
+                    &bas,
+                    &env,
+                    None,
+                    None,
+                )
+                .unwrap();
             }
             // component-leading split
             assert_eq!(cintx.len(), RANK * block, "2e: len != rank*ni*nj*nk*nl");
@@ -168,20 +189,33 @@ fn spike_004_multi_index_block_ordering() {
             for p in &perms {
                 neg_ok &= mismatches(&cintx, &reindex(&cintx, RANK, &ext, p)) > 0;
             }
-            assert!(neg_ok, "2e: a non-identity axis permutation left the block unchanged (degenerate fixture)");
+            assert!(
+                neg_ok,
+                "2e: a non-identity axis permutation left the block unchanged (degenerate fixture)"
+            );
 
             #[cfg(has_vendor_libcint)]
             {
                 use cintx_oracle::vendor_ffi as v;
-                let vfn = if rep == "cart" { v::vendor_int2e_ip1_cart } else { v::vendor_int2e_ip1_sph };
+                let vfn = if rep == "cart" {
+                    v::vendor_int2e_ip1_cart
+                } else {
+                    v::vendor_int2e_ip1_sph
+                };
                 let mut vendor = vec![0.0_f64; RANK * block];
                 vfn(&mut vendor, &shls, &atm, natm, &bas, nbas, &env);
                 let mm0 = mismatches(&vendor, &cintx);
-                assert_eq!(mm0, 0, "2e {rep}: cintx != vendor (inner-block order divergence)");
+                assert_eq!(
+                    mm0, 0,
+                    "2e {rep}: cintx != vendor (inner-block order divergence)"
+                );
                 let mut worst_perm_mm = usize::MAX;
                 for p in &perms {
                     let mmp = mismatches(&vendor, &reindex(&cintx, RANK, &ext, p));
-                    assert!(mmp > 0, "2e {rep}: permutation {p:?} ALSO matches vendor — order not pinned");
+                    assert!(
+                        mmp > 0,
+                        "2e {rep}: permutation {p:?} ALSO matches vendor — order not pinned"
+                    );
                     worst_perm_mm = worst_perm_mm.min(mmp);
                 }
                 println!(
@@ -197,30 +231,65 @@ fn spike_004_multi_index_block_ordering() {
             let shls = [1_i32, 2, 4];
             let ext = [nf(ang(&bas, 1)), nf(ang(&bas, 2)), nf(ang(&bas, 4))];
             let block: usize = ext.iter().product();
-            let api = if rep == "cart" { RawApiId::INT3C2E_IP2_CART } else { RawApiId::INT3C2E_IP2_SPH };
+            let api = if rep == "cart" {
+                RawApiId::INT3C2E_IP2_CART
+            } else {
+                RawApiId::INT3C2E_IP2_SPH
+            };
             let mut cintx = vec![0.0_f64; RANK * block];
             unsafe {
-                eval_raw(api, Some(&mut cintx), None, &shls, &atm, &bas, &env, None, None).unwrap();
+                eval_raw(
+                    api,
+                    Some(&mut cintx),
+                    None,
+                    &shls,
+                    &atm,
+                    &bas,
+                    &env,
+                    None,
+                    None,
+                )
+                .unwrap();
             }
-            assert_eq!(cintx.len() / RANK, block, "3c2e: comp_stride != inner block");
+            assert_eq!(
+                cintx.len() / RANK,
+                block,
+                "3c2e: comp_stride != inner block"
+            );
             let perms: [[usize; 3]; 2] = [[1, 0, 2], [2, 1, 0]];
             for p in &perms {
-                assert!(mismatches(&cintx, &reindex(&cintx, RANK, &ext, p)) > 0, "3c2e: perm {p:?} no-op");
+                assert!(
+                    mismatches(&cintx, &reindex(&cintx, RANK, &ext, p)) > 0,
+                    "3c2e: perm {p:?} no-op"
+                );
             }
             #[cfg(has_vendor_libcint)]
             {
                 use cintx_oracle::vendor_ffi as v;
-                let vfn = if rep == "cart" { v::vendor_int3c2e_ip2_cart } else { v::vendor_int3c2e_ip2_sph };
+                let vfn = if rep == "cart" {
+                    v::vendor_int3c2e_ip2_cart
+                } else {
+                    v::vendor_int3c2e_ip2_sph
+                };
                 let mut vendor = vec![0.0_f64; RANK * block];
                 vfn(&mut vendor, &shls, &atm, natm, &bas, nbas, &env);
-                assert_eq!(mismatches(&vendor, &cintx), 0, "3c2e {rep}: cintx != vendor");
+                assert_eq!(
+                    mismatches(&vendor, &cintx),
+                    0,
+                    "3c2e {rep}: cintx != vendor"
+                );
                 let mut worst = usize::MAX;
                 for p in &perms {
                     let mmp = mismatches(&vendor, &reindex(&cintx, RANK, &ext, p));
-                    assert!(mmp > 0, "3c2e {rep}: perm {p:?} also matches vendor — order not pinned");
+                    assert!(
+                        mmp > 0,
+                        "3c2e {rep}: perm {p:?} also matches vendor — order not pinned"
+                    );
                     worst = worst.min(mmp);
                 }
-                println!("    int3c2e_ip2 ext(i,j,k)={ext:?}   block={block:>4}  mm(vendor,cintx)=0  min mm(vendor,perm)={worst}");
+                println!(
+                    "    int3c2e_ip2 ext(i,j,k)={ext:?}   block={block:>4}  mm(vendor,cintx)=0  min mm(vendor,perm)={worst}"
+                );
             }
             #[cfg(not(has_vendor_libcint))]
             println!("    int3c2e_ip2 ext(i,j,k)={ext:?}   block={block:>4}  order-sensitive ✓");

@@ -2591,14 +2591,14 @@ mod tests {
         // at slot 4. Layout (BAS_SLOTS=8): [atom, ang, nprim, RADI_POWER,
         // SO_TYPE_OF, ptr_exp, ptr_coeff, _].
         let row: [i32; 8] = [
-            0, /* atom */
+            0,  /* atom */
             -1, /* ang (Local sentinel) */
-            1, /* nprim */
-            2, /* RADI_POWER */
-            0, /* SO_TYPE_OF (scalar) */
+            1,  /* nprim */
+            2,  /* RADI_POWER */
+            0,  /* SO_TYPE_OF (scalar) */
             10, /* PTR_EXP */
             11, /* PTR_COEFF */
-            0, /* padding */
+            0,  /* padding */
         ];
         let view = EcpBasArray::new(&row).expect("single-row slab");
         assert_eq!(view.len(), 1);
@@ -2616,10 +2616,7 @@ mod tests {
     #[test]
     fn raw_api_id_ecp_constants_expose_canonical_symbols() {
         // Construct via the public constants and round-trip through symbol().
-        assert_eq!(
-            RawApiId::INT1E_ECP_CART.symbol(),
-            "int1e_ecp_cart",
-        );
+        assert_eq!(RawApiId::INT1E_ECP_CART.symbol(), "int1e_ecp_cart",);
         assert_eq!(RawApiId::INT1E_ECP_SPH.symbol(), "int1e_ecp_sph");
         assert_eq!(
             RawApiId::INT1E_ECP_IPNUC_CART.symbol(),
@@ -2683,7 +2680,10 @@ mod tests {
     /// Verify that PTR_RINV_ORIG is the correct libcint constant value (4).
     #[test]
     fn ptr_rinv_orig_is_4() {
-        assert_eq!(PTR_RINV_ORIG, 4, "PTR_RINV_ORIG must equal 4 (libcint constant)");
+        assert_eq!(
+            PTR_RINV_ORIG, 4,
+            "PTR_RINV_ORIG must equal 4 (libcint constant)"
+        );
     }
 
     /// Verify that is_iprinv_family_symbol detects iprinv symbols correctly.

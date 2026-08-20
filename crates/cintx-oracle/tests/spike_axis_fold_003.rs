@@ -104,15 +104,35 @@ fn spike_003_arm1_hand_checked_component_identity() {
 
     // Scalar overlap S = <g_R|g_R> (cintx's own scalar kernel).
     let mut s_block = [0.0_f64; 1];
-    unsafe { run(RawApiId::INT1E_OVLP_CART, &mut s_block, &shls, &atm, &bas, &env) };
+    unsafe {
+        run(
+            RawApiId::INT1E_OVLP_CART,
+            &mut s_block,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+        )
+    };
     let s = s_block[0];
     assert!(s.abs() > 1e-12, "overlap is zero — degenerate fixture");
 
     // Position operator r (rank 3), 1x1 block → buffer is exactly [<r_x>, <r_y>, <r_z>].
     let mut r_block = [0.0_f64; 3];
-    unsafe { run(RawApiId::INT1E_R_CART, &mut r_block, &shls, &atm, &bas, &env) };
+    unsafe {
+        run(
+            RawApiId::INT1E_R_CART,
+            &mut r_block,
+            &shls,
+            &atm,
+            &bas,
+            &env,
+        )
+    };
 
-    println!("\n================ SPIKE 003 Arm 1 : hand-checked component identity ================");
+    println!(
+        "\n================ SPIKE 003 Arm 1 : hand-checked component identity ================"
+    );
     println!("  R (hand-chosen)   = {R_CENTER:?}");
     println!("  S = <g|g>         = {s:.12e}");
     let axes = ["x", "y", "z"];
@@ -132,7 +152,9 @@ fn spike_003_arm1_hand_checked_component_identity() {
             axes[c]
         );
     }
-    println!("  PASS — comp 0/1/2 == x/y/z * S (component axis pinned, origin=0 honored)  max_rel={max_rel:.2e}\n");
+    println!(
+        "  PASS — comp 0/1/2 == x/y/z * S (component axis pinned, origin=0 honored)  max_rel={max_rel:.2e}\n"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -206,7 +228,10 @@ fn to_j_fastest(buf: &[f64], rank: usize, ni: usize, nj: usize) -> Vec<f64> {
 }
 
 fn mismatches(a: &[f64], b: &[f64]) -> usize {
-    a.iter().zip(b.iter()).filter(|(x, y)| (**x - **y).abs() > ATOL).count()
+    a.iter()
+        .zip(b.iter())
+        .filter(|(x, y)| (**x - **y).abs() > ATOL)
+        .count()
 }
 
 struct Tier {
@@ -218,10 +243,30 @@ struct Tier {
 
 fn ladder() -> Vec<Tier> {
     vec![
-        Tier { label: "int1e_r   ", rank: 3, cart: RawApiId::INT1E_R_CART, sph: RawApiId::INT1E_R_SPH },
-        Tier { label: "int1e_rr  ", rank: 9, cart: RawApiId::INT1E_RR_CART, sph: RawApiId::INT1E_RR_SPH },
-        Tier { label: "int1e_rrr ", rank: 27, cart: RawApiId::INT1E_RRR_CART, sph: RawApiId::INT1E_RRR_SPH },
-        Tier { label: "int1e_rrrr", rank: 81, cart: RawApiId::INT1E_RRRR_CART, sph: RawApiId::INT1E_RRRR_SPH },
+        Tier {
+            label: "int1e_r   ",
+            rank: 3,
+            cart: RawApiId::INT1E_R_CART,
+            sph: RawApiId::INT1E_R_SPH,
+        },
+        Tier {
+            label: "int1e_rr  ",
+            rank: 9,
+            cart: RawApiId::INT1E_RR_CART,
+            sph: RawApiId::INT1E_RR_SPH,
+        },
+        Tier {
+            label: "int1e_rrr ",
+            rank: 27,
+            cart: RawApiId::INT1E_RRR_CART,
+            sph: RawApiId::INT1E_RRR_SPH,
+        },
+        Tier {
+            label: "int1e_rrrr",
+            rank: 81,
+            cart: RawApiId::INT1E_RRRR_CART,
+            sph: RawApiId::INT1E_RRRR_SPH,
+        },
     ]
 }
 
@@ -248,19 +293,29 @@ fn spike_003_arm2_orientation_pinned() {
     let (atm, bas, env) = build_p_times_d();
     let shls = [0_i32, 1];
     #[cfg(has_vendor_libcint)]
-    let (natm, nbas) = ((atm.len() / ATM_SLOTS) as i32, (bas.len() / BAS_SLOTS) as i32);
+    let (natm, nbas) = (
+        (atm.len() / ATM_SLOTS) as i32,
+        (bas.len() / BAS_SLOTS) as i32,
+    );
 
-    println!("\n================ SPIKE 003 Arm 2 : i-fastest orientation (p x d, non-square) ================");
+    println!(
+        "\n================ SPIKE 003 Arm 2 : i-fastest orientation (p x d, non-square) ================"
+    );
     #[cfg(has_vendor_libcint)]
     println!("vendor: LINKED — orientation pinned against ground truth");
     #[cfg(not(has_vendor_libcint))]
-    println!("vendor: NOT linked — negative-control only (cintx != j-fastest); run with CINTX_ORACLE_BUILD_VENDOR=1 to pin");
+    println!(
+        "vendor: NOT linked — negative-control only (cintx != j-fastest); run with CINTX_ORACLE_BUILD_VENDOR=1 to pin"
+    );
 
     for path in ["cart", "sph"] {
         let nf: fn(i32) -> usize = if path == "cart" { ncart } else { nsph };
         let ni = nf(1); // p
         let nj = nf(2); // d
-        println!("\n  ---- {path} path : ni={ni} (p) x nj={nj} (d), block={} ----", ni * nj);
+        println!(
+            "\n  ---- {path} path : ni={ni} (p) x nj={nj} (d), block={} ----",
+            ni * nj
+        );
         for t in ladder() {
             let api = if path == "cart" { t.cart } else { t.sph };
             let mut cintx = vec![0.0_f64; t.rank * ni * nj];
@@ -288,7 +343,11 @@ fn spike_003_arm2_orientation_pinned() {
                     "    {}  rank={:>2}  mm(vendor,cintx)={mm_claimed:>3}  mm(vendor,j-fastest)={mm_swapped:>3}  self_diff={self_diff:>3}",
                     t.label, t.rank
                 );
-                assert_eq!(mm_claimed, 0, "{} {path}: cintx diverges from vendor (layout)", t.label);
+                assert_eq!(
+                    mm_claimed, 0,
+                    "{} {path}: cintx diverges from vendor (layout)",
+                    t.label
+                );
                 assert!(
                     mm_swapped > 0,
                     "{} {path}: j-fastest ALSO matches vendor — orientation not actually pinned",
@@ -296,7 +355,10 @@ fn spike_003_arm2_orientation_pinned() {
                 );
             }
             #[cfg(not(has_vendor_libcint))]
-            println!("    {}  rank={:>2}  self_diff={self_diff:>3} (i-fastest vs j-fastest differ)", t.label, t.rank);
+            println!(
+                "    {}  rank={:>2}  self_diff={self_diff:>3} (i-fastest vs j-fastest differ)",
+                t.label, t.rank
+            );
         }
     }
     println!("\n================ SPIKE 003 Arm 2 : done ================\n");

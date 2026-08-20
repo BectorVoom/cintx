@@ -74,22 +74,38 @@ macro_rules! moment_origj_parity_test {
 }
 
 moment_parity_test!(
-    test_int1e_rrr_parity, 27,
-    INT1E_RRR_SPH, INT1E_RRR_CART,
-    vendor_int1e_rrr_sph, vendor_int1e_rrr_cart, "int1e_rrr"
+    test_int1e_rrr_parity,
+    27,
+    INT1E_RRR_SPH,
+    INT1E_RRR_CART,
+    vendor_int1e_rrr_sph,
+    vendor_int1e_rrr_cart,
+    "int1e_rrr"
 );
 moment_parity_test!(
-    test_int1e_rrrr_parity, 81,
-    INT1E_RRRR_SPH, INT1E_RRRR_CART,
-    vendor_int1e_rrrr_sph, vendor_int1e_rrrr_cart, "int1e_rrrr"
+    test_int1e_rrrr_parity,
+    81,
+    INT1E_RRRR_SPH,
+    INT1E_RRRR_CART,
+    vendor_int1e_rrrr_sph,
+    vendor_int1e_rrrr_cart,
+    "int1e_rrrr"
 );
 moment_parity_test!(
-    test_int1e_r4_parity, 1,
-    INT1E_R4_SPH, INT1E_R4_CART,
-    vendor_int1e_r4_sph, vendor_int1e_r4_cart, "int1e_r4"
+    test_int1e_r4_parity,
+    1,
+    INT1E_R4_SPH,
+    INT1E_R4_CART,
+    vendor_int1e_r4_sph,
+    vendor_int1e_r4_cart,
+    "int1e_r4"
 );
 moment_origj_parity_test!(
-    test_int1e_r4_origj_parity, 1,
-    INT1E_R4_ORIGJ_SPH, INT1E_R4_ORIGJ_CART,
-    vendor_int1e_r4_origj_sph, vendor_int1e_r4_origj_cart, "int1e_r4_origj"
+    test_int1e_r4_origj_parity,
+    1,
+    INT1E_R4_ORIGJ_SPH,
+    INT1E_R4_ORIGJ_CART,
+    vendor_int1e_r4_origj_sph,
+    vendor_int1e_r4_origj_cart,
+    "int1e_r4_origj"
 );

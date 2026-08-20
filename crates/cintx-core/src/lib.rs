@@ -15,7 +15,7 @@ pub mod tensor;
 
 pub use atom::{Atom, NuclearModel};
 pub use basis::{BasisMeta, BasisSet};
-pub use ecp::{EcpShell, EcpChannel};
+pub use ecp::{EcpChannel, EcpShell};
 pub use env::{EnvBoundsError, EnvParams, EnvUnits};
 pub use error::{CoreError, cintxRsError};
 pub use operator::{AoSymmetry, OperatorId, Representation};

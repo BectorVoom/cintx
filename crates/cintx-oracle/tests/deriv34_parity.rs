@@ -137,8 +137,18 @@ fn collect_nc_block(
     let mut out = vec![0.0_f64; ncomp * ni * nj];
     // SAFETY: atm/bas/env well-formed by construction; shls valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed (0,1): {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed (0,1): {e:?}"));
     }
     out
 }
@@ -186,7 +196,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 #[allow(dead_code)]
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: matrix is all-zero (zero-fill regression)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,7 +208,13 @@ fn assert_any_nonzero(matrix: &[f64], label: &str) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(feature = "cpu")]
-fn determinism(api_sph: RawApiId, api_cart: RawApiId, ncomp: usize, rinv: Option<[f64; 3]>, label: &str) {
+fn determinism(
+    api_sph: RawApiId,
+    api_cart: RawApiId,
+    ncomp: usize,
+    rinv: Option<[f64; 3]>,
+    label: &str,
+) {
     let (atm, bas, env0) = build_pd_nonsquare();
     let env = match rinv {
         Some(o) => env_with_rinv_origin(&env0, o),
@@ -209,9 +228,17 @@ fn determinism(api_sph: RawApiId, api_cart: RawApiId, ncomp: usize, rinv: Option
         let m2 = collect_nc_block(api, ncomp, &atm, &bas, &env, nf);
         let ni = nf(1);
         let nj = nf(2);
-        assert_eq!(m1.len(), ncomp * ni * nj, "{label}_{rep} length = ncomp*ni*nj");
+        assert_eq!(
+            m1.len(),
+            ncomp * ni * nj,
+            "{label}_{rep} length = ncomp*ni*nj"
+        );
         for (a, b) in m1.iter().zip(m2.iter()) {
-            assert_eq!(a.to_bits(), b.to_bits(), "{label}_{rep} must be bit-identical");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "{label}_{rep} must be bit-identical"
+            );
         }
         assert_any_nonzero(&m1, &format!("{label}_{rep}"));
     }
@@ -220,7 +247,13 @@ fn determinism(api_sph: RawApiId, api_cart: RawApiId, ncomp: usize, rinv: Option
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int1e_ipipipnuc_determinism() {
-    determinism(RawApiId::INT1E_IPIPIPNUC_SPH, RawApiId::INT1E_IPIPIPNUC_CART, 27, None, "int1e_ipipipnuc");
+    determinism(
+        RawApiId::INT1E_IPIPIPNUC_SPH,
+        RawApiId::INT1E_IPIPIPNUC_CART,
+        27,
+        None,
+        "int1e_ipipipnuc",
+    );
 }
 
 #[cfg(feature = "cpu")]
@@ -238,7 +271,13 @@ fn test_int1e_ipipiprinv_determinism() {
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int1e_ipipnucip_determinism() {
-    determinism(RawApiId::INT1E_IPIPNUCIP_SPH, RawApiId::INT1E_IPIPNUCIP_CART, 27, None, "int1e_ipipnucip");
+    determinism(
+        RawApiId::INT1E_IPIPNUCIP_SPH,
+        RawApiId::INT1E_IPIPNUCIP_CART,
+        27,
+        None,
+        "int1e_ipipnucip",
+    );
 }
 
 #[cfg(feature = "cpu")]
@@ -323,14 +362,20 @@ fn deriv34_ipipip<FS, FC>(
     assert_any_nonzero(&cintx_s, &format!("{label}_sph p×d cintx"));
     assert_any_nonzero(&vendor_s, &format!("{label}_sph p×d vendor"));
     let mm = count_mismatches(&vendor_s, &cintx_s, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_sph (p×d non-square, {ncomp} comp): {mm} mismatches at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_sph (p×d non-square, {ncomp} comp): {mm} mismatches at atol={ATOL}"
+    );
 
     let vendor_c = collect_vendor_nc_block(&vendor_cart, ncomp, &atm, &bas, &env, ncart);
     let cintx_c = collect_nc_block(api_cart, ncomp, &atm, &bas, &env, ncart);
     assert_any_nonzero(&cintx_c, &format!("{label}_cart p×d cintx"));
     assert_any_nonzero(&vendor_c, &format!("{label}_cart p×d vendor"));
     let mm = count_mismatches(&vendor_c, &cintx_c, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_cart (p×d non-square, {ncomp} comp): {mm} mismatches at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_cart (p×d non-square, {ncomp} comp): {mm} mismatches at atol={ATOL}"
+    );
 }
 
 // ── deriv3 (rank 27) ─────────────────────────────────────────────────────────

@@ -10,14 +10,14 @@
 
 use approx::assert_relative_eq;
 use cintx_compat::raw::{
-    ANG_OF, ATOM_OF, ATM_SLOTS, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF,
-    POINT_NUC, PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 use cintx_oracle::vendor_ffi;
 use cintx_simd::{
     AtomCoord, Center2c2eInput, Center3c1eInput, Center3c2eInput, OneElectronInput,
-    SimdCenter2c2eKernel, SimdCenter3c1eKernel, SimdCenter3c2eKernel,
-    SimdOneElectronKernel, SimdTwoElectronKernel, TwoElectronInput,
+    SimdCenter2c2eKernel, SimdCenter3c1eKernel, SimdCenter3c2eKernel, SimdOneElectronKernel,
+    SimdTwoElectronKernel, TwoElectronInput,
 };
 
 /// Build H2O STO-3G libcint-style atm/bas/env.
@@ -217,15 +217,7 @@ fn test_3way_int1e_ovlp_parity() {
 
             // 3. libcint Reference (via vendor_ffi)
             let mut out_libcint = vec![0.0; len];
-            vendor_ffi::vendor_int1e_ovlp_cart(
-                &mut out_libcint,
-                &shls,
-                &atm,
-                3,
-                &bas,
-                5,
-                &env,
-            );
+            vendor_ffi::vendor_int1e_ovlp_cart(&mut out_libcint, &shls, &atm, 3, &bas, 5, &env);
 
             // Assert 3-way parity
             for k in 0..len {
@@ -283,15 +275,7 @@ fn test_3way_int1e_kin_parity() {
 
             // 3. libcint Reference (via vendor_ffi)
             let mut out_libcint = vec![0.0; len];
-            vendor_ffi::vendor_int1e_kin_cart(
-                &mut out_libcint,
-                &shls,
-                &atm,
-                3,
-                &bas,
-                5,
-                &env,
-            );
+            vendor_ffi::vendor_int1e_kin_cart(&mut out_libcint, &shls, &atm, 3, &bas, 5, &env);
 
             for k in 0..len {
                 assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-12);
@@ -349,15 +333,7 @@ fn test_3way_int1e_nuc_parity() {
 
             // 3. libcint Reference (via vendor_ffi)
             let mut out_libcint = vec![0.0; len];
-            vendor_ffi::vendor_int1e_nuc_cart(
-                &mut out_libcint,
-                &shls,
-                &atm,
-                3,
-                &bas,
-                5,
-                &env,
-            );
+            vendor_ffi::vendor_int1e_nuc_cart(&mut out_libcint, &shls, &atm, 3, &bas, 5, &env);
 
             for k in 0..len {
                 assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-10);
@@ -417,15 +393,7 @@ fn test_3way_int2c2e_parity() {
 
             // 3. libcint Reference (via vendor_ffi)
             let mut out_libcint = vec![0.0; len];
-            vendor_ffi::vendor_int2c2e_cart(
-                &mut out_libcint,
-                &shls,
-                &atm,
-                3,
-                &bas,
-                5,
-                &env,
-            );
+            vendor_ffi::vendor_int2c2e_cart(&mut out_libcint, &shls, &atm, 3, &bas, 5, &env);
 
             for k in 0..len {
                 assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-10);
@@ -491,15 +459,7 @@ fn test_3way_int3c2e_parity() {
 
                 // 3. libcint Reference (via vendor_ffi)
                 let mut out_libcint = vec![0.0; len];
-                vendor_ffi::vendor_int3c2e_cart(
-                    &mut out_libcint,
-                    &shls,
-                    &atm,
-                    3,
-                    &bas,
-                    5,
-                    &env,
-                );
+                vendor_ffi::vendor_int3c2e_cart(&mut out_libcint, &shls, &atm, 3, &bas, 5, &env);
 
                 for k in 0..len {
                     assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-9);
@@ -566,15 +526,7 @@ fn test_3way_int3c1e_parity() {
 
                 // 3. libcint Reference (via vendor_ffi)
                 let mut out_libcint = vec![0.0; len];
-                vendor_ffi::vendor_int3c1e_cart(
-                    &mut out_libcint,
-                    &shls,
-                    &atm,
-                    3,
-                    &bas,
-                    5,
-                    &env,
-                );
+                vendor_ffi::vendor_int3c1e_cart(&mut out_libcint, &shls, &atm, 3, &bas, 5, &env);
 
                 for k in 0..len {
                     assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-10);
@@ -632,7 +584,12 @@ fn test_3way_int2e_parity() {
 
         // 2. CubeCL Kernel (via eval_raw)
         let mut out_cubecl = vec![0.0; len];
-        let shls_i32 = [shls[0] as i32, shls[1] as i32, shls[2] as i32, shls[3] as i32];
+        let shls_i32 = [
+            shls[0] as i32,
+            shls[1] as i32,
+            shls[2] as i32,
+            shls[3] as i32,
+        ];
         unsafe {
             eval_raw(
                 RawApiId::INT2E_CART,
@@ -650,15 +607,7 @@ fn test_3way_int2e_parity() {
 
         // 3. libcint Reference (via vendor_ffi)
         let mut out_libcint = vec![0.0; len];
-        vendor_ffi::vendor_int2e_cart(
-            &mut out_libcint,
-            &shls_i32,
-            &atm,
-            3,
-            &bas,
-            5,
-            &env,
-        );
+        vendor_ffi::vendor_int2e_cart(&mut out_libcint, &shls_i32, &atm, 3, &bas, 5, &env);
 
         for k in 0..len {
             assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-10);
@@ -862,7 +811,15 @@ fn test_3way_high_l_1e_ovlp_kin_nuc_parity() {
         }
 
         let mut out_libcint = vec![0.0; len];
-        vendor_ffi::vendor_int1e_ovlp_cart(&mut out_libcint, &shls_i32, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int1e_ovlp_cart(
+            &mut out_libcint,
+            &shls_i32,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
 
         for k in 0..len {
             assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-10);
@@ -891,7 +848,15 @@ fn test_3way_high_l_1e_ovlp_kin_nuc_parity() {
         }
 
         let mut out_libcint_kin = vec![0.0; len];
-        vendor_ffi::vendor_int1e_kin_cart(&mut out_libcint_kin, &shls_i32, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int1e_kin_cart(
+            &mut out_libcint_kin,
+            &shls_i32,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
 
         for k in 0..len {
             assert_relative_eq!(out_simd_kin[k], out_libcint_kin[k], epsilon = 1e-10);
@@ -920,7 +885,15 @@ fn test_3way_high_l_1e_ovlp_kin_nuc_parity() {
         }
 
         let mut out_libcint_nuc = vec![0.0; len];
-        vendor_ffi::vendor_int1e_nuc_cart(&mut out_libcint_nuc, &shls_i32, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int1e_nuc_cart(
+            &mut out_libcint_nuc,
+            &shls_i32,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
 
         for k in 0..len {
             assert_relative_eq!(out_simd_nuc[k], out_libcint_nuc[k], epsilon = 1e-9);
@@ -1046,7 +1019,15 @@ fn test_3way_high_l_3c1e_and_3c2e_parity() {
         }
 
         let mut out_libcint_3c1e = vec![0.0; len];
-        vendor_ffi::vendor_int3c1e_cart(&mut out_libcint_3c1e, &shls_i32, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int3c1e_cart(
+            &mut out_libcint_3c1e,
+            &shls_i32,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
 
         for k in 0..len {
             assert_relative_eq!(out_simd_3c1e[k], out_libcint_3c1e[k], epsilon = 1e-9);
@@ -1089,7 +1070,15 @@ fn test_3way_high_l_3c1e_and_3c2e_parity() {
         }
 
         let mut out_libcint_3c2e = vec![0.0; len];
-        vendor_ffi::vendor_int3c2e_cart(&mut out_libcint_3c2e, &shls_i32, &atm, natm, &bas, nbas, &env);
+        vendor_ffi::vendor_int3c2e_cart(
+            &mut out_libcint_3c2e,
+            &shls_i32,
+            &atm,
+            natm,
+            &bas,
+            nbas,
+            &env,
+        );
 
         for k in 0..len {
             assert_relative_eq!(out_simd_3c2e[k], out_libcint_3c2e[k], epsilon = 1e-9);
@@ -1147,7 +1136,12 @@ fn test_3way_high_l_2e_quartets_parity() {
 
         // 2. CubeCL Kernel (via eval_raw)
         let mut out_cubecl = vec![0.0; len];
-        let shls_i32 = [shls[0] as i32, shls[1] as i32, shls[2] as i32, shls[3] as i32];
+        let shls_i32 = [
+            shls[0] as i32,
+            shls[1] as i32,
+            shls[2] as i32,
+            shls[3] as i32,
+        ];
         unsafe {
             eval_raw(
                 RawApiId::INT2E_CART,
@@ -1165,15 +1159,7 @@ fn test_3way_high_l_2e_quartets_parity() {
 
         // 3. libcint Reference (via vendor_ffi)
         let mut out_libcint = vec![0.0; len];
-        vendor_ffi::vendor_int2e_cart(
-            &mut out_libcint,
-            &shls_i32,
-            &atm,
-            natm,
-            &bas,
-            nbas,
-            &env,
-        );
+        vendor_ffi::vendor_int2e_cart(&mut out_libcint, &shls_i32, &atm, natm, &bas, nbas, &env);
 
         for k in 0..len {
             assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-9);
@@ -1182,4 +1168,3 @@ fn test_3way_high_l_2e_quartets_parity() {
         }
     }
 }
-

@@ -94,10 +94,30 @@ struct Tier {
 
 fn ladder() -> Vec<Tier> {
     vec![
-        Tier { label: "int1e_r   ", rank: 3, cart: RawApiId::INT1E_R_CART, sph: RawApiId::INT1E_R_SPH },
-        Tier { label: "int1e_rr  ", rank: 9, cart: RawApiId::INT1E_RR_CART, sph: RawApiId::INT1E_RR_SPH },
-        Tier { label: "int1e_rrr ", rank: 27, cart: RawApiId::INT1E_RRR_CART, sph: RawApiId::INT1E_RRR_SPH },
-        Tier { label: "int1e_rrrr", rank: 81, cart: RawApiId::INT1E_RRRR_CART, sph: RawApiId::INT1E_RRRR_SPH },
+        Tier {
+            label: "int1e_r   ",
+            rank: 3,
+            cart: RawApiId::INT1E_R_CART,
+            sph: RawApiId::INT1E_R_SPH,
+        },
+        Tier {
+            label: "int1e_rr  ",
+            rank: 9,
+            cart: RawApiId::INT1E_RR_CART,
+            sph: RawApiId::INT1E_RR_SPH,
+        },
+        Tier {
+            label: "int1e_rrr ",
+            rank: 27,
+            cart: RawApiId::INT1E_RRR_CART,
+            sph: RawApiId::INT1E_RRR_SPH,
+        },
+        Tier {
+            label: "int1e_rrrr",
+            rank: 81,
+            cart: RawApiId::INT1E_RRRR_CART,
+            sph: RawApiId::INT1E_RRRR_SPH,
+        },
     ]
 }
 
@@ -114,7 +134,9 @@ fn spike_002_cart_vs_sph_fold_invariance() {
     let block_cart = nci * ncj;
     let block_sph = nsi * nsj;
 
-    println!("\n================ SPIKE 002 : cart↔sph per-component fold invariance (p×d) ================");
+    println!(
+        "\n================ SPIKE 002 : cart↔sph per-component fold invariance (p×d) ================"
+    );
     println!("  cart block = {nci}×{ncj} = {block_cart}   sph block = {nsi}×{nsj} = {block_sph}");
 
     for t in ladder() {
@@ -122,13 +144,45 @@ fn spike_002_cart_vs_sph_fold_invariance() {
         let mut sph = vec![0.0_f64; t.rank * block_sph];
         // SAFETY: fixture well-formed, shls valid.
         unsafe {
-            eval_raw(t.cart, Some(&mut cart), None, &shls, &atm, &bas, &env, None, None).unwrap();
-            eval_raw(t.sph, Some(&mut sph), None, &shls, &atm, &bas, &env, None, None).unwrap();
+            eval_raw(
+                t.cart,
+                Some(&mut cart),
+                None,
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                None,
+                None,
+            )
+            .unwrap();
+            eval_raw(
+                t.sph,
+                Some(&mut sph),
+                None,
+                &shls,
+                &atm,
+                &bas,
+                &env,
+                None,
+                None,
+            )
+            .unwrap();
         }
 
         // A. component axis outermost + same count in both paths.
-        assert_eq!(cart.len(), t.rank * block_cart, "{}: cart comp_stride != ncart_i*ncart_j", t.label);
-        assert_eq!(sph.len(), t.rank * block_sph, "{}: sph comp_stride != nsph_i*nsph_j", t.label);
+        assert_eq!(
+            cart.len(),
+            t.rank * block_cart,
+            "{}: cart comp_stride != ncart_i*ncart_j",
+            t.label
+        );
+        assert_eq!(
+            sph.len(),
+            t.rank * block_sph,
+            "{}: sph comp_stride != nsph_i*nsph_j",
+            t.label
+        );
         assert_eq!(cart.len() / t.rank, block_cart);
         assert_eq!(sph.len() / t.rank, block_sph);
 
@@ -146,14 +200,20 @@ fn spike_002_cart_vs_sph_fold_invariance() {
                     d <= ATOL,
                     "{}: comp {c}/{} elem {k}: c2s(cart)={r:.15e} != sph={s:.15e} (Δ={d:.3e}) \
                      — cart/sph paths fold the component axis differently",
-                    t.label, t.rank
+                    t.label,
+                    t.rank
                 );
             }
         }
         println!(
             "  {}  rank={:>2}  cart_len={:>4} sph_len={:>4}  per-comp c2s(cart)==sph ✓  worst Δ={worst:.2e}",
-            t.label, t.rank, cart.len(), sph.len()
+            t.label,
+            t.rank,
+            cart.len(),
+            sph.len()
         );
     }
-    println!("\n================ SPIKE 002 : PASS — fold path-invariant, component axis untouched ================\n");
+    println!(
+        "\n================ SPIKE 002 : PASS — fold path-invariant, component axis untouched ================\n"
+    );
 }

@@ -7,6 +7,7 @@
 //! risk-accept that applies to those modules.
 
 pub mod backend;
+mod batch_pilot;
 pub mod capability;
 pub mod executor;
 #[path = "kernels/mod.rs"]
@@ -20,6 +21,7 @@ pub mod transfer;
 pub mod transform;
 
 pub use backend::{ResolvedBackend, compiled_backends};
+pub use batch_pilot::{EriSsssInput, OverlapSsInput, PilotOutputArenaStats};
 pub use capability::{
     CapabilityReason, WgpuCapabilitySnapshot, WgpuPreflightReport, capability_fingerprint,
 };

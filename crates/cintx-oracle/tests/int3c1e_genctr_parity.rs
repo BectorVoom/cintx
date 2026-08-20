@@ -157,7 +157,12 @@ fn shell_nctr(bas: &[i32], s: usize) -> usize {
 const TRIPLE: (usize, usize, usize) = (0, 1, 2);
 
 /// Total element count = ncomp * (di*nctr_i) * (dj*nctr_j) * (dk*nctr_k).
-fn elem_count(bas: &[i32], triple: (usize, usize, usize), nf: impl Fn(i32) -> usize, ncomp: usize) -> usize {
+fn elem_count(
+    bas: &[i32],
+    triple: (usize, usize, usize),
+    nf: impl Fn(i32) -> usize,
+    ncomp: usize,
+) -> usize {
     let (si, sj, sk) = triple;
     let ni = nf(shell_ang(bas, si)) * shell_nctr(bas, si);
     let nj = nf(shell_ang(bas, sj)) * shell_nctr(bas, sj);
@@ -180,8 +185,18 @@ fn collect_cintx(
     let shls = [si as i32, sj as i32, sk as i32];
     // SAFETY: atm/bas/env well-formed by construction; shls valid; out sized exactly.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for {api_id:?} triple {triple:?}: {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            &shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for {api_id:?} triple {triple:?}: {e:?}"));
     }
     out
 }
@@ -230,7 +245,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 #[allow(dead_code)]
 fn assert_any_nonzero(buf: &[f64], label: &str) {
     let any_nonzero = buf.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: buffer is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: buffer is all-zero (zero-fill regression)"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -248,9 +266,17 @@ fn determinism(api_sph: RawApiId, api_cart: RawApiId, ncomp: usize, label: &str)
         let m1 = collect_cintx(api, &atm, &bas, &env, TRIPLE, nf, ncomp);
         let m2 = collect_cintx(api, &atm, &bas, &env, TRIPLE, nf, ncomp);
         let expect = elem_count(&bas, TRIPLE, nf, ncomp);
-        assert_eq!(m1.len(), expect, "{label}_{rep}: element count = ncomp*(di*nctr_i)*(dj*nctr_j)*(dk*nctr_k)");
+        assert_eq!(
+            m1.len(),
+            expect,
+            "{label}_{rep}: element count = ncomp*(di*nctr_i)*(dj*nctr_j)*(dk*nctr_k)"
+        );
         for (a, b) in m1.iter().zip(m2.iter()) {
-            assert_eq!(a.to_bits(), b.to_bits(), "{label}_{rep} must be bit-identical");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "{label}_{rep} must be bit-identical"
+            );
         }
         assert_any_nonzero(&m1, &format!("{label}_{rep}"));
     }
@@ -265,13 +291,23 @@ fn test_int3c1e_genctr_determinism() {
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int3c1e_ip1_genctr_determinism() {
-    determinism(RawApiId::INT3C1E_IP1_SPH, RawApiId::INT3C1E_IP1_CART, 3, "int3c1e_ip1");
+    determinism(
+        RawApiId::INT3C1E_IP1_SPH,
+        RawApiId::INT3C1E_IP1_CART,
+        3,
+        "int3c1e_ip1",
+    );
 }
 
 #[cfg(feature = "cpu")]
 #[test]
 fn test_int3c1e_iprinv_genctr_determinism() {
-    determinism(RawApiId::INT3C1E_IPRINV_SPH, RawApiId::INT3C1E_IPRINV_CART, 3, "int3c1e_iprinv");
+    determinism(
+        RawApiId::INT3C1E_IPRINV_SPH,
+        RawApiId::INT3C1E_IPRINV_CART,
+        3,
+        "int3c1e_iprinv",
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -298,14 +334,20 @@ fn vendor_parity<FS, FC>(
     assert_any_nonzero(&cintx_s, &format!("{label}_sph cintx"));
     assert_any_nonzero(&vendor_s, &format!("{label}_sph vendor"));
     let mm = count_mismatches(&vendor_s, &cintx_s, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_sph (nctr>1): {mm} mismatches vs vendored libcint at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_sph (nctr>1): {mm} mismatches vs vendored libcint at atol={ATOL}"
+    );
 
     let vendor_c = collect_vendor(&vendor_cart, &atm, &bas, &env, TRIPLE, ncart, ncomp);
     let cintx_c = collect_cintx(api_cart, &atm, &bas, &env, TRIPLE, ncart, ncomp);
     assert_any_nonzero(&cintx_c, &format!("{label}_cart cintx"));
     assert_any_nonzero(&vendor_c, &format!("{label}_cart vendor"));
     let mm = count_mismatches(&vendor_c, &cintx_c, ATOL, RTOL);
-    assert_eq!(mm, 0, "{label}_cart (nctr>1): {mm} mismatches vs vendored libcint at atol={ATOL}");
+    assert_eq!(
+        mm, 0,
+        "{label}_cart (nctr>1): {mm} mismatches vs vendored libcint at atol={ATOL}"
+    );
 }
 
 #[cfg(has_vendor_libcint)]

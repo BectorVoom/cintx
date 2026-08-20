@@ -129,15 +129,18 @@ impl SimdCenter4c1eKernel {
                         let rl_y = V::from_f64(input.rl[1]);
                         let rl_z = V::from_f64(input.rl[2]);
 
-                        let dil = (V::from_f64(input.ri[0]) - rl_x) * (V::from_f64(input.ri[0]) - rl_x)
+                        let dil = (V::from_f64(input.ri[0]) - rl_x)
+                            * (V::from_f64(input.ri[0]) - rl_x)
                             + (V::from_f64(input.ri[1]) - rl_y) * (V::from_f64(input.ri[1]) - rl_y)
                             + (V::from_f64(input.ri[2]) - rl_z) * (V::from_f64(input.ri[2]) - rl_z);
 
-                        let djl = (V::from_f64(input.rj[0]) - rl_x) * (V::from_f64(input.rj[0]) - rl_x)
+                        let djl = (V::from_f64(input.rj[0]) - rl_x)
+                            * (V::from_f64(input.rj[0]) - rl_x)
                             + (V::from_f64(input.rj[1]) - rl_y) * (V::from_f64(input.rj[1]) - rl_y)
                             + (V::from_f64(input.rj[2]) - rl_z) * (V::from_f64(input.rj[2]) - rl_z);
 
-                        let dkl = (V::from_f64(input.rk[0]) - rl_x) * (V::from_f64(input.rk[0]) - rl_x)
+                        let dkl = (V::from_f64(input.rk[0]) - rl_x)
+                            * (V::from_f64(input.rk[0]) - rl_x)
                             + (V::from_f64(input.rk[1]) - rl_y) * (V::from_f64(input.rk[1]) - rl_y)
                             + (V::from_f64(input.rk[2]) - rl_z) * (V::from_f64(input.rk[2]) - rl_z);
 
@@ -164,7 +167,8 @@ impl SimdCenter4c1eKernel {
                             + aj * ak * V::from_f64(djk)
                             + aj * al * djl
                             + ak * al * dkl;
-                        let s0 = (V::from_f64(PI) / zeta).pow(V::from_f64(1.5)) * (-exp_sum / zeta).exp();
+                        let s0 = (V::from_f64(PI) / zeta).pow(V::from_f64(1.5))
+                            * (-exp_sum / zeta).exp();
 
                         // 1D VRR
                         let wi_x = wx - V::from_f64(input.ri[0]);
@@ -230,8 +234,7 @@ impl SimdCenter4c1eKernel {
                                             g_ij_kl_y[out_idx] = g_i_jkl_y[j * (li + 1) + i];
                                             g_ij_kl_z[out_idx] = g_i_jkl_z[j * (li + 1) + i];
                                         } else {
-                                            let prev_idx =
-                                                ((kl - 1) * (lj + 1) + j) * (li + 1) + i;
+                                            let prev_idx = ((kl - 1) * (lj + 1) + j) * (li + 1) + i;
                                             let prev_next_j =
                                                 ((kl - 1) * (lj + 1) + (j + 1)) * (li + 1) + i;
                                             g_ij_kl_x[out_idx] = g_ij_kl_x[prev_next_j]
@@ -265,7 +268,8 @@ impl SimdCenter4c1eKernel {
                                                 g_ijkl[2 * hrr_size + out_idx] =
                                                     g_ij_kl_z[(k * (lj + 1) + j) * (li + 1) + i];
                                             } else {
-                                                let prev_idx = (l - 1) * dl + k * dk + j * dj + i * di;
+                                                let prev_idx =
+                                                    (l - 1) * dl + k * dk + j * dj + i * di;
                                                 let prev_next_k =
                                                     (l - 1) * dl + (k + 1) * dk + j * dj + i * di;
                                                 g_ijkl[out_idx] =

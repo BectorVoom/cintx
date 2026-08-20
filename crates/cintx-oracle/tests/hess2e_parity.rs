@@ -124,8 +124,18 @@ fn collect_quartet(
 
     // SAFETY: atm/bas/env well-formed by construction; shls valid.
     unsafe {
-        eval_raw(api_id, Some(&mut out), None, shls, atm, bas, env, None, None)
-            .unwrap_or_else(|e| panic!("eval_raw failed for quartet {shls:?}: {e:?}"));
+        eval_raw(
+            api_id,
+            Some(&mut out),
+            None,
+            shls,
+            atm,
+            bas,
+            env,
+            None,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("eval_raw failed for quartet {shls:?}: {e:?}"));
     }
     out
 }
@@ -176,7 +186,10 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 
 fn assert_any_nonzero(matrix: &[f64], label: &str) {
     let any_nonzero = matrix.iter().any(|v| v.abs() > 1e-14);
-    assert!(any_nonzero, "{label}: matrix is all-zero (zero-fill regression)");
+    assert!(
+        any_nonzero,
+        "{label}: matrix is all-zero (zero-fill regression)"
+    );
 }
 
 /// Per-family descriptor for the parametric sweep: name, rank, the cart/sph
@@ -290,9 +303,20 @@ fn hess2e_ipip_determinism_and_shape() {
             // vanish by symmetry (bra p on atom0, ket p on atom1 → non-square,
             // distinct centers).
             let probe = collect_quartet(api, fam.ncomp, &atm, &bas, &env, &[1, 0, 4, 3], nf);
-            assert_any_nonzero(&probe, &format!("{}_{rep} probe (p,s,p,s) cross-atom", fam.name));
-            assert!(nonsquare, "{}_{rep}: no non-square (ni!=nk) quartet exercised", fam.name);
-            assert!(tested > 0, "{}_{rep}: no quartets within nroots ceiling", fam.name);
+            assert_any_nonzero(
+                &probe,
+                &format!("{}_{rep} probe (p,s,p,s) cross-atom", fam.name),
+            );
+            assert!(
+                nonsquare,
+                "{}_{rep}: no non-square (ni!=nk) quartet exercised",
+                fam.name
+            );
+            assert!(
+                tested > 0,
+                "{}_{rep}: no quartets within nroots ceiling",
+                fam.name
+            );
         }
     }
 }
@@ -330,8 +354,16 @@ fn hess2e_ipip() {
             j_inc: 0,
             k_inc: 0,
             reps: [
-                (false, RawApiId::INT2E_IPIP1_SPH, vendor_ffi::vendor_int2e_ipip1_sph),
-                (true, RawApiId::INT2E_IPIP1_CART, vendor_ffi::vendor_int2e_ipip1_cart),
+                (
+                    false,
+                    RawApiId::INT2E_IPIP1_SPH,
+                    vendor_ffi::vendor_int2e_ipip1_sph,
+                ),
+                (
+                    true,
+                    RawApiId::INT2E_IPIP1_CART,
+                    vendor_ffi::vendor_int2e_ipip1_cart,
+                ),
             ],
         },
         Case {
@@ -341,8 +373,16 @@ fn hess2e_ipip() {
             j_inc: 1,
             k_inc: 0,
             reps: [
-                (false, RawApiId::INT2E_IPVIP1_SPH, vendor_ffi::vendor_int2e_ipvip1_sph),
-                (true, RawApiId::INT2E_IPVIP1_CART, vendor_ffi::vendor_int2e_ipvip1_cart),
+                (
+                    false,
+                    RawApiId::INT2E_IPVIP1_SPH,
+                    vendor_ffi::vendor_int2e_ipvip1_sph,
+                ),
+                (
+                    true,
+                    RawApiId::INT2E_IPVIP1_CART,
+                    vendor_ffi::vendor_int2e_ipvip1_cart,
+                ),
             ],
         },
         Case {
@@ -352,8 +392,16 @@ fn hess2e_ipip() {
             j_inc: 0,
             k_inc: 1,
             reps: [
-                (false, RawApiId::INT2E_IP1IP2_SPH, vendor_ffi::vendor_int2e_ip1ip2_sph),
-                (true, RawApiId::INT2E_IP1IP2_CART, vendor_ffi::vendor_int2e_ip1ip2_cart),
+                (
+                    false,
+                    RawApiId::INT2E_IP1IP2_SPH,
+                    vendor_ffi::vendor_int2e_ip1ip2_sph,
+                ),
+                (
+                    true,
+                    RawApiId::INT2E_IP1IP2_CART,
+                    vendor_ffi::vendor_int2e_ip1ip2_cart,
+                ),
             ],
         },
         Case {
@@ -363,8 +411,16 @@ fn hess2e_ipip() {
             j_inc: 0,
             k_inc: 2,
             reps: [
-                (false, RawApiId::INT2E_IPIP1IPIP2_SPH, vendor_ffi::vendor_int2e_ipip1ipip2_sph),
-                (true, RawApiId::INT2E_IPIP1IPIP2_CART, vendor_ffi::vendor_int2e_ipip1ipip2_cart),
+                (
+                    false,
+                    RawApiId::INT2E_IPIP1IPIP2_SPH,
+                    vendor_ffi::vendor_int2e_ipip1ipip2_sph,
+                ),
+                (
+                    true,
+                    RawApiId::INT2E_IPIP1IPIP2_CART,
+                    vendor_ffi::vendor_int2e_ipip1ipip2_cart,
+                ),
             ],
         },
     ];
@@ -383,7 +439,8 @@ fn hess2e_ipip() {
                     for k in 0..N_SHELLS {
                         for l in 0..N_SHELLS {
                             let (li, lj, lk, ll) = (ang(i), ang(j), ang(k), ang(l));
-                            if hess_nroots(li, lj, lk, ll, case.i_inc, case.j_inc, case.k_inc) > 12 {
+                            if hess_nroots(li, lj, lk, ll, case.i_inc, case.j_inc, case.k_inc) > 12
+                            {
                                 continue;
                             }
                             let shls = [i as i32, j as i32, k as i32, l as i32];
@@ -410,8 +467,16 @@ fn hess2e_ipip() {
                 "{}_{rep}: {mismatches} parity mismatches vs vendored libcint (rank {})",
                 case.name, case.ncomp
             );
-            assert!(any_nonzero, "{}_{rep}: all outputs zero — kernel appears stubbed", case.name);
-            assert!(nonsquare, "{}_{rep}: no non-square (ni!=nk) quartet exercised", case.name);
+            assert!(
+                any_nonzero,
+                "{}_{rep}: all outputs zero — kernel appears stubbed",
+                case.name
+            );
+            assert!(
+                nonsquare,
+                "{}_{rep}: no non-square (ni!=nk) quartet exercised",
+                case.name
+            );
             assert!(tested > 0, "{}_{rep}: no quartets tested", case.name);
             println!(
                 "{}_{rep}: vendor parity PASS over {tested} quartets (rank {}), atol={ATOL:.0e}",

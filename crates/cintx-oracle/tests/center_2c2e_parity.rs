@@ -26,8 +26,8 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, PTR_COEFF, PTR_COORD,
-    PTR_EXP, PTR_ENV_START, PTR_ZETA, NUC_MOD_OF, POINT_NUC, RawApiId, eval_raw,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,34 +75,34 @@ fn build_h2o_sto3g() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     //   [51..53]  H 1s coefficients
     let mut env = vec![0.0_f64; PTR_ENV_START]; // zeros for reserved slots
 
-    let o_coord_ptr = env.len() as i32;   // 20
+    let o_coord_ptr = env.len() as i32; // 20
     env.extend_from_slice(&o_coord);
 
-    let h1_coord_ptr = env.len() as i32;  // 23
+    let h1_coord_ptr = env.len() as i32; // 23
     env.extend_from_slice(&h1_coord);
 
-    let h2_coord_ptr = env.len() as i32;  // 26
+    let h2_coord_ptr = env.len() as i32; // 26
     env.extend_from_slice(&h2_coord);
 
-    let zeta_ptr = env.len() as i32;      // 29
+    let zeta_ptr = env.len() as i32; // 29
     env.push(0.0);
 
-    let o1s_exp_ptr = env.len() as i32;   // 30
+    let o1s_exp_ptr = env.len() as i32; // 30
     env.extend_from_slice(&o_1s_exp);
     let o1s_coeff_ptr = env.len() as i32; // 33
     env.extend_from_slice(&o_1s_coeff);
 
-    let o2s_exp_ptr = env.len() as i32;   // 36
+    let o2s_exp_ptr = env.len() as i32; // 36
     env.extend_from_slice(&o_2s_exp);
     let o2s_coeff_ptr = env.len() as i32; // 39
     env.extend_from_slice(&o_2s_coeff);
 
-    let o2p_exp_ptr = env.len() as i32;   // 42
+    let o2p_exp_ptr = env.len() as i32; // 42
     env.extend_from_slice(&o_2p_exp);
     let o2p_coeff_ptr = env.len() as i32; // 45
     env.extend_from_slice(&o_2p_coeff);
 
-    let h1s_exp_ptr = env.len() as i32;   // 48
+    let h1s_exp_ptr = env.len() as i32; // 48
     env.extend_from_slice(&h_1s_exp);
     let h1s_coeff_ptr = env.len() as i32; // 51
     env.extend_from_slice(&h_1s_coeff);
@@ -226,7 +226,9 @@ fn eval_2c2e_sph_cintx(
             None,
             None,
         )
-        .unwrap_or_else(|e| panic!("eval_raw int2c2e_sph failed for shells ({i_sh},{k_sh}): {e:?}"));
+        .unwrap_or_else(|e| {
+            panic!("eval_raw int2c2e_sph failed for shells ({i_sh},{k_sh}): {e:?}")
+        });
     }
     out
 }
@@ -243,9 +245,7 @@ fn eval_2c2e_sph_cintx(
 fn test_int2c2e_sph_h2o_sto3g_idempotency() {
     let (atm, bas, env) = build_h2o_sto3g();
 
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
 
     let atol = 1e-15_f64;
@@ -276,7 +276,9 @@ fn test_int2c2e_sph_h2o_sto3g_idempotency() {
         "int2c2e_sph output is all zeros — 2c2e kernel stub not replaced"
     );
 
-    println!("  PASS: int2c2e_sph H2O STO-3G idempotency: mismatch_count=0, non-zero values present");
+    println!(
+        "  PASS: int2c2e_sph H2O STO-3G idempotency: mismatch_count=0, non-zero values present"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,9 +304,7 @@ fn test_int2c2e_sph_h2o_sto3g_vendor_parity() {
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
 
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
 
     let atol = 1e-9_f64;
@@ -415,9 +415,7 @@ fn test_int2c2e_sph_h2o_sto3g_rocm_parity() {
     let atol = 1e-12_f64;
     let rtol = 1e-10_f64;
 
-    let ang: Vec<i32> = (0..N_SHELLS)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
 
     let mut mismatch_count = 0usize;
@@ -516,7 +514,11 @@ fn build_random_2shell(rng: &mut Lcg) -> (Vec<i32>, Vec<i32>, Vec<f64>, i32, i32
     let nprim_i = rng.range_i32(1, 3) as usize;
     let nprim_k = rng.range_i32(1, 3) as usize;
 
-    let coord_i = [rng.uniform(-1.5, 1.5), rng.uniform(-1.5, 1.5), rng.uniform(-1.5, 1.5)];
+    let coord_i = [
+        rng.uniform(-1.5, 1.5),
+        rng.uniform(-1.5, 1.5),
+        rng.uniform(-1.5, 1.5),
+    ];
     // Offset shell k so the centers never coincide (distinct atoms).
     let coord_k = [
         coord_i[0] + rng.uniform(0.8, 2.5),

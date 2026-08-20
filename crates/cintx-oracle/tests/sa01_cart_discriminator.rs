@@ -98,7 +98,18 @@ fn build_cart_fixture(li: u8, lj: u8) -> CartFixture {
     bas[BAS_SLOTS + PTR_EXP] = exp_j_ptr as i32;
     bas[BAS_SLOTS + PTR_COEFF] = coeff_j_ptr as i32;
 
-    CartFixture { atm, bas, env, ri, rj, common_orig, ai, aj, ci, cj }
+    CartFixture {
+        atm,
+        bas,
+        env,
+        ri,
+        rj,
+        common_orig,
+        ai,
+        aj,
+        ci,
+        cj,
+    }
 }
 
 #[cfg(feature = "cpu")]
@@ -190,8 +201,14 @@ fn collect_vendor_cart(fx: &CartFixture, li: u8, lj: u8) -> Vec<f64> {
 fn diagnose(cintx: &[f64], vendor: &[f64], block_len: usize, label: &str) -> Vec<usize> {
     assert_eq!(cintx.len(), vendor.len(), "{label}: length mismatch");
     let zthr = 1e-12;
-    let cmax = cintx.iter().fold(0.0_f64, |m, v| m.max(v.abs())).max(1e-300);
-    let vmax = vendor.iter().fold(0.0_f64, |m, v| m.max(v.abs())).max(1e-300);
+    let cmax = cintx
+        .iter()
+        .fold(0.0_f64, |m, v| m.max(v.abs()))
+        .max(1e-300);
+    let vmax = vendor
+        .iter()
+        .fold(0.0_f64, |m, v| m.max(v.abs()))
+        .max(1e-300);
 
     eprintln!("\n===== {label} (36 comp × block_len {block_len}) =====");
     eprintln!("  cintx |max| = {cmax:.6e}   vendor |max| = {vmax:.6e}");
@@ -271,8 +288,11 @@ fn sa01_cart_discriminator_ss() {
     // Vendor's 6 hard-zero gout slots: comps 1,2,16,18,32,33 (block-1 of grp0/4/8
     // pattern). Any struct diff OUTSIDE those is a real g-tensor zero/non-zero defect.
     let vendor_hard_zeros = [1usize, 2, 16, 18, 32, 33];
-    let unexpected: Vec<usize> =
-        diffs.iter().copied().filter(|d| !vendor_hard_zeros.contains(d)).collect();
+    let unexpected: Vec<usize> = diffs
+        .iter()
+        .copied()
+        .filter(|d| !vendor_hard_zeros.contains(d))
+        .collect();
     assert!(
         unexpected.is_empty(),
         "s×s: cintx cart gc has zero/non-zero STRUCTURE differing from vendor at comps {unexpected:?} \
@@ -360,7 +380,15 @@ fn extract_shell(s: usize, atm: &[i32], bas: &[i32], env: &[f64]) -> Shell {
             coeff_row_major[ip * nctr + ic] = col_major[ic * nprim + ip];
         }
     }
-    Shell { l, kappa, nprim, nctr, coord, exps, coeff_row_major }
+    Shell {
+        l,
+        kappa,
+        nprim,
+        nctr,
+        coord,
+        exps,
+        coeff_row_major,
+    }
 }
 
 /// PINPOINT: for nprim=1 general contraction, the nctr=2 cart gc's per-ci block must
@@ -390,38 +418,100 @@ fn sa01_nctr2_gc_linearity() {
 
     // nprim=1, nctr_i=2 (row-major coeff [c0, c1]); nctr_j=1.
     let gc2 = sa01_cart_gc_for_test(
-        &backend, li, lj, 1, 1, 2, 1, ri, rj, [0.0; 3], origin, &[ai], &[aj], &[c0, c1], &[cj0],
+        &backend,
+        li,
+        lj,
+        1,
+        1,
+        2,
+        1,
+        ri,
+        rj,
+        [0.0; 3],
+        origin,
+        &[ai],
+        &[aj],
+        &[c0, c1],
+        &[cj0],
     )
     .expect("nctr=2 gc");
     // Reference: two separate nctr=1 runs, one per contraction coeff.
     let gc_c0 = sa01_cart_gc_for_test(
-        &backend, li, lj, 1, 1, 1, 1, ri, rj, [0.0; 3], origin, &[ai], &[aj], &[c0], &[cj0],
+        &backend,
+        li,
+        lj,
+        1,
+        1,
+        1,
+        1,
+        ri,
+        rj,
+        [0.0; 3],
+        origin,
+        &[ai],
+        &[aj],
+        &[c0],
+        &[cj0],
     )
     .expect("nctr=1 c0");
     let gc_c1 = sa01_cart_gc_for_test(
-        &backend, li, lj, 1, 1, 1, 1, ri, rj, [0.0; 3], origin, &[ai], &[aj], &[c1], &[cj0],
+        &backend,
+        li,
+        lj,
+        1,
+        1,
+        1,
+        1,
+        ri,
+        rj,
+        [0.0; 3],
+        origin,
+        &[ai],
+        &[aj],
+        &[c1],
+        &[cj0],
     )
     .expect("nctr=1 c1");
 
     let total_len = 9 * 4 * ncart(li) * ncart(lj); // per (ci,cj) block
-    assert_eq!(gc2.len(), 2 * total_len, "nctr=2 gc has 2 contraction blocks");
+    assert_eq!(
+        gc2.len(),
+        2 * total_len,
+        "nctr=2 gc has 2 contraction blocks"
+    );
     assert_eq!(gc_c0.len(), total_len);
 
     let blk0 = &gc2[0..total_len]; // ci=0
     let blk1 = &gc2[total_len..2 * total_len]; // ci=1
-    let dev0 = blk0.iter().zip(gc_c0.iter()).fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
-    let dev1 = blk1.iter().zip(gc_c1.iter()).fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
+    let dev0 = blk0
+        .iter()
+        .zip(gc_c0.iter())
+        .fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
+    let dev1 = blk1
+        .iter()
+        .zip(gc_c1.iter())
+        .fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
     eprintln!("\n=== sa01 nctr=2 gc linearity ===");
     eprintln!("  ci=0 block vs nctr1(c0): max dev = {dev0:.3e}");
     eprintln!("  ci=1 block vs nctr1(c1): max dev = {dev1:.3e}");
-    eprintln!("  |ci=0 block|max = {:.4e}  |nctr1(c0)|max = {:.4e}",
+    eprintln!(
+        "  |ci=0 block|max = {:.4e}  |nctr1(c0)|max = {:.4e}",
         blk0.iter().fold(0.0_f64, |m, v| m.max(v.abs())),
-        gc_c0.iter().fold(0.0_f64, |m, v| m.max(v.abs())));
-    eprintln!("  |ci=1 block|max = {:.4e}  |nctr1(c1)|max = {:.4e}",
+        gc_c0.iter().fold(0.0_f64, |m, v| m.max(v.abs()))
+    );
+    eprintln!(
+        "  |ci=1 block|max = {:.4e}  |nctr1(c1)|max = {:.4e}",
         blk1.iter().fold(0.0_f64, |m, v| m.max(v.abs())),
-        gc_c1.iter().fold(0.0_f64, |m, v| m.max(v.abs())));
-    assert!(dev0 < 1e-12, "ci=0 block diverges from nctr=1(c0) by {dev0:.3e} — kernel contraction bug");
-    assert!(dev1 < 1e-12, "ci=1 block diverges from nctr=1(c1) by {dev1:.3e} — kernel contraction bug");
+        gc_c1.iter().fold(0.0_f64, |m, v| m.max(v.abs()))
+    );
+    assert!(
+        dev0 < 1e-12,
+        "ci=0 block diverges from nctr=1(c0) by {dev0:.3e} — kernel contraction bug"
+    );
+    assert!(
+        dev1 < 1e-12,
+        "ci=1 block diverges from nctr=1(c1) by {dev1:.3e} — kernel contraction bug"
+    );
 }
 
 /// PINPOINT #2: nprim=3, nctr=2 (the REAL fixture's bra shell shape). For general
@@ -454,7 +544,20 @@ fn sa01_nprim3_nctr2_gc_linearity() {
     let d_coeff = [0.15591627_f64, 0.60768372, 0.39195739];
 
     let gc2 = sa01_cart_gc_for_test(
-        &backend, li, lj, 3, 3, 2, 1, ri, rj, [0.0; 3], origin, &p_exp, &d_exp, &p_coeff_rm,
+        &backend,
+        li,
+        lj,
+        3,
+        3,
+        2,
+        1,
+        ri,
+        rj,
+        [0.0; 3],
+        origin,
+        &p_exp,
+        &d_exp,
+        &p_coeff_rm,
         &d_coeff,
     )
     .expect("nprim3 nctr2");
@@ -470,8 +573,14 @@ fn sa01_nprim3_nctr2_gc_linearity() {
     let total_len = 9 * 4 * ncart(li) * ncart(lj);
     let blk0 = &gc2[0..total_len];
     let blk1 = &gc2[total_len..2 * total_len];
-    let dev0 = blk0.iter().zip(gc_c0.iter()).fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
-    let dev1 = blk1.iter().zip(gc_c1.iter()).fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
+    let dev0 = blk0
+        .iter()
+        .zip(gc_c0.iter())
+        .fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
+    let dev1 = blk1
+        .iter()
+        .zip(gc_c1.iter())
+        .fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
     eprintln!("\n=== sa01 nprim=3 nctr=2 gc linearity ===");
     eprintln!("  ci=0 block vs nctr1(col0): max dev = {dev0:.3e}");
     eprintln!("  ci=1 block vs nctr1(col1): max dev = {dev1:.3e}");
@@ -494,7 +603,12 @@ fn build_spinor_nctr1_fixture(kappa_i: i32, kappa_j: i32) -> (Vec<i32>, Vec<i32>
 /// Build p(kappa_i, nctr=2)×d(kappa_j) SPINOR fixture, single primitive, gauge≠0.
 /// Isolates nctr=2 in the spinor launcher with controlled simple data.
 #[cfg(all(feature = "cpu", has_vendor_libcint))]
-fn build_spinor_nctr2_fixture(kappa_i: i32, kappa_j: i32, c0: f64, c1: f64) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+fn build_spinor_nctr2_fixture(
+    kappa_i: i32,
+    kappa_j: i32,
+    c0: f64,
+    c1: f64,
+) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let ri = [0.10_f64, 0.20, 0.30];
     let rj = [0.00_f64, 0.05, 0.90];
     let common_orig = [0.05_f64, -0.10, 0.15];
@@ -562,13 +676,39 @@ fn sa01_spinor_nctr2_controlled() {
         selector: "auto".to_owned(),
     })
     .expect("CPU backend");
-    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
-    let rinv_orig = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
+    let common_orig = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
+    let rinv_orig = [
+        env[PTR_RINV_ORIG],
+        env[PTR_RINV_ORIG + 1],
+        env[PTR_RINV_ORIG + 2],
+    ];
     let mut cintx = vec![0.0_f64; ni_sp * nj_sp * 2 * 9];
     launch_int1e_giao_sigma_family_spinor_pair::<f64>(
-        &backend, "cg_sa10sa01", si.l, si.kappa, sj.l, sj.kappa, si.nprim, sj.nprim, si.nctr,
-        sj.nctr, si.coord, sj.coord, common_orig, rinv_orig, &si.exps, &sj.exps, &si.coeff_row_major,
-        &sj.coeff_row_major, &[], &[], &mut cintx,
+        &backend,
+        "cg_sa10sa01",
+        si.l,
+        si.kappa,
+        sj.l,
+        sj.kappa,
+        si.nprim,
+        sj.nprim,
+        si.nctr,
+        sj.nctr,
+        si.coord,
+        sj.coord,
+        common_orig,
+        rinv_orig,
+        &si.exps,
+        &sj.exps,
+        &si.coeff_row_major,
+        &sj.coeff_row_major,
+        &[],
+        &[],
+        &mut cintx,
     )
     .expect("cintx nctr2 controlled");
 
@@ -580,7 +720,10 @@ fn sa01_spinor_nctr2_controlled() {
     vendor_int1e_cg_sa10sa01_spinor(&mut vendor, &shls, &atm, natm, &bas, nbas, &env);
 
     let mism = count_mismatches(&cintx, &vendor, 1e-9, 0.0);
-    eprintln!("\n=== sa01 SPINOR nctr=2 CONTROLLED (nprim=1): mismatch = {mism}/{} ===", ni_sp * nj_sp * 9 * 2);
+    eprintln!(
+        "\n=== sa01 SPINOR nctr=2 CONTROLLED (nprim=1): mismatch = {mism}/{} ===",
+        ni_sp * nj_sp * 9 * 2
+    );
     // per-group half-zero tally
     let group_out = ni_sp * nj_sp * 2;
     for grp in 0..9 {
@@ -589,7 +732,11 @@ fn sa01_spinor_nctr2_controlled() {
             let idx = grp * group_out + k * 2;
             let rz = cintx[idx].abs() <= 1e-12;
             let iz = cintx[idx + 1].abs() <= 1e-12;
-            if !rz && !iz { both += 1; } else if rz != iz { half += 1; }
+            if !rz && !iz {
+                both += 1;
+            } else if rz != iz {
+                half += 1;
+            }
         }
         eprintln!("  group {grp}: both={both} half-zero={half}");
     }
@@ -598,7 +745,10 @@ fn sa01_spinor_nctr2_controlled() {
 
 #[cfg(all(feature = "cpu", has_vendor_libcint))]
 fn count_mismatches(a: &[f64], b: &[f64], atol: f64, rtol: f64) -> usize {
-    a.iter().zip(b.iter()).filter(|(x, y)| (**x - **y).abs() > atol + rtol * y.abs()).count()
+    a.iter()
+        .zip(b.iter())
+        .filter(|(x, y)| (**x - **y).abs() > atol + rtol * y.abs())
+        .count()
 }
 
 /// DISCRIMINATOR: does the half-zero spinor bug persist at nctr=1? If yes → core
@@ -625,13 +775,39 @@ fn sa01_spinor_nctr1_pattern() {
         selector: "auto".to_owned(),
     })
     .expect("CPU backend");
-    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
-    let rinv_orig = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
+    let common_orig = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
+    let rinv_orig = [
+        env[PTR_RINV_ORIG],
+        env[PTR_RINV_ORIG + 1],
+        env[PTR_RINV_ORIG + 2],
+    ];
     let mut cintx = vec![0.0_f64; ni_sp * nj_sp * 2 * 9];
     launch_int1e_giao_sigma_family_spinor_pair::<f64>(
-        &backend, "cg_sa10sa01", si.l, si.kappa, sj.l, sj.kappa, si.nprim, sj.nprim, si.nctr,
-        sj.nctr, si.coord, sj.coord, common_orig, rinv_orig, &si.exps, &sj.exps, &si.coeff_row_major,
-        &sj.coeff_row_major, &[], &[], &mut cintx,
+        &backend,
+        "cg_sa10sa01",
+        si.l,
+        si.kappa,
+        sj.l,
+        sj.kappa,
+        si.nprim,
+        sj.nprim,
+        si.nctr,
+        sj.nctr,
+        si.coord,
+        sj.coord,
+        common_orig,
+        rinv_orig,
+        &si.exps,
+        &sj.exps,
+        &si.coeff_row_major,
+        &sj.coeff_row_major,
+        &[],
+        &[],
+        &mut cintx,
     )
     .expect("cintx cg_sa10sa01 nctr1");
 
@@ -659,21 +835,31 @@ fn sa01_spinor_nctr1_pattern() {
             } else if rz != iz {
                 half += 1;
             }
-            if (cintx[idx] - vendor[idx]).abs() > 1e-9 || (cintx[idx + 1] - vendor[idx + 1]).abs() > 1e-9
+            if (cintx[idx] - vendor[idx]).abs() > 1e-9
+                || (cintx[idx + 1] - vendor[idx + 1]).abs() > 1e-9
             {
                 mism += 1;
             }
         }
         total_mismatch += mism;
-        eprintln!("  group {grp}: cintx both={both} half-zero={half}  mismatch-vs-vendor={mism}/{}", group_out / 2);
+        eprintln!(
+            "  group {grp}: cintx both={both} half-zero={half}  mismatch-vs-vendor={mism}/{}",
+            group_out / 2
+        );
     }
-    eprintln!("  TOTAL mismatch = {total_mismatch} / {}", ni_sp * nj_sp * 9);
+    eprintln!(
+        "  TOTAL mismatch = {total_mismatch} / {}",
+        ni_sp * nj_sp * 9
+    );
     // Print first few elements of group 0 for the relationship.
     for k in 0..ni_sp * nj_sp {
         let idx = k * 2;
         eprintln!(
             "  g0 e{k}: cintx=({:+.5e},{:+.5e}) vendor=({:+.5e},{:+.5e})",
-            cintx[idx], cintx[idx + 1], vendor[idx], vendor[idx + 1]
+            cintx[idx],
+            cintx[idx + 1],
+            vendor[idx],
+            vendor[idx + 1]
         );
     }
 }
@@ -702,21 +888,44 @@ fn sa01_rinv_center_is_the_bug() {
         selector: "auto".to_owned(),
     })
     .expect("CPU backend");
-    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
+    let common_orig = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
     let dri = [
         si.coord[0] - common_orig[0],
         si.coord[1] - common_orig[1],
         si.coord[2] - common_orig[2],
     ];
     // The CORRECT rinv center from env (what vendor uses), NOT the dispatcher's [0,0,0].
-    let rinv = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
+    let rinv = [
+        env[PTR_RINV_ORIG],
+        env[PTR_RINV_ORIG + 1],
+        env[PTR_RINV_ORIG + 2],
+    ];
     eprintln!("\n=== rinv center from env = {rinv:?} (dispatcher hardcodes [0,0,0]) ===");
 
     let mut cintx = vec![0.0_f64; ni_sp * nj_sp * 2 * 9];
     launch_int1e_sa10sa01_spinor_pair::<f64>(
-        &backend, si.l, si.kappa, sj.l, sj.kappa, si.nprim, sj.nprim, si.nctr, sj.nctr,
-        si.coord, sj.coord, rinv, dri, &si.exps, &sj.exps, &si.coeff_row_major,
-        &sj.coeff_row_major, &mut cintx,
+        &backend,
+        si.l,
+        si.kappa,
+        sj.l,
+        sj.kappa,
+        si.nprim,
+        sj.nprim,
+        si.nctr,
+        sj.nctr,
+        si.coord,
+        sj.coord,
+        rinv,
+        dri,
+        &si.exps,
+        &sj.exps,
+        &si.coeff_row_major,
+        &sj.coeff_row_major,
+        &mut cintx,
     )
     .expect("direct launch with correct rinv");
 
@@ -727,7 +936,10 @@ fn sa01_rinv_center_is_the_bug() {
     vendor_int1e_cg_sa10sa01_spinor(&mut vendor, &shls, &atm, natm, &bas, nbas, &env);
 
     let mism = count_mismatches(&cintx, &vendor, 1e-9, 0.0);
-    eprintln!("  direct-launch(rinv=env) vs vendor: mismatch = {mism}/{}", ni_sp * nj_sp * 9 * 2);
+    eprintln!(
+        "  direct-launch(rinv=env) vs vendor: mismatch = {mism}/{}",
+        ni_sp * nj_sp * 9 * 2
+    );
     assert_eq!(
         mism, 0,
         "with rinv=env[PTR_RINV_ORIG] the sa01 spinor MUST match vendor — confirms the \
@@ -756,13 +968,39 @@ fn sa01_spinor_pattern_probe() {
         selector: "auto".to_owned(),
     })
     .expect("CPU backend");
-    let common_orig = [env[PTR_COMMON_ORIG], env[PTR_COMMON_ORIG + 1], env[PTR_COMMON_ORIG + 2]];
-    let rinv_orig = [env[PTR_RINV_ORIG], env[PTR_RINV_ORIG + 1], env[PTR_RINV_ORIG + 2]];
+    let common_orig = [
+        env[PTR_COMMON_ORIG],
+        env[PTR_COMMON_ORIG + 1],
+        env[PTR_COMMON_ORIG + 2],
+    ];
+    let rinv_orig = [
+        env[PTR_RINV_ORIG],
+        env[PTR_RINV_ORIG + 1],
+        env[PTR_RINV_ORIG + 2],
+    ];
     let mut cintx = vec![0.0_f64; ni_sp * nj_sp * 2 * 9];
     launch_int1e_giao_sigma_family_spinor_pair::<f64>(
-        &backend, "cg_sa10sa01", si.l, si.kappa, sj.l, sj.kappa, si.nprim, sj.nprim, si.nctr,
-        sj.nctr, si.coord, sj.coord, common_orig, rinv_orig, &si.exps, &sj.exps, &si.coeff_row_major,
-        &sj.coeff_row_major, &[], &[], &mut cintx,
+        &backend,
+        "cg_sa10sa01",
+        si.l,
+        si.kappa,
+        sj.l,
+        sj.kappa,
+        si.nprim,
+        sj.nprim,
+        si.nctr,
+        sj.nctr,
+        si.coord,
+        sj.coord,
+        common_orig,
+        rinv_orig,
+        &si.exps,
+        &sj.exps,
+        &si.coeff_row_major,
+        &sj.coeff_row_major,
+        &[],
+        &[],
+        &mut cintx,
     )
     .expect("cintx cg_sa10sa01");
 
@@ -849,7 +1087,10 @@ fn sa01_spinor_pattern_probe() {
         }
         cm.sort_by(|a, b| a.partial_cmp(b).unwrap());
         vm.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let maxdev = cm.iter().zip(vm.iter()).fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
+        let maxdev = cm
+            .iter()
+            .zip(vm.iter())
+            .fold(0.0_f64, |m, (a, b)| m.max((a - b).abs()));
         eprintln!(
             "  group {grp}: sorted-|·| max dev = {maxdev:.3e}  (cintx sum|·|={:.4e} vendor sum|·|={:.4e})",
             cm.iter().sum::<f64>(),
@@ -864,6 +1105,9 @@ fn sa01_spinor_pattern_probe() {
 fn fixture_is_well_formed() {
     let fx = build_cart_fixture(0, 0);
     assert_ne!(fx.ri, fx.rj, "bra/ket must be at distinct coords");
-    assert!(fx.common_orig.iter().any(|&c| c != 0.0), "gauge origin must be non-zero");
+    assert!(
+        fx.common_orig.iter().any(|&c| c != 0.0),
+        "gauge origin must be non-zero"
+    );
     assert_eq!(fx.env[PTR_RINV_ORIG], 0.0, "rinv center pinned to 0");
 }

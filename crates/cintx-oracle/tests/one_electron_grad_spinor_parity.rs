@@ -201,8 +201,18 @@ fn collect_cintx_spinor_grad(api_id: RawApiId, atm: &[i32], bas: &[i32], env: &[
 
             // SAFETY: atm/bas/env are well-formed by construction; shls are valid.
             unsafe {
-                eval_raw(api_id, Some(&mut out), None, &shls, atm, bas, env, None, None)
-                    .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
+                eval_raw(
+                    api_id,
+                    Some(&mut out),
+                    None,
+                    &shls,
+                    atm,
+                    bas,
+                    env,
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|e| panic!("eval_raw failed for shells ({si},{sj}): {e:?}"));
             }
 
             stitch_block(&mut matrix, &out, ni, nj, n_sp, row_offset, col_offset);
@@ -327,7 +337,11 @@ fn test_int1e_ipovlp_spinor_evaluates() {
     let (atm, bas, env) = build_h2o_sto3g_spinor();
     let mat = collect_cintx_spinor_grad(RawApiId::INT1E_IPOVLP_SPINOR, &atm, &bas, &env);
     // n_sp for H2O STO-3G spinor kappa=0: O1s=2, O2s=2, O2p=6, H1=2, H2=2 → 14.
-    assert_eq!(mat.len(), 3 * 14 * 14 * 2, "ipovlp_spinor matrix size 3*14*14*2");
+    assert_eq!(
+        mat.len(),
+        3 * 14 * 14 * 2,
+        "ipovlp_spinor matrix size 3*14*14*2"
+    );
     assert_any_nonzero(&mat, "int1e_ipovlp_spinor cintx");
 }
 
@@ -371,7 +385,8 @@ fn test_int1e_ipovlp_spinor_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g_spinor();
 
-    let vendor = collect_vendor_spinor_grad(vendor_ffi::vendor_int1e_ipovlp_spinor, &atm, &bas, &env);
+    let vendor =
+        collect_vendor_spinor_grad(vendor_ffi::vendor_int1e_ipovlp_spinor, &atm, &bas, &env);
     let cintx = collect_cintx_spinor_grad(RawApiId::INT1E_IPOVLP_SPINOR, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipovlp_spinor cintx");
@@ -391,7 +406,8 @@ fn test_int1e_ipkin_spinor_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g_spinor();
 
-    let vendor = collect_vendor_spinor_grad(vendor_ffi::vendor_int1e_ipkin_spinor, &atm, &bas, &env);
+    let vendor =
+        collect_vendor_spinor_grad(vendor_ffi::vendor_int1e_ipkin_spinor, &atm, &bas, &env);
     let cintx = collect_cintx_spinor_grad(RawApiId::INT1E_IPKIN_SPINOR, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipkin_spinor cintx");
@@ -411,7 +427,8 @@ fn test_int1e_ipnuc_spinor_h2o_sto3g_parity() {
     use cintx_oracle::vendor_ffi;
     let (atm, bas, env) = build_h2o_sto3g_spinor();
 
-    let vendor = collect_vendor_spinor_grad(vendor_ffi::vendor_int1e_ipnuc_spinor, &atm, &bas, &env);
+    let vendor =
+        collect_vendor_spinor_grad(vendor_ffi::vendor_int1e_ipnuc_spinor, &atm, &bas, &env);
     let cintx = collect_cintx_spinor_grad(RawApiId::INT1E_IPNUC_SPINOR, &atm, &bas, &env);
 
     assert_any_nonzero(&cintx, "int1e_ipnuc_spinor cintx");

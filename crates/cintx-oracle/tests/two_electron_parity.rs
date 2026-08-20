@@ -15,7 +15,7 @@
 #![cfg(any(all(feature = "cpu", has_vendor_libcint), feature = "rocm"))]
 
 use cintx_compat::raw::{
-    ATM_SLOTS, ANG_OF, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
+    ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,
     PTR_COEFF, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_ZETA, RawApiId, eval_raw,
 };
 
@@ -344,9 +344,7 @@ fn test_int2e_sph_h2o_sto3g_rocm_parity() {
     let rtol = 1e-10_f64;
     let n_shells = 5_usize;
 
-    let ang: Vec<i32> = (0..n_shells)
-        .map(|s| bas[s * BAS_SLOTS + ANG_OF])
-        .collect();
+    let ang: Vec<i32> = (0..n_shells).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nsph: Vec<usize> = ang.iter().map(|&l| nsph_for_l(l)).collect();
 
     let mut mismatch_count = 0usize;
