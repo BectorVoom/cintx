@@ -436,11 +436,11 @@ mod tests {
         let input_handle = client.create_from_slice(f64::as_bytes(input));
         let output_handle = client.empty(std::mem::size_of_val(input));
         let cube_dim = 32u32;
-        let cube_count = ((input.len() as u32).div_ceil(cube_dim)).max(1);
+        let cube_count = crate::plane::linear_grid_cube_count(input.len(), cube_dim);
 
         boys_f0_sweep_kernel::launch::<cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(cube_count, 1, 1),
+            cube_count,
             CubeDim::new_1d(cube_dim),
             // SAFETY: both handles contain exactly `input.len()` f64 elements.
             unsafe { ArrayArg::from_raw_parts(input_handle, input.len()) },

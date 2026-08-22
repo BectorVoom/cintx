@@ -734,8 +734,8 @@ fn run_sigma_nuc_gauge_device<R: Runtime>(
             unsafe {
                 sigma_nuc_gauge_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -983,8 +983,8 @@ fn run_sigma_nuc_device<R: Runtime>(
         ($nr:expr, $ur:expr) => {
             sigma_nuc_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },

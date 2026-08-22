@@ -810,8 +810,8 @@ fn run_3c2e_device<R: Runtime>(
     unsafe {
         center_3c2e_scalar_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
             ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
@@ -1529,8 +1529,8 @@ fn run_3c2e_ip1_device<R: Runtime>(
     unsafe {
         center_3c2e_ip1_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
             ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
@@ -2260,8 +2260,8 @@ fn run_3c2e_ip2_device<R: Runtime>(
     unsafe {
         center_3c2e_ip2_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
             ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
@@ -4172,8 +4172,8 @@ mod scalar_device_tests {
 
         center_3c2e_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },

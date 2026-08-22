@@ -254,6 +254,75 @@ fn ss_grid_stride_kernel<F: Float + CubeElement>(
     }
 }
 
+/// Plane-cooperative s-s kernel.
+///
+/// Each plane cooperatively evaluates a single shell tuple item, distributing
+/// its primitive pairs across `UNIT_POS_PLANE` in lock-step and reducing
+/// the partial sums via `plane_sum`. The elected lane writes the single reduced output.
+#[cube(launch, launch_unchecked)]
+pub fn ss_plane_cooperative_kernel<F: Float + CubeElement>(
+    exponents_i: &Array<F>,
+    coefficients_i: &Array<F>,
+    exponents_j: &Array<F>,
+    coefficients_j: &Array<F>,
+    centers: &Array<F>,
+    primitive_counts: &Array<u32>,
+    output: &mut Array<F>,
+    item_count: usize,
+    primitive_stride_i: usize,
+    primitive_stride_j: usize,
+    sqrtpi: F,
+    pi_const: F,
+    kinetic: u32,
+) {
+    let planes_per_cube = CUBE_DIM / PLANE_DIM;
+    let total_planes = (CUBE_COUNT_X * planes_per_cube) as usize;
+    let mut item = (CUBE_POS_X * planes_per_cube + PLANE_POS) as usize;
+    while item < item_count {
+        let center_offset = item * 6;
+        let dx = centers[center_offset] - centers[center_offset + 3];
+        let dy = centers[center_offset + 1] - centers[center_offset + 4];
+        let dz = centers[center_offset + 2] - centers[center_offset + 5];
+        let distance_squared = dx * dx + dy * dy + dz * dz;
+        let offset_i = item * primitive_stride_i;
+        let offset_j = item * primitive_stride_j;
+        let count_offset = item * 2;
+        let count_i = primitive_counts[count_offset] as usize;
+        let count_j = primitive_counts[count_offset + 1] as usize;
+        let total_pairs = count_i * count_j;
+
+        let mut lane_val = F::new(0.0);
+        let mut pair_idx = UNIT_POS_PLANE as usize;
+        while pair_idx < total_pairs {
+            let primitive_i = pair_idx / count_j;
+            let primitive_j = pair_idx % count_j;
+            let ai = exponents_i[offset_i + primitive_i];
+            let ci = coefficients_i[offset_i + primitive_i];
+            let aj = exponents_j[offset_j + primitive_j];
+            let cj = coefficients_j[offset_j + primitive_j];
+            let zeta = ai + aj;
+            let reduced_exponent = ai * aj / zeta;
+            let overlap =
+                ci * cj * F::exp(-reduced_exponent * distance_squared) * sqrtpi * pi_const
+                    / (zeta * F::sqrt(zeta) * F::new(4.0) * pi_const);
+            if kinetic == 0 {
+                lane_val += overlap;
+            } else {
+                lane_val += overlap
+                    * reduced_exponent
+                    * (F::new(3.0) - F::new(2.0) * reduced_exponent * distance_squared);
+            }
+            pair_idx += PLANE_DIM as usize;
+        }
+
+        let total_val = plane_sum(lane_val);
+        if UNIT_POS_PLANE == 0u32 {
+            output[item] = total_val;
+        }
+        item += total_planes;
+    }
+}
+
 /// Grid-stride f64 kernel for one primitive Cartesian `(s s | s s)` ERI per
 /// tuple.  `boys_f0_f64` is the Cody f64 device routine: do not replace it
 /// with generic Boys machinery or `Float::erf`, whose coefficients/lowering
@@ -394,16 +463,19 @@ pub fn run_eri_ssss_batch_chunks_device<R: Runtime>(
             .saturating_add(centers.len())
             .saturating_add(inputs.len())
             .saturating_mul(std::mem::size_of::<f64>());
-        let cube_dim = 64u32;
-        let cube_count = (inputs.len() as u32).div_ceil(cube_dim).clamp(1, 64);
+        let (cube_count, cube_dim) = crate::plane::occupancy_launch_geometry(
+            inputs.len(),
+            64,
+            crate::plane::DEFAULT_PLANE_DIM,
+        );
 
         // SAFETY: every table is packed at its fixed tuple stride and the
         // grid-stride guard bounds all accesses by `item_count`.
         unsafe {
             eri_ssss_grid_stride_kernel::launch_unchecked::<R>(
                 client,
-                CubeCount::Static(cube_count, 1, 1),
-                CubeDim::new_1d(cube_dim),
+                cube_count,
+                cube_dim,
                 ArrayArg::from_raw_parts(exponent_handle, exponents.len()),
                 ArrayArg::from_raw_parts(coefficient_handle, coefficients.len()),
                 ArrayArg::from_raw_parts(center_handle, centers.len()),
@@ -512,16 +584,19 @@ fn run_ss_batch_chunks_device<R: Runtime>(
                     .saturating_mul(std::mem::size_of::<u32>()),
             )
             .saturating_add(inputs.len().saturating_mul(std::mem::size_of::<f64>()));
-        let cube_dim = 64u32;
-        let cube_count = (inputs.len() as u32).div_ceil(cube_dim).clamp(1, 64);
+        let (cube_count, cube_dim) = crate::plane::occupancy_launch_geometry(
+            inputs.len(),
+            64,
+            crate::plane::DEFAULT_PLANE_DIM,
+        );
 
         // SAFETY: Every table has exactly the item-count-scaled length indexed by
         // the kernel. `item < item_count` bounds all accesses and output slots.
         unsafe {
             ss_grid_stride_kernel::launch_unchecked::<f64, R>(
                 client,
-                CubeCount::Static(cube_count, 1, 1),
-                CubeDim::new_1d(cube_dim),
+                cube_count,
+                cube_dim,
                 ArrayArg::from_raw_parts(exponent_i_handle, exponents_i.len()),
                 ArrayArg::from_raw_parts(coefficient_i_handle, coefficients_i.len()),
                 ArrayArg::from_raw_parts(exponent_j_handle, exponents_j.len()),

@@ -370,8 +370,8 @@ fn run_sigma_p_device<R: Runtime>(
         ($rank:expr) => {
             sigma_p_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -840,8 +840,8 @@ fn run_sigma_p_cg_device<R: Runtime>(
 
     sigma_p_cg_sa10sp_kernel::launch::<f64, R>(
         client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
+        crate::plane::single_cube_count(),
+        crate::plane::standard_plane_cube_dim(),
         unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
         unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
         unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -1672,8 +1672,8 @@ fn run_sigma_p_spgsp_device<R: Runtime>(
 
     sigma_p_spgsp_kernel::launch::<f64, R>(
         client,
-        CubeCount::Static(1, 1, 1),
-        CubeDim::new_1d(1),
+        crate::plane::single_cube_count(),
+        crate::plane::standard_plane_cube_dim(),
         unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
         unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
         unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -2624,8 +2624,8 @@ fn run_sa01_rys_device<R: Runtime>(
         ($nr:expr) => {
             sa01_rys_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -3476,8 +3476,8 @@ fn run_spgnucsp_rys_device<R: Runtime>(
         ($nr:expr) => {
             spgnucsp_rys_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -4367,8 +4367,8 @@ fn run_spgsa01_rys_device<R: Runtime>(
         ($nr:expr) => {
             spgsa01_rys_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },

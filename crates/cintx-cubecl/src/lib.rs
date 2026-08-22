@@ -13,15 +13,24 @@ pub mod executor;
 #[path = "kernels/mod.rs"]
 pub mod kernels;
 pub mod math;
+pub mod plane;
 pub mod resident_cache;
 #[cfg(feature = "wgpu")]
 pub mod runtime_bootstrap;
+pub mod shared_memory;
 pub mod specialization;
 pub mod transfer;
 pub mod transform;
 
 pub use backend::{ResolvedBackend, compiled_backends};
 pub use batch_pilot::{EriSsssInput, OverlapSsInput, PilotOutputArenaStats};
+pub use plane::{
+    DEFAULT_PLANE_DIM, STANDARD_PLANE_ALIGNED_CUBE_DIM, cube_count_1d, cube_count_2d,
+    cube_count_3d, linear_grid_cube_count, occupancy_launch_geometry, plane_aligned_cube_dim,
+    plane_aligned_cube_dim_2d, plane_aligned_cube_dim_3d, plane_cooperative_launch_geometry,
+    planes_per_cube, single_cube_count, standard_plane_cube_dim, tiled_grid_cube_count_2d,
+    tiled_grid_cube_count_3d,
+};
 pub use capability::{
     CapabilityReason, WgpuCapabilitySnapshot, WgpuPreflightReport, capability_fingerprint,
 };
@@ -31,6 +40,12 @@ pub use executor::{
 pub use resident_cache::{DeviceResidentCache, ResidentCache};
 #[cfg(feature = "wgpu")]
 pub use runtime_bootstrap::bootstrap_wgpu_runtime;
+pub use shared_memory::{
+    CapacityClass, FallbackReason, SharedLayout, SharedMemoryMetrics, SharedVariant,
+    calc_1e_layout, calc_2c2e_layout, calc_2e_layout, calc_3c1e_layout, calc_3c2e_layout,
+    calc_4c1e_layout, calc_ecp_type2_layout, calc_f12_layout, calc_math_layout,
+    calc_sigma_layout, generate_layout_catalog, validate_shared_layout_bounds,
+};
 pub use specialization::{ComponentRank, SpecializationKey};
 pub use transfer::{TransferPlan, TransferWorkspaceBuffers};
 
@@ -44,7 +59,7 @@ mod tests {
             DeviceResidentCache, ResolvedBackend, TransferPlan, TransferWorkspaceBuffers,
             WgpuCapabilitySnapshot, WgpuPreflightReport, backend, capability,
             capability_fingerprint, check_shader_f64_in_features, compiled_backends, executor,
-            kernels, resident_cache, specialization, transfer, transform,
+            kernels, resident_cache, shared_memory, specialization, transfer, transform,
         };
         #[cfg(feature = "wgpu")]
         #[allow(unused_imports)]

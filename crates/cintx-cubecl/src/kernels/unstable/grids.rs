@@ -424,8 +424,8 @@ fn run_grids_nuclear_device<R: Runtime>(
         ($nr:expr) => {
             grids_scalar_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_per_axis as usize) },
                 unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots as usize) },
@@ -929,8 +929,8 @@ fn run_grids_deriv_device<R: Runtime>(
         ($nr:expr, $op:expr) => {
             grids_deriv_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(g0_h.clone(), axis_len) },
                 unsafe { ArrayArg::from_raw_parts(g1_h.clone(), axis_len) },
                 unsafe { ArrayArg::from_raw_parts(g2_h.clone(), axis_len) },
@@ -2036,8 +2036,8 @@ mod tests {
         let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
         grids_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3) },
             unsafe { ArrayArg::from_raw_parts(u_h, 1) },
             unsafe { ArrayArg::from_raw_parts(w_h, 1) },
@@ -2306,8 +2306,8 @@ mod tests {
                 ($nr:expr, $op:expr) => {
                     grids_deriv_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                         &client,
-                        CubeCount::Static(1, 1, 1),
-                        CubeDim::new_1d(1),
+                        crate::plane::single_cube_count(),
+                        crate::plane::standard_plane_cube_dim(),
                         unsafe { ArrayArg::from_raw_parts(g0_h.clone(), axis_len) },
                         unsafe { ArrayArg::from_raw_parts(g1_h.clone(), axis_len) },
                         unsafe { ArrayArg::from_raw_parts(g2_h.clone(), axis_len) },

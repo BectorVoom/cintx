@@ -1430,7 +1430,7 @@ fn rys_jacobi_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f6
 
     jacobi_tridiag_kernel::launch::<cubecl::cpu::CpuRuntime>(
         &client,
-        CubeCount::Static(1, 1, 1),
+        crate::plane::single_cube_count(),
         CubeDim::new_1d(1),
         unsafe { ArrayArg::from_raw_parts(alpha_h, alpha.len()) },
         unsafe { ArrayArg::from_raw_parts(beta_h, beta.len()) },
@@ -1472,7 +1472,7 @@ fn rys_jacobi_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f6
 
     jacobi_transform_kernel::launch::<cubecl::cpu::CpuRuntime>(
         &client,
-        CubeCount::Static(1, 1, 1),
+        crate::plane::single_cube_count(),
         CubeDim::new_1d(1),
         unsafe { ArrayArg::from_raw_parts(eig_h, n) },
         unsafe { ArrayArg::from_raw_parts(c0_h, n * n) },
@@ -2088,7 +2088,7 @@ fn rys_schmidt_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f
 
     schmidt_kernel::launch::<cubecl::cpu::CpuRuntime>(
         &client,
-        CubeCount::Static(1, 1, 1),
+        crate::plane::single_cube_count(),
         CubeDim::new_1d(1),
         unsafe { ArrayArg::from_raw_parts(fmt_h, MXRYSROOTS * 2) },
         unsafe { ArrayArg::from_raw_parts(cs_h, nroots1 * nroots1) },
@@ -2650,7 +2650,7 @@ fn lrys_wheeler_device(
     if is_laguerre {
         llaguerre_tridiag_kernel::launch::<cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(1, 1, 1),
+            crate::plane::single_cube_count(),
             CubeDim::new_1d(1),
             unsafe { ArrayArg::from_raw_parts(momh, MXRYSROOTS * 2) },
             unsafe { ArrayArg::from_raw_parts(moml, MXRYSROOTS * 2) },
@@ -2685,7 +2685,7 @@ fn lrys_wheeler_device(
         let sn_h = client.create_from_slice(f64::as_bytes(snv));
         ljacobi_tridiag_kernel::launch::<cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(1, 1, 1),
+            crate::plane::single_cube_count(),
             CubeDim::new_1d(1),
             unsafe { ArrayArg::from_raw_parts(alpha_h, alpha.len()) },
             unsafe { ArrayArg::from_raw_parts(beta_h, beta.len()) },
@@ -2737,7 +2737,7 @@ fn lrys_wheeler_device(
     let weights_h = client.create_from_slice(f64::as_bytes(&rz));
     jacobi_transform_kernel::launch::<cubecl::cpu::CpuRuntime>(
         &client,
-        CubeCount::Static(1, 1, 1),
+        crate::plane::single_cube_count(),
         CubeDim::new_1d(1),
         unsafe { ArrayArg::from_raw_parts(eig_h, n) },
         unsafe { ArrayArg::from_raw_parts(c0_h, n * n) },
@@ -3115,7 +3115,7 @@ fn lrys_schmidt_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [
 
     lschmidt_kernel::launch::<cubecl::cpu::CpuRuntime>(
         &client,
-        CubeCount::Static(1, 1, 1),
+        crate::plane::single_cube_count(),
         CubeDim::new_1d(1),
         unsafe { ArrayArg::from_raw_parts(fmh, MXRYSROOTS * 2) },
         unsafe { ArrayArg::from_raw_parts(fml, MXRYSROOTS * 2) },
@@ -3433,7 +3433,7 @@ mod tests {
 
         fma_probe_kernel::launch::<f64, cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(1, 1, 1),
+            crate::plane::single_cube_count(),
             CubeDim::new_1d(a.len() as u32),
             unsafe { ArrayArg::from_raw_parts(a_h, a.len()) },
             unsafe { ArrayArg::from_raw_parts(b_h, a.len()) },

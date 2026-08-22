@@ -233,149 +233,123 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
     #[comptime] op_kind: u32,
     #[comptime] nroots: u32,
 ) {
-    if UNIT_POS == 0u32 {
-        // Bind the comptime nroots to a runtime u32 (mirrors 2c2e `let nrys = nroots`).
-        let nrys = nroots;
-        // ── G-tensor sizing (mirrors the host scalar path) ───────────────────
-        // overlap : nmax = li+lj      , lj_ext = lj
-        // kinetic : nmax = li+lj+2    , lj_ext = lj+2  (D_j^2 needs jx+2 access)
-        // nuclear : nmax = li+lj      , lj_ext = lj
-        let mut nmax = li + lj;
-        let mut lj_ext = lj;
-        if comptime!(op_kind == 1u32) {
-            nmax = li + lj + 2u32;
-            lj_ext = lj + 2u32;
-        }
-        let dj = nmax + 1u32; // stride between consecutive j-levels within an axis block
-        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
-        let total_g = 3u32 * g_per_axis;
-        let gx = 0u32;
-        let gy = g_per_axis;
-        let gz = 2u32 * g_per_axis;
+    let nci = (li + 1u32) * (li + 2u32) / 2u32;
+    let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+    let block_len = nci * ncj;
+    let out_total = nctr_i * nctr_j * block_len;
 
-        let nci = (li + 1u32) * (li + 2u32) / 2u32;
-        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
-        let block_len = nci * ncj;
-        let out_total = nctr_i * nctr_j * block_len;
+    // Zero the full accumulation buffer cooperatively.
+    let mut oi = UNIT_POS as usize;
+    let stride = CUBE_DIM as usize;
+    while oi < (out_total as usize) {
+        cart_out[oi] = F::new(0.0);
+        oi += stride;
+    }
+    sync_cube();
 
-        // Zero the full accumulation buffer.
-        let mut oi = 0u32;
-        while oi < out_total {
-            cart_out[oi as usize] = F::new(0.0);
-            oi += 1u32;
-        }
+    // ── G-tensor sizing (mirrors the host scalar path) ───────────────────
+    let mut nmax = li + lj;
+    let mut lj_ext = lj;
+    if comptime!(op_kind == 1u32) {
+        nmax = li + lj + 2u32;
+        lj_ext = lj + 2u32;
+    }
+    let dj = nmax + 1u32; // stride between consecutive j-levels within an axis block
+    let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+    let gx = 0u32;
+    let gy = g_per_axis;
+    let gz = 2u32 * g_per_axis;
 
-        // `pi_const` is passed in as a runtime scalar so the f64 path keeps full
-        // PI precision (F::new only accepts f32).
+    let is_uncontracted_1e = (nctr_i == 1u32) && (nctr_j == 1u32);
 
-        // ── Primitive loop ───────────────────────────────────────────────────
-        let mut pi = 0u32;
-        while pi < nprim_i {
-            let ai = exps_i[pi as usize];
-            let mut pj = 0u32;
-            while pj < nprim_j {
-                let aj = exps_j[pj as usize];
+    // ── Primitive loop ───────────────────────────────────────────────────
+    let mut pi = 0u32;
+    while pi < nprim_i {
+        let ai = exps_i[pi as usize];
+        let mut pj = 0u32;
+        while pj < nprim_j {
+            let aj = exps_j[pj as usize];
 
-                // Pair data, computed in-kernel in F (norm_i = norm_j = 1.0).
-                let zeta = ai + aj;
-                let aij2 = F::new(0.5) / zeta;
-                let rirjx = rix - rjx;
-                let rirjy = riy - rjy;
-                let rirjz = riz - rjz;
-                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
-                let fac = F::exp(-ai * aj / zeta * rr);
-                let px = (ai * rix + aj * rjx) / zeta;
-                let py = (ai * riy + aj * rjy) / zeta;
-                let pz = (ai * riz + aj * rjz) / zeta;
+            // Pair data, computed in-kernel in F (norm_i = norm_j = 1.0).
+            let zeta = ai + aj;
+            let aij2 = F::new(0.5) / zeta;
+            let rirjx = rix - rjx;
+            let rirjy = riy - rjy;
+            let rirjz = riz - rjz;
+            let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+            let fac = F::exp(-ai * aj / zeta * rr);
+            let px = (ai * rix + aj * rjx) / zeta;
+            let py = (ai * riy + aj * rjy) / zeta;
+            let pz = (ai * riz + aj * rjz) / zeta;
 
-                // ── Build the per-primitive Cartesian block into a temporary
-                //    region of `cart_out`? No — accumulate directly per (ci,cj)
-                //    with the contraction weight, mirroring the host scatter.
-                //
-                // To avoid recomputing the (operator-specific) G-tensor for every
-                // contraction pair, build it ONCE per primitive pair into `g`
-                // (and for nuclear, accumulate the per-atom/per-root contributions
-                // into a primitive Cartesian buffer stored in the FIRST block of
-                // `cart_out`'s scratch — but cart_out is the live accumulator, so
-                // instead we re-contract per (ci,cj) from the shared `g`).
-                //
-                // Overlap / kinetic: a single `g` is shared by all (ci,cj).
-                // Nuclear: the per-root accumulation is folded into `g`-derived
-                //          contraction below, recomputed per primitive (atoms loop
-                //          inside), independent of (ci,cj). We therefore build a
-                //          per-primitive Cartesian block `prim` on the fly inside
-                //          the (ci,cj) loop by reading `g` (ovlp/kin) or by the
-                //          nuclear root loop. For determinism + simplicity we
-                //          compute the primitive Cartesian block ONCE here for
-                //          ovlp/kin (store in `g`-derived reads) and for nuclear we
-                //          recompute the root accumulation inside the contraction.
+            let prim_weight_1e = if is_uncontracted_1e {
+                coeff_i[pi as usize] * coeff_j[pj as usize]
+            } else {
+                F::new(0.0)
+            };
 
-                let is_uncontracted_1e = (nctr_i == 1u32) && (nctr_j == 1u32);
-                let prim_weight_1e = if is_uncontracted_1e {
-                    coeff_i[pi as usize] * coeff_j[pj as usize]
-                } else {
-                    F::new(0.0)
-                };
+            if comptime!(op_kind == 0u32 || op_kind == 1u32) {
+                if UNIT_POS == 0u32 {
+                    if comptime!(op_kind == 0u32) {
+                        // ===== OVERLAP G-tensor (fixed-center VRR + HRR) =====
+                        g[gx as usize] = F::new(1.0);
+                        g[gy as usize] = F::new(1.0);
+                        g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
 
-                if comptime!(op_kind == 0u32) {
-                    // ===== OVERLAP G-tensor (fixed-center VRR + HRR) =====
-                    // Base case: gx[0]=1, gy[0]=1, gz[0]=fac*SQRTPI*PI/(zeta*sqrt(zeta))
-                    g[gx as usize] = F::new(1.0);
-                    g[gy as usize] = F::new(1.0);
-                    g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+                        // VRR on bra (center i): rijrx = P - Ri, per axis sub-block.
+                        one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                        one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                        one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
 
-                    // VRR on bra (center i): rijrx = P - Ri, per axis sub-block.
-                    one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
-                    one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
-                    one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+                        // HRR to ket center on all 3 axes: rirj = Ri - Rj.
+                        if lj >= 1u32 {
+                            one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj);
+                            one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
+                            one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
+                        }
+                    } else {
+                        // ===== KINETIC: overlap G-tensor with lj+2 HRR levels =====
+                        g[gx as usize] = F::new(1.0);
+                        g[gy as usize] = F::new(1.0);
+                        g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
 
-                    // HRR to ket center on all 3 axes: rirj = Ri - Rj.
-                    if lj >= 1u32 {
-                        one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj);
-                        one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
-                        one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
-                    }
-                } else if comptime!(op_kind == 1u32) {
-                    // ===== KINETIC: overlap G-tensor with lj+2 HRR levels =====
-                    g[gx as usize] = F::new(1.0);
-                    g[gy as usize] = F::new(1.0);
-                    g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+                        one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                        one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                        one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
 
-                    one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
-                    one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
-                    one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
-
-                    // HRR to lj_ext = lj+2 levels.
-                    if lj_ext >= 1u32 {
-                        one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
-                        one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
-                        one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                        // HRR to lj_ext = lj+2 levels.
+                        if lj_ext >= 1u32 {
+                            one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                            one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                            one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                        }
                     }
                 }
-                // (Nuclear builds its G-tensor per-root inside the contraction below.)
+                sync_cube();
 
-                if comptime!(op_kind == 0u32 || op_kind == 1u32) {
-                    // ── Contract into every (ci,cj) contraction block ────────────
-                    let mut cj_idx = 0u32;
-                    let mut ja = 0u32;
-                    while ja <= lj {
-                        let jx = lj - ja;
-                        let lj_minus_jx = lj - jx;
-                        let mut jb = 0u32;
-                        while jb <= lj_minus_jx {
-                            let jy = lj_minus_jx - jb;
-                            let jz = lj - jx - jy;
+                // ── Contract into every (ci,cj) contraction block cooperatively across lanes ────────────
+                let mut cj_idx = 0u32;
+                let mut ja = 0u32;
+                while ja <= lj {
+                    let jx = lj - ja;
+                    let lj_minus_jx = lj - jx;
+                    let mut jb = 0u32;
+                    while jb <= lj_minus_jx {
+                        let jy = lj_minus_jx - jb;
+                        let jz = lj - jx - jy;
 
-                            let mut ci_idx = 0u32;
-                            let mut ia = 0u32;
-                            while ia <= li {
-                                let ix = li - ia;
-                                let li_minus_ix = li - ix;
-                                let mut ib = 0u32;
-                                while ib <= li_minus_ix {
-                                    let iy = li_minus_ix - ib;
-                                    let iz = li - ix - iy;
+                        let mut ci_idx = 0u32;
+                        let mut ia = 0u32;
+                        while ia <= li {
+                            let ix = li - ia;
+                            let li_minus_ix = li - ix;
+                            let mut ib = 0u32;
+                            while ib <= li_minus_ix {
+                                let iy = li_minus_ix - ib;
+                                let iz = li - ix - iy;
 
+                                let elem_idx = cj_idx * nci + ci_idx;
+                                if ((elem_idx as u32) % CUBE_DIM) == UNIT_POS {
                                     let mut val = F::new(0.0);
                                     if comptime!(op_kind == 0u32) {
                                         // Overlap: vx*vy*vz from shared g.
@@ -419,33 +393,36 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                             ci += 1u32;
                                         }
                                     }
-
-                                    ci_idx += 1u32;
-                                    ib += 1u32;
                                 }
-                                ia += 1u32;
+
+                                ci_idx += 1u32;
+                                ib += 1u32;
                             }
-
-                            cj_idx += 1u32;
-                            jb += 1u32;
+                            ia += 1u32;
                         }
-                        ja += 1u32;
+
+                        cj_idx += 1u32;
+                        jb += 1u32;
                     }
-                } else {
-                    // Nuclear: sum over atoms and Rys roots FIRST, building G-tensor once per (atom, root)
-                    let mut atom = 0u32;
-                    while atom < natm {
-                        let z_c = atom_charges[atom as usize];
-                        let rcx = atom_coords[(atom * 3u32) as usize];
-                        let rcy = atom_coords[(atom * 3u32 + 1u32) as usize];
-                        let rcz = atom_coords[(atom * 3u32 + 2u32) as usize];
+                    ja += 1u32;
+                }
+                sync_cube();
+            } else {
+                // Nuclear: sum over atoms and Rys roots FIRST, building G-tensor once per (atom, root)
+                let mut atom = 0u32;
+                while atom < natm {
+                    let z_c = atom_charges[atom as usize];
+                    let rcx = atom_coords[(atom * 3u32) as usize];
+                    let rcy = atom_coords[(atom * 3u32 + 1u32) as usize];
+                    let rcz = atom_coords[(atom * 3u32 + 2u32) as usize];
 
-                        // crij = C - P
-                        let crijx = rcx - px;
-                        let crijy = rcy - py;
-                        let crijz = rcz - pz;
-                        let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
+                    // crij = C - P
+                    let crijx = rcx - px;
+                    let crijy = rcy - py;
+                    let crijz = rcz - pz;
+                    let x_boys = zeta * (crijx * crijx + crijy * crijy + crijz * crijz);
 
+                    if UNIT_POS == 0u32 {
                         // Rys roots/weights (comptime nroots).
                         if comptime!(nroots == 1u32) {
                             rys_root1::<F>(x_boys, urys, wrys, pie4);
@@ -458,13 +435,16 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                         } else {
                             rys_root5::<F>(x_boys, urys, wrys, pie4);
                         }
+                    }
+                    sync_cube();
 
-                        // fac1 = 2*PI*(-Z_C)*fac/zeta
-                        let neg_z = F::new(0.0) - z_c;
-                        let fac1 = F::new(2.0) * pi_const * neg_z * fac / zeta;
+                    // fac1 = 2*PI*(-Z_C)*fac/zeta
+                    let neg_z = F::new(0.0) - z_c;
+                    let fac1 = F::new(2.0) * pi_const * neg_z * fac / zeta;
 
-                        #[unroll]
-                        for irys in 0..nroots {
+                    #[unroll]
+                    for irys in 0..nroots {
+                        if UNIT_POS == 0u32 {
                             let u_n = urys[irys as usize];
                             let w_n = wrys[irys as usize];
                             let tau = u_n / (F::new(1.0) + u_n);
@@ -487,28 +467,32 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                 one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
                                 one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
                             }
+                        }
+                        sync_cube();
 
-                            // Accumulate over Cartesian triples and contractions
-                            let mut cj_idx = 0u32;
-                            let mut ja = 0u32;
-                            while ja <= lj {
-                                let jx = lj - ja;
-                                let lj_minus_jx = lj - jx;
-                                let mut jb = 0u32;
-                                while jb <= lj_minus_jx {
-                                    let jy = lj_minus_jx - jb;
-                                    let jz = lj - jx - jy;
+                        // Accumulate over Cartesian triples and contractions cooperatively
+                        let mut cj_idx = 0u32;
+                        let mut ja = 0u32;
+                        while ja <= lj {
+                            let jx = lj - ja;
+                            let lj_minus_jx = lj - jx;
+                            let mut jb = 0u32;
+                            while jb <= lj_minus_jx {
+                                let jy = lj_minus_jx - jb;
+                                let jz = lj - jx - jy;
 
-                                    let mut ci_idx = 0u32;
-                                    let mut ia = 0u32;
-                                    while ia <= li {
-                                        let ix = li - ia;
-                                        let li_minus_ix = li - ix;
-                                        let mut ib = 0u32;
-                                        while ib <= li_minus_ix {
-                                            let iy = li_minus_ix - ib;
-                                            let iz = li - ix - iy;
+                                let mut ci_idx = 0u32;
+                                let mut ia = 0u32;
+                                while ia <= li {
+                                    let ix = li - ia;
+                                    let li_minus_ix = li - ix;
+                                    let mut ib = 0u32;
+                                    while ib <= li_minus_ix {
+                                        let iy = li_minus_ix - ib;
+                                        let iz = li - ix - iy;
 
+                                        let elem_idx = cj_idx * nci + ci_idx;
+                                        if ((elem_idx as u32) % CUBE_DIM) == UNIT_POS {
                                             let vx = g[(gx + jx * dj + ix) as usize];
                                             let vy = g[(gy + jy * dj + iy) as usize];
                                             let vz = g[(gz + jz * dj + iz) as usize];
@@ -530,27 +514,28 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                                 }
                                                 ci += 1u32;
                                             }
-
-                                            ci_idx += 1u32;
-                                            ib += 1u32;
                                         }
-                                        ia += 1u32;
+
+                                        ci_idx += 1u32;
+                                        ib += 1u32;
                                     }
-
-                                    cj_idx += 1u32;
-                                    jb += 1u32;
+                                    ia += 1u32;
                                 }
-                                ja += 1u32;
-                            }
-                        }
-                        atom += 1u32;
-                    }
-                }
 
-                pj += 1u32;
+                                cj_idx += 1u32;
+                                jb += 1u32;
+                            }
+                            ja += 1u32;
+                        }
+                        sync_cube();
+                    }
+                    atom += 1u32;
+                }
             }
-            pi += 1u32;
+
+            pj += 1u32;
         }
+        pi += 1u32;
     }
 }
 
@@ -982,8 +967,8 @@ fn run_1e_grad_bra_device<R: Runtime>(
             unsafe {
                 one_electron_grad_bra_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -1399,8 +1384,8 @@ fn run_1e_grad_both_device<R: Runtime>(
     unsafe {
         one_electron_grad_both_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
             ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -1765,8 +1750,8 @@ fn run_1e_gradgrad_bra_ovlp_device<R: Runtime>(
     unsafe {
         one_electron_gradgrad_bra_ovlp_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
             ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -2214,8 +2199,8 @@ fn run_1e_p4_device<R: Runtime>(
     unsafe {
         one_electron_p4_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
             ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -2666,8 +2651,8 @@ fn run_1e_irp_device<R: Runtime>(
     unsafe {
         one_electron_irp_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
             ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -3154,8 +3139,8 @@ fn run_1e_giao_ovlp_device<R: Runtime>(
             unsafe {
                 one_electron_giao_ovlp_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -3855,8 +3840,8 @@ fn run_1e_giao_nuc_device<R: Runtime>(
             unsafe {
                 one_electron_giao_nuc_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -4360,8 +4345,8 @@ fn run_1e_grad_kin_both_device<R: Runtime>(
     unsafe {
         one_electron_grad_kin_both_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
             ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -4772,8 +4757,8 @@ fn run_1e_nuc_grad_device<R: Runtime>(
             unsafe {
                 one_electron_nuc_grad_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -5191,8 +5176,8 @@ fn run_1e_rinv_device<R: Runtime>(
             unsafe {
                 one_electron_rinv_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -5573,8 +5558,8 @@ fn run_1e_drinv_device<R: Runtime>(
             unsafe {
                 one_electron_drinv_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -5996,8 +5981,8 @@ fn run_1e_nuc_grad_both_device<R: Runtime>(
             unsafe {
                 one_electron_nuc_grad_both_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -6400,8 +6385,8 @@ fn run_1e_nuc_gradgrad_bra_device<R: Runtime>(
             unsafe {
                 one_electron_nuc_gradgrad_bra_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -7080,8 +7065,8 @@ fn run_1e_gradgrad_bra_kin_device<R: Runtime>(
     unsafe {
         one_electron_gradgrad_bra_kin_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
             ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -7235,8 +7220,8 @@ fn run_1e_scalar_device<R: Runtime>(
             unsafe {
                 one_electron_scalar_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -7933,8 +7918,8 @@ fn run_1e_moment_device<R: Runtime>(
             unsafe {
                 one_electron_moment_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -12426,8 +12411,8 @@ mod tests {
 
         one_electron_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },

@@ -886,8 +886,8 @@ fn run_origi_scalar_device<R: Runtime>(
         ($rp:expr) => {
             origi_scalar_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -1318,8 +1318,8 @@ fn run_origi_ip2_device<R: Runtime>(
         ($rp:expr) => {
             origi_ip2_kernel::launch::<f64, R>(
                 client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -1562,8 +1562,8 @@ mod tests {
 
         origi_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
@@ -1749,8 +1749,8 @@ mod tests {
 
         origi_ip2_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },

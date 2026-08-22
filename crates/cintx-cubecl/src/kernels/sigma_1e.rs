@@ -538,8 +538,8 @@ fn run_sigma_ov_device<R: Runtime>(
             unsafe {
                 sigma_ov_kernel::launch_unchecked::<f64, R>(
                     client,
-                    CubeCount::Static(1, 1, 1),
-                    CubeDim::new_1d(1),
+                    crate::plane::single_cube_count(),
+                    crate::plane::standard_plane_cube_dim(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),

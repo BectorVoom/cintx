@@ -962,36 +962,39 @@ fn ecp_angular_kernel<F: Float + CubeElement>(
     nfi: u32,
     nfj: u32,
 ) {
-    if UNIT_POS == 0u32 {
-        // Strides for the radial/angular tensor (d1 = li+lj+1).
-        let d1 = li + lj + 1u32;
-        let d2 = d1 * d1;
-        // ifac strides (di1 = li+1).
-        let di1 = li + 1u32;
-        let di2 = di1 * di1;
-        let di3 = di2 * di1;
-        // jfac strides (dj1 = lj+1).
-        let dj1 = lj + 1u32;
-        let dj2 = dj1 * dj1;
-        let dj3 = dj2 * dj1;
+    // Strides for the radial/angular tensor (d1 = li+lj+1).
+    let d1 = li + lj + 1u32;
+    let d2 = d1 * d1;
+    // ifac strides (di1 = li+1).
+    let di1 = li + 1u32;
+    let di2 = di1 * di1;
+    let di3 = di2 * di1;
+    // jfac strides (dj1 = lj+1).
+    let dj1 = lj + 1u32;
+    let dj2 = dj1 * dj1;
+    let dj3 = dj2 * dj1;
 
-        // Zero the output block (nci=ncj=1 per launch → block = nfi*nfj).
-        let out_len = nfi * nfj;
-        let mut oi = 0u32;
-        while oi < out_len {
-            cart_out[oi as usize] = F::new(0.0);
-            oi += 1u32;
-        }
+    // Zero the output block cooperatively.
+    let out_len = nfi * nfj;
+    let mut oi = UNIT_POS as usize;
+    let stride = CUBE_DIM as usize;
+    while oi < (out_len as usize) {
+        cart_out[oi] = F::new(0.0);
+        oi += stride;
+    }
+    sync_cube();
 
-        // Loop over bra cartesian components mi, then ket mj.
-        let mut mi = 0u32;
-        while mi < nfi {
-            let ix = comps_i[(mi * 3u32) as usize];
-            let iy = comps_i[(mi * 3u32 + 1u32) as usize];
-            let iz = comps_i[(mi * 3u32 + 2u32) as usize];
-            let ifac_base = mi * di3;
-            let mut mj = 0u32;
-            while mj < nfj {
+    // Loop over bra cartesian components mi, then ket mj cooperatively.
+    let mut mi = 0u32;
+    while mi < nfi {
+        let ix = comps_i[(mi * 3u32) as usize];
+        let iy = comps_i[(mi * 3u32 + 1u32) as usize];
+        let iz = comps_i[(mi * 3u32 + 2u32) as usize];
+        let ifac_base = mi * di3;
+        let mut mj = 0u32;
+        while mj < nfj {
+            let pout_idx = mj * nfi + mi;
+            if ((pout_idx as u32) % CUBE_DIM) == UNIT_POS {
                 let jx = comps_j[(mj * 3u32) as usize];
                 let jy = comps_j[(mj * 3u32 + 1u32) as usize];
                 let jz = comps_j[(mj * 3u32 + 2u32) as usize];
@@ -1033,12 +1036,11 @@ fn ecp_angular_kernel<F: Float + CubeElement>(
                 }
 
                 // F-order block [ao_i, ao_j] within this (ic=0,jc=0) tuple.
-                let pout_idx = mj * nfi + mi;
                 cart_out[pout_idx as usize] = acc;
-                mj += 1u32;
             }
-            mi += 1u32;
+            mj += 1u32;
         }
+        mi += 1u32;
     }
 }
 
@@ -1096,8 +1098,8 @@ fn run_ecp_angular_device<R: Runtime>(
     unsafe {
         ecp_angular_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(rad_h, rad_ang.len()),
             ArrayArg::from_raw_parts(ifac_h, ifac.len()),
             ArrayArg::from_raw_parts(jfac_h, jfac.len()),
@@ -1158,14 +1160,7 @@ fn cart_comps_flat_u32(l: u8) -> Vec<u32> {
 // the host scatter is a trivial `+=` (matching the Type-1 template).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Type-2 angular-splice device kernel for ONE (ic=0,jc=0) contraction tuple,
-/// generic over `F: Float`. Single work item (`UNIT_POS == 0`). All math uses
-/// `F` arithmetic, statement-form `if`, `u32` indices and `while` loops bounded by
-/// the runtime-`u32` angular momenta — no break/continue, no special functions
-/// (those stay host-side). Reproduces the host two-`dgemm` splice
-/// (`ecp_type2_cart`, ecp.rs:1272-1309) bit-for-bit at f64.
-///
-/// Source of the splice arithmetic: vendor/pyscf-nr-ecp/src/nr_ecp.c:5505-5510.
+/// On-device angular contraction for Type-2 semi-local ECP with lane-owned outputs.
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn ecp_type2_angular_kernel<F: Float + CubeElement>(
@@ -1180,40 +1175,39 @@ fn ecp_type2_angular_kernel<F: Float + CubeElement>(
     nfi: u32,
     nfj: u32,
 ) {
-    if UNIT_POS == 0u32 {
-        // Strides — recomputed from the runtime u32 args (mirror the host driver).
-        let dlc = lc * 2u32 + 1u32;
-        let lilc1 = li + lc + 1u32;
-        let ljlc1 = lj + lc + 1u32;
-        let d2 = lilc1 * ljlc1;
-        // `im = nfi*dlc` is the dgemm-1 column count; here `col` is derived inline
-        // per dgemm-2 index (col = row*dlc + kk2/ljlc1, ∈ 0..im) so `im` is implicit.
-        let mq = dlc * ljlc1;
+    // Strides — recomputed from the runtime u32 args (mirror the host driver).
+    let dlc = lc * 2u32 + 1u32;
+    let lilc1 = li + lc + 1u32;
+    let ljlc1 = lj + lc + 1u32;
+    let d2 = lilc1 * ljlc1;
+    let mq = dlc * ljlc1;
 
-        // Zero the output block (nci=ncj=1 per launch → block = nfi*nfj).
-        let out_len = nfi * nfj;
-        let mut oi = 0u32;
-        while oi < out_len {
-            cart_out[oi as usize] = F::new(0.0);
-            oi += 1u32;
-        }
+    // Zero the output block cooperatively.
+    let out_len = nfi * nfj;
+    let mut oi = UNIT_POS as usize;
+    let stride = CUBE_DIM as usize;
+    while oi < (out_len as usize) {
+        cart_out[oi] = F::new(0.0);
+        oi += stride;
+    }
+    sync_cube();
 
-        // Accumulate over the angular pair (i in 0..=li, j in 0..=lj), matching the
-        // host `for i / for j` order. a/b/bj base offsets recomputed per (i,j).
-        let mut i = 0u32;
-        while i <= li {
-            let mut j = 0u32;
-            while j <= lj {
-                let a_base = (i + j) * d2; // prad block: lilc1 x ljlc1 (col-major)
-                let b_base = i * nfi * dlc * lilc1; // angi block: lilc1 x im (col-major)
-                let bj_base = j * nfj * dlc * ljlc1; // angj block: mq x nfj (col-major)
+    // Accumulate over the angular pair (i in 0..=li, j in 0..=lj), matching the
+    // host `for i / for j` order.
+    let mut i = 0u32;
+    while i <= li {
+        let mut j = 0u32;
+        while j <= lj {
+            let a_base = (i + j) * d2; // prad block: lilc1 x ljlc1 (col-major)
+            let b_base = i * nfi * dlc * lilc1; // angi block: lilc1 x im (col-major)
+            let bj_base = j * nfj * dlc * ljlc1; // angj block: mq x nfj (col-major)
 
-                // dgemm-2: gctr[c_off + col2*di + row] += common_fac
-                //            * Σ_kk2(0..mq) buf[row*mq+kk2] * bj[col2*mq+kk2]
-                let mut row = 0u32;
-                while row < nfi {
-                    let mut col2 = 0u32;
-                    while col2 < nfj {
+            let mut row = 0u32;
+            while row < nfi {
+                let mut col2 = 0u32;
+                while col2 < nfj {
+                    let out_idx = col2 * nfi + row;
+                    if ((out_idx as u32) % CUBE_DIM) == UNIT_POS {
                         let mut acc = F::new(0.0);
                         let mut kk2 = 0u32;
                         while kk2 < mq {
@@ -1240,14 +1234,14 @@ fn ecp_type2_angular_kernel<F: Float + CubeElement>(
                         // accumulate across (i,j) and fold common_fac in-kernel.
                         let out_idx = col2 * nfi + row;
                         cart_out[out_idx as usize] += common_fac * acc;
-                        col2 += 1u32;
                     }
-                    row += 1u32;
+                    col2 += 1u32;
                 }
-                j += 1u32;
+                row += 1u32;
             }
-            i += 1u32;
+            j += 1u32;
         }
+        i += 1u32;
     }
 }
 
@@ -1310,8 +1304,8 @@ fn run_ecp_type2_angular_device<R: Runtime>(
     unsafe {
         ecp_type2_angular_kernel::launch_unchecked::<f64, R>(
             client,
-            CubeCount::Static(1, 1, 1),
-            CubeDim::new_1d(1),
+            crate::plane::single_cube_count(),
+            crate::plane::standard_plane_cube_dim(),
             ArrayArg::from_raw_parts(prad_h, prad.len()),
             ArrayArg::from_raw_parts(angi_h, angi.len()),
             ArrayArg::from_raw_parts(angj_h, angj.len()),
@@ -2769,8 +2763,8 @@ mod tests {
 
             ecp_angular_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                 &client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(rad_h, rad_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(ifac_h, ifac_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(jfac_h, jfac_f32.len()) },
@@ -2964,8 +2958,8 @@ mod tests {
 
             ecp_type2_angular_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                 &client,
-                CubeCount::Static(1, 1, 1),
-                CubeDim::new_1d(1),
+                crate::plane::single_cube_count(),
+                crate::plane::standard_plane_cube_dim(),
                 unsafe { ArrayArg::from_raw_parts(prad_h, prad_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(angi_h, angi_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(angj_h, angj_f32.len()) },

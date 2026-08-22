@@ -382,7 +382,7 @@ mod rys_cpu_tests {
         let u_handle = client.create_from_slice(f64::as_bytes(&zeros));
         let w_handle = client.create_from_slice(f64::as_bytes(&zeros));
 
-        let cube_count = CubeCount::Static(1, 1, 1);
+        let cube_count = cintx_cubecl::plane::single_cube_count();
         let cube_dim = CubeDim::new_1d(1);
 
         // cubecl 0.10.0 API deltas (vs 0.9.0):

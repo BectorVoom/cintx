@@ -390,6 +390,8 @@ dependencies = [
  "cubecl-hip",
  "cubecl-runtime",
  "cubecl-wgpu",
+ "serde",
+ "serde_json",
  "smallvec",
  "tracing",
  "wgpu",

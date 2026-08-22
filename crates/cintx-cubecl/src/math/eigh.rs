@@ -841,7 +841,7 @@ fn cint_diagonalize_device<R: Runtime>(
 
     cint_diagonalize_kernel::launch::<f64, R>(
         client,
-        CubeCount::Static(1, 1, 1),
+        crate::plane::single_cube_count(),
         CubeDim::new_1d(1),
         unsafe { ArrayArg::from_raw_parts(diag_h, nu) },
         unsafe { ArrayArg::from_raw_parts(offd_h, nu) },
