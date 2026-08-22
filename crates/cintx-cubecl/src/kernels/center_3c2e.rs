@@ -15,7 +15,7 @@ use crate::backend::ResolvedBackend;
 use crate::kernels::two_electron::fill_g_tensor_2e;
 use crate::kernels::two_electron::{build_2e_shape, two_e_shape_as_f12};
 // Phase 25 HESS-03: verbatim Hessian gout helpers (bra-i ∇² + ket-k ∇²).
-use crate::kernels::f12::{gout_ipip1, gout_ipip2_l};
+use crate::kernels::f12::{gout_ip1ip2_l, gout_ipip1, gout_ipip2_l, gout_ipvip1};
 #[cfg(test)]
 use crate::math::pdata::PairData;
 use crate::math::pdata::compute_pdata_host;
@@ -3081,6 +3081,10 @@ enum HessKind {
     /// `int3c2e_ipip2` — ∇² on the auxiliary k center (mapped to the 2e `ll` slot
     /// via `gout_ipip2_l`, `nabla1l_2e`, ll=lk+2 headroom). KET-side (D-09).
     Ipip2,
+    /// Mixed derivative on the two real bra centers i and j.
+    Ipvip1,
+    /// Mixed derivative on bra i and the real auxiliary center in the 2e l slot.
+    Ip1ip2,
 }
 
 /// Shared HOST launcher for the two multi-center 3c2e rank-9 Hessian families
@@ -3112,6 +3116,8 @@ fn launch_center_3c2e_hess<F: CintFloat>(
             requested: match kind {
                 HessKind::Ipip1 => "spinor int3c2e_ipip1 Hessian".to_owned(),
                 HessKind::Ipip2 => "spinor int3c2e_ipip2 Hessian".to_owned(),
+                HessKind::Ipvip1 => "spinor int3c2e_ipvip1 Hessian".to_owned(),
+                HessKind::Ip1ip2 => "spinor int3c2e_ip1ip2 Hessian".to_owned(),
             },
         });
     }
@@ -3121,6 +3127,8 @@ fn launch_center_3c2e_hess<F: CintFloat>(
     let hess_shape = match kind {
         HessKind::Ipip1 => build_2e_shape(li as usize + 2, lj as usize, 0, lk as usize),
         HessKind::Ipip2 => build_2e_shape(li as usize, lj as usize, 0, lk as usize + 2),
+        HessKind::Ipvip1 => build_2e_shape(li as usize + 1, lj as usize + 1, 0, lk as usize),
+        HessKind::Ip1ip2 => build_2e_shape(li as usize + 1, lj as usize, 0, lk as usize + 1),
     };
 
     if hess_shape.nroots > HOST_RYS_NROOTS_CEILING {
@@ -3221,6 +3229,26 @@ fn launch_center_3c2e_hess<F: CintFloat>(
                         lj as usize,
                         0,
                         lk as usize,
+                        ak,
+                    ),
+                    HessKind::Ipvip1 => gout_ipvip1(
+                        &g,
+                        &hess_f12_shape,
+                        li as usize,
+                        lj as usize,
+                        0,
+                        lk as usize,
+                        ai,
+                        aj,
+                    ),
+                    HessKind::Ip1ip2 => gout_ip1ip2_l(
+                        &g,
+                        &hess_f12_shape,
+                        li as usize,
+                        lj as usize,
+                        0,
+                        lk as usize,
+                        ai,
                         ak,
                     ),
                 };
@@ -3462,6 +3490,32 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     if plan.descriptor.operator_name() == "ipip2" {
         return launch_center_3c2e_hess2::<F>(
             plan, shell_i_in, shell_j_in, shell_k, li_in, lj_in, lk, staging,
+        );
+    }
+    if plan.descriptor.operator_name() == "ipvip1" {
+        return launch_center_3c2e_hess::<F>(
+            plan,
+            shell_i_in,
+            shell_j_in,
+            shell_k,
+            li_in,
+            lj_in,
+            lk,
+            HessKind::Ipvip1,
+            staging,
+        );
+    }
+    if plan.descriptor.operator_name() == "ip1ip2" {
+        return launch_center_3c2e_hess::<F>(
+            plan,
+            shell_i_in,
+            shell_j_in,
+            shell_k,
+            li_in,
+            lj_in,
+            lk,
+            HessKind::Ip1ip2,
+            staging,
         );
     }
 

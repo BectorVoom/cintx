@@ -83,6 +83,17 @@ struct FamilySpec {
     s_table: &'static [(usize, usize, usize)],
     /// `gout[rank]` permutation: `gout[c] = s[perm[c]]`.
     gout_perm: &'static [usize],
+    /// Optional DOT-P contraction: each output is the sum of three `s` entries.
+    dot_terms: Option<&'static [[usize; 3]]>,
+    /// General signed linear gout map used by σ derivative families.
+    linear_terms: Option<&'static [LinearTerm]>,
+}
+
+#[derive(Clone, Copy)]
+struct LinearTerm {
+    out: usize,
+    s: usize,
+    coeff: f64,
 }
 
 // ── deriv3 (rank 27) op sequences (i_off/j_off verbatim from deriv3.c) ────────
@@ -217,6 +228,8 @@ const PERM_IPIPNUCIP: [usize; 27] = [
     0, 1, 2, 9, 10, 11, 18, 19, 20, 3, 4, 5, 12, 13, 14, 21, 22, 23, 6, 7, 8, 15, 16, 17, 24, 25,
     26,
 ];
+
+const DOT_IPPNUCP: [[usize; 3]; 3] = [[0, 4, 8], [9, 13, 17], [18, 22, 26]];
 
 // ── deriv4 (rank 81) op sequences (i_off/j_off verbatim from deriv4.c) ────────
 // ipipipiprinv: all D_I (bra ∇∇∇∇), first op bra+3.
@@ -588,6 +601,28 @@ const PERM_IPIPIPIPRINV: [usize; 81] = [
     43, 70, 25, 52, 79, 2, 29, 56, 11, 38, 65, 20, 47, 74, 5, 32, 59, 14, 41, 68, 23, 50, 77, 8,
     35, 62, 17, 44, 71, 26, 53, 80,
 ];
+const DOT_IPIPPNUCP: [[usize; 3]; 9] = [
+    [0, 4, 8],
+    [27, 31, 35],
+    [54, 58, 62],
+    [9, 13, 17],
+    [36, 40, 44],
+    [63, 67, 71],
+    [18, 22, 26],
+    [45, 49, 53],
+    [72, 76, 80],
+];
+const DOT_IPPNUCPIP: [[usize; 3]; 9] = [
+    [0, 12, 24],
+    [27, 39, 51],
+    [54, 66, 78],
+    [1, 13, 25],
+    [28, 40, 52],
+    [55, 67, 79],
+    [2, 14, 26],
+    [29, 41, 53],
+    [56, 68, 80],
+];
 const PERM_IPIPRINVIPIP: [usize; 81] = [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 27, 28, 29, 30, 31, 32, 33, 34, 35, 54, 55, 56, 57, 58, 59, 60, 61,
     62, 9, 10, 11, 12, 13, 14, 15, 16, 17, 36, 37, 38, 39, 40, 41, 42, 43, 44, 63, 64, 65, 66, 67,
@@ -601,9 +636,1020 @@ const PERM_IPIPIPRINVIP: [usize; 81] = [
     25, 26, 51, 52, 53, 78, 79, 80,
 ];
 
+const LINEAR_IPSP: &[LinearTerm] = &[
+    LinearTerm {
+        out: 0,
+        s: 11,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 0,
+        s: 19,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 1,
+        s: 18,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 1,
+        s: 2,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 2,
+        s: 1,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 2,
+        s: 9,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 0,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 10,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 20,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 4,
+        s: 14,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 4,
+        s: 22,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 5,
+        s: 21,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 5,
+        s: 5,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 6,
+        s: 4,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 6,
+        s: 12,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 3,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 13,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 23,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 8,
+        s: 17,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 8,
+        s: 25,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 9,
+        s: 24,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 9,
+        s: 8,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 10,
+        s: 7,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 10,
+        s: 15,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 6,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 16,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 26,
+        coeff: 1.0,
+    },
+];
+const LINEAR_IPIPSP: &[LinearTerm] = &[
+    LinearTerm {
+        out: 0,
+        s: 29,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 0,
+        s: 55,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 1,
+        s: 54,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 1,
+        s: 2,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 2,
+        s: 1,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 2,
+        s: 27,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 0,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 28,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 56,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 4,
+        s: 32,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 4,
+        s: 58,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 5,
+        s: 57,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 5,
+        s: 5,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 6,
+        s: 4,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 6,
+        s: 30,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 3,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 31,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 59,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 8,
+        s: 35,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 8,
+        s: 61,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 9,
+        s: 60,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 9,
+        s: 8,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 10,
+        s: 7,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 10,
+        s: 33,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 6,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 34,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 62,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 12,
+        s: 38,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 12,
+        s: 64,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 13,
+        s: 63,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 13,
+        s: 11,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 14,
+        s: 10,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 14,
+        s: 36,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 15,
+        s: 9,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 15,
+        s: 37,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 15,
+        s: 65,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 16,
+        s: 41,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 16,
+        s: 67,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 17,
+        s: 66,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 17,
+        s: 14,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 18,
+        s: 13,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 18,
+        s: 39,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 19,
+        s: 12,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 19,
+        s: 40,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 19,
+        s: 68,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 20,
+        s: 44,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 20,
+        s: 70,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 21,
+        s: 69,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 21,
+        s: 17,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 22,
+        s: 16,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 22,
+        s: 42,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 23,
+        s: 15,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 23,
+        s: 43,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 23,
+        s: 71,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 24,
+        s: 47,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 24,
+        s: 73,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 25,
+        s: 72,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 25,
+        s: 20,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 26,
+        s: 19,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 26,
+        s: 45,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 27,
+        s: 18,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 27,
+        s: 46,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 27,
+        s: 74,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 28,
+        s: 50,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 28,
+        s: 76,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 29,
+        s: 75,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 29,
+        s: 23,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 30,
+        s: 22,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 30,
+        s: 48,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 31,
+        s: 21,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 31,
+        s: 49,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 31,
+        s: 77,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 32,
+        s: 53,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 32,
+        s: 79,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 33,
+        s: 78,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 33,
+        s: 26,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 34,
+        s: 25,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 34,
+        s: 51,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 35,
+        s: 24,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 35,
+        s: 52,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 35,
+        s: 80,
+        coeff: 1.0,
+    },
+];
+const LINEAR_IPSPIP: &[LinearTerm] = &[
+    LinearTerm {
+        out: 0,
+        s: 33,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 0,
+        s: 57,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 1,
+        s: 54,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 1,
+        s: 6,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 2,
+        s: 3,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 2,
+        s: 27,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 0,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 30,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 3,
+        s: 60,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 4,
+        s: 34,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 4,
+        s: 58,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 5,
+        s: 55,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 5,
+        s: 7,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 6,
+        s: 4,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 6,
+        s: 28,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 1,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 31,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 7,
+        s: 61,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 8,
+        s: 35,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 8,
+        s: 59,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 9,
+        s: 56,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 9,
+        s: 8,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 10,
+        s: 5,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 10,
+        s: 29,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 2,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 32,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 11,
+        s: 62,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 12,
+        s: 42,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 12,
+        s: 66,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 13,
+        s: 63,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 13,
+        s: 15,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 14,
+        s: 12,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 14,
+        s: 36,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 15,
+        s: 9,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 15,
+        s: 39,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 15,
+        s: 69,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 16,
+        s: 43,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 16,
+        s: 67,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 17,
+        s: 64,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 17,
+        s: 16,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 18,
+        s: 13,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 18,
+        s: 37,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 19,
+        s: 10,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 19,
+        s: 40,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 19,
+        s: 70,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 20,
+        s: 44,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 20,
+        s: 68,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 21,
+        s: 65,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 21,
+        s: 17,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 22,
+        s: 14,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 22,
+        s: 38,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 23,
+        s: 11,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 23,
+        s: 41,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 23,
+        s: 71,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 24,
+        s: 51,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 24,
+        s: 75,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 25,
+        s: 72,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 25,
+        s: 24,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 26,
+        s: 21,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 26,
+        s: 45,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 27,
+        s: 18,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 27,
+        s: 48,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 27,
+        s: 78,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 28,
+        s: 52,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 28,
+        s: 76,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 29,
+        s: 73,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 29,
+        s: 25,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 30,
+        s: 22,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 30,
+        s: 46,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 31,
+        s: 19,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 31,
+        s: 49,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 31,
+        s: 79,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 32,
+        s: 53,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 32,
+        s: 77,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 33,
+        s: 74,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 33,
+        s: 26,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 34,
+        s: 23,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 34,
+        s: 47,
+        coeff: -1.0,
+    },
+    LinearTerm {
+        out: 35,
+        s: 20,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 35,
+        s: 50,
+        coeff: 1.0,
+    },
+    LinearTerm {
+        out: 35,
+        s: 80,
+        coeff: 1.0,
+    },
+];
+fn sigma_deriv_spec(op_name: &str) -> Option<FamilySpec> {
+    match op_name {
+        "ipspnucsp" | "ipsprinvsp" => Some(FamilySpec {
+            rank: 12,
+            nbuf: 8,
+            ops: &OPS_IPIPNUCIP,
+            s_table: &S27,
+            gout_perm: &[],
+            dot_terms: None,
+            linear_terms: Some(LINEAR_IPSP),
+        }),
+        "ipipspnucsp" | "ipipsprinvsp" => Some(FamilySpec {
+            rank: 36,
+            nbuf: 16,
+            ops: &OPS_IPIPIPRINVIP,
+            s_table: &S81,
+            gout_perm: &[],
+            dot_terms: None,
+            linear_terms: Some(LINEAR_IPIPSP),
+        }),
+        "ipspnucspip" | "ipsprinvspip" => Some(FamilySpec {
+            rank: 36,
+            nbuf: 16,
+            ops: &OPS_IPIPRINVIPIP,
+            s_table: &S81,
+            gout_perm: &[],
+            dot_terms: None,
+            linear_terms: Some(LINEAR_IPSPIP),
+        }),
+        _ => None,
+    }
+}
+
 /// Resolve a `deriv3`/`deriv4` operator name to its [`FamilySpec`], or `None`.
 fn family_spec(op_name: &str) -> Option<FamilySpec> {
     let spec = match op_name {
+        "ippnucp" | "ipprinvp" => FamilySpec {
+            rank: 3,
+            nbuf: 8,
+            ops: &OPS_IPIPNUCIP,
+            s_table: &S27,
+            gout_perm: &[],
+            dot_terms: Some(&DOT_IPPNUCP),
+            linear_terms: None,
+        },
+        "ippnucpip" | "ipprinvpip" => FamilySpec {
+            rank: 9,
+            nbuf: 16,
+            ops: &OPS_IPIPRINVIPIP,
+            s_table: &S81,
+            gout_perm: &[],
+            dot_terms: Some(&DOT_IPPNUCPIP),
+            linear_terms: None,
+        },
+        "ipippnucp" | "ipipprinvp" => FamilySpec {
+            rank: 9,
+            nbuf: 16,
+            ops: &OPS_IPIPIPRINVIP,
+            s_table: &S81,
+            gout_perm: &[],
+            dot_terms: Some(&DOT_IPIPPNUCP),
+            linear_terms: None,
+        },
         // deriv3 (rank 27)
         "ipipipnuc" | "ipipiprinv" => FamilySpec {
             rank: 27,
@@ -612,6 +1658,8 @@ fn family_spec(op_name: &str) -> Option<FamilySpec> {
             ops: &OPS_IPIPIP,
             s_table: &S27,
             gout_perm: &PERM_IPIPIP,
+            dot_terms: None,
+            linear_terms: None,
         },
         "ipipnucip" | "ipiprinvip" => FamilySpec {
             rank: 27,
@@ -620,6 +1668,8 @@ fn family_spec(op_name: &str) -> Option<FamilySpec> {
             ops: &OPS_IPIPNUCIP,
             s_table: &S27,
             gout_perm: &PERM_IPIPNUCIP,
+            dot_terms: None,
+            linear_terms: None,
         },
         // deriv4 (rank 81)
         "ipipipiprinv" => FamilySpec {
@@ -629,6 +1679,8 @@ fn family_spec(op_name: &str) -> Option<FamilySpec> {
             ops: &OPS_IPIPIPIPRINV,
             s_table: &S81,
             gout_perm: &PERM_IPIPIPIPRINV,
+            dot_terms: None,
+            linear_terms: None,
         },
         "ipiprinvipip" => FamilySpec {
             rank: 81,
@@ -637,6 +1689,8 @@ fn family_spec(op_name: &str) -> Option<FamilySpec> {
             ops: &OPS_IPIPRINVIPIP,
             s_table: &S81,
             gout_perm: &PERM_IPIPRINVIPIP,
+            dot_terms: None,
+            linear_terms: None,
         },
         "ipipiprinvip" => FamilySpec {
             rank: 81,
@@ -645,6 +1699,8 @@ fn family_spec(op_name: &str) -> Option<FamilySpec> {
             ops: &OPS_IPIPIPRINVIP,
             s_table: &S81,
             gout_perm: &PERM_IPIPIPRINVIP,
+            dot_terms: None,
+            linear_terms: None,
         },
         _ => return None,
     };
@@ -851,10 +1907,27 @@ fn contract_deriv34_pair(
                     let ny = jy as usize * dj + iy as usize;
                     let nz = jz as usize * dj + iz as usize;
                     let bn = cj_idx * nci + ci_idx;
-                    for (comp, &perm) in spec.gout_perm.iter().enumerate() {
-                        let (sx, sy, sz) = spec.s_table[perm];
-                        let val = g[sx][gx + nx] * g[sy][gy + ny] * g[sz][gz + nz];
-                        out[comp * block_len + bn] += val;
+                    if let Some(linear_terms) = spec.linear_terms {
+                        for term in linear_terms {
+                            let (sx, sy, sz) = spec.s_table[term.s];
+                            let val = g[sx][gx + nx] * g[sy][gy + ny] * g[sz][gz + nz];
+                            out[term.out * block_len + bn] += term.coeff * val;
+                        }
+                    } else if let Some(dot_terms) = spec.dot_terms {
+                        for (comp, terms) in dot_terms.iter().enumerate() {
+                            let mut val = 0.0;
+                            for &term in terms {
+                                let (sx, sy, sz) = spec.s_table[term];
+                                val += g[sx][gx + nx] * g[sy][gy + ny] * g[sz][gz + nz];
+                            }
+                            out[comp * block_len + bn] += val;
+                        }
+                    } else {
+                        for (comp, &perm) in spec.gout_perm.iter().enumerate() {
+                            let (sx, sy, sz) = spec.s_table[perm];
+                            let val = g[sx][gx + nx] * g[sy][gy + ny] * g[sz][gz + nz];
+                            out[comp * block_len + bn] += val;
+                        }
                     }
                 }
             }
@@ -884,8 +1957,8 @@ fn borrow_two(g: &mut [Vec<f64>], a: usize, b: usize) -> (&mut Vec<f64>, &mut Ve
 /// Returns a `Vec<f64>` of length `nctr_i * nctr_j * rank * nci * ncj`, with the
 /// layout `[(ci*nctr_j+cj)][comp][cj_cart*nci + ci_cart]`.
 #[allow(clippy::too_many_arguments)]
-pub fn contract_deriv34_block(
-    op_name: &str,
+fn contract_family_block(
+    spec: FamilySpec,
     li: u8,
     lj: u8,
     ri: [f64; 3],
@@ -897,8 +1970,7 @@ pub fn contract_deriv34_block(
     n_ctr_i: usize,
     n_ctr_j: usize,
     origins: &[([f64; 3], f64)],
-) -> Option<Vec<f64>> {
-    let spec = family_spec(op_name)?;
+) -> Vec<f64> {
     let n_prim_i = exps_i.len();
     let n_prim_j = exps_j.len();
     let nci = ncart(li);
@@ -933,7 +2005,69 @@ pub fn contract_deriv34_block(
         }
     }
 
-    Some(out)
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn contract_deriv34_block(
+    op_name: &str,
+    li: u8,
+    lj: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    origins: &[([f64; 3], f64)],
+) -> Option<Vec<f64>> {
+    Some(contract_family_block(
+        family_spec(op_name)?,
+        li,
+        lj,
+        ri,
+        rj,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+        n_ctr_i,
+        n_ctr_j,
+        origins,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn contract_sigma_deriv_block(
+    op_name: &str,
+    li: u8,
+    lj: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    origins: &[([f64; 3], f64)],
+) -> Option<Vec<f64>> {
+    Some(contract_family_block(
+        sigma_deriv_spec(op_name)?,
+        li,
+        lj,
+        ri,
+        rj,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+        n_ctr_i,
+        n_ctr_j,
+        origins,
+    ))
 }
 
 /// Build the `(origin, factor)` list for the nuclear families (sum over atoms,

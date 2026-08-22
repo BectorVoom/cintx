@@ -2363,6 +2363,10 @@ pub(crate) enum Rel2eOp {
     J,
     K,
     L,
+    Ri,
+    Rj,
+    Rk,
+    Rl,
 }
 
 #[derive(Clone, Copy)]
@@ -2406,6 +2410,26 @@ pub(crate) fn build_rel2e_cascade(
             Rel2eOp::J => nabla1j_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, a, shape),
             Rel2eOp::K => nabla1k_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, a, shape),
             Rel2eOp::L => nabla1l_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, a, shape),
+            Rel2eOp::Ri | Rel2eOp::Rj | Rel2eOp::Rk | Rel2eOp::Rl => {
+                let shift = match st.op {
+                    Rel2eOp::Ri => shape.di,
+                    Rel2eOp::Rj => shape.dj,
+                    Rel2eOp::Rk => shape.dk,
+                    Rel2eOp::Rl => shape.dl,
+                    _ => unreachable!(),
+                };
+                for axis in 0..3 {
+                    let off = axis * shape.g_size;
+                    for idx in 0..shape.g_size {
+                        let src = off + idx + shift;
+                        scratch[off + idx] = if src < off + shape.g_size {
+                            gv[st.src][src]
+                        } else {
+                            0.0
+                        };
+                    }
+                }
+            }
         }
         gv[st.dst].copy_from_slice(&scratch);
     }
@@ -2502,6 +2526,272 @@ fn gout_rel2e_rank9<const NCOMP: usize>(
     out
 }
 
+#[inline]
+fn sigma4_fold(s: &[f64; 9]) -> [f64; 4] {
+    [s[5] - s[7], s[6] - s[2], s[1] - s[3], s[0] + s[4] + s[8]]
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_spsp2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
+    let steps = [
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: Rel2eOp::L,
+            bounds: (li, lj, lk + 1, ll),
+            exp: Rel2eExp::Al,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: Rel2eOp::K,
+            bounds: (li, lj, lk, ll),
+            exp: Rel2eExp::Ak,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: Rel2eOp::K,
+            bounds: (li, lj, lk, ll),
+            exp: Rel2eExp::Ak,
+        },
+    ];
+    gout_rel2e_rank9::<4>(
+        g,
+        shape,
+        li,
+        lj,
+        lk,
+        ll,
+        &steps,
+        ai,
+        aj,
+        ak,
+        al,
+        sigma4_fold,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn gout_srsr2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
+    let steps = [
+        Rel2eStep {
+            dst: 1,
+            src: 0,
+            op: Rel2eOp::Rl,
+            bounds: (li, lj, lk + 1, ll),
+            exp: Rel2eExp::Al,
+        },
+        Rel2eStep {
+            dst: 2,
+            src: 0,
+            op: Rel2eOp::Rk,
+            bounds: (li, lj, lk, ll),
+            exp: Rel2eExp::Ak,
+        },
+        Rel2eStep {
+            dst: 3,
+            src: 1,
+            op: Rel2eOp::Rk,
+            bounds: (li, lj, lk, ll),
+            exp: Rel2eExp::Ak,
+        },
+    ];
+    gout_rel2e_rank9::<4>(
+        g,
+        shape,
+        li,
+        lj,
+        lk,
+        ll,
+        &steps,
+        ai,
+        aj,
+        ak,
+        al,
+        sigma4_fold,
+    )
+}
+
+fn bra_derivative_from_shifted(
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ncomp: usize,
+    ai: f64,
+    plus: &[f64],
+    minus: Option<&[f64]>,
+) -> Vec<f64> {
+    let ci = cart_comps(li as u8);
+    let cip = cart_comps((li + 1) as u8);
+    let cim = li.checked_sub(1).map(|l| cart_comps(l as u8));
+    let nfj = ncart(lj as u8);
+    let nfk = ncart(lk as u8);
+    let nfl = ncart(ll as u8);
+    let mut out = vec![0.0; ci.len() * nfj * nfk * nfl * 3 * ncomp];
+    for l in 0..nfl {
+        for k in 0..nfk {
+            for j in 0..nfj {
+                for (i, &(x, y, z)) in ci.iter().enumerate() {
+                    let exps = [x, y, z];
+                    let n = (((l * nfk + k) * nfj + j) * ci.len()) + i;
+                    for axis in 0..3 {
+                        let mut raised = [x, y, z];
+                        raised[axis] += 1;
+                        let ip = cip
+                            .iter()
+                            .position(|&v| v == (raised[0], raised[1], raised[2]))
+                            .expect("raised Cartesian component");
+                        let np = (((l * nfk + k) * nfj + j) * cip.len()) + ip;
+                        for comp in 0..ncomp {
+                            let mut value = -2.0 * ai * plus[np * ncomp + comp];
+                            if exps[axis] > 0 {
+                                let mut lowered = [x, y, z];
+                                lowered[axis] -= 1;
+                                let cm = cim.as_ref().expect("lowered Cartesian shell");
+                                let im = cm
+                                    .iter()
+                                    .position(|&v| v == (lowered[0], lowered[1], lowered[2]))
+                                    .expect("lowered Cartesian component");
+                                let nm = (((l * nfk + k) * nfj + j) * cm.len()) + im;
+                                value += f64::from(exps[axis])
+                                    * minus.expect("lowered derivative block")[nm * ncomp + comp];
+                            }
+                            out[n * (3 * ncomp) + axis * ncomp + comp] = value;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Rank-3 bra derivative of the six sigma-p/sigma-r 2e base tensors. `kind` maps
+/// in order to ipspsp1, ip1spsp2, ipspsp1spsp2, ipsrsr1, ip1srsr2,
+/// ipsrsr1srsr2. Output is interleaved as `[cart][tensor_axis][sigma_components]`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ip_sigma(
+    kind: u32,
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
+    if matches!(kind, 1 | 4) {
+        let sigma_r = kind == 4;
+        let steps = [
+            Rel2eStep {
+                dst: 1,
+                src: 0,
+                op: if sigma_r { Rel2eOp::Rl } else { Rel2eOp::L },
+                bounds: (li + 1, lj, lk + 1, ll),
+                exp: Rel2eExp::Al,
+            },
+            Rel2eStep {
+                dst: 2,
+                src: 0,
+                op: if sigma_r { Rel2eOp::Rk } else { Rel2eOp::K },
+                bounds: (li + 1, lj, lk, ll),
+                exp: Rel2eExp::Ak,
+            },
+            Rel2eStep {
+                dst: 3,
+                src: 1,
+                op: if sigma_r { Rel2eOp::Rk } else { Rel2eOp::K },
+                bounds: (li + 1, lj, lk, ll),
+                exp: Rel2eExp::Ak,
+            },
+            Rel2eStep {
+                dst: 4,
+                src: 0,
+                op: Rel2eOp::I,
+                bounds: (li, lj, lk, ll),
+                exp: Rel2eExp::Ai,
+            },
+            Rel2eStep {
+                dst: 5,
+                src: 1,
+                op: Rel2eOp::I,
+                bounds: (li, lj, lk, ll),
+                exp: Rel2eExp::Ai,
+            },
+            Rel2eStep {
+                dst: 6,
+                src: 2,
+                op: Rel2eOp::I,
+                bounds: (li, lj, lk, ll),
+                exp: Rel2eExp::Ai,
+            },
+            Rel2eStep {
+                dst: 7,
+                src: 3,
+                op: Rel2eOp::I,
+                bounds: (li, lj, lk, ll),
+                exp: Rel2eExp::Ai,
+            },
+        ];
+        return gout_rel2e_rank27::<12>(g, shape, li, lj, lk, ll, &steps, ai, aj, ak, al, |s| {
+            [
+                s[5] - s[7],
+                s[6] - s[2],
+                s[1] - s[3],
+                s[0] + s[4] + s[8],
+                s[14] - s[16],
+                s[15] - s[11],
+                s[10] - s[12],
+                s[9] + s[13] + s[17],
+                s[23] - s[25],
+                s[24] - s[20],
+                s[19] - s[21],
+                s[18] + s[22] + s[26],
+            ]
+        });
+    }
+    let base = |l: usize| match kind {
+        0 => gout_spsp1(g, shape, l, lj, lk, ll, ai, aj),
+        1 => unreachable!(),
+        2 => gout_spsp1spsp2(g, shape, l, lj, lk, ll, ai, aj, ak, al),
+        3 => gout_srsr1(g, shape, l, lj, lk, ll),
+        4 => unreachable!(),
+        5 => gout_srsr1srsr2(g, shape, l, lj, lk, ll),
+        _ => unreachable!("invalid sigma derivative kind"),
+    };
+    let ncomp = if matches!(kind, 2 | 5) { 16 } else { 4 };
+    let plus = base(li + 1);
+    let minus = li.checked_sub(1).map(base);
+    bra_derivative_from_shifted(li, lj, lk, ll, ncomp, ai, &plus, minus.as_deref())
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 /// Generic rank-3 REL-04 σ gout (the single-σ·p dkb spv1/vsp1, ncomp=4): one nabla
 /// block g1, s[0..2] = (g1·g0·g0, g0·g1·g0, g0·g0·g1), folded to 4 components.
@@ -2572,7 +2862,7 @@ fn gout_rel2e_rank3(
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 /// Generic rank-27 REL-04 σ gout (dkb spv1spsp2/vsp1spsp2, ncomp=16): g0..g7 cascade,
 /// 27-term `s[]`, folded to 16 components.
-fn gout_rel2e_rank27(
+fn gout_rel2e_rank27<const NCOMP: usize>(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
@@ -2584,7 +2874,7 @@ fn gout_rel2e_rank27(
     aj: f64,
     ak: f64,
     al: f64,
-    fold: impl Fn(&[f64; 27]) -> [f64; 16],
+    fold: impl Fn(&[f64; 27]) -> [f64; NCOMP],
 ) -> Vec<f64> {
     let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
     let g_size = shape.g_size;
@@ -2597,7 +2887,7 @@ fn gout_rel2e_rank27(
     let cl_comps = cart_comps(ll as u8);
     let (gx_off, gy_off, gz_off) = (0usize, g_size, 2 * g_size);
 
-    let mut out = vec![0.0_f64; 16 * nf];
+    let mut out = vec![0.0_f64; NCOMP * nf];
     let mut n = 0usize;
     for &(lx, ly, lz) in &cl_comps {
         for &(kx, ky, kz) in &ck_comps {
@@ -2649,8 +2939,8 @@ fn gout_rel2e_rank27(
                         s[26] += gx(0) * gy(0) * gz(7);
                     }
                     let o = fold(&s);
-                    for c in 0..16 {
-                        out[n * 16 + c] = o[c];
+                    for c in 0..NCOMP {
+                        out[n * NCOMP + c] = o[c];
                     }
                     n += 1;
                 }
@@ -3314,7 +3604,7 @@ pub(crate) fn gout_vsp1spsp2(
 /// No column-major reordering.
 ///
 /// `pub(crate)` for the plain-Coulomb 2e Hessian launcher (Phase 25 HESS-02).
-pub(crate) fn gout_ip1ip2(
+fn gout_ip1ip2_center(
     g: &[f64],
     shape: &F12Shape,
     li: usize,
@@ -3322,7 +3612,8 @@ pub(crate) fn gout_ip1ip2(
     lk: usize,
     ll: usize,
     ai: f64,
-    ak: f64,
+    ket_exp: f64,
+    ket_on_l: bool,
 ) -> Vec<f64> {
     let nfi = ncart(li as u8);
     let nfj = ncart(lj as u8);
@@ -3334,8 +3625,13 @@ pub(crate) fn gout_ip1ip2(
     let mut g1 = vec![0.0_f64; 3 * g_size];
     let mut g2 = vec![0.0_f64; 3 * g_size];
     let mut g3 = vec![0.0_f64; 3 * g_size];
-    // g1 = nabla1k at (li+1, lj+0, lk+0): k-derivative at elevated i
-    nabla1k_2e(&mut g1, g, li + 1, lj, lk, ll, ak, shape);
+    // The ordinary 2e/2c2e family differentiates k. The 3c2e embedding stores
+    // its real auxiliary center in l, so that form differentiates l instead.
+    if ket_on_l {
+        nabla1l_2e(&mut g1, g, li + 1, lj, lk, ll, ket_exp, shape);
+    } else {
+        nabla1k_2e(&mut g1, g, li + 1, lj, lk, ll, ket_exp, shape);
+    }
     // g2 = nabla1i at (li+0): i-derivative at base
     nabla1i_2e(&mut g2, g, li, lj, lk, ll, ai, shape);
     // g3 = nabla1i(g1) at (li+0): mixed i,k second derivative
@@ -3405,6 +3701,138 @@ pub(crate) fn gout_ip1ip2(
                     out[n * 9 + 6] = s[6];
                     out[n * 9 + 7] = s[7];
                     out[n * 9 + 8] = s[8];
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ip1ip2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    ak: f64,
+) -> Vec<f64> {
+    gout_ip1ip2_center(g, shape, li, lj, lk, ll, ai, ak, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ip1ip2_l(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    al: f64,
+) -> Vec<f64> {
+    gout_ip1ip2_center(g, shape, li, lj, lk, ll, ai, al, true)
+}
+
+/// Compute gout for `int2e_ipvip1ipvip2` (one nabla on each center).
+///
+/// The 16 derivative buffers and the base-3 component enumeration are the
+/// compact equivalent of `CINTgout2e_int2e_ipvip1ipvip2` in hess.c. Buffer
+/// bits are L,K,J,I (least to most significant); each output component assigns
+/// those four derivative axes to x/y/z in the same base-3 order as libcint.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_ipvip1ipvip2(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<f64> {
+    let mut g1 = vec![0.0; 3 * shape.g_size];
+    let mut g2 = vec![0.0; 3 * shape.g_size];
+    let mut g3 = vec![0.0; 3 * shape.g_size];
+    let mut g4 = vec![0.0; 3 * shape.g_size];
+    let mut g5 = vec![0.0; 3 * shape.g_size];
+    let mut g6 = vec![0.0; 3 * shape.g_size];
+    let mut g7 = vec![0.0; 3 * shape.g_size];
+    let mut g8 = vec![0.0; 3 * shape.g_size];
+    let mut g9 = vec![0.0; 3 * shape.g_size];
+    let mut g10 = vec![0.0; 3 * shape.g_size];
+    let mut g11 = vec![0.0; 3 * shape.g_size];
+    let mut g12 = vec![0.0; 3 * shape.g_size];
+    let mut g13 = vec![0.0; 3 * shape.g_size];
+    let mut g14 = vec![0.0; 3 * shape.g_size];
+    let mut g15 = vec![0.0; 3 * shape.g_size];
+
+    nabla1l_2e(&mut g1, g, li + 1, lj + 1, lk + 1, ll, al, shape);
+    nabla1k_2e(&mut g2, g, li + 1, lj + 1, lk, ll, ak, shape);
+    nabla1k_2e(&mut g3, &g1, li + 1, lj + 1, lk, ll, ak, shape);
+    nabla1j_2e(&mut g4, g, li + 1, lj, lk, ll, aj, shape);
+    nabla1j_2e(&mut g5, &g1, li + 1, lj, lk, ll, aj, shape);
+    nabla1j_2e(&mut g6, &g2, li + 1, lj, lk, ll, aj, shape);
+    nabla1j_2e(&mut g7, &g3, li + 1, lj, lk, ll, aj, shape);
+    nabla1i_2e(&mut g8, g, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g9, &g1, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g10, &g2, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g11, &g3, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g12, &g4, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g13, &g5, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g14, &g6, li, lj, lk, ll, ai, shape);
+    nabla1i_2e(&mut g15, &g7, li, lj, lk, ll, ai, shape);
+    let buffers: [&[f64]; 16] = [
+        g, &g1, &g2, &g3, &g4, &g5, &g6, &g7, &g8, &g9, &g10, &g11, &g12, &g13, &g14, &g15,
+    ];
+
+    let ci = cart_comps(li as u8);
+    let cj = cart_comps(lj as u8);
+    let ck = cart_comps(lk as u8);
+    let cl = cart_comps(ll as u8);
+    let nf = ci.len() * cj.len() * ck.len() * cl.len();
+    let mut out = vec![0.0; 81 * nf];
+    let axis_offsets = [0, shape.g_size, 2 * shape.g_size];
+    let mut n = 0;
+    for &(lx, ly, lz) in &cl {
+        for &(kx, ky, kz) in &ck {
+            for &(jx, jy, jz) in &cj {
+                for &(ix, iy, iz) in &ci {
+                    let indices = [
+                        ix as usize * shape.di
+                            + kx as usize * shape.dk
+                            + lx as usize * shape.dl
+                            + jx as usize * shape.dj,
+                        iy as usize * shape.di
+                            + ky as usize * shape.dk
+                            + ly as usize * shape.dl
+                            + jy as usize * shape.dj,
+                        iz as usize * shape.di
+                            + kz as usize * shape.dk
+                            + lz as usize * shape.dl
+                            + jz as usize * shape.dj,
+                    ];
+                    for comp in 0..81usize {
+                        let mut digits = comp;
+                        let mut masks = [0usize; 3];
+                        for bit in 0..4usize {
+                            let axis = digits % 3;
+                            digits /= 3;
+                            masks[axis] |= 1usize << bit;
+                        }
+                        let mut value = 0.0;
+                        for root in 0..shape.nroots {
+                            value += buffers[masks[0]][axis_offsets[0] + indices[0] + root]
+                                * buffers[masks[1]][axis_offsets[1] + indices[1] + root]
+                                * buffers[masks[2]][axis_offsets[2] + indices[2] + root];
+                        }
+                        out[n * 81 + comp] = value;
+                    }
                     n += 1;
                 }
             }

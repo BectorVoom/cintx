@@ -70,6 +70,12 @@ pub(crate) fn family_id(op: &str) -> Option<u32> {
         "spnucsp" => Some(10),
         "srnucsr" => Some(11),
         "sprinvsp" => Some(12),
+        "ipspnucsp" => Some(13),
+        "ipsprinvsp" => Some(14),
+        "ipipspnucsp" => Some(15),
+        "ipipsprinvsp" => Some(16),
+        "ipspnucspip" => Some(17),
+        "ipsprinvspip" => Some(18),
         _ => None,
     }
 }
@@ -77,7 +83,11 @@ pub(crate) fn family_id(op: &str) -> Option<u32> {
 /// Number of σ-tensor component groups (output spinor matrices). 3 for `sigma`,
 /// 1 otherwise.
 fn family_rank(op: &str) -> usize {
-    if op == "sigma" { 3 } else { 1 }
+    match op {
+        "sigma" | "ipspnucsp" | "ipsprinvsp" => 3,
+        "ipipspnucsp" | "ipipsprinvsp" | "ipspnucspip" | "ipsprinvspip" => 9,
+        _ => 1,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -858,7 +868,7 @@ fn build_sigma_cart(
             coeff_i,
             coeff_j,
         )
-    } else {
+    } else if fam < 13 {
         // Nuclear engine (spnucsp/srnucsr/sprinvsp) — implemented in sigma_1e_nuc.
         super::sigma_1e_nuc::run_sigma_nuc_on_backend(
             op,
@@ -878,6 +888,18 @@ fn build_sigma_cart(
             origin_coords,
             origin_charges,
         )
+    } else {
+        let origins: Vec<([f64; 3], f64)> = origin_coords
+            .chunks_exact(3)
+            .zip(origin_charges.iter().copied())
+            .map(|(coord, charge)| ([coord[0], coord[1], coord[2]], charge))
+            .collect();
+        super::deriv34::contract_sigma_deriv_block(
+            op, li, lj, ri, rj, exps_i, exps_j, coeff_i, coeff_j, nctr_i, nctr_j, &origins,
+        )
+        .ok_or_else(|| cintxRsError::UnsupportedApi {
+            requested: format!("int1e_{op}_spinor sigma derivative is not implemented"),
+        })
     }
 }
 

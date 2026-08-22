@@ -13,8 +13,8 @@ use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::{
-    cart_to_spinor_sf_2e2, cart_to_spinor_sf_4d, cart_to_spinor_si_2e1, cart_to_spinor_si_2e1i,
-    cart_to_spinor_si_2e2, cart_to_spinor_si_2e2i, spinor_len,
+    cart_to_spinor_sf_2e1, cart_to_spinor_sf_2e2, cart_to_spinor_sf_4d, cart_to_spinor_si_2e1,
+    cart_to_spinor_si_2e1i, cart_to_spinor_si_2e2, cart_to_spinor_si_2e2i, spinor_len,
 };
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
@@ -727,577 +727,577 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     let is_uncontracted =
         (nctr_i == 1u32) && (nctr_j == 1u32) && (nctr_k == 1u32) && (nctr_l == 1u32);
 
-        // Primitive quartet loop.
-        let mut pi = 0u32;
-        while pi < nprim_i {
-            let ai = exps_i[pi as usize];
-            let mut pj = 0u32;
-            while pj < nprim_j {
-                let aj = exps_j[pj as usize];
-                let aij = ai + aj;
-                // Gaussian product center for ij and the bra overlap exponential.
-                let rijx = (ai * rix + aj * rjx) / aij;
-                let rijy = (ai * riy + aj * rjy) / aij;
-                let rijz = (ai * riz + aj * rjz) / aij;
-                let dxij = rix - rjx;
-                let dyij = riy - rjy;
-                let dzij = riz - rjz;
-                let rr_ij = dxij * dxij + dyij * dyij + dzij * dzij;
-                let fac_ij = F::exp(-ai * aj / aij * rr_ij);
+    // Primitive quartet loop.
+    let mut pi = 0u32;
+    while pi < nprim_i {
+        let ai = exps_i[pi as usize];
+        let mut pj = 0u32;
+        while pj < nprim_j {
+            let aj = exps_j[pj as usize];
+            let aij = ai + aj;
+            // Gaussian product center for ij and the bra overlap exponential.
+            let rijx = (ai * rix + aj * rjx) / aij;
+            let rijy = (ai * riy + aj * rjy) / aij;
+            let rijz = (ai * riz + aj * rjz) / aij;
+            let dxij = rix - rjx;
+            let dyij = riy - rjy;
+            let dzij = riz - rjz;
+            let rr_ij = dxij * dxij + dyij * dyij + dzij * dzij;
+            let fac_ij = F::exp(-ai * aj / aij * rr_ij);
 
-                let mut pk = 0u32;
-                while pk < nprim_k {
-                    let ak = exps_k[pk as usize];
-                    let mut pl = 0u32;
-                    while pl < nprim_l {
-                        let al = exps_l[pl as usize];
-                        let akl = ak + al;
-                        let rklx = (ak * rkx + al * rlx) / akl;
-                        let rkly = (ak * rky + al * rly) / akl;
-                        let rklz = (ak * rkz + al * rlz) / akl;
-                        let dxkl = rkx - rlx;
-                        let dykl = rky - rly;
-                        let dzkl = rkz - rlz;
-                        let rr_kl = dxkl * dxkl + dykl * dykl + dzkl * dzkl;
-                        let fac_kl = F::exp(-ak * al / akl * rr_kl);
+            let mut pk = 0u32;
+            while pk < nprim_k {
+                let ak = exps_k[pk as usize];
+                let mut pl = 0u32;
+                while pl < nprim_l {
+                    let al = exps_l[pl as usize];
+                    let akl = ak + al;
+                    let rklx = (ak * rkx + al * rlx) / akl;
+                    let rkly = (ak * rky + al * rly) / akl;
+                    let rklz = (ak * rkz + al * rlz) / akl;
+                    let dxkl = rkx - rlx;
+                    let dykl = rky - rly;
+                    let dzkl = rkz - rlz;
+                    let rr_kl = dxkl * dxkl + dykl * dykl + dzkl * dzkl;
+                    let fac_kl = F::exp(-ak * al / akl * rr_kl);
 
-                        let xij_kl = rijx - rklx;
-                        let yij_kl = rijy - rkly;
-                        let zij_kl = rijz - rklz;
-                        let rr = xij_kl * xij_kl + yij_kl * yij_kl + zij_kl * zij_kl;
+                    let xij_kl = rijx - rklx;
+                    let yij_kl = rijy - rkly;
+                    let zij_kl = rijz - rklz;
+                    let rr = xij_kl * xij_kl + yij_kl * yij_kl + zij_kl * zij_kl;
 
-                        let a1 = aij * akl;
-                        let a0 = a1 / (aij + akl);
-                        let x_rys = a0 * rr;
+                    let a1 = aij * akl;
+                    let a0 = a1 / (aij + akl);
+                    let x_rys = a0 * rr;
 
-                        if UNIT_POS == 0u32 {
-                            // Rys roots/weights (comptime nroots branch).
-                            if comptime!(nroots == 1u32) {
-                                rys_root1::<F>(x_rys, urys, wrys, pie4);
-                            } else if comptime!(nroots == 2u32) {
-                                rys_root2::<F>(x_rys, urys, wrys, pie4);
-                            } else if comptime!(nroots == 3u32) {
-                                rys_root3::<F>(x_rys, urys, wrys, pie4);
-                            } else if comptime!(nroots == 4u32) {
-                                rys_root4::<F>(x_rys, urys, wrys, pie4);
-                            } else {
-                                rys_root5::<F>(x_rys, urys, wrys, pie4);
-                            }
+                    if UNIT_POS == 0u32 {
+                        // Rys roots/weights (comptime nroots branch).
+                        if comptime!(nroots == 1u32) {
+                            rys_root1::<F>(x_rys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 2u32) {
+                            rys_root2::<F>(x_rys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 3u32) {
+                            rys_root3::<F>(x_rys, urys, wrys, pie4);
+                        } else if comptime!(nroots == 4u32) {
+                            rys_root4::<F>(x_rys, urys, wrys, pie4);
+                        } else {
+                            rys_root5::<F>(x_rys, urys, wrys, pie4);
+                        }
+                    }
+
+                    // ibase/kbase-selected reference centers (rijrx / rklrx)
+                    // and the HRR displacement vectors rirj / rkrl.
+                    let mut rx_ij_x = rjx;
+                    let mut rx_ij_y = rjy;
+                    let mut rx_ij_z = rjz;
+                    let mut rirjx = rjx - rix;
+                    let mut rirjy = rjy - riy;
+                    let mut rirjz = rjz - riz;
+                    if comptime!(ibase == 1u32) {
+                        rx_ij_x = rix;
+                        rx_ij_y = riy;
+                        rx_ij_z = riz;
+                        rirjx = rix - rjx;
+                        rirjy = riy - rjy;
+                        rirjz = riz - rjz;
+                    }
+                    let mut rx_kl_x = rlx;
+                    let mut rx_kl_y = rly;
+                    let mut rx_kl_z = rlz;
+                    let mut rkrlx = rlx - rkx;
+                    let mut rkrly = rly - rky;
+                    let mut rkrlz = rlz - rkz;
+                    if comptime!(kbase == 1u32) {
+                        rx_kl_x = rkx;
+                        rx_kl_y = rky;
+                        rx_kl_z = rkz;
+                        rkrlx = rkx - rlx;
+                        rkrly = rky - rly;
+                        rkrlz = rkz - rlz;
+                    }
+
+                    let rijrxx = rijx - rx_ij_x;
+                    let rijrxy = rijy - rx_ij_y;
+                    let rijrxz = rijz - rx_ij_z;
+                    let rklrxx = rklx - rx_kl_x;
+                    let rklrxy = rkly - rx_kl_y;
+                    let rklrxz = rklz - rx_kl_z;
+
+                    let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor * fac_ij * fac_kl;
+
+                    if UNIT_POS == 0u32 {
+                        // ── Build the [gx|gy|gz] tensor ───────────────────────
+                        #[unroll]
+                        for irys in 0..nroots {
+                            g[irys as usize] = F::new(1.0);
+                            g[(gy_off + irys) as usize] = F::new(1.0);
+                            g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
                         }
 
-                        // ibase/kbase-selected reference centers (rijrx / rklrx)
-                        // and the HRR displacement vectors rirj / rkrl.
-                        let mut rx_ij_x = rjx;
-                        let mut rx_ij_y = rjy;
-                        let mut rx_ij_z = rjz;
-                        let mut rirjx = rjx - rix;
-                        let mut rirjy = rjy - riy;
-                        let mut rirjz = rjz - riz;
-                        if comptime!(ibase == 1u32) {
-                            rx_ij_x = rix;
-                            rx_ij_y = riy;
-                            rx_ij_z = riz;
-                            rirjx = rix - rjx;
-                            rirjy = riy - rjy;
-                            rirjz = riz - rjz;
-                        }
-                        let mut rx_kl_x = rlx;
-                        let mut rx_kl_y = rly;
-                        let mut rx_kl_z = rlz;
-                        let mut rkrlx = rlx - rkx;
-                        let mut rkrly = rly - rky;
-                        let mut rkrlz = rlz - rkz;
-                        if comptime!(kbase == 1u32) {
-                            rx_kl_x = rkx;
-                            rx_kl_y = rky;
-                            rx_kl_z = rkz;
-                            rkrlx = rkx - rlx;
-                            rkrly = rky - rly;
-                            rkrlz = rkz - rlz;
-                        }
+                        #[unroll]
+                        for irys2 in 0..nroots {
+                            let u2 = a0 * urys[irys2 as usize];
+                            let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
+                            let tmp5 = u2 * tmp4;
+                            let tmp1 = F::new(2.0) * tmp5;
+                            let tmp2 = tmp1 * akl;
+                            let tmp3 = tmp1 * aij;
+                            let b00 = tmp5;
+                            let b10 = tmp5 + tmp4 * akl;
+                            let b01 = tmp5 + tmp4 * aij;
 
-                        let rijrxx = rijx - rx_ij_x;
-                        let rijrxy = rijy - rx_ij_y;
-                        let rijrxz = rijz - rx_ij_z;
-                        let rklrxx = rklx - rx_kl_x;
-                        let rklrxy = rkly - rx_kl_y;
-                        let rklrxz = rklz - rx_kl_z;
-
-                        let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor * fac_ij * fac_kl;
-
-                        if UNIT_POS == 0u32 {
-                            // ── Build the [gx|gy|gz] tensor ───────────────────────
+                            // Per-axis c00/c0p then inline vrr_fill_axis.
                             #[unroll]
-                            for irys in 0..nroots {
-                                g[irys as usize] = F::new(1.0);
-                                g[(gy_off + irys) as usize] = F::new(1.0);
-                                g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
-                            }
+                            for axis in 0..3u32 {
+                                let off = axis * g_size;
+                                let mut xkl = xij_kl;
+                                let mut rijrx = rijrxx;
+                                let mut rklrx = rklrxx;
+                                if axis == 1u32 {
+                                    xkl = yij_kl;
+                                    rijrx = rijrxy;
+                                    rklrx = rklrxy;
+                                } else if axis == 2u32 {
+                                    xkl = zij_kl;
+                                    rijrx = rijrxz;
+                                    rklrx = rklrxz;
+                                }
+                                let c00 = rijrx - tmp2 * xkl;
+                                let c0p = rklrx + tmp3 * xkl;
 
-                            #[unroll]
-                            for irys2 in 0..nroots {
-                                let u2 = a0 * urys[irys2 as usize];
-                                let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
-                                let tmp5 = u2 * tmp4;
-                                let tmp1 = F::new(2.0) * tmp5;
-                                let tmp2 = tmp1 * akl;
-                                let tmp3 = tmp1 * aij;
-                                let b00 = tmp5;
-                                let b10 = tmp5 + tmp4 * akl;
-                                let b01 = tmp5 + tmp4 * aij;
+                                // Inline vrr_fill_axis(g[off..], irys2, nmax, mmax,
+                                //   dn=g2d_ijmax, dm=g2d_klmax, c00, c0p, b10, b01, b00).
+                                let root = irys2;
+                                let dn = g2d_ijmax;
+                                let dm = g2d_klmax;
 
-                                // Per-axis c00/c0p then inline vrr_fill_axis.
-                                #[unroll]
-                                for axis in 0..3u32 {
-                                    let off = axis * g_size;
-                                    let mut xkl = xij_kl;
-                                    let mut rijrx = rijrxx;
-                                    let mut rklrx = rklrxx;
-                                    if axis == 1u32 {
-                                        xkl = yij_kl;
-                                        rijrx = rijrxy;
-                                        rklrx = rklrxy;
-                                    } else if axis == 2u32 {
-                                        xkl = zij_kl;
-                                        rijrx = rijrxz;
-                                        rklrx = rklrxz;
+                                if nmax > 0u32 {
+                                    let mut s0 = g[(off + root) as usize];
+                                    let mut s1 = c00 * s0;
+                                    g[(off + root + dn) as usize] = s1;
+                                    let mut n = 1u32;
+                                    while n < nmax {
+                                        let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
+                                        g[(off + root + (n + 1u32) * dn) as usize] = s2;
+                                        s0 = s1;
+                                        s1 = s2;
+                                        n += 1u32;
                                     }
-                                    let c00 = rijrx - tmp2 * xkl;
-                                    let c0p = rklrx + tmp3 * xkl;
+                                }
 
-                                    // Inline vrr_fill_axis(g[off..], irys2, nmax, mmax,
-                                    //   dn=g2d_ijmax, dm=g2d_klmax, c00, c0p, b10, b01, b00).
-                                    let root = irys2;
-                                    let dn = g2d_ijmax;
-                                    let dm = g2d_klmax;
-
-                                    if nmax > 0u32 {
-                                        let mut s0 = g[(off + root) as usize];
-                                        let mut s1 = c00 * s0;
-                                        g[(off + root + dn) as usize] = s1;
-                                        let mut n = 1u32;
-                                        while n < nmax {
-                                            let s2 = c00 * s1 + F::cast_from(n) * b10 * s0;
-                                            g[(off + root + (n + 1u32) * dn) as usize] = s2;
-                                            s0 = s1;
-                                            s1 = s2;
-                                            n += 1u32;
-                                        }
-                                    }
-
-                                    if mmax > 0u32 {
-                                        let mut s0 = g[(off + root) as usize];
-                                        let mut s1 = c0p * s0;
-                                        g[(off + root + dm) as usize] = s1;
-                                        let mut m = 1u32;
-                                        while m < mmax {
-                                            let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
-                                            g[(off + root + (m + 1u32) * dm) as usize] = s2;
-                                            s0 = s1;
-                                            s1 = s2;
-                                            m += 1u32;
-                                        }
-
-                                        if nmax > 0u32 {
-                                            let mut s0n = g[(off + root + dn) as usize];
-                                            let mut s1n = c0p * s0n + b00 * g[(off + root) as usize];
-                                            g[(off + root + dn + dm) as usize] = s1n;
-                                            let mut m2 = 1u32;
-                                            while m2 < mmax {
-                                                let s2n = c0p * s1n
-                                                    + F::cast_from(m2) * b01 * s0n
-                                                    + b00 * g[(off + root + m2 * dm) as usize];
-                                                g[(off + root + dn + (m2 + 1u32) * dm) as usize] = s2n;
-                                                s0n = s1n;
-                                                s1n = s2n;
-                                                m2 += 1u32;
-                                            }
-                                        }
+                                if mmax > 0u32 {
+                                    let mut s0 = g[(off + root) as usize];
+                                    let mut s1 = c0p * s0;
+                                    g[(off + root + dm) as usize] = s1;
+                                    let mut m = 1u32;
+                                    while m < mmax {
+                                        let s2 = c0p * s1 + F::cast_from(m) * b01 * s0;
+                                        g[(off + root + (m + 1u32) * dm) as usize] = s2;
+                                        s0 = s1;
+                                        s1 = s2;
+                                        m += 1u32;
                                     }
 
                                     if nmax > 0u32 {
-                                        let mut m3 = 1u32;
-                                        while m3 <= mmax {
-                                            let offm = m3 * dm;
-                                            let jbase = offm + root;
-                                            let mut s0 = g[(off + jbase) as usize];
-                                            let mut s1 = g[(off + jbase + dn) as usize];
-                                            let mut n2 = 1u32;
-                                            while n2 < nmax {
-                                                let s2 = c00 * s1
-                                                    + F::cast_from(n2) * b10 * s0
-                                                    + F::cast_from(m3)
-                                                        * b00
-                                                        * g[(off + jbase + n2 * dn - dm) as usize];
-                                                g[(off + jbase + (n2 + 1u32) * dn) as usize] = s2;
-                                                s0 = s1;
-                                                s1 = s2;
-                                                n2 += 1u32;
-                                            }
-                                            m3 += 1u32;
+                                        let mut s0n = g[(off + root + dn) as usize];
+                                        let mut s1n = c0p * s0n + b00 * g[(off + root) as usize];
+                                        g[(off + root + dn + dm) as usize] = s1n;
+                                        let mut m2 = 1u32;
+                                        while m2 < mmax {
+                                            let s2n = c0p * s1n
+                                                + F::cast_from(m2) * b01 * s0n
+                                                + b00 * g[(off + root + m2 * dm) as usize];
+                                            g[(off + root + dn + (m2 + 1u32) * dm) as usize] = s2n;
+                                            s0n = s1n;
+                                            s1n = s2n;
+                                            m2 += 1u32;
                                         }
                                     }
                                 }
+
+                                if nmax > 0u32 {
+                                    let mut m3 = 1u32;
+                                    while m3 <= mmax {
+                                        let offm = m3 * dm;
+                                        let jbase = offm + root;
+                                        let mut s0 = g[(off + jbase) as usize];
+                                        let mut s1 = g[(off + jbase + dn) as usize];
+                                        let mut n2 = 1u32;
+                                        while n2 < nmax {
+                                            let s2 = c00 * s1
+                                                + F::cast_from(n2) * b10 * s0
+                                                + F::cast_from(m3)
+                                                    * b00
+                                                    * g[(off + jbase + n2 * dn - dm) as usize];
+                                            g[(off + jbase + (n2 + 1u32) * dn) as usize] = s2;
+                                            s0 = s1;
+                                            s1 = s2;
+                                            n2 += 1u32;
+                                        }
+                                        m3 += 1u32;
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── HRR transfer (branch by comptime kbase/ibase) ──────
+                        #[unroll]
+                        for axis2 in 0..3u32 {
+                            let off = axis2 * g_size;
+                            let mut rirj = rirjx;
+                            let mut rkrl = rkrlx;
+                            if axis2 == 1u32 {
+                                rirj = rirjy;
+                                rkrl = rkrly;
+                            } else if axis2 == 2u32 {
+                                rirj = rirjz;
+                                rkrl = rkrlz;
                             }
 
-                            // ── HRR transfer (branch by comptime kbase/ibase) ──────
-                            #[unroll]
-                            for axis2 in 0..3u32 {
-                                let off = axis2 * g_size;
-                                let mut rirj = rirjx;
-                                let mut rkrl = rkrlx;
-                                if axis2 == 1u32 {
-                                    rirj = rirjy;
-                                    rkrl = rkrly;
-                                } else if axis2 == 2u32 {
-                                    rirj = rirjz;
-                                    rkrl = rkrlz;
+                            if comptime!(kbase == 1u32 && ibase == 1u32) {
+                                // ik2d: i then k done; transfer dl←dk (ll), dj←di (lj).
+                                let mut l = 1u32;
+                                while l <= ll {
+                                    let mut k = 0u32;
+                                    while k <= (mmax - l) {
+                                        let mut i = 0u32;
+                                        while i <= nmax {
+                                            let ptr = l * dl + k * dk + i * di;
+                                            let mut r = 0u32;
+                                            while r < nroots {
+                                                let idx = ptr + r;
+                                                g[(off + idx) as usize] = rkrl
+                                                    * g[(off + idx - dl) as usize]
+                                                    + g[(off + idx - dl + dk) as usize];
+                                                r += 1u32;
+                                            }
+                                            i += 1u32;
+                                        }
+                                        k += 1u32;
+                                    }
+                                    l += 1u32;
                                 }
-
-                                if comptime!(kbase == 1u32 && ibase == 1u32) {
-                                    // ik2d: i then k done; transfer dl←dk (ll), dj←di (lj).
-                                    let mut l = 1u32;
-                                    while l <= ll {
-                                        let mut k = 0u32;
-                                        while k <= (mmax - l) {
-                                            let mut i = 0u32;
-                                            while i <= nmax {
-                                                let ptr = l * dl + k * dk + i * di;
+                                let mut j = 1u32;
+                                while j <= lj {
+                                    let mut l2 = 0u32;
+                                    while l2 <= ll {
+                                        let mut k2 = 0u32;
+                                        while k2 <= lk {
+                                            let ptr = j * dj + l2 * dl + k2 * dk;
+                                            let mut i2 = 0u32;
+                                            while i2 <= (nmax - j) {
+                                                let pbase = ptr + i2 * di;
                                                 let mut r = 0u32;
                                                 while r < nroots {
-                                                    let idx = ptr + r;
-                                                    g[(off + idx) as usize] = rkrl
-                                                        * g[(off + idx - dl) as usize]
-                                                        + g[(off + idx - dl + dk) as usize];
+                                                    let idx = pbase + r;
+                                                    g[(off + idx) as usize] = rirj
+                                                        * g[(off + idx - dj) as usize]
+                                                        + g[(off + idx - dj + di) as usize];
                                                     r += 1u32;
                                                 }
-                                                i += 1u32;
+                                                i2 += 1u32;
+                                            }
+                                            k2 += 1u32;
+                                        }
+                                        l2 += 1u32;
+                                    }
+                                    j += 1u32;
+                                }
+                            } else if comptime!(kbase == 1u32 && ibase == 0u32) {
+                                // kj2d: i raise (dj←di), then l raise (dl←dk).
+                                let mut i = 1u32;
+                                while i <= li {
+                                    let mut j = 0u32;
+                                    while j <= (nmax - i) {
+                                        let mut k = 0u32;
+                                        while k <= mmax {
+                                            let ptr = j * dj + k * dk + i * di;
+                                            let mut r = 0u32;
+                                            while r < nroots {
+                                                let idx = ptr + r;
+                                                g[(off + idx) as usize] = rirj
+                                                    * g[(off + idx - di) as usize]
+                                                    + g[(off + idx - di + dj) as usize];
+                                                r += 1u32;
                                             }
                                             k += 1u32;
-                                        }
-                                        l += 1u32;
-                                    }
-                                    let mut j = 1u32;
-                                    while j <= lj {
-                                        let mut l2 = 0u32;
-                                        while l2 <= ll {
-                                            let mut k2 = 0u32;
-                                            while k2 <= lk {
-                                                let ptr = j * dj + l2 * dl + k2 * dk;
-                                                let mut i2 = 0u32;
-                                                while i2 <= (nmax - j) {
-                                                    let pbase = ptr + i2 * di;
-                                                    let mut r = 0u32;
-                                                    while r < nroots {
-                                                        let idx = pbase + r;
-                                                        g[(off + idx) as usize] = rirj
-                                                            * g[(off + idx - dj) as usize]
-                                                            + g[(off + idx - dj + di) as usize];
-                                                        r += 1u32;
-                                                    }
-                                                    i2 += 1u32;
-                                                }
-                                                k2 += 1u32;
-                                            }
-                                            l2 += 1u32;
                                         }
                                         j += 1u32;
                                     }
-                                } else if comptime!(kbase == 1u32 && ibase == 0u32) {
-                                    // kj2d: i raise (dj←di), then l raise (dl←dk).
-                                    let mut i = 1u32;
-                                    while i <= li {
+                                    i += 1u32;
+                                }
+                                let mut l = 1u32;
+                                while l <= ll {
+                                    let mut k = 0u32;
+                                    while k <= (mmax - l) {
                                         let mut j = 0u32;
-                                        while j <= (nmax - i) {
-                                            let mut k = 0u32;
-                                            while k <= mmax {
-                                                let ptr = j * dj + k * dk + i * di;
-                                                let mut r = 0u32;
-                                                while r < nroots {
-                                                    let idx = ptr + r;
-                                                    g[(off + idx) as usize] = rirj
-                                                        * g[(off + idx - di) as usize]
-                                                        + g[(off + idx - di + dj) as usize];
-                                                    r += 1u32;
-                                                }
-                                                k += 1u32;
+                                        while j <= lj {
+                                            let ptr = l * dl + k * dk + j * dj;
+                                            let mut n = 0u32;
+                                            while n < di {
+                                                let idx = ptr + n;
+                                                g[(off + idx) as usize] = rkrl
+                                                    * g[(off + idx - dl) as usize]
+                                                    + g[(off + idx - dl + dk) as usize];
+                                                n += 1u32;
                                             }
                                             j += 1u32;
                                         }
-                                        i += 1u32;
+                                        k += 1u32;
                                     }
-                                    let mut l = 1u32;
-                                    while l <= ll {
-                                        let mut k = 0u32;
-                                        while k <= (mmax - l) {
-                                            let mut j = 0u32;
-                                            while j <= lj {
-                                                let ptr = l * dl + k * dk + j * dj;
-                                                let mut n = 0u32;
-                                                while n < di {
-                                                    let idx = ptr + n;
-                                                    g[(off + idx) as usize] = rkrl
-                                                        * g[(off + idx - dl) as usize]
-                                                        + g[(off + idx - dl + dk) as usize];
-                                                    n += 1u32;
-                                                }
-                                                j += 1u32;
+                                    l += 1u32;
+                                }
+                            } else if comptime!(kbase == 0u32 && ibase == 1u32) {
+                                // il2d: k raise (dl←dk), then j raise (dj←di).
+                                let mut k = 1u32;
+                                while k <= lk {
+                                    let mut l = 0u32;
+                                    while l <= (mmax - k) {
+                                        let mut i = 0u32;
+                                        while i <= nmax {
+                                            let ptr = l * dl + k * dk + i * di;
+                                            let mut r = 0u32;
+                                            while r < nroots {
+                                                let idx = ptr + r;
+                                                g[(off + idx) as usize] = rkrl
+                                                    * g[(off + idx - dk) as usize]
+                                                    + g[(off + idx - dk + dl) as usize];
+                                                r += 1u32;
                                             }
-                                            k += 1u32;
+                                            i += 1u32;
                                         }
                                         l += 1u32;
                                     }
-                                } else if comptime!(kbase == 0u32 && ibase == 1u32) {
-                                    // il2d: k raise (dl←dk), then j raise (dj←di).
+                                    k += 1u32;
+                                }
+                                let mut j = 1u32;
+                                while j <= lj {
+                                    let mut l = 0u32;
+                                    while l <= ll {
+                                        let mut k2 = 0u32;
+                                        while k2 <= lk {
+                                            let ptr = j * dj + l * dl + k2 * dk;
+                                            let mut i2 = 0u32;
+                                            while i2 <= (nmax - j) {
+                                                let pbase = ptr + i2 * di;
+                                                let mut r = 0u32;
+                                                while r < nroots {
+                                                    let idx = pbase + r;
+                                                    g[(off + idx) as usize] = rirj
+                                                        * g[(off + idx - dj) as usize]
+                                                        + g[(off + idx - dj + di) as usize];
+                                                    r += 1u32;
+                                                }
+                                                i2 += 1u32;
+                                            }
+                                            k2 += 1u32;
+                                        }
+                                        l += 1u32;
+                                    }
+                                    j += 1u32;
+                                }
+                            } else {
+                                // lj2d: i raise (dj←di), then k raise (dl←dk).
+                                let mut i = 1u32;
+                                while i <= li {
+                                    let mut j = 0u32;
+                                    while j <= (nmax - i) {
+                                        let mut l = 0u32;
+                                        while l <= mmax {
+                                            let ptr = j * dj + l * dl + i * di;
+                                            let mut r = 0u32;
+                                            while r < nroots {
+                                                let idx = ptr + r;
+                                                g[(off + idx) as usize] = rirj
+                                                    * g[(off + idx - di) as usize]
+                                                    + g[(off + idx - di + dj) as usize];
+                                                r += 1u32;
+                                            }
+                                            l += 1u32;
+                                        }
+                                        j += 1u32;
+                                    }
+                                    i += 1u32;
+                                }
+                                let mut j2 = 0u32;
+                                while j2 <= lj {
                                     let mut k = 1u32;
                                     while k <= lk {
                                         let mut l = 0u32;
                                         while l <= (mmax - k) {
-                                            let mut i = 0u32;
-                                            while i <= nmax {
-                                                let ptr = l * dl + k * dk + i * di;
-                                                let mut r = 0u32;
-                                                while r < nroots {
-                                                    let idx = ptr + r;
-                                                    g[(off + idx) as usize] = rkrl
-                                                        * g[(off + idx - dk) as usize]
-                                                        + g[(off + idx - dk + dl) as usize];
-                                                    r += 1u32;
-                                                }
-                                                i += 1u32;
+                                            let ptr = j2 * dj + l * dl + k * dk;
+                                            let mut n = 0u32;
+                                            while n < dk {
+                                                let idx = ptr + n;
+                                                g[(off + idx) as usize] = rkrl
+                                                    * g[(off + idx - dk) as usize]
+                                                    + g[(off + idx - dk + dl) as usize];
+                                                n += 1u32;
                                             }
                                             l += 1u32;
                                         }
                                         k += 1u32;
                                     }
-                                    let mut j = 1u32;
-                                    while j <= lj {
-                                        let mut l = 0u32;
-                                        while l <= ll {
-                                            let mut k2 = 0u32;
-                                            while k2 <= lk {
-                                                let ptr = j * dj + l * dl + k2 * dk;
-                                                let mut i2 = 0u32;
-                                                while i2 <= (nmax - j) {
-                                                    let pbase = ptr + i2 * di;
-                                                    let mut r = 0u32;
-                                                    while r < nroots {
-                                                        let idx = pbase + r;
-                                                        g[(off + idx) as usize] = rirj
-                                                            * g[(off + idx - dj) as usize]
-                                                            + g[(off + idx - dj + di) as usize];
-                                                        r += 1u32;
-                                                    }
-                                                    i2 += 1u32;
-                                                }
-                                                k2 += 1u32;
-                                            }
-                                            l += 1u32;
-                                        }
-                                        j += 1u32;
-                                    }
-                                } else {
-                                    // lj2d: i raise (dj←di), then k raise (dl←dk).
-                                    let mut i = 1u32;
-                                    while i <= li {
-                                        let mut j = 0u32;
-                                        while j <= (nmax - i) {
-                                            let mut l = 0u32;
-                                            while l <= mmax {
-                                                let ptr = j * dj + l * dl + i * di;
-                                                let mut r = 0u32;
-                                                while r < nroots {
-                                                    let idx = ptr + r;
-                                                    g[(off + idx) as usize] = rirj
-                                                        * g[(off + idx - di) as usize]
-                                                        + g[(off + idx - di + dj) as usize];
-                                                    r += 1u32;
-                                                }
-                                                l += 1u32;
-                                            }
-                                            j += 1u32;
-                                        }
-                                        i += 1u32;
-                                    }
-                                    let mut j2 = 0u32;
-                                    while j2 <= lj {
-                                        let mut k = 1u32;
-                                        while k <= lk {
-                                            let mut l = 0u32;
-                                            while l <= (mmax - k) {
-                                                let ptr = j2 * dj + l * dl + k * dk;
-                                                let mut n = 0u32;
-                                                while n < dk {
-                                                    let idx = ptr + n;
-                                                    g[(off + idx) as usize] = rkrl
-                                                        * g[(off + idx - dk) as usize]
-                                                        + g[(off + idx - dk + dl) as usize];
-                                                    n += 1u32;
-                                                }
-                                                l += 1u32;
-                                            }
-                                            k += 1u32;
-                                        }
-                                        j2 += 1u32;
-                                    }
+                                    j2 += 1u32;
                                 }
                             }
                         }
-                        sync_cube();
+                    }
+                    sync_cube();
 
-                        let prim_weight = if is_uncontracted {
-                            coeff_i[pi as usize]
-                                * coeff_j[pj as usize]
-                                * coeff_k[pk as usize]
-                                * coeff_l[pl as usize]
-                        } else {
-                            F::new(0.0)
-                        };
+                    let prim_weight = if is_uncontracted {
+                        coeff_i[pi as usize]
+                            * coeff_j[pj as usize]
+                            * coeff_k[pk as usize]
+                            * coeff_l[pl as usize]
+                    } else {
+                        F::new(0.0)
+                    };
 
-                        // ── Contract into per-quad Cartesian blocks cooperatively ───────────
-                        // Descending cart_comps over (l,k,j,i); i fastest.
-                        let mut l_idx = 0u32;
-                        let mut la = 0u32;
-                        while la <= ll {
-                            let lx = ll - la;
-                            let ll_minus = ll - lx;
-                            let mut lb = 0u32;
-                            while lb <= ll_minus {
-                                let ly = ll_minus - lb;
-                                let lz = ll - lx - ly;
+                    // ── Contract into per-quad Cartesian blocks cooperatively ───────────
+                    // Descending cart_comps over (l,k,j,i); i fastest.
+                    let mut l_idx = 0u32;
+                    let mut la = 0u32;
+                    while la <= ll {
+                        let lx = ll - la;
+                        let ll_minus = ll - lx;
+                        let mut lb = 0u32;
+                        while lb <= ll_minus {
+                            let ly = ll_minus - lb;
+                            let lz = ll - lx - ly;
 
-                                let mut k_idx = 0u32;
-                                let mut ka = 0u32;
-                                while ka <= lk {
-                                    let kx = lk - ka;
-                                    let lk_minus = lk - kx;
-                                    let mut kb = 0u32;
-                                    while kb <= lk_minus {
-                                        let ky = lk_minus - kb;
-                                        let kz = lk - kx - ky;
+                            let mut k_idx = 0u32;
+                            let mut ka = 0u32;
+                            while ka <= lk {
+                                let kx = lk - ka;
+                                let lk_minus = lk - kx;
+                                let mut kb = 0u32;
+                                while kb <= lk_minus {
+                                    let ky = lk_minus - kb;
+                                    let kz = lk - kx - ky;
 
-                                        let mut j_idx = 0u32;
-                                        let mut ja = 0u32;
-                                        while ja <= lj {
-                                            let jx = lj - ja;
-                                            let lj_minus = lj - jx;
-                                            let mut jb = 0u32;
-                                            while jb <= lj_minus {
-                                                let jy = lj_minus - jb;
-                                                let jz = lj - jx - jy;
+                                    let mut j_idx = 0u32;
+                                    let mut ja = 0u32;
+                                    while ja <= lj {
+                                        let jx = lj - ja;
+                                        let lj_minus = lj - jx;
+                                        let mut jb = 0u32;
+                                        while jb <= lj_minus {
+                                            let jy = lj_minus - jb;
+                                            let jz = lj - jx - jy;
 
-                                                let mut i_idx = 0u32;
-                                                let mut ia = 0u32;
-                                                while ia <= li {
-                                                    let ix = li - ia;
-                                                    let li_minus_ix = li - ix;
-                                                    let mut ib = 0u32;
-                                                    while ib <= li_minus_ix {
-                                                        let iy = li_minus_ix - ib;
-                                                        let iz = li - ix - iy;
+                                            let mut i_idx = 0u32;
+                                            let mut ia = 0u32;
+                                            while ia <= li {
+                                                let ix = li - ia;
+                                                let li_minus_ix = li - ix;
+                                                let mut ib = 0u32;
+                                                while ib <= li_minus_ix {
+                                                    let iy = li_minus_ix - ib;
+                                                    let iz = li - ix - iy;
 
-                                                        let q_elem = i_idx
-                                                            + (j_idx + (k_idx + l_idx * nfk) * nfj)
-                                                                * nfi;
+                                                    let q_elem = i_idx
+                                                        + (j_idx + (k_idx + l_idx * nfk) * nfj)
+                                                            * nfi;
 
-                                                        if ((q_elem as u32) % CUBE_DIM) == UNIT_POS {
-                                                            let base_x =
-                                                                ix * di + kx * dk + lx * dl + jx * dj;
-                                                            let base_y =
-                                                                iy * di + ky * dk + ly * dl + jy * dj;
-                                                            let base_z =
-                                                                iz * di + kz * dk + lz * dl + jz * dj;
+                                                    if ((q_elem as u32) % CUBE_DIM) == UNIT_POS {
+                                                        let base_x =
+                                                            ix * di + kx * dk + lx * dl + jx * dj;
+                                                        let base_y =
+                                                            iy * di + ky * dk + ly * dl + jy * dj;
+                                                        let base_z =
+                                                            iz * di + kz * dk + lz * dl + jz * dj;
 
-                                                            let mut sum = F::new(0.0);
-                                                            #[unroll]
-                                                            for r in 0..nroots {
-                                                                sum += g[(base_x + r) as usize]
-                                                                    * g[(gy_off + base_y + r) as usize]
-                                                                    * g[(gz_off + base_z + r) as usize];
-                                                            }
-
-                                                            if is_uncontracted {
-                                                                cart_out[q_elem as usize] +=
-                                                                    prim_weight * sum;
-                                                            } else {
-                                                                // Accumulate into every
-                                                                // contraction quad block.
-                                                                let mut ci = 0u32;
-                                                                while ci < nctr_i {
-                                                                    let cvi = coeff_i
-                                                                        [(pi * nctr_i + ci) as usize];
-                                                                    let mut cj = 0u32;
-                                                                    while cj < nctr_j {
-                                                                        let cvj = coeff_j[(pj * nctr_j
-                                                                            + cj)
-                                                                            as usize];
-                                                                        let mut ck = 0u32;
-                                                                        while ck < nctr_k {
-                                                                            let cvk = coeff_k[(pk
-                                                                                * nctr_k
-                                                                                + ck)
-                                                                                as usize];
-                                                                            let mut cl = 0u32;
-                                                                            while cl < nctr_l {
-                                                                                let cvl = coeff_l[(pl
-                                                                                    * nctr_l
-                                                                                    + cl)
-                                                                                    as usize];
-                                                                                let weight = cvi
-                                                                                    * cvj
-                                                                                    * cvk
-                                                                                    * cvl;
-                                                                                let qbase = (((ci
-                                                                                    * nctr_j
-                                                                                    + cj)
-                                                                                    * nctr_k
-                                                                                    + ck)
-                                                                                    * nctr_l
-                                                                                    + cl)
-                                                                                    * block_len;
-                                                                                let oidx =
-                                                                                    qbase + q_elem;
-                                                                                cart_out
-                                                                                    [oidx as usize] +=
-                                                                                    weight * sum;
-                                                                                cl += 1u32;
-                                                                            }
-                                                                            ck += 1u32;
-                                                                        }
-                                                                        cj += 1u32;
-                                                                    }
-                                                                    ci += 1u32;
-                                                                }
-                                                            }
+                                                        let mut sum = F::new(0.0);
+                                                        #[unroll]
+                                                        for r in 0..nroots {
+                                                            sum += g[(base_x + r) as usize]
+                                                                * g[(gy_off + base_y + r) as usize]
+                                                                * g[(gz_off + base_z + r) as usize];
                                                         }
 
-                                                        i_idx += 1u32;
-                                                        ib += 1u32;
+                                                        if is_uncontracted {
+                                                            cart_out[q_elem as usize] +=
+                                                                prim_weight * sum;
+                                                        } else {
+                                                            // Accumulate into every
+                                                            // contraction quad block.
+                                                            let mut ci = 0u32;
+                                                            while ci < nctr_i {
+                                                                let cvi = coeff_i
+                                                                    [(pi * nctr_i + ci) as usize];
+                                                                let mut cj = 0u32;
+                                                                while cj < nctr_j {
+                                                                    let cvj = coeff_j[(pj * nctr_j
+                                                                        + cj)
+                                                                        as usize];
+                                                                    let mut ck = 0u32;
+                                                                    while ck < nctr_k {
+                                                                        let cvk = coeff_k[(pk
+                                                                            * nctr_k
+                                                                            + ck)
+                                                                            as usize];
+                                                                        let mut cl = 0u32;
+                                                                        while cl < nctr_l {
+                                                                            let cvl = coeff_l[(pl
+                                                                                * nctr_l
+                                                                                + cl)
+                                                                                as usize];
+                                                                            let weight = cvi
+                                                                                * cvj
+                                                                                * cvk
+                                                                                * cvl;
+                                                                            let qbase = (((ci
+                                                                                * nctr_j
+                                                                                + cj)
+                                                                                * nctr_k
+                                                                                + ck)
+                                                                                * nctr_l
+                                                                                + cl)
+                                                                                * block_len;
+                                                                            let oidx =
+                                                                                qbase + q_elem;
+                                                                            cart_out
+                                                                                [oidx as usize] +=
+                                                                                weight * sum;
+                                                                            cl += 1u32;
+                                                                        }
+                                                                        ck += 1u32;
+                                                                    }
+                                                                    cj += 1u32;
+                                                                }
+                                                                ci += 1u32;
+                                                            }
+                                                        }
                                                     }
-                                                    ia += 1u32;
-                                                }
-                                                j_idx += 1u32;
-                                                jb += 1u32;
-                                            }
-                                            ja += 1u32;
-                                        }
-                                        k_idx += 1u32;
-                                        kb += 1u32;
-                                    }
-                                    ka += 1u32;
-                                }
-                                l_idx += 1u32;
-                                lb += 1u32;
-                            }
-                            la += 1u32;
-                        }
-                        sync_cube();
 
-                        pl += 1u32;
+                                                    i_idx += 1u32;
+                                                    ib += 1u32;
+                                                }
+                                                ia += 1u32;
+                                            }
+                                            j_idx += 1u32;
+                                            jb += 1u32;
+                                        }
+                                        ja += 1u32;
+                                    }
+                                    k_idx += 1u32;
+                                    kb += 1u32;
+                                }
+                                ka += 1u32;
+                            }
+                            l_idx += 1u32;
+                            lb += 1u32;
+                        }
+                        la += 1u32;
                     }
-                    pk += 1u32;
+                    sync_cube();
+
+                    pl += 1u32;
                 }
-                pj += 1u32;
+                pk += 1u32;
+            }
+            pj += 1u32;
         }
         pi += 1u32;
     }
@@ -1971,22 +1971,25 @@ enum Hess2eKind {
     Ip1ip2,
     /// int2e_ipip1ipip2 (∇²_i∇²_k), rank 81, headroom i+2, k+2.
     Ipip1ipip2,
+    /// int2e_ipvip1ipvip2 (∇_i∇_j∇_k∇_l), rank 81, one derivative per center.
+    Ipvip1ipvip2,
 }
 
 impl Hess2eKind {
     fn ncomp(self) -> usize {
         match self {
             Hess2eKind::Ipip1 | Hess2eKind::Ipvip1 | Hess2eKind::Ip1ip2 => 9,
-            Hess2eKind::Ipip1ipip2 => 81,
+            Hess2eKind::Ipip1ipip2 | Hess2eKind::Ipvip1ipvip2 => 81,
         }
     }
-    /// (i_inc, j_inc, k_inc) headroom raised on the plain G-tensor (ll never raised).
-    fn headroom(self) -> (usize, usize, usize) {
+    /// (i_inc, j_inc, k_inc, l_inc) headroom raised on the plain G-tensor.
+    fn headroom(self) -> (usize, usize, usize, usize) {
         match self {
-            Hess2eKind::Ipip1 => (2, 0, 0),
-            Hess2eKind::Ipvip1 => (1, 1, 0),
-            Hess2eKind::Ip1ip2 => (1, 0, 1),
-            Hess2eKind::Ipip1ipip2 => (2, 0, 2),
+            Hess2eKind::Ipip1 => (2, 0, 0, 0),
+            Hess2eKind::Ipvip1 => (1, 1, 0, 0),
+            Hess2eKind::Ip1ip2 => (1, 0, 1, 0),
+            Hess2eKind::Ipip1ipip2 => (2, 0, 2, 0),
+            Hess2eKind::Ipvip1ipvip2 => (1, 1, 1, 1),
         }
     }
 }
@@ -2023,7 +2026,7 @@ fn launch_two_electron_hess2e<F: CintFloat>(
     }
 
     let ncomp = kind.ncomp();
-    let (i_inc, j_inc, k_inc) = kind.headroom();
+    let (i_inc, j_inc, k_inc, l_inc) = kind.headroom();
 
     // Per-family headroom shape (D-09): raise the G-tensor angular momenta so the
     // gout's nabla compositions can read up to the elevated indices.
@@ -2031,7 +2034,7 @@ fn launch_two_electron_hess2e<F: CintFloat>(
         li as usize + i_inc,
         lj as usize + j_inc,
         lk as usize + k_inc,
-        ll as usize,
+        ll as usize + l_inc,
     );
 
     // FND-02 host Rys ceiling: nroots 6..12 route here; >12 stays fail-closed.
@@ -2148,6 +2151,18 @@ fn launch_two_electron_hess2e<F: CintFloat>(
                             ll_b,
                             ai,
                             ak,
+                        ),
+                        Hess2eKind::Ipvip1ipvip2 => crate::kernels::f12::gout_ipvip1ipvip2(
+                            &g,
+                            &grad_f12_shape,
+                            li_b,
+                            lj_b,
+                            lk_b,
+                            ll_b,
+                            ai,
+                            aj,
+                            ak,
+                            al,
                         ),
                     };
 
@@ -2997,9 +3012,16 @@ pub fn rel2e_family_dispatch(name: &str) -> Option<(Rel2eGout, E1Transform, E2Tr
     match name {
         // REL-03 (intor4.c): 1-sided σ → si_2e1 + sf_2e2.
         "srsr1" => Some((Rel2eGout::Srsr1, Si, E2::Sf)),
+        "spsp2" => Some((Rel2eGout::Spsp2, Sf, E2::Si)),
         // REL-03 (intor4.c): 2-sided σ → si_2e1 + si_2e2.
         "spsp1spsp2" => Some((Rel2eGout::Spsp1spsp2, Si, E2::Si)),
         "srsr1srsr2" => Some((Rel2eGout::Srsr1srsr2, Si, E2::Si)),
+        "ipspsp1" => Some((Rel2eGout::IpSpsp1, Si, E2::Sf)),
+        "ip1spsp2" => Some((Rel2eGout::Ip1Spsp2, Sf, E2::Si)),
+        "ipspsp1spsp2" => Some((Rel2eGout::IpSpsp1Spsp2, Si, E2::Si)),
+        "ipsrsr1" => Some((Rel2eGout::IpSrsr1, Si, E2::Sf)),
+        "ip1srsr2" => Some((Rel2eGout::Ip1Srsr2, Sf, E2::Si)),
+        "ipsrsr1srsr2" => Some((Rel2eGout::IpSrsr1Srsr2, Si, E2::Si)),
         // REL-04 (gaunt1.c): ssp/sps → si_2e1i + si_2e2i (BOTH imaginary).
         "ssp1ssp2" => Some((Rel2eGout::Ssp1ssp2, SiI, E2::SiI)),
         "ssp1sps2" => Some((Rel2eGout::Ssp1sps2, SiI, E2::SiI)),
@@ -3118,6 +3140,8 @@ fn launch_rel2e_sigma_spinor<F: CintFloat>(
 /// Per-electron spinor transform selection for a 2e σ family (29-RESEARCH §2e map).
 #[derive(Clone, Copy, PartialEq)]
 pub enum E1Transform {
+    /// `c2s_sf_2e1` — spin-free electron-1 transform.
+    Sf,
     /// `c2s_si_2e1` — real bra σ-mix + ordinary ket.
     Si,
     /// `c2s_si_2e1i` — bra σ-mix + imaginary (×i) ket.
@@ -3141,9 +3165,16 @@ pub enum E2Transform {
 pub enum Rel2eGout {
     // REL-03 (intor4.c)
     Spsp1,
+    Spsp2,
     Srsr1,
     Spsp1spsp2,
     Srsr1srsr2,
+    IpSpsp1,
+    Ip1Spsp2,
+    IpSpsp1Spsp2,
+    IpSrsr1,
+    Ip1Srsr2,
+    IpSrsr1Srsr2,
     // REL-04 gaunt1.c (rank-9, ncomp 16)
     Ssp1ssp2,
     Ssp1sps2,
@@ -3167,8 +3198,17 @@ impl Rel2eGout {
     fn ncomp(self) -> usize {
         use Rel2eGout::*;
         match self {
-            Spsp1 | Srsr1 | Spv1 | Vsp1 => 4,
+            Spsp1 | Spsp2 | Srsr1 | Spv1 | Vsp1 => 4,
+            IpSpsp1 | Ip1Spsp2 | IpSrsr1 | Ip1Srsr2 => 12,
+            IpSpsp1Spsp2 | IpSrsr1Srsr2 => 48,
             _ => 16,
+        }
+    }
+    fn visible_rank(self) -> usize {
+        use Rel2eGout::*;
+        match self {
+            IpSpsp1 | Ip1Spsp2 | IpSpsp1Spsp2 | IpSrsr1 | Ip1Srsr2 | IpSrsr1Srsr2 => 3,
+            _ => 1,
         }
     }
     /// Headroom (i_inc, j_inc, k_inc, l_inc) for the G-tensor build — the libcint
@@ -3177,7 +3217,11 @@ impl Rel2eGout {
         use Rel2eGout::*;
         match self {
             Spsp1 | Srsr1 => (1, 1, 0, 0),
+            Spsp2 => (0, 0, 1, 1),
             Spsp1spsp2 | Srsr1srsr2 => (1, 1, 1, 1),
+            IpSpsp1 | IpSrsr1 => (2, 1, 0, 0),
+            Ip1Spsp2 | Ip1Srsr2 => (1, 0, 1, 1),
+            IpSpsp1Spsp2 | IpSrsr1Srsr2 => (2, 1, 1, 1),
             Ssp1ssp2 => (0, 1, 0, 1),
             Ssp1sps2 => (0, 1, 1, 0),
             Sps1ssp2 => (1, 0, 0, 1),
@@ -3244,6 +3288,7 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
     let nfl = ncart(ll);
     let block_len = nfi * nfj * nfk * nfl; // a single component's cart block
     let ngc = gout_kind.ncomp();
+    let visible_rank = gout_kind.visible_rank();
 
     let di = spinor_len(li, kappa_i as i32);
     let dj = spinor_len(lj, kappa_j as i32);
@@ -3255,7 +3300,8 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
     let nl_sp = nctr_l * dl;
 
     // ── Fail-closed staging guard (T-29-11) BEFORE any write. ──
-    let staging_required = ni_sp * nj_sp * nk_sp * nl_sp * 2;
+    let spinor_block_len = ni_sp * nj_sp * nk_sp * nl_sp * 2;
+    let staging_required = visible_rank * spinor_block_len;
     if staging.len() < staging_required {
         return Err(cintxRsError::BufferTooSmall {
             required: staging_required,
@@ -3315,6 +3361,9 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
                         Rel2eGout::Spsp1 => {
                             f12::gout_spsp1(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj)
                         }
+                        Rel2eGout::Spsp2 => {
+                            f12::gout_spsp2(&g, &grad_f12_shape, gli, glj, glk, gll, ai, aj, ak, al)
+                        }
                         Rel2eGout::Srsr1 => {
                             f12::gout_srsr1(&g, &grad_f12_shape, gli, glj, glk, gll)
                         }
@@ -3333,6 +3382,84 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
                         Rel2eGout::Srsr1srsr2 => {
                             f12::gout_srsr1srsr2(&g, &grad_f12_shape, gli, glj, glk, gll)
                         }
+                        Rel2eGout::IpSpsp1 => f12::gout_ip_sigma(
+                            0,
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Ip1Spsp2 => f12::gout_ip_sigma(
+                            1,
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::IpSpsp1Spsp2 => f12::gout_ip_sigma(
+                            2,
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::IpSrsr1 => f12::gout_ip_sigma(
+                            3,
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::Ip1Srsr2 => f12::gout_ip_sigma(
+                            4,
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
+                        Rel2eGout::IpSrsr1Srsr2 => f12::gout_ip_sigma(
+                            5,
+                            &g,
+                            &grad_f12_shape,
+                            gli,
+                            glj,
+                            glk,
+                            gll,
+                            ai,
+                            aj,
+                            ak,
+                            al,
+                        ),
                         Rel2eGout::Ssp1ssp2 => f12::gout_ssp1ssp2(
                             &g,
                             &grad_f12_shape,
@@ -3507,17 +3634,36 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
             *v = 0.0;
         }
         let cb = |c: usize| &cart_blocks[base + c * block_len..base + (c + 1) * block_len];
-        let gx = cb(comp0);
-        let gy = cb(comp0 + 1);
-        let gz = cb(comp0 + 2);
-        let g1 = cb(comp0 + 3);
         match e1 {
-            E1Transform::Si => {
-                cart_to_spinor_si_2e1(opij_slot, gx, gy, gz, g1, li, kappa_i, lj, kappa_j, lk, ll)
+            E1Transform::Sf => {
+                cart_to_spinor_sf_2e1(opij_slot, cb(comp0), li, kappa_i, lj, kappa_j, lk, ll)
             }
-            E1Transform::SiI => {
-                cart_to_spinor_si_2e1i(opij_slot, gx, gy, gz, g1, li, kappa_i, lj, kappa_j, lk, ll)
-            }
+            E1Transform::Si => cart_to_spinor_si_2e1(
+                opij_slot,
+                cb(comp0),
+                cb(comp0 + 1),
+                cb(comp0 + 2),
+                cb(comp0 + 3),
+                li,
+                kappa_i,
+                lj,
+                kappa_j,
+                lk,
+                ll,
+            ),
+            E1Transform::SiI => cart_to_spinor_si_2e1i(
+                opij_slot,
+                cb(comp0),
+                cb(comp0 + 1),
+                cb(comp0 + 2),
+                cb(comp0 + 3),
+                li,
+                kappa_i,
+                lj,
+                kappa_j,
+                lk,
+                ll,
+            ),
         }
     };
 
@@ -3527,72 +3673,82 @@ pub fn launch_rel2e_sigma_spinor_quartet<F: CintFloat>(
                 for cl in 0..nctr_l {
                     let base = (((ci * nctr_j + cj) * nctr_k + ck) * nctr_l + cl) * total_len;
 
-                    match e2 {
-                        E2Transform::Sf => {
-                            // 1-sided: 4 e1 blocks (x,y,z,1) → one opij → sf_2e2.
-                            let (slot, _) = opij_buf.split_at_mut(opij_len);
-                            run_e1(slot, &cart_blocks, base, 0)?;
-                            for v in sub.iter_mut() {
-                                *v = F::from_f64_lossy(0.0);
-                            }
-                            cart_to_spinor_sf_2e2::<F>(
-                                &mut sub,
-                                &opij_buf[..opij_len],
-                                li,
-                                kappa_i,
-                                lj,
-                                kappa_j,
-                                lk,
-                                kappa_k,
-                                ll,
-                                kappa_l,
-                            )?;
-                        }
-                        E2Transform::Si | E2Transform::SiI => {
-                            // 2-sided: for each of the 4 e2 σ-components, run e1 on its
-                            // 4 e1 blocks → opij[e2]; then feed ox/oy/oz/o1 to si_2e2(i).
-                            for e2c in 0..4 {
-                                let mut scratch = vec![0.0_f64; opij_len];
-                                run_e1(&mut scratch, &cart_blocks, base, e2c * 4)?;
-                                opij_buf[e2c * opij_len..(e2c + 1) * opij_len]
-                                    .copy_from_slice(&scratch);
-                            }
-                            for v in sub.iter_mut() {
-                                *v = F::from_f64_lossy(0.0);
-                            }
-                            let (ox, rest) = opij_buf.split_at(opij_len);
-                            let (oy, rest) = rest.split_at(opij_len);
-                            let (oz, o1) = rest.split_at(opij_len);
-                            let o1 = &o1[..opij_len];
-                            if e2 == E2Transform::Si {
-                                cart_to_spinor_si_2e2::<F>(
-                                    &mut sub, ox, oy, oz, o1, li, kappa_i, lj, kappa_j, lk,
-                                    kappa_k, ll, kappa_l,
-                                )?;
-                            } else {
-                                cart_to_spinor_si_2e2i::<F>(
-                                    &mut sub, ox, oy, oz, o1, li, kappa_i, lj, kappa_j, lk,
-                                    kappa_k, ll, kappa_l,
+                    for group in 0..visible_rank {
+                        let e1_components = if e1 == E1Transform::Sf { 1 } else { 4 };
+                        let group_base = group * e1_components * n_e2_blocks;
+                        match e2 {
+                            E2Transform::Sf => {
+                                // 1-sided: 4 e1 blocks (x,y,z,1) → one opij → sf_2e2.
+                                let (slot, _) = opij_buf.split_at_mut(opij_len);
+                                run_e1(slot, &cart_blocks, base, group_base)?;
+                                for v in sub.iter_mut() {
+                                    *v = F::from_f64_lossy(0.0);
+                                }
+                                cart_to_spinor_sf_2e2::<F>(
+                                    &mut sub,
+                                    &opij_buf[..opij_len],
+                                    li,
+                                    kappa_i,
+                                    lj,
+                                    kappa_j,
+                                    lk,
+                                    kappa_k,
+                                    ll,
+                                    kappa_l,
                                 )?;
                             }
+                            E2Transform::Si | E2Transform::SiI => {
+                                // 2-sided: for each of the 4 e2 σ-components, run e1 on its
+                                // 4 e1 blocks → opij[e2]; then feed ox/oy/oz/o1 to si_2e2(i).
+                                for e2c in 0..4 {
+                                    let mut scratch = vec![0.0_f64; opij_len];
+                                    run_e1(
+                                        &mut scratch,
+                                        &cart_blocks,
+                                        base,
+                                        group_base + e2c * e1_components,
+                                    )?;
+                                    opij_buf[e2c * opij_len..(e2c + 1) * opij_len]
+                                        .copy_from_slice(&scratch);
+                                }
+                                for v in sub.iter_mut() {
+                                    *v = F::from_f64_lossy(0.0);
+                                }
+                                let (ox, rest) = opij_buf.split_at(opij_len);
+                                let (oy, rest) = rest.split_at(opij_len);
+                                let (oz, o1) = rest.split_at(opij_len);
+                                let o1 = &o1[..opij_len];
+                                if e2 == E2Transform::Si {
+                                    cart_to_spinor_si_2e2::<F>(
+                                        &mut sub, ox, oy, oz, o1, li, kappa_i, lj, kappa_j, lk,
+                                        kappa_k, ll, kappa_l,
+                                    )?;
+                                } else {
+                                    cart_to_spinor_si_2e2i::<F>(
+                                        &mut sub, ox, oy, oz, o1, li, kappa_i, lj, kappa_j, lk,
+                                        kappa_k, ll, kappa_l,
+                                    )?;
+                                }
+                            }
                         }
-                    }
 
-                    // Scatter the (di×dj×dk×dl) sub-block into the contraction-major
-                    // spinor AO grid: sub[(((l*dk+k)*dj+j)*di+i)*2 + {re,im}].
-                    for l in 0..dl {
-                        let l_g = cl * dl + l;
-                        for k in 0..dk {
-                            let k_g = ck * dk + k;
-                            for j in 0..dj {
-                                let j_g = cj * dj + j;
-                                for i in 0..di {
-                                    let i_g = ci * di + i;
-                                    let src = (((l * dk + k) * dj + j) * di + i) * 2;
-                                    let dst =
-                                        (((l_g * nk_sp + k_g) * nj_sp + j_g) * ni_sp + i_g) * 2;
-                                    staging[dst] = sub[src];
-                                    staging[dst + 1] = sub[src + 1];
+                        // Scatter the (di×dj×dk×dl) sub-block into the contraction-major
+                        // spinor AO grid: sub[(((l*dk+k)*dj+j)*di+i)*2 + {re,im}].
+                        for l in 0..dl {
+                            let l_g = cl * dl + l;
+                            for k in 0..dk {
+                                let k_g = ck * dk + k;
+                                for j in 0..dj {
+                                    let j_g = cj * dj + j;
+                                    for i in 0..di {
+                                        let i_g = ci * di + i;
+                                        let src = (((l * dk + k) * dj + j) * di + i) * 2;
+                                        let dst = group * spinor_block_len
+                                            + (((l_g * nk_sp + k_g) * nj_sp + j_g) * ni_sp + i_g)
+                                                * 2;
+                                        staging[dst] = sub[src];
+                                        staging[dst + 1] = sub[src + 1];
+                                    }
                                 }
                             }
                         }
@@ -3742,6 +3898,7 @@ fn launch_two_electron_typed<F: CintFloat>(
         "ipvip1" => Some(Hess2eKind::Ipvip1),
         "ip1ip2" => Some(Hess2eKind::Ip1ip2),
         "ipip1ipip2" => Some(Hess2eKind::Ipip1ipip2),
+        "ipvip1ipvip2" => Some(Hess2eKind::Ipvip1ipvip2),
         _ => None,
     } {
         return launch_two_electron_hess2e::<F>(

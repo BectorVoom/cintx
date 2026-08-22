@@ -426,6 +426,10 @@ impl RawApiId {
     pub const INT2E_IPIP1IPIP2_SPH: Self = Self::Symbol("int2e_ipip1ipip2_sph");
     pub const INT2E_IPIP1IPIP2_SPINOR: Self = Self::Symbol("int2e_ipip1ipip2_spinor");
 
+    pub const INT2E_IPVIP1IPVIP2_CART: Self = Self::Symbol("int2e_ipvip1ipvip2_cart");
+    pub const INT2E_IPVIP1IPVIP2_SPH: Self = Self::Symbol("int2e_ipvip1ipvip2_sph");
+    pub const INT2E_IPVIP1IPVIP2_SPINOR: Self = Self::Symbol("int2e_ipvip1ipvip2_spinor");
+
     // Phase 26 GIAO-02 (D-16): spin-free 2e GIAO magnetic-property families
     // (complex_output=true; rank 3 for g1/ig1, rank 9 for gg1/g1g2). Spinor reps
     // registered for surface completeness; the kernel returns UnsupportedApi (D-11).
@@ -487,12 +491,18 @@ impl RawApiId {
     // surface completeness; kernel returns UnsupportedApi (D-11).
     pub const INT2C2E_IPIP1_CART: Self = Self::Symbol("int2c2e_ipip1_cart");
     pub const INT2C2E_IPIP1_SPH: Self = Self::Symbol("int2c2e_ipip1_sph");
+    pub const INT2C2E_IP1IP2_CART: Self = Self::Symbol("int2c2e_ip1ip2_cart");
+    pub const INT2C2E_IP1IP2_SPH: Self = Self::Symbol("int2c2e_ip1ip2_sph");
 
     pub const INT3C2E_IPIP1_CART: Self = Self::Symbol("int3c2e_ipip1_cart");
     pub const INT3C2E_IPIP1_SPH: Self = Self::Symbol("int3c2e_ipip1_sph");
 
     pub const INT3C2E_IPIP2_CART: Self = Self::Symbol("int3c2e_ipip2_cart");
     pub const INT3C2E_IPIP2_SPH: Self = Self::Symbol("int3c2e_ipip2_sph");
+    pub const INT3C2E_IPVIP1_CART: Self = Self::Symbol("int3c2e_ipvip1_cart");
+    pub const INT3C2E_IPVIP1_SPH: Self = Self::Symbol("int3c2e_ipvip1_sph");
+    pub const INT3C2E_IP1IP2_CART: Self = Self::Symbol("int3c2e_ip1ip2_cart");
+    pub const INT3C2E_IP1IP2_SPH: Self = Self::Symbol("int3c2e_ip1ip2_sph");
 
     fn symbol(self) -> &'static str {
         match self {
@@ -1160,6 +1170,12 @@ fn is_giao_rinv_center_symbol(symbol: &str) -> bool {
 /// Used to gate the PTR_RINV_ORIG env-read block in `eval_raw`.
 fn is_iprinv_family_symbol(symbol: &str) -> bool {
     symbol.contains("iprinv")
+        || symbol.starts_with("int1e_ipprinvp_")
+        || symbol.starts_with("int1e_ipprinvpip_")
+        || symbol.starts_with("int1e_ipipprinvp_")
+        || symbol.starts_with("int1e_ipsprinvsp_")
+        || symbol.starts_with("int1e_ipipsprinvsp_")
+        || symbol.starts_with("int1e_ipsprinvspip_")
 }
 
 /// Phase 24 D-04 / OQ-1: identifies plain rinv-family operator symbols

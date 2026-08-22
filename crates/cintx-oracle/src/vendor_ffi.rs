@@ -18,6 +18,141 @@ mod ffi {
 
 use std::ptr;
 
+macro_rules! vendor_1e_gap_wrapper {
+    ($wrapper:ident, $ffi_symbol:ident) => {
+        pub fn $wrapper(
+            out: &mut [f64],
+            shls: &[i32; 2],
+            atm: &[i32],
+            natm: i32,
+            bas: &[i32],
+            nbas: i32,
+            env: &[f64],
+        ) -> i32 {
+            unsafe {
+                ffi::$ffi_symbol(
+                    out.as_mut_ptr(),
+                    ptr::null_mut(),
+                    shls.as_ptr() as *mut i32,
+                    atm.as_ptr() as *mut i32,
+                    natm,
+                    bas.as_ptr() as *mut i32,
+                    nbas,
+                    env.as_ptr() as *mut f64,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                )
+            }
+        }
+    };
+}
+
+vendor_1e_gap_wrapper!(vendor_int1e_iprinvip_cart, int1e_iprinvip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_iprinvip_sph, int1e_iprinvip_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_iprinvip_spinor, int1e_iprinvip_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipipr_cart, int1e_ipipr_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ipipr_sph, int1e_ipipr_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ipipr_spinor, int1e_ipipr_spinor);
+vendor_1e_gap_wrapper!(vendor_int2c2e_ip1ip2_cart, int2c2e_ip1ip2_cart);
+vendor_1e_gap_wrapper!(vendor_int2c2e_ip1ip2_sph, int2c2e_ip1ip2_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ippnucp_cart, int1e_ippnucp_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ippnucp_sph, int1e_ippnucp_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ipprinvp_cart, int1e_ipprinvp_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ipprinvp_sph, int1e_ipprinvp_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ippnucpip_cart, int1e_ippnucpip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ippnucpip_sph, int1e_ippnucpip_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ipprinvpip_cart, int1e_ipprinvpip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ipprinvpip_sph, int1e_ipprinvpip_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ipippnucp_cart, int1e_ipippnucp_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ipippnucp_sph, int1e_ipippnucp_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ipipprinvp_cart, int1e_ipipprinvp_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ipipprinvp_sph, int1e_ipipprinvp_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ippnucp_spinor, int1e_ippnucp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipprinvp_spinor, int1e_ipprinvp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ippnucpip_spinor, int1e_ippnucpip_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipprinvpip_spinor, int1e_ipprinvpip_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipippnucp_spinor, int1e_ipippnucp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipipprinvp_spinor, int1e_ipipprinvp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipspnucsp_spinor, int1e_ipspnucsp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipsprinvsp_spinor, int1e_ipsprinvsp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipipspnucsp_spinor, int1e_ipipspnucsp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipipsprinvsp_spinor, int1e_ipipsprinvsp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipspnucspip_spinor, int1e_ipspnucspip_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_ipsprinvspip_spinor, int1e_ipsprinvspip_spinor);
+
+macro_rules! vendor_3c_gap_wrapper {
+    ($wrapper:ident, $ffi_symbol:ident) => {
+        pub fn $wrapper(
+            out: &mut [f64],
+            shls: &[i32; 3],
+            atm: &[i32],
+            natm: i32,
+            bas: &[i32],
+            nbas: i32,
+            env: &[f64],
+        ) -> i32 {
+            unsafe {
+                ffi::$ffi_symbol(
+                    out.as_mut_ptr(),
+                    ptr::null_mut(),
+                    shls.as_ptr() as *mut i32,
+                    atm.as_ptr() as *mut i32,
+                    natm,
+                    bas.as_ptr() as *mut i32,
+                    nbas,
+                    env.as_ptr() as *mut f64,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                )
+            }
+        }
+    };
+}
+
+vendor_3c_gap_wrapper!(vendor_int3c2e_ipvip1_cart, int3c2e_ipvip1_cart);
+vendor_3c_gap_wrapper!(vendor_int3c2e_ipvip1_sph, int3c2e_ipvip1_sph);
+vendor_3c_gap_wrapper!(vendor_int3c2e_ip1ip2_cart, int3c2e_ip1ip2_cart);
+vendor_3c_gap_wrapper!(vendor_int3c2e_ip1ip2_sph, int3c2e_ip1ip2_sph);
+
+macro_rules! vendor_2e_gap_wrapper {
+    ($wrapper:ident, $ffi_symbol:ident) => {
+        pub fn $wrapper(
+            out: &mut [f64],
+            shls: &[i32; 4],
+            atm: &[i32],
+            natm: i32,
+            bas: &[i32],
+            nbas: i32,
+            env: &[f64],
+        ) -> i32 {
+            unsafe {
+                ffi::$ffi_symbol(
+                    out.as_mut_ptr(),
+                    ptr::null_mut(),
+                    shls.as_ptr() as *mut i32,
+                    atm.as_ptr() as *mut i32,
+                    natm,
+                    bas.as_ptr() as *mut i32,
+                    nbas,
+                    env.as_ptr() as *mut f64,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                )
+            }
+        }
+    };
+}
+
+vendor_2e_gap_wrapper!(vendor_int2e_ipvip1ipvip2_cart, int2e_ipvip1ipvip2_cart);
+vendor_2e_gap_wrapper!(vendor_int2e_ipvip1ipvip2_sph, int2e_ipvip1ipvip2_sph);
+vendor_2e_gap_wrapper!(vendor_int2e_spsp2_spinor, int2e_spsp2_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ipspsp1_spinor, int2e_ipspsp1_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ip1spsp2_spinor, int2e_ip1spsp2_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ipspsp1spsp2_spinor, int2e_ipspsp1spsp2_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ipsrsr1_spinor, int2e_ipsrsr1_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ip1srsr2_spinor, int2e_ip1srsr2_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ipsrsr1srsr2_spinor, int2e_ipsrsr1srsr2_spinor);
+
 /// Evaluate int1e_ovlp_sph for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with ni*nj elements where ni=CINTcgto_spheric(shls[0])

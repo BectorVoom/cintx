@@ -1,11 +1,11 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use cintx_ops::resolver::{HelperKind, Resolver, Stability};
 use cintx_oracle::fixtures::{
-    build_profile_representation_matrix, build_required_profile_matrices,
-    is_dedicated_oracle_family, is_oracle_eligible_family, write_pretty_json_artifact,
-    OracleRawInputs, PHASE4_APPROVED_PROFILES,
+    OracleRawInputs, PHASE4_APPROVED_PROFILES, build_profile_representation_matrix,
+    build_required_profile_matrices, is_dedicated_oracle_family, is_oracle_eligible_family,
+    write_pretty_json_artifact,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,7 +23,8 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
         .map(|profile| (*profile).to_owned())
         .collect();
 
-    let profile_scope_mismatch = evaluate_profile_scope_mismatch(&requested_profiles, &required_profiles);
+    let profile_scope_mismatch =
+        evaluate_profile_scope_mismatch(&requested_profiles, &required_profiles);
     let inputs = OracleRawInputs::sample();
     let required_matrices = build_required_profile_matrices(&inputs)?;
     let generated_required_profiles: BTreeSet<String> = required_matrices
@@ -41,11 +42,8 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
 
     for profile in PHASE4_APPROVED_PROFILES {
         let generated_symbols = collect_generated_symbols_for_profile(&inputs, profile)?;
-        let lock_symbols = collect_lock_symbols_for_profile(
-            &lock_root,
-            profile,
-            oracle_scope.get(*profile),
-        )?;
+        let lock_symbols =
+            collect_lock_symbols_for_profile(&lock_root, profile, oracle_scope.get(*profile))?;
 
         let missing_lock = set_difference(&generated_symbols, &lock_symbols);
         let missing_generated = set_difference(&lock_symbols, &generated_symbols);
@@ -54,7 +52,9 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
     }
 
     let has_symbol_drift = missing_in_lock.values().any(|symbols| !symbols.is_empty())
-        || missing_in_generated.values().any(|symbols| !symbols.is_empty());
+        || missing_in_generated
+            .values()
+            .any(|symbols| !symbols.is_empty());
 
     let has_profile_scope_mismatch = profile_scope_mismatch
         .get("has_mismatch")
@@ -67,6 +67,15 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
     } else {
         Vec::new()
     };
+
+    // PARITY-01: libcint's public surface is wider than cint_funcs.h.  PySCF
+    // reaches these compiled wrappers by dynamic symbol lookup, so scan the
+    // actual ALL_CINT/ALL_CINT1E invocations as a third reference source.
+    let exported_libcint_families = collect_all_cint_exports()?;
+    let manifest_libcint_families = collect_manifest_base_symbols();
+    let unsupported_libcint_families =
+        set_difference(&exported_libcint_families, &manifest_libcint_families);
+    let parity_strict = std::env::var("CINTX_PARITY_STRICT").as_deref() == Ok("1");
 
     let mut report = json!({
         "compiled_manifest_lock": COMPILED_MANIFEST_LOCK_JSON,
@@ -95,13 +104,22 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
             "uncovered_stable_entries": &uncovered_stable,
             "uncovered_count": uncovered_stable.len(),
         },
+        "libcint_export_parity": {
+            "reference": "libcint-master/src/**/*.c ALL_CINT/ALL_CINT1E invocations",
+            "strict": parity_strict,
+            "exported_count": exported_libcint_families.len(),
+            "manifest_base_count": manifest_libcint_families.len(),
+            "unsupported_libcint_families": &unsupported_libcint_families,
+            "unsupported_count": unsupported_libcint_families.len(),
+        },
     });
 
     let should_fail = check_lock
         && (has_symbol_drift
             || has_profile_scope_mismatch
             || has_required_matrix_scope_mismatch
-            || !uncovered_stable.is_empty());
+            || !uncovered_stable.is_empty()
+            || (parity_strict && !unsupported_libcint_families.is_empty()));
     report["status"] = if should_fail {
         json!("failed")
     } else {
@@ -120,6 +138,65 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
     Ok(())
 }
 
+fn collect_manifest_base_symbols() -> BTreeSet<String> {
+    Resolver::manifest()
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .symbol_name
+                .strip_suffix("_cart")
+                .or_else(|| entry.symbol_name.strip_suffix("_sph"))
+                .or_else(|| entry.symbol_name.strip_suffix("_spinor"))
+        })
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn collect_all_cint_exports() -> Result<BTreeSet<String>> {
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../libcint-master/src");
+    let mut files = Vec::new();
+    collect_c_sources(&source_root, &mut files)?;
+    files.sort();
+
+    let mut symbols = BTreeSet::new();
+    for path in files {
+        let source = fs::read_to_string(&path)
+            .with_context(|| format!("read libcint source `{}`", path.display()))?;
+        for prefix in ["ALL_CINT(", "ALL_CINT1E("] {
+            let mut rest = source.as_str();
+            while let Some(offset) = rest.find(prefix) {
+                rest = &rest[offset + prefix.len()..];
+                let Some(end) = rest.find(')') else { break };
+                let symbol = rest[..end].trim();
+                if symbol != "NAME"
+                    && !symbol.is_empty()
+                    && symbol
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+                {
+                    symbols.insert(symbol.to_owned());
+                }
+                rest = &rest[end + 1..];
+            }
+        }
+    }
+    Ok(symbols)
+}
+
+fn collect_c_sources(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(directory)
+        .with_context(|| format!("read libcint source directory `{}`", directory.display()))?
+    {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_c_sources(&path, files)?;
+        } else if path.extension().and_then(|value| value.to_str()) == Some("c") {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
 fn evaluate_profile_scope_mismatch(
     requested_profiles: &BTreeSet<String>,
     required_profiles: &BTreeSet<String>,
@@ -135,7 +212,8 @@ fn evaluate_profile_scope_mismatch(
 }
 
 fn load_compiled_manifest_lock() -> Result<Value> {
-    let lock_path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../{COMPILED_MANIFEST_LOCK_JSON}"));
+    let lock_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../{COMPILED_MANIFEST_LOCK_JSON}"));
     let payload = fs::read_to_string(&lock_path)
         .with_context(|| format!("read compiled manifest lock `{}`", lock_path.display()))?;
     serde_json::from_str(&payload).context("parse compiled manifest lock json")
@@ -268,10 +346,7 @@ fn check_oracle_coverage(lock_root: &Value) -> Vec<String> {
     };
     let mut uncovered = Vec::new();
     for entry in entries {
-        let stability = entry
-            .get("stability")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let stability = entry.get("stability").and_then(Value::as_str).unwrap_or("");
         if stability != "stable" {
             continue;
         }
@@ -309,7 +384,12 @@ fn oracle_scope_symbols_by_profile() -> BTreeMap<&'static str, BTreeSet<String>>
         .map(|profile| {
             let symbols = Resolver::manifest()
                 .iter()
-                .filter(|entry| matches!(entry.helper_kind, HelperKind::Operator | HelperKind::SourceOnly))
+                .filter(|entry| {
+                    matches!(
+                        entry.helper_kind,
+                        HelperKind::Operator | HelperKind::SourceOnly
+                    )
+                })
                 .filter(|entry| is_phase4_oracle_family(entry.family_name))
                 .filter(|entry| entry.is_compiled_in_profile(profile))
                 .filter(|entry| !matches!(entry.stability, Stability::UnstableSource))

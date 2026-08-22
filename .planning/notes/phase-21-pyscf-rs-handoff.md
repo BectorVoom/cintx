@@ -172,3 +172,30 @@ Phase 21 satisfies gate (1). The consumer un-gate exercises gate (2) via the
 ---
 *Phase: 21-coulomb-gradient-intors — close-out hand-off (21-08)*
 *Created: 2026-05-26*
+
+## 2026-08-22 correction and current downstream disposition
+
+The blocker statement still quoted by
+`pyscf_rs/.planning/phases/07-gradients-geomopt/07-01-PLAN.md:46-48` is stale.
+The gradient families it names are shipped today:
+
+| Requirement | Current cintx evidence |
+|---|---|
+| `int1e_ipovlp`, `int1e_ipkin`, `int1e_ipnuc`, `int1e_iprinv` | cart+sph+spinor dispatch in `crates/cintx-cubecl/src/kernels/one_electron.rs`; vendor parity suites are live |
+| `int2e_ip1`, `int2e_ip2` | cart+sph dispatch in `crates/cintx-cubecl/src/kernels/two_electron.rs` |
+| `int3c2e_ip1`, `int3c2e_ip2` | cart+sph+spinor dispatch in `crates/cintx-cubecl/src/kernels/center_3c2e.rs` |
+| `int2c2e_ip1`, `int2c2e_ip2` | cart+sph dispatch in `crates/cintx-cubecl/src/kernels/center_2c2e.rs` |
+| `ECPscalar_ipnuc`, `ECPscalar_iprinv` | cart+sph dispatch in `crates/cintx-cubecl/src/kernels/ecp.rs` |
+| rinv origin selection | `cintx_rs::Builder::with_rinv_origin([f64; 3])` |
+
+Accordingly, the `pyscf_rs` GRAD-01..07 dispositions marked `[~]` solely as
+"cintx-gated", and tests ignored solely with `blocked on cintx`, can be
+un-gated. The real remaining consumer gap is in the additional molecular and
+DF Hessian symbols (not the first-gradient families), notably
+`int1e_iprinvip`, `int2e_ipvip1ipvip2`, `int2c2e_ip1ip2`,
+`int3c2e_ip1ip2`, and `int3c2e_ipvip1`.
+
+The historical caveats in sections 5a and 5b describe the Phase-21 state, not
+the current tree: later phases added spinor-gradient coverage and the
+higher-root Wheeler fallback. Consumers should use the compiled manifest lock
+and current oracle reports as the authoritative support record.

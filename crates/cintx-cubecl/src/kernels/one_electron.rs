@@ -2321,6 +2321,8 @@ fn one_electron_irp_kernel<F: Float + CubeElement>(
     dj1: &mut Array<F>,
     rcj: &mut Array<F>,
     djrcj: &mut Array<F>,
+    di2: &mut Array<F>,
+    di2rcj: &mut Array<F>,
     cart_out: &mut Array<F>,
     rix: F,
     riy: F,
@@ -2339,11 +2341,16 @@ fn one_electron_irp_kernel<F: Float + CubeElement>(
     nprim_j: u32,
     nctr_i: u32,
     nctr_j: u32,
+    #[comptime] op_kind: u32,
 ) {
     if UNIT_POS == 0u32 {
-        // Ket headroom +2: g0 spans i..=li, j..=lj+2 (ng={0,2,...}).
-        let nmax = li + lj + 2u32;
-        let lj_ext = lj + 2u32;
+        // op_kind=0: irp, ng={0,2}; op_kind=1: ipipr, ng={2,1}.
+        let mut nmax = li + lj + 2u32;
+        let mut lj_ext = lj + 2u32;
+        if op_kind == 1u32 {
+            nmax = li + lj + 3u32;
+            lj_ext = lj + 1u32;
+        }
         let dj = nmax + 1u32;
         let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
         let total_g = 3u32 * g_per_axis;
@@ -2354,7 +2361,11 @@ fn one_electron_irp_kernel<F: Float + CubeElement>(
         let nci = (li + 1u32) * (li + 2u32) / 2u32;
         let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
         let block_len = nci * ncj;
-        let total_len = 9u32 * block_len;
+        let mut rank = 9u32;
+        if op_kind == 1u32 {
+            rank = 27u32;
+        }
+        let total_len = rank * block_len;
         let out_total = nctr_i * nctr_j * total_len;
 
         let mut oi = 0u32;
@@ -2404,21 +2415,26 @@ fn one_electron_irp_kernel<F: Float + CubeElement>(
                     dj1[zi as usize] = F::new(0.0);
                     rcj[zi as usize] = F::new(0.0);
                     djrcj[zi as usize] = F::new(0.0);
+                    di2[zi as usize] = F::new(0.0);
+                    di2rcj[zi as usize] = F::new(0.0);
                     zi += 1u32;
                 }
 
-                let aj2 = F::new(-2.0) * aj;
-
-                // g1 = D_J(g0): ∇ on ket, over j..=lj, i..=li.
-                d_j_1e_into::<F>(dj1, g, g_per_axis, dj, lj, li, aj2);
-
-                // g2 = RCJ(g0): r on ket relative to the gauge origin (drj). Build
-                // it over j..=lj+1, i..=li so that g3 = D_J(g2) can read g2 at j+1.
-                //   RCJ[j][i] = g0[j+1][i] + drj * g0[j][i]   (libcint CINTx1j_1e).
-                rcj_1e_into::<F>(rcj, g, g_per_axis, dj, lj + 1u32, li, drjx, drjy, drjz);
-
-                // g3 = D_J(g2): ∇ on the r-block, over j..=lj, i..=li.
-                d_j_1e_into::<F>(djrcj, rcj, g_per_axis, dj, lj, li, aj2);
+                if op_kind == 0u32 {
+                    let aj2 = F::new(-2.0) * aj;
+                    d_j_1e_into::<F>(dj1, g, g_per_axis, dj, lj, li, aj2);
+                    rcj_1e_into::<F>(rcj, g, g_per_axis, dj, lj + 1u32, li, drjx, drjy, drjz);
+                    d_j_1e_into::<F>(djrcj, rcj, g_per_axis, dj, lj, li, aj2);
+                } else {
+                    // hess.c CINTgout1e_int1e_ipipr. g4/g5 are the lower-range
+                    // portions of g2/g3 and therefore share those buffers.
+                    let ai2 = F::new(-2.0) * ai;
+                    rcj_1e_into::<F>(rcj, g, g_per_axis, dj, lj, li + 2u32, drjx, drjy, drjz);
+                    d_i_1e_into::<F>(dj1, g, g_per_axis, dj, lj, li + 1u32, ai2);
+                    d_i_1e_into::<F>(djrcj, rcj, g_per_axis, dj, lj, li + 1u32, ai2);
+                    d_i_1e_into::<F>(di2, dj1, g_per_axis, dj, lj, li, ai2);
+                    d_i_1e_into::<F>(di2rcj, djrcj, g_per_axis, dj, lj, li, ai2);
+                }
 
                 let mut ci = 0u32;
                 while ci < nctr_i {
@@ -2467,36 +2483,108 @@ fn one_electron_irp_kernel<F: Float + CubeElement>(
                                         let g3y = djrcj[(gy + ny) as usize];
                                         let g3z = djrcj[(gz + nz) as usize];
 
-                                        // intor1.c:2788-2816 verbatim (s[0..8]):
-                                        let s0 = g3x * g0y * g0z;
-                                        let s1 = g2x * g1y * g0z;
-                                        let s2 = g2x * g0y * g1z;
-                                        let s3 = g1x * g2y * g0z;
-                                        let s4 = g0x * g3y * g0z;
-                                        let s5 = g0x * g2y * g1z;
-                                        let s6 = g1x * g0y * g2z;
-                                        let s7 = g0x * g1y * g2z;
-                                        let s8 = g0x * g0y * g3z;
-
                                         let elem = cj_idx * nci + ci_idx;
-                                        cart_out[(base + 0u32 * block_len + elem) as usize] +=
-                                            weight * s0;
-                                        cart_out[(base + 1u32 * block_len + elem) as usize] +=
-                                            weight * s1;
-                                        cart_out[(base + 2u32 * block_len + elem) as usize] +=
-                                            weight * s2;
-                                        cart_out[(base + 3u32 * block_len + elem) as usize] +=
-                                            weight * s3;
-                                        cart_out[(base + 4u32 * block_len + elem) as usize] +=
-                                            weight * s4;
-                                        cart_out[(base + 5u32 * block_len + elem) as usize] +=
-                                            weight * s5;
-                                        cart_out[(base + 6u32 * block_len + elem) as usize] +=
-                                            weight * s6;
-                                        cart_out[(base + 7u32 * block_len + elem) as usize] +=
-                                            weight * s7;
-                                        cart_out[(base + 8u32 * block_len + elem) as usize] +=
-                                            weight * s8;
+                                        if op_kind == 0u32 {
+                                            let s0 = g3x * g0y * g0z;
+                                            let s1 = g2x * g1y * g0z;
+                                            let s2 = g2x * g0y * g1z;
+                                            let s3 = g1x * g2y * g0z;
+                                            let s4 = g0x * g3y * g0z;
+                                            let s5 = g0x * g2y * g1z;
+                                            let s6 = g1x * g0y * g2z;
+                                            let s7 = g0x * g1y * g2z;
+                                            let s8 = g0x * g0y * g3z;
+                                            cart_out[(base + 0u32 * block_len + elem) as usize] +=
+                                                weight * s0;
+                                            cart_out[(base + 1u32 * block_len + elem) as usize] +=
+                                                weight * s1;
+                                            cart_out[(base + 2u32 * block_len + elem) as usize] +=
+                                                weight * s2;
+                                            cart_out[(base + 3u32 * block_len + elem) as usize] +=
+                                                weight * s3;
+                                            cart_out[(base + 4u32 * block_len + elem) as usize] +=
+                                                weight * s4;
+                                            cart_out[(base + 5u32 * block_len + elem) as usize] +=
+                                                weight * s5;
+                                            cart_out[(base + 6u32 * block_len + elem) as usize] +=
+                                                weight * s6;
+                                            cart_out[(base + 7u32 * block_len + elem) as usize] +=
+                                                weight * s7;
+                                            cart_out[(base + 8u32 * block_len + elem) as usize] +=
+                                                weight * s8;
+                                        } else {
+                                            let g6x = di2[(gx + nx) as usize];
+                                            let g6y = di2[(gy + ny) as usize];
+                                            let g6z = di2[(gz + nz) as usize];
+                                            let g7x = di2rcj[(gx + nx) as usize];
+                                            let g7y = di2rcj[(gy + ny) as usize];
+                                            let g7z = di2rcj[(gz + nz) as usize];
+                                            // hess.c:840-953. g4==g2 and g5==g3 at
+                                            // the contracted indices; the repeated
+                                            // values below preserve libcint's output
+                                            // permutation exactly.
+                                            let s0 = g7x * g0y * g0z;
+                                            let s1 = g6x * g2y * g0z;
+                                            let s2 = g6x * g0y * g2z;
+                                            let s3 = g3x * g1y * g0z;
+                                            let s4 = g1x * g3y * g0z;
+                                            let s5 = g1x * g1y * g2z;
+                                            let s6 = g3x * g0y * g1z;
+                                            let s7 = g1x * g2y * g1z;
+                                            let s8 = g1x * g0y * g3z;
+                                            let s12 = g2x * g6y * g0z;
+                                            let s13 = g0x * g7y * g0z;
+                                            let s14 = g0x * g6y * g2z;
+                                            let s15 = g2x * g1y * g1z;
+                                            let s16 = g0x * g3y * g1z;
+                                            let s17 = g0x * g1y * g3z;
+                                            let s24 = g2x * g0y * g6z;
+                                            let s25 = g0x * g2y * g6z;
+                                            let s26 = g0x * g0y * g7z;
+                                            let mut comp = 0u32;
+                                            while comp < 27u32 {
+                                                let mut value = s0;
+                                                if comp == 1u32 {
+                                                    value = s1;
+                                                } else if comp == 2u32 {
+                                                    value = s2;
+                                                } else if comp == 3u32 || comp == 9u32 {
+                                                    value = s3;
+                                                } else if comp == 4u32 || comp == 10u32 {
+                                                    value = s4;
+                                                } else if comp == 5u32 || comp == 11u32 {
+                                                    value = s5;
+                                                } else if comp == 6u32 || comp == 18u32 {
+                                                    value = s6;
+                                                } else if comp == 7u32 || comp == 19u32 {
+                                                    value = s7;
+                                                } else if comp == 8u32 || comp == 20u32 {
+                                                    value = s8;
+                                                } else if comp == 12u32 {
+                                                    value = s12;
+                                                } else if comp == 13u32 {
+                                                    value = s13;
+                                                } else if comp == 14u32 {
+                                                    value = s14;
+                                                } else if comp == 15u32 || comp == 21u32 {
+                                                    value = s15;
+                                                } else if comp == 16u32 || comp == 22u32 {
+                                                    value = s16;
+                                                } else if comp == 17u32 || comp == 23u32 {
+                                                    value = s17;
+                                                } else if comp == 24u32 {
+                                                    value = s24;
+                                                } else if comp == 25u32 {
+                                                    value = s25;
+                                                } else if comp == 26u32 {
+                                                    value = s26;
+                                                }
+                                                cart_out
+                                                    [(base + comp * block_len + elem) as usize] +=
+                                                    weight * value;
+                                                comp += 1u32;
+                                            }
+                                        }
 
                                         ci_idx += 1u32;
                                         ib += 1u32;
@@ -2623,16 +2711,20 @@ fn run_1e_irp_device<R: Runtime>(
     exps_j: &[f64],
     coeff_i: &[f64],
     coeff_j: &[f64],
+    op_kind: u32,
 ) -> Vec<f64> {
     let li_u = li as usize;
     let lj_u = lj as usize;
-    let nmax_u = li_u + lj_u + 2;
-    let lj_ext_u = lj_u + 2;
+    let (nmax_u, lj_ext_u, rank) = if op_kind == 1 {
+        (li_u + lj_u + 3, lj_u + 1, 27)
+    } else {
+        (li_u + lj_u + 2, lj_u + 2, 9)
+    };
     let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
     let total_g = 3 * g_per_axis;
     let nci = (li_u + 1) * (li_u + 2) / 2;
     let ncj = (lj_u + 1) * (lj_u + 2) / 2;
-    let out_len = (nctr_i as usize) * (nctr_j as usize) * 9 * nci * ncj;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * rank * nci * ncj;
 
     let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
     let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
@@ -2644,6 +2736,8 @@ fn run_1e_irp_device<R: Runtime>(
     let dj1_h = client.empty(total_g * std::mem::size_of::<f64>());
     let rcj_h = client.empty(total_g * std::mem::size_of::<f64>());
     let djrcj_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di2_h = client.empty(total_g * std::mem::size_of::<f64>());
+    let di2rcj_h = client.empty(total_g * std::mem::size_of::<f64>());
     let out_h = client.empty(out_len * std::mem::size_of::<f64>());
 
     // SAFETY: Input and scratch buffer lengths match exact dimensions.
@@ -2661,6 +2755,8 @@ fn run_1e_irp_device<R: Runtime>(
             ArrayArg::from_raw_parts(dj1_h.clone(), total_g),
             ArrayArg::from_raw_parts(rcj_h.clone(), total_g),
             ArrayArg::from_raw_parts(djrcj_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di2_h.clone(), total_g),
+            ArrayArg::from_raw_parts(di2rcj_h.clone(), total_g),
             ArrayArg::from_raw_parts(out_h.clone(), out_len),
             ri[0],
             ri[1],
@@ -2679,6 +2775,7 @@ fn run_1e_irp_device<R: Runtime>(
             nprim_j,
             nctr_i,
             nctr_j,
+            op_kind,
         );
     }
 
@@ -2703,32 +2800,33 @@ fn run_1e_irp_on_backend(
     exps_j: &[f64],
     coeff_i: &[f64],
     coeff_j: &[f64],
+    op_kind: u32,
 ) -> Vec<f64> {
     match backend {
         #[cfg(feature = "cpu")]
         ResolvedBackend::Cpu(client) => run_1e_irp_device::<cubecl::cpu::CpuRuntime>(
             client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j, coeff_i,
-            coeff_j,
+            coeff_j, op_kind,
         ),
         #[cfg(feature = "wgpu")]
         ResolvedBackend::Wgpu(client, _) => run_1e_irp_device::<cubecl_wgpu::WgpuRuntime>(
             client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j, coeff_i,
-            coeff_j,
+            coeff_j, op_kind,
         ),
         #[cfg(feature = "cuda")]
         ResolvedBackend::Cuda(client) => run_1e_irp_device::<cubecl_cuda::CudaRuntime>(
             client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j, coeff_i,
-            coeff_j,
+            coeff_j, op_kind,
         ),
         #[cfg(feature = "rocm")]
         ResolvedBackend::Rocm(client) => run_1e_irp_device::<cubecl_hip::HipRuntime>(
             client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j, coeff_i,
-            coeff_j,
+            coeff_j, op_kind,
         ),
         #[cfg(feature = "metal")]
         ResolvedBackend::Metal(client, _) => run_1e_irp_device::<cubecl_wgpu::WgpuRuntime>(
             client, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, drj, exps_i, exps_j, coeff_i,
-            coeff_j,
+            coeff_j, op_kind,
         ),
     }
 }
@@ -8836,6 +8934,8 @@ fn write_component_leading_staging<F: CintFloat>(
     nsj: usize,
     li: u8,
     lj: u8,
+    kappa_i: i16,
+    kappa_j: i16,
     total_len: usize,
     block_len: usize,
     cart_comp: &[f64],
@@ -8911,9 +9011,9 @@ fn write_component_leading_staging<F: CintFloat>(
             }
         }
         Representation::Spinor => {
-            // Callers reject Spinor before reaching here (each family fails typed
-            // with UnsupportedApi). Keep this as an internal invariant guard.
-            unreachable!("spinor representation rejected before staging copy");
+            cart_to_spinor_sf_derivative_2d::<F>(
+                staging, cart_comp, rank, li, kappa_i, lj, kappa_j, n_ctr_i, n_ctr_j,
+            )?;
         }
     }
 
@@ -9121,7 +9221,8 @@ fn launch_one_electron_typed<F: CintFloat>(
     let is_ipovlpip = op_name == "ipovlpip";
     let is_ipkinip = op_name == "ipkinip";
     let is_ipnucip = op_name == "ipnucip";
-    let is_rank9_both = is_ipovlpip || is_ipkinip || is_ipnucip;
+    let is_iprinvip = op_name == "iprinvip";
+    let is_rank9_both = is_ipovlpip || is_ipkinip || is_ipnucip || is_iprinvip;
     // Phase 25 HESS-01 bra-only rank-9 1e Hessian family (<∇∇ i | OP | j>).
     // ipipovlp/ipipkin ride the no-Rys overlap-deriv engine; ipipnuc/ipiprinv
     // ride the nuclear/Rys 1e path (FND-02 consumer at nroots≥6).
@@ -9139,6 +9240,7 @@ fn launch_one_electron_typed<F: CintFloat>(
     // the gauge origin env[PTR_COMMON_ORIG] via G1E_RCJ (drj = rj - common_orig);
     // ket headroom +2 (ng={0,2,...}).
     let is_irp = op_name == "irp";
+    let is_ipipr = op_name == "ipipr";
 
     // Phase 28 FND-05 (Gap B2): `int1e_sp` = σ·p on the bra only. Detected by
     // SYMBOL name (Pitfall 6 — never a positional OperatorId literal). This is the
@@ -9147,6 +9249,7 @@ fn launch_one_electron_typed<F: CintFloat>(
     // representation. The σ·p assembler emits the four gc_x/gc_y/gc_z/gc_1 blocks the
     // host `cart_to_spinor_si_2d` consumes; nctr>1 is HANDLED (not rejected).
     let is_sp = op_name == "sp";
+    let is_sigma_family = crate::kernels::sigma_1e::family_id(op_name).is_some();
 
     // Phase 26 GIAO-01: spin-free 1e GIAO/CG families (complex output). The
     // overlap-engine families (govlp/igovlp/cg_irxp/giao_irjxp/igkin) ride the
@@ -9244,10 +9347,12 @@ fn launch_one_electron_typed<F: CintFloat>(
         && !is_drinv
         && !is_p4
         && !is_irp
+        && !is_ipipr
         && !is_giao_ovlp
         && !is_giao_nuc
         && !is_deriv34
         && !is_sp
+        && !is_sigma_family
     {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("1e operator '{}' is not supported", op_name),
@@ -9578,6 +9683,8 @@ fn launch_one_electron_typed<F: CintFloat>(
             nsj,
             li,
             lj,
+            shell_i.kappa,
+            shell_j.kappa,
             total_len,
             block_len,
             &cart_comp,
@@ -9715,6 +9822,8 @@ fn launch_one_electron_typed<F: CintFloat>(
             nsj,
             li,
             lj,
+            shell_i.kappa,
+            shell_j.kappa,
             total_len,
             block_len,
             &cart_comp,
@@ -9810,6 +9919,8 @@ fn launch_one_electron_typed<F: CintFloat>(
             nsj,
             li,
             lj,
+            shell_i.kappa,
+            shell_j.kappa,
             total_len,
             block_len,
             &cart_comp,
@@ -9833,10 +9944,10 @@ fn launch_one_electron_typed<F: CintFloat>(
     // Phase 24 Cluster D irp path (`int1e_irp` = i·r×∇) — rank-9 (3×3 ∇⊗r)
     // — reads the gauge origin env[PTR_COMMON_ORIG] via drj = rj - common_orig
     // ─────────────────────────────────────────────────────────────────────────
-    if is_irp {
+    if is_irp || is_ipipr {
         // Spinor irp reps are registered for surface completeness but not
         // implemented: fail typed, never partial (D-09).
-        if plan.representation == Representation::Spinor {
+        if is_irp && plan.representation == Representation::Spinor {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!("spinor int1e_{op_name}"),
             });
@@ -9846,11 +9957,14 @@ fn launch_one_electron_typed<F: CintFloat>(
         // overlap-derivative engine supports li+lj<=8. Fail closed (UnsupportedApi)
         // if a corpus shell would exceed it — NEVER truncate (T-24-05-02). On
         // STO-3G (li,lj<=1) nmax<=4, well within the limit.
-        if li as u32 + lj as u32 + 2 > 8 {
+        let op_kind = u32::from(is_ipipr);
+        let headroom = if is_ipipr { 3 } else { 2 };
+        let rank = if is_ipipr { 27 } else { 9 };
+        if li as u32 + lj as u32 + headroom > 8 {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "device int1e_irp kernel supports l_i+l_j+2<=8 (ket headroom); \
-                     got l_i={li}, l_j={lj}"
+                    "device int1e_{op_name} kernel supports l_i+l_j+headroom<=8; \
+                     got l_i={li}, l_j={lj}, headroom={headroom}"
                 ),
             });
         }
@@ -9868,7 +9982,7 @@ fn launch_one_electron_typed<F: CintFloat>(
         let n_ctr_j = shell_j.nctr as usize;
 
         let block_len = nci * ncj;
-        let total_len = 9 * block_len;
+        let total_len = rank * block_len;
 
         let exps_i: Vec<f64> = shell_i.exponents[..n_prim_i].to_vec();
         let exps_j: Vec<f64> = shell_j.exponents[..n_prim_j].to_vec();
@@ -9890,6 +10004,7 @@ fn launch_one_electron_typed<F: CintFloat>(
             &exps_j,
             &coeff_i,
             &coeff_j,
+            op_kind,
         );
 
         // Apply the libcint CINTcommon_fac_sp normalization to all components.
@@ -9903,7 +10018,7 @@ fn launch_one_electron_typed<F: CintFloat>(
         // IN-03: shared component-leading staging writer (irp rank = 9).
         let not0 = write_component_leading_staging::<F>(
             plan.representation,
-            9,
+            rank,
             n_ctr_i,
             n_ctr_j,
             nci,
@@ -9912,6 +10027,8 @@ fn launch_one_electron_typed<F: CintFloat>(
             nsj,
             li,
             lj,
+            shell_i.kappa,
+            shell_j.kappa,
             total_len,
             block_len,
             &cart_9comp,
@@ -9932,7 +10049,8 @@ fn launch_one_electron_typed<F: CintFloat>(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Both-side rank-9 gradient path (`ipovlpip` / `ipkinip` / `ipnucip`)
+    // Both-side rank-9 gradient path (`ipovlpip` / `ipkinip` / `ipnucip` /
+    // `iprinvip`)
     // — 9-component output
     // ─────────────────────────────────────────────────────────────────────────
     if is_rank9_both {
@@ -9955,10 +10073,10 @@ fn launch_one_electron_typed<F: CintFloat>(
         // ipnucip Rys nroots: one extra root vs single-side nuclear grad for the
         // added ket headroom. nmax = li+lj+2 → nroots = nmax/2 + 1. Fail closed.
         let nuc_nroots_both = (li as u32 + lj as u32 + 2) / 2 + 1;
-        if is_ipnucip && nuc_nroots_both as usize > MAX_DEVICE_NROOTS {
+        if (is_ipnucip || is_iprinvip) && nuc_nroots_both as usize > MAX_DEVICE_NROOTS {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "device int1e_ipnucip kernel supports nroots<={MAX_DEVICE_NROOTS}; \
+                    "device int1e_{op_name} kernel supports nroots<={MAX_DEVICE_NROOTS}; \
                      got nroots={nuc_nroots_both} for l_i={li}, l_j={lj}"
                 ),
             });
@@ -9997,13 +10115,20 @@ fn launch_one_electron_typed<F: CintFloat>(
                 &coeff_j,
             )
         } else {
-            // ipnucip: ∑_C (-Z_C)·∇²-mixed over ALL nuclei, low→high (D-10).
-            let mut origin_coords = Vec::with_capacity(atoms.len() * 3);
-            let mut origin_charges = Vec::with_capacity(atoms.len());
-            for atom in atoms.iter() {
-                origin_coords.extend_from_slice(&atom.coord_bohr);
-                origin_charges.push(-(atom.atomic_number as f64));
-            }
+            // ipnucip sums -Z_C over every atom. iprinvip uses one +1/r center
+            // from env[PTR_RINV_ORIG], matching CINT1e_drv type=1.
+            let (origin_coords, origin_charges) = if is_iprinvip {
+                let origin = plan.operator_env_params.rinv_orig.unwrap_or([0.0; 3]);
+                (origin.to_vec(), vec![1.0])
+            } else {
+                let mut coords = Vec::with_capacity(atoms.len() * 3);
+                let mut charges = Vec::with_capacity(atoms.len());
+                for atom in atoms.iter() {
+                    coords.extend_from_slice(&atom.coord_bohr);
+                    charges.push(-(atom.atomic_number as f64));
+                }
+                (coords, charges)
+            };
             run_1e_nuc_grad_both_on_backend(
                 backend,
                 nuc_nroots_both,
@@ -10142,7 +10267,10 @@ fn launch_one_electron_typed<F: CintFloat>(
 
         // Build the (origin, charge_factor) Coulomb-center list: nuclear families
         // sum over all nuclei (-Z_C); rinv families use the single rinv origin.
-        let is_nuc_family = op_name == "ipipipnuc" || op_name == "ipipnucip";
+        let is_nuc_family = matches!(
+            op_name,
+            "ipipipnuc" | "ipipnucip" | "ippnucp" | "ippnucpip" | "ipippnucp"
+        );
         let origins: Vec<([f64; 3], f64)> = if is_nuc_family {
             nuclear_origins(atoms)
         } else {
@@ -10518,6 +10646,85 @@ fn launch_one_electron_typed<F: CintFloat>(
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Group-4 one-electron sigma families, including the gradient/Hessian gap
+    // closure families. libcint only exposes these through its spinor driver.
+    if is_sigma_family && !is_sp {
+        if plan.representation != Representation::Spinor {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!("int1e_{op_name} is Spinor-only"),
+            });
+        }
+
+        let n_prim_i = shell_i.nprim as usize;
+        let n_prim_j = shell_j.nprim as usize;
+        let n_ctr_i = shell_i.nctr as usize;
+        let n_ctr_j = shell_j.nctr as usize;
+        let exps_i = &shell_i.exponents[..n_prim_i];
+        let exps_j = &shell_j.exponents[..n_prim_j];
+        let coeff_i = &shell_i.coefficients[..n_prim_i * n_ctr_i];
+        let coeff_j = &shell_j.coefficients[..n_prim_j * n_ctr_j];
+
+        let is_rinv = matches!(
+            op_name,
+            "sprinvsp" | "ipsprinvsp" | "ipipsprinvsp" | "ipsprinvspip"
+        );
+        let (origin_coords, origin_charges) = if is_rinv {
+            let origin = plan.operator_env_params.rinv_orig.unwrap_or([0.0; 3]);
+            (origin.to_vec(), vec![1.0])
+        } else {
+            let mut coords = Vec::with_capacity(atoms.len() * 3);
+            let mut charges = Vec::with_capacity(atoms.len());
+            for atom in atoms.iter() {
+                coords.extend_from_slice(&atom.coord_bohr);
+                charges.push(-(atom.atomic_number as f64));
+            }
+            (coords, charges)
+        };
+
+        crate::kernels::sigma_1e::launch_int1e_sigma_family_spinor_pair(
+            backend,
+            op_name,
+            li,
+            shell_i.kappa,
+            lj,
+            shell_j.kappa,
+            n_prim_i,
+            n_prim_j,
+            n_ctr_i,
+            n_ctr_j,
+            ri,
+            rj,
+            exps_i,
+            exps_j,
+            coeff_i,
+            coeff_j,
+            &origin_coords,
+            &origin_charges,
+            staging,
+        )?;
+
+        let nonzero_threshold = F::from_f64_lossy(if F::PRECISION == PrecisionKind::F32 {
+            1e-12
+        } else {
+            1e-18
+        });
+        let not0 = staging
+            .iter()
+            .filter(|&&value| value.abs() > nonzero_threshold)
+            .count() as i32;
+        let staging_bytes = staging.len() * std::mem::size_of::<F>();
+        return Ok(ExecutionStats {
+            workspace_bytes: plan.workspace.bytes,
+            required_workspace_bytes: plan.workspace.required_bytes,
+            peak_workspace_bytes: staging_bytes,
+            chunk_count: 1,
+            planned_batches: 1,
+            transfer_bytes: staging_bytes,
+            not0,
+            fallback_reason: plan.workspace.fallback_reason,
+        });
+    }
+
     // Phase 28 FND-05: int1e_sp Spinor path — σ·p assembler → cart_to_spinor_si_2d
     //
     // The σ·p device assembler (`run_sigma_p_on_backend`, tensor_rank=1) emits the

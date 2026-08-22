@@ -43,7 +43,7 @@
 //!         libcint-master/src/g2e.c (CINTg0_2e, CINTg0_2e_2d).
 
 use crate::backend::ResolvedBackend;
-use crate::kernels::f12::{Nabla1Center, gout_ipip1, gout_ipn};
+use crate::kernels::f12::{Nabla1Center, gout_ip1ip2, gout_ipip1, gout_ipn};
 use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
@@ -817,15 +817,19 @@ fn launch_center_2c2e_grad<F: CintFloat>(
 /// G-tensor needs `li+2` headroom (`gout_ipip1` reads `nabla1i_2e` up to `li+1`).
 /// Phantom j,l centers collapse to s (aj=al=0). HOST-routed through
 /// `fill_g_tensor_2e` so the elevated `li+2` raise can reach nroots 6..12 (FND-02).
-fn launch_center_2c2e_hess1<F: CintFloat>(
+fn launch_center_2c2e_hess<F: CintFloat>(
     plan: &ExecutionPlan<'_>,
+    mixed_centers: bool,
     staging: &mut [F],
 ) -> Result<ExecutionStats, cintxRsError> {
     const NCOMP: usize = 9;
     // Spinor Hessian: not supported (D-11). Reject before any compute.
     if plan.representation == Representation::Spinor {
         return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int2c2e_ipip1 Hessian".to_owned(),
+            requested: format!(
+                "spinor int2c2e_{} Hessian",
+                if mixed_centers { "ip1ip2" } else { "ipip1" }
+            ),
         });
     }
 
@@ -836,8 +840,11 @@ fn launch_center_2c2e_hess1<F: CintFloat>(
     let li = shell_i.ang_momentum;
     let lk = shell_k.ang_momentum;
 
-    // bra-i raised +2 (∇²); k is a spectator. Phantom 2e j,l = s.
-    let hess_shape = build_2e_shape(li as usize + 2, 0, lk as usize, 0);
+    let hess_shape = if mixed_centers {
+        build_2e_shape(li as usize + 1, 0, lk as usize + 1, 0)
+    } else {
+        build_2e_shape(li as usize + 2, 0, lk as usize, 0)
+    };
 
     // FND-02: route to the HOST path; the +2 raise can push nroots to 6..12.
     if hess_shape.nroots > HOST_RYS_NROOTS_CEILING {
@@ -889,8 +896,11 @@ fn launch_center_2c2e_hess1<F: CintFloat>(
                 common_factor,
             );
 
-            // gout_ipip1 at BASE li/lk (the G-tensor carries the +2 headroom).
-            let gout = gout_ipip1(&g, &hess_f12_shape, li as usize, 0, lk as usize, 0, ai);
+            let gout = if mixed_centers {
+                gout_ip1ip2(&g, &hess_f12_shape, li as usize, 0, lk as usize, 0, ai, ak)
+            } else {
+                gout_ipip1(&g, &hess_f12_shape, li as usize, 0, lk as usize, 0, ai)
+            };
 
             for ci in 0..n_ctr_i {
                 let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
@@ -1053,7 +1063,8 @@ fn launch_center_2c2e_typed<F: CintFloat>(
         "ip1" => return launch_center_2c2e_grad::<F>(plan, Nabla1Center::I, staging),
         "ip2" => return launch_center_2c2e_grad::<F>(plan, Nabla1Center::K, staging),
         // Phase 25 HESS-03: int2c2e_ipip1 — ∇² on bra center 1 (rank 9, host-routed).
-        "ipip1" => return launch_center_2c2e_hess1::<F>(plan, staging),
+        "ipip1" => return launch_center_2c2e_hess::<F>(plan, false, staging),
+        "ip1ip2" => return launch_center_2c2e_hess::<F>(plan, true, staging),
         _ => {} // fall through to the existing scalar path
     }
 
