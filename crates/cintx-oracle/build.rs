@@ -404,6 +404,12 @@ extern int ECPscalar_iprinv_cart(double *out, int *dims, int *shls,
         // the already-large legacy regex harder to audit.
         .allowlist_function("(int1e_ipipr|int1e_iprinvip|int2e_ipvip1ipvip2|int2c2e_ip1ip2|int3c2e_ip1ip2|int3c2e_ipvip1|int1e_ippnucp|int1e_ipprinvp|int1e_ippnucpip|int1e_ipprinvpip|int1e_ipippnucp|int1e_ipipprinvp|int1e_ipspnucsp|int1e_ipsprinvsp|int2e_ipspsp1|int2e_ip1spsp2|int2e_ipspsp1spsp2|int1e_ipipspnucsp|int1e_ipipsprinvsp|int1e_ipspnucspip|int1e_ipsprinvspip|int2e_ipsrsr1|int2e_ip1srsr2|int2e_ipsrsr1srsr2|int2e_ip1v_r1|int2e_ip1v_rc1|int2e_ipvg1_xp1|int2e_ipvg2_xp1|int3c2e_ipspsp1|int1e_iprinvr|int1e_iprip|int1e_iprinviprip|int1e_ipiprinvrip)_(cart|sph|spinor)")
         .allowlist_function("int2e_spsp2_spinor")
+        // Wave 5: W5-01/W5-02 spinor rows proven at nctr_k=2, plus W5-05 (int1e_ovlpip,
+        // int1e_kinip) and W5-06 (int1e_pnucp, int1e_prinvp). `int1e_rinvipiprip` is the
+        // lresc.c family the parent plan's Tier-6 table omitted.
+        .allowlist_function(
+            "(int2c2e_ip2|int3c2e_ip2|int1e_ovlpip|int1e_kinip|int1e_pnucp|int1e_prinvp|int1e_rinvipiprip)_(cart|sph|spinor)",
+        )
         .allowlist_type("CINTOpt")
         .generate()
         .expect("failed to generate oracle libcint bindings");

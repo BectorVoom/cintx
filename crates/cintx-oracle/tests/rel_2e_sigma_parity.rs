@@ -43,6 +43,9 @@ const RTOL: f64 = 0.0;
 const REL_2E_FAMILIES: &[&str] = &[
     // REL-03 (intor4.c)
     "int2e_srsr1_spinor",
+    // W4-03: `spsp2` is a REL-03 family that Phase 29 left out of this list while
+    // its `(c2s_sf_2e1, c2s_si_2e2)` pairing was still wrong. Fixed and gated here.
+    "int2e_spsp2_spinor",
     "int2e_spsp1spsp2_spinor",
     "int2e_srsr1srsr2_spinor",
     // REL-04 (gaunt1.c)
@@ -127,11 +130,11 @@ fn collect_vendor_family(symbol: &str, atm: &[i32], bas: &[i32], env: &[f64]) ->
     use cintx_compat::raw::ATM_SLOTS;
     use cintx_oracle::vendor_ffi::{
         vendor_CINTcgto_spinor, vendor_int2e_sps1sps2_spinor, vendor_int2e_sps1ssp2_spinor,
-        vendor_int2e_spsp1spsp2_spinor, vendor_int2e_spv1_spinor, vendor_int2e_spv1spsp2_spinor,
-        vendor_int2e_spv1spv2_spinor, vendor_int2e_spv1vsp2_spinor, vendor_int2e_srsr1_spinor,
-        vendor_int2e_srsr1srsr2_spinor, vendor_int2e_ssp1sps2_spinor, vendor_int2e_ssp1ssp2_spinor,
-        vendor_int2e_vsp1_spinor, vendor_int2e_vsp1spsp2_spinor, vendor_int2e_vsp1spv2_spinor,
-        vendor_int2e_vsp1vsp2_spinor,
+        vendor_int2e_spsp1spsp2_spinor, vendor_int2e_spsp2_spinor, vendor_int2e_spv1_spinor,
+        vendor_int2e_spv1spsp2_spinor, vendor_int2e_spv1spv2_spinor, vendor_int2e_spv1vsp2_spinor,
+        vendor_int2e_srsr1_spinor, vendor_int2e_srsr1srsr2_spinor, vendor_int2e_ssp1sps2_spinor,
+        vendor_int2e_ssp1ssp2_spinor, vendor_int2e_vsp1_spinor, vendor_int2e_vsp1spsp2_spinor,
+        vendor_int2e_vsp1spv2_spinor, vendor_int2e_vsp1vsp2_spinor,
     };
 
     let natm = (atm.len() / ATM_SLOTS) as i32;
@@ -145,6 +148,7 @@ fn collect_vendor_family(symbol: &str, atm: &[i32], bas: &[i32], env: &[f64]) ->
     let mut out = vec![0.0_f64; ni_sp * nj_sp * nk_sp * nl_sp * 2];
     let f: fn(&mut [f64], &[i32; 4], &[i32], i32, &[i32], i32, &[f64]) -> i32 = match symbol {
         "int2e_srsr1_spinor" => vendor_int2e_srsr1_spinor,
+        "int2e_spsp2_spinor" => vendor_int2e_spsp2_spinor,
         "int2e_spsp1spsp2_spinor" => vendor_int2e_spsp1spsp2_spinor,
         "int2e_srsr1srsr2_spinor" => vendor_int2e_srsr1srsr2_spinor,
         "int2e_ssp1ssp2_spinor" => vendor_int2e_ssp1ssp2_spinor,
@@ -469,6 +473,7 @@ macro_rules! rel_2e_byte_identity_gate_live {
 
 // REL-03 (intor4.c) — LIVE (29-06 Task 1).
 rel_2e_byte_identity_gate_live!(test_srsr1_byte_identity, "int2e_srsr1_spinor");
+rel_2e_byte_identity_gate_live!(test_spsp2_byte_identity, "int2e_spsp2_spinor");
 rel_2e_byte_identity_gate_live!(test_spsp1spsp2_byte_identity, "int2e_spsp1spsp2_spinor");
 
 rel_2e_byte_identity_gate_live!(test_srsr1srsr2_byte_identity, "int2e_srsr1srsr2_spinor");

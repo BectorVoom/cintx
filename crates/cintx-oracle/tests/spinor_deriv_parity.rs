@@ -496,6 +496,8 @@ fn test_int3c1e_ip1_spinor_adversarial_parity() {
     let nctr_j = bas[SJ * BAS_SLOTS + NCTR_OF] as usize;
 
     let lk = bas[SK * BAS_SLOTS + ANG_OF] as u8;
+    // W5-02: aux-k now carries its own general-contraction axis in the transform.
+    let nctr_k = bas[SK * BAS_SLOTS + NCTR_OF] as usize;
 
     let nci = cintx_cubecl::transform::c2s::ncart(li);
     let ncj = cintx_cubecl::transform::c2s::ncart(lj);
@@ -522,6 +524,7 @@ fn test_int3c1e_ip1_spinor_adversarial_parity() {
         lk,
         nctr_i,
         nctr_j,
+        nctr_k,
     )
     .unwrap();
 
@@ -557,6 +560,8 @@ fn test_int3c1e_iprinv_spinor_adversarial_parity() {
     let nctr_j = bas[SJ * BAS_SLOTS + NCTR_OF] as usize;
 
     let lk = bas[SK * BAS_SLOTS + ANG_OF] as u8;
+    // W5-02: aux-k now carries its own general-contraction axis in the transform.
+    let nctr_k = bas[SK * BAS_SLOTS + NCTR_OF] as usize;
 
     let nci = cintx_cubecl::transform::c2s::ncart(li);
     let ncj = cintx_cubecl::transform::c2s::ncart(lj);
@@ -583,6 +588,7 @@ fn test_int3c1e_iprinv_spinor_adversarial_parity() {
         lk,
         nctr_i,
         nctr_j,
+        nctr_k,
     )
     .unwrap();
 

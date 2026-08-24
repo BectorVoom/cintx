@@ -371,7 +371,7 @@ fn run_sigma_p_device<R: Runtime>(
             sigma_p_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<R>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -841,7 +841,7 @@ fn run_sigma_p_cg_device<R: Runtime>(
     sigma_p_cg_sa10sp_kernel::launch::<f64, R>(
         client,
         crate::plane::single_cube_count(),
-        crate::plane::standard_plane_cube_dim(),
+        crate::plane::backend_plane_cube_dim::<R>(),
         unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
         unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
         unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -1673,7 +1673,7 @@ fn run_sigma_p_spgsp_device<R: Runtime>(
     sigma_p_spgsp_kernel::launch::<f64, R>(
         client,
         crate::plane::single_cube_count(),
-        crate::plane::standard_plane_cube_dim(),
+        crate::plane::backend_plane_cube_dim::<R>(),
         unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
         unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
         unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -2201,6 +2201,10 @@ fn sigma_p_host(
 // ═════════════════════════════════════════════════════════════════════════════
 
 /// PIE4 = pi/4 (Rys weight normalization, matches `sigma_1e_nuc::PIE4`).
+// Verbatim libcint literal, not `std::f64::consts::FRAC_PI_4`: result compatibility
+// with upstream is decided by the exact bits this file feeds the Rys kernels, so
+// the constant is transcribed from `rys_roots.c` rather than recomputed.
+#[allow(clippy::approx_constant)]
 const SA01_PIE4: f64 = 0.78539816339744827900_f64;
 
 /// Maximum on-device Rys root count (comptime arms 1..=5). Above this the kernel
@@ -2276,6 +2280,11 @@ fn sa01_x1i_of_g1<F: Float>(
 /// this body. `s[0..8]` per intor3.c:1022-1030.
 #[cube]
 #[allow(clippy::too_many_arguments)]
+// `0u32 * block_len` is deliberate: these accumulations write a
+// component-leading table (`0`, `1`, `2`, ... times `block_len`) and dropping the
+// zero term would break the column alignment that makes the component index
+// readable at a glance.
+#[allow(clippy::erasing_op)]
 fn sa01_gout<F: Float>(
     gc_out: &mut Array<F>,
     base: u32,
@@ -2625,7 +2634,7 @@ fn run_sa01_rys_device<R: Runtime>(
             sa01_rys_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<R>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -3477,7 +3486,7 @@ fn run_spgnucsp_rys_device<R: Runtime>(
             spgnucsp_rys_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<R>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -3778,6 +3787,11 @@ pub fn launch_int1e_spgnucsp_spinor_pair<F: CintFloat>(
 /// (G2E_R0I). nroots is comptime.
 #[cube(launch)]
 #[allow(clippy::too_many_arguments)]
+// `0u32 * block_len` is deliberate: these accumulations write a
+// component-leading table (`0`, `1`, `2`, ... times `block_len`) and dropping the
+// zero term would break the column alignment that makes the component index
+// readable at a glance.
+#[allow(clippy::erasing_op)]
 fn spgsa01_rys_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
     exps_j: &Array<F>,
@@ -4368,7 +4382,7 @@ fn run_spgsa01_rys_device<R: Runtime>(
             spgsa01_rys_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<R>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },

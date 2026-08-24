@@ -22,6 +22,12 @@
 //! check is not applicable to this file — documented as a deviation (stg.rs
 //! host-only, no `#[cube]` fns).
 
+// The Clenshaw/DCT node tables below are transcribed verbatim from
+// `libcint-master/src/stg_roots.c`. Some entries coincide with a `std::f64::consts`
+// value (1/sqrt(2) appears in every cosine table), but they are quadrature data,
+// not derived constants, and must stay bit-for-bit what upstream ships.
+#![allow(clippy::approx_constant)]
+
 use super::roots_xw_data::{data_w, data_x};
 use cintx_core::CintFloat;
 

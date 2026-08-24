@@ -33,13 +33,13 @@
       "stability": "stable"
     },
     {
+      "complex_output": true,
       "id": {
         "family": "1e",
         "operator": "overlap",
         "representation": "spinor",
         "symbol": "int1e_ovlp_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -82,13 +82,13 @@
       "stability": "stable"
     },
     {
+      "complex_output": true,
       "id": {
         "family": "1e",
         "operator": "kinetic",
         "representation": "spinor",
         "symbol": "int1e_kin_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -131,13 +131,13 @@
       "stability": "stable"
     },
     {
+      "complex_output": true,
       "id": {
         "family": "1e",
         "operator": "nuclear-attraction",
         "representation": "spinor",
         "symbol": "int1e_nuc_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -180,13 +180,13 @@
       "stability": "stable"
     },
     {
+      "complex_output": true,
       "id": {
         "family": "2e",
         "operator": "electron-repulsion",
         "representation": "spinor",
         "symbol": "int2e_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -229,13 +229,13 @@
       "stability": "stable"
     },
     {
+      "complex_output": true,
       "id": {
         "family": "2c2e",
         "operator": "electron-repulsion",
         "representation": "spinor",
         "symbol": "int2c2e_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -383,6 +383,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -396,7 +397,6 @@
         "representation": "spinor",
         "symbol": "int3c2e_ip1_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -653,7 +653,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-01",
+        "policy": "no_upstream_oracle",
+        "reason": "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) \u2014 cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false"
+      }
     },
     {
       "arity": 0,
@@ -3602,6 +3607,7 @@
       "compiled_in_profiles": [
         "unstable-source"
       ],
+      "complex_output": true,
       "component_rank": "",
       "declared_in": "src/source/unstable",
       "feature_flag": "unstable_source",
@@ -3615,7 +3621,6 @@
         "representation": "spinor",
         "symbol": "int2e_breit_r1p2_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "unstable-source"
@@ -3629,6 +3634,7 @@
       "compiled_in_profiles": [
         "unstable-source"
       ],
+      "complex_output": true,
       "component_rank": "",
       "declared_in": "src/source/unstable",
       "feature_flag": "unstable_source",
@@ -3642,7 +3648,6 @@
         "representation": "spinor",
         "symbol": "int2e_breit_r2p2_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "unstable-source"
@@ -3905,6 +3910,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -3918,7 +3924,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipovlp_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4002,6 +4007,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4015,7 +4021,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipkin_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4099,6 +4104,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4112,7 +4118,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipovlpip_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4196,6 +4201,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4209,7 +4215,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipkinip_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4293,6 +4298,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4306,7 +4312,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipnucip_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4390,6 +4395,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4403,7 +4409,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipipovlp_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4487,6 +4492,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4500,7 +4506,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipipnuc_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4584,6 +4589,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4597,7 +4603,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipipkin_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4681,6 +4686,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4694,7 +4700,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipiprinv_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4778,6 +4783,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4791,7 +4797,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipnuc_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4875,6 +4880,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4888,7 +4894,6 @@
         "representation": "spinor",
         "symbol": "int1e_iprinv_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -4972,6 +4977,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -4985,7 +4991,6 @@
         "representation": "spinor",
         "symbol": "int1e_rinv_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -4993,7 +4998,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9717 (Phase 24 Cluster B rinv)"
+      }
     },
     {
       "arity": 2,
@@ -5069,6 +5079,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5082,7 +5093,6 @@
         "representation": "spinor",
         "symbol": "int1e_drinv_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5090,7 +5100,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03d",
+        "policy": "fail_closed",
+        "reason": "spinor drinv rejected at one_electron.rs:9717 (Phase 24 Cluster B)"
+      }
     },
     {
       "arity": 2,
@@ -5166,6 +5181,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5179,7 +5195,6 @@
         "representation": "spinor",
         "symbol": "int1e_rr_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5187,7 +5202,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -5263,6 +5283,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "27",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5276,7 +5297,6 @@
         "representation": "spinor",
         "symbol": "int1e_rrr_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5284,7 +5304,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -5360,6 +5385,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "81",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5373,7 +5399,6 @@
         "representation": "spinor",
         "symbol": "int1e_rrrr_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5381,7 +5406,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -5457,6 +5487,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5470,7 +5501,6 @@
         "representation": "spinor",
         "symbol": "int1e_r2_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5478,7 +5508,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -5554,6 +5589,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5567,7 +5603,6 @@
         "representation": "spinor",
         "symbol": "int1e_r4_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5575,7 +5610,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -5651,6 +5691,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5664,7 +5705,6 @@
         "representation": "spinor",
         "symbol": "int1e_rr_origj_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5672,7 +5712,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -5748,6 +5793,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5761,7 +5807,6 @@
         "representation": "spinor",
         "symbol": "int1e_r2_origj_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5769,7 +5814,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -5845,6 +5895,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5858,7 +5909,6 @@
         "representation": "spinor",
         "symbol": "int1e_r4_origj_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5866,7 +5916,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -5942,6 +5997,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -5955,7 +6011,6 @@
         "representation": "spinor",
         "symbol": "int1e_r_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -5963,7 +6018,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -6039,6 +6099,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6052,7 +6113,6 @@
         "representation": "spinor",
         "symbol": "int1e_z_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6060,7 +6120,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -6136,6 +6201,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6149,7 +6215,6 @@
         "representation": "spinor",
         "symbol": "int1e_zz_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6157,7 +6222,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -6233,6 +6303,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6246,7 +6317,6 @@
         "representation": "spinor",
         "symbol": "int1e_r_origj_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6254,7 +6324,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -6330,6 +6405,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6343,7 +6419,6 @@
         "representation": "spinor",
         "symbol": "int1e_z_origj_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6351,7 +6426,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -6427,6 +6507,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6440,7 +6521,6 @@
         "representation": "spinor",
         "symbol": "int1e_zz_origj_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6448,7 +6528,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)"
+      }
     },
     {
       "arity": 2,
@@ -6524,6 +6609,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "1",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6537,7 +6623,6 @@
         "representation": "spinor",
         "symbol": "int1e_p4_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6545,7 +6630,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9855 (Phase 24 Cluster C p4)"
+      }
     },
     {
       "arity": 2,
@@ -6621,6 +6711,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6634,7 +6725,6 @@
         "representation": "spinor",
         "symbol": "int1e_irp_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6642,7 +6732,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9952 (Phase 24 Cluster D irp)"
+      }
     },
     {
       "arity": 4,
@@ -6718,6 +6813,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6731,7 +6827,6 @@
         "representation": "spinor",
         "symbol": "int2e_ip1_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6739,7 +6834,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03a",
+        "policy": "fail_closed",
+        "reason": "spinor 2e gradient rejected at two_electron.rs:1463"
+      }
     },
     {
       "arity": 4,
@@ -6815,6 +6915,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -6828,7 +6929,6 @@
         "representation": "spinor",
         "symbol": "int2e_ip2_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6836,7 +6936,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03a",
+        "policy": "fail_closed",
+        "reason": "spinor 2e gradient rejected at two_electron.rs:1730"
+      }
     },
     {
       "arity": 4,
@@ -6912,6 +7017,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
@@ -6925,7 +7031,6 @@
         "representation": "spinor",
         "symbol": "int2e_ipip1_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -6933,7 +7038,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03b",
+        "policy": "fail_closed",
+        "reason": "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)"
+      }
     },
     {
       "arity": 4,
@@ -7009,6 +7119,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
@@ -7022,7 +7133,6 @@
         "representation": "spinor",
         "symbol": "int2e_ipvip1_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -7030,7 +7140,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03b",
+        "policy": "fail_closed",
+        "reason": "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)"
+      }
     },
     {
       "arity": 4,
@@ -7106,6 +7221,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
@@ -7119,7 +7235,6 @@
         "representation": "spinor",
         "symbol": "int2e_ip1ip2_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -7127,7 +7242,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03b",
+        "policy": "fail_closed",
+        "reason": "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)"
+      }
     },
     {
       "arity": 4,
@@ -7203,6 +7323,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "81",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
@@ -7216,7 +7337,6 @@
         "representation": "spinor",
         "symbol": "int2e_ipip1ipip2_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -7224,7 +7344,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03b",
+        "policy": "fail_closed",
+        "reason": "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)"
+      }
     },
     {
       "arity": 2,
@@ -7492,6 +7617,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -7505,7 +7631,6 @@
         "representation": "spinor",
         "symbol": "int2c2e_ip1_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -7513,7 +7638,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-01",
+        "policy": "no_upstream_oracle",
+        "reason": "upstream int2c2e_ip1_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:384-388) \u2014 cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false"
+      }
     },
     {
       "arity": 2,
@@ -7589,6 +7719,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -7602,7 +7733,6 @@
         "representation": "spinor",
         "symbol": "int2c2e_ip2_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -7610,7 +7740,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-01",
+        "policy": "no_upstream_oracle",
+        "reason": "upstream int2c2e_ip2_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:462-466) \u2014 cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false"
+      }
     },
     {
       "arity": 2,
@@ -7686,6 +7821,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -7699,7 +7835,6 @@
         "representation": "spinor",
         "symbol": "int1e_ecp_iprinv_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -7707,7 +7842,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "deferred-v1.4",
+        "policy": "fail_closed",
+        "reason": "W5-04 DECISION (2026-08-22): permanently deferred for v1.4, not merely unimplemented. Rejected at kernels/ecp.rs:2047 (Phase 21 R5). No oracle exists in ANY vendored source: libcint has no ECP at all, and PySCF's nr_ecp_deriv.c contains zero spinor code (only nr_ecp.c's ECPso_spinor, a different operator), so RULE 4 byte-identity is unobtainable and the row could never flip to oracle_covered=true even if implemented"
+      }
     },
     {
       "arity": 2,
@@ -8359,6 +8499,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -8372,7 +8513,6 @@
         "representation": "spinor",
         "symbol": "int3c2e_ip2_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -8456,6 +8596,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -8469,7 +8610,6 @@
         "representation": "spinor",
         "symbol": "int3c1e_ip1_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -8477,7 +8617,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-01",
+        "policy": "no_upstream_oracle",
+        "reason": "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) \u2014 cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false"
+      }
     },
     {
       "arity": 3,
@@ -8553,6 +8698,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "3",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -8566,7 +8712,6 @@
         "representation": "spinor",
         "symbol": "int3c1e_iprinv_spinor"
       },
-      "complex_output": true,
       "oracle_covered": false,
       "profiles": [
         "base",
@@ -8574,7 +8719,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-01",
+        "policy": "no_upstream_oracle",
+        "reason": "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) \u2014 cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false"
+      }
     },
     {
       "arity": 2,
@@ -8650,6 +8800,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "27",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -8663,7 +8814,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipipipnuc_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -8747,6 +8897,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "27",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -8760,7 +8911,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipipiprinv_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -8844,6 +8994,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "27",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -8857,7 +9008,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipipnucip_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -8941,6 +9091,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "27",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -8954,7 +9105,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipiprinvip_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -9038,6 +9188,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "81",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -9051,7 +9202,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipipipiprinv_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -9135,6 +9285,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "81",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -9148,7 +9299,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipiprinvipip_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -9232,6 +9382,7 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
+      "complex_output": true,
       "component_rank": "81",
       "declared_in": "unknown",
       "feature_flag": "none",
@@ -9245,7 +9396,6 @@
         "representation": "spinor",
         "symbol": "int1e_ipipiprinvip_spinor"
       },
-      "complex_output": true,
       "oracle_covered": true,
       "profiles": [
         "base",
@@ -9352,7 +9502,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)"
+      }
     },
     {
       "arity": 2,
@@ -9451,7 +9606,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)"
+      }
     },
     {
       "arity": 2,
@@ -9550,7 +9710,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)"
+      }
     },
     {
       "arity": 2,
@@ -9649,7 +9814,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)"
+      }
     },
     {
       "arity": 2,
@@ -9748,7 +9918,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)"
+      }
     },
     {
       "arity": 2,
@@ -9847,7 +10022,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)"
+      }
     },
     {
       "arity": 2,
@@ -9946,7 +10126,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)"
+      }
     },
     {
       "arity": 2,
@@ -10045,7 +10230,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)"
+      }
     },
     {
       "arity": 2,
@@ -10144,7 +10334,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)"
+      }
     },
     {
       "arity": 2,
@@ -10243,7 +10438,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)"
+      }
     },
     {
       "arity": 2,
@@ -10342,7 +10542,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)"
+      }
     },
     {
       "arity": 4,
@@ -10441,7 +10646,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)"
+      }
     },
     {
       "arity": 4,
@@ -10540,7 +10750,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)"
+      }
     },
     {
       "arity": 4,
@@ -10639,7 +10854,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)"
+      }
     },
     {
       "arity": 4,
@@ -10738,7 +10958,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-24-26-spinor-completion",
+        "policy": "fail_closed",
+        "reason": "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)"
+      }
     },
     {
       "arity": 2,
@@ -11629,7 +11854,12 @@
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable"
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "phase-30",
+        "policy": "fail_closed",
+        "reason": "GIAO x sigma slice: 1e operator 'spgsa01' rejected at one_electron.rs:9378 region"
+      }
     },
     {
       "arity": 2,
@@ -11833,11 +12063,18 @@
       "arity": 2,
       "canonical_family": "1e",
       "category": "1e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["cart"],
+      "forms": [
+        "cart"
+      ],
       "helper_kind": "operator",
       "id": {
         "family": "1e",
@@ -11846,18 +12083,30 @@
         "symbol": "int1e_iprinvip_cart"
       },
       "oracle_covered": true,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 2,
       "canonical_family": "1e",
       "category": "1e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["sph"],
+      "forms": [
+        "sph"
+      ],
       "helper_kind": "operator",
       "id": {
         "family": "1e",
@@ -11866,19 +12115,31 @@
         "symbol": "int1e_iprinvip_sph"
       },
       "oracle_covered": true,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 2,
       "canonical_family": "1e",
       "category": "1e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "complex_output": true,
       "component_rank": "9",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["spinor"],
+      "forms": [
+        "spinor"
+      ],
       "helper_kind": "operator",
       "id": {
         "family": "1e",
@@ -11887,204 +12148,2157 @@
         "symbol": "int1e_iprinvip_spinor"
       },
       "oracle_covered": true,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 2,
       "canonical_family": "1e",
       "category": "1e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "27",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["cart"],
+      "forms": [
+        "cart"
+      ],
       "helper_kind": "operator",
-      "id": {"family": "1e", "operator": "ipipr", "representation": "cart", "symbol": "int1e_ipipr_cart"},
+      "id": {
+        "family": "1e",
+        "operator": "ipipr",
+        "representation": "cart",
+        "symbol": "int1e_ipipr_cart"
+      },
       "oracle_covered": true,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 2,
       "canonical_family": "1e",
       "category": "1e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "27",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["sph"],
+      "forms": [
+        "sph"
+      ],
       "helper_kind": "operator",
-      "id": {"family": "1e", "operator": "ipipr", "representation": "sph", "symbol": "int1e_ipipr_sph"},
+      "id": {
+        "family": "1e",
+        "operator": "ipipr",
+        "representation": "sph",
+        "symbol": "int1e_ipipr_sph"
+      },
       "oracle_covered": true,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 2,
       "canonical_family": "1e",
       "category": "1e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "complex_output": true,
       "component_rank": "27",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["spinor"],
+      "forms": [
+        "spinor"
+      ],
       "helper_kind": "operator",
-      "id": {"family": "1e", "operator": "ipipr", "representation": "spinor", "symbol": "int1e_ipipr_spinor"},
+      "id": {
+        "family": "1e",
+        "operator": "ipipr",
+        "representation": "spinor",
+        "symbol": "int1e_ipipr_spinor"
+      },
       "oracle_covered": true,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "81",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["cart"],
+      "forms": [
+        "cart"
+      ],
       "helper_kind": "operator",
-      "id": {"family": "2e", "operator": "ipvip1ipvip2", "representation": "cart", "symbol": "int2e_ipvip1ipvip2_cart"},
+      "id": {
+        "family": "2e",
+        "operator": "ipvip1ipvip2",
+        "representation": "cart",
+        "symbol": "int2e_ipvip1ipvip2_cart"
+      },
       "oracle_covered": true,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "component_rank": "81",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["sph"],
+      "forms": [
+        "sph"
+      ],
       "helper_kind": "operator",
-      "id": {"family": "2e", "operator": "ipvip1ipvip2", "representation": "sph", "symbol": "int2e_ipvip1ipvip2_sph"},
+      "id": {
+        "family": "2e",
+        "operator": "ipvip1ipvip2",
+        "representation": "sph",
+        "symbol": "int2e_ipvip1ipvip2_sph"
+      },
       "oracle_covered": true,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
       "arity": 4,
       "canonical_family": "2e",
       "category": "2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "complex_output": true,
       "component_rank": "81",
       "declared_in": "src/autocode/hess.c",
       "feature_flag": "none",
-      "forms": ["spinor"],
+      "forms": [
+        "spinor"
+      ],
       "helper_kind": "operator",
-      "id": {"family": "2e", "operator": "ipvip1ipvip2", "representation": "spinor", "symbol": "int2e_ipvip1ipvip2_spinor"},
+      "id": {
+        "family": "2e",
+        "operator": "ipvip1ipvip2",
+        "representation": "spinor",
+        "symbol": "int2e_ipvip1ipvip2_spinor"
+      },
       "oracle_covered": false,
-      "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03b",
+        "policy": "fail_closed",
+        "reason": "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)"
+      }
+    },
+    {
+      "arity": 2,
+      "canonical_family": "2c2e",
+      "category": "2c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2c2e",
+        "operator": "ip1ip2",
+        "representation": "cart",
+        "symbol": "int2c2e_ip1ip2_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
       "stability": "stable"
     },
     {
-      "arity": 2, "canonical_family": "2c2e", "category": "2c2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["cart"], "helper_kind": "operator",
-      "id": {"family": "2c2e", "operator": "ip1ip2", "representation": "cart", "symbol": "int2c2e_ip1ip2_cart"},
-      "oracle_covered": true, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 2,
+      "canonical_family": "2c2e",
+      "category": "2c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2c2e",
+        "operator": "ip1ip2",
+        "representation": "sph",
+        "symbol": "int2c2e_ip1ip2_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
     },
     {
-      "arity": 2, "canonical_family": "2c2e", "category": "2c2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["sph"], "helper_kind": "operator",
-      "id": {"family": "2c2e", "operator": "ip1ip2", "representation": "sph", "symbol": "int2c2e_ip1ip2_sph"},
-      "oracle_covered": true, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 2,
+      "canonical_family": "2c2e",
+      "category": "2c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2c2e",
+        "operator": "ip1ip2",
+        "representation": "spinor",
+        "symbol": "int2c2e_ip1ip2_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-01",
+        "policy": "no_upstream_oracle",
+        "reason": "upstream int2c2e_ip1ip2_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:1366-1370); cintx also rejects this row at center_2c2e.rs:829 \u2014 cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false"
+      }
     },
     {
-      "arity": 2, "canonical_family": "2c2e", "category": "2c2e", "complex_output": true,
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["spinor"], "helper_kind": "operator",
-      "id": {"family": "2c2e", "operator": "ip1ip2", "representation": "spinor", "symbol": "int2c2e_ip1ip2_spinor"},
-      "oracle_covered": false, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 3,
+      "canonical_family": "3c2e",
+      "category": "3c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "3c2e",
+        "operator": "ipvip1",
+        "representation": "cart",
+        "symbol": "int3c2e_ipvip1_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
     },
     {
-      "arity": 3, "canonical_family": "3c2e", "category": "3c2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["cart"], "helper_kind": "operator",
-      "id": {"family": "3c2e", "operator": "ipvip1", "representation": "cart", "symbol": "int3c2e_ipvip1_cart"},
-      "oracle_covered": true, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 3,
+      "canonical_family": "3c2e",
+      "category": "3c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "3c2e",
+        "operator": "ipvip1",
+        "representation": "sph",
+        "symbol": "int3c2e_ipvip1_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
     },
     {
-      "arity": 3, "canonical_family": "3c2e", "category": "3c2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["sph"], "helper_kind": "operator",
-      "id": {"family": "3c2e", "operator": "ipvip1", "representation": "sph", "symbol": "int3c2e_ipvip1_sph"},
-      "oracle_covered": true, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 3,
+      "canonical_family": "3c2e",
+      "category": "3c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "3c2e",
+        "operator": "ipvip1",
+        "representation": "spinor",
+        "symbol": "int3c2e_ipvip1_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03c",
+        "policy": "fail_closed",
+        "reason": "spinor 3c2e Hessian rejected at center_3c2e.rs:3119-3122"
+      }
     },
     {
-      "arity": 3, "canonical_family": "3c2e", "category": "3c2e", "complex_output": true,
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["spinor"], "helper_kind": "operator",
-      "id": {"family": "3c2e", "operator": "ipvip1", "representation": "spinor", "symbol": "int3c2e_ipvip1_spinor"},
-      "oracle_covered": false, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 3,
+      "canonical_family": "3c2e",
+      "category": "3c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "3c2e",
+        "operator": "ip1ip2",
+        "representation": "cart",
+        "symbol": "int3c2e_ip1ip2_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
     },
     {
-      "arity": 3, "canonical_family": "3c2e", "category": "3c2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["cart"], "helper_kind": "operator",
-      "id": {"family": "3c2e", "operator": "ip1ip2", "representation": "cart", "symbol": "int3c2e_ip1ip2_cart"},
-      "oracle_covered": true, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 3,
+      "canonical_family": "3c2e",
+      "category": "3c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "3c2e",
+        "operator": "ip1ip2",
+        "representation": "sph",
+        "symbol": "int3c2e_ip1ip2_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
     },
     {
-      "arity": 3, "canonical_family": "3c2e", "category": "3c2e",
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["sph"], "helper_kind": "operator",
-      "id": {"family": "3c2e", "operator": "ip1ip2", "representation": "sph", "symbol": "int3c2e_ip1ip2_sph"},
-      "oracle_covered": true, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 3,
+      "canonical_family": "3c2e",
+      "category": "3c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "3c2e",
+        "operator": "ip1ip2",
+        "representation": "spinor",
+        "symbol": "int3c2e_ip1ip2_spinor"
+      },
+      "oracle_covered": false,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable",
+      "unsupported_policy": {
+        "owner": "wave-5-W5-03c",
+        "policy": "fail_closed",
+        "reason": "spinor 3c2e Hessian rejected at center_3c2e.rs:3119-3122"
+      }
     },
     {
-      "arity": 3, "canonical_family": "3c2e", "category": "3c2e", "complex_output": true,
-      "compiled_in_profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-      "component_rank": "9", "declared_in": "src/autocode/int3c2e.c", "feature_flag": "none",
-      "forms": ["spinor"], "helper_kind": "operator",
-      "id": {"family": "3c2e", "operator": "ip1ip2", "representation": "spinor", "symbol": "int3c2e_ip1ip2_spinor"},
-      "oracle_covered": false, "profiles": ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"], "stability": "stable"
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad1.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ippnucp",
+        "representation": "cart",
+        "symbol": "int1e_ippnucp_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
     },
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad1.c","feature_flag":"none","forms":["cart"],"helper_kind":"operator","id":{"family":"1e","operator":"ippnucp","representation":"cart","symbol":"int1e_ippnucp_cart"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad1.c","feature_flag":"none","forms":["sph"],"helper_kind":"operator","id":{"family":"1e","operator":"ippnucp","representation":"sph","symbol":"int1e_ippnucp_sph"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad1.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ippnucp","representation":"spinor","symbol":"int1e_ippnucp_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad1.c","feature_flag":"none","forms":["cart"],"helper_kind":"operator","id":{"family":"1e","operator":"ipprinvp","representation":"cart","symbol":"int1e_ipprinvp_cart"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad1.c","feature_flag":"none","forms":["sph"],"helper_kind":"operator","id":{"family":"1e","operator":"ipprinvp","representation":"sph","symbol":"int1e_ipprinvp_sph"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad1.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipprinvp","representation":"spinor","symbol":"int1e_ipprinvp_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["cart"],"helper_kind":"operator","id":{"family":"1e","operator":"ippnucpip","representation":"cart","symbol":"int1e_ippnucpip_cart"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["sph"],"helper_kind":"operator","id":{"family":"1e","operator":"ippnucpip","representation":"sph","symbol":"int1e_ippnucpip_sph"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ippnucpip","representation":"spinor","symbol":"int1e_ippnucpip_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["cart"],"helper_kind":"operator","id":{"family":"1e","operator":"ipprinvpip","representation":"cart","symbol":"int1e_ipprinvpip_cart"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["sph"],"helper_kind":"operator","id":{"family":"1e","operator":"ipprinvpip","representation":"sph","symbol":"int1e_ipprinvpip_sph"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipprinvpip","representation":"spinor","symbol":"int1e_ipprinvpip_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["cart"],"helper_kind":"operator","id":{"family":"1e","operator":"ipippnucp","representation":"cart","symbol":"int1e_ipippnucp_cart"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["sph"],"helper_kind":"operator","id":{"family":"1e","operator":"ipippnucp","representation":"sph","symbol":"int1e_ipippnucp_sph"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipippnucp","representation":"spinor","symbol":"int1e_ipippnucp_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["cart"],"helper_kind":"operator","id":{"family":"1e","operator":"ipipprinvp","representation":"cart","symbol":"int1e_ipipprinvp_cart"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["sph"],"helper_kind":"operator","id":{"family":"1e","operator":"ipipprinvp","representation":"sph","symbol":"int1e_ipipprinvp_sph"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipipprinvp","representation":"spinor","symbol":"int1e_ipipprinvp_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad1.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipspnucsp","representation":"spinor","symbol":"int1e_ipspnucsp_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad1.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipsprinvsp","representation":"spinor","symbol":"int1e_ipsprinvsp_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipipspnucsp","representation":"spinor","symbol":"int1e_ipipspnucsp_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipipsprinvsp","representation":"spinor","symbol":"int1e_ipipsprinvsp_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipspnucspip","representation":"spinor","symbol":"int1e_ipspnucspip_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":2,"canonical_family":"1e","category":"1e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"9","declared_in":"src/autocode/hess.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"1e","operator":"ipsprinvspip","representation":"spinor","symbol":"int1e_ipsprinvspip_spinor"},"oracle_covered":true,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":4,"canonical_family":"2e","category":"2e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad2.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"2e","operator":"ipspsp1","representation":"spinor","symbol":"int2e_ipspsp1_spinor"},"oracle_covered":false,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":4,"canonical_family":"2e","category":"2e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad2.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"2e","operator":"ip1spsp2","representation":"spinor","symbol":"int2e_ip1spsp2_spinor"},"oracle_covered":false,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":4,"canonical_family":"2e","category":"2e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad2.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"2e","operator":"ipspsp1spsp2","representation":"spinor","symbol":"int2e_ipspsp1spsp2_spinor"},"oracle_covered":false,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":4,"canonical_family":"2e","category":"2e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad2.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"2e","operator":"ipsrsr1","representation":"spinor","symbol":"int2e_ipsrsr1_spinor"},"oracle_covered":false,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":4,"canonical_family":"2e","category":"2e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad2.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"2e","operator":"ip1srsr2","representation":"spinor","symbol":"int2e_ip1srsr2_spinor"},"oracle_covered":false,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":4,"canonical_family":"2e","category":"2e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"3","declared_in":"src/autocode/grad2.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"2e","operator":"ipsrsr1srsr2","representation":"spinor","symbol":"int2e_ipsrsr1srsr2_spinor"},"oracle_covered":false,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"},
-    {"arity":4,"canonical_family":"2e","category":"2e","complex_output":true,"compiled_in_profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"component_rank":"1","declared_in":"src/autocode/dkb.c","feature_flag":"none","forms":["spinor"],"helper_kind":"operator","id":{"family":"2e","operator":"spsp2","representation":"spinor","symbol":"int2e_spsp2_spinor"},"oracle_covered":false,"profiles":["base","with-f12","with-4c1e","with-f12+with-4c1e"],"stability":"stable"}
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad1.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ippnucp",
+        "representation": "sph",
+        "symbol": "int1e_ippnucp_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad1.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ippnucp",
+        "representation": "spinor",
+        "symbol": "int1e_ippnucp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad1.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipprinvp",
+        "representation": "cart",
+        "symbol": "int1e_ipprinvp_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad1.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipprinvp",
+        "representation": "sph",
+        "symbol": "int1e_ipprinvp_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad1.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipprinvp",
+        "representation": "spinor",
+        "symbol": "int1e_ipprinvp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ippnucpip",
+        "representation": "cart",
+        "symbol": "int1e_ippnucpip_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ippnucpip",
+        "representation": "sph",
+        "symbol": "int1e_ippnucpip_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ippnucpip",
+        "representation": "spinor",
+        "symbol": "int1e_ippnucpip_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipprinvpip",
+        "representation": "cart",
+        "symbol": "int1e_ipprinvpip_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipprinvpip",
+        "representation": "sph",
+        "symbol": "int1e_ipprinvpip_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipprinvpip",
+        "representation": "spinor",
+        "symbol": "int1e_ipprinvpip_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipippnucp",
+        "representation": "cart",
+        "symbol": "int1e_ipippnucp_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipippnucp",
+        "representation": "sph",
+        "symbol": "int1e_ipippnucp_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipippnucp",
+        "representation": "spinor",
+        "symbol": "int1e_ipippnucp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipipprinvp",
+        "representation": "cart",
+        "symbol": "int1e_ipipprinvp_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipipprinvp",
+        "representation": "sph",
+        "symbol": "int1e_ipipprinvp_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipipprinvp",
+        "representation": "spinor",
+        "symbol": "int1e_ipipprinvp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad1.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipspnucsp",
+        "representation": "spinor",
+        "symbol": "int1e_ipspnucsp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad1.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipsprinvsp",
+        "representation": "spinor",
+        "symbol": "int1e_ipsprinvsp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipipspnucsp",
+        "representation": "spinor",
+        "symbol": "int1e_ipipspnucsp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipipsprinvsp",
+        "representation": "spinor",
+        "symbol": "int1e_ipipsprinvsp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipspnucspip",
+        "representation": "spinor",
+        "symbol": "int1e_ipspnucspip_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/hess.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "ipsprinvspip",
+        "representation": "spinor",
+        "symbol": "int1e_ipsprinvspip_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipspsp1",
+        "representation": "spinor",
+        "symbol": "int2e_ipspsp1_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ip1spsp2",
+        "representation": "spinor",
+        "symbol": "int2e_ip1spsp2_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipspsp1spsp2",
+        "representation": "spinor",
+        "symbol": "int2e_ipspsp1spsp2_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipsrsr1",
+        "representation": "spinor",
+        "symbol": "int2e_ipsrsr1_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ip1srsr2",
+        "representation": "spinor",
+        "symbol": "int2e_ip1srsr2_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/grad2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipsrsr1srsr2",
+        "representation": "spinor",
+        "symbol": "int2e_ipsrsr1srsr2_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "1",
+      "declared_in": "src/autocode/dkb.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "spsp2",
+        "representation": "spinor",
+        "symbol": "int2e_spsp2_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ip1v_r1",
+        "representation": "cart",
+        "symbol": "int2e_ip1v_r1_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ip1v_r1",
+        "representation": "sph",
+        "symbol": "int2e_ip1v_r1_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ip1v_r1",
+        "representation": "spinor",
+        "symbol": "int2e_ip1v_r1_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ip1v_rc1",
+        "representation": "cart",
+        "symbol": "int2e_ip1v_rc1_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ip1v_rc1",
+        "representation": "sph",
+        "symbol": "int2e_ip1v_rc1_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ip1v_rc1",
+        "representation": "spinor",
+        "symbol": "int2e_ip1v_rc1_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipvg1_xp1",
+        "representation": "cart",
+        "symbol": "int2e_ipvg1_xp1_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipvg1_xp1",
+        "representation": "sph",
+        "symbol": "int2e_ipvg1_xp1_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipvg1_xp1",
+        "representation": "spinor",
+        "symbol": "int2e_ipvg1_xp1_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipvg2_xp1",
+        "representation": "cart",
+        "symbol": "int2e_ipvg2_xp1_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipvg2_xp1",
+        "representation": "sph",
+        "symbol": "int2e_ipvg2_xp1_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 4,
+      "canonical_family": "2e",
+      "category": "2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "9",
+      "declared_in": "src/autocode/intor2.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "2e",
+        "operator": "ipvg2_xp1",
+        "representation": "spinor",
+        "symbol": "int2e_ipvg2_xp1_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 3,
+      "canonical_family": "3c2e",
+      "category": "3c2e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "3",
+      "declared_in": "src/autocode/int3c2e.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "3c2e",
+        "operator": "ipspsp1",
+        "representation": "spinor",
+        "symbol": "int3c2e_ipspsp1_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "1",
+      "declared_in": "src/autocode/intor1.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "pnucp",
+        "representation": "cart",
+        "symbol": "int1e_pnucp_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "1",
+      "declared_in": "src/autocode/intor1.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "pnucp",
+        "representation": "sph",
+        "symbol": "int1e_pnucp_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "1",
+      "declared_in": "src/autocode/intor1.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "pnucp",
+        "representation": "spinor",
+        "symbol": "int1e_pnucp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "1",
+      "declared_in": "src/autocode/intor1.c",
+      "feature_flag": "none",
+      "forms": [
+        "cart"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "prinvp",
+        "representation": "cart",
+        "symbol": "int1e_prinvp_cart"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": false,
+      "component_rank": "1",
+      "declared_in": "src/autocode/intor1.c",
+      "feature_flag": "none",
+      "forms": [
+        "sph"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "prinvp",
+        "representation": "sph",
+        "symbol": "int1e_prinvp_sph"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    },
+    {
+      "arity": 2,
+      "canonical_family": "1e",
+      "category": "1e",
+      "compiled_in_profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "complex_output": true,
+      "component_rank": "1",
+      "declared_in": "src/autocode/intor1.c",
+      "feature_flag": "none",
+      "forms": [
+        "spinor"
+      ],
+      "helper_kind": "operator",
+      "id": {
+        "family": "1e",
+        "operator": "prinvp",
+        "representation": "spinor",
+        "symbol": "int1e_prinvp_spinor"
+      },
+      "oracle_covered": true,
+      "profiles": [
+        "base",
+        "with-f12",
+        "with-4c1e",
+        "with-f12+with-4c1e"
+      ],
+      "stability": "stable"
+    }
   ],
   "profile_scope": {
     "approved": [

@@ -281,6 +281,11 @@ pub fn gauss_chebyshev_fill_host(rs: &mut [f64], ws: &mut [f64], n: u32) {
 ///
 /// Fills `x` and `w` (each of length `n_L = 2^level - 1` allocated by the
 /// caller) with the same formula as `gauss_chebyshev_nodes_weights_host`.
+// The three constants below are device-side literals, not `std::f64::consts`
+// items: a `#[cube]` body is expanded into CubeCL IR, so every value it uses has
+// to be a literal the macro can lower. Each is the correctly-rounded f64 of the
+// constant named in its variable.
+#[allow(clippy::approx_constant)]
 #[cube]
 pub fn gauss_chebyshev_nodes_weights(x: &mut Array<f64>, w: &mut Array<f64>, level: u32) {
     // Compute n = 2^level - 1 inside the kernel (cubecl supports bitshifts

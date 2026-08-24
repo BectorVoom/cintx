@@ -17,6 +17,10 @@ use cubecl::client::ComputeClient;
 use cubecl::prelude::*;
 
 /// PIE4 = pi/4 (Rys weight normalization, matches `one_electron::PIE4`).
+// Verbatim libcint literal, not `std::f64::consts::FRAC_PI_4`: result compatibility
+// with upstream is decided by the exact bits this file feeds the Rys kernels, so
+// the constant is transcribed from `rys_roots.c` rather than recomputed.
+#[allow(clippy::approx_constant)]
 const PIE4: f64 = 0.78539816339744827900_f64;
 const N_GC: u32 = 4;
 
@@ -735,7 +739,7 @@ fn run_sigma_nuc_gauge_device<R: Runtime>(
                 sigma_nuc_gauge_kernel::launch_unchecked::<f64, R>(
                     client,
                     crate::plane::single_cube_count(),
-                    crate::plane::standard_plane_cube_dim(),
+                    crate::plane::backend_plane_cube_dim::<R>(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
@@ -984,7 +988,7 @@ fn run_sigma_nuc_device<R: Runtime>(
             sigma_nuc_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<R>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },

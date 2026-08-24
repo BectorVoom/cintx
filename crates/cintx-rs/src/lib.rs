@@ -16,7 +16,10 @@ pub use api::TypedEvaluationOutput;
 pub use api::WorkspaceChunk;
 pub use api::WorkspaceExecutionToken;
 pub use api::WorkspacePlan;
-pub use api::{BatchEvaluationOutput, BatchExecutionStats, BatchRequest};
+pub use api::{
+    BatchEvaluationOutput, BatchExecutionStats, BatchRequest, QuartetBatchOutput,
+    QuartetBatchRequest, evaluate_shell_quartets, evaluate_shell_quartets_in,
+};
 pub use builder::SessionBuilder;
 pub use error::{FacadeError, FacadeErrorKind};
 

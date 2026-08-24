@@ -807,6 +807,7 @@ fn cint_diagonalize_kernel<F: Float + CubeElement>(
 // Host launcher — preserves the public `cint_diagonalize` signature.
 // ---------------------------------------------------------------------------
 
+#[cfg_attr(not(feature = "cpu"), allow(dead_code))]
 fn cint_diagonalize_device<R: Runtime>(
     client: &ComputeClient<R>,
     n: usize,
@@ -898,8 +899,19 @@ pub fn cint_diagonalize(
         "cint_diagonalize: n={n} > MXRYSROOTS={MXRYSROOTS}"
     );
 
-    let client = cubecl::cpu::CpuRuntime::client(&Default::default());
-    cint_diagonalize_device::<cubecl::cpu::CpuRuntime>(&client, n, diag, diag_off1, eig, vec)
+    // The `#[cube]` solver is host-launched on `CpuRuntime`, which only exists when the
+    // `cpu` feature is on. Under a GPU-only feature profile the pure-Rust reference
+    // diagonalizer serves the same contract; `eigh_device_matches_host` pins the two
+    // together whenever both are compiled.
+    #[cfg(feature = "cpu")]
+    {
+        let client = cubecl::cpu::CpuRuntime::client(&Default::default());
+        cint_diagonalize_device::<cubecl::cpu::CpuRuntime>(&client, n, diag, diag_off1, eig, vec)
+    }
+    #[cfg(not(feature = "cpu"))]
+    {
+        cint_diagonalize_host(n, diag, diag_off1, eig, vec)
+    }
 }
 
 // ---------------------------------------------------------------------------

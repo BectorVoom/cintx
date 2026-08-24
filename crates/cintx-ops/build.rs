@@ -53,7 +53,7 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(rs_buffer, "use crate::resolver::{{")?;
     writeln!(
         rs_buffer,
-        "    FeatureFlag, HelperKind, ManifestEntry, OperatorDescriptor, RepresentationSupport, Stability,"
+        "    FeatureFlag, HelperKind, ManifestEntry, OperatorDescriptor, RepresentationSupport, Stability,\n    UnsupportedPolicy,"
     )?;
     writeln!(rs_buffer, "}};")?;
     writeln!(rs_buffer, "use cintx_core::OperatorId;")?;
@@ -153,6 +153,20 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
             spheric = entry.rep_spheric,
             spinor = entry.rep_spinor,
         )?;
+        let policy_literal = match &entry.unsupported_policy {
+            None => "None".to_owned(),
+            Some(p) => format!(
+                "Some(UnsupportedPolicy {{ policy: {}, reason: {}, owner: {} }})",
+                literal(&p.policy),
+                literal(&p.reason),
+                literal(&p.owner),
+            ),
+        };
+        writeln!(
+            rs_buffer,
+            "        unsupported_policy: {policy},",
+            policy = policy_literal
+        )?;
         writeln!(rs_buffer, "    }},")?;
     }
 
@@ -174,12 +188,12 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(rs_buffer, "];")?;
 
     let mut csv_buffer = String::from(
-        "family_name,operator_name,symbol_name,category,arity,forms,component_rank,complex_output,feature_flag,stability,declared_in,compiled_in_profiles,oracle_covered,helper_kind,canonical_family\n",
+        "family_name,operator_name,symbol_name,category,arity,forms,component_rank,complex_output,feature_flag,stability,declared_in,compiled_in_profiles,oracle_covered,helper_kind,canonical_family,unsupported_policy,unsupported_owner\n",
     );
     for entry in &entries {
         writeln!(
             csv_buffer,
-            "{family},{operator},{symbol},{category},{arity},{forms},{component},{complex_output},{feature_flag},{stability},{declared},{compiled},{oracle},{helper},{canonical}",
+            "{family},{operator},{symbol},{category},{arity},{forms},{component},{complex_output},{feature_flag},{stability},{declared},{compiled},{oracle},{helper},{canonical},{policy},{owner}",
             family = csv_quote(&entry.family),
             operator = csv_quote(&entry.operator),
             symbol = csv_quote(&entry.symbol),
@@ -195,6 +209,20 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
             oracle = entry.oracle_covered,
             helper = csv_quote(&entry.helper_kind),
             canonical = csv_quote(&entry.canonical_family),
+            policy = csv_quote(
+                entry
+                    .unsupported_policy
+                    .as_ref()
+                    .map(|p| p.policy.as_str())
+                    .unwrap_or("")
+            ),
+            owner = csv_quote(
+                entry
+                    .unsupported_policy
+                    .as_ref()
+                    .map(|p| p.owner.as_str())
+                    .unwrap_or("")
+            ),
         )?;
     }
 
@@ -358,6 +386,20 @@ struct LockEntry {
     oracle_covered: Option<bool>,
     helper_kind: Option<String>,
     canonical_family: Option<String>,
+    unsupported_policy: Option<LockUnsupportedPolicy>,
+}
+
+/// Wave 5 W5-00: declared-but-fail-closed marker carried by the lock.
+#[derive(Deserialize, Clone)]
+struct LockUnsupportedPolicy {
+    #[serde(default = "default_policy")]
+    policy: String,
+    reason: String,
+    owner: String,
+}
+
+fn default_policy() -> String {
+    "fail_closed".to_owned()
 }
 
 #[derive(Deserialize)]
@@ -387,6 +429,7 @@ struct GeneratedEntry {
     rep_cart: bool,
     rep_spheric: bool,
     rep_spinor: bool,
+    unsupported_policy: Option<LockUnsupportedPolicy>,
 }
 
 impl From<&LockEntry> for GeneratedEntry {
@@ -432,6 +475,7 @@ impl From<&LockEntry> for GeneratedEntry {
             rep_cart,
             rep_spheric,
             rep_spinor,
+            unsupported_policy: entry.unsupported_policy.clone(),
         }
     }
 }

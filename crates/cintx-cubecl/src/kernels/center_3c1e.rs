@@ -504,7 +504,7 @@ fn run_3c1e_device<R: Runtime>(
         center_3c1e_kernel::launch_unchecked::<f64, R>(
             client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
+            crate::plane::backend_plane_cube_dim::<R>(),
             ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
             ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
@@ -1142,6 +1142,7 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
             lk,
             n_ctr_i,
             n_ctr_j,
+            n_ctr_k,
         )?;
         return Ok(grad_stats::<F>(plan, staging));
     }
@@ -1164,10 +1165,11 @@ fn launch_center_3c1e_ip1<F: CintFloat>(
 /// `cart_to_spinor_sf_derivative_3c1e` expects (the same layout the 3c2e device
 /// kernel emits).
 ///
-/// Aux-k stays a single SPHERICAL axis inside the sibling, so `n_ctr_k > 1` is
-/// rejected here (a contracted aux-k axis is outside the single-spherical-axis
-/// contract). Returns the blocked cart buffer; the caller invokes the sibling so
-/// both ip1 and iprinv dispatch to it directly (D3).
+/// W5-02: aux-k carries its own general-contraction axis, so the blocked buffer is
+/// ordered `[((ci*n_ctr_j+cj)*n_ctr_k+ck)][comp][k][j][i]` — matching what the 3c2e
+/// device kernel emits — and `n_ctr_k > 1` is composed rather than rejected. Returns
+/// the blocked cart buffer; the caller invokes the sibling so both ip1 and iprinv
+/// dispatch to it directly (D3).
 fn relayout_3c1e_grad_to_blocked(
     out_buf: &[f64],
     li: u8,
@@ -1177,12 +1179,6 @@ fn relayout_3c1e_grad_to_blocked(
     n_ctr_j: usize,
     n_ctr_k: usize,
 ) -> Result<Vec<f64>, cintxRsError> {
-    if n_ctr_k > 1 {
-        return Err(cintxRsError::UnsupportedApi {
-            requested: "spinor int3c1e gradient with general-contracted aux-k (nctr_k>1)"
-                .to_owned(),
-        });
-    }
     let nci = ncart(li);
     let ncj = ncart(lj);
     let nck = ncart(lk);
@@ -1191,22 +1187,36 @@ fn relayout_3c1e_grad_to_blocked(
     // Contraction-interleaved cartesian source axes (out_buf layout).
     let ni_full = n_ctr_i * nci;
     let nj_full = n_ctr_j * ncj;
-    let comp_stride = ni_full * nj_full * nck; // nk_full = nck (n_ctr_k == 1)
+    let nk_full = n_ctr_k * nck;
+    let comp_stride = ni_full * nj_full * nk_full;
 
-    let mut blocked = vec![0.0_f64; n_ctr_i * n_ctr_j * ncomp * kblock];
+    let required = ncomp * comp_stride;
+    if out_buf.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: out_buf.len(),
+        });
+    }
+
+    let mut blocked = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * ncomp * kblock];
     for ci in 0..n_ctr_i {
         for cj in 0..n_ctr_j {
-            let dst_base = (ci * n_ctr_j + cj) * ncomp * kblock;
-            for comp in 0..ncomp {
-                let comp_base = comp * comp_stride;
-                for k in 0..nck {
-                    for j in 0..ncj {
-                        let j_global = cj * ncj + j;
-                        for i in 0..nci {
-                            let i_global = ci * nci + i;
-                            let src = comp_base + (k * nj_full + j_global) * ni_full + i_global;
-                            let dst = dst_base + comp * kblock + (k * ncj + j) * nci + i;
-                            blocked[dst] = out_buf[src];
+            for ck in 0..n_ctr_k {
+                let dst_base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * ncomp * kblock;
+                for comp in 0..ncomp {
+                    let comp_base = comp * comp_stride;
+                    for k in 0..nck {
+                        let k_global = ck * nck + k;
+                        for j in 0..ncj {
+                            let j_global = cj * ncj + j;
+                            for i in 0..nci {
+                                let i_global = ci * nci + i;
+                                let src = comp_base
+                                    + (k_global * nj_full + j_global) * ni_full
+                                    + i_global;
+                                let dst = dst_base + comp * kblock + (k * ncj + j) * nci + i;
+                                blocked[dst] = out_buf[src];
+                            }
                         }
                     }
                 }
@@ -1400,6 +1410,7 @@ fn launch_center_3c1e_iprinv<F: CintFloat>(
             lk,
             n_ctr_i,
             n_ctr_j,
+            n_ctr_k,
         )?;
         return Ok(grad_stats::<F>(plan, staging));
     }
@@ -1961,7 +1972,7 @@ mod tests {
         center_3c1e_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
+            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },

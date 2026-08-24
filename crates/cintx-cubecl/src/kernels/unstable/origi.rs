@@ -887,7 +887,7 @@ fn run_origi_scalar_device<R: Runtime>(
             origi_scalar_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<R>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -1319,7 +1319,7 @@ fn run_origi_ip2_device<R: Runtime>(
             origi_ip2_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<R>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()) },
@@ -1563,7 +1563,7 @@ mod tests {
         origi_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
+            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
@@ -1750,7 +1750,7 @@ mod tests {
         origi_ip2_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
+            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },

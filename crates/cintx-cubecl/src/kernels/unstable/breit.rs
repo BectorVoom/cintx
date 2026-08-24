@@ -1027,7 +1027,7 @@ fn run_breit_g_device<R: Runtime>(
     breit_g_kernel::launch::<f64, R>(
         client,
         crate::plane::single_cube_count(),
-        crate::plane::standard_plane_cube_dim(),
+        crate::plane::backend_plane_cube_dim::<R>(),
         unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_size_u) },
         unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
         unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },
@@ -2074,7 +2074,7 @@ mod tests {
         breit_g_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
+            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
             unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_size_u) },
             unsafe { ArrayArg::from_raw_parts(u_h, nroots_u) },
             unsafe { ArrayArg::from_raw_parts(w_h, nroots_u) },

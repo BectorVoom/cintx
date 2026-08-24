@@ -2635,61 +2635,6 @@ fn gout_srsr2(
     )
 }
 
-fn bra_derivative_from_shifted(
-    li: usize,
-    lj: usize,
-    lk: usize,
-    ll: usize,
-    ncomp: usize,
-    ai: f64,
-    plus: &[f64],
-    minus: Option<&[f64]>,
-) -> Vec<f64> {
-    let ci = cart_comps(li as u8);
-    let cip = cart_comps((li + 1) as u8);
-    let cim = li.checked_sub(1).map(|l| cart_comps(l as u8));
-    let nfj = ncart(lj as u8);
-    let nfk = ncart(lk as u8);
-    let nfl = ncart(ll as u8);
-    let mut out = vec![0.0; ci.len() * nfj * nfk * nfl * 3 * ncomp];
-    for l in 0..nfl {
-        for k in 0..nfk {
-            for j in 0..nfj {
-                for (i, &(x, y, z)) in ci.iter().enumerate() {
-                    let exps = [x, y, z];
-                    let n = (((l * nfk + k) * nfj + j) * ci.len()) + i;
-                    for axis in 0..3 {
-                        let mut raised = [x, y, z];
-                        raised[axis] += 1;
-                        let ip = cip
-                            .iter()
-                            .position(|&v| v == (raised[0], raised[1], raised[2]))
-                            .expect("raised Cartesian component");
-                        let np = (((l * nfk + k) * nfj + j) * cip.len()) + ip;
-                        for comp in 0..ncomp {
-                            let mut value = -2.0 * ai * plus[np * ncomp + comp];
-                            if exps[axis] > 0 {
-                                let mut lowered = [x, y, z];
-                                lowered[axis] -= 1;
-                                let cm = cim.as_ref().expect("lowered Cartesian shell");
-                                let im = cm
-                                    .iter()
-                                    .position(|&v| v == (lowered[0], lowered[1], lowered[2]))
-                                    .expect("lowered Cartesian component");
-                                let nm = (((l * nfk + k) * nfj + j) * cm.len()) + im;
-                                value += f64::from(exps[axis])
-                                    * minus.expect("lowered derivative block")[nm * ncomp + comp];
-                            }
-                            out[n * (3 * ncomp) + axis * ncomp + comp] = value;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
 /// Rank-3 bra derivative of the six sigma-p/sigma-r 2e base tensors. `kind` maps
 /// in order to ipspsp1, ip1spsp2, ipspsp1spsp2, ipsrsr1, ip1srsr2,
 /// ipsrsr1srsr2. Output is interleaved as `[cart][tensor_axis][sigma_components]`.
@@ -2777,19 +2722,162 @@ pub(crate) fn gout_ip_sigma(
             ]
         });
     }
-    let base = |l: usize| match kind {
-        0 => gout_spsp1(g, shape, l, lj, lk, ll, ai, aj),
-        1 => unreachable!(),
-        2 => gout_spsp1spsp2(g, shape, l, lj, lk, ll, ai, aj, ak, al),
-        3 => gout_srsr1(g, shape, l, lj, lk, ll),
-        4 => unreachable!(),
-        5 => gout_srsr1srsr2(g, shape, l, lj, lk, ll),
-        _ => unreachable!("invalid sigma derivative kind"),
+    // Kinds 0/2 (σ·p) and 3/5 (σ·r): explicit cascades transcribed from the
+    // vendored C (W4-04 / RC-1).
+    //
+    // These four were previously synthesized by evaluating the *base* σ family at
+    // `li ± 1` and combining the pair (`bra_derivative_from_shifted`). That identity
+    // holds for σ·p, whose operator carries no explicit `r_i`, but is INVALID for σ·r:
+    // the σ·r operator is itself a bra-index raise, so shifting `li` perturbs the
+    // operator as well as the basis function, and the vendored cascade applies `D_I`
+    // BEFORE the `R_I` fold in a way the shortcut cannot reproduce
+    // (`grad2.c:861` / `grad2.c:1089`).
+    //
+    // The σ·p and σ·r variants share their `s[]` product table and their fold
+    // verbatim; only the operator legs differ (`D_J/D_K/D_L → R_J/R_K/R_L` and the
+    // trailing `D_I → R_I`). The *gradient* `D_I` leg stays a nabla in both.
+    let sigma_r = matches!(kind, 3 | 5);
+    let two_sided = matches!(kind, 2 | 5);
+    let (op_i, op_j, op_k, op_l) = if sigma_r {
+        (Rel2eOp::Ri, Rel2eOp::Rj, Rel2eOp::Rk, Rel2eOp::Rl)
+    } else {
+        (OpI, OpJ, OpK, OpL)
     };
-    let ncomp = if matches!(kind, 2 | 5) { 16 } else { 4 };
-    let plus = base(li + 1);
-    let minus = li.checked_sub(1).map(base);
-    bra_derivative_from_shifted(li, lj, lk, ll, ncomp, ai, &plus, minus.as_deref())
+
+    if !two_sided {
+        // 1-sided (`ipspsp1` grad2.c:183 / `ipsrsr1` grad2.c:861), 8 blocks.
+        let steps = [
+            Rel2eStep {
+                dst: 1,
+                src: 0,
+                op: op_j,
+                bounds: (li + 2, lj, lk, ll),
+                exp: Aj,
+            },
+            Rel2eStep {
+                dst: 2,
+                src: 0,
+                op: OpI,
+                bounds: (li + 1, lj, lk, ll),
+                exp: Ai,
+            },
+            Rel2eStep {
+                dst: 3,
+                src: 1,
+                op: OpI,
+                bounds: (li + 1, lj, lk, ll),
+                exp: Ai,
+            },
+            Rel2eStep {
+                dst: 4,
+                src: 0,
+                op: op_i,
+                bounds: (li, lj, lk, ll),
+                exp: Ai,
+            },
+            Rel2eStep {
+                dst: 5,
+                src: 1,
+                op: op_i,
+                bounds: (li, lj, lk, ll),
+                exp: Ai,
+            },
+            Rel2eStep {
+                dst: 6,
+                src: 2,
+                op: op_i,
+                bounds: (li, lj, lk, ll),
+                exp: Ai,
+            },
+            Rel2eStep {
+                dst: 7,
+                src: 3,
+                op: op_i,
+                bounds: (li, lj, lk, ll),
+                exp: Ai,
+            },
+        ];
+        return gout_rel2e_rank27::<12>(
+            g,
+            shape,
+            li,
+            lj,
+            lk,
+            ll,
+            &steps,
+            ai,
+            aj,
+            ak,
+            al,
+            fold_ip_sigma1_12,
+        );
+    }
+
+    // 2-sided (`ipspsp1spsp2` grad2.c:411 / `ipsrsr1srsr2` grad2.c:1089), 32 blocks.
+    let mut steps: Vec<Rel2eStep> = Vec::with_capacity(31);
+    steps.push(Rel2eStep {
+        dst: 1,
+        src: 0,
+        op: op_l,
+        bounds: (li + 2, lj + 1, lk + 1, ll),
+        exp: Al,
+    });
+    steps.push(Rel2eStep {
+        dst: 2,
+        src: 0,
+        op: op_k,
+        bounds: (li + 2, lj + 1, lk, ll),
+        exp: Ak,
+    });
+    steps.push(Rel2eStep {
+        dst: 3,
+        src: 1,
+        op: op_k,
+        bounds: (li + 2, lj + 1, lk, ll),
+        exp: Ak,
+    });
+    for m in 0..4 {
+        steps.push(Rel2eStep {
+            dst: 4 + m,
+            src: m,
+            op: op_j,
+            bounds: (li + 2, lj, lk, ll),
+            exp: Aj,
+        });
+    }
+    // The gradient leg — a nabla in BOTH the σ·p and σ·r families.
+    for m in 0..8 {
+        steps.push(Rel2eStep {
+            dst: 8 + m,
+            src: m,
+            op: OpI,
+            bounds: (li + 1, lj, lk, ll),
+            exp: Ai,
+        });
+    }
+    for m in 0..16 {
+        steps.push(Rel2eStep {
+            dst: 16 + m,
+            src: m,
+            op: op_i,
+            bounds: (li, lj, lk, ll),
+            exp: Ai,
+        });
+    }
+    gout_rel2e_rank243::<48>(
+        g,
+        shape,
+        li,
+        lj,
+        lk,
+        ll,
+        &steps,
+        ai,
+        aj,
+        ak,
+        al,
+        fold_ip_sigma2_48,
+    )
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -2948,6 +3036,173 @@ fn gout_rel2e_rank27<const NCOMP: usize>(
         }
     }
     out
+}
+
+/// Precomputed `(mask_x, mask_y, mask_z)` block selectors for an `NLEG`-leg σ
+/// derivative `s[]` table.
+///
+/// Each of the `NLEG` cascade legs is assigned independently to one of the three
+/// Cartesian axes, giving `3^NLEG` product terms over `2^NLEG` cascade blocks. Term
+/// `m` assigns leg `t` to axis `(m / 3^t) % 3`, and the block index for an axis is the
+/// bitmask of the legs sitting on it. This reproduces libcint's autocoded
+/// `s[..] += gA[ix] * gB[iy] * gC[iz]` tables verbatim — verified term-by-term against
+/// `CINTgout2e_int2e_ipsrsr1` (3 legs, 27 terms) and
+/// `CINTgout2e_int2e_ipsrsr1srsr2` (5 legs, 243 terms).
+fn rel2e_leg_masks<const NLEG: usize, const NTERM: usize>() -> [(usize, usize, usize); NTERM] {
+    let mut masks = [(0usize, 0usize, 0usize); NTERM];
+    for (m, slot) in masks.iter_mut().enumerate() {
+        let (mut mx, mut my, mut mz) = (0usize, 0usize, 0usize);
+        let mut q = m;
+        for t in 0..NLEG {
+            match q % 3 {
+                0 => mx |= 1 << t,
+                1 => my |= 1 << t,
+                _ => mz |= 1 << t,
+            }
+            q /= 3;
+        }
+        *slot = (mx, my, mz);
+    }
+    masks
+}
+
+/// 32-block / 243-term analogue of [`gout_rel2e_rank27`] for the 2-sided σ⊗σ
+/// derivative families (`int2e_ipspsp1spsp2`, `int2e_ipsrsr1srsr2`).
+#[allow(clippy::too_many_arguments)]
+fn gout_rel2e_rank243<const NCOMP: usize>(
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    steps: &[Rel2eStep],
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+    fold: impl Fn(&[f64; 243]) -> [f64; NCOMP],
+) -> Vec<f64> {
+    let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
+    let g_size = shape.g_size;
+    let gv = build_rel2e_cascade(g, shape, 32, steps, ai, aj, ak, al);
+    let blocks: [&[f64]; 32] = std::array::from_fn(|m| gv[m].as_slice());
+    let masks = rel2e_leg_masks::<5, 243>();
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+    let (gx_off, gy_off, gz_off) = (0usize, g_size, 2 * g_size);
+
+    let mut out = vec![0.0_f64; NCOMP * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
+                    let mut s = [0.0_f64; 243];
+                    for r in 0..shape.nroots {
+                        for (m, &(mx, my, mz)) in masks.iter().enumerate() {
+                            s[m] += blocks[mx][gx_off + ix_base + r]
+                                * blocks[my][gy_off + iy_base + r]
+                                * blocks[mz][gz_off + iz_base + r];
+                        }
+                    }
+                    let o = fold(&s);
+                    for c in 0..NCOMP {
+                        out[n * NCOMP + c] = o[c];
+                    }
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+#[inline]
+fn fold_ip_sigma2_48(s: &[f64; 243]) -> [f64; 48] {
+    [
+        s[104] - s[176] - s[106] + s[178],
+        s[167] - s[23] - s[169] + s[25],
+        s[14] - s[86] - s[16] + s[88],
+        s[5] + s[95] + s[185] - s[7] - s[97] - s[187],
+        s[105] - s[177] - s[101] + s[173],
+        s[168] - s[24] - s[164] + s[20],
+        s[15] - s[87] - s[11] + s[83],
+        s[6] + s[96] + s[186] - s[2] - s[92] - s[182],
+        s[100] - s[172] - s[102] + s[174],
+        s[163] - s[19] - s[165] + s[21],
+        s[10] - s[82] - s[12] + s[84],
+        s[1] + s[91] + s[181] - s[3] - s[93] - s[183],
+        s[99] - s[171] + s[103] - s[175] + s[107] - s[179],
+        s[162] - s[18] + s[166] - s[22] + s[170] - s[26],
+        s[9] - s[81] + s[13] - s[85] + s[17] - s[89],
+        s[0] + s[90] + s[180] + s[4] + s[94] + s[184] + s[8] + s[98] + s[188],
+        s[131] - s[203] - s[133] + s[205],
+        s[194] - s[50] - s[196] + s[52],
+        s[41] - s[113] - s[43] + s[115],
+        s[32] + s[122] + s[212] - s[34] - s[124] - s[214],
+        s[132] - s[204] - s[128] + s[200],
+        s[195] - s[51] - s[191] + s[47],
+        s[42] - s[114] - s[38] + s[110],
+        s[33] + s[123] + s[213] - s[29] - s[119] - s[209],
+        s[127] - s[199] - s[129] + s[201],
+        s[190] - s[46] - s[192] + s[48],
+        s[37] - s[109] - s[39] + s[111],
+        s[28] + s[118] + s[208] - s[30] - s[120] - s[210],
+        s[126] - s[198] + s[130] - s[202] + s[134] - s[206],
+        s[189] - s[45] + s[193] - s[49] + s[197] - s[53],
+        s[36] - s[108] + s[40] - s[112] + s[44] - s[116],
+        s[27] + s[117] + s[207] + s[31] + s[121] + s[211] + s[35] + s[125] + s[215],
+        s[158] - s[230] - s[160] + s[232],
+        s[221] - s[77] - s[223] + s[79],
+        s[68] - s[140] - s[70] + s[142],
+        s[59] + s[149] + s[239] - s[61] - s[151] - s[241],
+        s[159] - s[231] - s[155] + s[227],
+        s[222] - s[78] - s[218] + s[74],
+        s[69] - s[141] - s[65] + s[137],
+        s[60] + s[150] + s[240] - s[56] - s[146] - s[236],
+        s[154] - s[226] - s[156] + s[228],
+        s[217] - s[73] - s[219] + s[75],
+        s[64] - s[136] - s[66] + s[138],
+        s[55] + s[145] + s[235] - s[57] - s[147] - s[237],
+        s[153] - s[225] + s[157] - s[229] + s[161] - s[233],
+        s[216] - s[72] + s[220] - s[76] + s[224] - s[80],
+        s[63] - s[135] + s[67] - s[139] + s[71] - s[143],
+        s[54] + s[144] + s[234] + s[58] + s[148] + s[238] + s[62] + s[152] + s[242],
+    ]
+}
+
+#[inline]
+fn fold_ip_sigma1_12(s: &[f64; 27]) -> [f64; 12] {
+    [
+        s[11] - s[19],
+        s[18] - s[2],
+        s[1] - s[9],
+        s[0] + s[10] + s[20],
+        s[14] - s[22],
+        s[21] - s[5],
+        s[4] - s[12],
+        s[3] + s[13] + s[23],
+        s[17] - s[25],
+        s[24] - s[8],
+        s[7] - s[15],
+        s[6] + s[16] + s[26],
+    ]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4384,7 +4639,7 @@ fn run_f12_cart_contraction_device<R: Runtime>(
         f12_cart_contraction_kernel::launch_unchecked::<f64, R>(
             client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
+            crate::plane::backend_plane_cube_dim::<R>(),
             ArrayArg::from_raw_parts(g_h, g.len()),
             ArrayArg::from_raw_parts(comps_i_h, comps_i.len()),
             ArrayArg::from_raw_parts(comps_j_h, comps_j.len()),
@@ -5559,7 +5814,7 @@ mod tests {
             f12_cart_contraction_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                 &client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
                 unsafe { ArrayArg::from_raw_parts(g_h, g_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(comps_i_h, comps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(comps_j_h, comps_j.len()) },
@@ -5799,5 +6054,562 @@ mod tests {
             out_l.iter().any(|&v| v != 0.0),
             "center L output should be non-trivial"
         );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// W4-06 — gauge / cross-product 2e families (`src/autocode/intor2.c`).
+//
+// These are NOT σ families: `ng[5] == ng[6] == 1`, and their spinor drivers use
+// `c2s_sf_2e1 + c2s_sf_2e2`. They are ordinary scalar Coulomb 2e integrals whose
+// gouts compose nablas with index raises about a center (`G2E_R0I` / `G2E_R0K`) or
+// about the gauge origin (`G2E_RCJ`), plus — for the `xp1` pair — a cross product
+// with the `ri − rj` / `rk − rl` coefficient vector.
+//
+// Only `int2e_ip1v_rc1` reads `PTR_COMMON_ORIG`. `int2e_ip1v_r1` uses a plain stride
+// shift (`G2E_R_J`), and both `xp1` families raise about a BASIS CENTER, not the gauge
+// origin — wiring the common origin into those three would be a silent wrong answer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Which of the four centers a gauge-cascade step acts on.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Gauge2eCenter {
+    I,
+    J,
+    K,
+    L,
+}
+
+/// One step of an `intor2.c` gauge / cross-product 2e cascade.
+#[derive(Clone, Copy)]
+pub(crate) enum Gauge2eOp {
+    /// `G2E_D_{I,J,K,L}` — nabla on that center (uses that center's exponent).
+    Nabla(Gauge2eCenter),
+    /// `G2E_R_{I,J,K,L}` — plain stride shift, `f = g + g_stride_x`, no origin term.
+    Shift(Gauge2eCenter),
+    /// `G2E_R0{I,K}` (origin = that center's coordinate) or `G2E_RC{J}`
+    /// (origin = center − gauge origin): `f[axis][n] = g[axis][n + stride]
+    /// + origin[axis] * g[axis][n]` — `CINTx1i_2e`, `g2e.c:4779`.
+    Raise(Gauge2eCenter, [f64; 3]),
+    /// The autocoded `for (ix = 0; ix < g_size*3; ix++) { g[dst][ix] += g[src][ix]; }`.
+    Accumulate,
+}
+
+pub(crate) struct Gauge2eStep {
+    pub dst: usize,
+    pub src: usize,
+    pub op: Gauge2eOp,
+    /// l-bounds `(li, lj, lk, ll)` passed to the C macro.
+    pub bounds: (usize, usize, usize, usize),
+}
+
+/// `CINTx1{i,j,k,l}_2e` (`g2e.c:4779`): bounded index raise plus per-axis origin shift.
+#[allow(clippy::too_many_arguments)]
+fn x1_center_2e(
+    f: &mut [f64],
+    g: &[f64],
+    stride: usize,
+    origin: [f64; 3],
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    shape: &F12Shape,
+) {
+    let g_size = shape.g_size;
+    let nroots = shape.nroots;
+    let (di, dj, dk, dl) = (shape.di, shape.dj, shape.dk, shape.dl);
+    for axis in 0..3 {
+        let off = axis * g_size;
+        let o = origin[axis];
+        for j in 0..=lj {
+            for l in 0..=ll {
+                for k in 0..=lk {
+                    for i in 0..=li {
+                        let ptr = dj * j + dl * l + dk * k + di * i;
+                        for n in ptr..ptr + nroots {
+                            let hi = off + n + stride;
+                            let raised = if hi < off + g_size { g[hi] } else { 0.0 };
+                            f[off + n] = raised + o * g[off + n];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Build the `g0..g{nblocks-1}` cascade for a gauge / cross-product 2e family.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_gauge2e_cascade(
+    g: &[f64],
+    shape: &F12Shape,
+    nblocks: usize,
+    steps: &[Gauge2eStep],
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+) -> Vec<Vec<f64>> {
+    let g_size = shape.g_size;
+    // Trailing pad so a bounded `nabla`'s `g[n + stride]` lookahead at the TOP of the
+    // z-axis block stays in bounds. libcint's `g` is allocated
+    // `g_size*3*((1<<gbits)+1)` long, so the same read lands inside its buffer; the
+    // value is written to an `f` slot the fold never reads (`fold_masked_blocks`
+    // indexes only the BASE Cartesian extents). Without the pad this is a panic on
+    // exactly the last element — see W4-06.
+    let pad = shape.di.max(shape.dj).max(shape.dk).max(shape.dl);
+    let blk_len = 3 * g_size + pad;
+    let mut gv: Vec<Vec<f64>> = (0..nblocks).map(|_| vec![0.0_f64; blk_len]).collect();
+    gv[0][..3 * g_size].copy_from_slice(&g[..3 * g_size]);
+    let mut scratch = vec![0.0_f64; blk_len];
+    for st in steps {
+        let (bi, bj, bk, bl) = st.bounds;
+        match st.op {
+            Gauge2eOp::Accumulate => {
+                // `g[dst] += g[src]` — read src, add into dst, no scratch round-trip.
+                let (lo, hi) = (st.dst.min(st.src), st.dst.max(st.src));
+                let (left, right) = gv.split_at_mut(hi);
+                let (dst, src) = if st.dst < st.src {
+                    (&mut left[lo], &right[0])
+                } else {
+                    (&mut right[0], &left[lo])
+                };
+                for (d, s) in dst.iter_mut().zip(src.iter()) {
+                    *d += *s;
+                }
+                continue;
+            }
+            Gauge2eOp::Nabla(center) => {
+                for v in scratch.iter_mut() {
+                    *v = 0.0;
+                }
+                match center {
+                    Gauge2eCenter::I => {
+                        nabla1i_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, ai, shape)
+                    }
+                    Gauge2eCenter::J => {
+                        nabla1j_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, aj, shape)
+                    }
+                    Gauge2eCenter::K => {
+                        nabla1k_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, ak, shape)
+                    }
+                    Gauge2eCenter::L => {
+                        nabla1l_2e(&mut scratch, &gv[st.src], bi, bj, bk, bl, al, shape)
+                    }
+                }
+            }
+            Gauge2eOp::Shift(center) => {
+                let stride = gauge2e_stride(center, shape);
+                for axis in 0..3 {
+                    let off = axis * g_size;
+                    for idx in 0..g_size {
+                        let src = off + idx + stride;
+                        scratch[off + idx] = if src < off + g_size {
+                            gv[st.src][src]
+                        } else {
+                            0.0
+                        };
+                    }
+                }
+            }
+            Gauge2eOp::Raise(center, origin) => {
+                for v in scratch.iter_mut() {
+                    *v = 0.0;
+                }
+                let stride = gauge2e_stride(center, shape);
+                x1_center_2e(
+                    &mut scratch,
+                    &gv[st.src],
+                    stride,
+                    origin,
+                    bi,
+                    bj,
+                    bk,
+                    bl,
+                    shape,
+                );
+            }
+        }
+        gv[st.dst].copy_from_slice(&scratch);
+    }
+    gv
+}
+
+fn gauge2e_stride(center: Gauge2eCenter, shape: &F12Shape) -> usize {
+    match center {
+        Gauge2eCenter::I => shape.di,
+        Gauge2eCenter::J => shape.dj,
+        Gauge2eCenter::K => shape.dk,
+        Gauge2eCenter::L => shape.dl,
+    }
+}
+
+/// Generic `s[]`-table fold over an `NLEG`-leg cascade — the shared body of the
+/// autocoded `for (n) { s[..] = ...; gout[n*NCOMP+c] = ...; }` loop. See
+/// [`rel2e_leg_masks`] for the term→block mapping.
+#[allow(clippy::too_many_arguments)]
+fn fold_masked_blocks<const NLEG: usize, const NTERM: usize, const NCOMP: usize>(
+    blocks: &[&[f64]],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    fold: impl Fn(&[f64; NTERM]) -> [f64; NCOMP],
+) -> Vec<f64> {
+    let nf = ncart(li as u8) * ncart(lj as u8) * ncart(lk as u8) * ncart(ll as u8);
+    let g_size = shape.g_size;
+    let masks = rel2e_leg_masks::<NLEG, NTERM>();
+
+    let ci_comps = cart_comps(li as u8);
+    let cj_comps = cart_comps(lj as u8);
+    let ck_comps = cart_comps(lk as u8);
+    let cl_comps = cart_comps(ll as u8);
+    let (gx_off, gy_off, gz_off) = (0usize, g_size, 2 * g_size);
+
+    let mut out = vec![0.0_f64; NCOMP * nf];
+    let mut n = 0usize;
+    for &(lx, ly, lz) in &cl_comps {
+        for &(kx, ky, kz) in &ck_comps {
+            for &(jx, jy, jz) in &cj_comps {
+                for &(ix, iy, iz) in &ci_comps {
+                    let ix_base = ix as usize * shape.di
+                        + kx as usize * shape.dk
+                        + lx as usize * shape.dl
+                        + jx as usize * shape.dj;
+                    let iy_base = iy as usize * shape.di
+                        + ky as usize * shape.dk
+                        + ly as usize * shape.dl
+                        + jy as usize * shape.dj;
+                    let iz_base = iz as usize * shape.di
+                        + kz as usize * shape.dk
+                        + lz as usize * shape.dl
+                        + jz as usize * shape.dj;
+                    let mut s = [0.0_f64; NTERM];
+                    for r in 0..shape.nroots {
+                        for (m, &(mx, my, mz)) in masks.iter().enumerate() {
+                            s[m] += blocks[mx][gx_off + ix_base + r]
+                                * blocks[my][gy_off + iy_base + r]
+                                * blocks[mz][gz_off + iz_base + r];
+                        }
+                    }
+                    let o = fold(&s);
+                    for c in 0..NCOMP {
+                        out[n * NCOMP + c] = o[c];
+                    }
+                    n += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Which `intor2.c` gauge family a launcher is evaluating.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Gauge2eKind {
+    /// `int2e_ip1v_r1` — `intor2.c:610`, `ng = {1,2,0,0,2,1,1,9}`.
+    Ip1vR1,
+    /// `int2e_ip1v_rc1` — `intor2.c:522`, same `ng`, reads `PTR_COMMON_ORIG`.
+    Ip1vRc1,
+    /// `int2e_ipvg1_xp1` — `intor2.c:694`, `ng = {2,1,0,0,3,1,1,9}`, `cf *= 0.5`.
+    Ipvg1Xp1,
+    /// `int2e_ipvg2_xp1` — `intor2.c:851`, `ng = {1,1,1,0,3,1,1,9}`, `cf *= 0.5`.
+    Ipvg2Xp1,
+}
+
+impl Gauge2eKind {
+    pub fn from_operator_name(name: &str) -> Option<Self> {
+        match name {
+            "ip1v_r1" => Some(Gauge2eKind::Ip1vR1),
+            "ip1v_rc1" => Some(Gauge2eKind::Ip1vRc1),
+            "ipvg1_xp1" => Some(Gauge2eKind::Ipvg1Xp1),
+            "ipvg2_xp1" => Some(Gauge2eKind::Ipvg2Xp1),
+            _ => None,
+        }
+    }
+
+    /// All four are rank 9 (`ng[7]`), `ncomp_e1 = ncomp_e2 = 1`.
+    pub fn ncomp(self) -> usize {
+        9
+    }
+
+    /// `(i_inc, j_inc, k_inc, l_inc)` — the libcint `ng[0..3]` headroom, verbatim.
+    pub fn headroom(self) -> (usize, usize, usize, usize) {
+        match self {
+            Gauge2eKind::Ip1vR1 | Gauge2eKind::Ip1vRc1 => (1, 2, 0, 0),
+            Gauge2eKind::Ipvg1Xp1 => (2, 1, 0, 0),
+            Gauge2eKind::Ipvg2Xp1 => (1, 1, 1, 0),
+        }
+    }
+
+    /// Per-family `envs.common_factor` multiplier.
+    pub fn common_factor_scale(self) -> f64 {
+        match self {
+            Gauge2eKind::Ip1vR1 | Gauge2eKind::Ip1vRc1 => 1.0,
+            Gauge2eKind::Ipvg1Xp1 | Gauge2eKind::Ipvg2Xp1 => 0.5,
+        }
+    }
+
+    /// Does this family read `env[PTR_COMMON_ORIG]`? Only `ip1v_rc1` does.
+    pub fn uses_common_origin(self) -> bool {
+        matches!(self, Gauge2eKind::Ip1vRc1)
+    }
+
+    /// Spinor phase relative to the plain `c2s_sf_2e1 + c2s_sf_2e2` transform.
+    ///
+    /// `int2e_ipvg2_xp1_spinor` is the one family of the four whose driver uses the
+    /// IMAGINARY-ket pair `c2s_sf_2e1i + c2s_sf_2e2i` (`intor2.c:1004`). Those apply a
+    /// factor of `i` to the j-ket and again to the l-ket, so the combined phase is
+    /// `i * i = -1` against the plain pair — the same convention `kernels/unstable/
+    /// breit.rs:1944` documents and negates for. The other three use the plain pair.
+    pub fn spinor_phase(self) -> f64 {
+        match self {
+            Gauge2eKind::Ipvg2Xp1 => -1.0,
+            _ => 1.0,
+        }
+    }
+}
+
+/// Evaluate one gauge / cross-product 2e family's gout for a primitive quartet.
+///
+/// `ri`/`rj`/`rk`/`rl` are the four basis-centre coordinates and `common_orig` the
+/// gauge origin (`env[PTR_COMMON_ORIG..+3]`, default `[0,0,0]`). Returns interleaved
+/// `out[n*9 + comp]`; `n` walks `[cl, ck, cj, ci]` with `ci` fastest.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn gout_gauge2e(
+    kind: Gauge2eKind,
+    g: &[f64],
+    shape: &F12Shape,
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    rl: [f64; 3],
+    common_orig: [f64; 3],
+) -> Vec<f64> {
+    use Gauge2eCenter::{I, J, K};
+    match kind {
+        // intor2.c:610 (r1) / :522 (rc1) — identical apart from the J raise:
+        // `G2E_R_J` (plain stride) vs `G2E_RCJ` (raise about rj − gauge origin).
+        Gauge2eKind::Ip1vR1 | Gauge2eKind::Ip1vRc1 => {
+            let j_op = if kind == Gauge2eKind::Ip1vRc1 {
+                let drj = [
+                    rj[0] - common_orig[0],
+                    rj[1] - common_orig[1],
+                    rj[2] - common_orig[2],
+                ];
+                Gauge2eOp::Raise(J, drj)
+            } else {
+                Gauge2eOp::Shift(J)
+            };
+            let steps = [
+                Gauge2eStep {
+                    dst: 1,
+                    src: 0,
+                    op: j_op,
+                    bounds: (li, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 2,
+                    src: 0,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 3,
+                    src: 0,
+                    op: Gauge2eOp::Nabla(I),
+                    bounds: (li, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 2,
+                    src: 3,
+                    op: Gauge2eOp::Accumulate,
+                    bounds: (li, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 3,
+                    src: 2,
+                    op: j_op,
+                    bounds: (li, lj, lk, ll),
+                },
+            ];
+            let gv = build_gauge2e_cascade(g, shape, 4, &steps, ai, aj, ak, al);
+            let blocks: Vec<&[f64]> = gv.iter().map(|b| b.as_slice()).collect();
+            fold_masked_blocks::<2, 9, 9>(&blocks, shape, li, lj, lk, ll, |s| {
+                [s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8]]
+            })
+        }
+        // intor2.c:694 — cross product with c = ri − rj.
+        Gauge2eKind::Ipvg1Xp1 => {
+            let steps = [
+                Gauge2eStep {
+                    dst: 1,
+                    src: 0,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li + 2, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 2,
+                    src: 0,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li + 1, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 3,
+                    src: 0,
+                    op: Gauge2eOp::Nabla(I),
+                    bounds: (li + 1, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 2,
+                    src: 3,
+                    op: Gauge2eOp::Accumulate,
+                    bounds: (li, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 3,
+                    src: 2,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li + 2, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 4,
+                    src: 0,
+                    op: Gauge2eOp::Raise(I, ri),
+                    bounds: (li, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 5,
+                    src: 1,
+                    op: Gauge2eOp::Raise(I, ri),
+                    bounds: (li, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 6,
+                    src: 2,
+                    op: Gauge2eOp::Raise(I, ri),
+                    bounds: (li, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 7,
+                    src: 3,
+                    op: Gauge2eOp::Raise(I, ri),
+                    bounds: (li, lj, lk, ll),
+                },
+            ];
+            let gv = build_gauge2e_cascade(g, shape, 8, &steps, ai, aj, ak, al);
+            let blocks: Vec<&[f64]> = gv.iter().map(|b| b.as_slice()).collect();
+            let c = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+            fold_masked_blocks::<3, 27, 9>(&blocks, shape, li, lj, lk, ll, |s| {
+                [
+                    c[1] * s[23] - c[2] * s[14] - c[1] * s[25] + c[2] * s[16],
+                    c[1] * s[24] - c[2] * s[15] - c[1] * s[20] + c[2] * s[11],
+                    c[1] * s[19] - c[2] * s[10] - c[1] * s[21] + c[2] * s[12],
+                    c[2] * s[5] - c[0] * s[23] - c[2] * s[7] + c[0] * s[25],
+                    c[2] * s[6] - c[0] * s[24] - c[2] * s[2] + c[0] * s[20],
+                    c[2] * s[1] - c[0] * s[19] - c[2] * s[3] + c[0] * s[21],
+                    c[0] * s[14] - c[1] * s[5] - c[0] * s[16] + c[1] * s[7],
+                    c[0] * s[15] - c[1] * s[6] - c[0] * s[11] + c[1] * s[2],
+                    c[0] * s[10] - c[1] * s[1] - c[0] * s[12] + c[1] * s[3],
+                ]
+            })
+        }
+        // intor2.c:851 — cross product with c = rk − rl; the K leg is a raise about rk.
+        Gauge2eKind::Ipvg2Xp1 => {
+            let steps = [
+                Gauge2eStep {
+                    dst: 1,
+                    src: 0,
+                    op: Gauge2eOp::Raise(K, rk),
+                    bounds: (li + 1, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 2,
+                    src: 0,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li + 1, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 3,
+                    src: 1,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li + 1, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 4,
+                    src: 0,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 5,
+                    src: 0,
+                    op: Gauge2eOp::Nabla(I),
+                    bounds: (li, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 4,
+                    src: 5,
+                    op: Gauge2eOp::Accumulate,
+                    bounds: (li, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 5,
+                    src: 1,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 6,
+                    src: 1,
+                    op: Gauge2eOp::Nabla(I),
+                    bounds: (li, lj + 1, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 5,
+                    src: 6,
+                    op: Gauge2eOp::Accumulate,
+                    bounds: (li, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 6,
+                    src: 4,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li + 1, lj, lk, ll),
+                },
+                Gauge2eStep {
+                    dst: 7,
+                    src: 5,
+                    op: Gauge2eOp::Nabla(J),
+                    bounds: (li + 1, lj, lk, ll),
+                },
+            ];
+            let gv = build_gauge2e_cascade(g, shape, 8, &steps, ai, aj, ak, al);
+            let blocks: Vec<&[f64]> = gv.iter().map(|b| b.as_slice()).collect();
+            let c = [rk[0] - rl[0], rk[1] - rl[1], rk[2] - rl[2]];
+            fold_masked_blocks::<3, 27, 9>(&blocks, shape, li, lj, lk, ll, |s| {
+                [
+                    -c[1] * s[17] + c[1] * s[23] + c[2] * s[16] - c[2] * s[22],
+                    -c[2] * s[15] + c[2] * s[21] + c[0] * s[17] - c[0] * s[23],
+                    -c[0] * s[16] + c[0] * s[22] + c[1] * s[15] - c[1] * s[21],
+                    -c[1] * s[20] + c[1] * s[8] + c[2] * s[19] - c[2] * s[7],
+                    -c[2] * s[18] + c[2] * s[6] + c[0] * s[20] - c[0] * s[8],
+                    -c[0] * s[19] + c[0] * s[7] + c[1] * s[18] - c[1] * s[6],
+                    -c[1] * s[5] + c[1] * s[11] + c[2] * s[4] - c[2] * s[10],
+                    -c[2] * s[3] + c[2] * s[9] + c[0] * s[5] - c[0] * s[11],
+                    -c[0] * s[4] + c[0] * s[10] + c[1] * s[3] - c[1] * s[9],
+                ]
+            })
+        }
     }
 }

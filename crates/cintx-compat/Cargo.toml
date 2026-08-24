@@ -12,11 +12,17 @@ cpu = ["cintx-cubecl/cpu"]
 with-f12 = ["cintx-cubecl/with-f12"]
 with-4c1e = ["cintx-cubecl/with-4c1e"]
 unstable-source-api = ["cintx-cubecl/unstable-source-api"]
-# Forwards `cintx-cubecl/rocm`. Required for the Phase 16-04 opt-in ROCm
-# oracle base-family suite (D-15) — exposes the rocm runtime through the
-# compat path so cintx-oracle (which depends on cintx-compat, not cintx-cubecl
-# directly) can transitively activate it via `--features rocm`.
+# Backend forwards. cintx-oracle / cintx-driver depend on cintx-compat rather
+# than on cintx-cubecl directly, so every backend cintx-cubecl exposes needs a
+# forward here or it is unreachable from those crates.
+#
+# `rocm` was first added for the Phase 16-04 opt-in ROCm oracle base-family
+# suite (D-15); the remaining three complete the set so a GPU-only feature
+# profile (`--no-default-features --features wgpu`) is selectable end to end.
 rocm = ["cintx-cubecl/rocm"]
+wgpu = ["cintx-cubecl/wgpu"]
+cuda = ["cintx-cubecl/cuda"]
+metal = ["cintx-cubecl/metal"]
 
 [dependencies]
 cintx-core = { path = "../cintx-core" }

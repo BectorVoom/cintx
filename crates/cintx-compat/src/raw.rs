@@ -1176,6 +1176,12 @@ fn is_iprinv_family_symbol(symbol: &str) -> bool {
         || symbol.starts_with("int1e_ipsprinvsp_")
         || symbol.starts_with("int1e_ipipsprinvsp_")
         || symbol.starts_with("int1e_ipsprinvspip_")
+        // W5-06: the X2C BASE family `int1e_prinvp` reads the same single rinv
+        // center as its Wave-3 derivative `int1e_ipprinvp` (both are
+        // `CINT1e_drv(..., 1)`), but its name contains neither "iprinv" nor the
+        // `int1e_rinv_`/`int1e_drinv_` prefix, so neither existing predicate
+        // caught it and the kernel was reached with `rinv_orig = None`.
+        || symbol.starts_with("int1e_prinvp_")
 }
 
 /// Phase 24 D-04 / OQ-1: identifies plain rinv-family operator symbols

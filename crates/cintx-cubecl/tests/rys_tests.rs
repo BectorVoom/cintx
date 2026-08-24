@@ -21,6 +21,9 @@ mod rys_cpu_tests {
     //  Mirror polynomial coefficients from rys_roots.c for validation.
     // ─────────────────────────────────────────────────────────────────────────
 
+    // Verbatim libcint literal (`rys_roots.c` `#define PIE4`), not
+    // `std::f64::consts::FRAC_PI_4`: this reference mirrors upstream exactly.
+    #[allow(clippy::approx_constant)]
     const PIE4: f64 = 0.78539816339744827900_f64;
 
     /// Horner polynomial evaluation helper.

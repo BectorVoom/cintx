@@ -1,6 +1,46 @@
 ### the Rust Redesign and Reimplementation of libcint
 
 
+## 1.  Evaluating a work list
+
+The integral-family API is per-shell-tuple, because libcint's is. That is a
+compatibility requirement, not the shape a Fock build wants: a per-tuple call
+pays a kernel launch and a blocking readback per tuple.
+
+For whole work lists, the safe facade takes the list:
+
+```rust
+use cintx_rs::prelude::{EvaluationContext, QuartetBatchRequest};
+
+let context = EvaluationContext::new();
+let output = QuartetBatchRequest::new(
+    int2e_sph,                 // OperatorId
+    Representation::Spheric,
+    &basis,                    // BasisSet
+    quartets,                  // impl IntoIterator<Item = [u32; 4]>, indices into basis.shells()
+    options,                   // ExecutionOptions
+)
+.evaluate_in(&context)?;
+
+// output.values  — concatenated spherical AO blocks, in the request's order
+// output.offsets — where each quartet's block starts
+// output.stats   — launches, readbacks, transferred bytes
+```
+
+The list is grouped into launch classes — quartets sharing `(l_i, l_j, l_k, l_l)`
+and therefore the G-tensor shape, the Rys order and the HRR branch — and costs
+one dispatch per class rather than one per quartet. `output.stats` reports the
+counts a speed claim would be made from, so it stays auditable.
+
+`cintx-cubecl` exposes the same shape one index shorter for the other families:
+`evaluate_1e_pair_batch`, `evaluate_2c2e_pair_batch`, `evaluate_3c2e_triple_batch`,
+plus `ResidentTwoEBasis` for a basis kept on the device across calls.
+
+Every batched result is **bit-identical** to the per-tuple route, which is
+enforced rather than assumed: the per-tuple entry points are themselves one-tuple
+batches, so both execute the same kernel.
+
+
 ## 2.  Source Tree
 
 ```text
@@ -91,6 +131,26 @@ cintx-rs/
 │   │       ├── lib.rs                  # extern C exports
 │   │       ├── errors.rs               # `last_error` API
 │   │       └── shim.rs                 # Symbol compatibility layer
+│   ├── cintx-basis/
+│   │   ├── Cargo.toml
+│   │   ├── data/                       # Vendored BSE tables (see data/README.md)
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── catalog.rs              # StandardBasis -> embedded table
+│   │       ├── format.rs               # NWChem-dialect parser
+│   │       ├── element.rs              # Symbol / Z / mass tables
+│   │       ├── normalize.rs            # libcint/PySCF normalization
+│   │       ├── build.rs                # Molecule -> typed BasisSet
+│   │       └── raw.rs                  # Molecule -> atm/bas/env arrays
+│   ├── cintx-driver/
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── basis_view.rs           # Borrowed atm/bas/env view
+│   │       ├── worklist.rs             # 8-fold canonical pair/quartet lists
+│   │       ├── screening.rs            # Cauchy-Schwarz (Schwarz table)
+│   │       ├── bucket.rs               # Launch classes + tiering
+│   │       └── execute.rs              # Batch run + auditable statistics
 │   └── cintx-oracle/
 │   │       ├── Cargo.toml
 │   │       ├── build.rs                # Vendored cintx build + bindgen

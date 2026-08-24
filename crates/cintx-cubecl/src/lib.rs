@@ -24,18 +24,26 @@ pub mod transform;
 
 pub use backend::{ResolvedBackend, compiled_backends};
 pub use batch_pilot::{EriSsssInput, OverlapSsInput, PilotOutputArenaStats};
-pub use plane::{
-    DEFAULT_PLANE_DIM, STANDARD_PLANE_ALIGNED_CUBE_DIM, cube_count_1d, cube_count_2d,
-    cube_count_3d, linear_grid_cube_count, occupancy_launch_geometry, plane_aligned_cube_dim,
-    plane_aligned_cube_dim_2d, plane_aligned_cube_dim_3d, plane_cooperative_launch_geometry,
-    planes_per_cube, single_cube_count, standard_plane_cube_dim, tiled_grid_cube_count_2d,
-    tiled_grid_cube_count_3d,
-};
 pub use capability::{
     CapabilityReason, WgpuCapabilitySnapshot, WgpuPreflightReport, capability_fingerprint,
 };
 pub use executor::{
     BackendCache, CUBECL_RUNTIME_PROFILE, CubeClExecutor, check_shader_f64_in_features,
+};
+pub use kernels::center_2c2e::{TwoC2eBatchOutput, evaluate_2c2e_pair_batch};
+pub use kernels::center_3c2e::{ThreeC2eBatchOutput, evaluate_3c2e_triple_batch};
+pub use kernels::one_electron::{BatchAtom, OneEBatchOutput, OneEOperator, evaluate_1e_pair_batch};
+pub use kernels::two_electron::{
+    BatchExecutionStats as TwoEBatchStats, BatchShell, ResidentTwoEBasis, TwoEBatchOptions,
+    TwoEBatchOutput, evaluate_2e_quartet_batch, evaluate_2e_quartet_batch_resident,
+    evaluate_2e_quartet_batch_with,
+};
+pub use plane::{
+    DEFAULT_PLANE_DIM, STANDARD_PLANE_ALIGNED_CUBE_DIM, backend_plane_cube_dim,
+    cooperative_cube_dim, cube_count_1d, cube_count_2d, cube_count_3d, linear_grid_cube_count,
+    occupancy_launch_geometry, plane_aligned_cube_dim, plane_aligned_cube_dim_2d,
+    plane_aligned_cube_dim_3d, plane_cooperative_launch_geometry, planes_per_cube, runtime_is_cpu,
+    single_cube_count, standard_plane_cube_dim, tiled_grid_cube_count_2d, tiled_grid_cube_count_3d,
 };
 pub use resident_cache::{DeviceResidentCache, ResidentCache};
 #[cfg(feature = "wgpu")]
@@ -43,8 +51,8 @@ pub use runtime_bootstrap::bootstrap_wgpu_runtime;
 pub use shared_memory::{
     CapacityClass, FallbackReason, SharedLayout, SharedMemoryMetrics, SharedVariant,
     calc_1e_layout, calc_2c2e_layout, calc_2e_layout, calc_3c1e_layout, calc_3c2e_layout,
-    calc_4c1e_layout, calc_ecp_type2_layout, calc_f12_layout, calc_math_layout,
-    calc_sigma_layout, generate_layout_catalog, validate_shared_layout_bounds,
+    calc_4c1e_layout, calc_ecp_type2_layout, calc_f12_layout, calc_math_layout, calc_sigma_layout,
+    generate_layout_catalog, validate_shared_layout_bounds,
 };
 pub use specialization::{ComponentRank, SpecializationKey};
 pub use transfer::{TransferPlan, TransferWorkspaceBuffers};

@@ -113,11 +113,42 @@ pub struct ManifestEntry {
     pub helper_kind: HelperKind,
     pub canonical_family: &'static str,
     pub representation: RepresentationSupport,
+    /// Wave 5 W5-00: declared-but-fail-closed policy for this (symbol,
+    /// representation).
+    ///
+    /// `None` means the row is expected to evaluate. `Some(_)` means the kernel
+    /// deliberately returns `UnsupportedApi` and the row must NOT be counted as
+    /// unproven oracle coverage — see [`UnsupportedPolicy`].
+    pub unsupported_policy: Option<UnsupportedPolicy>,
+}
+
+/// A declared manifest row whose kernel fails closed by design.
+///
+/// 45 rows were in this state when Wave 5 opened: `stability = "stable"`,
+/// `forms` naming a representation, `oracle_covered = false`, and a kernel that
+/// returns `UnsupportedApi`. The audit could not tell those apart from rows that
+/// are implemented but simply unproven, which is why
+/// `manifest-audit --check-lock` was red with no actionable signal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnsupportedPolicy {
+    /// Always `"fail_closed"` today; a field so the schema can grow without a
+    /// breaking change.
+    pub policy: &'static str,
+    /// Human-readable reason. MUST name the rejection site (`file.rs:line`) so a
+    /// reader can find the code from the manifest alone.
+    pub reason: &'static str,
+    /// The phase or plan that owns retiring this row.
+    pub owner: &'static str,
 }
 
 impl ManifestEntry {
     pub fn supports_representation(&self, rep: Representation) -> bool {
         self.representation.supports(rep)
+    }
+
+    /// True when this row is declared API that deliberately fails closed.
+    pub fn is_fail_closed(&self) -> bool {
+        self.unsupported_policy.is_some()
     }
 
     pub fn is_compiled_in_profile(&self, profile: &str) -> bool {
@@ -156,6 +187,11 @@ impl OperatorDescriptor {
 
     pub fn stability(&self) -> Stability {
         self.entry.stability.clone()
+    }
+
+    /// Wave 5 W5-00: the declared-but-fail-closed policy, if any.
+    pub fn unsupported_policy(&self) -> Option<&'static UnsupportedPolicy> {
+        self.entry.unsupported_policy.as_ref()
     }
 
     pub fn is_compiled_in_profile(&self, profile: &str) -> bool {

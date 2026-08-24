@@ -183,7 +183,10 @@ pub fn validate_rinv_orig_env_params(
     operator_name: &str,
     params: &OperatorEnvParams,
 ) -> Result<(), cintxRsError> {
-    if operator_name.contains("iprinv") {
+    // W5-06: `prinvp` is the X2C base rinv family. Its name has no "iprinv"
+    // substring, so without this arm it would reach the kernel with no origin and
+    // fail deep inside instead of at the typed boundary.
+    if operator_name.contains("iprinv") || operator_name == "prinvp" {
         match params.rinv_orig {
             None => {
                 return Err(cintxRsError::InvalidEnvParam {

@@ -31,6 +31,8 @@ serde_json = "1.0.145"
 
 [dev-dependencies]
 cintx-simd = { path = "../cintx-simd" }
+cintx-basis = { path = "../cintx-basis" }
+cintx-driver = { path = "../cintx-driver" }
 wide = "1.6"
 approx = "0.5"
 # Phase 25 FND-02: the nroots-sweep parity test exercises the host Rys

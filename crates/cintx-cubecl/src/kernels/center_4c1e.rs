@@ -820,7 +820,7 @@ fn run_4c1e_device<R: Runtime>(
         center_4c1e_kernel::launch_unchecked::<f64, R>(
             client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
+            crate::plane::backend_plane_cube_dim::<R>(),
             ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
             ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
             ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
@@ -2116,7 +2116,7 @@ mod tests {
             center_4c1e_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                 &client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
                 unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },

@@ -1099,7 +1099,7 @@ fn run_ssc_scalar_device<R: Runtime>(
             ssc_scalar_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::standard_plane_cube_dim(),
+                crate::plane::backend_plane_cube_dim::<R>(),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h, exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h, exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_k_h, exps_k.len()) },
@@ -1384,7 +1384,7 @@ mod device_tests {
         ssc_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
+            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
             unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
             unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },

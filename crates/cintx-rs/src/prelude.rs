@@ -13,7 +13,8 @@ pub use crate::api::SessionRequest;
 pub use crate::api::TypedEvaluationOutput;
 pub use crate::api::{
     BatchEvaluationOutput, BatchExecutionStats, BatchRequest, EvaluationContext,
-    EvaluationContextStats,
+    EvaluationContextStats, QuartetBatchOutput, QuartetBatchRequest, evaluate_shell_quartets,
+    evaluate_shell_quartets_in,
 };
 
 // Structured workspace metadata and execution-token contracts.

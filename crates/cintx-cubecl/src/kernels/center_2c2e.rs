@@ -63,6 +63,10 @@ const SQRTPI: f64 = 1.7724538509055159_f64;
 
 /// Rys `PIE4 = pi/4` constant passed into the device `rys_root{1..5}` kernels.
 /// Matches `rys_roots.c` `PIE4`.
+// Verbatim libcint literal, not `std::f64::consts::FRAC_PI_4`: result compatibility
+// with upstream is decided by the exact bits this file feeds the Rys kernels, so
+// the constant is transcribed from `rys_roots.c` rather than recomputed.
+#[allow(clippy::approx_constant)]
 const PIE4: f64 = 0.78539816339744827900_f64;
 
 /// Maximum `nroots` the device Rys kernels (`rys_root1..5`) can evaluate.
@@ -115,271 +119,822 @@ fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
 //  Device kernel — `#[cube(launch)]`, generic over `F: Float`
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 2c2e G-tensor fill + Cartesian contraction for one shell pair, on-device.
+/// Batched 2c2e G-tensor fill + Cartesian contraction — one shell pair per work
+/// slot (Phase 35).
 ///
-/// Single work item (`UNIT_POS == 0`) — this is a faithful, correctness-first
-/// port of the host pipeline (`fill_g_tensor_2c2e` + contraction). It is not yet
-/// parallelized across primitives/components; that is future work.
+/// Faithful, correctness-first port of the host pipeline (`fill_g_tensor_2c2e` +
+/// contraction), evaluating a whole **launch class** in one dispatch: every pair
+/// in the list shares `(li, lk)` and therefore the G-tensor shape and the Rys
+/// order. What varies per pair is only the shell data, read through a flattened
+/// basis plus an index table:
+///
+/// - `exps` / `coeffs` — every shell's primitives concatenated;
+/// - `centers` — 3 floats per shell;
+/// - `shell_meta` — 4 `u32` per shell: `[exp_off, coeff_off, nprim, nctr]`;
+/// - `pairs` — 3 `u32` per pair: `[si, sk, out_off]`.
 ///
 /// `#[comptime] nroots` selects the `rys_root{1..5}` device function at JIT
 /// specialization time (a `comptime!` branch — no runtime nroots dispatch, which
 /// avoids the documented MLIR index-type lowering issue, and no Rust
 /// monomorphization fan-out).
 ///
-/// Layout of `g` (size `3 * g_size`): `g[axis*g_size + k*dm + i*dn + root]`
-/// with `dn = nroots`, `dm = nroots*(li+1)`, `g_size = nroots*(li+1)*(lk+1)`.
+/// Layout of one slot's `g` slab (`3 * g_size` elements at `slot * g_stride`):
+/// `g[gbase + axis*g_size + k*dm + i*dn + root]` with `dn = nroots`,
+/// `dm = nroots*(li+1)`, `g_size = nroots*(li+1)*(lk+1)`.
 ///
-/// `cart_out` (size `nci*nck`, `nci = ncart(li)`) is zeroed in-kernel and
-/// accumulated over all primitive and contraction pairs:
-/// `cart_out[ci_idx + ck_idx*nci]`.
+/// `cart_out` block `out_off` (size `nctr_i*nctr_k*nci*nck`, `nci = ncart(li)`)
+/// is zeroed in-kernel and accumulated over all primitive pairs. Contraction
+/// block `(ci, ck)` lives at `out_off + (ci*nctr_k + ck) * nci*nck`, and within a
+/// block the Cartesian index is `ci_idx + ck_idx*nci` — the same
+/// contraction-major layout the 2e kernel produces.
+///
+/// This kernel's arithmetic is not split across a cube: one slot evaluates a
+/// whole pair. `per_unit == 1` therefore maps a pair to each *unit* (the CubeCL
+/// CPU shape, where a unit is an OS thread); `per_unit == 0` maps a pair to each
+/// *cube* and leaves the remaining lanes idle, which is what the pre-batching
+/// kernel did with its `UNIT_POS == 0` guard.
 ///
 /// Source: libcint-master/src/g2e.c `CINTg0_2e` + `CINTg0_2e_2d`,
 ///         g2c2e.c `CINT2c2e_loop_nopt`.
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn center_2c2e_kernel<F: Float + CubeElement>(
-    exps_i: &Array<F>,
-    exps_k: &Array<F>,
-    coeff_i: &Array<F>,
-    coeff_k: &Array<F>,
+    exps: &Array<F>,
+    coeffs: &Array<F>,
+    centers: &Array<F>,
+    shell_meta: &Array<u32>,
+    pairs: &Array<u32>,
+    class_shape: &Array<u32>,
+    class_factor: &Array<F>,
     g: &mut Array<F>,
-    urys: &mut Array<F>,
-    wrys: &mut Array<F>,
     cart_out: &mut Array<F>,
-    rix: F,
-    riy: F,
-    riz: F,
-    rkx: F,
-    rky: F,
-    rkz: F,
-    common_factor: F,
     pie4: F,
-    li: u32,
-    lk: u32,
-    nprim_i: u32,
-    nprim_k: u32,
-    nctr_i: u32,
-    nctr_k: u32,
+    n_pairs: u32,
+    n_cubes: u32,
+    g_stride: u32,
     #[comptime] nroots: u32,
+    #[comptime] per_unit: u32,
 ) {
-    if UNIT_POS == 0u32 {
+    let cube_pos = CUBE_POS as u32;
+    let unit_pos = UNIT_POS as u32;
+    let cube_dim = CUBE_DIM as u32;
+
+    // Slot decomposition — see the doc comment above, and the identical block in
+    // `two_electron.rs` for why this is arithmetic on comptime-folded flags
+    // rather than a `comptime!` if/else.
+    let coop = if comptime!(per_unit == 1u32) {
+        0u32
+    } else {
+        1u32
+    };
+    let punit = 1u32 - coop;
+    let slots_per_cube = cube_dim * punit + coop;
+    let slot = cube_pos * slots_per_cube + unit_pos * punit;
+    let n_slots = n_cubes * slots_per_cube;
+    // Only lane 0 of a cooperative group does anything here; in the per-unit
+    // decomposition every unit is its own group of one.
+    let lane = unit_pos * coop;
+
+    // Rys roots/weights are written and read entirely inside the `lane == 0`
+    // region below, so they are per-unit private storage rather than buffers.
+    let mut urys = Array::<F>::new(5usize);
+    let mut wrys = Array::<F>::new(5usize);
+
+    if lane == 0u32 {
         let nrys = nroots;
         let dn = nrys;
-        let dm = nrys * (li + 1u32);
-        let g_size = nrys * (li + 1u32) * (lk + 1u32);
-        let total_g = 3u32 * g_size;
-        let nci = (li + 1u32) * (li + 2u32) / 2u32;
-        let nck = (lk + 1u32) * (lk + 2u32) / 2u32;
-        let out_len = nci * nck;
+        let gbase = slot * g_stride;
 
-        // Zero the accumulation buffer.
-        let mut oi = 0u32;
-        while oi < out_len {
-            cart_out[oi as usize] = F::new(0.0);
-            oi += 1u32;
+        // Blocked walk under `per_unit == 1`, grid-stride otherwise.
+        let chunk = (n_pairs + n_slots - 1u32) / n_slots;
+        let qi_start = slot * (chunk * punit + coop);
+        let mut qi_stop = (qi_start + chunk) * punit + n_pairs * coop;
+        if qi_stop > n_pairs {
+            qi_stop = n_pairs;
         }
+        let qi_step = n_slots * coop + punit;
 
-        // Center displacement (independent of primitives): rij = ri, rkl = rk.
-        let xij = rix - rkx;
-        let yij = riy - rky;
-        let zij = riz - rkz;
-        let rr = xij * xij + yij * yij + zij * zij;
+        let mut qi = qi_start;
+        while qi < qi_stop {
+            let prow = qi * 4u32;
+            let si = pairs[prow as usize];
+            let sk = pairs[(prow + 1u32) as usize];
+            let out_off = pairs[(prow + 2u32) as usize];
 
-        let mut pi = 0u32;
-        while pi < nprim_i {
-            let ai = exps_i[pi as usize];
-            let mut pk = 0u32;
-            while pk < nprim_k {
-                let ak = exps_k[pk as usize];
+            // ── Per-class shape (Task 35-M2) ──────────────────────────────
+            //
+            // `nroots` is this kernel's only comptime parameter — `li` and `lk`
+            // were already runtime scalars — so one dispatch carries every
+            // `(li,lk)` class of the same Rys order. The G slab is sized to the
+            // widest class and each class indexes only what it owns, keeping
+            // the merge bit-identical.
+            let cls = pairs[(prow + 3u32) as usize];
+            let srow = cls * comptime!(TWO_C2E_SHAPE_STRIDE as u32);
+            let li = class_shape[srow as usize];
+            let lk = class_shape[(srow + 1u32) as usize];
+            let common_factor = class_factor[cls as usize];
 
-                // For 2c2e: aij = ai, akl = ak.
-                let aij = ai;
-                let akl = ak;
-                let a1 = aij * akl;
-                let a0 = a1 / (aij + akl); // rho = ai*ak/(ai+ak)
-                let x_rys = a0 * rr;
+            let dm = nrys * (li + 1u32);
+            let g_size = nrys * (li + 1u32) * (lk + 1u32);
+            let total_g = 3u32 * g_size;
+            let nci = (li + 1u32) * (li + 2u32) / 2u32;
+            let nck = (lk + 1u32) * (lk + 2u32) / 2u32;
+            let block_len = nci * nck;
 
-                // Rys roots/weights depend only on (ai, ak) → compute once here.
-                // `nroots` is comptime, so exactly one branch is emitted.
-                if comptime!(nroots == 1u32) {
-                    rys_root1::<F>(x_rys, urys, wrys, pie4);
-                } else if comptime!(nroots == 2u32) {
-                    rys_root2::<F>(x_rys, urys, wrys, pie4);
-                } else if comptime!(nroots == 3u32) {
-                    rys_root3::<F>(x_rys, urys, wrys, pie4);
-                } else if comptime!(nroots == 4u32) {
-                    rys_root4::<F>(x_rys, urys, wrys, pie4);
-                } else {
-                    rys_root5::<F>(x_rys, urys, wrys, pie4);
-                }
+            let mi = si * 4u32;
+            let eoff_i = shell_meta[mi as usize];
+            let coff_i = shell_meta[(mi + 1u32) as usize];
+            let nprim_i = shell_meta[(mi + 2u32) as usize];
+            let nctr_i = shell_meta[(mi + 3u32) as usize];
+            let mk = sk * 4u32;
+            let eoff_k = shell_meta[mk as usize];
+            let coff_k = shell_meta[(mk + 1u32) as usize];
+            let nprim_k = shell_meta[(mk + 2u32) as usize];
+            let nctr_k = shell_meta[(mk + 3u32) as usize];
 
-                let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor;
+            let ci3 = si * 3u32;
+            let rix = centers[ci3 as usize];
+            let riy = centers[(ci3 + 1u32) as usize];
+            let riz = centers[(ci3 + 2u32) as usize];
+            let ck3 = sk * 3u32;
+            let rkx = centers[ck3 as usize];
+            let rky = centers[(ck3 + 1u32) as usize];
+            let rkz = centers[(ck3 + 2u32) as usize];
 
-                // ── Fill the G-tensor (VRR) ──────────
-                #[unroll]
-                for irys in 0..nroots {
-                    let u2 = a0 * urys[irys as usize];
-                    let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
-                    let tmp5 = u2 * tmp4;
-                    let b00 = tmp5;
-                    let b10 = tmp5 + tmp4 * akl;
-                    let b01 = tmp5 + tmp4 * aij;
-                    let tmp2 = F::new(2.0) * tmp5 * akl;
-                    let tmp3 = F::new(2.0) * tmp5 * aij;
+            let out_len = nctr_i * nctr_k * block_len;
 
-                    // Base case: gx=gy=1, gz=w*fac1 (g2e.c lines 4517-4521).
-                    g[irys as usize] = F::new(1.0);
-                    g[(g_size + irys) as usize] = F::new(1.0);
-                    g[(2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
+            // Zero the accumulation buffer.
+            let mut oi = 0u32;
+            while oi < out_len {
+                cart_out[(out_off + oi) as usize] = F::new(0.0);
+                oi += 1u32;
+            }
 
+            // Center displacement (independent of primitives): rij = ri, rkl = rk.
+            let xij = rix - rkx;
+            let yij = riy - rky;
+            let zij = riz - rkz;
+            let rr = xij * xij + yij * yij + zij * zij;
+
+            let mut pi = 0u32;
+            while pi < nprim_i {
+                let ai = exps[(eoff_i + pi) as usize];
+                let mut pk = 0u32;
+                while pk < nprim_k {
+                    let ak = exps[(eoff_k + pk) as usize];
+
+                    // For 2c2e: aij = ai, akl = ak.
+                    let aij = ai;
+                    let akl = ak;
+                    let a1 = aij * akl;
+                    let a0 = a1 / (aij + akl); // rho = ai*ak/(ai+ak)
+                    let x_rys = a0 * rr;
+
+                    // Rys roots/weights depend only on (ai, ak) → compute once here.
+                    // `nroots` is comptime, so exactly one branch is emitted.
+                    if comptime!(nroots == 1u32) {
+                        rys_root1::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                    } else if comptime!(nroots == 2u32) {
+                        rys_root2::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                    } else if comptime!(nroots == 3u32) {
+                        rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                    } else if comptime!(nroots == 4u32) {
+                        rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                    } else {
+                        rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                    }
+
+                    let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor;
+
+                    // ── Fill the G-tensor (VRR) ──────────
                     #[unroll]
-                    for axis in 0..3u32 {
-                        let base = axis * g_size;
-                        // Displacement component for this axis.
-                        let mut d = xij;
-                        if axis == 1u32 {
-                            d = yij;
-                        } else if axis == 2u32 {
-                            d = zij;
-                        }
-                        let c00a = -tmp2 * d;
-                        let c0pa = tmp3 * d;
+                    for irys in 0..nroots {
+                        let u2 = a0 * urys[irys as usize];
+                        let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
+                        let tmp5 = u2 * tmp4;
+                        let b00 = tmp5;
+                        let b10 = tmp5 + tmp4 * akl;
+                        let b01 = tmp5 + tmp4 * aij;
+                        let tmp2 = F::new(2.0) * tmp5 * akl;
+                        let tmp3 = F::new(2.0) * tmp5 * aij;
 
-                        // i-VRR (nmax = li): g[n+1] = c00*g[n] + n*b10*g[n-1]
-                        if li >= 1u32 {
-                            let mut s_prev = g[(base + irys) as usize];
-                            let mut s1 = c00a * s_prev;
-                            g[(base + irys + dn) as usize] = s1;
-                            let mut n = 1u32;
-                            while n < li {
-                                let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
-                                g[(base + irys + (n + 1u32) * dn) as usize] = s2;
-                                s_prev = s1;
-                                s1 = s2;
-                                n += 1u32;
+                        // Base case: gx=gy=1, gz=w*fac1 (g2e.c lines 4517-4521).
+                        g[(gbase + irys) as usize] = F::new(1.0);
+                        g[(gbase + g_size + irys) as usize] = F::new(1.0);
+                        g[(gbase + 2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
+
+                        #[unroll]
+                        for axis in 0..3u32 {
+                            let base = gbase + axis * g_size;
+                            // Displacement component for this axis.
+                            let mut d = xij;
+                            if axis == 1u32 {
+                                d = yij;
+                            } else if axis == 2u32 {
+                                d = zij;
                             }
-                        }
+                            let c00a = -tmp2 * d;
+                            let c0pa = tmp3 * d;
 
-                        // k-VRR pure (i=0, mmax = lk):
-                        // g[k+1] = c0p*g[k] + k*b01*g[k-1]
-                        if lk >= 1u32 {
-                            let mut s_prev = g[(base + irys) as usize];
-                            let mut s1 = c0pa * s_prev;
-                            g[(base + irys + dm) as usize] = s1;
-                            let mut m = 1u32;
-                            while m < lk {
-                                let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
-                                g[(base + irys + (m + 1u32) * dm) as usize] = s2;
-                                s_prev = s1;
-                                s1 = s2;
-                                m += 1u32;
-                            }
-                        }
-
-                        // Mixed i+k recurrence for i>0 (g2e.c lines 362-391):
-                        // g[i,k+1] = c0p*g[i,k] + k*b01*g[i,k-1] + b00*g[i-1,k]
-                        if lk >= 1u32 {
+                            // i-VRR (nmax = li): g[n+1] = c00*g[n] + n*b10*g[n-1]
                             if li >= 1u32 {
+                                let mut s_prev = g[(base + irys) as usize];
+                                let mut s1 = c00a * s_prev;
+                                g[(base + irys + dn) as usize] = s1;
                                 let mut n = 1u32;
-                                while n <= li {
-                                    let i_off = irys + n * dn;
-                                    let s0_k0 = g[(base + i_off) as usize];
-                                    let prev_i_k0 = g[(base + irys + (n - 1u32) * dn) as usize];
-                                    // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
-                                    let mut s1 = c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
-                                    g[(base + i_off + dm) as usize] = s1;
-                                    let mut s_prev = s0_k0;
-                                    let mut m = 1u32;
-                                    while m < lk {
-                                        let prev_i_km =
-                                            g[(base + irys + (n - 1u32) * dn + m * dm) as usize];
-                                        let s2 = c0pa * s1
-                                            + F::cast_from(m) * b01 * s_prev
-                                            + F::cast_from(n) * b00 * prev_i_km;
-                                        g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
-                                        s_prev = s1;
-                                        s1 = s2;
-                                        m += 1u32;
-                                    }
+                                while n < li {
+                                    let s2 = c00a * s1 + F::cast_from(n) * b10 * s_prev;
+                                    g[(base + irys + (n + 1u32) * dn) as usize] = s2;
+                                    s_prev = s1;
+                                    s1 = s2;
                                     n += 1u32;
                                 }
                             }
-                        }
-                    }
-                }
 
-                let mut prim_coeff = F::new(0.0);
-                let mut ci = 0u32;
-                while ci < nctr_i {
-                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
-                    let mut ck = 0u32;
-                    while ck < nctr_k {
-                        let coeff_k_val = coeff_k[(pk * nctr_k + ck) as usize];
-                        prim_coeff += coeff_i_val * coeff_k_val;
-                        ck += 1u32;
-                    }
-                    ci += 1u32;
-                }
-
-                // ── Contract over Rys roots and Cartesian triples ─────
-                // Output: i fastest (innermost), k slowest (outermost):
-                // cart_out[ci_idx + ck_idx*nci]
-                let mut ck_idx = 0u32;
-                let mut ka = 0u32;
-                while ka <= lk {
-                    let kx = lk - ka; // kx: lk..0 (descending)
-                    let lk_minus_kx = lk - kx;
-                    let mut kb = 0u32;
-                    while kb <= lk_minus_kx {
-                        let ky = lk_minus_kx - kb; // ky descending
-                        let kz = lk - kx - ky;
-
-                        let mut ci_idx = 0u32;
-                        let mut ia = 0u32;
-                        while ia <= li {
-                            let ix = li - ia;
-                            let li_minus_ix = li - ix;
-                            let mut ib = 0u32;
-                            while ib <= li_minus_ix {
-                                let iy = li_minus_ix - ib;
-                                let iz = li - ix - iy;
-
-                                let mut val = F::new(0.0);
-                                #[unroll]
-                                for irys2 in 0..nroots {
-                                    let vx = g[(kx * dm + ix * dn + irys2) as usize];
-                                    let vy = g[(g_size + ky * dm + iy * dn + irys2) as usize];
-                                    let vz =
-                                        g[(2u32 * g_size + kz * dm + iz * dn + irys2) as usize];
-                                    val += vx * vy * vz;
+                            // k-VRR pure (i=0, mmax = lk):
+                            // g[k+1] = c0p*g[k] + k*b01*g[k-1]
+                            if lk >= 1u32 {
+                                let mut s_prev = g[(base + irys) as usize];
+                                let mut s1 = c0pa * s_prev;
+                                g[(base + irys + dm) as usize] = s1;
+                                let mut m = 1u32;
+                                while m < lk {
+                                    let s2 = c0pa * s1 + F::cast_from(m) * b01 * s_prev;
+                                    g[(base + irys + (m + 1u32) * dm) as usize] = s2;
+                                    s_prev = s1;
+                                    s1 = s2;
+                                    m += 1u32;
                                 }
-
-                                cart_out[(ci_idx + ck_idx * nci) as usize] += val * prim_coeff;
-
-                                ci_idx += 1u32;
-                                ib += 1u32;
                             }
-                            ia += 1u32;
+
+                            // Mixed i+k recurrence for i>0 (g2e.c lines 362-391):
+                            // g[i,k+1] = c0p*g[i,k] + k*b01*g[i,k-1] + b00*g[i-1,k]
+                            if lk >= 1u32 {
+                                if li >= 1u32 {
+                                    let mut n = 1u32;
+                                    while n <= li {
+                                        let i_off = irys + n * dn;
+                                        let s0_k0 = g[(base + i_off) as usize];
+                                        let prev_i_k0 = g[(base + irys + (n - 1u32) * dn) as usize];
+                                        // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
+                                        let mut s1 =
+                                            c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
+                                        g[(base + i_off + dm) as usize] = s1;
+                                        let mut s_prev = s0_k0;
+                                        let mut m = 1u32;
+                                        while m < lk {
+                                            let prev_i_km = g
+                                                [(base + irys + (n - 1u32) * dn + m * dm) as usize];
+                                            let s2 = c0pa * s1
+                                                + F::cast_from(m) * b01 * s_prev
+                                                + F::cast_from(n) * b00 * prev_i_km;
+                                            g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
+                                            s_prev = s1;
+                                            s1 = s2;
+                                            m += 1u32;
+                                        }
+                                        n += 1u32;
+                                    }
+                                }
+                            }
                         }
-
-                        ck_idx += 1u32;
-                        kb += 1u32;
                     }
-                    ka += 1u32;
-                }
 
-                pk += 1u32;
+                    // ── Contract over Rys roots and Cartesian triples ─────
+                    // Output: i fastest (innermost), k slowest (outermost) within
+                    // one contraction block; blocks are contraction-major.
+                    //
+                    // The Cartesian value is independent of (ci, ck) — only the
+                    // weight is not — so it is computed once and scattered across
+                    // the contraction blocks. Summing the weights into one scalar
+                    // and writing a single block instead (as this kernel did before)
+                    // is correct only when `nctr_i == nctr_k == 1`.
+                    let mut ck_idx = 0u32;
+                    let mut ka = 0u32;
+                    while ka <= lk {
+                        let kx = lk - ka; // kx: lk..0 (descending)
+                        let lk_minus_kx = lk - kx;
+                        let mut kb = 0u32;
+                        while kb <= lk_minus_kx {
+                            let ky = lk_minus_kx - kb; // ky descending
+                            let kz = lk - kx - ky;
+
+                            let mut ci_idx = 0u32;
+                            let mut ia = 0u32;
+                            while ia <= li {
+                                let ix = li - ia;
+                                let li_minus_ix = li - ix;
+                                let mut ib = 0u32;
+                                while ib <= li_minus_ix {
+                                    let iy = li_minus_ix - ib;
+                                    let iz = li - ix - iy;
+
+                                    let mut val = F::new(0.0);
+                                    #[unroll]
+                                    for irys2 in 0..nroots {
+                                        let vx = g[(gbase + kx * dm + ix * dn + irys2) as usize];
+                                        let vy = g
+                                            [(gbase + g_size + ky * dm + iy * dn + irys2) as usize];
+                                        let vz =
+                                            g[(gbase + 2u32 * g_size + kz * dm + iz * dn + irys2)
+                                                as usize];
+                                        val += vx * vy * vz;
+                                    }
+
+                                    let elem = ci_idx + ck_idx * nci;
+                                    let mut ci = 0u32;
+                                    while ci < nctr_i {
+                                        let coeff_i_val =
+                                            coeffs[(coff_i + pi * nctr_i + ci) as usize];
+                                        let mut ck = 0u32;
+                                        while ck < nctr_k {
+                                            let coeff_k_val =
+                                                coeffs[(coff_k + pk * nctr_k + ck) as usize];
+                                            let block = (ci * nctr_k + ck) * block_len;
+                                            cart_out[(out_off + block + elem) as usize] +=
+                                                val * coeff_i_val * coeff_k_val;
+                                            ck += 1u32;
+                                        }
+                                        ci += 1u32;
+                                    }
+
+                                    ci_idx += 1u32;
+                                    ib += 1u32;
+                                }
+                                ia += 1u32;
+                            }
+
+                            ck_idx += 1u32;
+                            kb += 1u32;
+                        }
+                        ka += 1u32;
+                    }
+
+                    pk += 1u32;
+                }
+                pi += 1u32;
             }
-            pi += 1u32;
+
+            qi += qi_step;
         }
     }
 }
 
-/// Dispatch [`center_2c2e_kernel`] at `f64` on a resolved backend's client and
-/// read back the Cartesian accumulation buffer (`nci*nck`, i fastest).
+/// Flattened basis shared by every launch class in one batched 2c2e run.
+#[derive(Clone, Debug, Default)]
+pub struct TwoC2eFlatBasis {
+    /// Every shell's primitive exponents, concatenated.
+    pub exps: Vec<f64>,
+    /// Every shell's contraction coefficients, concatenated, primitive-major.
+    pub coeffs: Vec<f64>,
+    /// Three coordinates per shell.
+    pub centers: Vec<f64>,
+    /// `[exp_off, coeff_off, nprim, nctr]` per shell.
+    pub shell_meta: Vec<u32>,
+}
+
+impl TwoC2eFlatBasis {
+    /// Bytes this basis costs to upload.
+    #[must_use]
+    pub fn upload_bytes(&self) -> usize {
+        (self.exps.len() + self.coeffs.len() + self.centers.len()) * std::mem::size_of::<f64>()
+            + self.shell_meta.len() * std::mem::size_of::<u32>()
+    }
+}
+
+/// `u32` shape scalars per class row of the device shape table: `li, lk`.
+const TWO_C2E_SHAPE_STRIDE: usize = 2;
+
+/// One dispatch: every shell pair of the same Rys order (Task 35-M2).
 ///
-/// Generic over `R: Runtime` so the same path serves CPU, ROCm, etc. Intermediate
-/// device compute is `f64` (see module-level precision policy).
+/// `center_2c2e_kernel` specializes on `nroots` alone, so a launch class is a
+/// Rys order rather than an `(li,lk)` tuple. Each pair names its class in the
+/// fourth column of its table row.
+#[derive(Clone, Debug)]
+pub struct TwoC2eLaunchGroup {
+    /// Rys order — the kernel's only comptime parameter.
+    pub nroots: u32,
+    /// [`TWO_C2E_SHAPE_STRIDE`] `u32` per merged class: `li, lk`.
+    pub class_shape: Vec<u32>,
+    /// One libcint `common_factor` per merged class.
+    pub class_factor: Vec<f64>,
+    /// `[si, sk, out_off, class]` per pair.
+    pub pairs: Vec<u32>,
+    /// Total Cartesian output elements across this group's pairs.
+    pub out_len: usize,
+    /// Widest per-slot G-tensor length in the group.
+    pub max_g_size: usize,
+}
+
+impl TwoC2eLaunchGroup {
+    /// An empty group of Rys order `nroots`.
+    #[must_use]
+    pub fn new(nroots: u32) -> Self {
+        Self {
+            nroots,
+            class_shape: Vec::new(),
+            class_factor: Vec::new(),
+            pairs: Vec::new(),
+            out_len: 0,
+            max_g_size: 0,
+        }
+    }
+
+    /// Append a class and return the index its pair rows carry.
+    pub fn push_class(&mut self, li: u32, lk: u32, common_factor: f64) -> u32 {
+        let index = self.class_factor.len() as u32;
+        self.class_shape.extend_from_slice(&[li, lk]);
+        self.class_factor.push(common_factor);
+        self.max_g_size = self
+            .max_g_size
+            .max(self.nroots as usize * (li as usize + 1) * (lk as usize + 1));
+        index
+    }
+
+    /// Number of angular-momentum classes merged into this dispatch.
+    #[must_use]
+    pub fn class_count(&self) -> usize {
+        self.class_factor.len()
+    }
+
+    /// Number of pairs in this group.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.pairs.len() / 4
+    }
+
+    /// Is this group empty?
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.pairs.is_empty()
+    }
+
+    /// Bytes this group's pair and class tables cost to upload.
+    #[must_use]
+    pub fn upload_bytes(&self) -> usize {
+        (self.pairs.len() + self.class_shape.len()) * std::mem::size_of::<u32>()
+            + self.class_factor.len() * std::mem::size_of::<f64>()
+    }
+}
+
+/// Stride, in `f64` elements, between one slot's 2c2e G slab and the next,
+/// padded to a 64-byte cache line so concurrent slots never share a line.
+fn two_c2e_g_slab_stride(g_size: usize) -> usize {
+    const LINE: usize = 8;
+    (3 * g_size).div_ceil(LINE) * LINE
+}
+
+/// Does this backend want the one-pair-per-unit decomposition? Same reasoning
+/// and override knob as `two_electron::two_e_per_unit`.
+fn two_c2e_per_unit<R: Runtime>() -> bool {
+    use std::sync::OnceLock;
+    static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
+    let pinned = *OVERRIDE.get_or_init(|| {
+        std::env::var("CINTX_2C2E_PER_UNIT")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+    });
+    match pinned {
+        Some(value) => value != 0,
+        None => crate::plane::runtime_is_cpu::<R>(),
+    }
+}
+
+/// Launch geometry for one 2c2e class: `(cube_count, cube_dim, n_slots)`.
+fn two_c2e_launch_geometry<R: Runtime>(n_pairs: usize, g_size: usize) -> (u32, CubeDim, usize) {
+    /// Ceiling on the per-launch G-tensor scratch slab.
+    const MAX_BATCH_SCRATCH_BYTES: usize = 64 * 1024 * 1024;
+
+    let per_slab = two_c2e_g_slab_stride(g_size) * std::mem::size_of::<f64>();
+    let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slab.max(1)).max(1);
+
+    if two_c2e_per_unit::<R>() {
+        let units =
+            crate::plane::per_unit_width(n_pairs, crate::plane::MIN_ITEMS_PER_UNIT_PAIR, by_memory);
+        return (1, CubeDim::new_1d(units), units as usize);
+    }
+    // The kernel's arithmetic is not split across a cube, so a wider cube would
+    // only add idle lanes.
+    let cubes = n_pairs.min(by_memory).clamp(1, 65535) as u32;
+    (cubes, CubeDim::new_1d(1), cubes as usize)
+}
+
+/// Evaluate every class of a batched 2c2e run: one dispatch and one readback per
+/// class, one basis upload for the whole run.
+fn run_2c2e_batches<R: Runtime>(
+    client: &ComputeClient<R>,
+    basis: &TwoC2eFlatBasis,
+    groups: &[TwoC2eLaunchGroup],
+) -> Vec<Vec<f64>> {
+    if groups.is_empty() {
+        return Vec::new();
+    }
+
+    let exps_h = client.create_from_slice(f64::as_bytes(&basis.exps));
+    let coeffs_h = client.create_from_slice(f64::as_bytes(&basis.coeffs));
+    let centers_h = client.create_from_slice(f64::as_bytes(&basis.centers));
+    let meta_h = client.create_from_slice(u32::as_bytes(&basis.shell_meta));
+
+    let mut results = Vec::with_capacity(groups.len());
+    for class in groups {
+        let n_pairs = class.len();
+        if n_pairs == 0 {
+            results.push(Vec::new());
+            continue;
+        }
+        // Sized to the widest class merged into this dispatch.
+        let g_size = class.max_g_size;
+
+        let (n_cubes, cube_dim, n_slots) = two_c2e_launch_geometry::<R>(n_pairs, g_size);
+        let g_stride = two_c2e_g_slab_stride(g_size);
+        let g_len = n_slots * g_stride;
+
+        let pairs_h = client.create_from_slice(u32::as_bytes(&class.pairs));
+        let shape_h = client.create_from_slice(u32::as_bytes(&class.class_shape));
+        let factor_h = client.create_from_slice(f64::as_bytes(&class.class_factor));
+        let g_h = client.empty(g_len * std::mem::size_of::<f64>());
+        let out_h = client.empty(class.out_len * std::mem::size_of::<f64>());
+        let per_unit = u32::from(two_c2e_per_unit::<R>());
+
+        // SAFETY: every buffer is allocated at the exact length passed to
+        // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
+        // `n_pairs`, by the per-shell `nprim`/`nctr` read from `shell_meta`, and
+        // by the class-uniform G-tensor extents.
+        macro_rules! launch_with {
+            ($nr:expr) => {
+                unsafe {
+                    center_2c2e_kernel::launch_unchecked::<f64, R>(
+                        client,
+                        crate::plane::cube_count_1d(n_cubes),
+                        cube_dim,
+                        ArrayArg::from_raw_parts(exps_h.clone(), basis.exps.len()),
+                        ArrayArg::from_raw_parts(coeffs_h.clone(), basis.coeffs.len()),
+                        ArrayArg::from_raw_parts(centers_h.clone(), basis.centers.len()),
+                        ArrayArg::from_raw_parts(meta_h.clone(), basis.shell_meta.len()),
+                        ArrayArg::from_raw_parts(pairs_h.clone(), class.pairs.len()),
+                        ArrayArg::from_raw_parts(shape_h.clone(), class.class_shape.len()),
+                        ArrayArg::from_raw_parts(factor_h.clone(), class.class_factor.len()),
+                        ArrayArg::from_raw_parts(g_h.clone(), g_len),
+                        ArrayArg::from_raw_parts(out_h.clone(), class.out_len),
+                        PIE4,
+                        n_pairs as u32,
+                        n_cubes,
+                        g_stride as u32,
+                        $nr,
+                        per_unit,
+                    );
+                }
+            };
+        }
+
+        match class.nroots {
+            1 => launch_with!(1u32),
+            2 => launch_with!(2u32),
+            3 => launch_with!(3u32),
+            4 => launch_with!(4u32),
+            _ => launch_with!(5u32),
+        }
+
+        let raw = client.read_one_unchecked(out_h);
+        results.push(f64::from_bytes(&raw)[0..class.out_len].to_vec());
+    }
+    results
+}
+
+/// Spherical AO blocks for a 2c2e pair batch, plus the offsets locating each pair.
+#[derive(Clone, Debug, Default)]
+pub struct TwoC2eBatchOutput {
+    /// Concatenated spherical AO blocks, in the caller's pair order.
+    pub values: Vec<f64>,
+    /// `offsets[n]` is where pair `n`'s block starts in [`Self::values`].
+    pub offsets: Vec<usize>,
+    /// Execution statistics.
+    pub stats: crate::kernels::two_electron::BatchExecutionStats,
+}
+
+/// Evaluate a list of shell pairs as `int2c2e_sph`, one dispatch per launch
+/// class (Phase 35).
+///
+/// Same shape as `two_electron::evaluate_2e_quartet_batch`, two indices shorter:
+/// the list is grouped by `(li, lk)`, each group costs exactly one dispatch and
+/// one readback, and the basis is uploaded once for the whole run.
+///
+/// `pairs` are `[i, k]` indices into `shells`.
+/// Where one `(li,lk)` class landed after launch-group merging (Task 35-M2).
+struct TwoC2eClassPlacement {
+    li: u32,
+    lk: u32,
+    /// Index into the group list — which dispatch's buffer holds these blocks.
+    group: usize,
+    /// Caller-order indices of this class's pairs.
+    members: Vec<usize>,
+    /// Each member's offset into the group's Cartesian buffer.
+    cart_offsets: Vec<usize>,
+}
+
+pub fn evaluate_2c2e_pair_batch(
+    backend: &ResolvedBackend,
+    shells: &[crate::kernels::two_electron::BatchShell],
+    pairs: &[[u32; 2]],
+) -> Result<TwoC2eBatchOutput, cintxRsError> {
+    let mut offsets = Vec::with_capacity(pairs.len());
+    let mut total = 0_usize;
+    for pair in pairs {
+        for &s in pair {
+            if s as usize >= shells.len() {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: format!("2c2e-batch:shell-index-out-of-range:{s}"),
+                });
+            }
+        }
+        offsets.push(total);
+        total += shells[pair[0] as usize].ao_len() * shells[pair[1] as usize].ao_len();
+    }
+
+    let mut output = TwoC2eBatchOutput {
+        values: vec![0.0; total],
+        offsets,
+        stats: crate::kernels::two_electron::BatchExecutionStats {
+            quartets: pairs.len(),
+            ..Default::default()
+        },
+    };
+    if pairs.is_empty() {
+        return Ok(output);
+    }
+
+    let mut basis = TwoC2eFlatBasis::default();
+    for shell in shells {
+        basis.shell_meta.push(basis.exps.len() as u32);
+        basis.shell_meta.push(basis.coeffs.len() as u32);
+        basis.shell_meta.push(shell.nprim);
+        basis.shell_meta.push(shell.nctr);
+        basis
+            .exps
+            .extend_from_slice(&shell.exponents[..shell.nprim as usize]);
+        basis
+            .coeffs
+            .extend_from_slice(&shell.coefficients[..(shell.nprim * shell.nctr) as usize]);
+        basis.centers.extend_from_slice(&shell.center);
+    }
+
+    let mut grouped: std::collections::BTreeMap<[u8; 2], Vec<usize>> = Default::default();
+    for (index, pair) in pairs.iter().enumerate() {
+        let key = [shells[pair[0] as usize].l, shells[pair[1] as usize].l];
+        grouped.entry(key).or_default().push(index);
+    }
+
+    // Classes merged into dispatch groups keyed on the Rys order (Task 35-M2);
+    // the `(li,lk)` grouping survives as the host cart-to-sph sub-grouping.
+    let mut groups: Vec<TwoC2eLaunchGroup> = Vec::new();
+    let mut group_of: std::collections::BTreeMap<u32, usize> = Default::default();
+    let mut classes: Vec<TwoC2eClassPlacement> = Vec::with_capacity(grouped.len());
+    for (class, members) in grouped {
+        let [li, lk] = class;
+        let nroots = (li as usize + lk as usize) / 2 + 1;
+        if nroots > MAX_DEVICE_NROOTS {
+            return Err(cintxRsError::UnsupportedApi {
+                requested: format!(
+                    "2c2e-batch:nroots={nroots} exceeds device ceiling {MAX_DEVICE_NROOTS} \
+                     for l=({li},{lk})"
+                ),
+            });
+        }
+
+        let nroots = nroots as u32;
+        let group_index = match group_of.get(&nroots) {
+            Some(&index) => index,
+            None => {
+                groups.push(TwoC2eLaunchGroup::new(nroots));
+                let index = groups.len() - 1;
+                group_of.insert(nroots, index);
+                index
+            }
+        };
+        let group = &mut groups[group_index];
+        let class_index = group.push_class(
+            u32::from(li),
+            u32::from(lk),
+            // g2c2e.c `CINTinit_int2c2e_EnvVars` lines 44-45.
+            (PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(li) * common_fac_sp(lk),
+        );
+
+        let cart_block = ncart(li) * ncart(lk);
+        group.pairs.reserve(members.len() * 4);
+        let mut cart_offsets = Vec::with_capacity(members.len());
+        for &index in &members {
+            let p = pairs[index];
+            let nctr_product =
+                shells[p[0] as usize].nctr as usize * shells[p[1] as usize].nctr as usize;
+            cart_offsets.push(group.out_len);
+            group
+                .pairs
+                .extend_from_slice(&[p[0], p[1], group.out_len as u32, class_index]);
+            group.out_len += nctr_product * cart_block;
+        }
+
+        classes.push(TwoC2eClassPlacement {
+            li: u32::from(li),
+            lk: u32::from(lk),
+            group: group_index,
+            members,
+            cart_offsets,
+        });
+    }
+
+    let dispatch_start = std::time::Instant::now();
+    let carts = dispatch_2c2e_batches(backend, &basis, &groups)?;
+    output.stats.dispatch_ns = dispatch_start.elapsed().as_nanos() as u64;
+
+    output.stats.basis_upload_bytes = basis.upload_bytes();
+    output.stats.kernel_launch_count = groups.len();
+    output.stats.launch_classes = classes.len();
+    output.stats.readback_count = groups.len();
+    output.stats.max_g_slab_bytes = groups
+        .iter()
+        .map(|group| two_c2e_g_slab_stride(group.max_g_size) * std::mem::size_of::<f64>())
+        .max()
+        .unwrap_or(0);
+    output.stats.transfer_bytes = output.stats.basis_upload_bytes
+        + groups
+            .iter()
+            .map(TwoC2eLaunchGroup::upload_bytes)
+            .sum::<usize>();
+
+    let transform_start = std::time::Instant::now();
+    for class in &classes {
+        let (li, lk) = (class.li as u8, class.lk as u8);
+        let cart_block = ncart(li) * ncart(lk);
+        let cart = &carts[class.group];
+        let members = &class.members;
+        let cart_offsets = &class.cart_offsets;
+        let (nsi, nsk) = (nsph(li), nsph(lk));
+
+        for (slot, &index) in members.iter().enumerate() {
+            let p = pairs[index];
+            let (nci_ctr, nck_ctr) = (
+                shells[p[0] as usize].nctr as usize,
+                shells[p[1] as usize].nctr as usize,
+            );
+            let di = nci_ctr * nsi;
+            let dst_base = output.offsets[index];
+            let src_base = cart_offsets[slot];
+            for ci in 0..nci_ctr {
+                for ck in 0..nck_ctr {
+                    let base = src_base + (ci * nck_ctr + ck) * cart_block;
+                    let sph = cart_to_sph_2c2e(&cart[base..base + cart_block], li, lk);
+                    for mk in 0..nsk {
+                        let kidx = ck * nsk + mk;
+                        for mi in 0..nsi {
+                            let iidx = ci * nsi + mi;
+                            output.values[dst_base + iidx + di * kidx] = sph[mi + nsi * mk];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    output.stats.host_transform_ns = transform_start.elapsed().as_nanos() as u64;
+
+    Ok(output)
+}
+
+/// Backend dispatch for a whole batched 2c2e run.
+fn dispatch_2c2e_batches(
+    backend: &ResolvedBackend,
+    basis: &TwoC2eFlatBasis,
+    groups: &[TwoC2eLaunchGroup],
+) -> Result<Vec<Vec<f64>>, cintxRsError> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => Ok(run_2c2e_batches::<cubecl::cpu::CpuRuntime>(
+            client, basis, groups,
+        )),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => Ok(run_2c2e_batches::<cubecl_wgpu::WgpuRuntime>(
+            client, basis, groups,
+        )),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => Ok(run_2c2e_batches::<cubecl_cuda::CudaRuntime>(
+            client, basis, groups,
+        )),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => Ok(run_2c2e_batches::<cubecl_hip::HipRuntime>(
+            client, basis, groups,
+        )),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => Ok(run_2c2e_batches::<cubecl_wgpu::WgpuRuntime>(
+            client, basis, groups,
+        )),
+    }
+}
+
+/// Single-pair dispatch — a one-class, one-pair batch.
+///
+/// Kept as its own entry point because the per-tuple compatibility API evaluates
+/// exactly one shell pair. It marshals the two shells into the flattened form
+/// [`run_2c2e_batches`] consumes, so both paths execute the *same* kernel and
+/// every existing parity test covers the batched code at `n_pairs == 1`.
 #[allow(clippy::too_many_arguments)]
 fn run_2c2e_device<R: Runtime>(
     client: &ComputeClient<R>,
@@ -400,63 +955,34 @@ fn run_2c2e_device<R: Runtime>(
 ) -> Vec<f64> {
     let li_u = li as usize;
     let lk_u = lk as usize;
-    let nroots_u = nroots as usize;
-    let g_size = nroots_u * (li_u + 1) * (lk_u + 1);
     let nci = (li_u + 1) * (li_u + 2) / 2;
     let nck = (lk_u + 1) * (lk_u + 2) / 2;
-    let out_len = nci * nck;
+    let out_len = (nctr_i as usize) * (nctr_k as usize) * nci * nck;
 
-    // Input buffers.
-    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
-    let exps_k_h = client.create_from_slice(f64::as_bytes(exps_k));
-    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
-    let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
-
-    // Scratch + output buffers: allocate directly on device via client.empty
-    // (the kernel zeros `g` and `cart_out`, and `rys_root` writes `u` and `w`).
-    let g_h = client.empty(3 * g_size * std::mem::size_of::<f64>());
-    let u_h = client.empty(nroots_u * std::mem::size_of::<f64>());
-    let w_h = client.empty(nroots_u * std::mem::size_of::<f64>());
-    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
-
-    // SAFETY: Input buffer lengths match exps and coeffs lengths.
-    // Scratch buffers `g_h`, `u_h`, `w_h`, and `out_h` are allocated to exact sizes
-    // `3 * g_size`, `nroots_u`, `nroots_u`, and `out_len`.
-    // Kernel loops strictly index within bounds: pi < nprim_i, pk < nprim_k, ci < nctr_i, ck < nctr_k,
-    // irys < nroots, oi < out_len, and gi < 3 * g_size.
-    unsafe {
-        center_2c2e_kernel::launch_unchecked::<f64, R>(
-            client,
-            crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
-            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
-            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
-            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
-            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
-            ArrayArg::from_raw_parts(g_h, 3 * g_size),
-            ArrayArg::from_raw_parts(u_h, nroots_u),
-            ArrayArg::from_raw_parts(w_h, nroots_u),
-            ArrayArg::from_raw_parts(out_h.clone(), out_len),
-            ri[0],
-            ri[1],
-            ri[2],
-            rk[0],
-            rk[1],
-            rk[2],
-            common_factor,
-            PIE4,
-            li,
-            lk,
-            nprim_i,
-            nprim_k,
-            nctr_i,
-            nctr_k,
-            nroots,
-        );
+    let mut basis = TwoC2eFlatBasis::default();
+    for (exps, coeffs, center, nprim, nctr) in [
+        (exps_i, coeff_i, ri, nprim_i, nctr_i),
+        (exps_k, coeff_k, rk, nprim_k, nctr_k),
+    ] {
+        basis.shell_meta.extend_from_slice(&[
+            basis.exps.len() as u32,
+            basis.coeffs.len() as u32,
+            nprim,
+            nctr,
+        ]);
+        basis.exps.extend_from_slice(exps);
+        basis.coeffs.extend_from_slice(coeffs);
+        basis.centers.extend_from_slice(&center);
     }
 
-    let raw = client.read_one_unchecked(out_h);
-    f64::from_bytes(&raw)[0..out_len].to_vec()
+    let mut group = TwoC2eLaunchGroup::new(nroots);
+    let class_index = group.push_class(li, lk, common_factor);
+    group.pairs.extend_from_slice(&[0, 1, 0, class_index]);
+    group.out_len = out_len;
+
+    run_2c2e_batches::<R>(client, &basis, std::slice::from_ref(&group))
+        .pop()
+        .unwrap_or_default()
 }
 
 /// Fill the 2c2e G-tensor for one primitive pair (ai, ak) using Rys quadrature.
@@ -1129,9 +1655,9 @@ fn launch_center_2c2e_typed<F: CintFloat>(
                     }
                 }
                 for ci in 0..n_ctr_i {
-                    let ci_coeff = coeff_i[ci * n_prim_i + pi];
+                    let ci_coeff = coeff_i[pi * n_ctr_i + ci];
                     for ck in 0..n_ctr_k {
-                        let ck_coeff = coeff_k[ck * n_prim_k + pk];
+                        let ck_coeff = coeff_k[pk * n_ctr_k + ck];
                         let pair_weight = ci_coeff * ck_coeff;
                         let block_offset = (ci * n_ctr_k + ck) * block_len;
                         for idx in 0..block_len {
@@ -1237,28 +1763,67 @@ fn launch_center_2c2e_typed<F: CintFloat>(
         }
     };
 
+    // `cart_buf` holds `n_ctr_i * n_ctr_k` Cartesian blocks, contraction-major.
+    // The AO index of contraction `c` and component `m` is `c * n<comp> + m`, so
+    // a general contraction has to be scattered rather than copied — the same
+    // shape the 2e path uses.
+    let cart_block = ncart(li) * ncart(lk);
+
     // Representation dispatch: intermediate transforms use f64 temp buffers;
     // final values cast to F via F::from_f64_lossy.
     match plan.representation {
         Representation::Spheric => {
-            let sph = cart_to_sph_2c2e(&cart_buf, li, lk);
-            let copy_len = staging.len().min(sph.len());
-            for (dst, &src) in staging[..copy_len].iter_mut().zip(sph[..copy_len].iter()) {
-                *dst = F::from_f64_lossy(src);
+            let (nsi, nsk) = (nsph(li), nsph(lk));
+            let di = n_ctr_i * nsi;
+            for ci in 0..n_ctr_i {
+                for ck in 0..n_ctr_k {
+                    let base = (ci * n_ctr_k + ck) * cart_block;
+                    let sph = cart_to_sph_2c2e(&cart_buf[base..base + cart_block], li, lk);
+                    for mk in 0..nsk {
+                        let kidx = ck * nsk + mk;
+                        for mi in 0..nsi {
+                            let iidx = ci * nsi + mi;
+                            let dst = iidx + di * kidx;
+                            if dst < staging.len() {
+                                staging[dst] = F::from_f64_lossy(sph[mi + nsi * mk]);
+                            }
+                        }
+                    }
+                }
             }
         }
         Representation::Spinor => {
             let kappa_i = shell_i.kappa;
             let kappa_k = shell_k.kappa;
+            // The spinor transform consumes one Cartesian block. General
+            // contraction is not wired through it, so fail closed rather than
+            // silently transforming only the first block.
+            if n_ctr_i != 1 || n_ctr_k != 1 {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: format!(
+                        "2c2e-spinor:general-contraction nctr_i={n_ctr_i} nctr_k={n_ctr_k}"
+                    ),
+                });
+            }
             cart_to_spinor_sf_2d::<F>(staging, &cart_buf, li, kappa_i, lk, kappa_k)?;
         }
         Representation::Cart => {
-            let copy_len = staging.len().min(cart_buf.len());
-            for (dst, &src) in staging[..copy_len]
-                .iter_mut()
-                .zip(cart_buf[..copy_len].iter())
-            {
-                *dst = F::from_f64_lossy(src);
+            let (nci, nck) = (ncart(li), ncart(lk));
+            let di = n_ctr_i * nci;
+            for ci in 0..n_ctr_i {
+                for ck in 0..n_ctr_k {
+                    let base = (ci * n_ctr_k + ck) * cart_block;
+                    for mk in 0..nck {
+                        let kidx = ck * nck + mk;
+                        for mi in 0..nci {
+                            let iidx = ci * nci + mi;
+                            let dst = iidx + di * kidx;
+                            if dst < staging.len() {
+                                staging[dst] = F::from_f64_lossy(cart_buf[base + mi + nci * mk]);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1556,53 +2121,51 @@ mod tests {
     #[test]
     fn test_center_2c2e_kernel_generic_f32() {
         let client = cpu_client();
-        let exps_i = [1.0_f32];
-        let exps_k = [1.0_f32];
-        let coeff_i = [1.0_f32];
-        let coeff_k = [1.0_f32];
+        // Flattened two-shell basis: one primitive, one contraction each.
+        let exps = [1.0_f32, 1.0];
+        let coeffs = [1.0_f32, 1.0];
+        let centers = [0.0_f32, 0.0, 0.0, 0.0, 0.0, 1.7];
+        let shell_meta: [u32; 8] = [0, 0, 1, 1, 1, 1, 1, 1];
+        // `[si, sk, out_off, class]` — one class, index 0.
+        let pairs: [u32; 4] = [0, 1, 0, 0];
+        let class_shape: [u32; TWO_C2E_SHAPE_STRIDE] = [0, 0];
         let g_zero = [0.0_f32; 3]; // nroots=1, g_size=1 → 3
-        let rys_zero = [0.0_f32; 1];
         let out_zero = [0.0_f32; 1];
 
-        let exps_i_h = client.create_from_slice(f32::as_bytes(&exps_i));
-        let exps_k_h = client.create_from_slice(f32::as_bytes(&exps_k));
-        let coeff_i_h = client.create_from_slice(f32::as_bytes(&coeff_i));
-        let coeff_k_h = client.create_from_slice(f32::as_bytes(&coeff_k));
+        let exps_h = client.create_from_slice(f32::as_bytes(&exps));
+        let coeffs_h = client.create_from_slice(f32::as_bytes(&coeffs));
+        let centers_h = client.create_from_slice(f32::as_bytes(&centers));
+        let meta_h = client.create_from_slice(u32::as_bytes(&shell_meta));
+        let pairs_h = client.create_from_slice(u32::as_bytes(&pairs));
+        let shape_h = client.create_from_slice(u32::as_bytes(&class_shape));
         let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
-        let u_h = client.create_from_slice(f32::as_bytes(&rys_zero));
-        let w_h = client.create_from_slice(f32::as_bytes(&rys_zero));
         let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
 
-        let common_factor =
-            ((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0)) as f32;
+        let class_factor =
+            [((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0)) as f32];
+        let factor_h = client.create_from_slice(f32::as_bytes(&class_factor));
 
         center_2c2e_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::standard_plane_cube_dim(),
-            unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
-            unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },
-            unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
-            unsafe { ArrayArg::from_raw_parts(coeff_k_h, 1) },
+            CubeDim::new_1d(1),
+            unsafe { ArrayArg::from_raw_parts(exps_h, exps.len()) },
+            unsafe { ArrayArg::from_raw_parts(coeffs_h, coeffs.len()) },
+            unsafe { ArrayArg::from_raw_parts(centers_h, centers.len()) },
+            unsafe { ArrayArg::from_raw_parts(meta_h, shell_meta.len()) },
+            unsafe { ArrayArg::from_raw_parts(pairs_h, pairs.len()) },
+            unsafe { ArrayArg::from_raw_parts(shape_h, class_shape.len()) },
+            unsafe { ArrayArg::from_raw_parts(factor_h, class_factor.len()) },
             unsafe { ArrayArg::from_raw_parts(g_h, 3) },
-            unsafe { ArrayArg::from_raw_parts(u_h, 1) },
-            unsafe { ArrayArg::from_raw_parts(w_h, 1) },
             unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
-            0.0_f32,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.7,
-            common_factor,
             PIE4 as f32,
-            0,
-            0,
-            1,
-            1,
-            1,
-            1,
-            1u32,
+            1u32, // n_pairs
+            1u32, // n_cubes
+            3u32, // g_stride (one slab, unpadded)
+            1u32, // nroots
+            // One cube, one pair: the cooperative shape this single slab is
+            // sized for.
+            0u32,
         );
 
         let raw = client.read_one_unchecked(out_h);

@@ -42,9 +42,17 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      # The manifest drift gate validates the compiled-manifest lock across the
+      # WHOLE approved profile set at once: the lock records per-profile scope,
+      # so auditing a single profile cannot tell "this profile is missing rows"
+      # from "the other three profiles were not requested". `manifest-audit`
+      # enforces that itself (`profile_scope_mismatch.requested_vs_required`),
+      # so passing `--profiles "${{ matrix.profile }}"` here fails on *every*
+      # profile. Pass the full set; the matrix leg still differs by the feature
+      # set the build and test steps below use.
       - name: Run manifest drift gate
         run: |
-          cargo run --locked --manifest-path xtask/Cargo.toml -- manifest-audit --profiles "${{ matrix.profile }}" --check-lock
+          cargo run --locked --manifest-path xtask/Cargo.toml -- manifest-audit --check-lock
 
       - name: Run OOM contract gate
         run: |
@@ -61,11 +69,51 @@ jobs:
             /mnt/data
             target/feature-matrix/${{ matrix.profile }}
 
+  backend_profile_matrix:
+    name: backend profile build (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - cpu
+          - wgpu
+          - cuda
+          - rocm
+          - metal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.0
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # `cargo check`, not `build`: the cuda/rocm legs compile against the
+      # cubecl backend crates but cannot LINK without the vendor SDK on the
+      # runner. Checking is what catches the class of defect this leg exists
+      # for — source that names a backend-gated item (`cubecl::cpu::CpuRuntime`)
+      # without the matching `cfg(feature = ...)`, which is invisible while the
+      # default `cpu` feature is on.
+      - name: Check backend-only profile
+        run: |
+          cargo check --locked -p cintx-cubecl \
+            --no-default-features --features "${{ matrix.backend }}"
+          cargo check --locked -p cintx-compat \
+            --no-default-features --features "${{ matrix.backend }}"
+          cargo check --locked -p cintx-driver \
+            --no-default-features --features "${{ matrix.backend }}"
+
   feature_matrix_summary:
     name: feature matrix summary
     if: always()
     needs:
       - feature_profile_matrix
+      - backend_profile_matrix
     runs-on: ubuntu-latest
     steps:
       - name: Report matrix completion
@@ -75,3 +123,9 @@ jobs:
           echo " - with-f12"
           echo " - with-4c1e"
           echo " - with-f12+with-4c1e"
+          echo "Completed backend profile builds for:"
+          echo " - cpu"
+          echo " - wgpu"
+          echo " - cuda"
+          echo " - rocm"
+          echo " - metal"

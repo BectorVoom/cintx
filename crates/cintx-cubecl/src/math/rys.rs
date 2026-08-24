@@ -16,6 +16,10 @@ use cubecl::prelude::*;
 
 /// PIE4 = pi/4, used in large-x asymptotic formula.
 /// Source: rys_roots.c line 24 (`#define PIE4 0.78539816339744827900`).
+// Verbatim libcint literal, not `std::f64::consts::FRAC_PI_4`: result compatibility
+// with upstream is decided by the exact bits this file feeds the Rys kernels, so
+// the constant is transcribed from `rys_roots.c` rather than recomputed.
+#[allow(clippy::approx_constant)]
 const PIE4: f64 = 0.78539816339744827900_f64;
 
 /// Clenshaw backward recurrence for a 14-coefficient Chebyshev polynomial.

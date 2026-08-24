@@ -1391,14 +1391,30 @@ pub fn cart_to_spinor_sf_4d<F: CintFloat>(
     let mut opij = vec![0.0f64; nck * ncl * di * dj * 2];
 
     let ij_stride = di * dj; // complex elements per (k,l) slice
+    // KET→BRA transpose. The documented input contract is i-fastest,
+    // `cart[((l*nck + k)*ncj + j)*nci + i]` (see `kernels/two_electron.rs:4732`), which
+    // every caller honours — the 2e gouts all emit `n = i + nfi*(j + nfj*(k + nfk*l))`.
+    // `cart_to_spinor_sf_2d` reads BRA-major and does NOT own the transpose (unlike
+    // `cart_to_spinor_si_2d`), so it must happen here.
+    //
+    // Omitting it transposed the `(i,j)` spinor block. That was invisible for an
+    // all-`s` quartet (`nci == ncj == 1`) and wrong for every `l > 0` shell — it made
+    // `int2e_spinor` disagree with vendored libcint by ~3e-3 while still carrying
+    // `oracle_covered = true`.
+    let mut bra_major = vec![0.0_f64; nci * ncj];
     for l_cart in 0..ncl {
         for k_cart in 0..nck {
             let kl_offset = (l_cart * nck + k_cart) * nci * ncj;
             let cart_slice = &cart[kl_offset..kl_offset + nci * ncj];
+            for i in 0..nci {
+                for j in 0..ncj {
+                    bra_major[i * ncj + j] = cart_slice[j * nci + i];
+                }
+            }
             let opij_offset = (l_cart * nck + k_cart) * ij_stride * 2;
             let opij_slice = &mut opij[opij_offset..opij_offset + ij_stride * 2];
             // Intermediate step 1 stays in f64 (opij is Vec<f64>).
-            cart_to_spinor_sf_2d::<f64>(opij_slice, cart_slice, li, kappa_i, lj, kappa_j)?;
+            cart_to_spinor_sf_2d::<f64>(opij_slice, &bra_major, li, kappa_i, lj, kappa_j)?;
         }
     }
 
@@ -1534,6 +1550,19 @@ fn store_2e2_block<F: CintFloat>(
 /// `nci*ncj` kl-slice, producing the complex `opij` intermediate ordered `<ik|lj>`.
 /// `cart` is the single device-KET-major block `[ncl*nck*ncj*nci]`; `opij` is the
 /// caller-allocated `[nck*ncl*di*dj*2]` complex buffer.
+///
+/// # Orientation (W4-03 / RC-2)
+/// Cart blocks arrive KET-major (`block[j*nci + i]`) from the σ launcher, exactly as
+/// they do for [`cart_to_spinor_si_2e1`]. Unlike `cart_to_spinor_si_2d`, which OWNS the
+/// KET→BRA transpose, [`cart_to_spinor_sf_2d`] reads its input BRA-major
+/// (`block[i*ncj + j]`) and leaves the transpose to its caller — the same contract
+/// honoured at `kernels/sigma_1e.rs:680` and `kernels/one_electron.rs:11295`. This
+/// function therefore transposes each `(k,l)` slice before the fold.
+///
+/// Omitting that transpose silently returned the `i↔j` transpose of the correct spinor
+/// block. It was invisible while `sf_2e1` was only ever paired with `sf_2e2` (whose own
+/// orientation cancelled it) and surfaced only through the `(sf_2e1, si_2e2)` pairing
+/// used by `int2e_spsp2` / `int2e_ip1spsp2` / `int2e_ip1srsr2`.
 #[allow(clippy::too_many_arguments)]
 pub fn cart_to_spinor_sf_2e1(
     opij: &mut [f64],
@@ -1572,13 +1601,21 @@ pub fn cart_to_spinor_sf_2e1(
         });
     }
 
+    let mut bra_major = vec![0.0_f64; nci * ncj];
     for l_cart in 0..ncl {
         for k_cart in 0..nck {
             let kl_offset = (l_cart * nck + k_cart) * nci * ncj;
             let cart_slice = &cart[kl_offset..kl_offset + nci * ncj];
+            // KET→BRA transpose: cart_to_spinor_sf_2d reads bra-major (see the
+            // Orientation note above).
+            for i in 0..nci {
+                for j in 0..ncj {
+                    bra_major[i * ncj + j] = cart_slice[j * nci + i];
+                }
+            }
             let opij_offset = (l_cart * nck + k_cart) * ij_stride * 2;
             let opij_slice = &mut opij[opij_offset..opij_offset + ij_stride * 2];
-            cart_to_spinor_sf_2d::<f64>(opij_slice, cart_slice, li, kappa_i, lj, kappa_j)?;
+            cart_to_spinor_sf_2d::<f64>(opij_slice, &bra_major, li, kappa_i, lj, kappa_j)?;
         }
     }
     Ok(())
@@ -2624,6 +2661,113 @@ pub fn cart_to_spinor_sf_3c2e<F: CintFloat>(
     Ok(())
 }
 
+/// 3c2e electron-1 transform, **spin-included** (`c2s_si_3c2e1`, `cart2sph.c:6108`).
+///
+/// The σ analogue of [`cart_to_spinor_sf_3c2e`], and structurally identical to it:
+/// spherical transform on the auxiliary `k` index (`sph2e_inner`), then the Pauli-σ
+/// bra mix on `i` (`a_bra_cart2spinor_si`) and the ORDINARY ket transform on `j`
+/// (`a_ket_cart2spinor`) — libcint swaps only that one bra call between the two.
+///
+/// Consumes the four Cartesian σ blocks `gc_x/gc_y/gc_z/gc_1` the σ·p assembler emits,
+/// each `[nck*ncj*nci]` device-KET-major. `cart_to_spinor_si_2d` OWNS the KET→BRA
+/// transpose (unlike `cart_to_spinor_sf_2d`), so the per-`k` slices are handed over
+/// untransposed. Output is interleaved complex, `[nsk][dj][di]` with `di` fastest.
+#[allow(clippy::too_many_arguments)]
+pub fn cart_to_spinor_si_3c2e1<F: CintFloat>(
+    staging: &mut [F],
+    gc_x: &[f64],
+    gc_y: &[f64],
+    gc_z: &[f64],
+    gc_1: &[f64],
+    li: u8,
+    kappa_i: i16,
+    lj: u8,
+    kappa_j: i16,
+    lk: u8,
+) -> Result<(), cintxRsError> {
+    use super::c2s::{ncart, nsph};
+
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let nsk = nsph(lk);
+    let di = spinor_len(li, kappa_i as i32);
+    let dj = spinor_len(lj, kappa_j as i32);
+
+    let expected_cart = nci * ncj * nck;
+    for (name, block) in [
+        ("gc_x", gc_x),
+        ("gc_y", gc_y),
+        ("gc_z", gc_z),
+        ("gc_1", gc_1),
+    ] {
+        if block.len() < expected_cart {
+            return Err(cintxRsError::ChunkPlanFailed {
+                from: "c2spinor_si_3c2e1",
+                detail: format!(
+                    "{} block length {} < nci*ncj*nck = {}*{}*{} = {}",
+                    name,
+                    block.len(),
+                    nci,
+                    ncj,
+                    nck,
+                    expected_cart
+                ),
+            });
+        }
+    }
+    let required = di * dj * nsk * 2;
+    if staging.len() < required {
+        return Err(cintxRsError::BufferTooSmall {
+            required,
+            provided: staging.len(),
+        });
+    }
+
+    // ── Step 1: cart→sph on the auxiliary k index, for each of the four σ blocks ──
+    let sph_of = |cart: &[f64]| -> Vec<f64> {
+        let mut sph_k = vec![0.0f64; nsk * ncj * nci];
+        for j in 0..ncj {
+            for i in 0..nci {
+                for mk in 0..nsk {
+                    let mut sum = 0.0f64;
+                    for ck in 0..nck {
+                        sum += c2s_k_coeff(lk, mk, ck) * cart[(ck * ncj + j) * nci + i];
+                    }
+                    sph_k[(mk * ncj + j) * nci + i] = sum;
+                }
+            }
+        }
+        sph_k
+    };
+    let sx = sph_of(gc_x);
+    let sy = sph_of(gc_y);
+    let sz = sph_of(gc_z);
+    let s1 = sph_of(gc_1);
+
+    // ── Step 2+3: σ bra mix + ordinary ket transform, per spherical k component ──
+    let slice_len = ncj * nci;
+    for mk in 0..nsk {
+        let lo = mk * slice_len;
+        let hi = lo + slice_len;
+        let staging_start = mk * di * dj * 2;
+        let staging_slice = &mut staging[staging_start..staging_start + di * dj * 2];
+        cart_to_spinor_si_2d::<F>(
+            staging_slice,
+            &sx[lo..hi],
+            &sy[lo..hi],
+            &sz[lo..hi],
+            &s1[lo..hi],
+            li,
+            kappa_i,
+            lj,
+            kappa_j,
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Retrieve a single cart-to-sph coefficient for the k auxiliary index transform.
 fn c2s_k_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
     use super::c2s::{C2S_L0, C2S_L1, C2S_L2, C2S_L3, C2S_L4};
@@ -2779,6 +2923,7 @@ fn cart_to_spinor_sf_derivative_3c_impl<F: CintFloat>(
     lk: u8,
     nctr_i: usize,
     nctr_j: usize,
+    nctr_k: usize,
 ) -> Result<(), cintxRsError> {
     use super::c2s::nsph;
 
@@ -2791,18 +2936,23 @@ fn cart_to_spinor_sf_derivative_3c_impl<F: CintFloat>(
     let dj = spinor_len(lj, kappa_j as i32);
     let ni_full = nctr_i * di;
     let nj_full = nctr_j * dj;
-    let kblock = nck * ncj * nci; // per-component cart extent for one (ci,cj) sub-block
+    // W5-02: aux-k carries its own general-contraction axis, exactly as bra i and
+    // ket j do. It was previously pinned to a single spherical axis, which forced
+    // `nctr_k > 1` to fail closed in all three arity-3 spinor derivative launchers.
+    let nk_full = nctr_k * nsk;
+    let kblock = nck * ncj * nci; // per-component cart extent for one (ci,cj,ck) sub-block
     let total_len = ncomp * kblock;
-    // Component-outer stride includes the SPHERICAL k axis (the SAME nsk the inner uses).
-    let comp_stride = ni_full * nj_full * nsk * 2;
+    // Component-outer stride spans the FULL (contracted) spherical k axis.
+    let comp_stride = ni_full * nj_full * nk_full * 2;
 
     // ── FAIL-CLOSED upfront (FND-06) ──
-    let cart_required = ncomp * kblock * nctr_i * nctr_j;
+    let cart_required = ncomp * kblock * nctr_i * nctr_j * nctr_k;
     if cart.len() < cart_required {
         return Err(cintxRsError::ChunkPlanFailed {
             from,
             detail: format!(
-                "cart buffer length {} < ncomp*nci*ncj*nck*nctr_i*nctr_j = {}*{}*{}*{}*{}*{} = {}",
+                "cart buffer length {} < ncomp*nci*ncj*nck*nctr_i*nctr_j*nctr_k = \
+                 {}*{}*{}*{}*{}*{}*{} = {}",
                 cart.len(),
                 ncomp,
                 nci,
@@ -2810,6 +2960,7 @@ fn cart_to_spinor_sf_derivative_3c_impl<F: CintFloat>(
                 nck,
                 nctr_i,
                 nctr_j,
+                nctr_k,
                 cart_required
             ),
         });
@@ -2829,24 +2980,33 @@ fn cart_to_spinor_sf_derivative_3c_impl<F: CintFloat>(
         let comp_base = comp * comp_stride;
         for ci in 0..nctr_i {
             for cj in 0..nctr_j {
-                let src_base = (ci * nctr_j + cj) * total_len + comp * kblock;
-                let block = &cart[src_base..src_base + kblock];
+                for ck in 0..nctr_k {
+                    // Source blocks are ordered `[((ci*nctr_j+cj)*nctr_k+ck)][comp][k][j][i]`
+                    // — the same ordering the 3c2e device kernel emits and the sph/cart
+                    // arms of the launcher already consume.
+                    let src_base = ((ci * nctr_j + cj) * nctr_k + ck) * total_len + comp * kblock;
+                    let block = &cart[src_base..src_base + kblock];
 
-                // Inner transform owns the per-(comp,k) cart→sph(k) + KET→BRA + sf_2d fold.
-                cart_to_spinor_sf_3c2e::<F>(&mut scratch, block, li, kappa_i, lj, kappa_j, lk)?;
+                    // Inner transform owns the per-(comp,k) cart→sph(k) + KET→BRA + sf_2d fold.
+                    cart_to_spinor_sf_3c2e::<F>(&mut scratch, block, li, kappa_i, lj, kappa_j, lk)?;
 
-                // scratch layout (per inner): scratch[mk*di*dj*2 + (j*di + i)*2 + {re,im}].
-                // Scatter into contraction-major output with the SPHERICAL k axis preserved.
-                for mk in 0..nsk {
-                    for j in 0..dj {
-                        let j_global = cj * dj + j;
-                        for i in 0..di {
-                            let i_global = ci * di + i;
-                            let src = (mk * di * dj + j * di + i) * 2;
-                            let dst = comp_base
-                                + (mk * ni_full * nj_full + j_global * ni_full + i_global) * 2;
-                            staging[dst] = scratch[src];
-                            staging[dst + 1] = scratch[src + 1];
+                    // scratch layout (per inner): scratch[mk*di*dj*2 + (j*di + i)*2 + {re,im}].
+                    // Scatter into contraction-major output on ALL THREE axes.
+                    for mk in 0..nsk {
+                        let k_global = ck * nsk + mk;
+                        for j in 0..dj {
+                            let j_global = cj * dj + j;
+                            for i in 0..di {
+                                let i_global = ci * di + i;
+                                let src = (mk * di * dj + j * di + i) * 2;
+                                let dst = comp_base
+                                    + (k_global * ni_full * nj_full
+                                        + j_global * ni_full
+                                        + i_global)
+                                        * 2;
+                                staging[dst] = scratch[src];
+                                staging[dst + 1] = scratch[src + 1];
+                            }
                         }
                     }
                 }
@@ -2867,8 +3027,8 @@ fn cart_to_spinor_sf_derivative_3c_impl<F: CintFloat>(
 /// AUX-K IS SPHERICAL `nsph(lk) = (2lk+1)*nctr_k` — never `CINTcgto_spinor`. For p×d×s kappa=0
 /// nctr=1 ncomp=3 the buffer is 360, NOT 720 (27-SPIKE-FINDINGS ⚠ CORRECTION NOTICE).
 ///
-/// nctr>1 composes contraction-major on bra i / ket j only (`i_global = ci*di + ic`); the aux-k
-/// stays a single spherical axis. Fail-closed (FND-06): sizes checked upfront, no scatter guards.
+/// nctr>1 composes contraction-major on ALL THREE axes (`i_global = ci*di + ic`,
+/// `k_global = ck*nsk + mk`) since W5-02. Fail-closed (FND-06): sizes checked upfront.
 #[allow(clippy::too_many_arguments)]
 pub fn cart_to_spinor_sf_derivative_3c2e<F: CintFloat>(
     staging: &mut [F],
@@ -2881,6 +3041,7 @@ pub fn cart_to_spinor_sf_derivative_3c2e<F: CintFloat>(
     lk: u8,
     nctr_i: usize,
     nctr_j: usize,
+    nctr_k: usize,
 ) -> Result<(), cintxRsError> {
     cart_to_spinor_sf_derivative_3c_impl::<F>(
         "c2spinor_sf_derivative_3c2e",
@@ -2894,6 +3055,7 @@ pub fn cart_to_spinor_sf_derivative_3c2e<F: CintFloat>(
         lk,
         nctr_i,
         nctr_j,
+        nctr_k,
     )
 }
 
@@ -2905,7 +3067,7 @@ pub fn cart_to_spinor_sf_derivative_3c2e<F: CintFloat>(
 /// internal implementation while keeping the 3c2e wrapper's device-cart precondition decoupled
 /// from the 3c1e host scatter.
 ///
-/// AUX-K IS SPHERICAL `nsph(lk)` (int3c1e_spinor sizes aux-k spherically exactly as int3c2e does);
+/// AUX-K IS SPHERICAL `nsph(lk)*nctr_k` (int3c1e_spinor sizes aux-k spherically as int3c2e does);
 /// never `CINTcgto_spinor`. Fail-closed (FND-06). iprinv differs only in the gout (reads
 /// `env[PTR_RINV_ORIG]`) — that lives in the launcher, not here.
 #[allow(clippy::too_many_arguments)]
@@ -2920,6 +3082,7 @@ pub fn cart_to_spinor_sf_derivative_3c1e<F: CintFloat>(
     lk: u8,
     nctr_i: usize,
     nctr_j: usize,
+    nctr_k: usize,
 ) -> Result<(), cintxRsError> {
     cart_to_spinor_sf_derivative_3c_impl::<F>(
         "c2spinor_sf_derivative_3c1e",
@@ -2933,6 +3096,7 @@ pub fn cart_to_spinor_sf_derivative_3c1e<F: CintFloat>(
         lk,
         nctr_i,
         nctr_j,
+        nctr_k,
     )
 }
 
@@ -3240,6 +3404,9 @@ mod tests {
     ///   n=0: ca_r=0.408248, ca_i=0 (row_i[1][0]=0), cb_r=0, cb_i=0
     ///   sa_re=0.408248, sa_im=0, sb_re=0, sb_im=0
     #[test]
+    // The expected value is the tabulated coupling coefficient (which is 1/sqrt(2)),
+    // read straight from the transform table this test is checking.
+    #[allow(clippy::approx_constant)]
     fn sf_p_shell_kappa_neg1_cart_px() {
         let cart = [1.0f64, 0.0, 0.0]; // px=1, py=0, pz=0
         let nd = spinor_len(1, -1); // 4
@@ -3826,8 +3993,10 @@ mod tests {
 
         let cart = make_deriv_cart_3c_nctr1(ncomp, nci, ncj, nck);
         let mut got = vec![0.0f64; total];
-        cart_to_spinor_sf_derivative_3c2e::<f64>(&mut got, &cart, ncomp, li, ki, lj, kj, lk, 1, 1)
-            .expect("derivative_3c2e rank3 should succeed");
+        cart_to_spinor_sf_derivative_3c2e::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, lk, 1, 1, 1,
+        )
+        .expect("derivative_3c2e rank3 should succeed");
 
         assert_eq!(got.len(), total, "3c2e output length mismatch");
         for comp in 0..ncomp {
@@ -3864,6 +4033,7 @@ mod tests {
             lk,
             1,
             1,
+            1,
         );
         assert!(
             matches!(res, Err(cintxRsError::BufferTooSmall { .. })),
@@ -3893,8 +4063,10 @@ mod tests {
 
         let cart = make_deriv_cart_3c_nctr1(ncomp, nci, ncj, nck);
         let mut got = vec![0.0f64; total];
-        cart_to_spinor_sf_derivative_3c1e::<f64>(&mut got, &cart, ncomp, li, ki, lj, kj, lk, 1, 1)
-            .expect("derivative_3c1e rank3 should succeed");
+        cart_to_spinor_sf_derivative_3c1e::<f64>(
+            &mut got, &cart, ncomp, li, ki, lj, kj, lk, 1, 1, 1,
+        )
+        .expect("derivative_3c1e rank3 should succeed");
         assert_eq!(got.len(), total);
         let nonzero = got.iter().filter(|&&v| v.abs() > 1e-15).count();
         assert!(nonzero > 0, "3c1e sibling output should be non-zero");
@@ -3919,6 +4091,15 @@ mod tests {
 
     /// `sf_2e1` + `sf_2e2` (the per-electron extractions) must reproduce the existing
     /// fused `cart_to_spinor_sf_4d` byte-for-byte. Non-square p×d×s×p quartet, GT/LT mix.
+    ///
+    /// # Orientation contract (W4-03 / RC-2)
+    /// Both entry points take the SAME i-fastest (KET-major, `block[j*nci + i]`) cart
+    /// input — the orientation every 2e gout emits — and both own the KET→BRA transpose
+    /// that the leaf `cart_to_spinor_sf_2d` requires but does not perform (unlike
+    /// `cart_to_spinor_si_2d`, which does own it). Feeding the same buffer to both is
+    /// therefore the correct comparison, and this test is what pins that down: while
+    /// `sf_4d` was missing the transpose it returned the `i↔j` transpose of the correct
+    /// block, making `int2e_spinor` wrong for every `l > 0` shell.
     #[test]
     fn sf_2e_split_matches_fused_4d() {
         let (li, ki) = (1u8, -1i16); // p, GT
@@ -3945,7 +4126,7 @@ mod tests {
         cart_to_spinor_sf_4d(&mut fused, &cart, li, ki, lj, kj, lk, kk, ll, kl)
             .expect("fused sf_4d");
 
-        // Split path: electron-1 then electron-2
+        // Split path: electron-1 then electron-2, on the SAME cart buffer.
         let mut opij = vec![0.0f64; nck * ncl * di * dj * 2];
         cart_to_spinor_sf_2e1(&mut opij, &cart, li, ki, lj, kj, lk, ll).expect("sf_2e1");
         let mut split = vec![0.0f64; di * dj * dk * dl * 2];

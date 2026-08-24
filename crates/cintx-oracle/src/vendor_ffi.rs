@@ -113,6 +113,8 @@ vendor_3c_gap_wrapper!(vendor_int3c2e_ipvip1_cart, int3c2e_ipvip1_cart);
 vendor_3c_gap_wrapper!(vendor_int3c2e_ipvip1_sph, int3c2e_ipvip1_sph);
 vendor_3c_gap_wrapper!(vendor_int3c2e_ip1ip2_cart, int3c2e_ip1ip2_cart);
 vendor_3c_gap_wrapper!(vendor_int3c2e_ip1ip2_sph, int3c2e_ip1ip2_sph);
+// W4-05: 3c2e σ gradient (int3c2e.c:668, ng={2,1,0,0,3,4,1,3}, c2s_si_3c2e1).
+vendor_3c_gap_wrapper!(vendor_int3c2e_ipspsp1_spinor, int3c2e_ipspsp1_spinor);
 
 macro_rules! vendor_2e_gap_wrapper {
     ($wrapper:ident, $ffi_symbol:ident) => {
@@ -152,6 +154,21 @@ vendor_2e_gap_wrapper!(vendor_int2e_ipspsp1spsp2_spinor, int2e_ipspsp1spsp2_spin
 vendor_2e_gap_wrapper!(vendor_int2e_ipsrsr1_spinor, int2e_ipsrsr1_spinor);
 vendor_2e_gap_wrapper!(vendor_int2e_ip1srsr2_spinor, int2e_ip1srsr2_spinor);
 vendor_2e_gap_wrapper!(vendor_int2e_ipsrsr1srsr2_spinor, int2e_ipsrsr1srsr2_spinor);
+
+// W4-06: gauge / cross-product 2e families (intor2.c). Spin-free: cart, sph and
+// spinor (c2s_sf_2e1 + c2s_sf_2e2), NOT a σ family.
+vendor_2e_gap_wrapper!(vendor_int2e_ip1v_r1_cart, int2e_ip1v_r1_cart);
+vendor_2e_gap_wrapper!(vendor_int2e_ip1v_r1_sph, int2e_ip1v_r1_sph);
+vendor_2e_gap_wrapper!(vendor_int2e_ip1v_r1_spinor, int2e_ip1v_r1_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ip1v_rc1_cart, int2e_ip1v_rc1_cart);
+vendor_2e_gap_wrapper!(vendor_int2e_ip1v_rc1_sph, int2e_ip1v_rc1_sph);
+vendor_2e_gap_wrapper!(vendor_int2e_ip1v_rc1_spinor, int2e_ip1v_rc1_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ipvg1_xp1_cart, int2e_ipvg1_xp1_cart);
+vendor_2e_gap_wrapper!(vendor_int2e_ipvg1_xp1_sph, int2e_ipvg1_xp1_sph);
+vendor_2e_gap_wrapper!(vendor_int2e_ipvg1_xp1_spinor, int2e_ipvg1_xp1_spinor);
+vendor_2e_gap_wrapper!(vendor_int2e_ipvg2_xp1_cart, int2e_ipvg2_xp1_cart);
+vendor_2e_gap_wrapper!(vendor_int2e_ipvg2_xp1_sph, int2e_ipvg2_xp1_sph);
+vendor_2e_gap_wrapper!(vendor_int2e_ipvg2_xp1_spinor, int2e_ipvg2_xp1_spinor);
 
 /// Evaluate int1e_ovlp_sph for a single shell pair using vendored libcint.
 ///
@@ -7257,3 +7274,33 @@ mod ecp_ffi_smoke {
         let _ = out_cart;
     }
 }
+
+// ── Wave 5 W5-01/W5-02: spinor rows re-proven with a general-contracted aux-k ──
+vendor_1e_gap_wrapper!(vendor_int2c2e_ip2_spinor, int2c2e_ip2_spinor);
+vendor_3c_gap_wrapper!(vendor_int3c2e_ip2_spinor, int3c2e_ip2_spinor);
+
+// ── Wave 5 W5-05: derivative families the parent plan's Gap-A table omitted ──
+vendor_1e_gap_wrapper!(vendor_int1e_ovlpip_cart, int1e_ovlpip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ovlpip_sph, int1e_ovlpip_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_kinip_cart, int1e_kinip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_kinip_sph, int1e_kinip_sph);
+// ── Wave 5 W5-05: Tier 6 (lresc.c + hess.c) ──
+vendor_1e_gap_wrapper!(vendor_int1e_iprinvr_cart, int1e_iprinvr_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_iprinvr_sph, int1e_iprinvr_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_iprip_cart, int1e_iprip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_iprip_sph, int1e_iprip_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_iprinviprip_cart, int1e_iprinviprip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_iprinviprip_sph, int1e_iprinviprip_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_ipiprinvrip_cart, int1e_ipiprinvrip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_ipiprinvrip_sph, int1e_ipiprinvrip_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_rinvipiprip_cart, int1e_rinvipiprip_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_rinvipiprip_sph, int1e_rinvipiprip_sph);
+// ── Wave 5 W5-06: X2C base families (intor1.c) ──
+vendor_1e_gap_wrapper!(vendor_int1e_pnucp_cart, int1e_pnucp_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_pnucp_sph, int1e_pnucp_sph);
+vendor_1e_gap_wrapper!(vendor_int1e_prinvp_cart, int1e_prinvp_cart);
+vendor_1e_gap_wrapper!(vendor_int1e_prinvp_sph, int1e_prinvp_sph);
+// W5-06: the spinor forms ride CINT1e_spinor_drv, which is real (unlike the
+// CINT2c2e/CINT3c1e spinor drivers), so they ARE oracle-provable.
+vendor_1e_gap_wrapper!(vendor_int1e_pnucp_spinor, int1e_pnucp_spinor);
+vendor_1e_gap_wrapper!(vendor_int1e_prinvp_spinor, int1e_prinvp_spinor);

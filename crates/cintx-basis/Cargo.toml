@@ -1,0 +1,13 @@
+[package]
+name = "cintx-basis"
+version = "0.1.0"
+edition = "2024"
+description = "Standard Gaussian basis-set catalog (def2-SVP / def2-TZVP / def2-ECP) for cintx"
+
+[dependencies]
+cintx-core = { path = "../cintx-core" }
+smallvec = "1.15.1"
+thiserror = "2.0.18"
+
+[dev-dependencies]
+approx = "0.5.1"

@@ -574,90 +574,130 @@ pub fn cart_to_sph_3c2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec
 /// Generic over `F: CintFloat`. The c2s coefficient table is FROZEN f64;
 /// each coefficient is cast to `F` via `F::from_f64_lossy` at the accumulation site.
 pub fn cart_to_sph_2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8, ll: u8) -> Vec<F> {
-    let nci = ncart(li);
-    let ncj = ncart(lj);
-    let nck = ncart(lk);
-    let ncl = ncart(ll);
-    let nsi = nsph(li);
-    let nsj = nsph(lj);
-    let nsk = nsph(lk);
-    let nsl = nsph(ll);
+    let mut out = vec![F::zero(); nsph(li) * nsph(lj) * nsph(lk) * nsph(ll)];
+    let mut scratch = Vec::new();
+    cart_to_sph_2e_into(cart, li, lj, lk, ll, &mut out, &mut scratch);
+    out
+}
+
+/// Transform one axis of a `[outer][ncart(l)][inner]` block into
+/// `[outer][nsph(l)][inner]`.
+///
+/// Accumulation order is `c` ascending for each `(outer, m, inner)` triple —
+/// the same order the four hand-written loops this replaces used, so the
+/// floating-point result is unchanged.
+fn c2s_axis<F: CintFloat>(src: &[F], dst: &mut [F], l: u8, outer: usize, inner: usize) {
+    let nc = ncart(l);
+    let ns = nsph(l);
+    debug_assert_eq!(src.len(), outer * nc * inner);
+    debug_assert_eq!(dst.len(), outer * ns * inner);
+    for o in 0..outer {
+        for m in 0..ns {
+            let dst_base = (o * ns + m) * inner;
+            for t in 0..inner {
+                let mut sum = F::zero();
+                for c in 0..nc {
+                    sum =
+                        sum + F::from_f64_lossy(c2s_coeff(l, m, c)) * src[(o * nc + c) * inner + t];
+                }
+                dst[dst_base + t] = sum;
+            }
+        }
+    }
+}
+
+/// [`cart_to_sph_2e`] writing into caller-owned buffers.
+///
+/// Batched evaluation calls this once per contraction block of every quartet in
+/// a work list, so the allocation-per-call shape of [`cart_to_sph_2e`] shows up
+/// as a real fraction of wall-clock. Two things are different here:
+///
+/// - **`out` and `scratch` are caller-owned**, so a loop over quartets
+///   allocates once instead of four times per block. `scratch` is grown as
+///   needed and may start empty.
+/// - **Axes with `l <= 1` are skipped.** `C2S_L0` and `C2S_L1` are identity
+///   matrices, so those axes are a copy; skipping them removes the entire
+///   transform for the s/p quartets that dominate a def2-SVP work list.
+///
+/// `out` must be exactly `nsph(li)*nsph(lj)*nsph(lk)*nsph(ll)` long.
+pub fn cart_to_sph_2e_into<F: CintFloat>(
+    cart: &[F],
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    out: &mut [F],
+    scratch: &mut Vec<F>,
+) {
+    let (nci, ncj, nck, ncl) = (ncart(li), ncart(lj), ncart(lk), ncart(ll));
+    let (nsi, nsj, nsk, nsl) = (nsph(li), nsph(lj), nsph(lk), nsph(ll));
 
     debug_assert_eq!(cart.len(), nci * ncj * nck * ncl);
+    debug_assert_eq!(out.len(), nsi * nsj * nsk * nsl);
 
-    // Step 1: Transform i-axis. Intermediate shape: [ncl * nck * ncj * nsi]
-    let mut tmp1 = vec![F::zero(); ncl * nck * ncj * nsi];
-    for l in 0..ncl {
-        for k in 0..nck {
-            for j in 0..ncj {
-                for mi in 0..nsi {
-                    let mut sum = F::zero();
-                    for ci in 0..nci {
-                        sum = sum
-                            + F::from_f64_lossy(c2s_coeff(li, mi, ci))
-                                * cart[((l * nck + k) * ncj + j) * nci + ci];
-                    }
-                    tmp1[((l * nck + k) * ncj + j) * nsi + mi] = sum;
-                }
-            }
+    // The block is `[l][k][j][i]` with `i` fastest. Viewed one axis at a time it
+    // is `[outer][ncart(axis)][inner]`, where `outer` counts the not-yet-
+    // transformed axes above it and `inner` the already-transformed axes below.
+    // Axes are taken innermost-first (i, j, k, l), matching the original
+    // four-step order.
+    let steps = [
+        (li, ncl * nck * ncj, 1),
+        (lj, ncl * nck, nsi),
+        (lk, ncl, nsj * nsi),
+        (ll, 1, nsk * nsj * nsi),
+    ];
+
+    // Identity axes (`l <= 1`) leave the block untouched *and* leave its extents
+    // untouched (`ncart == nsph` there), so dropping them from the plan does not
+    // disturb the `outer`/`inner` counts computed above.
+    let mut plan = [(0u8, 0usize, 0usize); 4];
+    let mut n_steps = 0;
+    for &(l, outer, inner) in &steps {
+        if l > 1 {
+            plan[n_steps] = (l, outer, inner);
+            n_steps += 1;
         }
     }
-
-    // Step 2: Transform j-axis. Intermediate shape: [ncl * nck * nsj * nsi]
-    let mut tmp2 = vec![F::zero(); ncl * nck * nsj * nsi];
-    for l in 0..ncl {
-        for k in 0..nck {
-            for mj in 0..nsj {
-                for mi in 0..nsi {
-                    let mut sum = F::zero();
-                    for cj in 0..ncj {
-                        sum = sum
-                            + F::from_f64_lossy(c2s_coeff(lj, mj, cj))
-                                * tmp1[((l * nck + k) * ncj + cj) * nsi + mi];
-                    }
-                    tmp2[((l * nck + k) * nsj + mj) * nsi + mi] = sum;
-                }
-            }
-        }
+    if n_steps == 0 {
+        out.copy_from_slice(cart);
+        return;
     }
 
-    // Step 3: Transform k-axis. Intermediate shape: [ncl * nsk * nsj * nsi]
-    let mut tmp3 = vec![F::zero(); ncl * nsk * nsj * nsi];
-    for l in 0..ncl {
-        for mk in 0..nsk {
-            for mj in 0..nsj {
-                for mi in 0..nsi {
-                    let mut sum = F::zero();
-                    for ck in 0..nck {
-                        sum = sum
-                            + F::from_f64_lossy(c2s_coeff(lk, mk, ck))
-                                * tmp2[((l * nck + ck) * nsj + mj) * nsi + mi];
-                    }
-                    tmp3[((l * nsk + mk) * nsj + mj) * nsi + mi] = sum;
-                }
+    // Ping-pong between two halves of `scratch`; the last step writes `out`.
+    let cap = cart.len();
+    if scratch.len() < 2 * cap {
+        scratch.resize(2 * cap, F::zero());
+    }
+    let (buf_a, buf_b) = scratch.split_at_mut(cap);
+    let mut src_in_a = false;
+    let mut src_len = cart.len();
+
+    for (step, &(l, outer, inner)) in plan[..n_steps].iter().enumerate() {
+        let dst_len = outer * nsph(l) * inner;
+        let last = step == n_steps - 1;
+        match (step == 0, src_in_a, last) {
+            (true, _, true) => c2s_axis(cart, &mut out[..dst_len], l, outer, inner),
+            (true, _, false) => {
+                c2s_axis(cart, &mut buf_a[..dst_len], l, outer, inner);
+                src_in_a = true;
+            }
+            (false, true, true) => {
+                c2s_axis(&buf_a[..src_len], &mut out[..dst_len], l, outer, inner);
+            }
+            (false, false, true) => {
+                c2s_axis(&buf_b[..src_len], &mut out[..dst_len], l, outer, inner);
+            }
+            (false, true, false) => {
+                c2s_axis(&buf_a[..src_len], &mut buf_b[..dst_len], l, outer, inner);
+                src_in_a = false;
+            }
+            (false, false, false) => {
+                c2s_axis(&buf_b[..src_len], &mut buf_a[..dst_len], l, outer, inner);
+                src_in_a = true;
             }
         }
+        src_len = dst_len;
     }
-
-    // Step 4: Transform l-axis. Output shape: [nsl * nsk * nsj * nsi]
-    let mut sph = vec![F::zero(); nsl * nsk * nsj * nsi];
-    for ml in 0..nsl {
-        for mk in 0..nsk {
-            for mj in 0..nsj {
-                for mi in 0..nsi {
-                    let mut sum = F::zero();
-                    for cl in 0..ncl {
-                        sum = sum
-                            + F::from_f64_lossy(c2s_coeff(ll, ml, cl))
-                                * tmp3[((cl * nsk + mk) * nsj + mj) * nsi + mi];
-                    }
-                    sph[((ml * nsk + mk) * nsj + mj) * nsi + mi] = sum;
-                }
-            }
-        }
-    }
-
-    sph
 }
 
 /// Staging cart-to-sph transform — no-op.

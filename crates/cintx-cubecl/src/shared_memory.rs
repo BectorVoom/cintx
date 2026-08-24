@@ -163,7 +163,9 @@ impl SharedLayout {
     /// respecting a maximum allowed occupancy reserve factor (e.g. 0.5 for 2 resident cubes).
     #[inline]
     pub fn fits_device_limit(&self, max_shared_bytes: u32, reserve_factor: f64) -> bool {
-        if self.variant == SharedVariant::NoSharedLane || self.variant == SharedVariant::FusedNoShared {
+        if self.variant == SharedVariant::NoSharedLane
+            || self.variant == SharedVariant::FusedNoShared
+        {
             return true;
         }
         let cap = ((max_shared_bytes as f64) * reserve_factor.clamp(0.1, 1.0)) as usize;
@@ -245,10 +247,7 @@ pub fn cooperative_load_slice<F: Float + CubeElement>(
 
 /// Zero out an entire [`SharedMemory`] region cooperatively across all cube units.
 #[cube]
-pub fn cooperative_zero_shared<F: Float + CubeElement>(
-    dst: &mut SharedMemory<F>,
-    dst_len: usize,
-) {
+pub fn cooperative_zero_shared<F: Float + CubeElement>(dst: &mut SharedMemory<F>, dst_len: usize) {
     let tid = UNIT_POS as usize;
     let stride = CUBE_DIM as usize;
 
@@ -578,7 +577,9 @@ pub fn validate_shared_layout_bounds(
     layout: &SharedLayout,
     max_shared_bytes: u32,
 ) -> Result<(), cintxRsError> {
-    if layout.variant == SharedVariant::NoSharedLane || layout.variant == SharedVariant::FusedNoShared {
+    if layout.variant == SharedVariant::NoSharedLane
+        || layout.variant == SharedVariant::FusedNoShared
+    {
         return Ok(());
     }
 
@@ -784,11 +785,7 @@ mod tests {
 
             unsafe {
                 spike_shared_memory_reduction_kernel::launch_unchecked::<f64, CpuRuntime>(
-                    &client,
-                    cube_count,
-                    cube_dim,
-                    input_arg,
-                    output_arg,
+                    &client, cube_count, cube_dim, input_arg, output_arg,
                 );
             }
 
@@ -807,7 +804,8 @@ mod tests {
     #[test]
     fn test_write_layout_catalog_artifact() {
         let catalog = generate_layout_catalog(65536);
-        let path = std::path::Path::new("/tmp/cintx_artifacts/cintx_shared_memory_layout_catalog.json");
+        let path =
+            std::path::Path::new("/tmp/cintx_artifacts/cintx_shared_memory_layout_catalog.json");
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }

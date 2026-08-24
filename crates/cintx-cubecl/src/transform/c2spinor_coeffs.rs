@@ -22,6 +22,11 @@
 //!   l=3: lt at R+160/I+160, gt at R+280/I+280
 //!   l=4: lt at R+440/I+440, gt at R+680/I+680
 
+// The Clebsch-Gordan tables below are transcribed verbatim from libcint
+// `cart2sph.c`. Several coefficients equal 1/sqrt(2); they are coupling data,
+// not derived constants, and must stay bit-for-bit what upstream ships.
+#![allow(clippy::approx_constant)]
+
 // ──────────────────────────────────────────────────────────────────────────
 //  l = 0  (s-shell)
 //  nf=1, nd_gt=2, nd_lt=0

@@ -180,6 +180,29 @@ impl CubeClExecutor {
         ))
     }
 
+    /// Evaluate a shell-quartet work list as `int2e_sph` through this
+    /// executor's cached client (Task 34-F).
+    ///
+    /// The whole list is one batched run: one dispatch per launch class, one
+    /// readback per dispatch, and one basis upload for the run. `resident`, when
+    /// supplied by the caller, moves that upload out of the run entirely.
+    ///
+    /// Returns the spherical AO blocks plus the batch's execution statistics.
+    pub fn evaluate_2e_quartets(
+        &self,
+        intent: &BackendIntent,
+        shells: &[kernels::two_electron::BatchShell],
+        quartets: &[[u32; 4]],
+        options: kernels::two_electron::TwoEBatchOptions,
+    ) -> Result<kernels::two_electron::TwoEBatchOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        let resident = kernels::two_electron::ResidentTwoEBasis::new(&backend, shells)?;
+        kernels::two_electron::evaluate_2e_quartet_batch_with(
+            &backend, &resident, quartets, options,
+        )
+    }
+
     /// Submit all primitive Cartesian `(s s | s s)` chunks before one
     /// collective readback.  This is intentionally separate from the general
     /// two-electron dispatcher until all 2e descriptor/output variants carry

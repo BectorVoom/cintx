@@ -28,6 +28,126 @@ pub fn standard_plane_cube_dim() -> CubeDim {
     CubeDim::new_1d(STANDARD_PLANE_ALIGNED_CUBE_DIM)
 }
 
+/// Is `R` the CubeCL **CPU** runtime?
+///
+/// The CPU runtime's execution model is fundamentally unlike a GPU's, and the
+/// difference is not a tuning detail — it decides launch topology
+/// (see [`cooperative_cube_dim`]).
+#[inline]
+pub fn runtime_is_cpu<R: cubecl::Runtime>() -> bool {
+    #[cfg(feature = "cpu")]
+    {
+        std::any::TypeId::of::<R>() == std::any::TypeId::of::<cubecl::cpu::CpuRuntime>()
+    }
+    #[cfg(not(feature = "cpu"))]
+    {
+        false
+    }
+}
+
+/// Cube dimension for a **single-cube cooperative kernel** that distributes
+/// `work_items` independent items across the cube and synchronises with
+/// `sync_cube()`.
+///
+/// # Why this is backend-dependent (Task 34-A0)
+///
+/// On a GPU backend a cube is a workgroup: units are hardware lanes, `sync_cube`
+/// is a workgroup barrier costing tens of cycles, and a wide cube is free
+/// occupancy. Sizing the cube to the work is the right call.
+///
+/// On the CubeCL **CPU** backend none of that holds
+/// (`cubecl-cpu-0.10.0`):
+///
+/// - `compute/runner.rs::execute_data` spawns **one OS thread per cube unit**,
+///   growing the worker pool past `available_parallelism` if the cube demands
+///   it, and clones the kernel's `MlirData` once per unit **per launch**.
+/// - `compute/compute_task.rs::sync_cube` is a **global spin-wait barrier**
+///   across every unit. Oversubscribed, each barrier costs a full scheduler
+///   round.
+/// - `compiler/visitor/mod.rs` lowers `cube_count` to a sequential `scf.for`
+///   loop *inside* each unit, so the grid is not a parallelism axis; the cube
+///   dimension is the only one, and it is an OS-thread count.
+///
+/// Measured on the scalar 2e kernel (`artifacts/34-A0_cube_dim_ab.md`), a
+/// 256-unit cube is between 28x and ~4.9e5x **slower** than a single unit on
+/// the CPU backend, because the kernel's `sync_cube()` calls sit inside the
+/// primitive-quartet loop. So on the CPU backend this returns `1`: one thread,
+/// and every `sync_cube()` degenerates to the barrier's `barrier_target <= 1`
+/// early return.
+///
+/// Kernels remain written cooperatively and stay correct at any cube
+/// dimension — `UNIT_POS == 0` guards and `idx % CUBE_DIM == UNIT_POS`
+/// partitioning both degenerate correctly at 1.
+#[inline]
+pub fn cooperative_cube_dim<R: cubecl::Runtime>(work_items: u32) -> CubeDim {
+    if runtime_is_cpu::<R>() {
+        return CubeDim::new_1d(1);
+    }
+    let mut dim = 1u32;
+    while dim < work_items && dim < STANDARD_PLANE_ALIGNED_CUBE_DIM {
+        dim *= 2;
+    }
+    CubeDim::new_1d(dim.min(STANDARD_PLANE_ALIGNED_CUBE_DIM))
+}
+
+/// Cube dimension for a cooperative kernel whose useful parallel width is not
+/// known at the launch site.
+///
+/// Returns a single unit on the CubeCL CPU runtime and the standard 256-wide
+/// plane everywhere else, for the reasons spelled out on
+/// [`cooperative_cube_dim`]. Use that function instead wherever the launch site
+/// *does* know how many independent work items the kernel has — it also sizes
+/// the GPU cube to the work.
+///
+/// Every kernel this is used from partitions with `UNIT_POS == 0` guards,
+/// `idx % CUBE_DIM == UNIT_POS` selection, or `i = UNIT_POS; i += CUBE_DIM`
+/// stride loops. All three cover the full index space at any cube dimension,
+/// so a single unit changes cost, never results.
+#[inline]
+pub fn backend_plane_cube_dim<R: cubecl::Runtime>() -> CubeDim {
+    if runtime_is_cpu::<R>() {
+        return CubeDim::new_1d(1);
+    }
+    standard_plane_cube_dim()
+}
+
+/// `min_items_per_unit` for the shell-pair and shell-triple families
+/// (`int1e_*`, `int2c2e`, `int3c2e`).
+///
+/// One item there is `nprim^2`/`nprim^3` primitive tuples through a small
+/// G-tensor, which is the same order as the per-unit dispatch cost — so a unit
+/// needs several of them before waking it pays for itself. Measured on
+/// H2O/def2-SVP `int2c2e` (~16 pairs per class): 4 units beat 16 by ~3x, and
+/// beat 1 unit as well.
+pub const MIN_ITEMS_PER_UNIT_PAIR: usize = 4;
+
+/// Unit count for the per-unit decomposition, given the work available, the
+/// per-item cost tier, and a per-slot scratch budget.
+///
+/// A CubeCL CPU launch dispatches each unit through an mpsc channel to its own
+/// OS thread and clones the binding table per unit; measured on this host that
+/// is ~2 us per unit per launch. Splitting a class across more units than its
+/// work can fill pays that cost for nothing — the `int2c2e` classes of an
+/// H2O/def2-SVP list are ~16 pairs each, and spreading them over 16 threads was
+/// **3x slower** than over 4.
+///
+/// `min_items_per_unit` is where the per-family difference lives, because how
+/// much work one item is differs by orders of magnitude: a 2e quartet runs
+/// `nprim^4` primitive quartets through a full VRR/HRR build, while a 1e or
+/// 2c2e pair runs `nprim^2` through a much smaller one. Pass 1 for a family
+/// whose single item already dwarfs the dispatch, and a larger value for one
+/// where it does not.
+pub fn per_unit_width(n_items: usize, min_items_per_unit: usize, by_memory: usize) -> u32 {
+    static HW: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let hw = *HW.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(1)
+    });
+    let by_work = (n_items / min_items_per_unit.max(1)).max(1);
+    hw.min(by_work).min(by_memory).max(1) as u32
+}
+
 /// Return a standard single-cube [`CubeCount`] dispatch (`1, 1, 1`).
 #[inline]
 pub fn single_cube_count() -> CubeCount {
@@ -110,7 +230,11 @@ pub fn planes_per_cube(cube_dim: &CubeDim, plane_dim: u32) -> u32 {
 /// avoiding partially filled tail planes.
 #[inline]
 pub fn plane_aligned_cube_dim(requested_units: u32, plane_dim: u32) -> CubeDim {
-    let p = if plane_dim == 0 { DEFAULT_PLANE_DIM } else { plane_dim };
+    let p = if plane_dim == 0 {
+        DEFAULT_PLANE_DIM
+    } else {
+        plane_dim
+    };
     let aligned = if requested_units <= p {
         p
     } else {
@@ -123,7 +247,11 @@ pub fn plane_aligned_cube_dim(requested_units: u32, plane_dim: u32) -> CubeDim {
 /// `x * y` is guaranteed to be an exact multiple of `plane_dim` within GPU hardware limits (<= 1024).
 #[inline]
 pub fn plane_aligned_cube_dim_2d(requested_x: u32, requested_y: u32, plane_dim: u32) -> CubeDim {
-    let p = if plane_dim == 0 { DEFAULT_PLANE_DIM } else { plane_dim };
+    let p = if plane_dim == 0 {
+        DEFAULT_PLANE_DIM
+    } else {
+        plane_dim
+    };
     let aligned_x = if requested_x <= p {
         p
     } else {
@@ -144,7 +272,11 @@ pub fn plane_aligned_cube_dim_3d(
     requested_z: u32,
     plane_dim: u32,
 ) -> CubeDim {
-    let p = if plane_dim == 0 { DEFAULT_PLANE_DIM } else { plane_dim };
+    let p = if plane_dim == 0 {
+        DEFAULT_PLANE_DIM
+    } else {
+        plane_dim
+    };
     let aligned_x = if requested_x <= p {
         p
     } else {
@@ -187,7 +319,11 @@ pub fn plane_cooperative_launch_geometry(
     planes_per_cube: u32,
     plane_dim: u32,
 ) -> (CubeCount, CubeDim) {
-    let p_dim = if plane_dim == 0 { DEFAULT_PLANE_DIM } else { plane_dim };
+    let p_dim = if plane_dim == 0 {
+        DEFAULT_PLANE_DIM
+    } else {
+        plane_dim
+    };
     let p_per_cube = planes_per_cube.max(1);
     let units_per_cube = p_dim * p_per_cube;
     let cube_dim = CubeDim::new_1d(units_per_cube);
@@ -501,6 +637,26 @@ mod tests {
             assert_eq!(dim64.num_elems() % 64, 0);
             assert!(dim64.num_elems() >= requested);
         }
+    }
+
+    /// Task 34-A0: the CPU runtime maps one cube unit to one OS thread and
+    /// `sync_cube` to a global spin barrier, so a cooperative launch there must
+    /// be a single unit. GPU runtimes keep the plane-aligned cube.
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn cpu_runtime_gets_a_single_unit_cube() {
+        assert!(runtime_is_cpu::<cubecl::cpu::CpuRuntime>());
+        for work in [1u32, 81, 256, 1296] {
+            assert_eq!(
+                cooperative_cube_dim::<cubecl::cpu::CpuRuntime>(work).num_elems(),
+                1,
+                "cooperative_cube_dim must be 1 on the cpu runtime (work={work})"
+            );
+        }
+        assert_eq!(
+            backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>().num_elems(),
+            1
+        );
     }
 
     #[test]

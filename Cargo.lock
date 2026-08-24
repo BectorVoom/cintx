@@ -348,6 +348,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cintx-basis"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "cintx-core",
+ "smallvec",
+ "thiserror",
+]
+
+[[package]]
 name = "cintx-capi"
 version = "0.1.0"
 dependencies = [
@@ -398,6 +408,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cintx-driver"
+version = "0.1.0"
+dependencies = [
+ "cintx-basis",
+ "cintx-compat",
+ "cintx-core",
+ "smallvec",
+ "thiserror",
+]
+
+[[package]]
 name = "cintx-ops"
 version = "0.1.0"
 dependencies = [
@@ -415,9 +436,11 @@ dependencies = [
  "approx",
  "bindgen",
  "cc",
+ "cintx-basis",
  "cintx-compat",
  "cintx-core",
  "cintx-cubecl",
+ "cintx-driver",
  "cintx-ops",
  "cintx-rs",
  "cintx-runtime",

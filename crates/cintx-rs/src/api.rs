@@ -2742,3 +2742,253 @@ mod tests {
         assert!(stats.host_workspace_reuses >= 1);
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Shell-quartet batch surface (Task 34-F)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A whole shell-quartet work list submitted as one request.
+///
+/// [`SessionRequest`] evaluates exactly one shell tuple, which is the right
+/// shape for the compatibility API and the wrong shape for a Fock build: the
+/// per-tuple route pays a kernel launch and a readback per quartet. This request
+/// carries the entire list, so the backend can group it into launch classes and
+/// dispatch once per class.
+///
+/// Scope: `int2e` in the spherical representation. Any other operator or
+/// representation returns [`FacadeError::UnsupportedApi`] before any device work
+/// — the batched kernel path is the plain Coulomb one, and quietly routing a
+/// different operator through it would be worse than refusing.
+///
+/// No CubeCL type appears in this surface. `quartets` are indices into
+/// `basis.shells()`, and results come back as ordinary `f64` AO blocks.
+#[derive(Clone, Debug)]
+pub struct QuartetBatchRequest<'basis> {
+    operator: OperatorId,
+    representation: Representation,
+    basis: &'basis BasisSet,
+    quartets: Vec<[u32; 4]>,
+    tolerance: f64,
+    options: ExecutionOptions,
+}
+
+/// Spherical AO blocks for a quartet batch, plus its execution statistics.
+///
+/// A claimed speed-up is only auditable if the launch and transfer counts that
+/// produced it travel with the values, so [`Self::stats`] is not optional.
+#[derive(Clone, Debug, PartialEq)]
+pub struct QuartetBatchOutput {
+    /// Concatenated spherical AO blocks, in the request's quartet order.
+    pub values: Vec<f64>,
+    /// `offsets[n]` is where quartet `n`'s block starts in [`Self::values`].
+    pub offsets: Vec<usize>,
+    /// Submission-level counters for the whole batch.
+    pub stats: BatchExecutionStats,
+}
+
+impl<'basis> QuartetBatchRequest<'basis> {
+    /// Build a request over `quartets`, each a `[i, j, k, l]` of indices into
+    /// `basis.shells()`.
+    pub fn new(
+        operator: OperatorId,
+        representation: Representation,
+        basis: &'basis BasisSet,
+        quartets: impl IntoIterator<Item = [u32; 4]>,
+        options: ExecutionOptions,
+    ) -> Self {
+        Self {
+            operator,
+            representation,
+            basis,
+            quartets: quartets.into_iter().collect(),
+            tolerance: 0.0,
+            options,
+        }
+    }
+
+    /// Primitive-quartet screening tolerance.
+    ///
+    /// The default, `0.0`, is exact: it reproduces the unscreened arithmetic bit
+    /// for bit. A positive value skips primitive quartets whose contribution
+    /// scale factor does not exceed it, trading accuracy for work.
+    #[must_use]
+    pub fn tolerance(mut self, value: f64) -> Self {
+        self.tolerance = value.max(0.0);
+        self
+    }
+
+    pub fn operator(&self) -> OperatorId {
+        self.operator
+    }
+
+    pub fn representation(&self) -> Representation {
+        self.representation
+    }
+
+    pub fn basis(&self) -> &'basis BasisSet {
+        self.basis
+    }
+
+    pub fn quartets(&self) -> &[[u32; 4]] {
+        &self.quartets
+    }
+
+    pub fn options(&self) -> &ExecutionOptions {
+        &self.options
+    }
+
+    pub fn len(&self) -> usize {
+        self.quartets.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.quartets.is_empty()
+    }
+
+    /// Evaluate the whole list, allocating a fresh execution context.
+    pub fn evaluate(self) -> Result<QuartetBatchOutput, FacadeError> {
+        self.evaluate_in(&EvaluationContext::new())
+    }
+
+    /// Evaluate with a reusable context, so repeated Fock builds share the
+    /// backend client rather than bootstrapping one per call.
+    pub fn evaluate_in(
+        self,
+        context: &EvaluationContext,
+    ) -> Result<QuartetBatchOutput, FacadeError> {
+        let descriptor =
+            Resolver::descriptor(self.operator).map_err(|error| FacadeError::UnsupportedApi {
+                requested: error.to_string(),
+            })?;
+        // `int2e_sph` specifically, not merely the 2e family: the batched kernel
+        // is the plain Coulomb one, so accepting `int2e_ip1_sph` here would hand
+        // back undifferentiated integrals under a derivative operator's name.
+        if descriptor.operator_symbol() != "int2e_sph" {
+            return Err(FacadeError::UnsupportedApi {
+                requested: format!(
+                    "quartet-batch:operator:{} (only int2e_sph is batched)",
+                    descriptor.operator_symbol()
+                ),
+            });
+        }
+        if self.representation != Representation::Spheric {
+            return Err(FacadeError::UnsupportedApi {
+                requested: format!(
+                    "quartet-batch:representation:{} (only Spheric is batched)",
+                    self.representation
+                ),
+            });
+        }
+        if let Some(aosym) = self.options.aosym {
+            if aosym != cintx_core::AoSymmetry::S1 {
+                return Err(FacadeError::UnsupportedAoSymmetry {
+                    requested: aosym.to_string(),
+                });
+            }
+        }
+        if self.options.precision != PrecisionKind::F64 {
+            return Err(FacadeError::UnsupportedApi {
+                requested: "quartet-batch:precision (only F64 is batched)".to_owned(),
+            });
+        }
+
+        let shells = batch_shells_from_basis(self.basis)?;
+        for quartet in &self.quartets {
+            for &index in quartet {
+                if index as usize >= shells.len() {
+                    return Err(FacadeError::Validation {
+                        detail: format!(
+                            "quartet-batch:shell-index {index} out of range (nbas={})",
+                            shells.len()
+                        ),
+                    });
+                }
+            }
+        }
+
+        let submit_start = Instant::now();
+        let batch = context
+            .executor
+            .evaluate_2e_quartets(
+                &self.options.backend_intent,
+                &shells,
+                &self.quartets,
+                cintx_cubecl::TwoEBatchOptions {
+                    primitive_tolerance: self.tolerance,
+                },
+            )
+            .map_err(FacadeError::from)?;
+        let submit_ns = submit_start.elapsed().as_nanos() as u64;
+
+        let stats = BatchExecutionStats {
+            items_planned: self.quartets.len(),
+            items_executed: batch.stats.quartets,
+            // A bucket is one angular-momentum class; a chunk is one dispatch.
+            // They coincided until Task 35-M1 merged every class sharing the
+            // kernel's comptime signature into a single launch, so they are now
+            // reported from the two counters the backend actually keeps apart.
+            bucket_count: batch.stats.launch_classes,
+            chunk_count: batch.stats.kernel_launch_count,
+            kernel_launch_count: batch.stats.kernel_launch_count,
+            readback_count: batch.stats.readback_count,
+            transfer_bytes: batch.stats.transfer_bytes,
+            pack_ns: 0,
+            submit_ns,
+            readback_ns: batch.stats.dispatch_ns,
+            pilot_output_staging_allocations: 0,
+            pilot_output_staging_reuses: 0,
+            pilot_output_staging_growths: 0,
+        };
+
+        Ok(QuartetBatchOutput {
+            values: batch.values,
+            offsets: batch.offsets,
+            stats,
+        })
+    }
+}
+
+/// Evaluate a whole shell-quartet work list. See [`QuartetBatchRequest`].
+pub fn evaluate_shell_quartets(
+    request: QuartetBatchRequest<'_>,
+) -> Result<QuartetBatchOutput, FacadeError> {
+    request.evaluate()
+}
+
+/// Evaluate a shell-quartet work list on a reusable context.
+pub fn evaluate_shell_quartets_in(
+    request: QuartetBatchRequest<'_>,
+    context: &EvaluationContext,
+) -> Result<QuartetBatchOutput, FacadeError> {
+    request.evaluate_in(context)
+}
+
+/// Flatten a [`BasisSet`]'s AO shells into the backend's batch shell table.
+///
+/// `Shell::coefficients` is already primitive-major (`coeff[p * nctr + c]`),
+/// which is the layout the batched kernel reads, so no transpose happens here —
+/// the raw `atm`/`bas`/`env` route is the one that has to transpose (WR-03).
+fn batch_shells_from_basis(basis: &BasisSet) -> Result<Vec<cintx_cubecl::BatchShell>, FacadeError> {
+    let atoms = basis.atoms();
+    let mut shells = Vec::with_capacity(basis.shells().len());
+    for shell in basis.shells() {
+        let atom = atoms
+            .get(shell.atom_index as usize)
+            .ok_or_else(|| FacadeError::Validation {
+                detail: format!(
+                    "quartet-batch:shell references atom {} of {}",
+                    shell.atom_index,
+                    atoms.len()
+                ),
+            })?;
+        shells.push(cintx_cubecl::BatchShell {
+            l: shell.ang_momentum,
+            nprim: u32::from(shell.nprim),
+            nctr: u32::from(shell.nctr),
+            exponents: shell.exponents.to_vec(),
+            coefficients: shell.coefficients.to_vec(),
+            center: atom.coord_bohr,
+        });
+    }
+    Ok(shells)
+}

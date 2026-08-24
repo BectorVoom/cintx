@@ -136,6 +136,11 @@ fn ov_hrr_axis<F: Float>(g: &mut Array<F>, base: u32, rirj: F, dj: u32, li_max: 
 
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
+// `0u32 * block_len` is deliberate: these accumulations write a
+// component-leading table (`0`, `1`, `2`, ... times `block_len`) and dropping the
+// zero term would break the column alignment that makes the component index
+// readable at a glance.
+#[allow(clippy::erasing_op)]
 fn sigma_ov_kernel<F: Float + CubeElement>(
     exps_i: &Array<F>,
     exps_j: &Array<F>,
@@ -549,7 +554,7 @@ fn run_sigma_ov_device<R: Runtime>(
                 sigma_ov_kernel::launch_unchecked::<f64, R>(
                     client,
                     crate::plane::single_cube_count(),
-                    crate::plane::standard_plane_cube_dim(),
+                    crate::plane::backend_plane_cube_dim::<R>(),
                     ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
                     ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
                     ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),

@@ -24,6 +24,11 @@ use std::path::{Path, PathBuf};
 /// Molecule: H2O with O at origin, H1 at (0, 1.4307, 1.1078) Bohr, H2 at (0, -1.4307, 1.1078) Bohr.
 /// Basis: STO-3G (Hehre, Stewart & Pople, JCP 51, 2657, 1969).
 /// Shells: 0=O-1s, 1=O-2s, 2=O-2p, 3=H1-1s, 4=H2-1s.
+// `0 * ATM_SLOTS` / `0 * BAS_SLOTS` is deliberate: these fixtures write the raw
+// `atm`/`bas` records as an aligned table (`0`, `1`, `2`, ... times the slot
+// width) and dropping the zero term would break the column that makes the record
+// index readable.
+#[allow(clippy::erasing_op)]
 pub fn build_h2o_sto3g() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
     let o_coord = [0.0_f64, 0.0, 0.0];
     let h1_coord = [0.0_f64, 1.4307, 1.1078];
@@ -1006,6 +1011,11 @@ impl OracleRawInputs {
     /// Mirrors the conformant `build_h2o_sto3g()` pattern: reserve
     /// `PTR_ENV_START` zero slots, then append user data with growing `env.len()`
     /// pointers, using the named `PTR_*` / ATM-slot constants.
+    // `0 * ATM_SLOTS` / `0 * BAS_SLOTS` is deliberate: these fixtures write the raw
+    // `atm`/`bas` records as an aligned table (`0`, `1`, `2`, ... times the slot
+    // width) and dropping the zero term would break the column that makes the record
+    // index readable.
+    #[allow(clippy::erasing_op)]
     pub fn sample() -> Self {
         // 1. Reserve env[0..PTR_ENV_START] for libcint global params (zeros).
         let mut env = vec![0.0_f64; PTR_ENV_START];

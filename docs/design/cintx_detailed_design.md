@@ -187,6 +187,24 @@ Basis: `README.rst:11-14`, `README.rst:38-40`, `README.rst:52-70`, `README.rst:2
 | Helper API | AO counts, offsets, normalization, transform, optimizer init/del | Provided through compat and safe helpers |
 | Legacy wrapper API | `cint2e_*` and `cNAME*` when `WITH_CINT2_INTERFACE` is enabled | Provided through compat / optional C ABI |
 | Internal-ish but reachable API | Source-only families, optional 4c1e/F12 | Managed via feature gates + stability levels |
+| **Work-list API** | Whole shell-quartet / -triple / -pair lists evaluated in one submission | `QuartetBatchRequest` on the safe facade; per-family batch entry points on `cintx-cubecl` |
+
+**On the work-list layer.** The integral-family API is per-shell-tuple because
+libcint's is, and that shape is a compatibility requirement — but it is not the
+shape a Fock build needs. A per-tuple call pays a kernel launch and a blocking
+readback per tuple; on the CubeCL CPU backend the launch alone measured ~42 us
+against ~0.18 us of arithmetic per 2e quartet. The work-list layer therefore sits
+*beside* the family API rather than replacing it: it groups a list into launch
+classes (tuples sharing `(l_i, l_j, ...)`, hence the G-tensor shape, the Rys
+order and the HRR branch), dispatches once per class, and uploads the basis once
+per run.
+
+The contract that keeps this from being a second implementation is that the
+per-tuple entry points are themselves one-tuple batches, so both routes execute
+the *same* kernel and every per-tuple parity test covers the batched code. The
+acceptance bar for each family is bit-identity against the per-tuple path, not
+merely a tolerance against the vendor — a tolerance the single path also passes
+would hide a batching regression.
 
 ### 3.2 Definition of API Inventory
 The design-time inventory is based on `/tmp/cintx_artifacts/cintx_rust_api_manifest.csv`.
@@ -468,8 +486,23 @@ Safe Rust API / Raw Compat API / Optional C ABI
 - `cintx-cubecl`: CubeCL kernels / transforms / transfer planning
 - `cintx-compat`: raw / helper / legacy
 - `cintx-capi`: optional C ABI shim
+- `cintx-basis`: standard basis-set catalog (def2-SVP / def2-TZVP / def2-ECP);
+  parses the embedded Basis Set Exchange tables, applies libcint/PySCF
+  normalization, and emits either a typed `BasisSet` or the raw `atm`/`bas`/`env`
+  arrays. Pure data + host code; no backend dependency.
+- `cintx-driver`: batched shell-pair/quartet driver — work-list enumeration
+  under 8-fold symmetry, Cauchy-Schwarz screening, launch-class bucketing and
+  tiering, and batch execution with auditable statistics. The execution backend
+  is a trait (`QuartetEvaluator`), so the same work-list drives cintx or a
+  reference engine, which is what makes like-for-like throughput comparison
+  possible.
 - `cintx-oracle`: dev-only oracle
 - `xtask`: manifest audit / codegen / benchmark helpers
+
+`cintx-basis` and `cintx-driver` sit beside the integral path rather than inside
+it: nothing in the facade, compat, or kernel layers depends on them, and they
+exist so that throughput and parity work is stated against a real basis and a
+real work-list instead of a hand-written fixture.
 
 ### 4.6 Data Flow
 1. Accept input (safe or raw)

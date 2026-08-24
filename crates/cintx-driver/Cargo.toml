@@ -1,0 +1,25 @@
+[package]
+name = "cintx-driver"
+version = "0.1.0"
+edition = "2024"
+description = "Batched shell-quartet work-list construction, screening, and dispatch for cintx"
+
+[features]
+default = []
+# Backend forwards, one per backend cintx-compat exposes. The driver itself is
+# backend-agnostic — these exist so a caller selecting a backend profile can do
+# it through the driver without also depending on cintx-compat.
+cpu = ["cintx-compat/cpu"]
+wgpu = ["cintx-compat/wgpu"]
+cuda = ["cintx-compat/cuda"]
+rocm = ["cintx-compat/rocm"]
+metal = ["cintx-compat/metal"]
+
+[dependencies]
+cintx-compat = { path = "../cintx-compat" }
+cintx-core = { path = "../cintx-core" }
+smallvec = "1.15.1"
+thiserror = "2.0.18"
+
+[dev-dependencies]
+cintx-basis = { path = "../cintx-basis" }

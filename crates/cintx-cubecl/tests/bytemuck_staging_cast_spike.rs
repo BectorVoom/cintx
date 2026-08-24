@@ -45,7 +45,9 @@ fn a5_u8_to_f32_write_read_bitexact() {
     assert_eq!(bytes.len(), byte_size);
 
     // Write known f32 values back through the f32 view
-    let vals: Vec<f32> = (0..n).map(|i| (i as f32) * 3.14_f32).collect();
+    // An arbitrary non-trivial scale, not pi — the spike only checks that values
+    // survive the byte round-trip.
+    let vals: Vec<f32> = (0..n).map(|i| (i as f32) * 3.25_f32).collect();
     let f32_view: &mut [f32] = bytemuck::cast_slice_mut::<u8, f32>(bytes);
     f32_view.copy_from_slice(&vals);
 

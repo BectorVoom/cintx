@@ -1,9 +1,15 @@
 // Generated manifest; do not edit.
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
-pub const PROFILE_SCOPE_APPROVED: &[&str] =
-    &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e", "unstable-source"];
+pub const PROFILE_SCOPE_APPROVED: &[&str] = &[
+    "base",
+    "with-f12",
+    "with-4c1e",
+    "with-f12+with-4c1e",
+    "unstable-source",
+];
 use crate::resolver::{
     FeatureFlag, HelperKind, ManifestEntry, OperatorDescriptor, RepresentationSupport, Stability,
+    UnsupportedPolicy,
 };
 use cintx_core::OperatorId;
 pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
@@ -24,6 +30,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -42,6 +49,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -60,6 +68,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -78,6 +87,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -96,6 +106,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -114,6 +125,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -132,6 +144,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -150,6 +163,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -168,6 +182,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -186,6 +201,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -204,6 +220,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -222,6 +239,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -240,6 +258,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -258,6 +277,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -276,6 +296,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -294,6 +315,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -312,6 +334,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -330,6 +353,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -348,6 +372,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -366,6 +391,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -384,6 +410,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -402,6 +429,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -420,6 +448,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -438,6 +467,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "4c1e",
@@ -456,6 +486,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "4c1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "4c1e",
@@ -474,6 +505,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "4c1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -492,6 +524,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "ecp",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -510,6 +543,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "ecp",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -528,6 +562,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "ecp",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -546,6 +581,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "ecp",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -564,6 +600,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "no_upstream_oracle",
+            reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
+            owner: "wave-5-W5-01",
+        }),
     },
     ManifestEntry {
         family_name: "helper",
@@ -582,6 +623,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -600,6 +642,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -618,6 +661,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -636,6 +680,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -654,6 +699,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -672,6 +718,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -690,6 +737,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -708,6 +756,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -726,6 +775,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -744,6 +794,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -762,6 +813,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -780,6 +832,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -798,6 +851,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -816,6 +870,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -834,6 +889,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -852,6 +908,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -870,6 +927,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Helper,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -888,6 +946,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Transform,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -906,6 +965,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Transform,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -924,6 +984,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Transform,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -942,6 +1003,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Transform,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -960,6 +1022,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Transform,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -978,6 +1041,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Transform,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "helper",
@@ -996,6 +1060,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Transform,
         canonical_family: "helper",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1014,6 +1079,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Optimizer,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1032,6 +1098,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Optimizer,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1050,6 +1117,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Optimizer,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1068,6 +1136,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Optimizer,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1086,6 +1155,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Optimizer,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1104,6 +1174,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Optimizer,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1122,6 +1193,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Optimizer,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1140,6 +1212,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1158,6 +1231,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1176,6 +1250,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1194,6 +1269,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1212,6 +1288,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1230,6 +1307,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1248,6 +1326,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1266,6 +1345,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1284,6 +1364,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1302,6 +1383,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1320,6 +1402,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1338,6 +1421,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1356,6 +1440,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1374,6 +1459,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -1392,6 +1478,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -1410,6 +1497,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -1428,6 +1516,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -1446,6 +1535,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -1464,6 +1554,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -1482,6 +1573,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -1500,6 +1592,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1518,6 +1611,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1536,6 +1630,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1554,6 +1649,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1572,6 +1668,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1590,6 +1687,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1608,6 +1706,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1626,6 +1725,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1644,6 +1744,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1662,6 +1763,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1680,6 +1782,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1698,6 +1801,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1716,6 +1820,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1734,6 +1839,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1752,6 +1858,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1770,6 +1877,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1788,6 +1896,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1806,6 +1915,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -1824,6 +1934,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -1842,6 +1953,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -1860,6 +1972,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -1878,6 +1991,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -1896,6 +2010,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -1914,6 +2029,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -1932,6 +2048,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1950,6 +2067,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1968,6 +2086,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -1986,6 +2105,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -2004,6 +2124,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -2022,6 +2143,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -2040,6 +2162,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -2058,6 +2181,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -2076,6 +2200,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -2094,6 +2219,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -2112,6 +2238,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "f12",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origi",
@@ -2130,6 +2257,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origi",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origi",
@@ -2148,6 +2276,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origi",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origi",
@@ -2166,6 +2295,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origi",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origi",
@@ -2184,6 +2314,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origi",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::grids",
@@ -2202,6 +2333,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "grids",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::grids",
@@ -2220,6 +2352,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "grids",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::grids",
@@ -2238,6 +2371,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "grids",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::grids",
@@ -2256,6 +2390,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "grids",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::grids",
@@ -2274,6 +2409,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "grids",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::breit",
@@ -2292,6 +2428,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "breit",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::breit",
@@ -2310,6 +2447,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "breit",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origk",
@@ -2328,6 +2466,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origk",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origk",
@@ -2346,6 +2485,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origk",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origk",
@@ -2364,6 +2504,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origk",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origk",
@@ -2382,6 +2523,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origk",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origk",
@@ -2400,6 +2542,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origk",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::origk",
@@ -2418,6 +2561,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "origk",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "unstable::source::ssc",
@@ -2436,6 +2580,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::SourceOnly,
         canonical_family: "ssc",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2454,6 +2599,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2472,6 +2618,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2490,6 +2637,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2508,6 +2656,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2526,6 +2675,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2544,6 +2694,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2562,6 +2713,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2580,6 +2732,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2598,6 +2751,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2616,6 +2770,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2634,6 +2789,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2652,6 +2808,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2670,6 +2827,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2688,6 +2846,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2706,6 +2865,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2724,6 +2884,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2742,6 +2903,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2760,6 +2922,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2778,6 +2941,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2796,6 +2960,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2814,6 +2979,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2832,6 +2998,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2850,6 +3017,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2868,6 +3036,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2886,6 +3055,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2904,6 +3074,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2922,6 +3093,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2940,6 +3112,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2958,6 +3131,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2976,6 +3150,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -2994,6 +3169,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3012,6 +3188,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3030,6 +3207,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3048,6 +3226,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3066,6 +3245,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3084,6 +3264,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9717 (Phase 24 Cluster B rinv)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3102,6 +3287,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3120,6 +3306,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3138,6 +3325,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor drinv rejected at one_electron.rs:9717 (Phase 24 Cluster B)",
+            owner: "wave-5-W5-03d",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3156,6 +3348,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3174,6 +3367,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3192,6 +3386,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3210,6 +3409,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3228,6 +3428,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3246,6 +3447,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3264,6 +3470,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3282,6 +3489,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3300,6 +3508,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3318,6 +3531,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3336,6 +3550,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3354,6 +3569,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3372,6 +3592,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3390,6 +3611,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3408,6 +3630,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3426,6 +3653,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3444,6 +3672,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3462,6 +3691,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3480,6 +3714,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3498,6 +3733,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3516,6 +3752,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3534,6 +3775,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3552,6 +3794,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3570,6 +3813,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3588,6 +3836,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3606,6 +3855,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3624,6 +3874,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3642,6 +3897,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3660,6 +3916,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3678,6 +3935,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3696,6 +3958,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3714,6 +3977,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3732,6 +3996,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3750,6 +4019,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3768,6 +4038,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3786,6 +4057,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3804,6 +4080,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3822,6 +4099,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3840,6 +4118,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3858,6 +4141,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3876,6 +4160,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3894,6 +4179,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3912,6 +4202,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3930,6 +4221,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3948,6 +4240,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9855 (Phase 24 Cluster C p4)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3966,6 +4263,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -3984,6 +4282,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4002,6 +4301,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9952 (Phase 24 Cluster D irp)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4020,6 +4324,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4038,6 +4343,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4056,6 +4362,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 2e gradient rejected at two_electron.rs:1463",
+            owner: "wave-5-W5-03a",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4074,6 +4385,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4092,6 +4404,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4110,6 +4423,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 2e gradient rejected at two_electron.rs:1730",
+            owner: "wave-5-W5-03a",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4128,6 +4446,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4146,6 +4465,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4164,6 +4484,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
+            owner: "wave-5-W5-03b",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4182,6 +4507,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4200,6 +4526,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4218,6 +4545,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
+            owner: "wave-5-W5-03b",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4236,6 +4568,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4254,6 +4587,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4272,6 +4606,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
+            owner: "wave-5-W5-03b",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4290,6 +4629,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4308,6 +4648,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4326,6 +4667,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
+            owner: "wave-5-W5-03b",
+        }),
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4344,6 +4690,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4362,6 +4709,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4380,6 +4728,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4398,6 +4747,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -4416,6 +4766,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -4434,6 +4785,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -4452,6 +4804,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -4470,6 +4823,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4488,6 +4842,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "no_upstream_oracle",
+            reason: "upstream int2c2e_ip1_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:384-388) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
+            owner: "wave-5-W5-01",
+        }),
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4506,6 +4865,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4524,6 +4884,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4542,6 +4903,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "no_upstream_oracle",
+            reason: "upstream int2c2e_ip2_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:462-466) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
+            owner: "wave-5-W5-01",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -4560,6 +4926,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "ecp",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4578,6 +4945,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "ecp",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4596,6 +4964,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "ecp",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "W5-04 DECISION (2026-08-22): permanently deferred for v1.4, not merely unimplemented. Rejected at kernels/ecp.rs:2047 (Phase 21 R5). No oracle exists in ANY vendored source: libcint has no ECP at all, and PySCF's nr_ecp_deriv.c contains zero spinor code (only nr_ecp.c's ECPso_spinor, a different operator), so RULE 4 byte-identity is unobtainable and the row could never flip to oracle_covered=true even if implemented",
+            owner: "deferred-v1.4",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -4614,6 +4987,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4632,6 +5006,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4650,6 +5025,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4668,6 +5044,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4686,6 +5063,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4704,6 +5082,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4722,6 +5101,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4740,6 +5120,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4758,6 +5139,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4776,6 +5158,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4794,6 +5177,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -4812,6 +5196,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4830,6 +5215,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4848,6 +5234,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4866,6 +5253,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4884,6 +5272,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4902,6 +5291,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -4920,6 +5310,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Legacy,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -4938,6 +5329,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -4956,6 +5348,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -4974,6 +5367,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -4992,6 +5386,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -5010,6 +5405,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -5028,6 +5424,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "no_upstream_oracle",
+            reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
+            owner: "wave-5-W5-01",
+        }),
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -5046,6 +5447,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -5064,6 +5466,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -5082,6 +5485,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "no_upstream_oracle",
+            reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
+            owner: "wave-5-W5-01",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5100,6 +5508,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5118,6 +5527,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5136,6 +5546,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5154,6 +5565,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5172,6 +5584,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5190,6 +5603,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5208,6 +5622,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5226,6 +5641,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5244,6 +5660,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5262,6 +5679,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5280,6 +5698,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5298,6 +5717,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5316,6 +5736,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5334,6 +5755,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5352,6 +5774,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5370,6 +5793,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5388,6 +5812,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5406,6 +5831,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5424,6 +5850,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5442,6 +5869,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5460,6 +5888,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5478,6 +5907,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5496,6 +5926,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5514,6 +5945,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5532,6 +5968,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5550,6 +5987,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5568,6 +6006,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5586,6 +6029,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5604,6 +6048,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5622,6 +6067,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5640,6 +6090,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5658,6 +6109,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5676,6 +6128,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5694,6 +6151,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5712,6 +6170,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5730,6 +6189,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5748,6 +6212,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5766,6 +6231,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5784,6 +6250,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5802,6 +6273,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5820,6 +6292,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5838,6 +6311,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5856,6 +6334,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5874,6 +6353,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5892,6 +6372,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5910,6 +6395,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5928,6 +6414,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5946,6 +6433,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5964,6 +6456,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -5982,6 +6475,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6000,6 +6494,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6018,6 +6517,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6036,6 +6536,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6054,6 +6555,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -6072,6 +6578,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6090,6 +6597,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6108,6 +6616,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -6126,6 +6639,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6144,6 +6658,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6162,6 +6677,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -6180,6 +6700,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6198,6 +6719,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6216,6 +6738,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -6234,6 +6761,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6252,6 +6780,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6270,6 +6799,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)",
+            owner: "phase-24-26-spinor-completion",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6288,6 +6822,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6306,6 +6841,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6324,6 +6860,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6342,6 +6879,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6360,6 +6898,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6378,6 +6917,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6396,6 +6936,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6414,6 +6955,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6432,6 +6974,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6450,6 +6993,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6468,6 +7012,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6486,6 +7031,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6504,6 +7050,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6522,6 +7069,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6540,6 +7088,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6558,6 +7107,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6576,6 +7126,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6594,6 +7145,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6612,6 +7164,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6630,6 +7183,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6648,6 +7202,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6666,6 +7221,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6684,6 +7240,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6702,6 +7259,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6720,6 +7278,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6738,6 +7297,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6756,6 +7316,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "GIAO x sigma slice: 1e operator 'spgsa01' rejected at one_electron.rs:9378 region",
+            owner: "phase-30",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6774,6 +7339,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6792,6 +7358,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6810,6 +7377,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6828,6 +7396,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6846,6 +7415,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6864,6 +7434,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6882,6 +7453,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6900,6 +7472,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6918,6 +7491,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6936,6 +7510,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6954,6 +7529,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -6972,6 +7548,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -6990,6 +7567,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7008,6 +7586,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7026,6 +7605,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
+            owner: "wave-5-W5-03b",
+        }),
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -7044,6 +7628,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -7062,6 +7647,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -7080,6 +7666,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "no_upstream_oracle",
+            reason: "upstream int2c2e_ip1ip2_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:1366-1370); cintx also rejects this row at center_2c2e.rs:829 — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
+            owner: "wave-5-W5-01",
+        }),
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -7098,6 +7689,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -7116,6 +7708,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -7134,6 +7727,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 3c2e Hessian rejected at center_3c2e.rs:3119-3122",
+            owner: "wave-5-W5-03c",
+        }),
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -7152,6 +7750,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -7170,6 +7769,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -7188,6 +7788,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: Some(UnsupportedPolicy {
+            policy: "fail_closed",
+            reason: "spinor 3c2e Hessian rejected at center_3c2e.rs:3119-3122",
+            owner: "wave-5-W5-03c",
+        }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -7206,6 +7811,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7224,6 +7830,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7242,6 +7849,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7260,6 +7868,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7278,6 +7887,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7296,6 +7906,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7314,6 +7925,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7332,6 +7944,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7350,6 +7963,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7368,6 +7982,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7386,6 +8001,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7404,6 +8020,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7422,6 +8039,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7440,6 +8058,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7458,6 +8077,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7476,6 +8096,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7494,6 +8115,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7512,6 +8134,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7530,6 +8153,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7548,6 +8172,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7566,6 +8191,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7584,6 +8210,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7602,6 +8229,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",
@@ -7620,6 +8248,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7634,10 +8263,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         stability: Stability::Stable,
         declared_in: "src/autocode/grad2.c",
         compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-        oracle_covered: false,
+        oracle_covered: true,
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7652,10 +8282,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         stability: Stability::Stable,
         declared_in: "src/autocode/grad2.c",
         compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-        oracle_covered: false,
+        oracle_covered: true,
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7670,10 +8301,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         stability: Stability::Stable,
         declared_in: "src/autocode/grad2.c",
         compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-        oracle_covered: false,
+        oracle_covered: true,
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7688,10 +8320,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         stability: Stability::Stable,
         declared_in: "src/autocode/grad2.c",
         compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-        oracle_covered: false,
+        oracle_covered: true,
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7706,10 +8339,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         stability: Stability::Stable,
         declared_in: "src/autocode/grad2.c",
         compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-        oracle_covered: false,
+        oracle_covered: true,
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7724,10 +8358,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         stability: Stability::Stable,
         declared_in: "src/autocode/grad2.c",
         compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-        oracle_covered: false,
+        oracle_covered: true,
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "2e",
@@ -7742,10 +8377,372 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         stability: Stability::Stable,
         declared_in: "src/autocode/dkb.c",
         compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-        oracle_covered: false,
+        oracle_covered: true,
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ip1v_r1",
+        symbol_name: "int2e_ip1v_r1_cart",
+        category: "2e",
+        arity: 4,
+        forms: &["cart"],
+        component_rank: "9",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ip1v_r1",
+        symbol_name: "int2e_ip1v_r1_sph",
+        category: "2e",
+        arity: 4,
+        forms: &["sph"],
+        component_rank: "9",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ip1v_r1",
+        symbol_name: "int2e_ip1v_r1_spinor",
+        category: "2e",
+        arity: 4,
+        forms: &["spinor"],
+        component_rank: "9",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ip1v_rc1",
+        symbol_name: "int2e_ip1v_rc1_cart",
+        category: "2e",
+        arity: 4,
+        forms: &["cart"],
+        component_rank: "9",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ip1v_rc1",
+        symbol_name: "int2e_ip1v_rc1_sph",
+        category: "2e",
+        arity: 4,
+        forms: &["sph"],
+        component_rank: "9",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ip1v_rc1",
+        symbol_name: "int2e_ip1v_rc1_spinor",
+        category: "2e",
+        arity: 4,
+        forms: &["spinor"],
+        component_rank: "9",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ipvg1_xp1",
+        symbol_name: "int2e_ipvg1_xp1_cart",
+        category: "2e",
+        arity: 4,
+        forms: &["cart"],
+        component_rank: "9",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ipvg1_xp1",
+        symbol_name: "int2e_ipvg1_xp1_sph",
+        category: "2e",
+        arity: 4,
+        forms: &["sph"],
+        component_rank: "9",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ipvg1_xp1",
+        symbol_name: "int2e_ipvg1_xp1_spinor",
+        category: "2e",
+        arity: 4,
+        forms: &["spinor"],
+        component_rank: "9",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ipvg2_xp1",
+        symbol_name: "int2e_ipvg2_xp1_cart",
+        category: "2e",
+        arity: 4,
+        forms: &["cart"],
+        component_rank: "9",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ipvg2_xp1",
+        symbol_name: "int2e_ipvg2_xp1_sph",
+        category: "2e",
+        arity: 4,
+        forms: &["sph"],
+        component_rank: "9",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "2e",
+        operator_name: "ipvg2_xp1",
+        symbol_name: "int2e_ipvg2_xp1_spinor",
+        category: "2e",
+        arity: 4,
+        forms: &["spinor"],
+        component_rank: "9",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor2.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "2e",
+        representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "3c2e",
+        operator_name: "ipspsp1",
+        symbol_name: "int3c2e_ipspsp1_spinor",
+        category: "3c2e",
+        arity: 3,
+        forms: &["spinor"],
+        component_rank: "3",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/int3c2e.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "3c2e",
+        representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "1e",
+        operator_name: "pnucp",
+        symbol_name: "int1e_pnucp_cart",
+        category: "1e",
+        arity: 2,
+        forms: &["cart"],
+        component_rank: "1",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor1.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "1e",
+        representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "1e",
+        operator_name: "pnucp",
+        symbol_name: "int1e_pnucp_sph",
+        category: "1e",
+        arity: 2,
+        forms: &["sph"],
+        component_rank: "1",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor1.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "1e",
+        representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "1e",
+        operator_name: "pnucp",
+        symbol_name: "int1e_pnucp_spinor",
+        category: "1e",
+        arity: 2,
+        forms: &["spinor"],
+        component_rank: "1",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor1.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "1e",
+        representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "1e",
+        operator_name: "prinvp",
+        symbol_name: "int1e_prinvp_cart",
+        category: "1e",
+        arity: 2,
+        forms: &["cart"],
+        component_rank: "1",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor1.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "1e",
+        representation: RepresentationSupport::new(true, false, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "1e",
+        operator_name: "prinvp",
+        symbol_name: "int1e_prinvp_sph",
+        category: "1e",
+        arity: 2,
+        forms: &["sph"],
+        component_rank: "1",
+        complex_output: false,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor1.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "1e",
+        representation: RepresentationSupport::new(false, true, false),
+        unsupported_policy: None,
+    },
+    ManifestEntry {
+        family_name: "1e",
+        operator_name: "prinvp",
+        symbol_name: "int1e_prinvp_spinor",
+        category: "1e",
+        arity: 2,
+        forms: &["spinor"],
+        component_rank: "1",
+        complex_output: true,
+        feature_flag: FeatureFlag::None,
+        stability: Stability::Stable,
+        declared_in: "src/autocode/intor1.c",
+        compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
+        oracle_covered: true,
+        helper_kind: HelperKind::Operator,
+        canonical_family: "1e",
+        representation: RepresentationSupport::new(false, false, true),
+        unsupported_policy: None,
     },
 ];
 pub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &[
@@ -9468,5 +10465,81 @@ pub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &[
     OperatorDescriptor {
         id: OperatorId::new(429),
         entry: &MANIFEST_ENTRIES[429],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(430),
+        entry: &MANIFEST_ENTRIES[430],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(431),
+        entry: &MANIFEST_ENTRIES[431],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(432),
+        entry: &MANIFEST_ENTRIES[432],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(433),
+        entry: &MANIFEST_ENTRIES[433],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(434),
+        entry: &MANIFEST_ENTRIES[434],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(435),
+        entry: &MANIFEST_ENTRIES[435],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(436),
+        entry: &MANIFEST_ENTRIES[436],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(437),
+        entry: &MANIFEST_ENTRIES[437],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(438),
+        entry: &MANIFEST_ENTRIES[438],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(439),
+        entry: &MANIFEST_ENTRIES[439],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(440),
+        entry: &MANIFEST_ENTRIES[440],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(441),
+        entry: &MANIFEST_ENTRIES[441],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(442),
+        entry: &MANIFEST_ENTRIES[442],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(443),
+        entry: &MANIFEST_ENTRIES[443],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(444),
+        entry: &MANIFEST_ENTRIES[444],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(445),
+        entry: &MANIFEST_ENTRIES[445],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(446),
+        entry: &MANIFEST_ENTRIES[446],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(447),
+        entry: &MANIFEST_ENTRIES[447],
+    },
+    OperatorDescriptor {
+        id: OperatorId::new(448),
+        entry: &MANIFEST_ENTRIES[448],
     },
 ];

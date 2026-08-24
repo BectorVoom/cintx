@@ -231,6 +231,62 @@ const PERM_IPIPNUCIP: [usize; 27] = [
 
 const DOT_IPPNUCP: [[usize; 3]; 3] = [[0, 4, 8], [9, 13, 17], [18, 22, 26]];
 
+// ── W5-06: the X2C BASE families `int1e_pnucp` / `int1e_prinvp` ──────────────
+//
+// Wave 3 shipped the DERIVATIVES (`ippnucp`, `ippnucpip`, `ipippnucp`, and the
+// rinv twins) but not the base families they differentiate, so `pyscf/x2c/x2c.py`
+// — which calls `int1e_pnucp` directly to build the X2C Hamiltonian — was still
+// unsatisfiable while `sfx2c1e_grad.py` was not.
+//
+// `ng[] = {1, 1, 0, 0, 2, 1, 0, 1}` (intor1.c:990), rank 1, `CINT1e_drv(..., 2)`
+// for pnucp (atom-summed nuclear) and `(..., 1)` for prinvp (single rinv center).
+// Both share ONE gout (`CINTgout1e_int1e_pnucp` / `_int1e_prinvp` are identical
+// term for term); only the Coulomb-center list differs, exactly as the Wave-3
+// `ippnucp`/`ipprinvp` pair already does.
+//
+// Cascade, verbatim from intor1.c:
+//   G2E_D_J(g1, g0, i_l+1, j_l+0)   ket ∇, bra headroom +1
+//   G2E_D_I(g2, g0, i_l+0, j_l  )   bra ∇
+//   G2E_D_I(g3, g1, i_l+0, j_l  )   bra ∇ of the ket-∇ block
+const OPS_PNUCP: [Op; 3] = [
+    Op::DJ {
+        dst: 1,
+        src: 0,
+        i_off: 1,
+        j_off: 0,
+    },
+    Op::DI {
+        dst: 2,
+        src: 0,
+        i_off: 0,
+        j_off: 0,
+    },
+    Op::DI {
+        dst: 3,
+        src: 1,
+        i_off: 0,
+        j_off: 0,
+    },
+];
+
+// The 2-leg (D_I, D_J) 3^2 = 9-term table, verbatim from `CINTgout1e_int1e_pnucp`.
+// Buffer roles: g0 = (), g1 = (J), g2 = (I), g3 = (I, J).
+const S9_PNUCP: [(usize, usize, usize); 9] = [
+    (3, 0, 0), // s[0] = g3 g0 g0   I and J both on x
+    (2, 1, 0), // s[1] = g2 g1 g0   I on x, J on y
+    (2, 0, 1), // s[2] = g2 g0 g1   I on x, J on z
+    (1, 2, 0), // s[3] = g1 g2 g0   I on y, J on x
+    (0, 3, 0), // s[4] = g0 g3 g0   I and J both on y
+    (0, 2, 1), // s[5] = g0 g2 g1   I on y, J on z
+    (1, 0, 2), // s[6] = g1 g0 g2   I on z, J on x
+    (0, 1, 2), // s[7] = g0 g1 g2   I on z, J on y
+    (0, 0, 3), // s[8] = g0 g0 g3   I and J both on z
+];
+
+// `gout[n] = s[0] + s[4] + s[8]` (intor1.c) — the ∇i · ∇j trace, i.e. the
+// diagonal of the 2-leg table. Rank 1.
+const DOT_PNUCP: [[usize; 3]; 1] = [[0, 4, 8]];
+
 // ── deriv4 (rank 81) op sequences (i_off/j_off verbatim from deriv4.c) ────────
 // ipipipiprinv: all D_I (bra ∇∇∇∇), first op bra+3.
 const OPS_IPIPIPIPRINV: [Op; 15] = [
@@ -1623,6 +1679,17 @@ fn sigma_deriv_spec(op_name: &str) -> Option<FamilySpec> {
 /// Resolve a `deriv3`/`deriv4` operator name to its [`FamilySpec`], or `None`.
 fn family_spec(op_name: &str) -> Option<FamilySpec> {
     let spec = match op_name {
+        // W5-06: X2C base families (rank 1) — the undifferentiated parents of
+        // the Wave-3 `ippnucp` / `ipprinvp` pair.
+        "pnucp" | "prinvp" => FamilySpec {
+            rank: 1,
+            nbuf: 4,
+            ops: &OPS_PNUCP,
+            s_table: &S9_PNUCP,
+            gout_perm: &[],
+            dot_terms: Some(&DOT_PNUCP),
+            linear_terms: None,
+        },
         "ippnucp" | "ipprinvp" => FamilySpec {
             rank: 3,
             nbuf: 8,

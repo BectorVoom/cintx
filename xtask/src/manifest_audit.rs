@@ -62,11 +62,15 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
         .unwrap_or(true);
     let has_required_matrix_scope_mismatch = generated_required_profiles != required_profiles;
 
-    let uncovered_stable = if check_lock {
+    let coverage = if check_lock {
         check_oracle_coverage(&lock_root)
     } else {
-        Vec::new()
+        OracleCoverageBuckets::default()
     };
+    let uncovered_stable = &coverage.uncovered;
+    // W5-00: a self-contradicting row (covered AND fail-closed) is always a
+    // failure, whether or not --check-lock was requested.
+    let policy_contradictions = check_policy_contradictions(&lock_root);
 
     // PARITY-01: libcint's public surface is wider than cint_funcs.h.  PySCF
     // reaches these compiled wrappers by dynamic symbol lookup, so scan the
@@ -76,6 +80,8 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
     let unsupported_libcint_families =
         set_difference(&exported_libcint_families, &manifest_libcint_families);
     let parity_strict = std::env::var("CINTX_PARITY_STRICT").as_deref() == Ok("1");
+    // W5-07: the baseline correspondence is checked unconditionally.
+    let parity_baseline_drift = evaluate_parity_baseline(&unsupported_libcint_families);
 
     let mut report = json!({
         "compiled_manifest_lock": COMPILED_MANIFEST_LOCK_JSON,
@@ -101,8 +107,13 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
             "fallback_file_name": AUDIT_ARTIFACT_FALLBACK_NAME,
         },
         "oracle_coverage": {
-            "uncovered_stable_entries": &uncovered_stable,
+            "uncovered_stable_entries": uncovered_stable,
             "uncovered_count": uncovered_stable.len(),
+            "fail_closed_entries": &coverage.fail_closed,
+            "fail_closed_count": coverage.fail_closed.len(),
+            "no_upstream_oracle_entries": &coverage.no_upstream_oracle,
+            "no_upstream_oracle_count": coverage.no_upstream_oracle.len(),
+            "policy_contradictions": &policy_contradictions,
         },
         "libcint_export_parity": {
             "reference": "libcint-master/src/**/*.c ALL_CINT/ALL_CINT1E invocations",
@@ -111,15 +122,20 @@ pub fn run_manifest_audit(profiles: &[String], check_lock: bool) -> Result<()> {
             "manifest_base_count": manifest_libcint_families.len(),
             "unsupported_libcint_families": &unsupported_libcint_families,
             "unsupported_count": unsupported_libcint_families.len(),
+            "baseline_dated": "2026-08-22",
+            "baseline_count": PARITY_BASELINE.len(),
+            "baseline_drift": &parity_baseline_drift,
         },
     });
 
-    let should_fail = check_lock
-        && (has_symbol_drift
-            || has_profile_scope_mismatch
-            || has_required_matrix_scope_mismatch
-            || !uncovered_stable.is_empty()
-            || (parity_strict && !unsupported_libcint_families.is_empty()));
+    let should_fail = !policy_contradictions.is_empty()
+        || !parity_baseline_drift.is_empty()
+        || (check_lock
+            && (has_symbol_drift
+                || has_profile_scope_mismatch
+                || has_required_matrix_scope_mismatch
+                || !uncovered_stable.is_empty()
+                || (parity_strict && !unsupported_libcint_families.is_empty())));
     report["status"] = if should_fail {
         json!("failed")
     } else {
@@ -150,6 +166,101 @@ fn collect_manifest_base_symbols() -> BTreeSet<String> {
         })
         .map(ToOwned::to_owned)
         .collect()
+}
+
+/// Wave 5 W5-07 — the PARITY-01 baseline.
+///
+/// `CINTX_PARITY_STRICT=1` demands `unsupported_libcint_families` be *empty*,
+/// which is Phase 31's exit gate, not Wave 5's: 43 of the 52 unsupported symbols
+/// legitimately belong to Phases 30 and 31. A permanently-red strict gate trains
+/// everyone to ignore it.
+///
+/// Instead every currently-unsupported symbol is enumerated here with the phase
+/// that owns closing it. The audit then fails, unconditionally and with no env
+/// var, if either half of the correspondence breaks:
+///
+///   * a symbol is unsupported but NOT on this list — a new Gap-A-shaped omission,
+///     which is the defect class PARITY-01 actually exists to catch;
+///   * a symbol is on this list but NO LONGER unsupported — a stale entry, which
+///     forces the list to shrink monotonically as families land.
+///
+/// Dated 2026-08-22. Wave 5 removes its own nine as W5-05/W5-06 land.
+const PARITY_BASELINE: &[(&str, &str)] = &[
+    // ── Wave 5 W5-05: Tier 6 + the derivative families the parent plan missed ──
+    ("int1e_iprinvr", "wave-5-W5-05"),
+    ("int1e_iprinviprip", "wave-5-W5-05"),
+    ("int1e_ipiprinvrip", "wave-5-W5-05"),
+    ("int1e_rinvipiprip", "wave-5-W5-05"),
+    ("int1e_iprip", "wave-5-W5-05"),
+    ("int1e_ovlpip", "wave-5-W5-05"),
+    ("int1e_kinip", "wave-5-W5-05"),
+    // ── Wave 5 W5-06: X2C base families — LANDED 2026-08-22, removed from the
+    //    baseline (they are no longer unsupported). ──
+    // ── Phase 30: GIAO / property families (intor1.c, intor2.c, intor3.c, intor4.c) ──
+    ("int1e_ggovlp", "phase-30"),
+    ("int1e_ggnuc", "phase-30"),
+    ("int1e_ggkin", "phase-30"),
+    ("int1e_grjxp", "phase-30"),
+    ("int1e_irpr", "phase-30"),
+    ("int1e_irrp", "phase-30"),
+    ("int1e_pnucxp", "phase-30"),
+    ("int1e_prinvxp", "phase-30"),
+    ("int1e_inuc_rxp", "phase-30"),
+    ("int1e_inuc_rcxp", "phase-30"),
+    ("int2e_p1vxp1", "phase-30"),
+    ("int1e_sa01sp", "phase-30"),
+    ("int1e_sprsp", "phase-30"),
+    ("int1e_spsigmasp", "phase-30"),
+    ("int1e_srsp", "phase-30"),
+    ("int2e_cg_sa10sp1", "phase-30"),
+    ("int2e_cg_sa10sp1spsp2", "phase-30"),
+    ("int2e_giao_sa10sp1", "phase-30"),
+    ("int2e_giao_sa10sp1spsp2", "phase-30"),
+    ("int2e_g1spsp2", "phase-30"),
+    ("int2e_pp1", "phase-30"),
+    ("int2e_pp2", "phase-30"),
+    ("int2e_pp1pp2", "phase-30"),
+    ("int2e_spgsp1", "phase-30"),
+    ("int2e_spgsp1spsp2", "phase-30"),
+    ("int3c2e_ig1", "phase-30"),
+    ("int3c2e_pvp1", "phase-30"),
+    ("int3c2e_pvxp1", "phase-30"),
+    ("int3c2e_spsp1", "phase-30"),
+    ("int3c2e_spsp1ip2", "phase-30"),
+    // ── Phase 31: Breit / Gaunt / gauge apex set ──
+    ("int2e_gauge_r1_ssp1ssp2", "phase-31"),
+    ("int2e_gauge_r1_ssp1sps2", "phase-31"),
+    ("int2e_gauge_r1_sps1ssp2", "phase-31"),
+    ("int2e_gauge_r1_sps1sps2", "phase-31"),
+    ("int2e_gauge_r2_ssp1ssp2", "phase-31"),
+    ("int2e_gauge_r2_ssp1sps2", "phase-31"),
+    ("int2e_gauge_r2_sps1ssp2", "phase-31"),
+    ("int2e_gauge_r2_sps1sps2", "phase-31"),
+    ("int2e_cg_ssa10ssp2", "phase-31"),
+    ("int2e_giao_ssa10ssp2", "phase-31"),
+    ("int2e_gssp1ssp2", "phase-31"),
+    ("int1e_spnuc", "phase-31"),
+    ("int1e_spspsp", "phase-31"),
+];
+
+/// Both halves of the baseline correspondence, as report-ready JSON rows.
+fn evaluate_parity_baseline(unsupported: &[String]) -> Vec<Value> {
+    let unsupported_set: BTreeSet<&str> = unsupported.iter().map(String::as_str).collect();
+    let baseline_set: BTreeSet<&str> = PARITY_BASELINE.iter().map(|(sym, _)| *sym).collect();
+    let mut drift = Vec::new();
+    for sym in unsupported_set.difference(&baseline_set) {
+        drift.push(json!({
+            "symbol": sym,
+            "problem": "unsupported but not on the PARITY_BASELINE — a new omission",
+        }));
+    }
+    for sym in baseline_set.difference(&unsupported_set) {
+        drift.push(json!({
+            "symbol": sym,
+            "problem": "on the PARITY_BASELINE but no longer unsupported — remove the stale entry",
+        }));
+    }
+    drift
 }
 
 fn collect_all_cint_exports() -> Result<BTreeSet<String>> {
@@ -339,12 +450,31 @@ fn write_manifest_audit_report(mut report: Value) -> Result<PathBuf> {
     Ok(artifact.actual_path)
 }
 
-fn check_oracle_coverage(lock_root: &Value) -> Vec<String> {
+/// Wave 5 W5-00: the three states a `stability = "stable"` row can be in.
+///
+/// Before W5-00 these were one bucket, so 45 rows that deliberately fail closed
+/// were indistinguishable from rows that are implemented but unproven — which is
+/// why `--check-lock` was red with no actionable signal.
+#[derive(Default)]
+struct OracleCoverageBuckets {
+    /// Implemented (or believed implemented) but not yet proven byte-identical.
+    /// This is the ONLY bucket that fails the gate.
+    uncovered: Vec<String>,
+    /// Declared API whose kernel returns `UnsupportedApi` by design, carrying an
+    /// `unsupported_policy` naming the rejection site and the owning phase.
+    fail_closed: Vec<Value>,
+    /// Rows whose vendored libcint driver is an unconditional stub, so RULE 4
+    /// byte-identity is unobtainable at any effort. cintx may evaluate them; it
+    /// simply cannot prove them, and claiming coverage would be unfalsifiable.
+    no_upstream_oracle: Vec<Value>,
+}
+
+fn check_oracle_coverage(lock_root: &Value) -> OracleCoverageBuckets {
+    let mut buckets = OracleCoverageBuckets::default();
     let entries = match lock_root["entries"].as_array() {
         Some(e) => e,
-        None => return Vec::new(),
+        None => return buckets,
     };
-    let mut uncovered = Vec::new();
     for entry in entries {
         let stability = entry.get("stability").and_then(Value::as_str).unwrap_or("");
         if stability != "stable" {
@@ -354,16 +484,61 @@ fn check_oracle_coverage(lock_root: &Value) -> Vec<String> {
             .get("oracle_covered")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        if !covered {
+        if covered {
+            continue;
+        }
+        let sym = entry
+            .get("id")
+            .and_then(|id| id.get("symbol"))
+            .and_then(Value::as_str)
+            .unwrap_or("?");
+        match entry.get("unsupported_policy") {
+            Some(policy) if !policy.is_null() => {
+                let row = json!({
+                    "symbol": sym,
+                    "owner": policy.get("owner").and_then(Value::as_str).unwrap_or("?"),
+                    "reason": policy.get("reason").and_then(Value::as_str).unwrap_or("?"),
+                });
+                match policy.get("policy").and_then(Value::as_str) {
+                    Some("no_upstream_oracle") => buckets.no_upstream_oracle.push(row),
+                    _ => buckets.fail_closed.push(row),
+                }
+            }
+            _ => buckets.uncovered.push(sym.to_owned()),
+        }
+    }
+    buckets.uncovered.sort();
+    buckets
+}
+
+/// Wave 5 W5-00: a row that is `oracle_covered = true` must NOT also claim a
+/// fail-closed policy — that combination means the manifest contradicts itself.
+fn check_policy_contradictions(lock_root: &Value) -> Vec<String> {
+    let entries = match lock_root["entries"].as_array() {
+        Some(e) => e,
+        None => return Vec::new(),
+    };
+    let mut bad = Vec::new();
+    for entry in entries {
+        let covered = entry
+            .get("oracle_covered")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let has_policy = entry
+            .get("unsupported_policy")
+            .map(|p| !p.is_null())
+            .unwrap_or(false);
+        if covered && has_policy {
             let sym = entry
                 .get("id")
                 .and_then(|id| id.get("symbol"))
                 .and_then(Value::as_str)
                 .unwrap_or("?");
-            uncovered.push(sym.to_owned());
+            bad.push(sym.to_owned());
         }
     }
-    uncovered
+    bad.sort();
+    bad
 }
 
 fn stability_is_included(stability: &str) -> bool {

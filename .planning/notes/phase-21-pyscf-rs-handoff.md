@@ -199,3 +199,70 @@ The historical caveats in sections 5a and 5b describe the Phase-21 state, not
 the current tree: later phases added spinor-gradient coverage and the
 higher-root Wheeler fallback. Consumers should use the compiled manifest lock
 and current oracle reports as the authoritative support record.
+
+## 2026-08-22 (later the same day) — Wave 4 close-out, and one correctness notice
+
+Two updates from the gradient-gap Wave-4 work
+(`.planning/notes/gradient-gap-wave-4-PLAN.md`).
+
+### Newly available to consumers
+
+`pyscf.grad.dhf` is now fully satisfiable. All five symbols it reaches are
+`oracle_covered = true` at `atol = 1e-12` against vendored libcint 6.1.3:
+`int1e_ipspnucsp`, `int1e_ipsprinvsp`, `int2e_ipspsp1`, `int2e_ip1spsp2`,
+`int2e_ipspsp1spsp2` (all spinor). The `srsr` siblings, `int3c2e_ipspsp1`, and the
+four `intor2.c` gauge/cross-product families (`int2e_ip1v_r1`, `int2e_ip1v_rc1`,
+`int2e_ipvg1_xp1`, `int2e_ipvg2_xp1`, the last group in cart + sph + spinor) also
+landed covered.
+
+The Hessian gap named in the previous section is closed too — `int1e_iprinvip`,
+`int2e_ipvip1ipvip2`, `int2c2e_ip1ip2`, `int3c2e_ip1ip2` and `int3c2e_ipvip1` all
+carry `oracle_covered = true` in the current lock.
+
+### ⚠️ Correctness notice — `int2e_spinor` was wrong before this commit
+
+`int2e_spinor` returned the `i↔j` transpose of the correct spinor block for **every
+shell with `l > 0`** (~3e-3 absolute on a `p` quartet). It was exact only for an
+all-`s` quartet, where the transpose is the identity — which is precisely what the
+existing coverage exercised, so the row carried `oracle_covered = true` throughout.
+
+Root cause: `cart_to_spinor_sf_4d` did not apply the KET→BRA transpose that its leaf
+`cart_to_spinor_sf_2d` requires. Fixed, and now gated on non-square quartets by
+`crates/cintx-oracle/tests/two_electron_spinor_orientation.rs`
+(residuals `3.1e-3 → 1.6e-17`).
+
+**Any downstream result computed with `int2e_spinor` (or the `int2e_breit_*` and F12
+spinor families, which share the transform) at `l > 0` before this commit should be
+recomputed.** Scalar `cart`/`sph` paths are unaffected.
+
+---
+
+## 2026-08-22 — gradient-gap Wave 5: X2C base families now available
+
+**New for consumers:** `int1e_pnucp` and `int1e_prinvp` ship today in **cart, sph and
+spinor**, byte-identical to vendored libcint 6.1.3 at `atol = 1e-12` across s/p/d shells
+(`crates/cintx-oracle/tests/gradient_gap_wave5_x2c_base.rs`).
+
+This closes a gap that was easy to miss. Wave 3 shipped the *derivatives*
+(`int1e_ippnucp`, `int1e_ipprinvp`, `int1e_ippnucpip`, `int1e_ipprinvpip`,
+`int1e_ipippnucp`, `int1e_ipipprinvp`) and reported the `pyscf/x2c` symbol set as
+satisfiable. It was only satisfiable for `sfx2c1e_grad.py` / `sfx2c1e_hess.py`:
+`pyscf/x2c/x2c.py` calls `int1e_pnucp` **directly** to build the X2C Hamiltonian itself,
+and that base family did not exist until now. **A downstream X2C port can proceed.**
+
+`int1e_prinvp` reads the per-nucleus origin from `env[PTR_RINV_ORIG]` (env[4..6]), the
+same slot as `int1e_iprinv`; `Builder::with_rinv_origin([f64;3])` sets it from the safe
+API. `int1e_pnucp` is atom-summed and ignores that slot — asserted by
+`only_prinvp_depends_on_the_rinv_origin`.
+
+**Correction to a coverage claim, if you depend on it:** `int3c2e_ip1_spinor` and
+`int3c2e_ip2_spinor` were marked `oracle_covered = true` but **failed closed for
+`nctr_k > 1`** (general-contracted auxiliary shell). Fixed and re-proven at
+`nctr_i = nctr_j = nctr_k = 2`. If you evaluated those with a generally-contracted aux
+basis before 2026-08-22 you received a typed `UnsupportedApi`, never a wrong number.
+
+**Still unavailable, and permanently so for v1.4** — do not plan around these landing:
+- `int1e_ecp_iprinv_spinor` — no oracle exists in libcint or PySCF; fail-closed.
+- `int3c1e{,_ip1,_iprinv}_spinor` and `int2c2e_{ip1,ip2,ip1ip2}_spinor` — vendored
+  libcint's own drivers are unconditional stubs, so byte-identity is unobtainable.
+  cintx evaluates the first five; they simply cannot carry `oracle_covered = true`.

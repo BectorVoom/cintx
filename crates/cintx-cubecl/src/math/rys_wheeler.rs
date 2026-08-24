@@ -315,7 +315,11 @@ fn rys_wheeler_partial(
 
     let mut truncated = false;
     for i in 1..n {
-        if b[i] < 1e-14 && b[i] < 0.0 {
+        // rys_wheeler.c:3453 nests `if (b[i] < 1e-14) { if (b[i] < 0.) { ... break } }`,
+        // so the truncation is reached only for a NEGATIVE b; the outer bound is a
+        // diagnostic gate, not part of the condition. Flattened here to the branch
+        // that actually decides.
+        if b[i] < 0.0 {
             // Singular value: approximate the quadrature; higher-order roots set to 0.
             for k in i..n {
                 roots[k] = 0.0;
@@ -495,7 +499,9 @@ fn lrys_wheeler_partial_dd(
     da[0] = a[0].to_f64();
     for i in 1..n {
         let bi = b[i].to_f64();
-        if bi < 1e-19 && bi < 0.0 {
+        // Same flattening as `rys_wheeler_partial` above: rys_wheeler.c:3640 gates the
+        // truncation on `b[i] < 0.` inside an outer `b[i] < 1e-19` diagnostic check.
+        if bi < 0.0 {
             for k in i..n {
                 roots[k] = 0.0;
                 weights[k] = 0.0;
@@ -1401,6 +1407,10 @@ fn jacobi_transform_kernel(
 }
 
 /// Host orchestrator for the f64 Jacobi path (nroots 6,7; x <= breakpoint).
+///
+/// Host-launched on `CpuRuntime`, so it only exists when the `cpu` feature is on;
+/// see [`rys_roots_host_wheeler`] for the GPU-only-profile substitution.
+#[cfg(feature = "cpu")]
 fn rys_jacobi_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     let n = nroots;
     let client = cubecl::cpu::CpuRuntime::client(&Default::default());
@@ -2063,6 +2073,7 @@ fn schmidt_kernel(
 /// production dispatch: nroots 6,7 stay on the host path (parity-honest escape hatch — see
 /// `rys_roots_host_wheeler`), and nroots 8's large-x tail uses the dd `lrys_schmidt_device`.
 #[allow(dead_code)]
+#[cfg(feature = "cpu")]
 fn rys_schmidt_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     let n = nroots;
     let nroots1 = n + 1;
@@ -2610,6 +2621,7 @@ fn llaguerre_tridiag_kernel(
 
 /// Shared host orchestrator for the dd Jacobi/Laguerre paths: launch a dd tridiagonal
 /// kernel (selected by `is_laguerre`), eigh, then the f64 transform kernel. `n` = nroots.
+#[cfg(feature = "cpu")]
 fn lrys_wheeler_device(
     nroots: usize,
     x: f64,
@@ -2753,9 +2765,11 @@ fn lrys_wheeler_device(
     error
 }
 
+#[cfg(feature = "cpu")]
 fn lrys_jacobi_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     lrys_wheeler_device(nroots, x, roots, weights, false)
 }
+#[cfg(feature = "cpu")]
 fn lrys_laguerre_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     lrys_wheeler_device(nroots, x, roots, weights, true)
 }
@@ -3086,6 +3100,7 @@ fn lschmidt_kernel(
 }
 
 /// Host orchestrator for the dd Schmidt path (nroots 8; x > 11).
+#[cfg(feature = "cpu")]
 fn lrys_schmidt_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     let n = nroots;
     let nroots1 = n + 1;
@@ -3167,8 +3182,29 @@ fn segment_solve(
     error
 }
 
+#[cfg(not(feature = "cpu"))]
+use {
+    lrys_jacobi as wheeler_jacobi_dd, lrys_laguerre as wheeler_laguerre_dd,
+    lrys_schmidt as wheeler_schmidt_dd, rys_jacobi as wheeler_jacobi_f64,
+};
 /// Compute the `nroots` Rys roots and weights for `nroots` in 6..=12, host-side.
 ///
+// ---------------------------------------------------------------------------
+// Solver selection for `rys_roots_host_wheeler`.
+//
+// The `*_device` orchestrators host-launch a `#[cube]` kernel on `CpuRuntime`, which
+// only exists when the `cpu` feature is on. Under a GPU-only feature profile
+// (`--no-default-features --features wgpu|cuda|rocm|metal`) the bit-identical pure-host
+// solvers stand in: these are host helper routines feeding the host `nroots > 5`
+// fallback, not device kernels, so they must not force `cubecl/cpu` into the build.
+// `rys_nroots_sweep` pins the two implementations to the same reference table.
+// ---------------------------------------------------------------------------
+#[cfg(feature = "cpu")]
+use {
+    lrys_jacobi_device as wheeler_jacobi_dd, lrys_laguerre_device as wheeler_laguerre_dd,
+    lrys_schmidt_device as wheeler_schmidt_dd, rys_jacobi_device as wheeler_jacobi_f64,
+};
+
 /// Mirrors the `CINTrys_roots` per-nroots dispatch (rys_roots.c:97-114, lower==0).
 /// Returns `(roots, weights)` each of length `nroots`. Panics for `nroots < 6` or
 /// `nroots > 12` (the caller `rys_roots_host_f64` only routes 6..=12 here).
@@ -3212,8 +3248,8 @@ pub fn rys_roots_host_wheeler(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
             11.0,
             &mut roots,
             &mut weights,
-            rys_jacobi_device,
-            lrys_schmidt_device,
+            wheeler_jacobi_f64,
+            wheeler_schmidt_dd,
         ),
         // nroots 9..12: dd Jacobi (x<=bp) + dd Laguerre (x>bp), both on the CubeCL CPU backend.
         9 => segment_solve(
@@ -3222,8 +3258,8 @@ pub fn rys_roots_host_wheeler(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
             10.0,
             &mut roots,
             &mut weights,
-            lrys_jacobi_device,
-            lrys_laguerre_device,
+            wheeler_jacobi_dd,
+            wheeler_laguerre_dd,
         ),
         10 | 11 => segment_solve(
             nroots,
@@ -3231,8 +3267,8 @@ pub fn rys_roots_host_wheeler(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
             18.0,
             &mut roots,
             &mut weights,
-            lrys_jacobi_device,
-            lrys_laguerre_device,
+            wheeler_jacobi_dd,
+            wheeler_laguerre_dd,
         ),
         12 => segment_solve(
             nroots,
@@ -3240,8 +3276,8 @@ pub fn rys_roots_host_wheeler(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
             22.0,
             &mut roots,
             &mut weights,
-            lrys_jacobi_device,
-            lrys_laguerre_device,
+            wheeler_jacobi_dd,
+            wheeler_laguerre_dd,
         ),
         _ => unreachable!(),
     };
