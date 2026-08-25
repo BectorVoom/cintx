@@ -224,7 +224,7 @@ fn ss_grid_stride_kernel<F: Float + CubeElement>(
         let count_offset = item * 2;
         let count_i = primitive_counts[count_offset] as usize;
         let count_j = primitive_counts[count_offset + 1] as usize;
-        let mut value = F::new(0.0);
+        let mut value = F::new(0.0_f32);
         let mut primitive_i = 0usize;
         while primitive_i < count_i {
             let ai = exponents_i[offset_i + primitive_i];
@@ -237,13 +237,13 @@ fn ss_grid_stride_kernel<F: Float + CubeElement>(
                 let reduced_exponent = ai * aj / zeta;
                 let overlap =
                     ci * cj * F::exp(-reduced_exponent * distance_squared) * sqrtpi * pi_const
-                        / (zeta * F::sqrt(zeta) * F::new(4.0) * pi_const);
+                        / (zeta * F::sqrt(zeta) * F::new(4.0_f32) * pi_const);
                 if kinetic == 0 {
                     value += overlap;
                 } else {
                     value += overlap
                         * reduced_exponent
-                        * (F::new(3.0) - F::new(2.0) * reduced_exponent * distance_squared);
+                        * (F::new(3.0_f32) - F::new(2.0_f32) * reduced_exponent * distance_squared);
                 }
                 primitive_j += 1;
             }
@@ -291,7 +291,7 @@ pub fn ss_plane_cooperative_kernel<F: Float + CubeElement>(
         let count_j = primitive_counts[count_offset + 1] as usize;
         let total_pairs = count_i * count_j;
 
-        let mut lane_val = F::new(0.0);
+        let mut lane_val = F::new(0.0_f32);
         let mut pair_idx = UNIT_POS_PLANE as usize;
         while pair_idx < total_pairs {
             let primitive_i = pair_idx / count_j;
@@ -304,13 +304,13 @@ pub fn ss_plane_cooperative_kernel<F: Float + CubeElement>(
             let reduced_exponent = ai * aj / zeta;
             let overlap =
                 ci * cj * F::exp(-reduced_exponent * distance_squared) * sqrtpi * pi_const
-                    / (zeta * F::sqrt(zeta) * F::new(4.0) * pi_const);
+                    / (zeta * F::sqrt(zeta) * F::new(4.0_f32) * pi_const);
             if kinetic == 0 {
                 lane_val += overlap;
             } else {
                 lane_val += overlap
                     * reduced_exponent
-                    * (F::new(3.0) - F::new(2.0) * reduced_exponent * distance_squared);
+                    * (F::new(3.0_f32) - F::new(2.0_f32) * reduced_exponent * distance_squared);
             }
             pair_idx += PLANE_DIM as usize;
         }
@@ -409,6 +409,7 @@ pub fn run_overlap_ss_batch_device<R: Runtime>(
 /// Each chunk owns distinct output storage. `ComputeClient::read` accepts every
 /// output handle at once, so this has one synchronization/readback boundary even
 /// when memory planning requires several launches.
+#[allow(dead_code)] // pilot reference API kept symmetric; see the module note
 pub fn run_overlap_ss_batch_chunks_device<R: Runtime>(
     client: &ComputeClient<R>,
     chunks: &[&[OverlapSsInput]],
@@ -418,6 +419,7 @@ pub fn run_overlap_ss_batch_chunks_device<R: Runtime>(
 }
 
 /// Submit every planned kinetic s-s chunk before one collective readback.
+#[allow(dead_code)] // pilot reference API kept symmetric; see the module note
 pub fn run_kinetic_ss_batch_chunks_device<R: Runtime>(
     client: &ComputeClient<R>,
     chunks: &[&[OverlapSsInput]],
@@ -679,6 +681,7 @@ pub fn run_overlap_ss_batch_chunks(
 }
 
 /// Backend-generic collective submission for all planned kinetic s-s chunks.
+#[allow(dead_code)] // pilot reference API kept symmetric; see the module note
 pub fn run_kinetic_ss_batch_chunks(
     backend: &ResolvedBackend,
     chunks: &[&[OverlapSsInput]],

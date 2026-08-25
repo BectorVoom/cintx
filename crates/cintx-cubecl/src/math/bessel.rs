@@ -27,7 +27,7 @@
 //!    series identity (per PySCF lines 4654-4672, with `exp(-z)` factored out):
 //!
 //!    $$i_l(x) \;=\; \frac{x^l}{(2l+1)!!} \sum_{k=0}^{\infty}
-//!        \frac{(x^2/2)^k}{k!\,(2l+2k+1)!!/(2l+1)!!}.$$
+//!    \frac{(x^2/2)^k}{k!\,(2l+2k+1)!!/(2l+1)!!}.$$
 //!
 //!    Equivalently, with $t_0 = x^l/(2l+1)!!$ and $t_{k+1} = t_k \cdot
 //!    (x^2/2) / [(k+1)(2k+2l+3)]$, sum $t_k$ until $s + t = s$ (rounding-stable
@@ -39,7 +39,7 @@
 //!    (PySCF lines 4639-4652, with `exp(-z)` factored out):
 //!
 //!    $$i_l(x) \;=\; \frac{e^x}{2x} \sum_{k=0}^{l}
-//!        \frac{(-1)^k\,(l+k)!}{k!\,(l-k)!\,(2x)^k}.$$
+//!    \frac{(-1)^k\,(l+k)!}{k!\,(l-k)!\,(2x)^k}.$$
 //!
 //!    The factor $e^x/(2x)$ is the leading asymptotic; the inner polynomial is
 //!    exact for fixed $l$ (it terminates at $k = l$). PySCF uses `0.5/z` and
@@ -74,6 +74,25 @@
 //!   register pressure budget.
 //! - A future plan may revisit the table strategy if profiling shows the Bessel
 //!   evaluation dominates a Type-2 ECP launch — but that is a separate decision.
+
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+// `x = x - y` rather than `x -= y`: these are statement-for-statement ports of
+// the vendored libcint source, and keeping the assignment shape means a reviewer
+// can diff a routine against the C line by line.
+#![allow(clippy::assign_op_pattern)]
 
 use cubecl::prelude::*;
 

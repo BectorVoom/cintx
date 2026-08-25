@@ -110,7 +110,7 @@ pub fn compute_pdata<F: Float>(
     let fac = F::exp(-ai * aj / zeta_ab * rr) * norm_i * norm_j;
 
     // aij2 = 0.5 / zeta_ab, g1e.c line 168
-    let aij2 = F::new(0.5) / zeta_ab;
+    let aij2 = F::new(0.5_f32) / zeta_ab;
 
     // Return PairData (concrete f64) via cast_from: for the f64 path this is a no-op.
     PairData {
@@ -141,6 +141,8 @@ pub fn compute_pdata<F: Float>(
 /// For F=f64: `to_f64().expect()` is lossless (identity) — byte-identical.
 ///
 /// Used by tests and host-side integral planning code.
+// Mirrors libcint's `CINTg1e_index_xyz` pair-data call, argument for argument.
+#[allow(clippy::too_many_arguments)]
 pub fn compute_pdata_host<F: CintFloat>(
     ai: F,
     aj: F,

@@ -6,6 +6,23 @@ use crate::operator::Representation;
 
 pub(crate) const SHELL_TUPLE_CAPACITY: usize = 4;
 
+/// Highest angular momentum a **spherical** shell may carry.
+///
+/// This is the ceiling of the Cartesian-to-spherical coefficient table, which
+/// is libcint's own: its `g_c2s` array (`cart2sph.c`) has entries for
+/// `l = 0..=15` and nothing above, so beyond it there is no upstream reference
+/// to be compatible with. `cintx-cubecl`'s generated table carries exactly that
+/// range, and `transform::c2s::tests::spheric_l_max_matches_the_table_ceiling`
+/// pins the two constants together.
+///
+/// Cartesian shells are unaffected — they need no transform — so this is
+/// validated per shell against its own `representation`, not globally.
+///
+/// The check exists because the alternative was silent: the transform used to
+/// return `0.0` above `l = 4`, so an out-of-range spherical shell came back
+/// entirely zeroed with an `Ok` status.
+pub const SPHERIC_L_MAX: u8 = 15;
+
 /// Error when a shell tuple would exceed libcint's arity limits.
 #[derive(Debug, thiserror::Error)]
 #[error("shell tuple arity cannot exceed {0}")]
@@ -44,6 +61,13 @@ impl Shell {
             return Err(CoreError::InvalidShellCounts {
                 nprim: nprim_usize,
                 nctr: nctr_usize,
+            });
+        }
+
+        if representation == Representation::Spheric && ang_momentum > SPHERIC_L_MAX {
+            return Err(CoreError::SphericAngularMomentumTooHigh {
+                requested: ang_momentum,
+                max: SPHERIC_L_MAX,
             });
         }
 

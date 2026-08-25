@@ -23,7 +23,36 @@
 //! Pauli σ-matrices. Every other family is component_rank 1 (the σ-axis folds
 //! into the transform).
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+// Index arithmetic here is written in full — `base + 0 * stride`, `base + 1 * stride`,
+// `out[n * 3 + 0]` — so that a slot or component index lines up column-wise with its
+// neighbours and with the libcint layout being mirrored. Folding the `0 *` and `1 *`
+// away would shorten the line and hide the stride.
+#![allow(clippy::identity_op)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+
 use crate::backend::ResolvedBackend;
+use crate::kernels::one_electron::{
+    ONE_E_DERIV_SHAPE_STRIDE, OneEDerivLaunchGroup, one_e_deriv_single_pair_group,
+    one_e_g_slab_stride, one_e_launch_geometry, one_e_per_unit,
+};
 use crate::transform::c2s::ncart;
 use crate::transform::c2spinor::{
     cart_to_spinor_sf_2d, cart_to_spinor_si_2d, cart_to_spinor_si_2di, spinor_len,
@@ -142,222 +171,279 @@ fn ov_hrr_axis<F: Float>(g: &mut Array<F>, base: u32, rirj: F, dj: u32, li_max: 
 // readable at a glance.
 #[allow(clippy::erasing_op)]
 fn sigma_ov_kernel<F: Float + CubeElement>(
-    exps_i: &Array<F>,
-    exps_j: &Array<F>,
-    coeff_i: &Array<F>,
-    coeff_j: &Array<F>,
+    exps: &Array<F>,
+    coeffs: &Array<F>,
+    centers: &Array<F>,
+    shell_meta: &Array<u32>,
+    pairs: &Array<u32>,
+    class_shape: &Array<u32>,
     g: &mut Array<F>,
     gc_out: &mut Array<F>,
-    rix: F,
-    riy: F,
-    riz: F,
-    rjx: F,
-    rjy: F,
-    rjz: F,
     sqrtpi: F,
     pi_const: F,
-    li: u32,
-    lj: u32,
-    nprim_i: u32,
-    nprim_j: u32,
-    nctr_i: u32,
-    nctr_j: u32,
+    n_pairs: u32,
+    n_cubes: u32,
+    g_stride: u32,
     #[comptime] family: u32,
+    #[comptime] per_unit: u32,
 ) {
-    if UNIT_POS == 0u32 {
-        // Headroom: +2 in i (D_I/R_I needs i+1; composed needs +2), +1 in j.
-        let nmax = li + lj + 2u32;
-        let lj_ext = lj + 1u32;
-        let dj = nmax + 1u32;
-        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
-        let total_g = 3u32 * g_per_axis;
-        let gx = 0u32;
-        let gy = g_per_axis;
-        let gz = 2u32 * g_per_axis;
+    // Slot / lane decomposition — see `two_electron.rs` for why this is
+    // arithmetic on comptime-folded flags rather than a `comptime!` if/else.
+    let cube_pos = CUBE_POS as u32;
+    let unit_pos = UNIT_POS as u32;
+    let cube_dim = CUBE_DIM as u32;
 
-        let nci = (li + 1u32) * (li + 2u32) / 2u32;
-        let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
-        let block_len = nci * ncj;
-        let rank = if comptime!(family == 0u32) {
-            3u32
-        } else {
-            1u32
-        };
-        let total_len = rank * N_GC * block_len;
-        let out_total = nctr_i * nctr_j * total_len;
+    let coop = if comptime!(per_unit == 1u32) {
+        0u32
+    } else {
+        1u32
+    };
+    let punit = 1u32 - coop;
+    let slots_per_cube = cube_dim * punit + coop;
+    let slot = cube_pos * slots_per_cube + unit_pos * punit;
+    let n_slots = n_cubes * slots_per_cube;
+    let lane = unit_pos * coop;
 
-        let mut oi = 0u32;
-        while oi < out_total {
-            gc_out[oi as usize] = F::new(0.0);
-            oi += 1u32;
+    if lane == 0u32 {
+        let gbase = slot * g_stride;
+
+        #[allow(clippy::manual_div_ceil)]
+        let chunk = (n_pairs + n_slots - 1u32) / n_slots;
+        let qi_start = slot * (chunk * punit + coop);
+        let mut qi_stop = (qi_start + chunk) * punit + n_pairs * coop;
+        if qi_stop > n_pairs {
+            qi_stop = n_pairs;
         }
+        let qi_step = n_slots * coop + punit;
 
-        let mut pi = 0u32;
-        while pi < nprim_i {
-            let ai = exps_i[pi as usize];
-            let mut pj = 0u32;
-            while pj < nprim_j {
-                let aj = exps_j[pj as usize];
+        let mut qi = qi_start;
+        while qi < qi_stop {
+            let prow = qi * 4u32;
+            let si = pairs[prow as usize];
+            let sj = pairs[(prow + 1u32) as usize];
+            let out_off = pairs[(prow + 2u32) as usize];
 
-                let zeta = ai + aj;
-                let aij2 = F::new(0.5) / zeta;
-                let rirjx = rix - rjx;
-                let rirjy = riy - rjy;
-                let rirjz = riz - rjz;
-                let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
-                let fac = F::exp(-ai * aj / zeta * rr);
-                let px = (ai * rix + aj * rjx) / zeta;
-                let py = (ai * riy + aj * rjy) / zeta;
-                let pz = (ai * riz + aj * rjz) / zeta;
+            let cls = pairs[(prow + 3u32) as usize];
+            let srow = cls * comptime!(ONE_E_DERIV_SHAPE_STRIDE as u32);
+            let li = class_shape[srow as usize];
+            let lj = class_shape[(srow + 1u32) as usize];
 
-                let mut gi = 0u32;
-                while gi < total_g {
-                    g[gi as usize] = F::new(0.0);
-                    gi += 1u32;
-                }
-                g[gx as usize] = F::new(1.0);
-                g[gy as usize] = F::new(1.0);
-                g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+            let mi = si * 4u32;
+            let eoff_i = shell_meta[mi as usize];
+            let coff_i = shell_meta[(mi + 1u32) as usize];
+            let nprim_i = shell_meta[(mi + 2u32) as usize];
+            let nctr_i = shell_meta[(mi + 3u32) as usize];
+            let mj = sj * 4u32;
+            let eoff_j = shell_meta[mj as usize];
+            let coff_j = shell_meta[(mj + 1u32) as usize];
+            let nprim_j = shell_meta[(mj + 2u32) as usize];
+            let nctr_j = shell_meta[(mj + 3u32) as usize];
 
-                ov_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
-                ov_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
-                ov_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+            let ci3 = si * 3u32;
+            let rix = centers[ci3 as usize];
+            let riy = centers[(ci3 + 1u32) as usize];
+            let riz = centers[(ci3 + 2u32) as usize];
+            let cj3 = sj * 3u32;
+            let rjx = centers[cj3 as usize];
+            let rjy = centers[(cj3 + 1u32) as usize];
+            let rjz = centers[(cj3 + 2u32) as usize];
+            // Headroom: +2 in i (D_I/R_I needs i+1; composed needs +2), +1 in j.
+            let nmax = li + lj + 2u32;
+            let lj_ext = lj + 1u32;
+            let dj = nmax + 1u32;
+            let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+            let total_g = 3u32 * g_per_axis;
+            let gx = gbase;
+            let gy = gbase + g_per_axis;
+            let gz = gbase + 2u32 * g_per_axis;
 
-                if lj_ext >= 1u32 {
-                    ov_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
-                    ov_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
-                    ov_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
-                }
+            let nci = (li + 1u32) * (li + 2u32) / 2u32;
+            let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
+            let block_len = nci * ncj;
+            let rank = if comptime!(family == 0u32) {
+                3u32
+            } else {
+                1u32
+            };
+            let total_len = rank * N_GC * block_len;
+            let out_total = nctr_i * nctr_j * total_len;
 
-                let ai2 = F::new(-2.0) * ai;
-                let aj2 = F::new(-2.0) * aj;
-
-                let mut ci = 0u32;
-                while ci < nctr_i {
-                    let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
-                    let mut cj = 0u32;
-                    while cj < nctr_j {
-                        let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
-                        let weight = coeff_i_val * coeff_j_val;
-                        let base = (ci * nctr_j + cj) * total_len;
-
-                        let mut cj_idx = 0u32;
-                        let mut ja = 0u32;
-                        while ja <= lj {
-                            let jx = lj - ja;
-                            let lj_minus_jx = lj - jx;
-                            let mut jb = 0u32;
-                            while jb <= lj_minus_jx {
-                                let jy = lj_minus_jx - jb;
-                                let jz = lj - jx - jy;
-
-                                let mut ci_idx = 0u32;
-                                let mut ia = 0u32;
-                                while ia <= li {
-                                    let ix = li - ia;
-                                    let li_minus_ix = li - ix;
-                                    let mut ib = 0u32;
-                                    while ib <= li_minus_ix {
-                                        let iy = li_minus_ix - ib;
-                                        let iz = li - ix - iy;
-
-                                        // Base index of (ix,iy,iz | jx,jy,jz) per axis.
-                                        let bx = jx * dj + ix;
-                                        let by = jy * dj + iy;
-                                        let bz = jz * dj + iz;
-
-                                        let g0x = g[(gx + bx) as usize];
-                                        let g0y = g[(gy + by) as usize];
-                                        let g0z = g[(gz + bz) as usize];
-
-                                        let elem = cj_idx * nci + ci_idx;
-
-                                        if comptime!(family == 0u32) {
-                                            // sigma: s0 = g0x*g0y*g0z; 3 groups, each
-                                            // [-s0 on its diag block, 0 elsewhere].
-                                            let s0 = g0x * g0y * g0z;
-                                            let v = weight * (-s0);
-                                            // group 0 (σ_x): gc_x = -s0
-                                            let g0base = base + 0u32 * N_GC * block_len;
-                                            gc_out[(g0base + elem) as usize] += v;
-                                            // group 1 (σ_y): gc_y = -s0
-                                            let g1base = base + 1u32 * N_GC * block_len;
-                                            gc_out[(g1base + block_len + elem) as usize] += v;
-                                            // group 2 (σ_z): gc_z = -s0
-                                            let g2base = base + 2u32 * N_GC * block_len;
-                                            gc_out[(g2base + 2u32 * block_len + elem) as usize] +=
-                                                v;
-                                        } else if comptime!(family == 1u32) {
-                                            // sr: g1 = R_I(g0) → read at i+1.
-                                            let g1x = g[(gx + bx + 1u32) as usize];
-                                            let g1y = g[(gy + by + 1u32) as usize];
-                                            let g1z = g[(gz + bz + 1u32) as usize];
-                                            let s0 = g1x * g0y * g0z;
-                                            let s1 = g0x * g1y * g0z;
-                                            let s2 = g0x * g0y * g1z;
-                                            // gout: -s0,-s1,-s2,0 → gc_x,gc_y,gc_z,gc_1
-                                            gc_out[(base + elem) as usize] += weight * (-s0);
-                                            gc_out[(base + block_len + elem) as usize] +=
-                                                weight * (-s1);
-                                            gc_out[(base + 2u32 * block_len + elem) as usize] +=
-                                                weight * (-s2);
-                                            // gc_1 stays 0.
-                                        } else if comptime!(family == 2u32) {
-                                            // srsr: g1=R_J(g0), g2=R_I(g0), g3=R_I(g1).
-                                            //   R_J read at +dj, R_I read at +1.
-                                            // g0[n]   = g[b]
-                                            // g1[n]   = g[b+dj]       (R_J)
-                                            // g2[n]   = g[b+1]        (R_I)
-                                            // g3[n]   = g[b+dj+1]     (R_I of R_J)
-                                            let s_idx_x0 = gx + bx;
-                                            let s_idx_y0 = gy + by;
-                                            let s_idx_z0 = gz + bz;
-                                            sigma_srsr_accum::<F>(
-                                                g, gc_out, base, block_len, elem, weight, dj,
-                                                s_idx_x0, s_idx_y0, s_idx_z0,
-                                            );
-                                        } else {
-                                            // spsp: g1=D_J(g0), g2=D_I(g0), g3=D_I(g1).
-                                            // gout scalar s0+s4+s8 → gc_1 (block 3).
-                                            sigma_spsp_accum::<F>(
-                                                g,
-                                                gc_out,
-                                                base,
-                                                block_len,
-                                                elem,
-                                                weight,
-                                                dj,
-                                                ai2,
-                                                aj2,
-                                                gx + bx,
-                                                gy + by,
-                                                gz + bz,
-                                                ix,
-                                                iy,
-                                                iz,
-                                                jx,
-                                                jy,
-                                                jz,
-                                            );
-                                        }
-
-                                        ci_idx += 1u32;
-                                        ib += 1u32;
-                                    }
-                                    ia += 1u32;
-                                }
-                                cj_idx += 1u32;
-                                jb += 1u32;
-                            }
-                            ja += 1u32;
-                        }
-                        cj += 1u32;
-                    }
-                    ci += 1u32;
-                }
-                pj += 1u32;
+            let mut oi = out_off;
+            while oi < out_off + out_total {
+                gc_out[oi as usize] = F::new(0.0_f32);
+                oi += 1u32;
             }
-            pi += 1u32;
+
+            let mut pi = 0u32;
+            while pi < nprim_i {
+                let ai = exps[(eoff_i + pi) as usize];
+                let mut pj = 0u32;
+                while pj < nprim_j {
+                    let aj = exps[(eoff_j + pj) as usize];
+
+                    let zeta = ai + aj;
+                    let aij2 = F::new(0.5_f32) / zeta;
+                    let rirjx = rix - rjx;
+                    let rirjy = riy - rjy;
+                    let rirjz = riz - rjz;
+                    let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
+                    let fac = F::exp(-ai * aj / zeta * rr);
+                    let px = (ai * rix + aj * rjx) / zeta;
+                    let py = (ai * riy + aj * rjy) / zeta;
+                    let pz = (ai * riz + aj * rjz) / zeta;
+
+                    let mut gi = gbase;
+                    while gi < gbase + total_g {
+                        g[gi as usize] = F::new(0.0_f32);
+                        gi += 1u32;
+                    }
+                    g[gx as usize] = F::new(1.0_f32);
+                    g[gy as usize] = F::new(1.0_f32);
+                    g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
+
+                    ov_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
+                    ov_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
+                    ov_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+
+                    if lj_ext >= 1u32 {
+                        ov_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
+                        ov_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
+                        ov_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                    }
+
+                    let ai2 = F::new(-2.0_f32) * ai;
+                    let aj2 = F::new(-2.0_f32) * aj;
+
+                    let mut ci = 0u32;
+                    while ci < nctr_i {
+                        let coeff_i_val = coeffs[(coff_i + pi * nctr_i + ci) as usize];
+                        let mut cj = 0u32;
+                        while cj < nctr_j {
+                            let coeff_j_val = coeffs[(coff_j + pj * nctr_j + cj) as usize];
+                            let weight = coeff_i_val * coeff_j_val;
+                            let base = out_off + (ci * nctr_j + cj) * total_len;
+
+                            let mut cj_idx = 0u32;
+                            let mut ja = 0u32;
+                            while ja <= lj {
+                                let jx = lj - ja;
+                                let lj_minus_jx = lj - jx;
+                                let mut jb = 0u32;
+                                while jb <= lj_minus_jx {
+                                    let jy = lj_minus_jx - jb;
+                                    let jz = lj - jx - jy;
+
+                                    let mut ci_idx = 0u32;
+                                    let mut ia = 0u32;
+                                    while ia <= li {
+                                        let ix = li - ia;
+                                        let li_minus_ix = li - ix;
+                                        let mut ib = 0u32;
+                                        while ib <= li_minus_ix {
+                                            let iy = li_minus_ix - ib;
+                                            let iz = li - ix - iy;
+
+                                            // Base index of (ix,iy,iz | jx,jy,jz) per axis.
+                                            let bx = jx * dj + ix;
+                                            let by = jy * dj + iy;
+                                            let bz = jz * dj + iz;
+
+                                            let g0x = g[(gx + bx) as usize];
+                                            let g0y = g[(gy + by) as usize];
+                                            let g0z = g[(gz + bz) as usize];
+
+                                            let elem = cj_idx * nci + ci_idx;
+
+                                            if comptime!(family == 0u32) {
+                                                // sigma: s0 = g0x*g0y*g0z; 3 groups, each
+                                                // [-s0 on its diag block, 0 elsewhere].
+                                                let s0 = g0x * g0y * g0z;
+                                                let v = weight * (-s0);
+                                                // group 0 (σ_x): gc_x = -s0
+                                                let g0base = base + 0u32 * N_GC * block_len;
+                                                gc_out[(g0base + elem) as usize] += v;
+                                                // group 1 (σ_y): gc_y = -s0
+                                                let g1base = base + 1u32 * N_GC * block_len;
+                                                gc_out[(g1base + block_len + elem) as usize] += v;
+                                                // group 2 (σ_z): gc_z = -s0
+                                                let g2base = base + 2u32 * N_GC * block_len;
+                                                gc_out[(g2base + 2u32 * block_len + elem)
+                                                    as usize] += v;
+                                            } else if comptime!(family == 1u32) {
+                                                // sr: g1 = R_I(g0) → read at i+1.
+                                                let g1x = g[(gx + bx + 1u32) as usize];
+                                                let g1y = g[(gy + by + 1u32) as usize];
+                                                let g1z = g[(gz + bz + 1u32) as usize];
+                                                let s0 = g1x * g0y * g0z;
+                                                let s1 = g0x * g1y * g0z;
+                                                let s2 = g0x * g0y * g1z;
+                                                // gout: -s0,-s1,-s2,0 → gc_x,gc_y,gc_z,gc_1
+                                                gc_out[(base + elem) as usize] += weight * (-s0);
+                                                gc_out[(base + block_len + elem) as usize] +=
+                                                    weight * (-s1);
+                                                gc_out
+                                                    [(base + 2u32 * block_len + elem) as usize] +=
+                                                    weight * (-s2);
+                                                // gc_1 stays 0.
+                                            } else if comptime!(family == 2u32) {
+                                                // srsr: g1=R_J(g0), g2=R_I(g0), g3=R_I(g1).
+                                                //   R_J read at +dj, R_I read at +1.
+                                                // g0[n]   = g[b]
+                                                // g1[n]   = g[b+dj]       (R_J)
+                                                // g2[n]   = g[b+1]        (R_I)
+                                                // g3[n]   = g[b+dj+1]     (R_I of R_J)
+                                                let s_idx_x0 = gx + bx;
+                                                let s_idx_y0 = gy + by;
+                                                let s_idx_z0 = gz + bz;
+                                                sigma_srsr_accum::<F>(
+                                                    g, gc_out, base, block_len, elem, weight, dj,
+                                                    s_idx_x0, s_idx_y0, s_idx_z0,
+                                                );
+                                            } else {
+                                                // spsp: g1=D_J(g0), g2=D_I(g0), g3=D_I(g1).
+                                                // gout scalar s0+s4+s8 → gc_1 (block 3).
+                                                sigma_spsp_accum::<F>(
+                                                    g,
+                                                    gc_out,
+                                                    base,
+                                                    block_len,
+                                                    elem,
+                                                    weight,
+                                                    dj,
+                                                    ai2,
+                                                    aj2,
+                                                    gx + bx,
+                                                    gy + by,
+                                                    gz + bz,
+                                                    ix,
+                                                    iy,
+                                                    iz,
+                                                    jx,
+                                                    jy,
+                                                    jz,
+                                                );
+                                            }
+
+                                            ci_idx += 1u32;
+                                            ib += 1u32;
+                                        }
+                                        ia += 1u32;
+                                    }
+                                    cj_idx += 1u32;
+                                    jb += 1u32;
+                                }
+                                ja += 1u32;
+                            }
+                            cj += 1u32;
+                        }
+                        ci += 1u32;
+                    }
+                    pj += 1u32;
+                }
+                pi += 1u32;
+            }
+
+            qi += qi_step;
         }
     }
 }
@@ -509,89 +595,133 @@ fn nabla_i_of_j<F: Float>(
 //  Device dispatch for the overlap-engine kernel.
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
-fn run_sigma_ov_device<R: Runtime>(
-    client: &ComputeClient<R>,
-    family: u32,
-    li: u32,
-    lj: u32,
-    nprim_i: u32,
-    nprim_j: u32,
-    nctr_i: u32,
-    nctr_j: u32,
-    ri: [f64; 3],
-    rj: [f64; 3],
-    exps_i: &[f64],
-    exps_j: &[f64],
-    coeff_i: &[f64],
-    coeff_j: &[f64],
-) -> Vec<f64> {
-    let li_u = li as usize;
-    let lj_u = lj as usize;
-    let nmax_u = li_u + lj_u + 2;
-    let lj_ext_u = lj_u + 1;
-    let g_per_axis = (nmax_u + 1) * (lj_ext_u + 1);
-    let total_g = 3 * g_per_axis;
-    let nci = (li_u + 1) * (li_u + 2) / 2;
-    let ncj = (lj_u + 1) * (lj_u + 2) / 2;
-    let rank = if family == 0 { 3 } else { 1 };
-    let out_len = (nctr_i as usize) * (nctr_j as usize) * rank * (N_GC as usize) * nci * ncj;
-
-    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
-    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
-    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
-    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
-
-    // Scratch + output buffers: allocate directly on device via client.empty.
-    let g_h = client.empty(total_g * std::mem::size_of::<f64>());
-    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
-
-    // SAFETY: Input and scratch buffer lengths match exact dimensions.
-    // In-kernel loops strictly bound indices to valid array ranges.
-    macro_rules! launch_with {
-        ($fam:expr) => {
-            unsafe {
-                sigma_ov_kernel::launch_unchecked::<f64, R>(
-                    client,
-                    crate::plane::single_cube_count(),
-                    crate::plane::backend_plane_cube_dim::<R>(),
-                    ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()),
-                    ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()),
-                    ArrayArg::from_raw_parts(coeff_i_h.clone(), coeff_i.len()),
-                    ArrayArg::from_raw_parts(coeff_j_h.clone(), coeff_j.len()),
-                    ArrayArg::from_raw_parts(g_h.clone(), total_g),
-                    ArrayArg::from_raw_parts(out_h.clone(), out_len),
-                    ri[0],
-                    ri[1],
-                    ri[2],
-                    rj[0],
-                    rj[1],
-                    rj[2],
-                    SQRTPI,
-                    std::f64::consts::PI,
-                    li,
-                    lj,
-                    nprim_i,
-                    nprim_j,
-                    nctr_i,
-                    nctr_j,
-                    $fam,
-                );
-            }
-        };
-    }
-
-    match family {
-        0 => launch_with!(0u32),
-        1 => launch_with!(1u32),
-        2 => launch_with!(2u32),
-        _ => launch_with!(3u32),
-    }
-
-    let raw = client.read_one_unchecked(out_h);
-    f64::from_bytes(&raw)[0..out_len].to_vec()
+/// `g_per_axis` for one σ-overlap class.
+///
+/// Mirrors the kernel's own sizing; the two must agree or the slab is too small.
+fn sigma_ov_g_per_axis(li: usize, lj: usize) -> usize {
+    // +2 in i, +1 in j: nmax = li+lj+2, lj_ext = lj+1.
+    (li + lj + 3) * (lj + 2)
 }
 
+/// Evaluate every launch group of a batched σ-overlap run (Task 35-D, wave 5).
+///
+/// `family` is fixed by the caller's operator and is the kernel's only comptime
+/// parameter, so a whole work list is one dispatch.
+fn run_sigma_ov_batches<R: Runtime>(
+    client: &ComputeClient<R>,
+    basis: &crate::kernels::two_electron::TwoEBasisHandles,
+    groups: &[OneEDerivLaunchGroup],
+    family: u32,
+) -> Vec<Vec<f64>> {
+    if groups.is_empty() {
+        return Vec::new();
+    }
+
+    let crate::kernels::two_electron::TwoEBasisHandles {
+        exps: exps_h,
+        coeffs: coeffs_h,
+        centers: centers_h,
+        shell_meta: meta_h,
+        exps_len,
+        coeffs_len,
+        centers_len,
+        shell_meta_len,
+    } = basis;
+
+    let mut results = Vec::with_capacity(groups.len());
+    for group in groups {
+        let n_pairs = group.len();
+        if n_pairs == 0 {
+            results.push(Vec::new());
+            continue;
+        }
+        let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
+        let (n_cubes, cube_dim, n_slots) =
+            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+        let g_len = n_slots * g_stride;
+
+        let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
+        let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
+        let g_h = client.empty(g_len * std::mem::size_of::<f64>());
+        let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
+        let per_unit = u32::from(one_e_per_unit::<R>());
+
+        // SAFETY: every buffer is allocated at the exact length passed to
+        // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
+        // `n_pairs`, the class index, and the per-shell counts.
+        macro_rules! launch_with {
+            ($fam:expr) => {
+                unsafe {
+                    sigma_ov_kernel::launch_unchecked::<f64, R>(
+                        client,
+                        crate::plane::cube_count_1d(n_cubes),
+                        cube_dim,
+                        ArrayArg::from_raw_parts(exps_h.clone(), *exps_len),
+                        ArrayArg::from_raw_parts(coeffs_h.clone(), *coeffs_len),
+                        ArrayArg::from_raw_parts(centers_h.clone(), *centers_len),
+                        ArrayArg::from_raw_parts(meta_h.clone(), *shell_meta_len),
+                        ArrayArg::from_raw_parts(pairs_h.clone(), group.pairs.len()),
+                        ArrayArg::from_raw_parts(shape_h.clone(), group.class_shape.len()),
+                        ArrayArg::from_raw_parts(g_h.clone(), g_len),
+                        ArrayArg::from_raw_parts(out_h.clone(), group.out_len),
+                        SQRTPI,
+                        std::f64::consts::PI,
+                        n_pairs as u32,
+                        n_cubes,
+                        g_stride as u32,
+                        $fam,
+                        per_unit,
+                    );
+                }
+            };
+        }
+
+        match family {
+            0 => launch_with!(0u32),
+            1 => launch_with!(1u32),
+            2 => launch_with!(2u32),
+            _ => launch_with!(3u32),
+        }
+
+        let raw = client.read_one_unchecked(out_h);
+        results.push(f64::from_bytes(&raw)[0..group.out_len].to_vec());
+    }
+    results
+}
+
+/// Backend dispatch for a whole batched σ-overlap run.
+fn dispatch_sigma_ov_batches(
+    backend: &ResolvedBackend,
+    basis: &crate::kernels::two_electron::TwoEBasisHandles,
+    groups: &[OneEDerivLaunchGroup],
+    family: u32,
+) -> Vec<Vec<f64>> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => {
+            run_sigma_ov_batches::<cubecl::cpu::CpuRuntime>(client, basis, groups, family)
+        }
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => {
+            run_sigma_ov_batches::<cubecl_wgpu::WgpuRuntime>(client, basis, groups, family)
+        }
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => {
+            run_sigma_ov_batches::<cubecl_cuda::CudaRuntime>(client, basis, groups, family)
+        }
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => {
+            run_sigma_ov_batches::<cubecl_hip::HipRuntime>(client, basis, groups, family)
+        }
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            run_sigma_ov_batches::<cubecl_wgpu::WgpuRuntime>(client, basis, groups, family)
+        }
+    }
+}
+
+/// One shell pair through the batched σ-overlap path — a one-pair group through
+/// the same kernel a wide batch uses (Task 35-D).
 #[allow(clippy::too_many_arguments)]
 fn run_sigma_ov_on_backend(
     backend: &ResolvedBackend,
@@ -609,34 +739,31 @@ fn run_sigma_ov_on_backend(
     coeff_i: &[f64],
     coeff_j: &[f64],
 ) -> Result<Vec<f64>, cintxRsError> {
-    let out = match backend {
-        #[cfg(feature = "cpu")]
-        ResolvedBackend::Cpu(client) => run_sigma_ov_device::<cubecl::cpu::CpuRuntime>(
-            client, family, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j,
-        ),
-        #[cfg(feature = "wgpu")]
-        ResolvedBackend::Wgpu(client, _) => run_sigma_ov_device::<cubecl_wgpu::WgpuRuntime>(
-            client, family, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j,
-        ),
-        #[cfg(feature = "cuda")]
-        ResolvedBackend::Cuda(client) => run_sigma_ov_device::<cubecl_cuda::CudaRuntime>(
-            client, family, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j,
-        ),
-        #[cfg(feature = "rocm")]
-        ResolvedBackend::Rocm(client) => run_sigma_ov_device::<cubecl_hip::HipRuntime>(
-            client, family, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j,
-        ),
-        #[cfg(feature = "metal")]
-        ResolvedBackend::Metal(client, _) => run_sigma_ov_device::<cubecl_wgpu::WgpuRuntime>(
-            client, family, li, lj, nprim_i, nprim_j, nctr_i, nctr_j, ri, rj, exps_i, exps_j,
-            coeff_i, coeff_j,
-        ),
-    };
-    Ok(out)
+    // `family == 0` is the rank-3 σ tensor; the others are rank 1.
+    let rank = if family == 0 { 3 } else { 1 };
+    let (group, handles) = one_e_deriv_single_pair_group(
+        backend,
+        li,
+        lj,
+        nprim_i,
+        nprim_j,
+        nctr_i,
+        nctr_j,
+        ri,
+        rj,
+        exps_i,
+        exps_j,
+        coeff_i,
+        coeff_j,
+        (rank * N_GC) as usize,
+        sigma_ov_g_per_axis(li as usize, lj as usize),
+        1,
+    );
+    Ok(
+        dispatch_sigma_ov_batches(backend, &handles, std::slice::from_ref(&group), family)
+            .pop()
+            .unwrap_or_default(),
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

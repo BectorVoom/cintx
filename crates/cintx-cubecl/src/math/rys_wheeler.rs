@@ -31,6 +31,35 @@
 //! replicates `c99_sqrtl`. The nroots 8..12 sweep at atol=1e-12 validates that the residual
 //! f64-vs-80bit divergence stays within tolerance.
 
+// Transcribed verbatim from vendored libcint 6.1.3. Result compatibility with
+// upstream is decided by the exact bits these literals feed the kernels, so a
+// literal is never truncated to the shortest form that round-trips — the same
+// provenance rationale the `clippy::approx_constant` allows in this crate carry.
+#![allow(clippy::excessive_precision)]
+// Index arithmetic here is written in full — `base + 0 * stride`, `base + 1 * stride`,
+// `out[n * 3 + 0]` — so that a slot or component index lines up column-wise with its
+// neighbours and with the libcint layout being mirrored. Folding the `0 *` and `1 *`
+// away would shorten the line and hide the stride.
+#![allow(clippy::identity_op)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+// Element loops rather than `copy_from_slice`: the source index carries a table
+// base offset (`tabu_base + i`, `j * ORDER7OFFSET + i`) or a recursion bound that
+// the slice form would have to restate as two range expressions.
+#![allow(clippy::manual_memcpy)]
+
 use super::eigh;
 use super::roots_jacobi_data as data;
 use cubecl::prelude::*;
@@ -46,9 +75,11 @@ const SQRTPIE4: f64 =
 const SML_FLOAT64: f64 = f64::EPSILON * 0.5;
 /// Flocke extra recursion order for the f64 ("DP") Miller pass (rys_wheeler.c:22).
 const FLOCKE_EXTRA_ORDER_FOR_DP: usize = 20;
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// Flocke extra recursion order for the long-double ("LP") Miller pass (rys_wheeler.c:24).
 const FLOCKE_EXTRA_ORDER_FOR_LP: usize = 24;
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `c99_sqrtl` (rys_roots.c:1776) — one Babylonian refinement over f64 `sqrt`.
 /// Used wherever the C long-double path calls `sqrtl` with `HAVE_SQRTL` disabled.
 #[inline]
@@ -56,6 +87,23 @@ fn c99_sqrtl(x: f64) -> f64 {
     let z = x.sqrt();
     (z * z + x) / (z * 2.0)
 }
+
+// ---------------------------------------------------------------------------
+// Superseded host long-double reference (`l*` / `Dd`).
+//
+// `rys_roots_host_wheeler` dispatches nroots 8..12 to the **device** dd
+// implementations — `wheeler_jacobi_f64`, `wheeler_jacobi_dd`,
+// `wheeler_schmidt_dd`, `wheeler_laguerre_dd`, built on the `*_dev` chain near
+// `DdDev` below — so nothing calls the host chain any more. It is kept, not
+// deleted, because it is the *independent* transcription those device kernels
+// were validated against: a divergence between the two is the only cheap signal
+// that a device dd routine has drifted, and re-deriving it from the C source
+// would cost far more than carrying it.
+//
+// Note for Phase 33 task 33-05 (FMA contraction destroying the error-free
+// transform): the functions at risk are the device `two_sum_dev` / `two_prod_dev`
+// pair, NOT the host `two_sum` / `two_prod` here. The host pair is unreachable.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Double-double (dd) extended precision for the long-double (nroots >= 8) path.
@@ -70,6 +118,7 @@ fn c99_sqrtl(x: f64) -> f64 {
 // `_CINTdiagonalize`. This brings nroots 8..12 within atol=1e-12 of the vendor.
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// A double-double number `hi + lo` with `|lo| <= 0.5 ulp(hi)`.
 #[derive(Clone, Copy, Debug)]
 struct Dd {
@@ -77,6 +126,7 @@ struct Dd {
     lo: f64,
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 impl Dd {
     #[inline]
     fn new(hi: f64, lo: f64) -> Self {
@@ -92,6 +142,7 @@ impl Dd {
     }
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// Knuth TwoSum: exact sum of two f64 as a double-double.
 #[inline]
 fn two_sum(a: f64, b: f64) -> (f64, f64) {
@@ -101,6 +152,7 @@ fn two_sum(a: f64, b: f64) -> (f64, f64) {
     (s, err)
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// Dekker TwoProd via fused-multiply-add (stable, exact product).
 #[inline]
 fn two_prod(a: f64, b: f64) -> (f64, f64) {
@@ -109,6 +161,7 @@ fn two_prod(a: f64, b: f64) -> (f64, f64) {
     (p, e)
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 #[inline]
 fn dd_add(a: Dd, b: Dd) -> Dd {
     let (s, e) = two_sum(a.hi, b.hi);
@@ -117,11 +170,13 @@ fn dd_add(a: Dd, b: Dd) -> Dd {
     Dd::new(hi, lo)
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 #[inline]
 fn dd_sub(a: Dd, b: Dd) -> Dd {
     dd_add(a, Dd::new(-b.hi, -b.lo))
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 #[inline]
 fn dd_mul(a: Dd, b: Dd) -> Dd {
     let (p, e) = two_prod(a.hi, b.hi);
@@ -130,6 +185,7 @@ fn dd_mul(a: Dd, b: Dd) -> Dd {
     Dd::new(hi, lo)
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 #[inline]
 fn dd_div(a: Dd, b: Dd) -> Dd {
     let q1 = a.hi / b.hi;
@@ -142,6 +198,7 @@ fn dd_div(a: Dd, b: Dd) -> Dd {
     dd_add(Dd::new(hi, lo), Dd::from(q3))
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 #[inline]
 fn dd_mul_f64(a: Dd, b: f64) -> Dd {
     dd_mul(a, Dd::from(b))
@@ -313,7 +370,10 @@ fn rys_wheeler_partial(
 
     wheeler_recursion(n, alpha, beta, moments, &mut a, &mut b);
 
-    let mut truncated = false;
+    // `n` is narrowed inside the loop for the *eigensolve below*, not to shorten
+    // the iteration — which is why the assignment is immediately followed by
+    // `break`. Clippy reads a mutated range bound as a likely mistake.
+    #[allow(clippy::mut_range_bound)]
     for i in 1..n {
         // rys_wheeler.c:3453 nests `if (b[i] < 1e-14) { if (b[i] < 0.) { ... break } }`,
         // so the truncation is reached only for a NEGATIVE b; the outer bound is a
@@ -326,12 +386,10 @@ fn rys_wheeler_partial(
                 weights[k] = 0.0;
             }
             n = i;
-            truncated = true;
             break;
         }
         b[i] = b[i].sqrt();
     }
-    let _ = truncated;
 
     // _CINTdiagonalize(n, a, b+1, roots, c0): off-diagonal is b[1..n].
     let mut c0 = vec![0.0f64; n * n];
@@ -373,6 +431,7 @@ fn rys_jacobi(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     )
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `lflocke_jacobi_moments` (rys_wheeler.c:3553) in double-double precision.
 /// Emulates the vendor's 80-bit long-double Miller recursion.
 fn lflocke_jacobi_moments_dd(n: usize, t: f64, mus: &mut [Dd]) {
@@ -425,6 +484,7 @@ fn lflocke_jacobi_moments_dd(n: usize, t: f64, mus: &mut [Dd]) {
     }
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `lwheeler_recursion` (rys_wheeler.c:3587) in double-double precision.
 /// `alpha`/`beta` are double-double (the long-double recurrence coefficients).
 fn lwheeler_recursion_dd(
@@ -466,6 +526,7 @@ fn lwheeler_recursion_dd(
     }
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `CINTlrys_jacobi` (rys_wheeler.c:3703) — long-double Jacobi path via double-double.
 fn lrys_jacobi(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     let mut moments = vec![Dd::from(0.0); MXRYSROOTS * 2];
@@ -475,6 +536,7 @@ fn lrys_jacobi(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 
     lrys_wheeler_partial_dd(n, &alpha, &beta, &moments, roots, weights)
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `lrys_wheeler_partial` (rys_wheeler.c:3625) — long-double partial via double-double
 /// intermediates, rounded to f64 before the shared f64 eigensolve (matches the vendor's
 /// long-double -> double cast at `_CINTdiagonalize`).
@@ -653,6 +715,7 @@ fn rys_schmidt(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) ->
     rdk_rys_roots(nroots, &fmt_ints, roots, weights)
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `lgamma_inc_like` (fmt.c:248) in double-double — the long-double FMT moments.
 fn lgamma_inc_like_dd(f: &mut [Dd], t: f64, m: usize) {
     if t == 0.0 {
@@ -696,6 +759,7 @@ fn lgamma_inc_like_dd(f: &mut [Dd], t: f64, m: usize) {
     }
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `R_lsmit` (rys_roots.c:1798) in double-double — Schmidt orthogonalization of the
 /// long-double FMT moments. `cs` is column-major n×n (dd). Returns 0 / j>0 / 1.
 fn r_lsmit_dd(cs: &mut [Dd], fmt_ints: &[Dd], n: usize) -> i32 {
@@ -750,6 +814,7 @@ fn r_lsmit_dd(cs: &mut [Dd], fmt_ints: &[Dd], n: usize) -> i32 {
     0
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// double-double square root (Newton step over the f64 sqrt).
 #[inline]
 fn dd_sqrt(a: Dd) -> Dd {
@@ -766,6 +831,7 @@ fn dd_sqrt(a: Dd) -> Dd {
     Dd::new(hi, lo)
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `CINTlrys_schmidt` (rys_roots.c:1851) — long-double Schmidt (double-double) for the
 /// nroots=8 large-x tail. FMT moments + R_lsmit are computed in dd, polynomial roots in
 /// f64 (the vendor also drops to `double` for `_CINT_polynomial_roots`).
@@ -1077,6 +1143,7 @@ fn r_dnode(a: &[f64], roots: &mut [f64], order: usize) -> i32 {
 // Laguerre path (long double) — large-x tail for nroots 9..12.
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `llaguerre_moments` (rys_wheeler.c:3479, lower==0) in double-double precision.
 /// alpha/beta are double-double (the vendor computes them in long double).
 fn llaguerre_moments_dd(n: usize, t: f64, alpha: &mut [Dd], beta: &mut [Dd], moments: &mut [Dd]) {
@@ -1104,6 +1171,7 @@ fn llaguerre_moments_dd(n: usize, t: f64, alpha: &mut [Dd], beta: &mut [Dd], mom
     }
 }
 
+#[allow(dead_code)] // superseded host long-double reference; see the note above
 /// `CINTlrys_laguerre` (rys_wheeler.c:3692) — long-double Laguerre path via double-double.
 fn lrys_laguerre(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     let mut moments = vec![Dd::from(0.0); MXRYSROOTS * 2];
@@ -1129,6 +1197,10 @@ fn lrys_laguerre(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i3
 //  coefficient tables passed as device input Arrays (no const-array runtime index).
 // ===========================================================================
 
+// `#[cube]` requires every binding to be initialized at its `let`: a
+// conditionally-initialized local does not expand. Each initializer below is
+// overwritten on every path, so it is structurally necessary rather than dead.
+#[allow(unused_assignments)]
 /// Device erf via Cody rational Chebyshev (unrolled const access, no runtime const index).
 #[cube]
 fn erf_dev(x: f64) -> f64 {
@@ -1166,6 +1238,10 @@ fn erf_dev(x: f64) -> f64 {
     out
 }
 
+// `#[cube]` requires every binding to be initialized at its `let`: a
+// conditionally-initialized local does not expand. Each initializer below is
+// overwritten on every path, so it is structurally necessary rather than dead.
+#[allow(unused_assignments)]
 /// Device erfc for |x| >= 0.5 (Cody), unrolled.
 #[cube]
 fn erfc_dev(ax: f64) -> f64 {
@@ -1243,6 +1319,10 @@ fn erfc_dev(ax: f64) -> f64 {
 
 const SQRTPIE4_DEV: f64 =
     0.886_226_925_452_758_013_649_083_741_670_572_591_398_774_728_061_193_564_106_903_894_926_4;
+// The `x <= SMALLX_LIMIT` polynomial-fit regime is outside the validated
+// Phase-25 corpus envelope, so no device kernel branches on it yet. Kept
+// beside `SQRTPIE4_DEV` because it is the breakpoint that branch will need.
+#[allow(dead_code)]
 const SMALLX_LIMIT_DEV: f64 = 3e-7;
 
 /// Device flocke_jacobi_moments (intermediate-x branch only; SMALLX path is out of the
@@ -1255,6 +1335,8 @@ fn flocke_jacobi_moments_dev(
     t: f64,
     rn_part2: &Array<f64>,
     sn: &Array<f64>,
+    rn_off: u32,
+    sn_off: u32,
     extra: u32,
     mus: &mut Array<f64>,
 ) {
@@ -1269,8 +1351,8 @@ fn flocke_jacobi_moments_dev(
     let count1 = top + 1 - n; // number of i in [n, top]
     while step < count1 {
         let ii = top - step; // ii descends from top to n
-        let rn = (2 * ii + 3) as f64 * t_inv + rn_part2[(ii) as usize];
-        mu0 = (mu2 - rn * mu1) / sn[(ii) as usize];
+        let rn = (2 * ii + 3) as f64 * t_inv + rn_part2[(rn_off + ii) as usize];
+        mu0 = (mu2 - rn * mu1) / sn[(sn_off + ii) as usize];
         mu2 = mu1;
         mu1 = mu0;
         step += 1;
@@ -1279,8 +1361,8 @@ fn flocke_jacobi_moments_dev(
     let mut step2: u32 = 0;
     while step2 < n {
         let ii = (n - 1) - step2; // ii descends from n-1 to 0
-        let rn = (2 * ii + 3) as f64 * t_inv + rn_part2[(ii) as usize];
-        mu0 = (mu2 - rn * mu1) / sn[(ii) as usize];
+        let rn = (2 * ii + 3) as f64 * t_inv + rn_part2[(rn_off + ii) as usize];
+        mu0 = (mu2 - rn * mu1) / sn[(sn_off + ii) as usize];
         mus[(ii) as usize] = mu0;
         mu2 = mu1;
         mu1 = mu0;
@@ -1302,6 +1384,8 @@ fn wheeler_recursion_dev(
     n: u32,
     alpha: &Array<f64>,
     beta: &Array<f64>,
+    alpha_off: u32,
+    beta_off: u32,
     moments: &Array<f64>,
     a: &mut Array<f64>,
     b: &mut Array<f64>,
@@ -1309,7 +1393,7 @@ fn wheeler_recursion_dev(
     sm: &mut Array<f64>,
     sk: &mut Array<f64>,
 ) {
-    let mut a0 = alpha[(0) as usize] + moments[(1) as usize] / moments[(0) as usize];
+    let mut a0 = alpha[(alpha_off) as usize] + moments[(1) as usize] / moments[(0) as usize];
     let mut b0 = 0.0f64;
     a[(0) as usize] = a0;
     b[(0) as usize] = b0;
@@ -1328,12 +1412,12 @@ fn wheeler_recursion_dev(
         let mut j: u32 = 0;
         while j < nc {
             sk[(j) as usize] = s0[(2 + j) as usize]
-                - (a0 - alpha[(step + j) as usize]) * s0[(1 + j) as usize]
+                - (a0 - alpha[(alpha_off + step + j) as usize]) * s0[(1 + j) as usize]
                 - b0 * sm[(2 + j) as usize]
-                + beta[(step + j) as usize] * s0[(j) as usize];
+                + beta[(beta_off + step + j) as usize] * s0[(j) as usize];
             j += 1;
         }
-        let a1 = alpha[(step) as usize] - s0[(1) as usize] / s0[(0) as usize]
+        let a1 = alpha[(alpha_off + step) as usize] - s0[(1) as usize] / s0[(0) as usize]
             + sk[(1) as usize] / sk[(0) as usize];
         let b1 = sk[(0) as usize] / s0[(0) as usize];
         a[(step) as usize] = a1;
@@ -1374,9 +1458,9 @@ fn jacobi_tridiag_kernel(
     #[comptime] n: u32,
     #[comptime] extra: u32,
 ) {
-    flocke_jacobi_moments_dev(n * 2, x, rn_part2, sn, extra, moments);
+    flocke_jacobi_moments_dev(n * 2, x, rn_part2, sn, 0, 0, extra, moments);
     mu0_out[(0) as usize] = moments[(0) as usize];
-    wheeler_recursion_dev(n, alpha, beta, moments, a_out, b_out, s0, sm, sk);
+    wheeler_recursion_dev(n, alpha, beta, 0, 0, moments, a_out, b_out, s0, sm, sk);
     // sqrt the off-diagonal b[1..n] in place (matches host rys_wheeler_partial).
     let mut i: u32 = 1;
     while i < n {
@@ -1814,6 +1898,10 @@ fn hessenberg_qr_dev(a: &mut Array<f64>, nroots: u32, flag: &mut Array<f64>) {
     flag[(0) as usize] = ret;
 }
 
+// `#[cube]` requires every binding to be initialized at its `let`: a
+// conditionally-initialized local does not expand. Each initializer below is
+// overwritten on every path, so it is structurally necessary rather than dead.
+#[allow(unused_assignments)]
 /// Device R_dnode Newton/bisection polish. `a` is the cs column slice base offset `off`.
 /// Returns via flag[0] (0 ok / 1 error).
 #[cube]
@@ -2228,6 +2316,8 @@ fn lflocke_jacobi_moments_dev(
     t: f64,
     rn_part2: &Array<f64>,
     sn: &Array<f64>,
+    rn_off: u32,
+    sn_off: u32,
     mus_hi: &mut Array<f64>,
     mus_lo: &mut Array<f64>,
 ) {
@@ -2246,13 +2336,13 @@ fn lflocke_jacobi_moments_dev(
         let ii = top - step;
         let rn = dd_add_dev(
             dd_mul_f64_dev(t_inv, (2 * ii + 3) as f64),
-            dd_from(rn_part2[(ii) as usize]),
+            dd_from(rn_part2[(rn_off + ii) as usize]),
         );
         let mu1 = DdDev { hi: mu1h, lo: mu1l };
         let mu2 = DdDev { hi: mu2h, lo: mu2l };
         let mu0 = dd_div_dev(
             dd_sub_dev(mu2, dd_mul_dev(rn, mu1)),
-            dd_from(sn[(ii) as usize]),
+            dd_from(sn[(sn_off + ii) as usize]),
         );
         mu0h = mu0.hi;
         mu0l = mu0.lo;
@@ -2267,13 +2357,13 @@ fn lflocke_jacobi_moments_dev(
         let ii = (n - 1) - step2;
         let rn = dd_add_dev(
             dd_mul_f64_dev(t_inv, (2 * ii + 3) as f64),
-            dd_from(rn_part2[(ii) as usize]),
+            dd_from(rn_part2[(rn_off + ii) as usize]),
         );
         let mu1 = DdDev { hi: mu1h, lo: mu1l };
         let mu2 = DdDev { hi: mu2h, lo: mu2l };
         let mu0 = dd_div_dev(
             dd_sub_dev(mu2, dd_mul_dev(rn, mu1)),
-            dd_from(sn[(ii) as usize]),
+            dd_from(sn[(sn_off + ii) as usize]),
         );
         mu0h = mu0.hi;
         mu0l = mu0.lo;
@@ -2556,7 +2646,7 @@ fn ljacobi_tridiag_kernel(
     x: f64,
     #[comptime] n: u32,
 ) {
-    lflocke_jacobi_moments_dev(n * 2, x, rn_part2, sn, momh, moml);
+    lflocke_jacobi_moments_dev(n * 2, x, rn_part2, sn, 0, 0, momh, moml);
     mu0_out[(0) as usize] = momh[(0) as usize];
     // alpha/beta dd from f64 LJACOBI tables.
     let mut i: u32 = 0;
@@ -3155,6 +3245,582 @@ fn lrys_schmidt_device(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [
     0
 }
 
+// ===========================================================================
+//  Inline device extended-Rys entry (Phase 33, task 33-01).
+//
+//  `rys_roots_ext_dev` is the whole `nroots` 6..=12 Wheeler dispatch expressed
+//  as a `#[cube]` CALLEE rather than as something the host launches. A family
+//  kernel that opts in calls it from inside its own launch, so a `(pp|ff)`-class
+//  quartet no longer has to leave the device for its roots.
+//
+//  Three properties make this practical, and each one is load-bearing:
+//
+//  1. **One table argument, not eight.** Only the two Jacobi arms need constant
+//     tables — the Laguerre arm builds its moments from `t` in-kernel and the
+//     Schmidt arms take `turnover` as a scalar. The eight tables
+//     (`JACOBI_*` + `LJACOBI_*`, 48/48/88/88 f64 each) plus `TURNOVER_POINT`
+//     are concatenated into one blob of [`EXT_TABLES_LEN`] f64 (~4.7 KB) that
+//     the host uploads once per run; every read is at a comptime offset. An
+//     opting-in family kernel therefore grows exactly one `&Array<f64>`
+//     parameter.
+//  2. **Scratch is local, not a parameter.** Every working buffer is a
+//     `#[cube]`-local `Array::<f64>::new(<comptime>)`, sized from `nroots`.
+//     That keeps the signature to (tables, x, u, w) and puts the scratch in
+//     thread-private memory rather than in the shared-memory budget — see
+//     `shared_memory::ext_rys_scratch_words` for the measured sizes.
+//  3. **The dd hazard is narrow.** `two_prod_dev` asks for `fma` explicitly and
+//     *wants* the fusion; `two_sum_dev` contains no multiply-add at all, so
+//     contraction cannot reach it. What the fusion buys is checked per backend
+//     by `device_rys_ceiling::probe_fma_fusion`, and the ceiling stays at
+//     `BASE_DEVICE_NROOTS` until that probe passes.
+//
+//  The dispatch below mirrors `rys_roots_host_wheeler` arm for arm, including
+//  `segment_solve`'s recovery path: on a solver error the host calls the f64
+//  `rys_schmidt`, so the inline entry calls the f64 Schmidt arm — the same
+//  callee, inline — exactly once, and does not recurse on its error.
+// ===========================================================================
+
+/// Offset of `JACOBI_ALPHA` (48 f64) in the extended-Rys table blob.
+pub(crate) const EXT_TAB_JACOBI_ALPHA: u32 = 0;
+/// Offset of `JACOBI_BETA` (48 f64).
+pub(crate) const EXT_TAB_JACOBI_BETA: u32 = 48;
+/// Offset of `JACOBI_RN_PART2` (88 f64).
+pub(crate) const EXT_TAB_JACOBI_RN_PART2: u32 = 96;
+/// Offset of `JACOBI_SN` (88 f64).
+pub(crate) const EXT_TAB_JACOBI_SN: u32 = 184;
+/// Offset of `LJACOBI_ALPHA` (48 f64).
+pub(crate) const EXT_TAB_LJACOBI_ALPHA: u32 = 272;
+/// Offset of `LJACOBI_BETA` (48 f64).
+pub(crate) const EXT_TAB_LJACOBI_BETA: u32 = 320;
+/// Offset of `LJACOBI_RN_PART2` (88 f64).
+pub(crate) const EXT_TAB_LJACOBI_RN_PART2: u32 = 368;
+/// Offset of `LJACOBI_SN` (88 f64).
+pub(crate) const EXT_TAB_LJACOBI_SN: u32 = 456;
+/// Offset of `TURNOVER_POINT` (40 f64). Read at `EXT_TAB_TURNOVER + nroots * 2`,
+/// which is a comptime index because `nroots` is comptime.
+pub(crate) const EXT_TAB_TURNOVER: u32 = 544;
+/// Total length of the concatenated blob, in f64.
+///
+/// Public because a family launcher that opts into the extended path has to
+/// create the buffer at exactly this length.
+pub const EXT_TABLES_LEN: usize = 584;
+
+/// Build the concatenated extended-Rys table blob the inline entry reads.
+///
+/// Uploaded once per run and shared by every work item; the order here is the
+/// one the `EXT_TAB_*` offsets name, and `ext_table_offsets_match_lengths`
+/// pins the two together.
+pub fn ext_rys_tables() -> Vec<f64> {
+    let mut blob = Vec::with_capacity(EXT_TABLES_LEN);
+    blob.extend_from_slice(&data::JACOBI_ALPHA);
+    blob.extend_from_slice(&data::JACOBI_BETA);
+    blob.extend_from_slice(&data::JACOBI_RN_PART2);
+    blob.extend_from_slice(&data::JACOBI_SN);
+    blob.extend_from_slice(&data::LJACOBI_ALPHA);
+    blob.extend_from_slice(&data::LJACOBI_BETA);
+    blob.extend_from_slice(&data::LJACOBI_RN_PART2);
+    blob.extend_from_slice(&data::LJACOBI_SN);
+    blob.extend_from_slice(&data::TURNOVER_POINT);
+    debug_assert_eq!(blob.len(), EXT_TABLES_LEN);
+    blob
+}
+
+/// The `x` breakpoint separating the two solvers for `nroots`, from the
+/// `CINTrys_roots` dispatch (`rys_roots.c:97-114`, lower==0).
+pub(crate) const fn ext_breakpoint(nroots: u32) -> f64 {
+    match nroots {
+        6..=8 => 11.0,
+        9 => 10.0,
+        10 | 11 => 18.0,
+        _ => 22.0,
+    }
+}
+
+/// `FLOCKE_EXTRA_ORDER_FOR_DP` as the `u32` the `#[cube]` layer wants.
+const FLOCKE_EXTRA_DP_DEV: u32 = 20;
+
+/// Root/weight slots a family kernel's `urys`/`wrys` need for `nroots`.
+///
+/// The polynomial-fit kernels `rys_root{1..5}` always write five slots
+/// regardless of the order asked for, so five is the floor; above that the
+/// extended entry writes exactly `nroots`.
+pub(crate) const fn ext_rys_slots(nroots: u32) -> usize {
+    if nroots > 5 { nroots as usize } else { 5 }
+}
+
+/// Slots for the extended arm's own f64 root/weight pair inside a family kernel.
+///
+/// One when the arm is not emitted: a zero-length `Array` is not a thing the
+/// `#[cube]` layer allocates, and one f64 is cheaper than a comptime branch
+/// around the declaration.
+pub(crate) const fn ext_rys_out_slots(nroots: u32) -> usize {
+    if nroots > 5 { nroots as usize } else { 1 }
+}
+
+/// Shared tail of every Wheeler arm: eigensolve the tridiagonal `(da, db)` and
+/// transform its spectrum into roots and weights.
+///
+/// This is the host sequence in `rys_jacobi_device` / `lrys_wheeler_device`
+/// — `_CINTdiagonalize(n, a, b+1, eig, c0)` then
+/// `roots[i] = eig[i]/(1-eig[i])`, `weights[i] = c0[i*n]^2 * mu0` — with the
+/// host round trip removed: `cint_diagonalize_dev` is the same body
+/// `cint_diagonalize_kernel` launches.
+#[cube]
+fn ext_eigen_transform_dev(
+    da: &Array<f64>,
+    db: &Array<f64>,
+    mu0: f64,
+    u: &mut Array<f64>,
+    w: &mut Array<f64>,
+    flag: &mut Array<f64>,
+    #[comptime] nroots: u32,
+) {
+    let n = nroots;
+    let mut diag = Array::<f64>::new(comptime!(nroots as usize));
+    let mut offd = Array::<f64>::new(comptime!(nroots as usize));
+    let mut i: u32 = 0;
+    while i < n {
+        diag[(i) as usize] = da[(i) as usize];
+        offd[(i) as usize] = 0.0;
+        i += 1;
+    }
+    // `_CINTdiagonalize` is handed `b + 1`: the off-diagonal is `db[1..n]`, and
+    // the last slot stays zero.
+    let mut k: u32 = 0;
+    while k + 1 < n {
+        offd[(k) as usize] = db[(k + 1) as usize];
+        k += 1;
+    }
+
+    let mut eig = Array::<f64>::new(comptime!(nroots as usize));
+    let mut c0 = Array::<f64>::new(comptime!((nroots * nroots) as usize));
+    let mut dwork = Array::<f64>::new(comptime!(nroots as usize));
+    let mut ework = Array::<f64>::new(comptime!(nroots as usize));
+    let mut z = Array::<f64>::new(comptime!((nroots * nroots) as usize));
+    let mut dorig = Array::<f64>::new(comptime!(nroots as usize));
+    let mut eorig = Array::<f64>::new(comptime!(nroots as usize));
+    let mut est = Array::<f64>::new(comptime!(nroots as usize));
+
+    eigh::cint_diagonalize_dev::<f64>(
+        &diag, &offd, &mut eig, &mut c0, flag, &mut dwork, &mut ework, &mut z, &mut dorig,
+        &mut eorig, &mut est, nroots,
+    );
+
+    let mut j: u32 = 0;
+    while j < n {
+        let r = eig[(j) as usize];
+        u[(j) as usize] = r / (1.0 - r);
+        let c = c0[(j * n) as usize];
+        w[(j) as usize] = c * c * mu0;
+        j += 1;
+    }
+}
+
+/// Inline f64 Jacobi arm (`rys_jacobi`): erf-normalized Flocke moments, Wheeler
+/// recursion, eigensolve, transform. Mirrors `jacobi_tridiag_kernel` plus the
+/// host tail that followed it.
+#[cube]
+fn ext_jacobi_f64_dev(
+    tab: &Array<f64>,
+    x: f64,
+    u: &mut Array<f64>,
+    w: &mut Array<f64>,
+    flag: &mut Array<f64>,
+    #[comptime] nroots: u32,
+) {
+    let n = nroots;
+    let mut mom = Array::<f64>::new(comptime!((2 * nroots + 2) as usize));
+    let mut a = Array::<f64>::new(comptime!(nroots as usize));
+    let mut b = Array::<f64>::new(comptime!(nroots as usize));
+    let mut s0 = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut sm = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut sk = Array::<f64>::new(comptime!((2 * nroots) as usize));
+
+    flocke_jacobi_moments_dev(
+        n * 2,
+        x,
+        tab,
+        tab,
+        comptime!(EXT_TAB_JACOBI_RN_PART2),
+        comptime!(EXT_TAB_JACOBI_SN),
+        comptime!(FLOCKE_EXTRA_DP_DEV),
+        &mut mom,
+    );
+    let mu0 = mom[(0) as usize];
+    wheeler_recursion_dev(
+        n,
+        tab,
+        tab,
+        comptime!(EXT_TAB_JACOBI_ALPHA),
+        comptime!(EXT_TAB_JACOBI_BETA),
+        &mom,
+        &mut a,
+        &mut b,
+        &mut s0,
+        &mut sm,
+        &mut sk,
+    );
+    let mut i: u32 = 1;
+    while i < n {
+        b[(i) as usize] = f64::sqrt(b[(i) as usize]);
+        i += 1;
+    }
+    ext_eigen_transform_dev(&a, &b, mu0, u, w, flag, nroots);
+}
+
+/// Inline f64 Schmidt arm (`rys_schmidt`). Also the recovery path every other
+/// arm falls back to, which is why it is sized for the whole 6..=12 range
+/// rather than only for the `nroots` values that dispatch to it directly.
+#[cube]
+fn ext_schmidt_f64_dev(
+    x: f64,
+    turnover: f64,
+    u: &mut Array<f64>,
+    w: &mut Array<f64>,
+    flag: &mut Array<f64>,
+    #[comptime] nroots: u32,
+) {
+    let nroots1 = nroots + 1;
+    let mut fmt_ints = Array::<f64>::new(comptime!((2 * nroots + 2) as usize));
+    let mut cs = Array::<f64>::new(comptime!(((nroots + 1) * (nroots + 1)) as usize));
+    let mut rt = Array::<f64>::new(comptime!(nroots as usize));
+    let mut acomp = Array::<f64>::new(comptime!((nroots * nroots) as usize));
+    let mut vscr = Array::<f64>::new(comptime!((nroots + 1) as usize));
+
+    gamma_inc_like_dev(&mut fmt_ints, x, nroots * 2, turnover);
+
+    let mut zeroed = false;
+    if fmt_ints[(0) as usize] == 0.0 {
+        let mut k: u32 = 0;
+        while k < nroots {
+            u[(k) as usize] = 0.0;
+            w[(k) as usize] = 0.0;
+            k += 1;
+        }
+        flag[(0) as usize] = 0.0;
+        zeroed = true;
+    }
+
+    if !zeroed {
+        let nn1 = nroots1 * nroots1;
+        let mut z: u32 = 0;
+        while z < nn1 {
+            cs[(z) as usize] = 0.0;
+            z += 1;
+        }
+        r_dsmit_dev(&mut cs, &fmt_ints, nroots1, &mut vscr, flag);
+        cint_polynomial_roots_dev(&mut rt, &cs, nroots, nroots1, &mut acomp, flag);
+
+        let mut k: u32 = 0;
+        while k < nroots {
+            let root = rt[(k) as usize];
+            if root == 1.0 {
+                u[(k) as usize] = 0.0;
+                w[(k) as usize] = 0.0;
+            } else {
+                let mut dum = 1.0 / fmt_ints[(0) as usize];
+                let mut j: u32 = 1;
+                while j < nroots {
+                    let off = j * nroots1;
+                    let poly = poly_value1_dev(&cs, off, j, root);
+                    dum += poly * poly;
+                    j += 1;
+                }
+                u[(k) as usize] = root / (1.0 - root);
+                w[(k) as usize] = 1.0 / dum;
+            }
+            k += 1;
+        }
+    }
+}
+
+/// Inline dd Schmidt arm (`lrys_schmidt`) — the `nroots = 8`, `x > 11` tail.
+#[cube]
+fn ext_lschmidt_dev(
+    x: f64,
+    turnover: f64,
+    u: &mut Array<f64>,
+    w: &mut Array<f64>,
+    flag: &mut Array<f64>,
+    #[comptime] nroots: u32,
+) {
+    let nroots1 = nroots + 1;
+    let mut fmh = Array::<f64>::new(comptime!((2 * nroots + 2) as usize));
+    let mut fml = Array::<f64>::new(comptime!((2 * nroots + 2) as usize));
+    let mut csh = Array::<f64>::new(comptime!(((nroots + 1) * (nroots + 1)) as usize));
+    let mut csl = Array::<f64>::new(comptime!(((nroots + 1) * (nroots + 1)) as usize));
+    let mut csf = Array::<f64>::new(comptime!(((nroots + 1) * (nroots + 1)) as usize));
+    let mut rt = Array::<f64>::new(comptime!(nroots as usize));
+    let mut acomp = Array::<f64>::new(comptime!((nroots * nroots) as usize));
+    let mut vh = Array::<f64>::new(comptime!((nroots + 1) as usize));
+    let mut vl = Array::<f64>::new(comptime!((nroots + 1) as usize));
+
+    lgamma_inc_like_dev(&mut fmh, &mut fml, x, nroots * 2, turnover);
+
+    let mut zeroed = false;
+    if fmh[(0) as usize] == 0.0 {
+        let mut k: u32 = 0;
+        while k < nroots {
+            u[(k) as usize] = 0.0;
+            w[(k) as usize] = 0.0;
+            k += 1;
+        }
+        flag[(0) as usize] = 0.0;
+        zeroed = true;
+    }
+
+    if !zeroed {
+        let nn1 = nroots1 * nroots1;
+        let mut z: u32 = 0;
+        while z < nn1 {
+            csh[(z) as usize] = 0.0;
+            csl[(z) as usize] = 0.0;
+            z += 1;
+        }
+        r_lsmit_dev(
+            &mut csh, &mut csl, &fmh, &fml, nroots1, &mut vh, &mut vl, flag,
+        );
+        let mut i: u32 = 0;
+        while i < nn1 {
+            csf[(i) as usize] = csh[(i) as usize];
+            i += 1;
+        }
+        cint_polynomial_roots_dev(&mut rt, &csf, nroots, nroots1, &mut acomp, flag);
+
+        let dum0 = 1.0 / fmh[(0) as usize];
+        let mut k: u32 = 0;
+        while k < nroots {
+            let root = rt[(k) as usize];
+            if root == 1.0 {
+                u[(k) as usize] = 0.0;
+                w[(k) as usize] = 0.0;
+            } else {
+                let mut dum = dum0;
+                let mut j: u32 = 1;
+                while j < nroots {
+                    let off = j * nroots1;
+                    let poly = poly_value1_dev(&csf, off, j, root);
+                    dum += poly * poly;
+                    j += 1;
+                }
+                u[(k) as usize] = root / (1.0 - root);
+                w[(k) as usize] = 1.0 / dum;
+            }
+            k += 1;
+        }
+    }
+}
+
+/// Inline dd Jacobi / dd Laguerre arms (`lrys_jacobi` / `lrys_laguerre`).
+///
+/// One body for both because they differ only in where `(alpha, beta, moments)`
+/// come from — the `LJACOBI_*` tables plus `lflocke_jacobi_moments_dev`, or
+/// `llaguerre_moments_dev` building them from `t` — after which the dd Wheeler
+/// recursion, the round-to-f64 tridiagonal and the eigensolve are identical.
+/// `is_laguerre` is a *runtime* selector on purpose. Making it comptime would
+/// give the two arms separate instantiations and therefore two copies of the
+/// ~30n words of dd scratch and two copies of the eigensolve tail; as a runtime
+/// branch inside one body they share both, which halves the private footprint
+/// at `nroots >= 9` for the cost of a branch that `x <= bp` already implies.
+#[cube]
+fn ext_lwheeler_dev(
+    tab: &Array<f64>,
+    x: f64,
+    is_laguerre: bool,
+    u: &mut Array<f64>,
+    w: &mut Array<f64>,
+    flag: &mut Array<f64>,
+    #[comptime] nroots: u32,
+) {
+    let n = nroots;
+    let n2 = nroots * 2;
+    let mut momh = Array::<f64>::new(comptime!((2 * nroots + 2) as usize));
+    let mut moml = Array::<f64>::new(comptime!((2 * nroots + 2) as usize));
+    let mut alh = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut all_ = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut beh = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut bel = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut ah = Array::<f64>::new(comptime!(nroots as usize));
+    let mut al = Array::<f64>::new(comptime!(nroots as usize));
+    let mut bh = Array::<f64>::new(comptime!(nroots as usize));
+    let mut bl = Array::<f64>::new(comptime!(nroots as usize));
+    let mut s0h = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut s0l = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut smh = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut sml = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut skh = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut skl = Array::<f64>::new(comptime!((2 * nroots) as usize));
+    let mut da = Array::<f64>::new(comptime!(nroots as usize));
+    let mut db = Array::<f64>::new(comptime!(nroots as usize));
+
+    if is_laguerre {
+        llaguerre_moments_dev(
+            n2, x, &mut alh, &mut all_, &mut beh, &mut bel, &mut momh, &mut moml,
+        );
+    } else {
+        lflocke_jacobi_moments_dev(
+            n2,
+            x,
+            tab,
+            tab,
+            comptime!(EXT_TAB_LJACOBI_RN_PART2),
+            comptime!(EXT_TAB_LJACOBI_SN),
+            &mut momh,
+            &mut moml,
+        );
+        // The `LJACOBI_*` tables are plain f64; their dd low words are zero.
+        let mut i: u32 = 0;
+        while i < n2 {
+            alh[(i) as usize] = tab[(comptime!(EXT_TAB_LJACOBI_ALPHA) + i) as usize];
+            all_[(i) as usize] = 0.0;
+            beh[(i) as usize] = tab[(comptime!(EXT_TAB_LJACOBI_BETA) + i) as usize];
+            bel[(i) as usize] = 0.0;
+            i += 1;
+        }
+    }
+    let mu0 = momh[(0) as usize];
+
+    lwheeler_recursion_dev(
+        n, &alh, &all_, &beh, &bel, &momh, &moml, &mut ah, &mut al, &mut bh, &mut bl, &mut s0h,
+        &mut s0l, &mut smh, &mut sml, &mut skh, &mut skl,
+    );
+
+    da[(0) as usize] = ah[(0) as usize];
+    db[(0) as usize] = 0.0;
+    let mut k: u32 = 1;
+    while k < n {
+        da[(k) as usize] = ah[(k) as usize];
+        db[(k) as usize] = c99_sqrtl_dev(bh[(k) as usize]);
+        k += 1;
+    }
+
+    ext_eigen_transform_dev(&da, &db, mu0, u, w, flag, nroots);
+}
+
+/// **The inline extended-Rys entry (task 33-01).**
+///
+/// Writes `nroots` roots into `u[0..nroots]` and weights into `w[0..nroots]`,
+/// reproducing `rys_roots_host_wheeler` arm for arm:
+///
+/// | nroots | `x <= bp` | `x > bp` | bp |
+/// |---|---|---|---|
+/// | 6, 7 | f64 Jacobi | f64 Schmidt | 11 |
+/// | 8 | f64 Jacobi | dd Schmidt | 11 |
+/// | 9 | dd Jacobi | dd Laguerre | 10 |
+/// | 10, 11 | dd Jacobi | dd Laguerre | 18 |
+/// | 12 | dd Jacobi | dd Laguerre | 22 |
+///
+/// `tab` is the blob [`ext_rys_tables`] builds. `nroots` is comptime, so the
+/// breakpoint, the turnover index and the arm selection all fold away and a
+/// given instantiation emits exactly one solver pair plus the recovery arm.
+#[cube]
+pub(crate) fn rys_roots_ext_dev(
+    tab: &Array<f64>,
+    x: f64,
+    u: &mut Array<f64>,
+    w: &mut Array<f64>,
+    #[comptime] nroots: u32,
+) {
+    let mut flag = Array::<f64>::new(1usize);
+    flag[(0) as usize] = 0.0;
+
+    let bp = comptime!(ext_breakpoint(nroots));
+    let turnover = tab[comptime!((EXT_TAB_TURNOVER + nroots * 2) as usize)];
+
+    if comptime!(nroots <= 7) {
+        if x <= bp {
+            ext_jacobi_f64_dev(tab, x, u, w, &mut flag, nroots);
+        } else {
+            ext_schmidt_f64_dev(x, turnover, u, w, &mut flag, nroots);
+        }
+    } else if comptime!(nroots == 8) {
+        if x <= bp {
+            ext_jacobi_f64_dev(tab, x, u, w, &mut flag, nroots);
+        } else {
+            ext_lschmidt_dev(x, turnover, u, w, &mut flag, nroots);
+        }
+    } else {
+        ext_lwheeler_dev(tab, x, x > bp, u, w, &mut flag, nroots);
+    }
+
+    // `segment_solve`'s recovery path (rys_roots.c:42): on a solver error the
+    // host retries through the f64 Schmidt solver and returns that result.
+    // Inline, that is the same callee — and, as on the host, its own error is
+    // not retried.
+    if flag[(0) as usize] != 0.0 {
+        ext_schmidt_f64_dev(x, turnover, u, w, &mut flag, nroots);
+    }
+}
+
+/// A one-line launch wrapper over [`rys_roots_ext_dev`], so the accuracy gate
+/// (task 33-04) measures the *same* body a family kernel will call rather than
+/// a second copy of it.
+#[cube(launch)]
+fn rys_roots_ext_kernel(
+    tab: &Array<f64>,
+    roots: &mut Array<f64>,
+    weights: &mut Array<f64>,
+    x: f64,
+    #[comptime] nroots: u32,
+) {
+    rys_roots_ext_dev(tab, x, roots, weights, nroots);
+}
+
+/// Host entry for the **inline** extended-Rys path — one launch, one work item.
+///
+/// Not the production dispatch: `rys_roots_host_wheeler` still owns that, and
+/// stays the reference the inline path is measured against
+/// (`rys_ext_inline_matches_host_wheeler`). This exists so the inline entry is
+/// reachable from a test and from a benchmark without a family kernel in the
+/// way.
+#[cfg(feature = "cpu")]
+pub fn rys_roots_ext_host(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
+    assert!(
+        (6..=12).contains(&nroots),
+        "rys_roots_ext_host: nroots={nroots} outside the validated 6..=12 range"
+    );
+    let client = cubecl::cpu::CpuRuntime::client(&Default::default());
+    let tables = ext_rys_tables();
+    let tab_h = client.create_from_slice(f64::as_bytes(&tables));
+    let zero = vec![0.0f64; nroots];
+    let roots_h = client.create_from_slice(f64::as_bytes(&zero));
+    let weights_h = client.create_from_slice(f64::as_bytes(&zero));
+
+    // `nroots` is comptime in the kernel, so the dispatch is spelled out rather
+    // than passed through: each arm is a distinct specialization.
+    macro_rules! launch_ext {
+        ($n:literal) => {
+            rys_roots_ext_kernel::launch::<cubecl::cpu::CpuRuntime>(
+                &client,
+                crate::plane::single_cube_count(),
+                CubeDim::new_1d(1),
+                // SAFETY: each buffer is created at exactly the length passed here.
+                unsafe { ArrayArg::from_raw_parts(tab_h, EXT_TABLES_LEN) },
+                unsafe { ArrayArg::from_raw_parts(roots_h.clone(), nroots) },
+                unsafe { ArrayArg::from_raw_parts(weights_h.clone(), nroots) },
+                x,
+                $n,
+            )
+        };
+    }
+    match nroots {
+        6 => launch_ext!(6u32),
+        7 => launch_ext!(7u32),
+        8 => launch_ext!(8u32),
+        9 => launch_ext!(9u32),
+        10 => launch_ext!(10u32),
+        11 => launch_ext!(11u32),
+        12 => launch_ext!(12u32),
+        _ => unreachable!(),
+    }
+
+    let r_bytes = client.read_one_unchecked(roots_h);
+    let roots = f64::from_bytes(&r_bytes)[0..nroots].to_vec();
+    let w_bytes = client.read_one_unchecked(weights_h);
+    let weights = f64::from_bytes(&w_bytes)[0..nroots].to_vec();
+    (roots, weights)
+}
+
 // ---------------------------------------------------------------------------
 // segment_solve dispatch (rys_roots.c:42) and the per-nroots entry.
 // ---------------------------------------------------------------------------
@@ -3232,6 +3898,21 @@ pub fn rys_roots_host_wheeler(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
         // is CLEAN (29/29 holds), device 6,7 breaks hess2e. The device 6,7 kernels are kept
         // in the module as the on-device implementation; the production family-critical
         // dispatch for 6,7 stays on the host path. The bar was NEVER loosened.
+        //
+        // RE-EXAMINED for task 33-06, after the inline entry (33-01) landed, and the
+        // hatch STAYS. Swapping these two arms for `rys_jacobi_device`/`rys_schmidt_device`
+        // and re-running `hess2e_parity` gives 3334 mismatches on `int2e_ipip1_sph`, with
+        // deltas of 1.3e-12 to 2.0e-12 against a 1e-12 threshold. The tolerance was not
+        // touched; the experiment was reverted.
+        //
+        // What 33-01 did change is the DIAGNOSIS, from a suspicion to a fact.
+        // `rys_ext_inline_parity` compares the inline entry — reached by exactly one
+        // launch — against this host dispatch over a log-spaced x sweep, and finds
+        // 10584/10584 values BIT-IDENTICAL at nroots 6 and 7. So the roots handed to
+        // hess2e are the same bits either way, and the ~1e-12 that moves is host
+        // arithmetic executed AFTER the launch, not the quadrature. That is a property
+        // of the CpuRuntime launch, not of this solver, and no amount of work on the Rys
+        // path will remove it.
         6 | 7 => segment_solve(
             nroots,
             x,
@@ -3428,6 +4109,60 @@ fn fma_probe_kernel<F: Float + CubeElement>(a: &Array<F>, b: &Array<F>, out: &mu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `EXT_TAB_*` offsets are the only thing tying `rys_roots_ext_dev`'s
+    /// comptime reads to `ext_rys_tables`'s concatenation order. Nothing in the
+    /// type system connects them, so they are checked here: each offset must be
+    /// where the previous table ends, and the blob must be exactly as long as
+    /// the offsets claim.
+    #[test]
+    fn ext_table_offsets_match_lengths() {
+        let expected: [(u32, usize); 9] = [
+            (EXT_TAB_JACOBI_ALPHA, data::JACOBI_ALPHA.len()),
+            (EXT_TAB_JACOBI_BETA, data::JACOBI_BETA.len()),
+            (EXT_TAB_JACOBI_RN_PART2, data::JACOBI_RN_PART2.len()),
+            (EXT_TAB_JACOBI_SN, data::JACOBI_SN.len()),
+            (EXT_TAB_LJACOBI_ALPHA, data::LJACOBI_ALPHA.len()),
+            (EXT_TAB_LJACOBI_BETA, data::LJACOBI_BETA.len()),
+            (EXT_TAB_LJACOBI_RN_PART2, data::LJACOBI_RN_PART2.len()),
+            (EXT_TAB_LJACOBI_SN, data::LJACOBI_SN.len()),
+            (EXT_TAB_TURNOVER, data::TURNOVER_POINT.len()),
+        ];
+        let mut cursor = 0usize;
+        for (offset, len) in expected {
+            assert_eq!(
+                offset as usize, cursor,
+                "table offset {offset} does not follow the previous table, which ends at {cursor}"
+            );
+            cursor += len;
+        }
+        assert_eq!(cursor, EXT_TABLES_LEN);
+
+        let blob = ext_rys_tables();
+        assert_eq!(blob.len(), EXT_TABLES_LEN);
+        // Spot-check the two the dispatch reads at a comptime index.
+        assert_eq!(blob[EXT_TAB_LJACOBI_SN as usize], data::LJACOBI_SN[0]);
+        for nroots in 6..=12usize {
+            assert_eq!(
+                blob[EXT_TAB_TURNOVER as usize + nroots * 2],
+                data::TURNOVER_POINT[nroots * 2],
+                "turnover lookup for nroots={nroots}"
+            );
+        }
+    }
+
+    /// The breakpoint table the inline dispatch folds at comptime is the one
+    /// `rys_roots_host_wheeler` branches on (`rys_roots.c:97-114`).
+    #[test]
+    fn ext_breakpoints_match_the_host_dispatch() {
+        assert_eq!(ext_breakpoint(6), 11.0);
+        assert_eq!(ext_breakpoint(7), 11.0);
+        assert_eq!(ext_breakpoint(8), 11.0);
+        assert_eq!(ext_breakpoint(9), 10.0);
+        assert_eq!(ext_breakpoint(10), 18.0);
+        assert_eq!(ext_breakpoint(11), 18.0);
+        assert_eq!(ext_breakpoint(12), 22.0);
+    }
 
     /// Task 3a FMA probe: assert the CPU CubeCL backend fuses `mul_add` (bit-for-bit vs host).
     #[test]

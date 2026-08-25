@@ -12,12 +12,26 @@ use std::sync::OnceLock;
 const DEF2_SVP_TEXT: &str = include_str!("../data/def2-svp.nwchem");
 const DEF2_TZVP_TEXT: &str = include_str!("../data/def2-tzvp.nwchem");
 const DEF2_ECP_TEXT: &str = include_str!("../data/def2-ecp.nwchem");
+const DEF2_JFIT_TEXT: &str = include_str!("../data/def2-universal-jfit.nwchem");
+const DEF2_JKFIT_TEXT: &str = include_str!("../data/def2-universal-jkfit.nwchem");
 
 /// A standard basis set available from the embedded catalog.
+///
+/// The two `Def2*Fit` entries are **auxiliary** bases: they are not orbital
+/// bases and are never used to build a wavefunction. They carry the fitting
+/// functions that density fitting expands a product density in — `def2/J` for
+/// Coulomb-only (RI-J) and `def2/JK` where exchange is fitted too. Both are
+/// *universal*: one table serves every def2 orbital basis, which is why they
+/// are catalog entries in their own right rather than a property of
+/// [`Self::Def2Svp`] or [`Self::Def2Tzvp`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StandardBasis {
     Def2Svp,
     Def2Tzvp,
+    /// `def2-universal-JFIT`, published as **def2/J**.
+    Def2JFit,
+    /// `def2-universal-JKFIT`, published as **def2/JK**.
+    Def2JkFit,
 }
 
 impl StandardBasis {
@@ -26,7 +40,20 @@ impl StandardBasis {
         match self {
             Self::Def2Svp => "def2-SVP",
             Self::Def2Tzvp => "def2-TZVP",
+            Self::Def2JFit => "def2/J",
+            Self::Def2JkFit => "def2/JK",
         }
+    }
+
+    /// Is this an auxiliary (density-fitting) basis rather than an orbital one?
+    ///
+    /// Callers that build a molecule's AO shells want the orbital bases; callers
+    /// assembling an RI-J or RI-JK work list want the auxiliary ones. Mixing them
+    /// up produces a plausible-looking calculation of the wrong thing, so the
+    /// distinction is on the type rather than left to the name.
+    #[must_use]
+    pub fn is_auxiliary(self) -> bool {
+        matches!(self, Self::Def2JFit | Self::Def2JkFit)
     }
 
     /// Resolve a basis-set name, case- and separator-insensitive
@@ -43,6 +70,11 @@ impl StandardBasis {
         match key.as_str() {
             "def2svp" => Ok(Self::Def2Svp),
             "def2tzvp" => Ok(Self::Def2Tzvp),
+            // BSE calls these `def2-universal-jfit`/`-jkfit`; the literature and
+            // every program input file call them `def2/J` and `def2/JK`. The
+            // separator-stripping key above maps both spellings onto one entry.
+            "def2j" | "def2jfit" | "def2universaljfit" => Ok(Self::Def2JFit),
+            "def2jk" | "def2jkfit" | "def2universaljkfit" => Ok(Self::Def2JkFit),
             _ => Err(BasisError::UnknownBasis {
                 name: name.to_owned(),
             }),
@@ -70,6 +102,18 @@ impl StandardBasis {
                     parse_basis(DEF2_TZVP_TEXT).expect("embedded def2-TZVP data must parse")
                 })
             }
+            Self::Def2JFit => {
+                static CACHE: OnceLock<BasisTable> = OnceLock::new();
+                CACHE.get_or_init(|| {
+                    parse_basis(DEF2_JFIT_TEXT).expect("embedded def2/J data must parse")
+                })
+            }
+            Self::Def2JkFit => {
+                static CACHE: OnceLock<BasisTable> = OnceLock::new();
+                CACHE.get_or_init(|| {
+                    parse_basis(DEF2_JKFIT_TEXT).expect("embedded def2/JK data must parse")
+                })
+            }
         }
     }
 
@@ -94,7 +138,12 @@ mod tests {
 
     #[test]
     fn catalog_parses_every_embedded_table() {
-        for basis in [StandardBasis::Def2Svp, StandardBasis::Def2Tzvp] {
+        for basis in [
+            StandardBasis::Def2Svp,
+            StandardBasis::Def2Tzvp,
+            StandardBasis::Def2JFit,
+            StandardBasis::Def2JkFit,
+        ] {
             let table = basis.table();
             assert!(
                 table.len() > 80,
@@ -159,5 +208,57 @@ mod tests {
             StandardBasis::Def2Tzvp
         );
         assert!(StandardBasis::from_name("cc-pVDZ").is_err());
+    }
+
+    /// Both spellings of each auxiliary basis resolve to the same entry: the
+    /// literature name (`def2/J`) and the BSE export name
+    /// (`def2-universal-jfit`) name one table, and a caller that learned the
+    /// name from either source must land on it.
+    #[test]
+    fn resolves_auxiliary_basis_names_from_either_spelling() {
+        for name in ["def2/J", "def2-J", "def2-jfit", "def2-universal-JFIT"] {
+            assert_eq!(
+                StandardBasis::from_name(name).unwrap(),
+                StandardBasis::Def2JFit,
+                "{name}"
+            );
+        }
+        for name in ["def2/JK", "def2-JK", "def2-jkfit", "def2-universal-JKFIT"] {
+            assert_eq!(
+                StandardBasis::from_name(name).unwrap(),
+                StandardBasis::Def2JkFit,
+                "{name}"
+            );
+        }
+    }
+
+    /// The auxiliary tables are flagged as auxiliary and the orbital ones are
+    /// not. This is what stops an RI-J work list being built from AO shells (or
+    /// a wavefunction from fitting functions) — a mix-up that produces numbers
+    /// rather than an error.
+    #[test]
+    fn auxiliary_flag_separates_fitting_from_orbital_bases() {
+        assert!(StandardBasis::Def2JFit.is_auxiliary());
+        assert!(StandardBasis::Def2JkFit.is_auxiliary());
+        assert!(!StandardBasis::Def2Svp.is_auxiliary());
+        assert!(!StandardBasis::Def2Tzvp.is_auxiliary());
+    }
+
+    /// def2/J hydrogen is the published (5s,2p,1d) -> [3s,1p,1d] fitting set,
+    /// and def2/JK hydrogen is (4s,2p,2d) -> [2s,2p,2d]. Both carry angular
+    /// momenta the *orbital* def2-SVP hydrogen does not (d functions), which is
+    /// exactly why an RI-J work list reaches launch classes the AO-only
+    /// fixtures never did.
+    #[test]
+    fn auxiliary_hydrogen_matches_published_composition() {
+        let jfit = &StandardBasis::Def2JFit.table()[&1];
+        let l_counts: Vec<u8> = jfit.iter().map(|b| b.ang_momentum).collect();
+        assert_eq!(l_counts, vec![0, 0, 0, 1, 2], "def2/J H composition");
+        assert_eq!(jfit[0].nprim(), 3);
+
+        let jkfit = &StandardBasis::Def2JkFit.table()[&1];
+        let l_counts: Vec<u8> = jkfit.iter().map(|b| b.ang_momentum).collect();
+        assert_eq!(l_counts, vec![0, 0, 1, 1, 2, 2], "def2/JK H composition");
+        assert_eq!(jkfit[0].nprim(), 3);
     }
 }

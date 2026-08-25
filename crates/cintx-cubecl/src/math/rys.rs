@@ -9,7 +9,19 @@
 //! Algorithm: Piecewise Horner polynomial evaluation per domain segment.
 //! Phase 25 FND-02: nroots 6..12 via Wheeler/Jacobi fallback (rys_wheeler module).
 
+// `#[cube]` requires every binding to be initialized at its `let`, and the Horner
+// segment branches below overwrite each initializer on every path — the initial
+// assignment is structurally necessary, not dead.
 #![allow(unused_assignments)]
+// Transcribed verbatim from vendored libcint 6.1.3. Result compatibility with
+// upstream is decided by the exact bits these literals feed the kernels, so a
+// literal is never truncated to the shortest form that round-trips — the same
+// provenance rationale the `clippy::approx_constant` allows in this crate carry.
+#![allow(clippy::excessive_precision)]
+// `x = x - y` rather than `x -= y`: these are statement-for-statement ports of
+// the vendored libcint source, and keeping the assignment shape means a reviewer
+// can diff a routine against the C line by line.
+#![allow(clippy::assign_op_pattern)]
 
 use cintx_core::CintFloat;
 use cubecl::prelude::*;
@@ -47,9 +59,9 @@ pub fn clenshaw_d1<F: Float>(
     c13: F,
     u: F,
 ) -> F {
-    let u2 = F::new(2.0) * u;
+    let u2 = F::new(2.0_f32) * u;
     let mut g = c13;
-    let mut d = F::new(0.0);
+    let mut d = F::new(0.0_f32);
     let tmp = u2 * g - d + c12;
     d = g;
     g = tmp;
@@ -86,7 +98,7 @@ pub fn clenshaw_d1<F: Float>(
     let tmp = u2 * g - d + c1;
     d = g;
     g = tmp;
-    u * g - d + F::new(0.5) * c0
+    u * g - d + F::new(0.5_f32) * c0
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,19 +112,19 @@ pub fn clenshaw_d1<F: Float>(
 /// Uses Horner polynomial evaluation with domain segmentation in X.
 #[cube]
 pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
-    let mut rt1 = F::new(0.0);
-    let mut ww1 = F::new(0.0);
+    let mut rt1 = F::new(0.0_f32);
+    let mut ww1 = F::new(0.0_f32);
 
-    if x > F::new(33.0) {
+    if x > F::new(33.0_f32) {
         ww1 = F::sqrt(pie4 / x);
-        rt1 = F::new(0.5) / (x - F::new(0.5));
-    } else if x < F::new(3.0e-7) {
-        ww1 = F::new(1.0) - x / F::new(3.0);
-        rt1 = F::new(0.5) - x / F::new(5.0);
+        rt1 = F::new(0.5_f32) / (x - F::new(0.5_f32));
+    } else if x < F::new(3.0e-7_f32) {
+        ww1 = F::new(1.0_f32) - x / F::new(3.0_f32);
+        rt1 = F::new(0.5_f32) - x / F::new(5.0_f32);
     } else {
         let e = F::exp(-x);
-        if x > F::new(15.0) {
-            let y = F::new(1.0) / x;
+        if x > F::new(15.0_f32) {
+            let y = F::new(1.0_f32) / x;
             let mut f1 = ((F::cast_from(1.9623264149430e-01_f64) * y
                 - F::cast_from(4.9695241464490e-01_f64))
                 * y
@@ -120,11 +132,11 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
                 * e
                 + F::sqrt(pie4 / x)
                 - e;
-            f1 = f1 * y * F::new(0.5);
-            ww1 = F::new(2.0) * x * f1 + e;
+            f1 = f1 * y * F::new(0.5_f32);
+            ww1 = F::new(2.0_f32) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
-        } else if x > F::new(10.0) {
-            let y = F::new(1.0) / x;
+        } else if x > F::new(10.0_f32) {
+            let y = F::new(1.0_f32) / x;
             let mut f1 = (((F::cast_from(-1.8784686463512e-01_f64) * y
                 + F::cast_from(2.2991849164985e-01_f64))
                 * y
@@ -134,11 +146,11 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
                 * e
                 + F::sqrt(pie4 / x)
                 - e;
-            f1 = f1 * y * F::new(0.5);
-            ww1 = F::new(2.0) * x * f1 + e;
+            f1 = f1 * y * F::new(0.5_f32);
+            ww1 = F::new(2.0_f32) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
-        } else if x > F::new(5.0) {
-            let y = F::new(1.0) / x;
+        } else if x > F::new(5.0_f32) {
+            let y = F::new(1.0_f32) / x;
             let mut f1 = ((((((F::cast_from(4.6897511375022e-01_f64) * y
                 - F::cast_from(6.9955602298985e-01_f64))
                 * y
@@ -154,11 +166,11 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
                 * e
                 + F::sqrt(pie4 / x)
                 - e;
-            f1 = f1 * y * F::new(0.5);
-            ww1 = F::new(2.0) * x * f1 + e;
+            f1 = f1 * y * F::new(0.5_f32);
+            ww1 = F::new(2.0_f32) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
-        } else if x > F::new(3.0) {
-            let y = x - F::new(4.0);
+        } else if x > F::new(3.0_f32) {
+            let y = x - F::new(4.0_f32);
             let f1 = ((((((((((F::cast_from(-2.62453564772299e-11_f64) * y
                 + F::cast_from(3.24031041623823e-10_f64))
                 * y
@@ -181,10 +193,10 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
                 - F::cast_from(1.75257821619926e-02_f64))
                 * y
                 + F::cast_from(5.28406320615584e-02_f64);
-            ww1 = F::new(2.0) * x * f1 + e;
+            ww1 = F::new(2.0_f32) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
-        } else if x > F::new(1.0) {
-            let y = x - F::new(2.0);
+        } else if x > F::new(1.0_f32) {
+            let y = x - F::new(2.0_f32);
             let f1 = ((((((((((F::cast_from(-1.61702782425558e-10_f64) * y
                 + F::cast_from(1.96215250865776e-09_f64))
                 * y
@@ -207,7 +219,7 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
                 - F::cast_from(5.29428148329736e-02_f64))
                 * y
                 + F::cast_from(1.15702180856167e-01_f64);
-            ww1 = F::new(2.0) * x * f1 + e;
+            ww1 = F::new(2.0_f32) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
         } else {
             let f1 = ((((((((F::cast_from(-8.36313918003957e-08_f64) * x
@@ -228,7 +240,7 @@ pub fn rys_root1<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
                 - F::cast_from(1.99999999997023e-01_f64))
                 * x
                 + F::cast_from(3.33333333333318e-01_f64);
-            ww1 = F::new(2.0) * x * f1 + e;
+            ww1 = F::new(2.0_f32) * x * f1 + e;
             rt1 = f1 / (ww1 - f1);
         }
     }
@@ -252,17 +264,17 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
     let r22 = F::cast_from(F::cast_from(2.72474487139158e+00_f64));
     let w22 = F::cast_from(F::cast_from(9.17517095361369e-02_f64));
 
-    let mut rt1 = F::new(0.0);
-    let mut rt2 = F::new(0.0);
-    let mut ww1 = F::new(0.0);
-    let mut ww2 = F::new(0.0);
+    let mut rt1 = F::new(0.0_f32);
+    let mut rt2 = F::new(0.0_f32);
+    let mut ww1 = F::new(0.0_f32);
+    let mut ww2 = F::new(0.0_f32);
 
-    if x < F::new(3.0e-7) {
+    if x < F::new(3.0e-7_f32) {
         rt1 = F::cast_from(1.30693606237085e-01_f64) - F::cast_from(2.90430236082028e-02_f64) * x;
         rt2 = F::cast_from(2.86930639376291e+00_f64) - F::cast_from(6.37623643058102e-01_f64) * x;
         ww1 = F::cast_from(6.52145154862545e-01_f64) - F::cast_from(1.22713621927067e-01_f64) * x;
         ww2 = F::cast_from(3.47854845137453e-01_f64) - F::cast_from(2.10619711404725e-01_f64) * x;
-    } else if x < F::new(1.0) {
+    } else if x < F::new(1.0_f32) {
         let f1 = ((((((((F::cast_from(-8.36313918003957e-08_f64) * x
             + F::cast_from(1.21222603512827e-06_f64))
             * x
@@ -315,10 +327,10 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(6.37623643056745e-01_f64))
             * x
             + F::cast_from(2.86930639376289e+00_f64);
-        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
+        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0_f32) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
-    } else if x < F::new(3.0) {
-        let y = x - F::new(2.0);
+    } else if x < F::new(3.0_f32) {
+        let y = x - F::new(2.0_f32);
         let f1 = ((((((((((F::cast_from(-1.61702782425558e-10_f64) * y
             + F::cast_from(1.96215250865776e-09_f64))
             * y
@@ -383,10 +395,10 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(4.30761584997596e-01_f64))
             * y
             + F::cast_from(1.80400974537950e+00_f64);
-        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
+        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0_f32) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
-    } else if x < F::new(5.0) {
-        let y = x - F::new(4.0);
+    } else if x < F::new(5.0_f32) {
+        let y = x - F::new(4.0_f32);
         let f1 = ((((((((((F::cast_from(-2.62453564772299e-11_f64) * y
             + F::cast_from(3.24031041623823e-10_f64))
             * y
@@ -449,9 +461,9 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(2.60417417692375e-01_f64))
             * y
             + F::cast_from(1.12155283108289e+00_f64);
-        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
+        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0_f32) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
-    } else if x < F::new(10.0) {
+    } else if x < F::new(10.0_f32) {
         let e = F::exp(-x);
         ww1 = ((((((F::cast_from(4.6897511375022e-01_f64) / x
             - F::cast_from(6.9955602298985e-01_f64))
@@ -468,7 +480,7 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             * e
             + F::sqrt(pie4 / x);
         let f1 = (ww1 - e) / (x + x);
-        let y = x - F::new(7.5);
+        let y = x - F::new(7.5_f32);
         rt1 = (((((((((((((F::cast_from(-1.43632730148572e-16_f64) * y
             + F::cast_from(2.38198922570405e-16_f64))
             * y
@@ -523,9 +535,9 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(9.53478510453887e-02_f64))
             * y
             + F::cast_from(5.44765245686790e-01_f64);
-        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
+        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0_f32) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
-    } else if x < F::new(15.0) {
+    } else if x < F::new(15.0_f32) {
         let e = F::exp(-x);
         ww1 = (((F::cast_from(-1.8784686463512e-01_f64) / x
             + F::cast_from(2.2991849164985e-01_f64))
@@ -568,9 +580,9 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             + F::cast_from(8.00839033297501e+00_f64))
             * e
             + r22 / (x - r22);
-        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
+        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0_f32) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
-    } else if x < F::new(33.0) {
+    } else if x < F::new(33.0_f32) {
         let e = F::exp(-x);
         ww1 = ((F::cast_from(1.9623264149430e-01_f64) / x - F::cast_from(4.9695241464490e-01_f64))
             / x
@@ -602,9 +614,9 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             + F::cast_from(2.98011277766958e+00_f64))
             * e
             + r22 / (x - r22);
-        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0) + rt2) / (rt2 - rt1);
+        ww2 = ((f1 - ww1) * rt1 + f1) * (F::new(1.0_f32) + rt2) / (rt2 - rt1);
         ww1 = ww1 - ww2;
-    } else if x < F::new(40.0) {
+    } else if x < F::new(40.0_f32) {
         let ww1_sqrt = F::sqrt(pie4 / x);
         let e = F::exp(-x);
         rt1 = (F::cast_from(-8.78947307498880e-01_f64) * x
@@ -645,26 +657,26 @@ pub fn rys_root2<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
 /// then large-x asymptotic. Mirrors the validated host port `rys_root3_host_f64`.
 #[cube]
 pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
-    let mut r13 = F::new(0.0);
-    let mut r23 = F::new(0.0);
-    let mut w23 = F::new(0.0);
-    let mut r33 = F::new(0.0);
-    let mut w33 = F::new(0.0);
-    let mut rt1 = F::new(0.0);
-    let mut rt2 = F::new(0.0);
-    let mut rt3 = F::new(0.0);
-    let mut ww1 = F::new(0.0);
-    let mut ww2 = F::new(0.0);
-    let mut ww3 = F::new(0.0);
-    let mut f1 = F::new(0.0);
-    let mut f2 = F::new(0.0);
-    let mut e = F::new(0.0);
-    let mut t1 = F::new(0.0);
-    let mut t2 = F::new(0.0);
-    let mut t3 = F::new(0.0);
-    let mut a1 = F::new(0.0);
-    let mut a2 = F::new(0.0);
-    let mut y = F::new(0.0);
+    let mut r13 = F::new(0.0_f32);
+    let mut r23 = F::new(0.0_f32);
+    let mut w23 = F::new(0.0_f32);
+    let mut r33 = F::new(0.0_f32);
+    let mut w33 = F::new(0.0_f32);
+    let mut rt1 = F::new(0.0_f32);
+    let mut rt2 = F::new(0.0_f32);
+    let mut rt3 = F::new(0.0_f32);
+    let mut ww1 = F::new(0.0_f32);
+    let mut ww2 = F::new(0.0_f32);
+    let mut ww3 = F::new(0.0_f32);
+    let mut f1 = F::new(0.0_f32);
+    let mut f2 = F::new(0.0_f32);
+    let mut e = F::new(0.0_f32);
+    let mut t1 = F::new(0.0_f32);
+    let mut t2 = F::new(0.0_f32);
+    let mut t3 = F::new(0.0_f32);
+    let mut a1 = F::new(0.0_f32);
+    let mut a2 = F::new(0.0_f32);
+    let mut y = F::new(0.0_f32);
 
     r13 = F::cast_from(1.90163509193487e-01_f64);
     r23 = F::cast_from(1.78449274854325e+00_f64);
@@ -672,14 +684,14 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
     r33 = F::cast_from(5.52534374226326e+00_f64);
     w33 = F::cast_from(5.11156880411248e-03_f64);
 
-    if x < F::new(3.0e-7) {
+    if x < F::new(3.0e-7_f32) {
         rt1 = F::cast_from(6.03769246832797e-02_f64) - F::cast_from(9.28875764357368e-03_f64) * x;
         rt2 = F::cast_from(7.76823355931043e-01_f64) - F::cast_from(1.19511285527878e-01_f64) * x;
         rt3 = F::cast_from(6.66279971938567e+00_f64) - F::cast_from(1.02504611068957e+00_f64) * x;
         ww1 = F::cast_from(4.67913934572691e-01_f64) - F::cast_from(5.64876917232519e-02_f64) * x;
         ww2 = F::cast_from(3.60761573048137e-01_f64) - F::cast_from(1.49077186455208e-01_f64) * x;
         ww3 = F::cast_from(1.71324492379169e-01_f64) - F::cast_from(1.27768455150979e-01_f64) * x;
-    } else if x < F::new(1.0) {
+    } else if x < F::new(1.0_f32) {
         rt1 = ((((((F::cast_from(-5.10186691538870e-10_f64) * x
             + F::cast_from(2.40134415703450e-08_f64))
             * x
@@ -751,7 +763,7 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
         ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
         ww1 = ww1 - ww2 - ww3;
-    } else if x < F::new(3.0) {
+    } else if x < F::new(3.0_f32) {
         y = x - F::cast_from(2.0e+00_f64);
         rt1 = ((((((((F::cast_from(1.44687969563318e-12_f64) * y
             + F::cast_from(4.85300143926755e-12_f64))
@@ -838,7 +850,7 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
         ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
         ww1 = ww1 - ww2 - ww3;
-    } else if x < F::new(5.0) {
+    } else if x < F::new(5.0_f32) {
         y = x - F::cast_from(4.0e+00_f64);
         rt1 = (((((((F::cast_from(1.44265709189601e-11_f64) * y
             - F::cast_from(4.66622033006074e-10_f64))
@@ -925,7 +937,7 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
         ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
         ww1 = ww1 - ww2 - ww3;
-    } else if x < F::new(10.0) {
+    } else if x < F::new(10.0_f32) {
         e = F::exp(-x);
         ww1 = ((((((F::cast_from(4.6897511375022e-01_f64) / x
             - F::cast_from(6.9955602298985e-01_f64))
@@ -1026,7 +1038,7 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
         ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
         ww1 = ww1 - ww2 - ww3;
-    } else if x < F::new(15.0) {
+    } else if x < F::new(15.0_f32) {
         e = F::exp(-x);
         ww1 = (((F::cast_from(-1.8784686463512e-01_f64) / x
             + F::cast_from(2.2991849164985e-01_f64))
@@ -1121,7 +1133,7 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
         ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
         ww1 = ww1 - ww2 - ww3;
-    } else if x < F::new(33.0) {
+    } else if x < F::new(33.0_f32) {
         e = F::exp(-x);
         ww1 = ((F::cast_from(1.9623264149430e-01_f64) / x - F::cast_from(4.9695241464490e-01_f64))
             / x
@@ -1130,7 +1142,7 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             + F::sqrt(pie4 / x);
         f1 = (ww1 - e) / (x + x);
         f2 = (f1 + f1 + f1 - e) / (x + x);
-        if x < F::new(20.0) {
+        if x < F::new(20.0_f32) {
             rt1 = ((((((F::cast_from(-2.43270989903742e-06_f64) * x
                 + F::cast_from(3.57901398988359e-04_f64))
                 * x
@@ -1223,7 +1235,7 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww3 = (a2 - t2 * a1) / ((t3 - t2) * (t3 - t1));
         ww2 = (t3 * a1 - a2) / ((t3 - t2) * (t2 - t1));
         ww1 = ww1 - ww2 - ww3;
-    } else if x < F::new(47.0) {
+    } else if x < F::new(47.0_f32) {
         ww1 = F::sqrt(pie4 / x);
         e = F::exp(-x);
         rt1 = ((F::cast_from(-7.39058467995275e+00_f64) * x
@@ -1288,23 +1300,23 @@ pub fn rys_root3<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
 /// then large-x asymptotic. Mirrors the validated host port `rys_root4_host_f64`.
 #[cube]
 pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
-    let mut r14 = F::new(0.0);
-    let mut r24 = F::new(0.0);
-    let mut w24 = F::new(0.0);
-    let mut r34 = F::new(0.0);
-    let mut w34 = F::new(0.0);
-    let mut r44 = F::new(0.0);
-    let mut w44 = F::new(0.0);
-    let mut rt1 = F::new(0.0);
-    let mut rt2 = F::new(0.0);
-    let mut rt3 = F::new(0.0);
-    let mut rt4 = F::new(0.0);
-    let mut ww1 = F::new(0.0);
-    let mut ww2 = F::new(0.0);
-    let mut ww3 = F::new(0.0);
-    let mut ww4 = F::new(0.0);
-    let mut y = F::new(0.0);
-    let mut e = F::new(0.0);
+    let mut r14 = F::new(0.0_f32);
+    let mut r24 = F::new(0.0_f32);
+    let mut w24 = F::new(0.0_f32);
+    let mut r34 = F::new(0.0_f32);
+    let mut w34 = F::new(0.0_f32);
+    let mut r44 = F::new(0.0_f32);
+    let mut w44 = F::new(0.0_f32);
+    let mut rt1 = F::new(0.0_f32);
+    let mut rt2 = F::new(0.0_f32);
+    let mut rt3 = F::new(0.0_f32);
+    let mut rt4 = F::new(0.0_f32);
+    let mut ww1 = F::new(0.0_f32);
+    let mut ww2 = F::new(0.0_f32);
+    let mut ww3 = F::new(0.0_f32);
+    let mut ww4 = F::new(0.0_f32);
+    let mut y = F::new(0.0_f32);
+    let mut e = F::new(0.0_f32);
 
     r14 = F::cast_from(1.45303521503316e-01_f64);
     r24 = F::cast_from(1.33909728812636e+00_f64);
@@ -1314,7 +1326,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
     r44 = F::cast_from(8.58863568901199e+00_f64);
     w44 = F::cast_from(2.25229076750736e-04_f64);
 
-    if x <= F::new(3.0e-7) {
+    if x <= F::new(3.0e-7_f32) {
         rt1 = F::cast_from(3.48198973061471e-02_f64) - F::cast_from(4.09645850660395e-03_f64) * x;
         rt2 = F::cast_from(3.81567185080042e-01_f64) - F::cast_from(4.48902570656719e-02_f64) * x;
         rt3 = F::cast_from(1.73730726945891e+00_f64) - F::cast_from(2.04389090547327e-01_f64) * x;
@@ -1323,7 +1335,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww2 = F::cast_from(3.13706645877886e-01_f64) - F::cast_from(8.98046242557724e-02_f64) * x;
         ww3 = F::cast_from(2.22381034453372e-01_f64) - F::cast_from(1.29314370958973e-01_f64) * x;
         ww4 = F::cast_from(1.01228536290376e-01_f64) - F::cast_from(8.28299075414321e-02_f64) * x;
-    } else if x <= F::new(1.0) {
+    } else if x <= F::new(1.0_f32) {
         rt1 = ((((((F::cast_from(-1.95309614628539e-10_f64) * x
             + F::cast_from(5.19765728707592e-09_f64))
             * x
@@ -1446,7 +1458,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(8.28299075413889e-02_f64))
             * x
             + F::cast_from(1.01228536290376e-01_f64);
-    } else if x <= F::new(5.0) {
+    } else if x <= F::new(5.0_f32) {
         y = x - F::cast_from(3.0e+00_f64);
         rt1 = (((((((((F::cast_from(-1.48570633747284e-15_f64) * y
             - F::cast_from(1.33273068108777e-13_f64))
@@ -1634,7 +1646,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(7.16227030134947e-03_f64))
             * y
             + F::cast_from(9.66077262223353e-03_f64);
-    } else if x <= F::new(10.0) {
+    } else if x <= F::new(10.0_f32) {
         y = x - F::cast_from(7.5e+00_f64);
         rt1 = (((((((((F::cast_from(4.64217329776215e-15_f64) * y
             - F::cast_from(6.27892383644164e-15_f64))
@@ -1828,7 +1840,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(2.78777909813289e-04_f64))
             * y
             + F::cast_from(5.26543779837487e-04_f64);
-    } else if x <= F::new(15.0) {
+    } else if x <= F::new(15.0_f32) {
         y = x - F::cast_from(12.5e+00_f64);
         rt1 = (((((((((((F::cast_from(4.94869622744119e-17_f64) * y
             + F::cast_from(8.03568805739160e-16_f64))
@@ -2011,7 +2023,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - ww4
             - ww3
             - ww2;
-    } else if x <= F::new(20.0) {
+    } else if x <= F::new(20.0_f32) {
         ww1 = F::sqrt(pie4 / x);
         y = x - F::cast_from(17.5e+00_f64);
         rt1 = (((((((((((F::cast_from(4.36701759531398e-17_f64) * y
@@ -2192,7 +2204,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - ww2
             - ww3
             - ww4;
-    } else if x <= F::new(35.0) {
+    } else if x <= F::new(35.0_f32) {
         ww1 = F::sqrt(pie4 / x);
         e = F::exp(-x);
         rt1 = ((((((F::cast_from(-4.45711399441838e-05_f64) * x
@@ -2263,7 +2275,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             + F::cast_from(2.96817940164703e+06_f64))
             * e
             + r44 / (x - r44);
-        if x <= F::new(25.0) {
+        if x <= F::new(25.0_f32) {
             ww4 = (((((((F::cast_from(2.33766206773151e-07_f64) * x
                 - F::cast_from(3.81542906607063e-05_f64))
                 * x
@@ -2341,7 +2353,7 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - ww2
             - ww3
             - ww4;
-    } else if x <= F::new(53.0) {
+    } else if x <= F::new(53.0_f32) {
         ww1 = F::sqrt(pie4 / x);
         e = F::exp(-x) * x * x * x * x;
         rt4 = ((F::cast_from(-2.19135070169653e-03_f64) * x
@@ -2420,28 +2432,28 @@ pub fn rys_root4<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
 /// large-x asymptotic. Mirrors the validated host port `rys_root5_host_f64`.
 #[cube]
 pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
-    let mut r15 = F::new(0.0);
-    let mut r25 = F::new(0.0);
-    let mut w25 = F::new(0.0);
-    let mut r35 = F::new(0.0);
-    let mut w35 = F::new(0.0);
-    let mut r45 = F::new(0.0);
-    let mut w45 = F::new(0.0);
-    let mut r55 = F::new(0.0);
-    let mut w55 = F::new(0.0);
-    let mut rt1 = F::new(0.0);
-    let mut rt2 = F::new(0.0);
-    let mut rt3 = F::new(0.0);
-    let mut rt4 = F::new(0.0);
-    let mut rt5 = F::new(0.0);
-    let mut ww1 = F::new(0.0);
-    let mut ww2 = F::new(0.0);
-    let mut ww3 = F::new(0.0);
-    let mut ww4 = F::new(0.0);
-    let mut ww5 = F::new(0.0);
-    let mut y = F::new(0.0);
-    let mut e = F::new(0.0);
-    let mut xxx = F::new(0.0);
+    let mut r15 = F::new(0.0_f32);
+    let mut r25 = F::new(0.0_f32);
+    let mut w25 = F::new(0.0_f32);
+    let mut r35 = F::new(0.0_f32);
+    let mut w35 = F::new(0.0_f32);
+    let mut r45 = F::new(0.0_f32);
+    let mut w45 = F::new(0.0_f32);
+    let mut r55 = F::new(0.0_f32);
+    let mut w55 = F::new(0.0_f32);
+    let mut rt1 = F::new(0.0_f32);
+    let mut rt2 = F::new(0.0_f32);
+    let mut rt3 = F::new(0.0_f32);
+    let mut rt4 = F::new(0.0_f32);
+    let mut rt5 = F::new(0.0_f32);
+    let mut ww1 = F::new(0.0_f32);
+    let mut ww2 = F::new(0.0_f32);
+    let mut ww3 = F::new(0.0_f32);
+    let mut ww4 = F::new(0.0_f32);
+    let mut ww5 = F::new(0.0_f32);
+    let mut y = F::new(0.0_f32);
+    let mut e = F::new(0.0_f32);
+    let mut xxx = F::new(0.0_f32);
 
     r15 = F::cast_from(1.17581320211778e-01_f64);
     r25 = F::cast_from(1.07456201243690e+00_f64);
@@ -2453,7 +2465,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
     r55 = F::cast_from(1.18071894899717e+01_f64);
     w55 = F::cast_from(8.62130526143657e-06_f64);
 
-    if x < F::new(3.0e-7) {
+    if x < F::new(3.0e-7_f32) {
         rt1 = F::cast_from(2.26659266316985e-02_f64) - F::cast_from(2.15865967920897e-03_f64) * x;
         rt2 = F::cast_from(2.31271692140903e-01_f64) - F::cast_from(2.20258754389745e-02_f64) * x;
         rt3 = F::cast_from(8.57346024118836e-01_f64) - F::cast_from(8.16520023025515e-02_f64) * x;
@@ -2464,7 +2476,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
         ww3 = F::cast_from(2.19086362515981e-01_f64) - F::cast_from(9.71152726793658e-02_f64) * x;
         ww4 = F::cast_from(1.49451349150580e-01_f64) - F::cast_from(1.02979262193565e-01_f64) * x;
         ww5 = F::cast_from(6.66713443086877e-02_f64) - F::cast_from(5.73782817488315e-02_f64) * x;
-    } else if x < F::new(1.0) {
+    } else if x < F::new(1.0_f32) {
         rt1 = ((((((F::cast_from(-4.46679165328413e-11_f64) * x
             + F::cast_from(1.21879111988031e-09_f64))
             * x
@@ -2613,7 +2625,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(5.73782817487958e-02_f64))
             * x
             + F::cast_from(6.66713443086877e-02_f64);
-    } else if x < F::new(5.0) {
+    } else if x < F::new(5.0_f32) {
         y = x - F::cast_from(3.0e+00_f64);
         rt1 = ((((((((F::cast_from(-2.58163897135138e-14_f64) * y
             + F::cast_from(8.14127461488273e-13_f64))
@@ -2839,7 +2851,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(4.37785737450783e-03_f64))
             * y
             + F::cast_from(5.36963805223095e-03_f64);
-    } else if x < F::new(10.0) {
+    } else if x < F::new(10.0_f32) {
         y = x - F::cast_from(7.5e+00_f64);
         rt1 = ((((((((F::cast_from(-1.13825201010775e-14_f64) * y
             + F::cast_from(1.89737681670375e-13_f64))
@@ -3075,7 +3087,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(1.21113782150370e-04_f64))
             * y
             + F::cast_from(1.75013126731224e-04_f64);
-    } else if x < F::new(15.0) {
+    } else if x < F::new(15.0_f32) {
         y = x - F::cast_from(12.5e+00_f64);
         rt1 = ((((((((((F::cast_from(-4.16387977337393e-17_f64) * y
             + F::cast_from(7.20872997373860e-16_f64))
@@ -3313,7 +3325,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(4.30868944351523e-06_f64))
             * y
             + F::cast_from(9.94307982432868e-06_f64);
-    } else if x < F::new(20.0) {
+    } else if x < F::new(20.0_f32) {
         y = x - F::cast_from(17.5e+00_f64);
         rt1 = ((((((((((F::cast_from(1.91875764545740e-16_f64) * y
             + F::cast_from(7.8357401095707e-16_f64))
@@ -3547,7 +3559,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(3.59858901591047e-07_f64))
             * y
             + F::cast_from(2.43682618601000e-06_f64);
-    } else if x < F::new(25.0) {
+    } else if x < F::new(25.0_f32) {
         y = x - F::cast_from(22.5e+00_f64);
         rt1 = (((((((((F::cast_from(-1.13927848238726e-15_f64) * y
             + F::cast_from(7.39404133595713e-15_f64))
@@ -3767,7 +3779,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             - F::cast_from(5.97767417400540e-08_f64))
             * y
             + F::cast_from(1.65186146094969e-06_f64);
-    } else if x < F::new(40.0) {
+    } else if x < F::new(40.0_f32) {
         ww1 = F::sqrt(pie4 / x);
         e = F::exp(-x);
         rt1 = ((((((((F::cast_from(-1.73363958895356e-06_f64) * x
@@ -3937,7 +3949,7 @@ pub fn rys_root5<F: Float>(x: F, u: &mut Array<F>, w: &mut Array<F>, pie4: F) {
             * e
             + w25 * ww1;
         ww1 = ww1 - F::cast_from(0.01962e+00_f64) * e - ww2 - ww3 - ww4 - ww5;
-    } else if x < F::new(59.0) {
+    } else if x < F::new(59.0_f32) {
         ww1 = F::sqrt(pie4 / x);
         xxx = x * x * x;
         e = xxx * F::exp(-x);
@@ -8323,11 +8335,11 @@ mod tests_rys_host {
     /// nroots>=8"):
     ///   * nroots 6,7 (pure f64): strict `|got - ref| <= atol=1e-12` (rtol never triggers).
     ///   * nroots 8..=12 (double-double): `|got - ref| <= max(atol=1e-12, rtol=1e-9*|ref|)`.
-    /// The bar is NEVER loosened below this documented baseline. nroots 6,7 use the rich
-    /// root5 intermediate-x grid; nroots 8..12 use the SAME x grid as
-    /// rys_nroots_sweep_parity.rs:19 — the grid against which the rtol=1e-9 dd-vs-f80
-    /// floor was validated in Phase 25 (a denser grid probes the worst-conditioned
-    /// largest root r->1 where the documented floor is the known T-25-02 boundary).
+    ///     The bar is NEVER loosened below this documented baseline. nroots 6,7 use the rich
+    ///     root5 intermediate-x grid; nroots 8..12 use the SAME x grid as
+    ///     rys_nroots_sweep_parity.rs:19 — the grid against which the rtol=1e-9 dd-vs-f80
+    ///     floor was validated in Phase 25 (a denser grid probes the worst-conditioned
+    ///     largest root r->1 where the documented floor is the known T-25-02 boundary).
     #[test]
     fn rys_roots_host_nroots6to12_matches_libcint() {
         /// nroots=6 vendor CINTrys_roots gold (libcint 6.1.3 capture, root5 intermediate-x grid).

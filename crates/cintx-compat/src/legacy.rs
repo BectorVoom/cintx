@@ -46,6 +46,14 @@ macro_rules! all_cint1e_wrappers {
         $sph_api:expr,
         $spinor_api:expr
     ) => {
+        /// libcint-compatible wrapper: see [`eval_raw`] for the shared contract.
+        ///
+        /// # Safety
+        /// `atm`, `bas` and `env` must be one coherent libcint environment —
+        /// every `PTR_*` offset in `atm`/`bas` addressing a valid range of `env`,
+        /// and `shls` indexing shells `bas` describes. Malformed layouts are
+        /// rejected with a typed error; a well-formed triple describing a
+        /// different molecule than intended yields wrong numbers instead.
         pub unsafe fn $cart_fn(
             out: Option<&mut [f64]>,
             shls: &[i32],
@@ -56,6 +64,14 @@ macro_rules! all_cint1e_wrappers {
             unsafe { eval_legacy($cart_api, out, shls, atm, bas, env, None) }
         }
 
+        /// libcint-compatible wrapper: see [`eval_raw`] for the shared contract.
+        ///
+        /// # Safety
+        /// `atm`, `bas` and `env` must be one coherent libcint environment —
+        /// every `PTR_*` offset in `atm`/`bas` addressing a valid range of `env`,
+        /// and `shls` indexing shells `bas` describes. Malformed layouts are
+        /// rejected with a typed error; a well-formed triple describing a
+        /// different molecule than intended yields wrong numbers instead.
         pub unsafe fn $sph_fn(
             out: Option<&mut [f64]>,
             shls: &[i32],
@@ -66,6 +82,14 @@ macro_rules! all_cint1e_wrappers {
             unsafe { eval_legacy($sph_api, out, shls, atm, bas, env, None) }
         }
 
+        /// libcint-compatible wrapper: see [`eval_raw`] for the shared contract.
+        ///
+        /// # Safety
+        /// `atm`, `bas` and `env` must be one coherent libcint environment —
+        /// every `PTR_*` offset in `atm`/`bas` addressing a valid range of `env`,
+        /// and `shls` indexing shells `bas` describes. Malformed layouts are
+        /// rejected with a typed error; a well-formed triple describing a
+        /// different molecule than intended yields wrong numbers instead.
         pub unsafe fn $spinor_fn(
             out: Option<&mut [f64]>,
             shls: &[i32],
@@ -90,6 +114,14 @@ macro_rules! all_cint_wrappers {
         $sph_api:expr,
         $spinor_api:expr
     ) => {
+        /// libcint-compatible wrapper: see [`eval_raw`] for the shared contract.
+        ///
+        /// # Safety
+        /// `atm`, `bas` and `env` must be one coherent libcint environment —
+        /// every `PTR_*` offset in `atm`/`bas` addressing a valid range of `env`,
+        /// and `shls` indexing shells `bas` describes. Malformed layouts are
+        /// rejected with a typed error; a well-formed triple describing a
+        /// different molecule than intended yields wrong numbers instead.
         pub unsafe fn $cart_fn(
             out: Option<&mut [f64]>,
             shls: &[i32],
@@ -101,6 +133,14 @@ macro_rules! all_cint_wrappers {
             unsafe { eval_legacy($cart_api, out, shls, atm, bas, env, opt) }
         }
 
+        /// libcint-compatible wrapper: see [`eval_raw`] for the shared contract.
+        ///
+        /// # Safety
+        /// `atm`, `bas` and `env` must be one coherent libcint environment —
+        /// every `PTR_*` offset in `atm`/`bas` addressing a valid range of `env`,
+        /// and `shls` indexing shells `bas` describes. Malformed layouts are
+        /// rejected with a typed error; a well-formed triple describing a
+        /// different molecule than intended yields wrong numbers instead.
         pub unsafe fn $sph_fn(
             out: Option<&mut [f64]>,
             shls: &[i32],
@@ -112,6 +152,14 @@ macro_rules! all_cint_wrappers {
             unsafe { eval_legacy($sph_api, out, shls, atm, bas, env, opt) }
         }
 
+        /// libcint-compatible wrapper: see [`eval_raw`] for the shared contract.
+        ///
+        /// # Safety
+        /// `atm`, `bas` and `env` must be one coherent libcint environment —
+        /// every `PTR_*` offset in `atm`/`bas` addressing a valid range of `env`,
+        /// and `shls` indexing shells `bas` describes. Malformed layouts are
+        /// rejected with a typed error; a well-formed triple describing a
+        /// different molecule than intended yields wrong numbers instead.
         pub unsafe fn $spinor_fn(
             out: Option<&mut [f64]>,
             shls: &[i32],

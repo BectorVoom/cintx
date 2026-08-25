@@ -22,6 +22,16 @@
 //! they are injected as `F` at the host/launcher boundary via `F::from_f64_lossy`.
 //! Never use `F::new(f64_literal)` for precision-critical constants (Pitfall 5).
 
+// Transcribed verbatim from vendored libcint 6.1.3. Result compatibility with
+// upstream is decided by the exact bits these literals feed the kernels, so a
+// literal is never truncated to the shortest form that round-trips — the same
+// provenance rationale the `clippy::approx_constant` allows in this crate carry.
+#![allow(clippy::excessive_precision)]
+// `x = x - y` rather than `x -= y`: these are statement-for-statement ports of
+// the vendored libcint source, and keeping the assignment shape means a reviewer
+// can diff a routine against the C line by line.
+#![allow(clippy::assign_op_pattern)]
+
 use cintx_core::CintFloat;
 use cubecl::prelude::*;
 
@@ -260,33 +270,33 @@ pub fn erf_host(x: f64) -> f64 {
 #[cube]
 pub fn boys_gamma_inc<F: Float>(f: &mut Array<F>, t: F, m: u32, turnover: F, sqrtpie4: F) {
     // Branch 1: t == 0 — F_m(0) = 1/(2m+1), fmt.c lines 208-212
-    if t == F::new(0.0) {
-        f[0usize] = F::new(1.0);
+    if t == F::new(0.0_f32) {
+        f[0usize] = F::new(1.0_f32);
         let mut k: u32 = 1;
         while k <= m {
-            f[k as usize] = F::new(1.0) / F::cast_from(2u32 * k + 1u32);
+            f[k as usize] = F::new(1.0_f32) / F::cast_from(2u32 * k + 1u32);
             k += 1;
         }
     } else if t < turnover {
         // Branch 2: power series, fmt1_gamma_inc_like fmt.c lines 186-203
-        let b = F::cast_from(m) + F::new(0.5);
-        let e = F::new(0.5) * F::exp(-t);
+        let b = F::cast_from(m) + F::new(0.5_f32);
+        let e = F::new(0.5_f32) * F::exp(-t);
         let mut x = e;
         let mut s = e;
         // WR-05: use F::EPSILON (CubeCL Float const) so the device convergence tolerance is
         // precision-appropriate — f32::EPSILON for F=f32, f64::EPSILON for F=f64. Matches host path.
         let tol = F::EPSILON * e;
-        let mut bi = b + F::new(1.0);
+        let mut bi = b + F::new(1.0_f32);
         while x > tol {
             x = x * t / bi;
             s = s + x;
-            bi = bi + F::new(1.0);
+            bi = bi + F::new(1.0_f32);
         }
         f[m as usize] = s / b;
         // Downward recurrence, fmt.c lines 200-203
         let mut i: u32 = m;
         while i > 0u32 {
-            let b_down = F::cast_from(i) - F::new(0.5);
+            let b_down = F::cast_from(i) - F::new(0.5_f32);
             f[(i - 1u32) as usize] = (e + t * f[i as usize]) / b_down;
             i -= 1;
         }
@@ -296,7 +306,7 @@ pub fn boys_gamma_inc<F: Float>(f: &mut Array<F>, t: F, m: u32, turnover: F, sqr
         let erf_val = boys_erf_approx::<F>(tt);
         f[0usize] = erf_val * (sqrtpie4 / tt);
         let e = F::exp(-t);
-        let b = F::new(0.5) / t;
+        let b = F::new(0.5_f32) / t;
         let mut i: u32 = 1;
         while i <= m {
             let coeff = F::cast_from(2u32 * i - 1u32);
@@ -306,6 +316,10 @@ pub fn boys_gamma_inc<F: Float>(f: &mut Array<F>, t: F, m: u32, turnover: F, sqr
     }
 }
 
+// `#[cube]` requires every binding to be initialized at its `let`: a
+// conditionally-initialized local does not expand. Each initializer below is
+// overwritten on every path, so it is structurally necessary rather than dead.
+#[allow(unused_assignments)]
 /// High-accuracy f64-only device implementation of the zeroth Boys function.
 ///
 /// `F_0(t) = sqrt(pi)/2 * erf(sqrt(t)) / sqrt(t)` for `t > 0`, with its
@@ -330,6 +344,10 @@ pub fn boys_f0_f64(t: f64) -> f64 {
     result
 }
 
+// `#[cube]` requires every binding to be initialized at its `let`: a
+// conditionally-initialized local does not expand. Each initializer below is
+// overwritten on every path, so it is structurally necessary rather than dead.
+#[allow(unused_assignments)]
 /// Cody's f64 `erf` rational approximation for a non-negative input.
 ///
 /// The caller is `boys_f0_f64`, whose input is `sqrt(t)`; keeping this helper
@@ -398,16 +416,16 @@ pub fn boys_erf_approx<F: Float>(x: F) -> F {
     // Abramowitz & Stegun 7.1.26 rational approximation
     // p = 0.3275911, a1..a5 coefficients
     // These are small exact literals — use F::new (safe for non-precision-critical constants)
-    let p = F::new(0.3275911);
-    let a1 = F::new(0.254829592);
-    let a2 = F::new(-0.284496736);
-    let a3 = F::new(1.421413741);
-    let a4 = F::new(-1.453152027);
-    let a5 = F::new(1.061405429);
+    let p = F::new(0.3275911_f32);
+    let a1 = F::new(0.254829592_f32);
+    let a2 = F::new(-0.284496736_f32);
+    let a3 = F::new(1.421413741_f32);
+    let a4 = F::new(-1.453152027_f32);
+    let a5 = F::new(1.061405429_f32);
 
-    let t_val = F::new(1.0) / (F::new(1.0) + p * x);
+    let t_val = F::new(1.0_f32) / (F::new(1.0_f32) + p * x);
     let poly = t_val * (a1 + t_val * (a2 + t_val * (a3 + t_val * (a4 + t_val * a5))));
-    F::new(1.0) - poly * F::exp(-(x * x))
+    F::new(1.0_f32) - poly * F::exp(-(x * x))
 }
 
 #[cfg(all(test, feature = "cpu"))]
@@ -420,6 +438,9 @@ mod tests {
     /// independent from every integral family while validating the actual
     /// CubeCL f64 lowering and comptime coefficient materialization.
     #[cube(launch)]
+    // `ABSOLUTE_POS` expands to a CubeCL builtin, not a `usize`; the cast is
+    // what makes it index an `Array`.
+    #[allow(clippy::unnecessary_cast)]
     fn boys_f0_sweep_kernel(input: &Array<f64>, output: &mut Array<f64>) {
         let index = ABSOLUTE_POS as usize;
         if index < input.len() {

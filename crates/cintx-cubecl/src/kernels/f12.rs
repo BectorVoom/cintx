@@ -14,6 +14,31 @@
 //!   ipvip1:  ng = [1, 1, 0, 0, ...] → ncomp = 9
 //!   ip1ip2:  ng = [1, 0, 1, 0, ...] → ncomp = 9
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+// Index arithmetic here is written in full — `base + 0 * stride`, `base + 1 * stride`,
+// `out[n * 3 + 0]` — so that a slot or component index lines up column-wise with its
+// neighbours and with the libcint layout being mirrored. Folding the `0 *` and `1 *`
+// away would shorten the line and hide the stride.
+#![allow(clippy::identity_op)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+
 use crate::backend::ResolvedBackend;
 use crate::math::pdata::compute_pdata_host;
 use crate::math::stg::stg_roots_host;
@@ -193,7 +218,20 @@ fn build_f12_shape(li: usize, lj: usize, lk: usize, ll: usize) -> F12Shape {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Host G-tensor fill — retained as the bit-identity reference (Task B)
+//
+//  `fill_g_tensor_f12` and the five helpers below no longer run in production:
+//  `fill_g_tensor_f12_dev` does, inside `f12_primitive_batch_kernel` (base
+//  variant) and `f12_g_fill_kernel` (derivative variants). They stay because
+//  they are what the device port is measured against —
+//  `f12_primitive_batch_matches_per_quartet_path` requires bit-identity between
+//  the two — and because they are the readable statement of the algorithm the
+//  `#[cube]` form has to obey. Deleting them would delete the gate.
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[inline]
+#[cfg_attr(not(test), allow(dead_code))]
 fn vrr_fill_axis_f12(
     g_axis: &mut [f64],
     root: usize,
@@ -259,6 +297,7 @@ fn vrr_fill_axis_f12(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn hrr_lj2d_4d_f12(g: &mut [f64], shape: F12Shape, rirj: [f64; 3], rkrl: [f64; 3]) {
     if shape.li == 0 && shape.lk == 0 {
         return;
@@ -298,6 +337,7 @@ fn hrr_lj2d_4d_f12(g: &mut [f64], shape: F12Shape, rirj: [f64; 3], rkrl: [f64; 3
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn hrr_kj2d_4d_f12(g: &mut [f64], shape: F12Shape, rirj: [f64; 3], rkrl: [f64; 3]) {
     if shape.li == 0 && shape.ll == 0 {
         return;
@@ -337,6 +377,7 @@ fn hrr_kj2d_4d_f12(g: &mut [f64], shape: F12Shape, rirj: [f64; 3], rkrl: [f64; 3
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn hrr_il2d_4d_f12(g: &mut [f64], shape: F12Shape, rirj: [f64; 3], rkrl: [f64; 3]) {
     if shape.lj == 0 && shape.lk == 0 {
         return;
@@ -379,6 +420,7 @@ fn hrr_il2d_4d_f12(g: &mut [f64], shape: F12Shape, rirj: [f64; 3], rkrl: [f64; 3
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn hrr_ik2d_4d_f12(g: &mut [f64], shape: F12Shape, rirj: [f64; 3], rkrl: [f64; 3]) {
     if shape.lj == 0 && shape.ll == 0 {
         return;
@@ -427,6 +469,7 @@ fn hrr_ik2d_4d_f12(g: &mut [f64], shape: F12Shape, rirj: [f64; 3], rkrl: [f64; 3
 /// - Calls `stg_roots_host` instead of `rys_roots_host`.
 /// - Applies STG or YP specific weight post-processing (per g2e_f12.c).
 /// - Everything after weight post-processing is identical to the plain 2e VRR.
+#[cfg_attr(not(test), allow(dead_code))]
 fn fill_g_tensor_f12(
     ai: f64,
     aj: f64,
@@ -522,6 +565,7 @@ fn fill_g_tensor_f12(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg_attr(not(test), allow(dead_code))]
 fn fill_g_tensor_inner(
     shape: F12Shape,
     u_roots: &[f64],
@@ -1351,6 +1395,9 @@ pub(crate) fn gout_g1g2(
 /// ket / remaining-center / auxiliary-center derivative families (int2e_ip2,
 /// int2c2e_ip1/ip2, int3c2e_ip2 — the last via the 2e `ll` slot, RESEARCH Pitfall 2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// Enumerates all four centers libcint's `\nabla` families address; `J` and `L`
+// have no wired caller yet (int2e_ip2 routes through `K`).
+#[allow(dead_code)]
 pub(crate) enum Nabla1Center {
     I,
     J,
@@ -2237,6 +2284,10 @@ pub(crate) fn gout_spsp1spsp2(
         J,
         I,
     }
+    // A table, not an abstraction: each row is one cascade step transcribed
+    // from `intor2.c`, and naming the tuple would put the column meanings a
+    // jump away from the rows that use them.
+    #[allow(clippy::type_complexity)]
     let plan: [(usize, usize, Op, usize, usize, usize, usize, f64); 15] = [
         (1, 0, Op::L, li + 1, lj + 1, lk + 1, ll, al),
         (2, 0, Op::K, li + 1, lj + 1, lk, ll, ak),
@@ -2584,6 +2635,9 @@ pub(crate) fn gout_spsp2(
 }
 
 #[allow(clippy::too_many_arguments)]
+// `int2e_yp`-family second short-range arm: implemented against the vendor
+// source but not yet reachable from a registered operator.
+#[allow(dead_code)]
 fn gout_srsr2(
     g: &[f64],
     shape: &F12Shape,
@@ -4447,6 +4501,632 @@ fn contract_f12_cart(g: &[f64], shape: F12Shape, li: u8, lj: u8, lk: u8, ll: u8)
     out
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  F12 G-tensor fill on device (post-wave-5 Task B).
+//
+//  `fill_g_tensor_f12` ran on the host once per primitive quartet, and
+//  `f12_cart_contraction_kernel` was launched once per quartet immediately
+//  after — so a `(6,6,6,6)`-primitive shell quartet cost 1296 launches, each
+//  preceded by a host G-tensor build. Porting the fill makes the whole
+//  primitive-quartet loop one dispatch, and removes the reason the contraction
+//  kernel could not be batched.
+//
+//  # Where the host/device line falls
+//
+//  Everything arithmetic is on device: the Gaussian-product geometry, the STG
+//  roots (`math::stg::stg_roots_dev`), the weight post-processing, the VRR and
+//  the HRR transfer. What stays on the host is per-row *marshaling*: the
+//  primitive-quartet enumeration, `compute_pdata_host`'s `quartet_fac`, and the
+//  STG table-cell lookup — see `math::stg` for why the cell lookup in
+//  particular cannot move (`log10` has no bit-identical device equivalent, and
+//  the frozen tables are 14 MB each).
+//
+//  # Bit-identity
+//
+//  The device path reproduces the host one bit for bit, and
+//  `f12_primitive_batch_matches_host` enforces it by running the per-quartet
+//  entry as a one-row batch. That is achievable because every operation is f64
+//  in the same order — the same property the wave 3-5 family ports rely on.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// `shape` array slots the F12 device kernels read. One flat `u32` row rather
+/// than fourteen scalar parameters, mirroring `class_shape` in the 2e families.
+pub(crate) const F12_SHAPE_NMAX: u32 = 0;
+pub(crate) const F12_SHAPE_MMAX: u32 = 1;
+pub(crate) const F12_SHAPE_LI: u32 = 2;
+pub(crate) const F12_SHAPE_LJ: u32 = 3;
+pub(crate) const F12_SHAPE_LK: u32 = 4;
+pub(crate) const F12_SHAPE_LL: u32 = 5;
+pub(crate) const F12_SHAPE_DI: u32 = 6;
+pub(crate) const F12_SHAPE_DK: u32 = 7;
+pub(crate) const F12_SHAPE_DL: u32 = 8;
+pub(crate) const F12_SHAPE_DJ: u32 = 9;
+pub(crate) const F12_SHAPE_G2D_IJMAX: u32 = 10;
+pub(crate) const F12_SHAPE_G2D_KLMAX: u32 = 11;
+pub(crate) const F12_SHAPE_GSIZE: u32 = 12;
+/// Number of `u32` slots one F12 shape row occupies.
+pub(crate) const F12_SHAPE_STRIDE: usize = 13;
+
+/// Flatten an [`F12Shape`] into the row the device kernels read.
+fn f12_shape_row(shape: F12Shape) -> Vec<u32> {
+    let mut row = vec![0_u32; F12_SHAPE_STRIDE];
+    row[F12_SHAPE_NMAX as usize] = shape.nmax as u32;
+    row[F12_SHAPE_MMAX as usize] = shape.mmax as u32;
+    row[F12_SHAPE_LI as usize] = shape.li as u32;
+    row[F12_SHAPE_LJ as usize] = shape.lj as u32;
+    row[F12_SHAPE_LK as usize] = shape.lk as u32;
+    row[F12_SHAPE_LL as usize] = shape.ll as u32;
+    row[F12_SHAPE_DI as usize] = shape.di as u32;
+    row[F12_SHAPE_DK as usize] = shape.dk as u32;
+    row[F12_SHAPE_DL as usize] = shape.dl as u32;
+    row[F12_SHAPE_DJ as usize] = shape.dj as u32;
+    row[F12_SHAPE_G2D_IJMAX as usize] = shape.g2d_ijmax as u32;
+    row[F12_SHAPE_G2D_KLMAX as usize] = shape.g2d_klmax as u32;
+    row[F12_SHAPE_GSIZE as usize] = shape.g_size as u32;
+    row
+}
+
+/// Device `vrr_fill_axis_f12` — the 2D vertical recurrence on one axis of the
+/// G tensor. `base` is the axis's offset inside the slab; every index below is
+/// relative to it, exactly as the host slices one axis at a time.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn vrr_fill_axis_f12_dev(
+    g: &mut Array<f64>,
+    base: u32,
+    root: u32,
+    nmax: u32,
+    mmax: u32,
+    dn: u32,
+    dm: u32,
+    c00: f64,
+    c0p: f64,
+    b10: f64,
+    b01: f64,
+    b00: f64,
+) {
+    if nmax > 0u32 {
+        let mut s0 = g[(base + root) as usize];
+        let mut s1 = c00 * s0;
+        g[(base + root + dn) as usize] = s1;
+        let mut n: u32 = 1;
+        while n < nmax {
+            let s2 = c00 * s1 + n as f64 * b10 * s0;
+            g[(base + root + (n + 1u32) * dn) as usize] = s2;
+            s0 = s1;
+            s1 = s2;
+            n += 1;
+        }
+    }
+
+    if mmax > 0u32 {
+        let mut s0 = g[(base + root) as usize];
+        let mut s1 = c0p * s0;
+        g[(base + root + dm) as usize] = s1;
+        let mut m: u32 = 1;
+        while m < mmax {
+            let s2 = c0p * s1 + m as f64 * b01 * s0;
+            g[(base + root + (m + 1u32) * dm) as usize] = s2;
+            s0 = s1;
+            s1 = s2;
+            m += 1;
+        }
+
+        if nmax > 0u32 {
+            let mut s0n = g[(base + root + dn) as usize];
+            let mut s1n = c0p * s0n + b00 * g[(base + root) as usize];
+            g[(base + root + dn + dm) as usize] = s1n;
+            let mut m2: u32 = 1;
+            while m2 < mmax {
+                let s2n =
+                    c0p * s1n + m2 as f64 * b01 * s0n + b00 * g[(base + root + m2 * dm) as usize];
+                g[(base + root + dn + (m2 + 1u32) * dm) as usize] = s2n;
+                s0n = s1n;
+                s1n = s2n;
+                m2 += 1;
+            }
+        }
+    }
+
+    if nmax > 0u32 {
+        let mut m: u32 = 1;
+        while m <= mmax {
+            let j = m * dm + root;
+            let mut s0 = g[(base + j) as usize];
+            let mut s1 = g[(base + j + dn) as usize];
+            let mut n: u32 = 1;
+            while n < nmax {
+                let s2 = c00 * s1
+                    + n as f64 * b10 * s0
+                    + m as f64 * b00 * g[(base + j + n * dn - dm) as usize];
+                g[(base + j + (n + 1u32) * dn) as usize] = s2;
+                s0 = s1;
+                s1 = s2;
+                n += 1;
+            }
+            m += 1;
+        }
+    }
+}
+
+/// Device HRR transfer — the `ibase`/`kbase` selected contraction of the 2D
+/// recurrence into the 4D `(i, j, k, l)` tensor.
+///
+/// One body for all four host functions (`hrr_ik2d_4d_f12`, `hrr_kj2d_4d_f12`,
+/// `hrr_il2d_4d_f12`, `hrr_lj2d_4d_f12`) because they are the same two transfers
+/// with the roles of `(i, j)` and `(k, l)` swapped by the two base flags. Both
+/// flags are comptime, so an instantiation emits exactly one of the four — the
+/// arrangement the host `if kbase { if ibase {..} else {..} } else {..}` picks.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn hrr_f12_dev(
+    g: &mut Array<f64>,
+    gbase: u32,
+    shape: &Array<u32>,
+    rirj: &Array<f64>,
+    rkrl: &Array<f64>,
+    #[comptime] nroots: u32,
+    #[comptime] ibase: u32,
+    #[comptime] kbase: u32,
+) {
+    let nmax = shape[(F12_SHAPE_NMAX) as usize];
+    let mmax = shape[(F12_SHAPE_MMAX) as usize];
+    let li = shape[(F12_SHAPE_LI) as usize];
+    let lj = shape[(F12_SHAPE_LJ) as usize];
+    let lk = shape[(F12_SHAPE_LK) as usize];
+    let ll = shape[(F12_SHAPE_LL) as usize];
+    let di = shape[(F12_SHAPE_DI) as usize];
+    let dk = shape[(F12_SHAPE_DK) as usize];
+    let dl = shape[(F12_SHAPE_DL) as usize];
+    let dj = shape[(F12_SHAPE_DJ) as usize];
+    let g_size = shape[(F12_SHAPE_GSIZE) as usize];
+
+    // The host's early return, expressed as the condition to do any work at all.
+    let active = if comptime!(kbase == 1u32) {
+        if comptime!(ibase == 1u32) {
+            // hrr_ik2d_4d_f12: returns early when lj == 0 && ll == 0.
+            lj > 0u32 || ll > 0u32
+        } else {
+            // hrr_kj2d_4d_f12: returns early when li == 0 && ll == 0.
+            li > 0u32 || ll > 0u32
+        }
+    } else if comptime!(ibase == 1u32) {
+        // hrr_il2d_4d_f12: returns early when lj == 0 && lk == 0.
+        lj > 0u32 || lk > 0u32
+    } else {
+        // hrr_lj2d_4d_f12: returns early when li == 0 && lk == 0.
+        li > 0u32 || lk > 0u32
+    };
+
+    if active {
+        let mut axis: u32 = 0;
+        while axis < 3u32 {
+            let off = gbase + axis * g_size;
+
+            if comptime!(kbase == 1u32) {
+                // ── ket transfer first: l -> k (ik) or k -> l (kj) ──
+                let rx = rkrl[(axis) as usize];
+                if comptime!(ibase == 1u32) {
+                    let mut l: u32 = 1;
+                    while l <= ll {
+                        let mut k: u32 = 0;
+                        while k <= mmax - l {
+                            let mut i: u32 = 0;
+                            while i <= nmax {
+                                let ptr = l * dl + k * dk + i * di;
+                                let mut r: u32 = 0;
+                                while r < nroots {
+                                    let idx = ptr + r;
+                                    g[(off + idx) as usize] = rx * g[(off + idx - dl) as usize]
+                                        + g[(off + idx - dl + dk) as usize];
+                                    r += 1;
+                                }
+                                i += 1;
+                            }
+                            k += 1;
+                        }
+                        l += 1;
+                    }
+                } else {
+                    let mut i: u32 = 1;
+                    while i <= li {
+                        let mut j: u32 = 0;
+                        while j <= nmax - i {
+                            let mut k: u32 = 0;
+                            while k <= mmax {
+                                let ptr = j * dj + k * dk + i * di;
+                                let mut r: u32 = 0;
+                                while r < nroots {
+                                    let idx = ptr + r;
+                                    g[(off + idx) as usize] = rirj[(axis) as usize]
+                                        * g[(off + idx - di) as usize]
+                                        + g[(off + idx - di + dj) as usize];
+                                    r += 1;
+                                }
+                                k += 1;
+                            }
+                            j += 1;
+                        }
+                        i += 1;
+                    }
+                }
+            } else {
+                // ── !kbase: the bra transfer runs first for `il`, the i -> j
+                //    transfer first for `lj` ──
+                if comptime!(ibase == 1u32) {
+                    let rx = rkrl[(axis) as usize];
+                    let mut k: u32 = 1;
+                    while k <= lk {
+                        let mut l: u32 = 0;
+                        while l <= mmax - k {
+                            let mut i: u32 = 0;
+                            while i <= nmax {
+                                let ptr = l * dl + k * dk + i * di;
+                                let mut r: u32 = 0;
+                                while r < nroots {
+                                    let idx = ptr + r;
+                                    g[(off + idx) as usize] = rx * g[(off + idx - dk) as usize]
+                                        + g[(off + idx - dk + dl) as usize];
+                                    r += 1;
+                                }
+                                i += 1;
+                            }
+                            l += 1;
+                        }
+                        k += 1;
+                    }
+                } else {
+                    let rx = rirj[(axis) as usize];
+                    let mut i: u32 = 1;
+                    while i <= li {
+                        let mut j: u32 = 0;
+                        while j <= nmax - i {
+                            let mut l: u32 = 0;
+                            while l <= mmax {
+                                let ptr = j * dj + l * dl + i * di;
+                                let mut r: u32 = 0;
+                                while r < nroots {
+                                    let idx = ptr + r;
+                                    g[(off + idx) as usize] = rx * g[(off + idx - di) as usize]
+                                        + g[(off + idx - di + dj) as usize];
+                                    r += 1;
+                                }
+                                l += 1;
+                            }
+                            j += 1;
+                        }
+                        i += 1;
+                    }
+                }
+            }
+
+            // ── second transfer ──
+            if comptime!(kbase == 1u32) {
+                if comptime!(ibase == 1u32) {
+                    let rx = rirj[(axis) as usize];
+                    let mut j: u32 = 1;
+                    while j <= lj {
+                        let mut l: u32 = 0;
+                        while l <= ll {
+                            let mut k: u32 = 0;
+                            while k <= lk {
+                                let ptr = j * dj + l * dl + k * dk;
+                                let mut i: u32 = 0;
+                                while i <= nmax - j {
+                                    let b = ptr + i * di;
+                                    let mut r: u32 = 0;
+                                    while r < nroots {
+                                        let idx = b + r;
+                                        g[(off + idx) as usize] = rx * g[(off + idx - dj) as usize]
+                                            + g[(off + idx - dj + di) as usize];
+                                        r += 1;
+                                    }
+                                    i += 1;
+                                }
+                                k += 1;
+                            }
+                            l += 1;
+                        }
+                        j += 1;
+                    }
+                } else {
+                    let rx = rkrl[(axis) as usize];
+                    let mut j: u32 = 0;
+                    while j <= lj {
+                        let mut l: u32 = 1;
+                        while l <= ll {
+                            let mut k: u32 = 0;
+                            while k <= mmax - l {
+                                let ptr = j * dj + l * dl + k * dk;
+                                let mut n: u32 = 0;
+                                while n < dk {
+                                    let idx = ptr + n;
+                                    g[(off + idx) as usize] = rx * g[(off + idx - dl) as usize]
+                                        + g[(off + idx - dl + dk) as usize];
+                                    n += 1;
+                                }
+                                k += 1;
+                            }
+                            l += 1;
+                        }
+                        j += 1;
+                    }
+                }
+            } else if comptime!(ibase == 1u32) {
+                let rx = rirj[(axis) as usize];
+                let mut j: u32 = 1;
+                while j <= lj {
+                    let mut l: u32 = 0;
+                    while l <= ll {
+                        let mut k: u32 = 0;
+                        while k <= lk {
+                            let ptr = j * dj + l * dl + k * dk;
+                            let mut i: u32 = 0;
+                            while i <= nmax - j {
+                                let b = ptr + i * di;
+                                let mut r: u32 = 0;
+                                while r < nroots {
+                                    let idx = b + r;
+                                    g[(off + idx) as usize] = rx * g[(off + idx - dj) as usize]
+                                        + g[(off + idx - dj + di) as usize];
+                                    r += 1;
+                                }
+                                i += 1;
+                            }
+                            k += 1;
+                        }
+                        l += 1;
+                    }
+                    j += 1;
+                }
+            } else {
+                let rx = rkrl[(axis) as usize];
+                let mut j: u32 = 0;
+                while j <= lj {
+                    let mut k: u32 = 1;
+                    while k <= lk {
+                        let mut l: u32 = 0;
+                        while l <= mmax - k {
+                            let ptr = j * dj + l * dl + k * dk;
+                            let mut n: u32 = 0;
+                            while n < dk {
+                                let idx = ptr + n;
+                                g[(off + idx) as usize] = rx * g[(off + idx - dk) as usize]
+                                    + g[(off + idx - dk + dl) as usize];
+                                n += 1;
+                            }
+                            l += 1;
+                        }
+                        k += 1;
+                    }
+                    j += 1;
+                }
+            }
+
+            axis += 1;
+        }
+    }
+}
+
+/// **The inline F12 G-tensor fill.** Builds one primitive quartet's
+/// `[gx | gy | gz]` slab at `gbase`, reproducing `fill_g_tensor_f12`.
+///
+/// `geom` holds `ri`, `rj`, `rk`, `rl` (three f64 each, in that order) — shell
+/// data, constant across every row of a launch. `fac_env` is the host's
+/// `quartet_fac`; `cell_off`, `tt_norm` and `uu_norm` locate this row's STG
+/// table cell (see `math::stg::stg_table_cell`).
+///
+/// `is_stg` selects the weight post-processing: `1` for the Slater-type
+/// geminal branch (`g2e_f12.c:292-297`), `0` for Yukawa (`:197-200`).
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fill_g_tensor_f12_dev(
+    g: &mut Array<f64>,
+    gbase: u32,
+    shape: &Array<u32>,
+    geom: &Array<f64>,
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+    fac_env: f64,
+    zeta: f64,
+    tab_x: &Array<f64>,
+    tab_w: &Array<f64>,
+    cos14: &Array<f64>,
+    cell_off: u32,
+    tt_norm: f64,
+    uu_norm: f64,
+    #[comptime] nroots: u32,
+    #[comptime] ibase: u32,
+    #[comptime] kbase: u32,
+    #[comptime] is_stg: u32,
+) {
+    let g_size = shape[(F12_SHAPE_GSIZE) as usize];
+    let nmax = shape[(F12_SHAPE_NMAX) as usize];
+    let mmax = shape[(F12_SHAPE_MMAX) as usize];
+    let dn = shape[(F12_SHAPE_G2D_IJMAX) as usize];
+    let dm = shape[(F12_SHAPE_G2D_KLMAX) as usize];
+
+    let aij = ai + aj;
+    let akl = ak + al;
+
+    // Gaussian-product centres. Written out per axis rather than in a loop so
+    // the expression order matches the host's array literal exactly.
+    let mut rij = Array::<f64>::new(3usize);
+    let mut rkl = Array::<f64>::new(3usize);
+    let mut axis: u32 = 0;
+    while axis < 3u32 {
+        rij[(axis) as usize] =
+            (ai * geom[(axis) as usize] + aj * geom[(3u32 + axis) as usize]) / aij;
+        rkl[(axis) as usize] =
+            (ak * geom[(6u32 + axis) as usize] + al * geom[(9u32 + axis) as usize]) / akl;
+        axis += 1;
+    }
+
+    let xij_kl = rij[(0) as usize] - rkl[(0) as usize];
+    let yij_kl = rij[(1) as usize] - rkl[(1) as usize];
+    let zij_kl = rij[(2) as usize] - rkl[(2) as usize];
+    // `rr` — and with it `ta` — is deliberately absent: the STG table cell it
+    // would select is resolved host-side (`f12_ta_ua` -> `stg_table_cell`) and
+    // arrives as `cell_off`/`tt_norm`/`uu_norm`. `ua` below is still recomputed
+    // here because the weight scaling needs the value, not the cell.
+    let a1 = aij * akl;
+    let a0 = a1 / (aij + akl);
+
+    // g2e_f12.c: fac1 = envs->fac[0] / (sqrt(aij+akl) * a1).
+    let fac1 = fac_env / (f64::sqrt(aij + akl) * a1);
+
+    // ua = zeta^2 / (4*a0), g2e_f12.c line 276.
+    let ua = 0.25 * zeta * zeta / a0;
+
+    let mut u_roots = Array::<f64>::new(comptime!(nroots as usize));
+    let mut w_weights = Array::<f64>::new(comptime!(nroots as usize));
+    crate::math::stg::stg_roots_dev(
+        tab_x,
+        tab_w,
+        cos14,
+        cell_off,
+        tt_norm,
+        uu_norm,
+        ua,
+        &mut u_roots,
+        &mut w_weights,
+        0,
+        nroots,
+    );
+
+    // Weight post-processing. Both branches read the ORIGINAL root before
+    // overwriting it, and both apply `fac1` in a second pass — the host does
+    // exactly that, and the two passes are what the bit-identity depends on.
+    if comptime!(is_stg == 1u32) {
+        let ua2 = 2.0 * ua / zeta;
+        let mut i: u32 = 0;
+        while i < nroots {
+            let u = u_roots[(i) as usize];
+            w_weights[(i) as usize] = w_weights[(i) as usize] * ((1.0 - u) * ua2);
+            u_roots[(i) as usize] = u / (1.0 - u);
+            i += 1;
+        }
+    } else {
+        let mut i: u32 = 0;
+        while i < nroots {
+            let u = u_roots[(i) as usize];
+            w_weights[(i) as usize] = w_weights[(i) as usize] * u;
+            u_roots[(i) as usize] = u / (1.0 - u);
+            i += 1;
+        }
+    }
+    let mut iw: u32 = 0;
+    while iw < nroots {
+        w_weights[(iw) as usize] = w_weights[(iw) as usize] * fac1;
+        iw += 1;
+    }
+
+    // ── fill_g_tensor_inner ──────────────────────────────────────────────
+    let mut rirj = Array::<f64>::new(3usize);
+    let mut rkrl = Array::<f64>::new(3usize);
+    let mut rijrx = Array::<f64>::new(3usize);
+    let mut rklrx = Array::<f64>::new(3usize);
+    let mut ax: u32 = 0;
+    while ax < 3u32 {
+        let ri = geom[(ax) as usize];
+        let rj = geom[(3u32 + ax) as usize];
+        let rk = geom[(6u32 + ax) as usize];
+        let rl = geom[(9u32 + ax) as usize];
+        if comptime!(ibase == 1u32) {
+            rirj[(ax) as usize] = ri - rj;
+            rijrx[(ax) as usize] = rij[(ax) as usize] - ri;
+        } else {
+            rirj[(ax) as usize] = rj - ri;
+            rijrx[(ax) as usize] = rij[(ax) as usize] - rj;
+        }
+        if comptime!(kbase == 1u32) {
+            rkrl[(ax) as usize] = rk - rl;
+            rklrx[(ax) as usize] = rkl[(ax) as usize] - rk;
+        } else {
+            rkrl[(ax) as usize] = rl - rk;
+            rklrx[(ax) as usize] = rkl[(ax) as usize] - rl;
+        }
+        ax += 1;
+    }
+
+    // The host allocates a fresh zeroed `g` per quartet; the device slab is
+    // reused across rows, so it is zeroed here. The VRR and HRR write only part
+    // of it and the contraction reads the rest.
+    let total = 3u32 * g_size;
+    let mut z: u32 = 0;
+    while z < total {
+        g[(gbase + z) as usize] = 0.0;
+        z += 1;
+    }
+
+    let gy_off = g_size;
+    let gz_off = 2u32 * g_size;
+    let mut irys: u32 = 0;
+    while irys < nroots {
+        g[(gbase + irys) as usize] = 1.0;
+        g[(gbase + gy_off + irys) as usize] = 1.0;
+        g[(gbase + gz_off + irys) as usize] = w_weights[(irys) as usize];
+        irys += 1;
+    }
+
+    let mut ir: u32 = 0;
+    while ir < nroots {
+        // After post-processing `u_roots[ir]` is t/(1-t); this is libcint's `u2`.
+        let u2 = a0 * u_roots[(ir) as usize];
+        let tmp4 = 0.5 / (u2 * (aij + akl) + a1);
+        let tmp5 = u2 * tmp4;
+        let tmp1 = 2.0 * tmp5;
+        let tmp2 = tmp1 * akl;
+        let tmp3 = tmp1 * aij;
+
+        let b00 = tmp5;
+        let b10 = tmp5 + tmp4 * akl;
+        let b01 = tmp5 + tmp4 * aij;
+
+        let c00x = rijrx[(0) as usize] - tmp2 * xij_kl;
+        let c00y = rijrx[(1) as usize] - tmp2 * yij_kl;
+        let c00z = rijrx[(2) as usize] - tmp2 * zij_kl;
+        let c0px = rklrx[(0) as usize] + tmp3 * xij_kl;
+        let c0py = rklrx[(1) as usize] + tmp3 * yij_kl;
+        let c0pz = rklrx[(2) as usize] + tmp3 * zij_kl;
+
+        vrr_fill_axis_f12_dev(g, gbase, ir, nmax, mmax, dn, dm, c00x, c0px, b10, b01, b00);
+        vrr_fill_axis_f12_dev(
+            g,
+            gbase + gy_off,
+            ir,
+            nmax,
+            mmax,
+            dn,
+            dm,
+            c00y,
+            c0py,
+            b10,
+            b01,
+            b00,
+        );
+        vrr_fill_axis_f12_dev(
+            g,
+            gbase + gz_off,
+            ir,
+            nmax,
+            mmax,
+            dn,
+            dm,
+            c00z,
+            c0pz,
+            b10,
+            b01,
+            b00,
+        );
+        ir += 1;
+    }
+
+    hrr_f12_dev(g, gbase, shape, &rirj, &rkrl, nroots, ibase, kbase);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // F12 base Cartesian-contraction splice — `#[cube(launch)]` device kernel,
 // generic over F (quick task 260529-i2q). Mirrors the ECP Type-1 angular-splice
@@ -4503,15 +5183,24 @@ fn cart_comps_flat_u32(l: u8) -> Vec<u32> {
 /// - `comps_i/j/k/l`: flat u32 cartesian-power triples (3 entries per component).
 /// - `out`: the `nfi*nfj*nfk*nfl` Cartesian block.
 /// - scalars (u32): `nfi, nfj, nfk, nfl, nroots, di, dk, dl, dj, g_size`.
-#[cube(launch, launch_unchecked)]
+/// The contraction body, as an **inline callee**.
+///
+/// Task B: the same loop `f12_cart_contraction_kernel` launches, factored out
+/// so `f12_primitive_batch_kernel` can run it right after building `g` in the
+/// same launch instead of round-tripping to the host. `gbase` and `out_off`
+/// locate this row's slab and output block; both are zero in the single-quartet
+/// wrapper, so the wrapper and the batched kernel run the same code.
+#[cube]
 #[allow(clippy::too_many_arguments)]
-fn f12_cart_contraction_kernel<F: Float + CubeElement>(
+fn f12_contract_dev<F: Float + CubeElement>(
     g: &Array<F>,
+    gbase: u32,
     comps_i: &Array<u32>,
     comps_j: &Array<u32>,
     comps_k: &Array<u32>,
     comps_l: &Array<u32>,
     out: &mut Array<F>,
+    out_off: u32,
     nfi: u32,
     nfj: u32,
     nfk: u32,
@@ -4523,16 +5212,16 @@ fn f12_cart_contraction_kernel<F: Float + CubeElement>(
     dj: u32,
     g_size: u32,
 ) {
-    if UNIT_POS == 0u32 {
-        let gx_off = 0u32;
-        let gy_off = g_size;
-        let gz_off = 2u32 * g_size;
+    {
+        let gx_off = gbase;
+        let gy_off = gbase + g_size;
+        let gz_off = gbase + 2u32 * g_size;
 
         // Zero the output block.
         let out_len = nfi * nfj * nfk * nfl;
         let mut oz = 0u32;
         while oz < out_len {
-            out[oz as usize] = F::new(0.0);
+            out[(out_off + oz) as usize] = F::new(0.0_f32);
             oz += 1u32;
         }
 
@@ -4559,7 +5248,7 @@ fn f12_cart_contraction_kernel<F: Float + CubeElement>(
                         let iy = comps_i[(i_idx * 3u32 + 1u32) as usize];
                         let iz = comps_i[(i_idx * 3u32 + 2u32) as usize];
 
-                        let mut sum = F::new(0.0);
+                        let mut sum = F::new(0.0_f32);
                         let mut irys = 0u32;
                         while irys < nroots {
                             let x_idx = irys + ix * di + kx * dk + lx * dl + jx * dj;
@@ -4574,7 +5263,7 @@ fn f12_cart_contraction_kernel<F: Float + CubeElement>(
 
                         let out_idx =
                             i_idx + j_idx * nfi + k_idx * nfi * nfj + l_idx * nfi * nfj * nfk;
-                        out[out_idx as usize] = sum;
+                        out[(out_off + out_idx) as usize] = sum;
                         i_idx += 1u32;
                     }
                     j_idx += 1u32;
@@ -4583,6 +5272,36 @@ fn f12_cart_contraction_kernel<F: Float + CubeElement>(
             }
             l_idx += 1u32;
         }
+    }
+}
+
+/// A one-line launch wrapper over [`f12_contract_dev`], so the single-quartet
+/// path and the batched kernel run the *same* body rather than two copies.
+#[cube(launch, launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn f12_cart_contraction_kernel<F: Float + CubeElement>(
+    g: &Array<F>,
+    comps_i: &Array<u32>,
+    comps_j: &Array<u32>,
+    comps_k: &Array<u32>,
+    comps_l: &Array<u32>,
+    out: &mut Array<F>,
+    nfi: u32,
+    nfj: u32,
+    nfk: u32,
+    nfl: u32,
+    nroots: u32,
+    di: u32,
+    dk: u32,
+    dl: u32,
+    dj: u32,
+    g_size: u32,
+) {
+    if UNIT_POS == 0u32 {
+        f12_contract_dev::<F>(
+            g, 0, comps_i, comps_j, comps_k, comps_l, out, 0, nfi, nfj, nfk, nfl, nroots, di, dk,
+            dl, dj, g_size,
+        );
     }
 }
 
@@ -4663,6 +5382,621 @@ fn run_f12_cart_contraction_device<R: Runtime>(
     f64::from_bytes(&raw)[0..out_len].to_vec()
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Fused F12 primitive-quartet kernel (Task B) — G-tensor fill + contraction
+//  in one dispatch over the whole primitive-quartet loop.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `f64` fields one row of [`f12_primitive_batch_kernel`]'s `rows` array holds.
+const F12_ROW_AI: u32 = 0;
+const F12_ROW_AJ: u32 = 1;
+const F12_ROW_AK: u32 = 2;
+const F12_ROW_AL: u32 = 3;
+const F12_ROW_FAC: u32 = 4;
+const F12_ROW_TT: u32 = 5;
+const F12_ROW_UU: u32 = 6;
+/// Number of `f64` slots one row occupies.
+const F12_ROW_STRIDE: usize = 7;
+
+/// One primitive quartet per work slot: build its G tensor, contract it, write
+/// the `nfi*nfj*nfk*nfl` Cartesian block.
+///
+/// The host loop this replaces ran `nprim_i * nprim_j * nprim_k * nprim_l`
+/// iterations, each a host `fill_g_tensor_f12` followed by its own launch of
+/// `f12_cart_contraction_kernel`. Here the whole loop is one dispatch, walked
+/// grid-stride, with a private G slab per slot rather than per row — the same
+/// arrangement the 2e and 3c2e batched kernels use, and the reason the slab
+/// cost is `n_slots * g_stride` instead of `n_rows * 3 * g_size`.
+///
+/// The host still owns the per-row *marshaling*: `rows` carries the four
+/// exponents, the `quartet_fac` from `compute_pdata_host`, and the normalized
+/// STG Clenshaw coordinates, while `row_cells` carries each row's offset into
+/// the uploaded table window.
+#[cube(launch, launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn f12_primitive_batch_kernel(
+    rows: &Array<f64>,
+    row_cells: &Array<u32>,
+    shape: &Array<u32>,
+    geom: &Array<f64>,
+    tab_x: &Array<f64>,
+    tab_w: &Array<f64>,
+    cos14: &Array<f64>,
+    comps_i: &Array<u32>,
+    comps_j: &Array<u32>,
+    comps_k: &Array<u32>,
+    comps_l: &Array<u32>,
+    g: &mut Array<f64>,
+    out: &mut Array<f64>,
+    zeta: f64,
+    n_rows: u32,
+    n_slots: u32,
+    g_stride: u32,
+    out_stride: u32,
+    nfi: u32,
+    nfj: u32,
+    nfk: u32,
+    nfl: u32,
+    #[comptime] nroots: u32,
+    #[comptime] ibase: u32,
+    #[comptime] kbase: u32,
+    #[comptime] is_stg: u32,
+) {
+    let slot = ABSOLUTE_POS as u32;
+    if slot < n_slots {
+        let di = shape[(F12_SHAPE_DI) as usize];
+        let dk = shape[(F12_SHAPE_DK) as usize];
+        let dl = shape[(F12_SHAPE_DL) as usize];
+        let dj = shape[(F12_SHAPE_DJ) as usize];
+        let g_size = shape[(F12_SHAPE_GSIZE) as usize];
+        let gbase = slot * g_stride;
+
+        let mut row = slot;
+        while row < n_rows {
+            let base = row * (F12_ROW_STRIDE as u32);
+            fill_g_tensor_f12_dev(
+                g,
+                gbase,
+                shape,
+                geom,
+                rows[(base + F12_ROW_AI) as usize],
+                rows[(base + F12_ROW_AJ) as usize],
+                rows[(base + F12_ROW_AK) as usize],
+                rows[(base + F12_ROW_AL) as usize],
+                rows[(base + F12_ROW_FAC) as usize],
+                zeta,
+                tab_x,
+                tab_w,
+                cos14,
+                row_cells[(row) as usize],
+                rows[(base + F12_ROW_TT) as usize],
+                rows[(base + F12_ROW_UU) as usize],
+                nroots,
+                ibase,
+                kbase,
+                is_stg,
+            );
+            f12_contract_dev::<f64>(
+                g,
+                gbase,
+                comps_i,
+                comps_j,
+                comps_k,
+                comps_l,
+                out,
+                row * out_stride,
+                nfi,
+                nfj,
+                nfk,
+                nfl,
+                nroots,
+                di,
+                dk,
+                dl,
+                dj,
+                g_size,
+            );
+            row += n_slots;
+        }
+    }
+}
+
+/// The `(ta, ua)` STG arguments for one primitive quartet.
+///
+/// Written with the same expression order as `fill_g_tensor_f12_dev`'s prologue
+/// so the two agree bit for bit: the host uses `(ta, ua)` only to pick the
+/// table cell, but the device recomputes `ua` for the `1/sqrt(ua)` weight
+/// scaling, and a last-bit difference between the two would select a different
+/// Chebyshev cell — a different answer, not a rounding difference.
+#[allow(clippy::too_many_arguments)]
+fn f12_ta_ua(
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    rk: &[f64; 3],
+    rl: &[f64; 3],
+    zeta: f64,
+) -> (f64, f64) {
+    let aij = ai + aj;
+    let akl = ak + al;
+    let mut d = [0.0_f64; 3];
+    for axis in 0..3 {
+        let rij = (ai * ri[axis] + aj * rj[axis]) / aij;
+        let rkl = (ak * rk[axis] + al * rl[axis]) / akl;
+        d[axis] = rij - rkl;
+    }
+    let rr = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    let a1 = aij * akl;
+    let a0 = a1 / (aij + akl);
+    (a0 * rr, 0.25 * zeta * zeta / a0)
+}
+
+/// One primitive quartet's marshaled row, as the host builds it.
+struct F12PrimitiveRow {
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+    fac: f64,
+    cell: crate::math::stg::StgTableCell,
+}
+
+/// Dispatch [`f12_primitive_batch_kernel`] on `client` for every primitive
+/// quartet of one shell quartet, returning the concatenated Cartesian blocks in
+/// row order.
+#[allow(clippy::too_many_arguments)]
+fn run_f12_primitive_batch_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    shape: F12Shape,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    rk: &[f64; 3],
+    rl: &[f64; 3],
+    zeta: f64,
+    is_stg: bool,
+    prim_rows: &[F12PrimitiveRow],
+) -> Vec<f64> {
+    let nfi = ncart(li);
+    let nfj = ncart(lj);
+    let nfk = ncart(lk);
+    let nfl = ncart(ll);
+    let out_stride = nfi * nfj * nfk * nfl;
+    let n_rows = prim_rows.len();
+    if n_rows == 0 {
+        return Vec::new();
+    }
+
+    // The STG table window every row of this launch reads, plus each row's
+    // offset inside it. Resolving the cells host-side is what keeps this to a
+    // few kilobytes instead of the tables' 14 MB — see `math::stg`.
+    let offsets: Vec<usize> = prim_rows.iter().map(|r| r.cell.offset).collect();
+    let (lo, x_win, w_win) = crate::math::stg::stg_table_window(shape.nroots, &offsets);
+    let row_cells: Vec<u32> = offsets.iter().map(|o| (o - lo) as u32).collect();
+
+    let mut rows = Vec::with_capacity(n_rows * F12_ROW_STRIDE);
+    for r in prim_rows {
+        rows.extend_from_slice(&[
+            r.ai,
+            r.aj,
+            r.ak,
+            r.al,
+            r.fac,
+            r.cell.tt_norm,
+            r.cell.uu_norm,
+        ]);
+    }
+
+    let shape_row = f12_shape_row(shape);
+    let mut geom = Vec::with_capacity(12);
+    geom.extend_from_slice(ri);
+    geom.extend_from_slice(rj);
+    geom.extend_from_slice(rk);
+    geom.extend_from_slice(rl);
+
+    let comps_i = cart_comps_flat_u32(li);
+    let comps_j = cart_comps_flat_u32(lj);
+    let comps_k = cart_comps_flat_u32(lk);
+    let comps_l = cart_comps_flat_u32(ll);
+
+    // One private G slab per slot, not per row. The slot count is capped so a
+    // wide primitive loop does not turn into a proportionally wide allocation.
+    let g_stride = 3 * shape.g_size;
+    let n_slots = n_rows.min(F12_MAX_BATCH_SLOTS);
+
+    let rows_h = client.create_from_slice(f64::as_bytes(&rows));
+    let cells_h = client.create_from_slice(u32::as_bytes(&row_cells));
+    let shape_h = client.create_from_slice(u32::as_bytes(&shape_row));
+    let geom_h = client.create_from_slice(f64::as_bytes(&geom));
+    let x_h = client.create_from_slice(f64::as_bytes(x_win));
+    let w_h = client.create_from_slice(f64::as_bytes(w_win));
+    let cos_h = client.create_from_slice(f64::as_bytes(crate::math::stg::stg_cos_table()));
+    let ci_h = client.create_from_slice(u32::as_bytes(&comps_i));
+    let cj_h = client.create_from_slice(u32::as_bytes(&comps_j));
+    let ck_h = client.create_from_slice(u32::as_bytes(&comps_k));
+    let cl_h = client.create_from_slice(u32::as_bytes(&comps_l));
+    let g_h = client.empty(n_slots * g_stride * std::mem::size_of::<f64>());
+    let out_h = client.empty(n_rows * out_stride * std::mem::size_of::<f64>());
+
+    // SAFETY: every buffer is created at exactly the length passed here, the
+    // grid-stride walk bounds `row` by `n_rows`, and the per-slot G slab is
+    // `g_stride` wide for a slot index bounded by `n_slots`.
+    macro_rules! launch_f12 {
+        ($nr:expr, $ib:expr, $kb:expr, $stg:expr) => {
+            unsafe {
+                f12_primitive_batch_kernel::launch_unchecked::<R>(
+                    client,
+                    crate::plane::cube_count_1d(n_slots as u32),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(rows_h.clone(), rows.len()),
+                    ArrayArg::from_raw_parts(cells_h.clone(), row_cells.len()),
+                    ArrayArg::from_raw_parts(shape_h.clone(), shape_row.len()),
+                    ArrayArg::from_raw_parts(geom_h.clone(), geom.len()),
+                    ArrayArg::from_raw_parts(x_h.clone(), x_win.len()),
+                    ArrayArg::from_raw_parts(w_h.clone(), w_win.len()),
+                    ArrayArg::from_raw_parts(cos_h.clone(), 196),
+                    ArrayArg::from_raw_parts(ci_h.clone(), comps_i.len()),
+                    ArrayArg::from_raw_parts(cj_h.clone(), comps_j.len()),
+                    ArrayArg::from_raw_parts(ck_h.clone(), comps_k.len()),
+                    ArrayArg::from_raw_parts(cl_h.clone(), comps_l.len()),
+                    ArrayArg::from_raw_parts(g_h.clone(), n_slots * g_stride),
+                    ArrayArg::from_raw_parts(out_h.clone(), n_rows * out_stride),
+                    zeta,
+                    n_rows as u32,
+                    n_slots as u32,
+                    g_stride as u32,
+                    out_stride as u32,
+                    nfi as u32,
+                    nfj as u32,
+                    nfk as u32,
+                    nfl as u32,
+                    $nr,
+                    $ib,
+                    $kb,
+                    $stg,
+                );
+            }
+        };
+    }
+
+    // `nroots`, `ibase`, `kbase` and the STG/Yukawa selector are all comptime:
+    // they choose the local scratch extents, the HRR arm and the weight
+    // post-processing. Each combination is spelled out so a missing arm is a
+    // compile error rather than a silently wrong family.
+    let ib = u32::from(shape.ibase);
+    let kb = u32::from(shape.kbase);
+    let st = u32::from(is_stg);
+    macro_rules! by_flags {
+        ($nr:expr) => {
+            match (ib, kb, st) {
+                (0, 0, 0) => launch_f12!($nr, 0u32, 0u32, 0u32),
+                (0, 0, 1) => launch_f12!($nr, 0u32, 0u32, 1u32),
+                (0, 1, 0) => launch_f12!($nr, 0u32, 1u32, 0u32),
+                (0, 1, 1) => launch_f12!($nr, 0u32, 1u32, 1u32),
+                (1, 0, 0) => launch_f12!($nr, 1u32, 0u32, 0u32),
+                (1, 0, 1) => launch_f12!($nr, 1u32, 0u32, 1u32),
+                (1, 1, 0) => launch_f12!($nr, 1u32, 1u32, 0u32),
+                _ => launch_f12!($nr, 1u32, 1u32, 1u32),
+            }
+        };
+    }
+    match shape.nroots {
+        1 => by_flags!(1u32),
+        2 => by_flags!(2u32),
+        3 => by_flags!(3u32),
+        4 => by_flags!(4u32),
+        _ => by_flags!(5u32),
+    }
+
+    let raw = client.read_one_unchecked(out_h);
+    f64::from_bytes(&raw)[0..n_rows * out_stride].to_vec()
+}
+
+/// Fill-only sibling of [`f12_primitive_batch_kernel`]: builds each row's G
+/// tensor into its own `3 * g_size` window of `g_out` and stops there.
+///
+/// The base variant contracts in the same launch, because the contraction
+/// collapses a `3 * g_size` tensor into an `nfi*nfj*nfk*nfl` block and only the
+/// block has to come back. The *derivative* variants cannot: their `gout_*`
+/// functions apply the nabla operators on the host, so the G tensor itself is
+/// the product. That is why this kernel writes per row rather than per slot,
+/// and why its caller processes rows in chunks — see [`f12_g_chunk_rows`].
+#[cube(launch, launch_unchecked)]
+#[allow(clippy::too_many_arguments)]
+fn f12_g_fill_kernel(
+    rows: &Array<f64>,
+    row_cells: &Array<u32>,
+    shape: &Array<u32>,
+    geom: &Array<f64>,
+    tab_x: &Array<f64>,
+    tab_w: &Array<f64>,
+    cos14: &Array<f64>,
+    g_out: &mut Array<f64>,
+    zeta: f64,
+    n_rows: u32,
+    n_slots: u32,
+    g_stride: u32,
+    #[comptime] nroots: u32,
+    #[comptime] ibase: u32,
+    #[comptime] kbase: u32,
+    #[comptime] is_stg: u32,
+) {
+    let slot = ABSOLUTE_POS as u32;
+    if slot < n_slots {
+        let mut row = slot;
+        while row < n_rows {
+            let base = row * (F12_ROW_STRIDE as u32);
+            fill_g_tensor_f12_dev(
+                g_out,
+                row * g_stride,
+                shape,
+                geom,
+                rows[(base + F12_ROW_AI) as usize],
+                rows[(base + F12_ROW_AJ) as usize],
+                rows[(base + F12_ROW_AK) as usize],
+                rows[(base + F12_ROW_AL) as usize],
+                rows[(base + F12_ROW_FAC) as usize],
+                zeta,
+                tab_x,
+                tab_w,
+                cos14,
+                row_cells[(row) as usize],
+                rows[(base + F12_ROW_TT) as usize],
+                rows[(base + F12_ROW_UU) as usize],
+                nroots,
+                ibase,
+                kbase,
+                is_stg,
+            );
+            row += n_slots;
+        }
+    }
+}
+
+/// Working-set budget, in f64 words, for one derivative-variant G-fill chunk.
+///
+/// 8 MB. The whole point of chunking is that a derivative variant has to bring
+/// the G tensors themselves back to the host, so an unchunked batch of a
+/// 6-primitive quartet would be `1296 * 3 * g_size` words — the "tens of
+/// megabytes" that made wave 5 decline this conversion.
+const F12_G_CHUNK_WORDS: usize = 1 << 20;
+
+/// Rows per G-fill chunk for a tensor of `g_size`. At least one, so a class
+/// whose single tensor exceeds the budget still runs.
+fn f12_g_chunk_rows(g_size: usize) -> usize {
+    (F12_G_CHUNK_WORDS / (3 * g_size).max(1)).max(1)
+}
+
+/// Dispatch [`f12_g_fill_kernel`] on `client` for `prim_rows`, returning their
+/// G tensors concatenated in row order (`3 * g_size` each).
+#[allow(clippy::too_many_arguments)]
+fn run_f12_g_fill_device<R: Runtime>(
+    client: &ComputeClient<R>,
+    shape: F12Shape,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    rk: &[f64; 3],
+    rl: &[f64; 3],
+    zeta: f64,
+    is_stg: bool,
+    prim_rows: &[F12PrimitiveRow],
+) -> Vec<f64> {
+    let n_rows = prim_rows.len();
+    let g_stride = 3 * shape.g_size;
+    if n_rows == 0 {
+        return Vec::new();
+    }
+
+    let offsets: Vec<usize> = prim_rows.iter().map(|r| r.cell.offset).collect();
+    let (lo, x_win, w_win) = crate::math::stg::stg_table_window(shape.nroots, &offsets);
+    let row_cells: Vec<u32> = offsets.iter().map(|o| (o - lo) as u32).collect();
+
+    let mut rows = Vec::with_capacity(n_rows * F12_ROW_STRIDE);
+    for r in prim_rows {
+        rows.extend_from_slice(&[
+            r.ai,
+            r.aj,
+            r.ak,
+            r.al,
+            r.fac,
+            r.cell.tt_norm,
+            r.cell.uu_norm,
+        ]);
+    }
+
+    let shape_row = f12_shape_row(shape);
+    let mut geom = Vec::with_capacity(12);
+    geom.extend_from_slice(ri);
+    geom.extend_from_slice(rj);
+    geom.extend_from_slice(rk);
+    geom.extend_from_slice(rl);
+
+    let n_slots = n_rows.min(F12_MAX_BATCH_SLOTS);
+
+    let rows_h = client.create_from_slice(f64::as_bytes(&rows));
+    let cells_h = client.create_from_slice(u32::as_bytes(&row_cells));
+    let shape_h = client.create_from_slice(u32::as_bytes(&shape_row));
+    let geom_h = client.create_from_slice(f64::as_bytes(&geom));
+    let x_h = client.create_from_slice(f64::as_bytes(x_win));
+    let w_h = client.create_from_slice(f64::as_bytes(w_win));
+    let cos_h = client.create_from_slice(f64::as_bytes(crate::math::stg::stg_cos_table()));
+    let g_h = client.empty(n_rows * g_stride * std::mem::size_of::<f64>());
+
+    // SAFETY: every buffer is created at exactly the length passed here, and the
+    // grid-stride walk bounds `row` by `n_rows` with a `g_stride`-wide window.
+    macro_rules! launch_fill {
+        ($nr:expr, $ib:expr, $kb:expr, $stg:expr) => {
+            unsafe {
+                f12_g_fill_kernel::launch_unchecked::<R>(
+                    client,
+                    crate::plane::cube_count_1d(n_slots as u32),
+                    CubeDim::new_1d(1),
+                    ArrayArg::from_raw_parts(rows_h.clone(), rows.len()),
+                    ArrayArg::from_raw_parts(cells_h.clone(), row_cells.len()),
+                    ArrayArg::from_raw_parts(shape_h.clone(), shape_row.len()),
+                    ArrayArg::from_raw_parts(geom_h.clone(), geom.len()),
+                    ArrayArg::from_raw_parts(x_h.clone(), x_win.len()),
+                    ArrayArg::from_raw_parts(w_h.clone(), w_win.len()),
+                    ArrayArg::from_raw_parts(cos_h.clone(), 196),
+                    ArrayArg::from_raw_parts(g_h.clone(), n_rows * g_stride),
+                    zeta,
+                    n_rows as u32,
+                    n_slots as u32,
+                    g_stride as u32,
+                    $nr,
+                    $ib,
+                    $kb,
+                    $stg,
+                );
+            }
+        };
+    }
+
+    let ib = u32::from(shape.ibase);
+    let kb = u32::from(shape.kbase);
+    let st = u32::from(is_stg);
+    macro_rules! fill_by_flags {
+        ($nr:expr) => {
+            match (ib, kb, st) {
+                (0, 0, 0) => launch_fill!($nr, 0u32, 0u32, 0u32),
+                (0, 0, 1) => launch_fill!($nr, 0u32, 0u32, 1u32),
+                (0, 1, 0) => launch_fill!($nr, 0u32, 1u32, 0u32),
+                (0, 1, 1) => launch_fill!($nr, 0u32, 1u32, 1u32),
+                (1, 0, 0) => launch_fill!($nr, 1u32, 0u32, 0u32),
+                (1, 0, 1) => launch_fill!($nr, 1u32, 0u32, 1u32),
+                (1, 1, 0) => launch_fill!($nr, 1u32, 1u32, 0u32),
+                _ => launch_fill!($nr, 1u32, 1u32, 1u32),
+            }
+        };
+    }
+    match shape.nroots {
+        1 => fill_by_flags!(1u32),
+        2 => fill_by_flags!(2u32),
+        3 => fill_by_flags!(3u32),
+        4 => fill_by_flags!(4u32),
+        _ => fill_by_flags!(5u32),
+    }
+
+    let raw = client.read_one_unchecked(g_h);
+    f64::from_bytes(&raw)[0..n_rows * g_stride].to_vec()
+}
+
+/// Dispatch [`run_f12_g_fill_device`] onto the resolved backend.
+#[allow(clippy::too_many_arguments)]
+fn run_f12_g_fill_on_backend(
+    backend: &ResolvedBackend,
+    shape: F12Shape,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    rk: &[f64; 3],
+    rl: &[f64; 3],
+    zeta: f64,
+    is_stg: bool,
+    prim_rows: &[F12PrimitiveRow],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_f12_g_fill_device::<cubecl::cpu::CpuRuntime>(
+            client, shape, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => run_f12_g_fill_device::<cubecl_wgpu::WgpuRuntime>(
+            client, shape, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+        ),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => run_f12_g_fill_device::<cubecl_cuda::CudaRuntime>(
+            client, shape, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+        ),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_f12_g_fill_device::<cubecl_hip::HipRuntime>(
+            client, shape, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => run_f12_g_fill_device::<cubecl_wgpu::WgpuRuntime>(
+            client, shape, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+        ),
+    }
+}
+
+/// Upper bound on concurrent G slabs in one F12 batch dispatch.
+///
+/// The slab is `3 * g_size` f64 per slot and `g_size` grows as
+/// `nroots * (li+lj+1)^2 * (lk+ll+1)^2` in the worst case, so an uncapped slot
+/// count would turn a 6-primitive quartet's 1296 rows into 1296 slabs. Rows
+/// beyond the cap are walked grid-stride by the slots that exist.
+const F12_MAX_BATCH_SLOTS: usize = 64;
+
+/// Dispatch [`run_f12_primitive_batch_device`] onto the resolved backend.
+fn run_f12_primitive_batch_on_backend(
+    backend: &ResolvedBackend,
+    shape: F12Shape,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    rk: &[f64; 3],
+    rl: &[f64; 3],
+    zeta: f64,
+    is_stg: bool,
+    prim_rows: &[F12PrimitiveRow],
+) -> Vec<f64> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => run_f12_primitive_batch_device::<cubecl::cpu::CpuRuntime>(
+            client, shape, li, lj, lk, ll, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+        ),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => {
+            run_f12_primitive_batch_device::<cubecl_wgpu::WgpuRuntime>(
+                client, shape, li, lj, lk, ll, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+            )
+        }
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => {
+            run_f12_primitive_batch_device::<cubecl_cuda::CudaRuntime>(
+                client, shape, li, lj, lk, ll, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+            )
+        }
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => run_f12_primitive_batch_device::<cubecl_hip::HipRuntime>(
+            client, shape, li, lj, lk, ll, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+        ),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            run_f12_primitive_batch_device::<cubecl_wgpu::WgpuRuntime>(
+                client, shape, li, lj, lk, ll, ri, rj, rk, rl, zeta, is_stg, prim_rows,
+            )
+        }
+    }
+}
+
+/// # Retained as the bit-identity reference (post-wave-5 Task B)
+///
+/// Task 35-D wave 5 declined to batch this kernel in the form the other wave-5
+/// conversions took, and the reason was right: the kernel was launched once per
+/// **primitive quartet** with its input `g` produced by the *host*
+/// `fill_g_tensor_f12` immediately before, so collapsing the launches alone
+/// would have meant materializing every `nprim^4` G tensor up front while
+/// leaving the arithmetic that dominates the loop exactly where it was.
+///
+/// Task B did the conversion the other way round, by porting the G fill onto
+/// the device — `fill_g_tensor_f12_dev` — so the whole primitive-quartet loop
+/// is one dispatch of `f12_primitive_batch_kernel` with a per-*slot* G slab
+/// rather than a per-row one. The production driver takes that path.
+///
+/// This single-quartet wrapper stays because it is what the batch is measured
+/// against: `f12_primitive_batch_matches_per_quartet_path` runs both and
+/// requires bit-identity. It is not dead code with a suppressed warning — it is
+/// the reference implementation, and removing it would remove the gate.
+///
 /// Backend-dispatch wrapper for the F12 base Cartesian contraction: routes the
 /// `#[cube(launch)]` [`f12_cart_contraction_kernel`] onto the resolved backend's
 /// device client (Cpu => CpuRuntime, Rocm => HipRuntime, Wgpu, Cuda, Metal — each
@@ -4813,6 +6147,15 @@ fn f12_kernel_core(
         // The cart_buf uses CEIL angular momenta (matching the G tensor shape).
         let mut cart_buf = vec![0.0_f64; nfi_ceil * nfj_ceil * nfk_ceil * nfl_ceil];
 
+        // ── Task B: the whole primitive-quartet loop is one dispatch ────────
+        //
+        // Pass 1 marshals every quartet's row — the four exponents, the
+        // `quartet_fac` from `compute_pdata_host`, and the STG table cell (see
+        // `math::stg` for why the cell lookup is the one piece that stays on the
+        // host). Pass 2 accumulates the returned blocks with the *same*
+        // contraction weights in the *same* order the per-quartet loop used, so
+        // the f64 sum sequence — and the bytes — are unchanged.
+        let mut prim_rows = Vec::with_capacity(n_prim_i * n_prim_j * n_prim_k * n_prim_l);
         for pi in 0..n_prim_i {
             let ai = shell_i.exponents[pi];
             for pj in 0..n_prim_j {
@@ -4826,31 +6169,33 @@ fn f12_kernel_core(
                         let pdata_kl = compute_pdata_host(
                             ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
                         );
-                        let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
-
-                        let g = fill_g_tensor_f12(
+                        let (ta, ua) = f12_ta_ua(ai, aj, ak, al, &ri, &rj, &rk, &rl, zeta);
+                        prim_rows.push(F12PrimitiveRow {
                             ai,
                             aj,
                             ak,
                             al,
-                            &ri,
-                            &rj,
-                            &rk,
-                            &rl,
-                            shape,
-                            quartet_fac,
-                            zeta,
-                            is_stg,
-                        );
-                        // Base Cartesian contraction now runs on-device as a
-                        // #[cube(launch)] kernel dispatched onto the resolved
-                        // backend's ComputeClient (quick-260529-i2q). Launches at
-                        // f64 with the SAME nested summation order as the host
-                        // `contract_f12_cart`, so byte-identity is preserved.
-                        let prim_cart = run_f12_cart_contraction_on_backend(
-                            backend, &g, shape, li_u8, lj_u8, lk_u8, ll_u8,
-                        );
+                            fac: common_factor * pdata_ij.fac * pdata_kl.fac,
+                            cell: crate::math::stg::stg_table_cell(shape.nroots, ta, ua),
+                        });
+                    }
+                }
+            }
+        }
 
+        let block_len = nfi_ceil * nfj_ceil * nfk_ceil * nfl_ceil;
+        let blocks = run_f12_primitive_batch_on_backend(
+            backend, shape, li_u8, lj_u8, lk_u8, ll_u8, &ri, &rj, &rk, &rl, zeta, is_stg,
+            &prim_rows,
+        );
+
+        let mut row = 0usize;
+        for pi in 0..n_prim_i {
+            for pj in 0..n_prim_j {
+                for pk in 0..n_prim_k {
+                    for pl in 0..n_prim_l {
+                        let prim_cart = &blocks[row * block_len..(row + 1) * block_len];
+                        row += 1;
                         for ci in 0..n_ctr_i {
                             let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
                             for cj in 0..n_ctr_j {
@@ -4903,74 +6248,90 @@ fn f12_kernel_core(
         // per component. The nabla operators read into the ceil headroom of the G tensor.
         let mut gout_contracted = vec![0.0_f64; ncomp * nf_base];
 
-        for pi in 0..n_prim_i {
+        // ── Task B: the G-tensor fills run on device here too, in chunks ────
+        //
+        // Unlike the base variant, a derivative variant cannot contract inside
+        // the same launch: its `gout_*` functions apply the nabla operators and
+        // are host code, so the G tensor itself has to come back. Reading back
+        // all `nprim^4` of them at once is the memory blow-up wave 5 declined,
+        // so rows are filled a chunk at a time — `f12_g_chunk_rows` sizes the
+        // chunk to an 8 MB working set. The host loop below is unchanged in
+        // order and in arithmetic; only the source of `g` moved.
+        let quartet_rows: Vec<(usize, usize, usize, usize)> = (0..n_prim_i)
+            .flat_map(|pi| {
+                (0..n_prim_j).flat_map(move |pj| {
+                    (0..n_prim_k).flat_map(move |pk| (0..n_prim_l).map(move |pl| (pi, pj, pk, pl)))
+                })
+            })
+            .collect();
+        let mut prim_rows = Vec::with_capacity(quartet_rows.len());
+        for &(pi, pj, pk, pl) in &quartet_rows {
             let ai = shell_i.exponents[pi];
-            for pj in 0..n_prim_j {
-                let aj = shell_j.exponents[pj];
-                let pdata_ij =
-                    compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
-                for pk in 0..n_prim_k {
-                    let ak = shell_k.exponents[pk];
-                    for pl in 0..n_prim_l {
-                        let al = shell_l.exponents[pl];
-                        let pdata_kl = compute_pdata_host(
-                            ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
-                        );
-                        let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+            let aj = shell_j.exponents[pj];
+            let ak = shell_k.exponents[pk];
+            let al = shell_l.exponents[pl];
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            let pdata_kl =
+                compute_pdata_host(ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0);
+            let (ta, ua) = f12_ta_ua(ai, aj, ak, al, &ri, &rj, &rk, &rl, zeta);
+            prim_rows.push(F12PrimitiveRow {
+                ai,
+                aj,
+                ak,
+                al,
+                fac: common_factor * pdata_ij.fac * pdata_kl.fac,
+                cell: crate::math::stg::stg_table_cell(shape.nroots, ta, ua),
+            });
+        }
 
-                        let g = fill_g_tensor_f12(
-                            ai,
-                            aj,
-                            ak,
-                            al,
-                            &ri,
-                            &rj,
-                            &rk,
-                            &rl,
-                            shape,
-                            quartet_fac,
-                            zeta,
-                            is_stg,
-                        );
+        let g_stride = 3 * shape.g_size;
+        let chunk = f12_g_chunk_rows(shape.g_size);
+        for (chunk_index, rows_chunk) in prim_rows.chunks(chunk).enumerate() {
+            let g_all = run_f12_g_fill_on_backend(
+                backend, shape, &ri, &rj, &rk, &rl, zeta, is_stg, rows_chunk,
+            );
+            for (local, row) in rows_chunk.iter().enumerate() {
+                let (pi, pj, pk, pl) = quartet_rows[chunk_index * chunk + local];
+                let (ai, aj, ak) = (row.ai, row.aj, row.ak);
+                let g = &g_all[local * g_stride..(local + 1) * g_stride];
 
-                        // Apply the variant-specific gout function to get ncomp * nf_base values.
-                        // The gout functions use BASE angular momenta for the loop bounds.
-                        let prim_gout = match ncomp {
-                            3 => gout_ip1(&g, &shape, li, lj, lk, ll, ai),
-                            9 => match (variant.j_inc, variant.k_inc) {
-                                (0, 0) => gout_ipip1(&g, &shape, li, lj, lk, ll, ai),
-                                (1, 0) => gout_ipvip1(&g, &shape, li, lj, lk, ll, ai, aj),
-                                (0, 1) => gout_ip1ip2(&g, &shape, li, lj, lk, ll, ai, ak),
-                                _ => {
-                                    return Err(cintxRsError::UnsupportedApi {
-                                        requested: format!(
-                                            "f12 derivative: unknown 9-component variant j_inc={} k_inc={}",
-                                            variant.j_inc, variant.k_inc
-                                        ),
-                                    });
-                                }
-                            },
-                            _ => {
-                                return Err(cintxRsError::UnsupportedApi {
-                                    requested: format!("f12 derivative: unsupported ncomp={ncomp}"),
-                                });
-                            }
-                        };
+                // Apply the variant-specific gout function to get ncomp * nf_base values.
+                // The gout functions use BASE angular momenta for the loop bounds.
+                let prim_gout = match ncomp {
+                    3 => gout_ip1(g, &shape, li, lj, lk, ll, ai),
+                    9 => match (variant.j_inc, variant.k_inc) {
+                        (0, 0) => gout_ipip1(g, &shape, li, lj, lk, ll, ai),
+                        (1, 0) => gout_ipvip1(g, &shape, li, lj, lk, ll, ai, aj),
+                        (0, 1) => gout_ip1ip2(g, &shape, li, lj, lk, ll, ai, ak),
+                        _ => {
+                            return Err(cintxRsError::UnsupportedApi {
+                                requested: format!(
+                                    "f12 derivative: unknown 9-component variant j_inc={} k_inc={}",
+                                    variant.j_inc, variant.k_inc
+                                ),
+                            });
+                        }
+                    },
+                    _ => {
+                        return Err(cintxRsError::UnsupportedApi {
+                            requested: format!("f12 derivative: unsupported ncomp={ncomp}"),
+                        });
+                    }
+                };
 
-                        // Accumulate with contraction weights
-                        for ci in 0..n_ctr_i {
-                            let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
-                            for cj in 0..n_ctr_j {
-                                let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
-                                for ck in 0..n_ctr_k {
-                                    let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
-                                    for cl in 0..n_ctr_l {
-                                        let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
-                                        let weight = coeff_i * coeff_j * coeff_k * coeff_l;
-                                        for idx in 0..gout_contracted.len() {
-                                            gout_contracted[idx] += weight * prim_gout[idx];
-                                        }
-                                    }
+                // Accumulate with contraction weights
+                for ci in 0..n_ctr_i {
+                    let coeff_i = shell_i.coefficients[pi * n_ctr_i + ci];
+                    for cj in 0..n_ctr_j {
+                        let coeff_j = shell_j.coefficients[pj * n_ctr_j + cj];
+                        for ck in 0..n_ctr_k {
+                            let coeff_k = shell_k.coefficients[pk * n_ctr_k + ck];
+                            for cl in 0..n_ctr_l {
+                                let coeff_l = shell_l.coefficients[pl * n_ctr_l + cl];
+                                let weight = coeff_i * coeff_j * coeff_k * coeff_l;
+                                for idx in 0..gout_contracted.len() {
+                                    gout_contracted[idx] += weight * prim_gout[idx];
                                 }
                             }
                         }
@@ -5011,7 +6372,7 @@ fn f12_kernel_core(
 
     let not0 = staging.iter().filter(|&&v| v.abs() > 1e-18).count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<f64>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -5230,7 +6591,7 @@ fn launch_f12_typed<F: CintFloat>(
         .count() as i32;
 
     // WR-01: true-output bytes (out_elems, not the doubled f32 lane count).
-    let staging_bytes = out_elems * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         not0,
         peak_workspace_bytes: staging_bytes,
@@ -5280,6 +6641,132 @@ pub fn launch_f12(
 mod tests {
     use super::*;
 
+    /// **The bit-identity gate for Task B.**
+    ///
+    /// The batched dispatch must reproduce the per-quartet path it replaced —
+    /// host `fill_g_tensor_f12` followed by a per-quartet
+    /// `f12_cart_contraction_kernel` launch — bit for bit, for every primitive
+    /// quartet. Bit-identity rather than a tolerance because the two run the
+    /// same f64 operations in the same order; anything less would be a
+    /// transcription error, not rounding.
+    ///
+    /// The sweep covers what the comptime flags select: `nroots` (through the
+    /// angular-momentum sum), `ibase` (`li > lj`), `kbase` (`lk > ll`), and both
+    /// the STG and Yukawa weight branches. Those four are the whole
+    /// specialization surface of the kernel, and getting one of them wrong is
+    /// exactly the "silent wrong family" failure the plan's risk table names.
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn f12_primitive_batch_matches_per_quartet_path() {
+        use crate::backend::ResolvedBackend;
+        use crate::backend::cpu_backend::resolve_cpu_client;
+
+        let backend = ResolvedBackend::Cpu(resolve_cpu_client().unwrap());
+        let ri = [0.0_f64, 0.0, 0.0];
+        let rj = [0.0_f64, 0.0, 1.3];
+        let rk = [0.0_f64, 1.1, 0.4];
+        let rl = [0.9_f64, 0.2, 0.7];
+        // Distinct exponents per centre so no accidental symmetry can make a
+        // transposed or mis-strided G tensor look right.
+        let exps: [&[f64]; 4] = [
+            &[1.7, 0.45],
+            &[1.3, 0.31, 0.09],
+            &[2.1, 0.52],
+            &[0.87, 0.23],
+        ];
+
+        let mut classes_checked = 0usize;
+        let mut compared = 0usize;
+        for (li, lj, lk, ll) in [
+            (0usize, 0usize, 0usize, 0usize),
+            (1, 0, 0, 0), // ibase
+            (0, 1, 0, 0), // !ibase
+            (1, 1, 1, 0), // kbase
+            (1, 1, 0, 1), // !kbase
+            (2, 1, 1, 1),
+            (1, 2, 2, 1),
+            (2, 2, 2, 2),
+        ] {
+            let shape = build_f12_shape(li, lj, lk, ll);
+            if shape.nroots > 5 {
+                continue;
+            }
+            for is_stg in [true, false] {
+                let zeta = if is_stg { 1.1 } else { 0.7 };
+                let common_factor = 0.93_f64;
+
+                let mut prim_rows = Vec::new();
+                let mut reference = Vec::new();
+                for &ai in exps[0] {
+                    for &aj in exps[1] {
+                        let pdata_ij = compute_pdata_host(
+                            ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0,
+                        );
+                        for &ak in exps[2] {
+                            for &al in exps[3] {
+                                let pdata_kl = compute_pdata_host(
+                                    ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
+                                );
+                                let fac = common_factor * pdata_ij.fac * pdata_kl.fac;
+                                let (ta, ua) = f12_ta_ua(ai, aj, ak, al, &ri, &rj, &rk, &rl, zeta);
+                                prim_rows.push(F12PrimitiveRow {
+                                    ai,
+                                    aj,
+                                    ak,
+                                    al,
+                                    fac,
+                                    cell: crate::math::stg::stg_table_cell(shape.nroots, ta, ua),
+                                });
+
+                                // The reference: exactly the loop body Task B
+                                // replaced.
+                                let g = fill_g_tensor_f12(
+                                    ai, aj, ak, al, &ri, &rj, &rk, &rl, shape, fac, zeta, is_stg,
+                                );
+                                reference.extend_from_slice(&run_f12_cart_contraction_on_backend(
+                                    &backend, &g, shape, li as u8, lj as u8, lk as u8, ll as u8,
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                let batched = run_f12_primitive_batch_on_backend(
+                    &backend, shape, li as u8, lj as u8, lk as u8, ll as u8, &ri, &rj, &rk, &rl,
+                    zeta, is_stg, &prim_rows,
+                );
+
+                assert_eq!(
+                    batched.len(),
+                    reference.len(),
+                    "l=({li},{lj},{lk},{ll}) is_stg={is_stg}: batch returned \
+                     {} values, the per-quartet path {}",
+                    batched.len(),
+                    reference.len()
+                );
+                for (index, (b, r)) in batched.iter().zip(&reference).enumerate() {
+                    compared += 1;
+                    assert_eq!(
+                        b.to_bits(),
+                        r.to_bits(),
+                        "l=({li},{lj},{lk},{ll}) is_stg={is_stg} nroots={} \
+                         ibase={} kbase={} element {index}: batch={b:.17e} \
+                         per-quartet={r:.17e}",
+                        shape.nroots,
+                        shape.ibase,
+                        shape.kbase
+                    );
+                }
+                classes_checked += 1;
+            }
+        }
+        assert!(
+            classes_checked >= 12,
+            "only {classes_checked} (class, branch) combinations were reachable"
+        );
+        assert!(compared > 1000, "only {compared} values compared");
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Test T05-2c: launch_f12_typed::<f64> byte-identical to launch_f12 at f64.
     // RED: compile fails until launch_f12_typed is defined.
@@ -5289,9 +6776,7 @@ mod tests {
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
         use crate::specialization::SpecializationKey;
-        use cintx_core::{
-            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
-        };
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell};
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
         use std::sync::Arc;
 
@@ -5391,9 +6876,7 @@ mod tests {
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
         use crate::specialization::SpecializationKey;
-        use cintx_core::{
-            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
-        };
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell};
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
         use std::sync::Arc;
 
@@ -5481,9 +6964,7 @@ mod tests {
         use crate::backend::ResolvedBackend;
         use crate::backend::cpu_backend::resolve_cpu_client;
         use crate::specialization::SpecializationKey;
-        use cintx_core::{
-            Atom, BasisSet, NuclearModel, OperatorId, PrecisionKind, Representation, Shell,
-        };
+        use cintx_core::{Atom, BasisSet, NuclearModel, PrecisionKind, Representation, Shell};
         use cintx_runtime::{ExecutionOptions, ExecutionPlan, query_workspace};
         use std::sync::Arc;
 
@@ -6073,6 +7554,9 @@ mod tests {
 
 /// Which of the four centers a gauge-cascade step acts on.
 #[derive(Clone, Copy, PartialEq)]
+// Same complete-enumeration rationale as `Nabla1Center`: `L` has no wired
+// gauge cascade yet.
+#[allow(dead_code)]
 pub(crate) enum Gauge2eCenter {
     I,
     J,

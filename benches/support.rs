@@ -56,6 +56,7 @@ pub const TWO_ELECTRON_CART: RealCase = RealCase {
 /// Calibration points from the CubeCL speed-optimization plan. They cover
 /// latency-sensitive calls through batches large enough to amortize launch and
 /// transfer overhead.
+#[allow(dead_code)] // shared calibration grid; not every bench sweeps it
 pub const BATCH_SIZES: [usize; 6] = [1, 8, 32, 128, 512, 2048];
 
 /// Persist the warm-path execution metrics alongside Criterion's timing output.

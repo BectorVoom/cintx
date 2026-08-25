@@ -34,6 +34,14 @@ pub struct RawArrays {
     pub atm: Vec<i32>,
     pub bas: Vec<i32>,
     pub env: Vec<f64>,
+    /// Number of leading `bas` rows that are **orbital** shells.
+    ///
+    /// [`to_raw_arrays`] leaves this equal to [`Self::nbas`] — every shell is an
+    /// orbital shell. [`to_raw_arrays_with_auxiliary`] appends the fitting
+    /// shells after the orbital ones and sets this to the boundary, so a
+    /// three-centre `(mu nu | P)` list can take `mu`, `nu` from
+    /// `0..n_orbital_shells` and `P` from `n_orbital_shells..nbas`.
+    pub n_orbital_shells: usize,
 }
 
 impl RawArrays {
@@ -45,6 +53,19 @@ impl RawArrays {
     #[must_use]
     pub fn nbas(&self) -> usize {
         self.bas.len() / BAS_SLOTS
+    }
+
+    /// Shell indices of the orbital shells.
+    #[must_use]
+    pub fn orbital_shells(&self) -> std::ops::Range<usize> {
+        0..self.n_orbital_shells
+    }
+
+    /// Shell indices of the auxiliary (fitting) shells; empty unless the arrays
+    /// came from [`to_raw_arrays_with_auxiliary`].
+    #[must_use]
+    pub fn auxiliary_shells(&self) -> std::ops::Range<usize> {
+        self.n_orbital_shells..self.nbas()
     }
 }
 
@@ -81,16 +102,64 @@ pub fn to_raw_arrays(molecule: &Molecule) -> Result<RawArrays, BasisError> {
     }
 
     let mut bas: Vec<i32> = Vec::new();
+    append_basis_shells(molecule, molecule.basis, &mut bas, &mut env)?;
+    let n_orbital_shells = bas.len() / BAS_SLOTS;
+
+    Ok(RawArrays {
+        atm,
+        bas,
+        env,
+        n_orbital_shells,
+    })
+}
+
+/// Emit `atm`/`bas`/`env` for a molecule with a density-fitting auxiliary basis
+/// appended after the orbital shells.
+///
+/// This is the layout a three-centre `(mu nu | P)` list needs: one `bas` array
+/// holding both shell sets, with `mu`/`nu` indexing the orbital block and `P`
+/// the auxiliary block. [`RawArrays::orbital_shells`] and
+/// [`RawArrays::auxiliary_shells`] name the two ranges.
+///
+/// # Errors
+/// Returns [`BasisError`] if an element is absent from either table, or
+/// [`BasisError::UnknownBasis`] if `auxiliary` is not actually an auxiliary
+/// basis — fitting an AO product density against orbital functions is a
+/// mistake that would otherwise produce numbers rather than a failure.
+pub fn to_raw_arrays_with_auxiliary(
+    molecule: &Molecule,
+    auxiliary: crate::catalog::StandardBasis,
+) -> Result<RawArrays, BasisError> {
+    if !auxiliary.is_auxiliary() {
+        return Err(BasisError::UnknownBasis {
+            name: format!(
+                "{} is an orbital basis, not an auxiliary one",
+                auxiliary.name()
+            ),
+        });
+    }
+
+    let mut arrays = to_raw_arrays(molecule)?;
+    append_basis_shells(molecule, auxiliary, &mut arrays.bas, &mut arrays.env)?;
+    Ok(arrays)
+}
+
+/// Append every atom's shells from `basis`, writing exponents and coefficients
+/// into `env` and one `bas` row per contracted shell.
+fn append_basis_shells(
+    molecule: &Molecule,
+    basis: crate::catalog::StandardBasis,
+    bas: &mut Vec<i32>,
+    env: &mut Vec<f64>,
+) -> Result<(), BasisError> {
     for (atom_index, spec) in molecule.atoms.iter().enumerate() {
-        let blocks =
-            molecule
-                .basis
-                .table()
-                .get(&spec.atomic_number)
-                .ok_or(BasisError::MissingElement {
-                    basis: molecule.basis.name(),
-                    atomic_number: spec.atomic_number,
-                })?;
+        let blocks = basis
+            .table()
+            .get(&spec.atomic_number)
+            .ok_or(BasisError::MissingElement {
+                basis: basis.name(),
+                atomic_number: spec.atomic_number,
+            })?;
 
         for block in blocks {
             let mut coefficients = block.coefficients.clone();
@@ -117,8 +186,7 @@ pub fn to_raw_arrays(molecule: &Molecule) -> Result<RawArrays, BasisError> {
             bas.extend_from_slice(&row);
         }
     }
-
-    Ok(RawArrays { atm, bas, env })
+    Ok(())
 }
 
 #[cfg(test)]

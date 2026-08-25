@@ -36,4 +36,4 @@ pub use catalog::{StandardBasis, def2_ecp_table};
 pub use error::BasisError;
 pub use format::{ContractionBlock, EcpBlock, EcpRecord, parse_basis, parse_ecp};
 pub use normalize::{gaussian_int, gto_norm, normalize_block};
-pub use raw::{RawArrays, to_raw_arrays};
+pub use raw::{RawArrays, to_raw_arrays, to_raw_arrays_with_auxiliary};

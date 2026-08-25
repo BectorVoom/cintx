@@ -81,7 +81,7 @@ impl OperatorId {
     /// preflight in `cintx-rs::SessionRequest::query_workspace` to gate
     /// `FacadeError::MissingEcpBasis`.
     pub const fn is_ecp(self) -> bool {
-        matches!(self.0, 26 | 27 | 28 | 29)
+        matches!(self.0, 26..=29)
     }
 }
 

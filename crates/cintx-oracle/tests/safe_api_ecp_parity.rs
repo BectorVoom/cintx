@@ -218,7 +218,17 @@ fn collect_safe_api_ecp_matrix(
             let pair = &output.tensor.owned_values;
             for ii in 0..ni {
                 for jj in 0..nj {
-                    matrix[(row_offset + ii) * n_ao + (col_offset + jj)] = pair[ii * nj + jj];
+                    // The safe API returns a 1e block in libcint's own layout —
+                    // column-major, bra fastest — the same `pair[j*ni + i]` the
+                    // vendor collector below reads. (`int1e_ovlp` on a
+                    // non-square `(p, f)` Cartesian pair pins this to 2.2e-16;
+                    // the ECP `ipnuc` collector at line 457 already reads it
+                    // this way.) The row-major spelling that stood here was
+                    // invisible on Cu/LANL2DZ: a one-atom fixture makes every
+                    // non-square ECP block identically zero, because a
+                    // spherical ECP centred on the only atom conserves angular
+                    // momentum, so `<l_i|V|l_j>` vanishes unless `l_i == l_j`.
+                    matrix[(row_offset + ii) * n_ao + (col_offset + jj)] = pair[jj * ni + ii];
                 }
             }
             col_offset += nj;

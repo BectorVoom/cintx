@@ -4,6 +4,11 @@
 //! All functions use the same atm/bas/env layout as cintx_compat::raw.
 
 #![cfg(has_vendor_libcint)]
+// Every wrapper is named after the libcint C symbol it calls
+// (`vendor_CINTgto_norm` -> `CINTgto_norm`). Renaming them to snake case would
+// break the one property that makes this file auditable against the vendored
+// header: a reader can match a wrapper to its C entry point by name alone.
+#![allow(non_snake_case)]
 
 #[allow(
     non_camel_case_types,
@@ -5932,7 +5937,7 @@ pub fn vendor_ECPscalar_ipnuc_sph(
 ) -> i32 {
     // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_spheric.
     debug_assert!(
-        out.len() % 3 == 0,
+        out.len().is_multiple_of(3),
         "ECPscalar_ipnuc_sph out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
         out.len()
     );
@@ -5972,7 +5977,7 @@ pub fn vendor_ECPscalar_ipnuc_cart(
 ) -> i32 {
     // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_cart.
     debug_assert!(
-        out.len() % 3 == 0,
+        out.len().is_multiple_of(3),
         "ECPscalar_ipnuc_cart out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
         out.len()
     );
@@ -6020,7 +6025,7 @@ pub fn vendor_ECPscalar_iprinv_sph(
 ) -> i32 {
     // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_spheric.
     debug_assert!(
-        out.len() % 3 == 0,
+        out.len().is_multiple_of(3),
         "ECPscalar_iprinv_sph out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
         out.len()
     );
@@ -6063,7 +6068,7 @@ pub fn vendor_ECPscalar_iprinv_cart(
 ) -> i32 {
     // T-19-23: out must be 3 * nao_i * nao_j f64s. nao = CINTcgto_cart.
     debug_assert!(
-        out.len() % 3 == 0,
+        out.len().is_multiple_of(3),
         "ECPscalar_iprinv_cart out buffer must be 3 * nao_i * nao_j (component_rank=3), got len={}",
         out.len()
     );

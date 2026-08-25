@@ -281,7 +281,7 @@ fn assert_flat_buffer_contract(fixture: &OracleFixture, values: &[f64]) -> bool 
     // "spinor". A complex family staged real-only is rejected, not silently
     // accepted. This is the V5-analog input-validation control (T-26-01).
     if fixture.complex_interleaved {
-        if values.len() % 2 != 0 {
+        if !values.len().is_multiple_of(2) {
             return false;
         }
         return values
@@ -305,12 +305,11 @@ fn is_skipped_spinor_fixture(fixture: &OracleFixture) -> bool {
     if fixture.representation != "spinor" {
         return false;
     }
-    if let Ok(metadata) = manifest_lock_symbol_metadata() {
-        if let Some(entry) = metadata.get(&fixture.symbol) {
-            if !entry.oracle_covered {
-                return true;
-            }
-        }
+    if let Ok(metadata) = manifest_lock_symbol_metadata()
+        && let Some(entry) = metadata.get(&fixture.symbol)
+        && !entry.oracle_covered
+    {
+        return true;
     }
     if fixture.component_count == 3 {
         return true;
@@ -410,6 +409,9 @@ fn raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
     }
 }
 
+// Reachable only from the source-only comparison arm, which no currently
+// enabled feature selects.
+#[allow(dead_code)]
 fn source_only_raw_api_for_symbol(symbol: &str) -> Option<RawApiId> {
     let descriptor = Resolver::descriptor_by_symbol(symbol).ok()?;
     if !matches!(descriptor.entry.helper_kind, HelperKind::SourceOnly) {
@@ -653,14 +655,15 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
         use crate::vendor_ffi;
         let nbas = 4_i32;
         let bas = &inputs.bas;
-        let mut mismatches = 0usize;
+        // Fail-fast by construction: every check below `bail!`s on its first
+        // disagreement, naming the helper and the two values. There is no
+        // aggregate count because no comparison can be reached after one fails.
 
         // Integer helpers — exact equality.
         for l in 0..5_i32 {
             let cintx_val = CINTlen_cart(l)? as i32;
             let vendor_val = vendor_ffi::vendor_CINTlen_cart(l);
             if cintx_val != vendor_val {
-                mismatches += 1;
                 bail!("CINTlen_cart({l}) mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
         }
@@ -675,7 +678,6 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             let cintx_val = CINTlen_spinor(shell, bas)? as i32;
             let vendor_val = vendor_ffi::vendor_CINTlen_spinor(shell, bas);
             if cintx_val != vendor_val {
-                mismatches += 1;
                 bail!("CINTlen_spinor({shell}) mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
         }
@@ -685,21 +687,18 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             let cintx_cart = CINTcgto_cart(shell, bas)? as i32;
             let vendor_cart = vendor_ffi::vendor_CINTcgto_cart(shell, bas);
             if cintx_cart != vendor_cart {
-                mismatches += 1;
                 bail!("CINTcgto_cart({shell}) mismatch: cintx={cintx_cart} vendor={vendor_cart}");
             }
 
             let cintx_sph = CINTcgto_spheric(shell, bas)? as i32;
             let vendor_sph = vendor_ffi::vendor_CINTcgto_spheric(shell, bas);
             if cintx_sph != vendor_sph {
-                mismatches += 1;
                 bail!("CINTcgto_spheric({shell}) mismatch: cintx={cintx_sph} vendor={vendor_sph}");
             }
 
             let cintx_sp = CINTcgto_spinor(shell, bas)? as i32;
             let vendor_sp = vendor_ffi::vendor_CINTcgto_spinor(shell, bas);
             if cintx_sp != vendor_sp {
-                mismatches += 1;
                 bail!("CINTcgto_spinor({shell}) mismatch: cintx={cintx_sp} vendor={vendor_sp}");
             }
         }
@@ -709,35 +708,30 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             let cintx_val = CINTtot_pgto_spheric(bas, nbas)? as i32;
             let vendor_val = vendor_ffi::vendor_CINTtot_pgto_spheric(bas, nbas);
             if cintx_val != vendor_val {
-                mismatches += 1;
                 bail!("CINTtot_pgto_spheric mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
 
             let cintx_val = CINTtot_pgto_spinor(bas, nbas)? as i32;
             let vendor_val = vendor_ffi::vendor_CINTtot_pgto_spinor(bas, nbas);
             if cintx_val != vendor_val {
-                mismatches += 1;
                 bail!("CINTtot_pgto_spinor mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
 
             let cintx_val = CINTtot_cgto_cart(bas, nbas)? as i32;
             let vendor_val = vendor_ffi::vendor_CINTtot_cgto_cart(bas, nbas);
             if cintx_val != vendor_val {
-                mismatches += 1;
                 bail!("CINTtot_cgto_cart mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
 
             let cintx_val = CINTtot_cgto_spheric(bas, nbas)? as i32;
             let vendor_val = vendor_ffi::vendor_CINTtot_cgto_spheric(bas, nbas);
             if cintx_val != vendor_val {
-                mismatches += 1;
                 bail!("CINTtot_cgto_spheric mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
 
             let cintx_val = CINTtot_cgto_spinor(bas, nbas)? as i32;
             let vendor_val = vendor_ffi::vendor_CINTtot_cgto_spinor(bas, nbas);
             if cintx_val != vendor_val {
-                mismatches += 1;
                 bail!("CINTtot_cgto_spinor mismatch: cintx={cintx_val} vendor={vendor_val}");
             }
         }
@@ -752,7 +746,6 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             vendor_ffi::vendor_CINTshells_cart_offset(&mut vendor_offsets, bas, nbas);
             for (i, (&c, &v)) in cintx_offsets.iter().zip(vendor_offsets.iter()).enumerate() {
                 if c != v {
-                    mismatches += 1;
                     bail!("CINTshells_cart_offset[{i}] mismatch: cintx={c} vendor={v}");
                 }
             }
@@ -761,7 +754,6 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             vendor_ffi::vendor_CINTshells_spheric_offset(&mut vendor_offsets, bas, nbas);
             for (i, (&c, &v)) in cintx_offsets.iter().zip(vendor_offsets.iter()).enumerate() {
                 if c != v {
-                    mismatches += 1;
                     bail!("CINTshells_spheric_offset[{i}] mismatch: cintx={c} vendor={v}");
                 }
             }
@@ -770,7 +762,6 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             vendor_ffi::vendor_CINTshells_spinor_offset(&mut vendor_offsets, bas, nbas);
             for (i, (&c, &v)) in cintx_offsets.iter().zip(vendor_offsets.iter()).enumerate() {
                 if c != v {
-                    mismatches += 1;
                     bail!("CINTshells_spinor_offset[{i}] mismatch: cintx={c} vendor={v}");
                 }
             }
@@ -782,7 +773,6 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
                 let cintx_val = CINTgto_norm(l, a);
                 let vendor_val = vendor_ffi::vendor_CINTgto_norm(l, a);
                 if (cintx_val - vendor_val).abs() > 1e-12 {
-                    mismatches += 1;
                     bail!(
                         "CINTgto_norm({l},{a}) mismatch: cintx={cintx_val} vendor={vendor_val} diff={}",
                         (cintx_val - vendor_val).abs()
@@ -809,17 +799,12 @@ pub fn verify_helper_surface_coverage(inputs: &OracleRawInputs) -> Result<()> {
             vendor_ffi::vendor_CINTc2s_bra_sph(&mut vendor_out, 1, &cart_in, l);
             for (i, (&cv, &vv)) in cintx_out.iter().zip(vendor_out.iter()).enumerate() {
                 if (cv - vv).abs() > 1e-12 {
-                    mismatches += 1;
                     bail!(
                         "CINTc2s_bra_sph(l={l}) elem {i} mismatch: cintx={cv} vendor={vv} diff={}",
                         (cv - vv).abs()
                     );
                 }
             }
-        }
-
-        if mismatches > 0 {
-            bail!("helper/transform oracle comparison: {mismatches} mismatch(es) found");
         }
     }
 
@@ -1644,6 +1629,9 @@ mod tests {
     // ─────────────────────────────────────────────────────────────────────────
 
     #[test]
+    // Asserting on constants is the point: these pin the ordering between the
+    // f32 and f64 tolerance pairs, which a careless edit to either could break.
+    #[allow(clippy::assertions_on_constants)]
     fn f32_tolerance_f32_unified_constants_exist() {
         // F32_UNIFIED_RTOL and F32_UNIFIED_ATOL must exist and be distinct from f64 ones.
         assert!(

@@ -22,9 +22,9 @@
 //! transpose-symmetric. For every tier r/rr/rrr/rrrr and both paths:
 //!   * count_mismatches(vendor, cintx)          == 0   (claimed i-fastest layout right)
 //!   * count_mismatches(vendor, cintx_jfastest) >  0   (the OTHER orientation is wrong,
-//!                                                       so orientation is truly pinned)
-//! The vendor-free half also asserts cintx != cintx_jfastest (fixture is orientation-
-//! sensitive) so the negative control is meaningful even without vendor.
+//!     so orientation is truly pinned)
+//!     The vendor-free half also asserts cintx != cintx_jfastest (fixture is orientation-
+//!     sensitive) so the negative control is meaningful even without vendor.
 //!
 //! Run:
 //!   cargo test -p cintx-oracle --features cpu --test spike_axis_fold_003 -- --ignored --nocapture

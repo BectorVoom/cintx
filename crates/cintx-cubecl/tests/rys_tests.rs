@@ -9,6 +9,12 @@
 //!
 //! Traceability (D-16): each test case cites the relevant rys_roots.c source segment.
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+
 #[cfg(feature = "cpu")]
 mod rys_cpu_tests {
     use cintx_cubecl::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};

@@ -42,13 +42,41 @@
 //! Source: libcint-master/src/g2c2e.c (CINT2c2e_loop_nopt, CINTinit_int2c2e_EnvVars) and
 //!         libcint-master/src/g2e.c (CINTg0_2e, CINTg0_2e_2d).
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+// Index arithmetic here is written in full — `base + 0 * stride`, `base + 1 * stride`,
+// `out[n * 3 + 0]` — so that a slot or component index lines up column-wise with its
+// neighbours and with the libcint layout being mirrored. Folding the `0 *` and `1 *`
+// away would shorten the line and hide the stride.
+#![allow(clippy::identity_op)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+
 use crate::backend::ResolvedBackend;
 use crate::kernels::f12::{Nabla1Center, gout_ip1ip2, gout_ipip1, gout_ipn};
 use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys_wheeler::{
+    EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
+};
 use crate::specialization::SpecializationKey;
-use crate::transform::c2s::{cart_to_sph_2c2e, cart_to_sph_2e, ncart, nsph};
+use crate::transform::c2s::{cart_to_sph_2c2e, cart_to_sph_2c2e_into, cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::{cart_to_spinor_sf_2d, cart_to_spinor_sf_derivative_2d};
 use cintx_core::{CintFloat, PrecisionKind, Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
@@ -68,10 +96,6 @@ const SQRTPI: f64 = 1.7724538509055159_f64;
 // the constant is transcribed from `rys_roots.c` rather than recomputed.
 #[allow(clippy::approx_constant)]
 const PIE4: f64 = 0.78539816339744827900_f64;
-
-/// Maximum `nroots` the device Rys kernels (`rys_root1..5`) can evaluate.
-/// `nroots = (li + lk) / 2 + 1`, so this covers `li + lk <= 8`.
-const MAX_DEVICE_NROOTS: usize = 5;
 
 /// Maximum `nroots` the HOST Rys engine (`rys_roots_host` → `rys_wheeler`) evaluates
 /// (Phase 25 FND-02). The 2c2e gradient path host-routes through `fill_g_tensor_2e`;
@@ -166,6 +190,7 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
     pairs: &Array<u32>,
     class_shape: &Array<u32>,
     class_factor: &Array<F>,
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     cart_out: &mut Array<F>,
     pie4: F,
@@ -197,8 +222,14 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
 
     // Rys roots/weights are written and read entirely inside the `lane == 0`
     // region below, so they are per-unit private storage rather than buffers.
-    let mut urys = Array::<F>::new(5usize);
-    let mut wrys = Array::<F>::new(5usize);
+    // The extent follows `nroots`: five for the polynomial-fit kernels, exactly
+    // `nroots` once the inline extended entry (task 33-01) serves the class.
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    // The extended entry is f64-only, so it lands in its own pair and is cast
+    // into `urys`/`wrys`. Both collapse to one element when the arm is absent.
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
 
     if lane == 0u32 {
         let nrys = nroots;
@@ -206,6 +237,9 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
         let gbase = slot * g_stride;
 
         // Blocked walk under `per_unit == 1`, grid-stride otherwise.
+        // `u32::div_ceil` has no `#[cube]` expansion, so the blocked-walk
+        // chunk size is written out.
+        #[allow(clippy::manual_div_ceil)]
         let chunk = (n_pairs + n_slots - 1u32) / n_slots;
         let qi_start = slot * (chunk * punit + coop);
         let mut qi_stop = (qi_start + chunk) * punit + n_pairs * coop;
@@ -236,7 +270,6 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
 
             let dm = nrys * (li + 1u32);
             let g_size = nrys * (li + 1u32) * (lk + 1u32);
-            let total_g = 3u32 * g_size;
             let nci = (li + 1u32) * (li + 2u32) / 2u32;
             let nck = (lk + 1u32) * (lk + 2u32) / 2u32;
             let block_len = nci * nck;
@@ -266,7 +299,7 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
             // Zero the accumulation buffer.
             let mut oi = 0u32;
             while oi < out_len {
-                cart_out[(out_off + oi) as usize] = F::new(0.0);
+                cart_out[(out_off + oi) as usize] = F::new(0.0_f32);
                 oi += 1u32;
             }
 
@@ -300,8 +333,24 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                         rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
                     } else if comptime!(nroots == 4u32) {
                         rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                    } else {
+                    } else if comptime!(nroots == 5u32) {
                         rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                    } else {
+                        // nroots 6..=12: the inline Wheeler/Jacobi entry
+                        // (task 33-01), reachable only once
+                        // `device_nroots_ceiling` was raised for this family.
+                        rys_roots_ext_dev(
+                            rys_tab,
+                            f64::cast_from(x_rys),
+                            &mut uext,
+                            &mut wext,
+                            nroots,
+                        );
+                        #[unroll]
+                        for iext in 0..nroots {
+                            urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                            wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                        }
                     }
 
                     let fac1 = F::sqrt(a0 / (a1 * a1 * a1)) * common_factor;
@@ -310,17 +359,17 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                     #[unroll]
                     for irys in 0..nroots {
                         let u2 = a0 * urys[irys as usize];
-                        let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
+                        let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
                         let tmp5 = u2 * tmp4;
                         let b00 = tmp5;
                         let b10 = tmp5 + tmp4 * akl;
                         let b01 = tmp5 + tmp4 * aij;
-                        let tmp2 = F::new(2.0) * tmp5 * akl;
-                        let tmp3 = F::new(2.0) * tmp5 * aij;
+                        let tmp2 = F::new(2.0_f32) * tmp5 * akl;
+                        let tmp3 = F::new(2.0_f32) * tmp5 * aij;
 
                         // Base case: gx=gy=1, gz=w*fac1 (g2e.c lines 4517-4521).
-                        g[(gbase + irys) as usize] = F::new(1.0);
-                        g[(gbase + g_size + irys) as usize] = F::new(1.0);
+                        g[(gbase + irys) as usize] = F::new(1.0_f32);
+                        g[(gbase + g_size + irys) as usize] = F::new(1.0_f32);
                         g[(gbase + 2u32 * g_size + irys) as usize] = wrys[irys as usize] * fac1;
 
                         #[unroll]
@@ -369,32 +418,29 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
 
                             // Mixed i+k recurrence for i>0 (g2e.c lines 362-391):
                             // g[i,k+1] = c0p*g[i,k] + k*b01*g[i,k-1] + b00*g[i-1,k]
-                            if lk >= 1u32 {
-                                if li >= 1u32 {
-                                    let mut n = 1u32;
-                                    while n <= li {
-                                        let i_off = irys + n * dn;
-                                        let s0_k0 = g[(base + i_off) as usize];
-                                        let prev_i_k0 = g[(base + irys + (n - 1u32) * dn) as usize];
-                                        // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
-                                        let mut s1 =
-                                            c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
-                                        g[(base + i_off + dm) as usize] = s1;
-                                        let mut s_prev = s0_k0;
-                                        let mut m = 1u32;
-                                        while m < lk {
-                                            let prev_i_km = g
-                                                [(base + irys + (n - 1u32) * dn + m * dm) as usize];
-                                            let s2 = c0pa * s1
-                                                + F::cast_from(m) * b01 * s_prev
-                                                + F::cast_from(n) * b00 * prev_i_km;
-                                            g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
-                                            s_prev = s1;
-                                            s1 = s2;
-                                            m += 1u32;
-                                        }
-                                        n += 1u32;
+                            if lk >= 1u32 && li >= 1u32 {
+                                let mut n = 1u32;
+                                while n <= li {
+                                    let i_off = irys + n * dn;
+                                    let s0_k0 = g[(base + i_off) as usize];
+                                    let prev_i_k0 = g[(base + irys + (n - 1u32) * dn) as usize];
+                                    // k=1: I(n,1)=c0p*I(n,0)+n*b00*I(n-1,0)
+                                    let mut s1 = c0pa * s0_k0 + F::cast_from(n) * b00 * prev_i_k0;
+                                    g[(base + i_off + dm) as usize] = s1;
+                                    let mut s_prev = s0_k0;
+                                    let mut m = 1u32;
+                                    while m < lk {
+                                        let prev_i_km =
+                                            g[(base + irys + (n - 1u32) * dn + m * dm) as usize];
+                                        let s2 = c0pa * s1
+                                            + F::cast_from(m) * b01 * s_prev
+                                            + F::cast_from(n) * b00 * prev_i_km;
+                                        g[(base + i_off + (m + 1u32) * dm) as usize] = s2;
+                                        s_prev = s1;
+                                        s1 = s2;
+                                        m += 1u32;
                                     }
+                                    n += 1u32;
                                 }
                             }
                         }
@@ -429,7 +475,7 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
                                     let iy = li_minus_ix - ib;
                                     let iz = li - ix - iy;
 
-                                    let mut val = F::new(0.0);
+                                    let mut val = F::new(0.0_f32);
                                     #[unroll]
                                     for irys2 in 0..nroots {
                                         let vx = g[(gbase + kx * dm + ix * dn + irys2) as usize];
@@ -477,28 +523,6 @@ fn center_2c2e_kernel<F: Float + CubeElement>(
 
             qi += qi_step;
         }
-    }
-}
-
-/// Flattened basis shared by every launch class in one batched 2c2e run.
-#[derive(Clone, Debug, Default)]
-pub struct TwoC2eFlatBasis {
-    /// Every shell's primitive exponents, concatenated.
-    pub exps: Vec<f64>,
-    /// Every shell's contraction coefficients, concatenated, primitive-major.
-    pub coeffs: Vec<f64>,
-    /// Three coordinates per shell.
-    pub centers: Vec<f64>,
-    /// `[exp_off, coeff_off, nprim, nctr]` per shell.
-    pub shell_meta: Vec<u32>,
-}
-
-impl TwoC2eFlatBasis {
-    /// Bytes this basis costs to upload.
-    #[must_use]
-    pub fn upload_bytes(&self) -> usize {
-        (self.exps.len() + self.coeffs.len() + self.centers.len()) * std::mem::size_of::<f64>()
-            + self.shell_meta.len() * std::mem::size_of::<u32>()
     }
 }
 
@@ -623,17 +647,27 @@ fn two_c2e_launch_geometry<R: Runtime>(n_pairs: usize, g_size: usize) -> (u32, C
 /// class, one basis upload for the whole run.
 fn run_2c2e_batches<R: Runtime>(
     client: &ComputeClient<R>,
-    basis: &TwoC2eFlatBasis,
+    basis: &crate::kernels::two_electron::TwoEBasisHandles,
     groups: &[TwoC2eLaunchGroup],
 ) -> Vec<Vec<f64>> {
     if groups.is_empty() {
         return Vec::new();
     }
 
-    let exps_h = client.create_from_slice(f64::as_bytes(&basis.exps));
-    let coeffs_h = client.create_from_slice(f64::as_bytes(&basis.coeffs));
-    let centers_h = client.create_from_slice(f64::as_bytes(&basis.centers));
-    let meta_h = client.create_from_slice(u32::as_bytes(&basis.shell_meta));
+    // The basis is already on the device; `Handle` is cheap to clone and the
+    // buffer it names is shared by every dispatch below (Task 34-C2).
+    let crate::kernels::two_electron::TwoEBasisHandles {
+        exps: exps_h,
+        coeffs: coeffs_h,
+        centers: centers_h,
+        shell_meta: meta_h,
+        exps_len,
+        coeffs_len,
+        centers_len,
+        shell_meta_len,
+    } = basis;
+
+    let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
 
     let mut results = Vec::with_capacity(groups.len());
     for class in groups {
@@ -652,6 +686,9 @@ fn run_2c2e_batches<R: Runtime>(
         let pairs_h = client.create_from_slice(u32::as_bytes(&class.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&class.class_shape));
         let factor_h = client.create_from_slice(f64::as_bytes(&class.class_factor));
+        // The extended-Rys constant tables (~4.7 KB), read only by a class whose
+        // Rys order is past the polynomial-fit ceiling.
+        let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(class.out_len * std::mem::size_of::<f64>());
         let per_unit = u32::from(two_c2e_per_unit::<R>());
@@ -667,13 +704,14 @@ fn run_2c2e_batches<R: Runtime>(
                         client,
                         crate::plane::cube_count_1d(n_cubes),
                         cube_dim,
-                        ArrayArg::from_raw_parts(exps_h.clone(), basis.exps.len()),
-                        ArrayArg::from_raw_parts(coeffs_h.clone(), basis.coeffs.len()),
-                        ArrayArg::from_raw_parts(centers_h.clone(), basis.centers.len()),
-                        ArrayArg::from_raw_parts(meta_h.clone(), basis.shell_meta.len()),
+                        ArrayArg::from_raw_parts(exps_h.clone(), *exps_len),
+                        ArrayArg::from_raw_parts(coeffs_h.clone(), *coeffs_len),
+                        ArrayArg::from_raw_parts(centers_h.clone(), *centers_len),
+                        ArrayArg::from_raw_parts(meta_h.clone(), *shell_meta_len),
                         ArrayArg::from_raw_parts(pairs_h.clone(), class.pairs.len()),
                         ArrayArg::from_raw_parts(shape_h.clone(), class.class_shape.len()),
                         ArrayArg::from_raw_parts(factor_h.clone(), class.class_factor.len()),
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(g_h.clone(), g_len),
                         ArrayArg::from_raw_parts(out_h.clone(), class.out_len),
                         PIE4,
@@ -687,11 +725,31 @@ fn run_2c2e_batches<R: Runtime>(
             };
         }
 
+        // Every reachable order gets its own arm. The upstream ceiling check
+        // already refused anything above `device_nroots_ceiling(backend,
+        // RysFamily::Int2c2e)`, which is 5 unless `extended-device-rys` is
+        // compiled in, this backend's FMA probe passed and this family is on
+        // the flipped list — so the 6..=12 arms are both feature-gated and
+        // unreachable without that evidence.
         match class.nroots {
             1 => launch_with!(1u32),
             2 => launch_with!(2u32),
             3 => launch_with!(3u32),
             4 => launch_with!(4u32),
+            #[cfg(feature = "extended-device-rys")]
+            6 => launch_with!(6u32),
+            #[cfg(feature = "extended-device-rys")]
+            7 => launch_with!(7u32),
+            #[cfg(feature = "extended-device-rys")]
+            8 => launch_with!(8u32),
+            #[cfg(feature = "extended-device-rys")]
+            9 => launch_with!(9u32),
+            #[cfg(feature = "extended-device-rys")]
+            10 => launch_with!(10u32),
+            #[cfg(feature = "extended-device-rys")]
+            11 => launch_with!(11u32),
+            #[cfg(feature = "extended-device-rys")]
+            12 => launch_with!(12u32),
             _ => launch_with!(5u32),
         }
 
@@ -737,6 +795,29 @@ pub fn evaluate_2c2e_pair_batch(
     shells: &[crate::kernels::two_electron::BatchShell],
     pairs: &[[u32; 2]],
 ) -> Result<TwoC2eBatchOutput, cintxRsError> {
+    let resident = crate::kernels::two_electron::ResidentBasis::new(backend, shells)?;
+    evaluate_2c2e_pair_batch_resident(backend, &resident, pairs)
+}
+
+/// [`evaluate_2c2e_pair_batch`] against a basis already on the device
+/// (Task 34-C2).
+///
+/// Identical results; the difference is that the flattened basis is the
+/// caller's [`crate::kernels::two_electron::ResidentBasis`] rather than a
+/// throwaway one, so `basis_upload_bytes` is the full upload on the first call
+/// and **0** on every later one. An RI-J build re-evaluates the same `(P|Q)`
+/// metric every SCF iteration, which is the case this exists for.
+///
+/// # Errors
+/// As [`evaluate_2c2e_pair_batch`], plus a backend mismatch on `resident`.
+pub fn evaluate_2c2e_pair_batch_resident(
+    backend: &ResolvedBackend,
+    resident: &crate::kernels::two_electron::ResidentBasis,
+    pairs: &[[u32; 2]],
+) -> Result<TwoC2eBatchOutput, cintxRsError> {
+    resident.check_for("2c2e-batch", backend)?;
+    let shells = resident.shells();
+
     let mut offsets = Vec::with_capacity(pairs.len());
     let mut total = 0_usize;
     for pair in pairs {
@@ -763,20 +844,10 @@ pub fn evaluate_2c2e_pair_batch(
         return Ok(output);
     }
 
-    let mut basis = TwoC2eFlatBasis::default();
-    for shell in shells {
-        basis.shell_meta.push(basis.exps.len() as u32);
-        basis.shell_meta.push(basis.coeffs.len() as u32);
-        basis.shell_meta.push(shell.nprim);
-        basis.shell_meta.push(shell.nctr);
-        basis
-            .exps
-            .extend_from_slice(&shell.exponents[..shell.nprim as usize]);
-        basis
-            .coeffs
-            .extend_from_slice(&shell.coefficients[..(shell.nprim * shell.nctr) as usize]);
-        basis.centers.extend_from_slice(&shell.center);
-    }
+    let ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+        backend,
+        crate::device_rys_ceiling::RysFamily::Int2c2e,
+    );
 
     let mut grouped: std::collections::BTreeMap<[u8; 2], Vec<usize>> = Default::default();
     for (index, pair) in pairs.iter().enumerate() {
@@ -792,10 +863,13 @@ pub fn evaluate_2c2e_pair_batch(
     for (class, members) in grouped {
         let [li, lk] = class;
         let nroots = (li as usize + lk as usize) / 2 + 1;
-        if nroots > MAX_DEVICE_NROOTS {
+        // Per-backend ceiling (task 33-05): the base value everywhere, raised
+        // only on a backend whose FMA-fusion probe passed and only with the
+        // `extended-device-rys` opt-in. See `crate::device_rys_ceiling`.
+        if nroots > ceiling {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "2c2e-batch:nroots={nroots} exceeds device ceiling {MAX_DEVICE_NROOTS} \
+                    "2c2e-batch:nroots={nroots} exceeds device ceiling {ceiling} \
                      for l=({li},{lk})"
                 ),
             });
@@ -843,10 +917,14 @@ pub fn evaluate_2c2e_pair_batch(
     }
 
     let dispatch_start = std::time::Instant::now();
-    let carts = dispatch_2c2e_batches(backend, &basis, &groups)?;
+    let carts = dispatch_2c2e_batches(backend, resident.handles(), &groups)?;
     output.stats.dispatch_ns = dispatch_start.elapsed().as_nanos() as u64;
 
-    output.stats.basis_upload_bytes = basis.upload_bytes();
+    output.stats.basis_upload_bytes = if resident.take_first_use() {
+        resident.upload_bytes()
+    } else {
+        0
+    };
     output.stats.kernel_launch_count = groups.len();
     output.stats.launch_classes = classes.len();
     output.stats.readback_count = groups.len();
@@ -862,39 +940,84 @@ pub fn evaluate_2c2e_pair_batch(
             .sum::<usize>();
 
     let transform_start = std::time::Instant::now();
-    for class in &classes {
-        let (li, lk) = (class.li as u8, class.lk as u8);
-        let cart_block = ncart(li) * ncart(lk);
-        let cart = &carts[class.group];
-        let members = &class.members;
-        let cart_offsets = &class.cart_offsets;
-        let (nsi, nsk) = (nsph(li), nsph(lk));
+    // Task 36-T1: one output block and one c2s scratch per worker, not one pair
+    // per contraction block. Both are fully written before being read on every
+    // call, so reuse across blocks does not change a single bit.
+    //
+    // Task 36-T2: one job per pair, in the caller's order, each writing a
+    // disjoint output block. Each output element is produced by exactly one
+    // pair, so the split reorders no summation.
+    let carts = &carts;
+    let mut placement = vec![(0_usize, 0_usize); pairs.len()];
+    for (class_index, class) in classes.iter().enumerate() {
+        for (slot, &index) in class.members.iter().enumerate() {
+            placement[index] = (class_index, slot);
+        }
+    }
+    let lens: Vec<usize> = pairs
+        .iter()
+        .map(|pair| shells[pair[0] as usize].ao_len() * shells[pair[1] as usize].ao_len())
+        .collect();
+    let jobs: Vec<(usize, &mut [f64])> =
+        crate::transform::host_batch::split_output_blocks(&mut output.values, &lens)
+            .into_iter()
+            .enumerate()
+            .collect();
 
-        for (slot, &index) in members.iter().enumerate() {
+    let states = crate::transform::host_batch::for_each_block(
+        jobs,
+        || {
+            (
+                Vec::<f64>::new(),
+                Vec::<f64>::new(),
+                crate::transform::profile::HostTransformProfile::new(),
+            )
+        },
+        |(sph, c2s_scratch, profile), (index, block)| {
+            let (class_index, slot) = placement[index];
+            let class = &classes[class_index];
+            let (li, lk) = (class.li as u8, class.lk as u8);
+            let cart_block = ncart(li) * ncart(lk);
+            let (nsi, nsk) = (nsph(li), nsph(lk));
+
+            profile.start();
+            sph.clear();
+            sph.resize(nsk * nsi, 0.0);
+            profile.charge_alloc();
+
+            let cart = &carts[class.group];
             let p = pairs[index];
             let (nci_ctr, nck_ctr) = (
                 shells[p[0] as usize].nctr as usize,
                 shells[p[1] as usize].nctr as usize,
             );
             let di = nci_ctr * nsi;
-            let dst_base = output.offsets[index];
-            let src_base = cart_offsets[slot];
+            let src_base = class.cart_offsets[slot];
             for ci in 0..nci_ctr {
                 for ck in 0..nck_ctr {
                     let base = src_base + (ci * nck_ctr + ck) * cart_block;
-                    let sph = cart_to_sph_2c2e(&cart[base..base + cart_block], li, lk);
+                    cart_to_sph_2c2e_into(&cart[base..base + cart_block], li, lk, sph, c2s_scratch);
+                    profile.charge_transform();
                     for mk in 0..nsk {
                         let kidx = ck * nsk + mk;
                         for mi in 0..nsi {
                             let iidx = ci * nsi + mi;
-                            output.values[dst_base + iidx + di * kidx] = sph[mi + nsi * mk];
+                            block[iidx + di * kidx] = sph[mi + nsi * mk];
                         }
                     }
+                    profile.charge_scatter();
                 }
             }
-        }
+            profile.pause();
+        },
+    );
+
+    let mut profile = crate::transform::profile::HostTransformProfile::new();
+    for (_, _, worker) in &states {
+        profile.merge(worker);
     }
     output.stats.host_transform_ns = transform_start.elapsed().as_nanos() as u64;
+    profile.store_into(&mut output.stats);
 
     Ok(output)
 }
@@ -902,7 +1025,7 @@ pub fn evaluate_2c2e_pair_batch(
 /// Backend dispatch for a whole batched 2c2e run.
 fn dispatch_2c2e_batches(
     backend: &ResolvedBackend,
-    basis: &TwoC2eFlatBasis,
+    basis: &crate::kernels::two_electron::TwoEBasisHandles,
     groups: &[TwoC2eLaunchGroup],
 ) -> Result<Vec<Vec<f64>>, cintxRsError> {
     match backend {
@@ -959,7 +1082,7 @@ fn run_2c2e_device<R: Runtime>(
     let nck = (lk_u + 1) * (lk_u + 2) / 2;
     let out_len = (nctr_i as usize) * (nctr_k as usize) * nci * nck;
 
-    let mut basis = TwoC2eFlatBasis::default();
+    let mut basis = crate::kernels::two_electron::TwoEFlatBasis::default();
     for (exps, coeffs, center, nprim, nctr) in [
         (exps_i, coeff_i, ri, nprim_i, nctr_i),
         (exps_k, coeff_k, rk, nprim_k, nctr_k),
@@ -974,13 +1097,14 @@ fn run_2c2e_device<R: Runtime>(
         basis.coeffs.extend_from_slice(coeffs);
         basis.centers.extend_from_slice(&center);
     }
+    let handles = crate::kernels::two_electron::upload_2e_basis::<R>(client, &basis);
 
     let mut group = TwoC2eLaunchGroup::new(nroots);
     let class_index = group.push_class(li, lk, common_factor);
     group.pairs.extend_from_slice(&[0, 1, 0, class_index]);
     group.out_len = out_len;
 
-    run_2c2e_batches::<R>(client, &basis, std::slice::from_ref(&group))
+    run_2c2e_batches::<R>(client, &handles, std::slice::from_ref(&group))
         .pop()
         .unwrap_or_default()
 }
@@ -1323,7 +1447,7 @@ fn launch_center_2c2e_grad<F: CintFloat>(
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -1524,7 +1648,7 @@ fn launch_center_2c2e_hess<F: CintFloat>(
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -1625,8 +1749,15 @@ fn launch_center_2c2e_typed<F: CintFloat>(
     let coeff_i: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
     let coeff_k: Vec<f64> = shell_k.coefficients[..n_prim_k * n_ctr_k].to_vec();
 
-    // Dispatch onto device client (if nroots <= MAX_DEVICE_NROOTS) or host loop (if nroots > MAX_DEVICE_NROOTS).
-    let cart_buf: Vec<f64> = if nroots > MAX_DEVICE_NROOTS {
+    // Task 33-03: the boundary between the device kernel and the host loop is
+    // the family's ceiling, not a constant. With `int2c2e` flipped onto the
+    // inline extended entry and this backend's FMA probe passing, orders 6..=12
+    // stay on the device; otherwise they fall to the host loop, as before.
+    let device_ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+        backend,
+        crate::device_rys_ceiling::RysFamily::Int2c2e,
+    );
+    let cart_buf: Vec<f64> = if nroots > device_ceiling {
         let nci = ncart(li);
         let nck = ncart(lk);
         let block_len = nci * nck;
@@ -1839,7 +1970,7 @@ fn launch_center_2c2e_typed<F: CintFloat>(
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -2144,6 +2275,10 @@ mod tests {
         let class_factor =
             [((PI * PI * PI) * 2.0 / SQRTPI * common_fac_sp(0) * common_fac_sp(0)) as f32];
         let factor_h = client.create_from_slice(f32::as_bytes(&class_factor));
+        // The extended-Rys tables are an unconditional kernel argument; an
+        // `nroots = 1` smoke launch never reads them.
+        let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+        let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
 
         center_2c2e_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
@@ -2156,6 +2291,7 @@ mod tests {
             unsafe { ArrayArg::from_raw_parts(pairs_h, pairs.len()) },
             unsafe { ArrayArg::from_raw_parts(shape_h, class_shape.len()) },
             unsafe { ArrayArg::from_raw_parts(factor_h, class_factor.len()) },
+            unsafe { ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN) },
             unsafe { ArrayArg::from_raw_parts(g_h, 3) },
             unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
             PIE4 as f32,

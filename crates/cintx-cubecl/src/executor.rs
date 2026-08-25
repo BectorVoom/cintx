@@ -73,8 +73,14 @@ impl BackendCache {
         Ok(resolved)
     }
 
+    /// Number of resolved backends held.
     pub fn len(&self) -> usize {
         self.entries.read().expect("backend cache poisoned").len()
+    }
+
+    /// Has no backend been resolved through this cache yet?
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -201,6 +207,81 @@ impl CubeClExecutor {
         kernels::two_electron::evaluate_2e_quartet_batch_with(
             &backend, &resident, quartets, options,
         )
+    }
+
+    /// Evaluate a shell-pair work list as `int1e_{ovlp,kin,nuc}_sph` through
+    /// this executor's cached client (Task 35-F2).
+    ///
+    /// The pair/triple batches were reachable only from this crate until now,
+    /// which meant a safe-API caller had to depend on the backend crate to
+    /// batch anything but `int2e`. These methods are what let the facade offer
+    /// them without that dependency.
+    pub fn evaluate_1e_pairs(
+        &self,
+        intent: &BackendIntent,
+        operator: kernels::one_electron::OneEOperator,
+        shells: &[kernels::two_electron::BatchShell],
+        atoms: &[kernels::one_electron::BatchAtom],
+        pairs: &[[u32; 2]],
+    ) -> Result<kernels::one_electron::OneEBatchOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        kernels::one_electron::evaluate_1e_pair_batch(&backend, operator, shells, atoms, pairs)
+    }
+
+    /// Evaluate a shell-pair work list as `int1e_ip{ovlp,kin,nuc}_sph`
+    /// (Task 35-F2).
+    pub fn evaluate_1e_deriv_pairs(
+        &self,
+        intent: &BackendIntent,
+        operator: kernels::one_electron::OneEDerivOperator,
+        shells: &[kernels::two_electron::BatchShell],
+        atoms: &[kernels::one_electron::BatchAtom],
+        pairs: &[[u32; 2]],
+    ) -> Result<kernels::one_electron::OneEDerivBatchOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        kernels::one_electron::evaluate_1e_deriv_pair_batch(
+            &backend, operator, shells, atoms, pairs,
+        )
+    }
+
+    /// Evaluate a shell-pair work list as `int2c2e_sph` (Task 35-F2).
+    pub fn evaluate_2c2e_pairs(
+        &self,
+        intent: &BackendIntent,
+        shells: &[kernels::two_electron::BatchShell],
+        pairs: &[[u32; 2]],
+    ) -> Result<kernels::center_2c2e::TwoC2eBatchOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        kernels::center_2c2e::evaluate_2c2e_pair_batch(&backend, shells, pairs)
+    }
+
+    /// Evaluate a shell-triple work list as `int3c2e_sph` (Task 35-F2).
+    pub fn evaluate_3c2e_triples(
+        &self,
+        intent: &BackendIntent,
+        shells: &[kernels::two_electron::BatchShell],
+        triples: &[[u32; 3]],
+    ) -> Result<kernels::center_3c2e::ThreeC2eBatchOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        kernels::center_3c2e::evaluate_3c2e_triple_batch(&backend, shells, triples)
+    }
+
+    /// Evaluate a shell-triple work list as `int3c2e_ip{1,2}_sph`
+    /// (Task 35-F2).
+    pub fn evaluate_3c2e_deriv_triples(
+        &self,
+        intent: &BackendIntent,
+        family: kernels::center_3c2e::ThreeC2eDerivFamily,
+        shells: &[kernels::two_electron::BatchShell],
+        triples: &[[u32; 3]],
+    ) -> Result<kernels::center_3c2e::ThreeC2eDerivBatchOutput, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        kernels::center_3c2e::evaluate_3c2e_deriv_triple_batch(&backend, family, shells, triples)
     }
 
     /// Submit all primitive Cartesian `(s s | s s)` chunks before one

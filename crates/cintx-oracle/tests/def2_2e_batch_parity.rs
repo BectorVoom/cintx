@@ -279,8 +279,17 @@ fn def2_svp_batch_matches_vendor_and_per_quartet() {
 
 /// A batch whose class needs more Rys roots than the device kernel supports is
 /// rejected as a whole — no partially-zeroed output.
+///
+/// What "supports" means moved in task 33-03. An `(f,f|f,f)` quartet is
+/// `nroots = 7`: above the base ceiling of 5, but inside the extended one once
+/// `int2e` is flipped onto the inline Wheeler entry and the backend's FMA probe
+/// has passed. So the assertion follows the ceiling rather than a constant —
+/// what must never happen, in either build, is the middle outcome where the
+/// batch returns something for a class it cannot evaluate.
 #[test]
 fn batch_rejects_classes_above_the_device_rys_ceiling() {
+    use cintx_cubecl::{RysFamily, device_nroots_ceiling};
+
     let shell = BatchShell {
         l: 3,
         nprim: 1,
@@ -295,12 +304,22 @@ fn batch_rejects_classes_above_the_device_rys_ceiling() {
     })
     .expect("cpu backend");
 
-    // l-sum 12 -> nroots 7, above the device ceiling of 5.
+    // l-sum 12 -> nroots 7.
+    let ceiling = device_nroots_ceiling(&backend, RysFamily::Int2e);
     let result = evaluate_2e_quartet_batch(&backend, &[shell], &[[0, 0, 0, 0]]);
-    assert!(
-        result.is_err(),
-        "an (f,f|f,f) batch must be rejected, not silently zeroed"
-    );
+    if ceiling >= 7 {
+        let batch = result.expect("an (f,f|f,f) batch is inside the extended Rys ceiling");
+        assert!(
+            batch.values.iter().any(|v| v.abs() > 1e-18),
+            "an accepted (f,f|f,f) batch must not come back all zeros"
+        );
+    } else {
+        assert!(
+            result.is_err(),
+            "an (f,f|f,f) batch is nroots=7, past the ceiling {ceiling}, and must \
+             be rejected rather than silently zeroed"
+        );
+    }
 }
 
 /// Task 34-C — a device-resident basis must change the transfer accounting and

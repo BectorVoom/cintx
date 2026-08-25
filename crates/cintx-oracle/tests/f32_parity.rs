@@ -21,6 +21,53 @@
 #![cfg(any(feature = "cpu", feature = "rocm"))]
 
 use cintx_core::{Atom, BasisSet, NuclearModel, OperatorId, Representation, Shell, ShellTuple};
+
+/// Every `OperatorId` this file still spells as a manifest position, paired with
+/// the symbol the test using it is named after.
+///
+/// A manifest position is not a name: nothing about `OperatorId::new(23)` says
+/// `int3c2e_sph`, so when a regeneration inserts a row above it the literal
+/// keeps compiling and starts meaning a different operator. That is not
+/// hypothetical — `int2e_stg_ip1_sph` was written as `107`, a later row shifted
+/// it to 108, and `collect_stg_ip1_f32` silently began evaluating the *scalar*
+/// `int2e_stg_sph` instead. It surfaced only because the two have different
+/// component counts; a shift onto a same-shaped operator would have compared
+/// cintx against the vendor for two different integrals with no length to
+/// disagree about.
+const HARDCODED_OPERATOR_IDS: &[(u32, &str)] = &[
+    (0, "int1e_ovlp_cart"),
+    (1, "int1e_ovlp_sph"),
+    (3, "int1e_kin_cart"),
+    (4, "int1e_kin_sph"),
+    (6, "int1e_nuc_cart"),
+    (7, "int1e_nuc_sph"),
+    (10, "int2e_sph"),
+    (13, "int2c2e_sph"),
+    (18, "int3c1e_sph"),
+    (23, "int3c2e_sph"),
+];
+
+/// The guard: each position above still resolves to the symbol its test claims.
+///
+/// Fixing this is a one-line edit — swap the literal for
+/// `Resolver::descriptor_by_symbol("...").id`, the way `collect_stg_ip1_f32`
+/// now does — so a failure here is a prompt, not a puzzle.
+#[test]
+fn operator_ids_used_here_still_resolve_to_their_symbols() {
+    use cintx_ops::resolver::Resolver;
+
+    for &(id, symbol) in HARDCODED_OPERATOR_IDS {
+        let descriptor = Resolver::descriptor_by_symbol(symbol)
+            .unwrap_or_else(|e| panic!("{symbol} must be in the manifest: {e}"));
+        assert_eq!(
+            descriptor.id.raw(),
+            id,
+            "{symbol} moved to manifest position {} but this file still passes \
+             OperatorId::new({id}); resolve it by symbol instead",
+            descriptor.id.raw()
+        );
+    }
+}
 use cintx_oracle::compare::f32_tolerance_for_family;
 use cintx_rs::SessionRequest;
 use cintx_runtime::ExecutionOptions;
@@ -1173,13 +1220,25 @@ fn collect_stg_ip1_f32(
     basis: &cintx_core::BasisSet,
     tuple_shells: &[Arc<cintx_core::Shell>],
 ) -> Vec<f32> {
+    use cintx_ops::resolver::Resolver;
     use cintx_runtime::ExecutionOptions;
-    // OperatorId 107 = int2e_stg_ip1_sph (int2e_stg_sph is 106; ip1 is next in manifest).
-    const STG_IP1_SPH_OPERATOR_ID: u32 = 107;
+
+    // Resolved by SYMBOL, not by manifest position. The literal `107` that stood
+    // here was written when `int2e_stg_ip1_sph` sat at that index; a later
+    // manifest regeneration inserted a row above it and shifted it to 108, so
+    // this helper silently started evaluating `int2e_stg_sph` — the *scalar*
+    // STG integral, `ncomp = 1` — and the test failed on the output length
+    // rather than on anything about f32. Nothing about a hard-coded index says
+    // which operator it means, which is why it could go stale unnoticed;
+    // `operator_ids_used_here_still_resolve_to_their_symbols` guards the ones
+    // this file still spells numerically.
+    let operator_id = Resolver::descriptor_by_symbol("int2e_stg_ip1_sph")
+        .expect("int2e_stg_ip1_sph must be in the manifest under the with-f12 profile")
+        .id;
     let shell_tuple = ShellTuple::try_from_iter(tuple_shells.iter().cloned())
         .expect("ShellTuple for 4-shell f12 ip1 quartet");
     let request = SessionRequest::new(
-        OperatorId::new(STG_IP1_SPH_OPERATOR_ID),
+        operator_id,
         Representation::Spheric,
         basis,
         shell_tuple,

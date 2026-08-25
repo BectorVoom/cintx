@@ -3,6 +3,12 @@
 //! Validates Condon-Shortley coefficient matrices against libcint cart2sph.c
 //! and verifies transform correctness for key shell pairs.
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+
 use cintx_cubecl::transform::c2s::{
     C2S_L0, C2S_L1, C2S_L2, C2S_L3, C2S_L4, cart_to_sph_1e, cart_to_spheric_staging, ncart, nsph,
 };

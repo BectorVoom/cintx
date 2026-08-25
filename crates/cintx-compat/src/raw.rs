@@ -541,7 +541,7 @@ pub struct RawAtmView<'a> {
 
 impl<'a> RawAtmView<'a> {
     pub fn new(data: &'a [i32]) -> Result<Self, cintxRsError> {
-        if data.len() % ATM_SLOTS != 0 {
+        if !data.len().is_multiple_of(ATM_SLOTS) {
             return Err(cintxRsError::InvalidAtmLayout {
                 slot_width: ATM_SLOTS,
                 provided: data.len(),
@@ -632,7 +632,7 @@ pub struct RawBasView<'a> {
 
 impl<'a> RawBasView<'a> {
     pub fn new(data: &'a [i32]) -> Result<Self, cintxRsError> {
-        if data.len() % BAS_SLOTS != 0 {
+        if !data.len().is_multiple_of(BAS_SLOTS) {
             return Err(cintxRsError::InvalidBasLayout {
                 slot_width: BAS_SLOTS,
                 provided: data.len(),
@@ -751,7 +751,7 @@ impl<'a> EcpBasArray<'a> {
     /// `cintxRsError::InvalidBasLayout` if `data.len()` is not a multiple
     /// of `BAS_SLOTS` (same error variant `RawBasView::new` uses).
     pub fn new(data: &'a [i32]) -> Result<Self, cintxRsError> {
-        if data.len() % BAS_SLOTS != 0 {
+        if !data.len().is_multiple_of(BAS_SLOTS) {
             return Err(cintxRsError::InvalidBasLayout {
                 slot_width: BAS_SLOTS,
                 provided: data.len(),
@@ -856,6 +856,17 @@ impl<'a> RawEnvView<'a> {
     }
 }
 
+/// Report the workspace one `eval_raw` call of `api` will need.
+/// # Safety
+/// This mirrors libcint's C entry point, where the caller — not the callee —
+/// owns the consistency of the environment triple. `atm`, `bas` and `env` must
+/// be one coherent set: every `PTR_*` offset stored in `atm`/`bas` must address
+/// a valid range of `env`, and `shls` must index shells that `bas` actually
+/// describes. The layout checks reject the malformed cases they can see and
+/// return a typed error rather than reading out of bounds, but a triple that is
+/// internally consistent yet describes a different molecule than the caller
+/// intends cannot be detected here and yields wrong numbers, not an error.
+/// `opt`, when supplied, must have been initialized against this same triple.
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn query_workspace_raw(
     api: RawApiId,
@@ -870,6 +881,17 @@ pub unsafe fn query_workspace_raw(
     Ok(prepared.query)
 }
 
+/// Evaluate `api` for one shell tuple, writing into `out`.
+/// # Safety
+/// This mirrors libcint's C entry point, where the caller — not the callee —
+/// owns the consistency of the environment triple. `atm`, `bas` and `env` must
+/// be one coherent set: every `PTR_*` offset stored in `atm`/`bas` must address
+/// a valid range of `env`, and `shls` must index shells that `bas` actually
+/// describes. The layout checks reject the malformed cases they can see and
+/// return a typed error rather than reading out of bounds, but a triple that is
+/// internally consistent yet describes a different molecule than the caller
+/// intends cannot be detected here and yields wrong numbers, not an error.
+/// `opt`, when supplied, must have been initialized against this same triple.
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn eval_raw(
     api: RawApiId,
@@ -1038,7 +1060,7 @@ pub unsafe fn eval_raw(
         });
     }
 
-    let schedule = schedule_chunks(&plan.workspace);
+    let schedule = schedule_chunks(plan.workspace);
 
     let mut total_not0: i32 = 0;
     let mut total_transfer_bytes: usize = 0;
@@ -1603,8 +1625,10 @@ fn representation_from_descriptor(
 }
 
 fn execution_options_from_opt(opt: Option<&RawOptimizerHandle>) -> ExecutionOptions {
-    let mut options = ExecutionOptions::default();
-    options.profile_label = Some(active_manifest_profile());
+    let mut options = ExecutionOptions {
+        profile_label: Some(active_manifest_profile()),
+        ..ExecutionOptions::default()
+    };
     if let Some(opt) = opt {
         options.memory_limit_bytes = opt.workspace_hint_bytes();
     }

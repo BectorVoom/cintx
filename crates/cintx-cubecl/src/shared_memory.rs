@@ -6,6 +6,21 @@
 //! loading, capacity checks against hardware limits (`max_shared_memory_size`),
 //! pure host-side size calculations, and transactional fallback mechanisms.
 
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+
 use cintx_core::cintxRsError;
 use cubecl::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -15,9 +30,10 @@ use serde::{Deserialize, Serialize};
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// High-level shared-memory execution variant.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum SharedVariant {
     /// Correct batched control; one independent item per lane (direct global access).
+    #[default]
     NoSharedLane,
     /// Cooperatively stage small reused descriptor/table data into shared memory.
     SharedDescriptor,
@@ -31,12 +47,6 @@ pub enum SharedVariant {
     SharedDoubleBuffer,
     /// Fused stages when global traffic falls without useful cross-unit reuse.
     FusedNoShared,
-}
-
-impl Default for SharedVariant {
-    fn default() -> Self {
-        Self::NoSharedLane
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,7 +248,7 @@ pub fn cooperative_load_slice<F: Float + CubeElement>(
         if idx < src_len {
             dst[idx] = src[src_offset + idx];
         } else {
-            dst[idx] = F::new(0.0);
+            dst[idx] = F::new(0.0_f32);
         }
         idx += stride;
     }
@@ -253,7 +263,7 @@ pub fn cooperative_zero_shared<F: Float + CubeElement>(dst: &mut SharedMemory<F>
 
     let mut idx = tid;
     while idx < dst_len {
-        dst[idx] = F::new(0.0);
+        dst[idx] = F::new(0.0_f32);
         idx += stride;
     }
     sync_cube();
@@ -270,7 +280,7 @@ pub fn cooperative_load_or_zero<F: Float + CubeElement>(
     if active {
         dst[lane] = val;
     } else {
-        dst[lane] = F::new(0.0);
+        dst[lane] = F::new(0.0_f32);
     }
     sync_cube();
 }
@@ -540,6 +550,95 @@ pub fn calc_sigma_layout(
     ))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 6b. Extended-Rys (nroots 6..=12) inline scratch — private, not shared
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Per-work-item scratch words the inline extended-Rys entry
+/// (`math::rys_wheeler::rys_roots_ext_dev`) allocates, for one `nroots`.
+///
+/// # Why this is private memory and not a shared-memory tile
+///
+/// Every buffer the extended path needs is a `#[cube]`-local
+/// `Array::<f64>::new(<comptime>)`, so it lands in thread-private storage —
+/// registers where they fit, the backend's local/global spill space where they
+/// do not. It never enters the shared-memory budget, which is what makes the
+/// path issuable at all: the dd arms need ~6 KB per work item, and 16 units of
+/// that is ~100 KB, comfortably over the 64 KB of shared memory a GPU cube
+/// typically has. Sizing it as a shared tile would have forced the choice
+/// between a launch that cannot be issued and a silent drop to global scratch;
+/// making it private takes the choice away and leaves only an occupancy cost,
+/// which [`ext_rys_max_units`] is there to bound.
+///
+/// # Where the numbers come from
+///
+/// Each term below is the allocation list of one arm of `rys_roots_ext_dev`,
+/// with `n = nroots`:
+///
+/// | arm | buffers | words |
+/// |---|---|---|
+/// | eigensolve tail (`ext_eigen_transform_dev`) | `diag`,`offd`,`eig`,`dwork`,`ework`,`dorig`,`eorig`,`est` (n each) + `c0`,`z` (n² each) | `8n + 2n²` |
+/// | f64 Jacobi | `mom` (2n+2), `a`,`b` (n), `s0`,`sm`,`sk` (2n) | `8n + 2` |
+/// | f64 Schmidt | `fmt_ints` (2n+2), `cs` ((n+1)²), `rt` (n), `acomp` (n²), `vscr` (n+1) | `2n² + 6n + 4` |
+/// | dd Schmidt | `fmh`,`fml` (2n+2), `csh`,`csl`,`csf` ((n+1)²), `rt` (n), `acomp` (n²), `vh`,`vl` (n+1) | `4n² + 13n + 9` |
+/// | dd Jacobi / Laguerre | `momh`,`moml` (2n+2), `alh`,`all_`,`beh`,`bel`,`s0h`..`skl` (2n), `ah`,`al`,`bh`,`bl`,`da`,`db` (n) | `30n + 4` |
+///
+/// A given `nroots` instantiates the two arms its dispatch selects, plus the
+/// f64 Schmidt recovery arm `segment_solve` falls back to — allocated a second
+/// time because it is a second call site — plus one word of error flag.
+/// `ext_rys_scratch_words_match_kernel` pins this arithmetic to the code.
+#[must_use]
+pub const fn ext_rys_scratch_words(nroots: usize) -> usize {
+    let n = nroots;
+    let eigen = 8 * n + 2 * n * n;
+    let jacobi_f64 = 8 * n + 2;
+    let schmidt_f64 = 2 * n * n + 6 * n + 4;
+    let lschmidt = 4 * n * n + 13 * n + 9;
+    let lwheeler = 30 * n + 4;
+
+    // The recovery arm is a second `ext_schmidt_f64_dev` call site, so its
+    // buffers are allocated again rather than reused.
+    let recovery = schmidt_f64;
+    let flag = 1;
+
+    let arms = if n <= 7 {
+        // f64 Jacobi (x <= 11) + f64 Schmidt (x > 11).
+        jacobi_f64 + eigen + schmidt_f64
+    } else if n == 8 {
+        // f64 Jacobi (x <= 11) + dd Schmidt (x > 11).
+        jacobi_f64 + eigen + lschmidt
+    } else {
+        // dd Jacobi (x <= bp) and dd Laguerre (x > bp) share one body with a
+        // runtime selector, so one allocation set covers both.
+        lwheeler + eigen
+    };
+    arms + recovery + flag
+}
+
+/// [`ext_rys_scratch_words`] in bytes.
+#[must_use]
+pub const fn ext_rys_scratch_bytes(nroots: usize) -> usize {
+    ext_rys_scratch_words(nroots) * std::mem::size_of::<f64>()
+}
+
+/// Largest per-cube unit count whose extended-Rys private scratch stays within
+/// `budget_bytes`.
+///
+/// The extended path pays its scratch per *work item*, so the lever that keeps
+/// a launch inside a device's local-memory budget is the unit count, not a tile
+/// size. Returns at least 1: a cube of one unit is always issuable, and a
+/// budget too small even for that is a device fact to report rather than a
+/// launch to shrink further.
+#[must_use]
+pub fn ext_rys_max_units(nroots: usize, budget_bytes: usize) -> u32 {
+    let per_unit = ext_rys_scratch_bytes(nroots);
+    if per_unit == 0 {
+        return 1;
+    }
+    let units = budget_bytes / per_unit;
+    u32::try_from(units.max(1)).unwrap_or(u32::MAX)
+}
+
 /// Compute exact `SharedLayout` for Math kernels (Rys/Wheeler/Schmidt/Eigensolver).
 pub fn calc_math_layout(
     math_kind: &str,
@@ -551,6 +650,11 @@ pub fn calc_math_layout(
         "jacobi_tridiag" | "llaguerre_tridiag" => (SharedVariant::SharedDescriptor, n * 4, 0),
         "schmidt" | "lschmidt" => (SharedVariant::SharedTiled, n, n * n),
         "cint_diagonalize" => (SharedVariant::SharedTiled, n, n * n),
+        // The inline extended-Rys entry allocates its scratch per work item in
+        // private memory, so it contributes nothing to the shared budget; the
+        // footprint it does have is reported by `ext_rys_scratch_words` and
+        // bounded by `ext_rys_max_units`.
+        "rys_roots_ext" => (SharedVariant::NoSharedLane, 0, 0),
         _ => (SharedVariant::NoSharedLane, 0, 0),
     };
 
@@ -704,7 +808,7 @@ mod tests {
         if tid < 128 && tid < input.len() {
             smem[tid] = input[tid];
         } else if tid < 128 {
-            smem[tid] = F::new(0.0);
+            smem[tid] = F::new(0.0_f32);
         }
         sync_cube();
 
@@ -812,5 +916,91 @@ mod tests {
         let formatted = serde_json::to_string_pretty(&catalog).expect("serialize catalog");
         std::fs::write(path, formatted).expect("write layout catalog");
         assert!(path.is_file());
+    }
+
+    /// Task 33-02 acceptance: the reported per-work-item size matches the
+    /// buffers `rys_roots_ext_dev` actually allocates, summed by hand at the
+    /// widest instantiation (`nroots = 12`).
+    ///
+    /// At `nroots = 12` the dispatch is dd Jacobi / dd Laguerre (one body,
+    /// runtime selector), the eigensolve tail, and the f64 Schmidt recovery
+    /// arm:
+    ///
+    /// | buffer group | words |
+    /// |---|---|
+    /// | dd Wheeler: `momh`,`moml` (26) + 10×`2n` (240) + 6×`n` (72) + `alh`..`bel` counted in the 10 | 364 |
+    /// | eigensolve: 8×`n` (96) + 2×`n²` (288) | 384 |
+    /// | f64 Schmidt recovery: `fmt_ints` 26 + `cs` 169 + `rt` 12 + `acomp` 144 + `vscr` 13 | 364 |
+    /// | error flag | 1 |
+    #[test]
+    fn ext_rys_scratch_words_match_kernel_at_nroots_12() {
+        let n = 12usize;
+
+        // dd Wheeler arm: momh+moml (2n+2 each), then the ten 2n buffers
+        // (alh, all_, beh, bel, s0h, s0l, smh, sml, skh, skl) and the six n
+        // buffers (ah, al, bh, bl, da, db).
+        let lwheeler = 2 * (2 * n + 2) + 10 * (2 * n) + 6 * n;
+        assert_eq!(lwheeler, 364);
+
+        // Eigensolve tail: diag, offd, eig, dwork, ework, dorig, eorig, est
+        // (n each) plus c0 and z (n² each).
+        let eigen = 8 * n + 2 * n * n;
+        assert_eq!(eigen, 384);
+
+        // f64 Schmidt recovery arm: fmt_ints (2n+2), cs ((n+1)²), rt (n),
+        // acomp (n²), vscr (n+1).
+        let schmidt = (2 * n + 2) + (n + 1) * (n + 1) + n + n * n + (n + 1);
+        assert_eq!(schmidt, 364);
+
+        assert_eq!(
+            ext_rys_scratch_words(n),
+            lwheeler + eigen + schmidt + 1,
+            "the reported extended-Rys scratch size drifted from the kernel's \
+             allocation list; recount both before changing either"
+        );
+        assert_eq!(ext_rys_scratch_words(n), 1113);
+        assert_eq!(ext_rys_scratch_bytes(n), 1113 * 8);
+    }
+
+    /// Every order in the validated 6..=12 range stays under 16 KiB of private
+    /// scratch per work item — the number that decides how many units a cube
+    /// can carry.
+    ///
+    /// The footprint is deliberately **not** asserted to grow with `nroots`.
+    /// It dips at `nroots = 9`: order 8 is the only one whose large-`x` arm is
+    /// the dd Schmidt solver, which carries three `(n+1)²` coefficient matrices
+    /// in dd, and that outweighs the dd Wheeler scratch orders 9..12 use. The
+    /// peak is at 12 regardless, so that is where the sizing is pinned.
+    #[test]
+    fn ext_rys_scratch_stays_within_the_private_budget() {
+        for n in 6..=12usize {
+            assert!(
+                ext_rys_scratch_bytes(n) <= 16 * 1024,
+                "nroots={n} needs {} bytes of private scratch per work item",
+                ext_rys_scratch_bytes(n)
+            );
+        }
+        // The dd Schmidt arm makes order 8 a local peak, and order 12 the global one.
+        assert!(ext_rys_scratch_words(8) > ext_rys_scratch_words(9));
+        assert_eq!(
+            (6..=12).map(ext_rys_scratch_words).max(),
+            Some(ext_rys_scratch_words(12))
+        );
+    }
+
+    /// The extended path never enters the shared-memory budget: its scratch is
+    /// private, so `calc_math_layout` reports zero shared bytes and the unit
+    /// count is what bounds the footprint instead.
+    #[test]
+    fn ext_rys_takes_no_shared_memory_and_caps_units_instead() {
+        let layout = calc_math_layout("rys_roots_ext", 12, 256).expect("layout");
+        assert_eq!(layout.variant, SharedVariant::NoSharedLane);
+        assert_eq!(layout.total_bytes, 0);
+        assert!(validate_shared_layout_bounds(&layout, 0).is_ok());
+
+        // 64 KiB of local budget carries 7 units at nroots=12 (1113 words each);
+        // a budget too small even for one still yields an issuable cube.
+        assert_eq!(ext_rys_max_units(12, 64 * 1024), 7);
+        assert_eq!(ext_rys_max_units(12, 1024), 1);
     }
 }

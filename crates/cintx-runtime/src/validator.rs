@@ -157,7 +157,7 @@ pub fn validate_f12_env_params(
                         .to_owned(),
                 });
             }
-            Some(z) if z == 0.0_f64 => {
+            Some(0.0) => {
                 return Err(cintxRsError::InvalidEnvParam {
                     param: "PTR_F12_ZETA",
                     reason: "env[9] (PTR_F12_ZETA) must be non-zero for F12/STG/YP integrals"
@@ -186,16 +186,12 @@ pub fn validate_rinv_orig_env_params(
     // W5-06: `prinvp` is the X2C base rinv family. Its name has no "iprinv"
     // substring, so without this arm it would reach the kernel with no origin and
     // fail deep inside instead of at the typed boundary.
-    if operator_name.contains("iprinv") || operator_name == "prinvp" {
-        match params.rinv_orig {
-            None => {
-                return Err(cintxRsError::InvalidEnvParam {
-                    param: "PTR_RINV_ORIG",
-                    reason: "env[4..6] (PTR_RINV_ORIG) must be set for iprinv operators".to_owned(),
-                });
-            }
-            _ => {}
-        }
+    if (operator_name.contains("iprinv") || operator_name == "prinvp") && params.rinv_orig.is_none()
+    {
+        return Err(cintxRsError::InvalidEnvParam {
+            param: "PTR_RINV_ORIG",
+            reason: "env[4..6] (PTR_RINV_ORIG) must be set for iprinv operators".to_owned(),
+        });
     }
     Ok(())
 }
@@ -213,13 +209,13 @@ pub fn validate_common_orig_env_params(
     _operator_name: &str,
     params: &OperatorEnvParams,
 ) -> Result<(), cintxRsError> {
-    if let Some(origin) = params.common_orig {
-        if origin.iter().any(|v| !v.is_finite()) {
-            return Err(cintxRsError::InvalidEnvParam {
-                param: "PTR_COMMON_ORIG",
-                reason: "env[1..3] (PTR_COMMON_ORIG) gauge origin must be finite".to_owned(),
-            });
-        }
+    if let Some(origin) = params.common_orig
+        && origin.iter().any(|v| !v.is_finite())
+    {
+        return Err(cintxRsError::InvalidEnvParam {
+            param: "PTR_COMMON_ORIG",
+            reason: "env[1..3] (PTR_COMMON_ORIG) gauge origin must be finite".to_owned(),
+        });
     }
     Ok(())
 }

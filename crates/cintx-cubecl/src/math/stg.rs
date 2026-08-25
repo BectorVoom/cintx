@@ -27,6 +27,25 @@
 // value (1/sqrt(2) appears in every cosine table), but they are quadrature data,
 // not derived constants, and must stay bit-for-bit what upstream ships.
 #![allow(clippy::approx_constant)]
+// Transcribed verbatim from vendored libcint 6.1.3. Result compatibility with
+// upstream is decided by the exact bits these literals feed the kernels, so a
+// literal is never truncated to the shortest form that round-trips — the same
+// provenance rationale the `clippy::approx_constant` allows in this crate carry.
+#![allow(clippy::excessive_precision)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
 
 use super::roots_xw_data::{data_w, data_x};
 use cintx_core::CintFloat;
@@ -381,37 +400,17 @@ pub fn stg_roots_host<F: CintFloat>(nroots: usize, ta: F, ua: F) -> (Vec<F>, Vec
     let ta_f64 = ta.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
     let ua_f64 = ua.to_f64().expect("CintFloat is f32|f64; to_f64 is total");
 
-    // D-07: clamp t to T_MAX to prevent out-of-bounds table lookup.
-    let t = ta_f64.min(T_MAX);
-
-    // Compute normalized t coordinate (tt)
-    let tt = if t > 1.0_f64 {
-        t.ln() * 0.9102392266268373_f64 + 1.0_f64 // log(3)+1 scaling
-    } else {
-        t.sqrt()
-    };
-
-    // Compute normalized u coordinate (uu)
-    let uu = ua_f64.log10();
-
-    // Compute t grid index and normalized t in [-1, 1]
-    let it = tt.floor() as usize;
-    let tt_norm = 2.0_f64 * (tt - it as f64) - 1.0_f64;
-
-    // Compute u grid index and normalized u in [-1, 1]
-    // iu range: 0..=9 (corresponds to u in [1e-7, 1e3])
-    let iu = (uu + 7.0_f64).floor() as usize;
-    let uu_norm = 2.0_f64 * (uu - (iu as f64 - 7.0_f64)) - 1.0_f64;
-
-    // Table offset: stride is nroots * 196 per (it, iu) cell.
-    // DATA_X base offset: (nroots-1)*nroots/2 * 19600 (skips earlier nroots tables).
-    let table_base = (nroots - 1) * nroots / 2 * 19600;
-    let cell_offset = nroots * 196 * (iu + it * 10);
+    // The t/u clamp, the normalized Clenshaw coordinates and the table cell all
+    // come from `stg_table_cell`, which the device path calls too — one
+    // definition of the lookup rather than two that can drift.
+    let cell = stg_table_cell(nroots, ta_f64, ua_f64);
+    let tt_norm = cell.tt_norm;
+    let uu_norm = cell.uu_norm;
 
     let data_x = data_x();
     let data_w = data_w();
-    let x_slice = &data_x[table_base + cell_offset..];
-    let w_slice = &data_w[table_base + cell_offset..];
+    let x_slice = &data_x[cell.offset..];
+    let w_slice = &data_w[cell.offset..];
 
     // Intermediate buffers (f64 — internal computation on FROZEN tables)
     let mut im = vec![0.0_f64; 14 * nroots];
@@ -542,5 +541,400 @@ mod tests {
             roots_a[0].is_finite() && roots_a[0] != 0.0,
             "root must be finite and non-zero"
         );
+    }
+}
+
+// ===========================================================================
+//  Device STG roots (post-wave-5 Task B).
+//
+//  `stg_roots_dev` is `stg_roots_host`'s Clenshaw/DCT pipeline as a `#[cube]`
+//  callee, so the F12 G-tensor fill can run inside a kernel instead of forcing
+//  a host round trip once per primitive quartet.
+//
+//  # The host/device split, and why it falls where it does
+//
+//  What stays on the host is the **table lookup**, not the arithmetic:
+//  [`stg_table_cell`] turns `(nroots, ta, ua)` into a normalized
+//  `(tt_norm, uu_norm)` pair and a flat offset into `DATA_X`/`DATA_W`. Two
+//  reasons, and both are about fidelity rather than convenience:
+//
+//  1. **`log10` has no device equivalent that is bit-identical.** The host
+//     computes `uu = ua.log10()`; CubeCL offers `ln` but not `log10`, and
+//     `ln(x) * LOG10_E` differs in the last bit. That bit decides
+//     `iu = floor(uu + 7)` at a cell boundary, which selects a *different
+//     table cell* — a whole different answer, not a rounding difference.
+//  2. **The tables are 14 MB each.** Resolving the cell host-side means a
+//     launch uploads the handful of `196 * nroots` windows its rows actually
+//     touch instead of 28 MB of Chebyshev coefficients.
+//
+//  Everything downstream — the two Clenshaw recurrences, the DCT, the
+//  `1/sqrt(ua)` weight scaling — runs on device in the same order as the host,
+//  which is what `stg_roots_dev_matches_host` checks bit for bit.
+// ===========================================================================
+
+use cubecl::prelude::*;
+
+/// Chebyshev coefficients one `(nroots, it, iu)` cell holds, per table.
+pub const STG_CELL_STRIDE: usize = 196;
+
+/// Where one `(ta, ua)` pair lands in the frozen `DATA_X` / `DATA_W` tables,
+/// plus the normalized Clenshaw coordinates that go with it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StgTableCell {
+    /// Flat offset of the cell in `DATA_X` / `DATA_W` (the same offset in both).
+    pub offset: usize,
+    /// Clenshaw coordinate along `t`, normalized to `[-1, 1]`.
+    pub tt_norm: f64,
+    /// Clenshaw coordinate along `u`, normalized to `[-1, 1]`.
+    pub uu_norm: f64,
+}
+
+/// Resolve the table cell for `(nroots, ta, ua)`.
+///
+/// Extracted verbatim from [`stg_roots_host`]'s prologue so the host and device
+/// paths cannot drift: `stg_roots_host` now calls this, and the device launcher
+/// calls it to decide which window to upload.
+#[must_use]
+pub fn stg_table_cell(nroots: usize, ta: f64, ua: f64) -> StgTableCell {
+    // D-07: clamp t to T_MAX to prevent out-of-bounds table access.
+    let t = ta.min(T_MAX);
+    let tt = if t > 1.0_f64 {
+        t.ln() * 0.9102392266268373_f64 + 1.0_f64 // log(3)+1 scaling
+    } else {
+        t.sqrt()
+    };
+    let uu = ua.log10();
+
+    let it = tt.floor() as usize;
+    let tt_norm = 2.0_f64 * (tt - it as f64) - 1.0_f64;
+    let iu = (uu + 7.0_f64).floor() as usize;
+    let uu_norm = 2.0_f64 * (uu - (iu as f64 - 7.0_f64)) - 1.0_f64;
+
+    let table_base = (nroots - 1) * nroots / 2 * 19600;
+    let cell_offset = nroots * STG_CELL_STRIDE * (iu + it * 10);
+    StgTableCell {
+        offset: table_base + cell_offset,
+        tt_norm,
+        uu_norm,
+    }
+}
+
+/// The `DATA_X` window a set of cells needs, as `(lo, slice)`.
+///
+/// `lo` is the flat table index the returned slice starts at, so a row whose
+/// cell offset is `o` reads the device array from `o - lo`. The window is sized
+/// to cover every cell plus the `nroots * STG_CELL_STRIDE` the Clenshaw pass
+/// reads from the last one.
+#[must_use]
+pub fn stg_table_window(
+    nroots: usize,
+    offsets: &[usize],
+) -> (usize, &'static [f64], &'static [f64]) {
+    let span = nroots * STG_CELL_STRIDE;
+    let lo = offsets.iter().copied().min().unwrap_or(0);
+    let hi = offsets.iter().copied().max().unwrap_or(0) + span;
+    let x = data_x();
+    let w = data_w();
+    let hi = hi.min(x.len()).min(w.len());
+    (lo, &x[lo..hi], &w[lo..hi])
+}
+
+/// The `COS_14_14` DCT matrix, for upload to the device.
+#[must_use]
+pub fn stg_cos_table() -> &'static [f64] {
+    &COS_14_14
+}
+
+/// Device `_clenshaw_dc`: the paired Clenshaw recurrence over the `u` axis.
+///
+/// `x_off` is where this row's cell starts in `tab`; `rr_off` where its 14×nroots
+/// output starts in `rr`. Mirrors the host loop exactly, including the `k = 11`
+/// down-by-two schedule and the final half-weighted term.
+#[cube]
+fn clenshaw_dc_dev(
+    rr: &mut Array<f64>,
+    rr_off: u32,
+    tab: &Array<f64>,
+    x_off: u32,
+    u: f64,
+    #[comptime] nroots: u32,
+) {
+    let u2 = u * 2.0;
+    let mut d = Array::<f64>::new(14usize);
+    let mut g = Array::<f64>::new(14usize);
+
+    let mut i: u32 = 0;
+    while i < nroots {
+        let xr = x_off + i * 196u32;
+        let mut j: u32 = 0;
+        while j < 14u32 {
+            g[(j) as usize] = tab[(xr + 13u32 + 14u32 * j) as usize];
+            d[(j) as usize] = 0.0;
+            j += 1;
+        }
+        // Clenshaw backward recurrence from k = 11 down to 1, step -2 — six
+        // passes. Counted rather than written as `while k >= 1 { k -= 2 }`: the
+        // host runs that on `i32`, where the final `1 - 2` is `-1` and ends the
+        // loop, while `u32` would wrap to `u32::MAX` and never end.
+        let mut pass: u32 = 0;
+        while pass < 6u32 {
+            let k = 11u32 - 2u32 * pass;
+            let mut jj: u32 = 0;
+            while jj < 14u32 {
+                d[(jj) as usize] = u2 * g[(jj) as usize] - d[(jj) as usize]
+                    + tab[(xr + k + 1u32 + jj * 14u32) as usize];
+                g[(jj) as usize] =
+                    u2 * d[(jj) as usize] - g[(jj) as usize] + tab[(xr + k + jj * 14u32) as usize];
+                jj += 1;
+            }
+            pass += 1;
+        }
+        let mut j2: u32 = 0;
+        while j2 < 14u32 {
+            rr[(rr_off + j2 + 14u32 * i) as usize] =
+                u * g[(j2) as usize] - d[(j2) as usize] + tab[(xr + j2 * 14u32) as usize] * 0.5;
+            j2 += 1;
+        }
+        i += 1;
+    }
+}
+
+/// Device `_matmul_14_14`: `out = (1/7) * COS_14_14 * in`, per root.
+#[cube]
+fn matmul_14_14_dev(
+    imc: &mut Array<f64>,
+    im: &Array<f64>,
+    cos14: &Array<f64>,
+    #[comptime] nroots: u32,
+) {
+    // 1/7, spelled the way the C source spells it.
+    let o7 = 0.14285714285714285714_f64;
+    let mut d0 = Array::<f64>::new(14usize);
+    let mut i: u32 = 0;
+    while i < nroots {
+        let mut z: u32 = 0;
+        while z < 14u32 {
+            d0[(z) as usize] = 0.0;
+            z += 1;
+        }
+        let mut j: u32 = 0;
+        while j < 14u32 {
+            let s = im[(j + 14u32 * i) as usize];
+            let mut l: u32 = 0;
+            while l < 14u32 {
+                d0[(l) as usize] += s * cos14[(j * 14u32 + l) as usize];
+                l += 1;
+            }
+            j += 1;
+        }
+        let mut l2: u32 = 0;
+        while l2 < 14u32 {
+            imc[(l2 + 14u32 * i) as usize] = o7 * d0[(l2) as usize];
+            l2 += 1;
+        }
+        i += 1;
+    }
+}
+
+/// Device `_clenshaw_d1`: the 1D Clenshaw evaluation over the `t` axis.
+///
+/// The host processes roots in pairs with an unrolled `k = 12..1` schedule and
+/// a single-root tail. Written here as one loop over roots with the same
+/// `k` schedule: pairing is an instruction-level detail on the host and does not
+/// change the arithmetic each root sees, so the per-root sequence — and the
+/// bits — are the same.
+#[cube]
+fn clenshaw_d1_dev(
+    out: &mut Array<f64>,
+    out_off: u32,
+    x: &Array<f64>,
+    u: f64,
+    #[comptime] nroots: u32,
+) {
+    let u2 = u * 2.0;
+    let mut i: u32 = 0;
+    while i < nroots {
+        let base = 14u32 * i;
+        let mut d0 = 0.0f64;
+        let mut g0 = x[(base + 13u32) as usize];
+        // k = 12, 10, 8, 6, 4, 2 — the host's unrolled schedule, counted for the
+        // same reason `clenshaw_dc_dev`'s is.
+        let mut pass: u32 = 0;
+        while pass < 6u32 {
+            let k = 12u32 - 2u32 * pass;
+            d0 = u2 * g0 - d0 + x[(base + k) as usize];
+            g0 = u2 * d0 - g0 + x[(base + k - 1u32) as usize];
+            pass += 1;
+        }
+        out[(out_off + i) as usize] = u * g0 - d0 + x[(base) as usize] * 0.5;
+        i += 1;
+    }
+}
+
+/// **The inline STG root entry.** Writes `nroots` roots into
+/// `u_out[u_off .. u_off + nroots]` and weights into `w_out[..]`, reproducing
+/// [`stg_roots_host`] given the cell [`stg_table_cell`] resolved.
+///
+/// `tab_x` / `tab_w` are the uploaded window; `x_off` is this row's cell offset
+/// *within that window*. `cos14` is [`stg_cos_table`].
+#[cube]
+pub(crate) fn stg_roots_dev(
+    tab_x: &Array<f64>,
+    tab_w: &Array<f64>,
+    cos14: &Array<f64>,
+    cell_off: u32,
+    tt_norm: f64,
+    uu_norm: f64,
+    ua: f64,
+    u_out: &mut Array<f64>,
+    w_out: &mut Array<f64>,
+    out_off: u32,
+    #[comptime] nroots: u32,
+) {
+    let mut im = Array::<f64>::new(comptime!((14 * nroots) as usize));
+    let mut imc = Array::<f64>::new(comptime!((14 * nroots) as usize));
+
+    clenshaw_dc_dev(&mut im, 0, tab_x, cell_off, uu_norm, nroots);
+    matmul_14_14_dev(&mut imc, &im, cos14, nroots);
+    clenshaw_d1_dev(u_out, out_off, &imc, tt_norm, nroots);
+
+    clenshaw_dc_dev(&mut im, 0, tab_w, cell_off, uu_norm, nroots);
+    matmul_14_14_dev(&mut imc, &im, cos14, nroots);
+    clenshaw_d1_dev(w_out, out_off, &imc, tt_norm, nroots);
+
+    // stg_roots.c:445-448 — weights carry a 1/sqrt(ua) normalization.
+    let inv_sqrt_ua = 1.0 / f64::sqrt(ua);
+    let mut i: u32 = 0;
+    while i < nroots {
+        w_out[(out_off + i) as usize] = w_out[(out_off + i) as usize] * inv_sqrt_ua;
+        i += 1;
+    }
+}
+
+/// A one-line launch wrapper over [`stg_roots_dev`], so the bit-identity gate
+/// measures the same body an F12 kernel will call rather than a second copy.
+#[cube(launch)]
+fn stg_roots_kernel(
+    tab_x: &Array<f64>,
+    tab_w: &Array<f64>,
+    cos14: &Array<f64>,
+    roots: &mut Array<f64>,
+    weights: &mut Array<f64>,
+    cell_off: u32,
+    tt_norm: f64,
+    uu_norm: f64,
+    ua: f64,
+    #[comptime] nroots: u32,
+) {
+    stg_roots_dev(
+        tab_x, tab_w, cos14, cell_off, tt_norm, uu_norm, ua, roots, weights, 0, nroots,
+    );
+}
+
+/// Host entry for the **device** STG root path — one launch, one work item.
+///
+/// Not the production dispatch: [`stg_roots_host`] still owns that. This exists
+/// so the device entry is reachable from a test without an F12 kernel in the
+/// way, and it is what `stg_roots_dev_matches_host` compares against.
+#[cfg(feature = "cpu")]
+#[must_use]
+pub fn stg_roots_device_host(nroots: usize, ta: f64, ua: f64) -> (Vec<f64>, Vec<f64>) {
+    assert!(
+        (1..=5).contains(&nroots),
+        "stg_roots_device_host: nroots={nroots} outside the table's 1..=5 range"
+    );
+    let cell = stg_table_cell(nroots, ta, ua);
+    let (lo, x_win, w_win) = stg_table_window(nroots, &[cell.offset]);
+
+    let client = cubecl::cpu::CpuRuntime::client(&Default::default());
+    let x_h = client.create_from_slice(f64::as_bytes(x_win));
+    let w_h = client.create_from_slice(f64::as_bytes(w_win));
+    let cos_h = client.create_from_slice(f64::as_bytes(stg_cos_table()));
+    let zero = vec![0.0_f64; nroots];
+    let roots_h = client.create_from_slice(f64::as_bytes(&zero));
+    let weights_h = client.create_from_slice(f64::as_bytes(&zero));
+
+    macro_rules! launch_stg {
+        ($n:literal) => {
+            stg_roots_kernel::launch::<cubecl::cpu::CpuRuntime>(
+                &client,
+                crate::plane::single_cube_count(),
+                CubeDim::new_1d(1),
+                // SAFETY: each buffer is created at exactly the length passed here.
+                unsafe { ArrayArg::from_raw_parts(x_h, x_win.len()) },
+                unsafe { ArrayArg::from_raw_parts(w_h, w_win.len()) },
+                unsafe { ArrayArg::from_raw_parts(cos_h, COS_14_14.len()) },
+                unsafe { ArrayArg::from_raw_parts(roots_h.clone(), nroots) },
+                unsafe { ArrayArg::from_raw_parts(weights_h.clone(), nroots) },
+                (cell.offset - lo) as u32,
+                cell.tt_norm,
+                cell.uu_norm,
+                ua,
+                $n,
+            )
+        };
+    }
+    match nroots {
+        1 => launch_stg!(1u32),
+        2 => launch_stg!(2u32),
+        3 => launch_stg!(3u32),
+        4 => launch_stg!(4u32),
+        _ => launch_stg!(5u32),
+    }
+
+    let r = client.read_one_unchecked(roots_h);
+    let roots = f64::from_bytes(&r)[0..nroots].to_vec();
+    let w = client.read_one_unchecked(weights_h);
+    let weights = f64::from_bytes(&w)[0..nroots].to_vec();
+    (roots, weights)
+}
+
+#[cfg(all(test, feature = "cpu"))]
+mod device_tests {
+    use super::*;
+
+    /// **The gate for the device STG roots.** The `#[cube]` entry reproduces
+    /// `stg_roots_host` bit for bit across the `(ta, ua)` envelope the F12
+    /// families reach.
+    ///
+    /// Bit-identity, not a tolerance: both paths run the same f64 operations in
+    /// the same order on the same frozen tables, so anything less would be a
+    /// transcription error rather than a rounding difference.
+    #[test]
+    fn stg_roots_dev_matches_host() {
+        let mut compared = 0usize;
+        for nroots in 1..=5usize {
+            // `ta` spans the sqrt branch (t <= 1), the log branch, and the
+            // T_MAX clamp; `ua` spans the table's 1e-7..1e3 decades.
+            for ta in [
+                1e-6, 0.25, 1.0, 2.5, 12.0, 250.0, 5000.0, 19_682.0, 25_000.0,
+            ] {
+                for ua_exp in -6..=2i32 {
+                    let ua = 10.0_f64.powi(ua_exp) * 3.7;
+                    let (hr, hw) = stg_roots_host::<f64>(nroots, ta, ua);
+                    let (dr, dw) = stg_roots_device_host(nroots, ta, ua);
+                    for i in 0..nroots {
+                        compared += 2;
+                        assert_eq!(
+                            dr[i].to_bits(),
+                            hr[i].to_bits(),
+                            "root {i} for nroots={nroots} ta={ta:e} ua={ua:e}: \
+                             device={} host={}",
+                            dr[i],
+                            hr[i]
+                        );
+                        assert_eq!(
+                            dw[i].to_bits(),
+                            hw[i].to_bits(),
+                            "weight {i} for nroots={nroots} ta={ta:e} ua={ua:e}: \
+                             device={} host={}",
+                            dw[i],
+                            hw[i]
+                        );
+                    }
+                }
+            }
+        }
+        assert!(compared > 500, "only {compared} values compared");
     }
 }

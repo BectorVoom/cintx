@@ -183,6 +183,13 @@ fn copy_last_error_field(
 /// Copies the current thread's last-error message into a caller-owned buffer.
 ///
 /// Returns the required byte count including the trailing `\0`.
+///
+/// # Safety
+/// `out` must be either null or valid for writes of `out_len` bytes, and
+/// `out_len` must be that allocation's true capacity. The buffer must not be
+/// aliased by another thread for the duration of the call. Passing a null `out`
+/// or `out_len == 0` is well defined: nothing is written and the required size
+/// is returned, which is how a caller sizes the buffer before allocating.
 pub unsafe fn copy_last_error_message(out: *mut c_char, out_len: usize) -> usize {
     copy_last_error_field(out, out_len, |report| report.message.as_str())
 }
@@ -190,6 +197,13 @@ pub unsafe fn copy_last_error_message(out: *mut c_char, out_len: usize) -> usize
 /// Copies the current thread's last-error API symbol into a caller-owned buffer.
 ///
 /// Returns the required byte count including the trailing `\0`.
+///
+/// # Safety
+/// `out` must be either null or valid for writes of `out_len` bytes, and
+/// `out_len` must be that allocation's true capacity. The buffer must not be
+/// aliased by another thread for the duration of the call. Passing a null `out`
+/// or `out_len == 0` is well defined: nothing is written and the required size
+/// is returned, which is how a caller sizes the buffer before allocating.
 pub unsafe fn copy_last_error_api(out: *mut c_char, out_len: usize) -> usize {
     copy_last_error_field(out, out_len, |report| report.api.as_str())
 }
@@ -197,6 +211,13 @@ pub unsafe fn copy_last_error_api(out: *mut c_char, out_len: usize) -> usize {
 /// Copies the current thread's last-error family into a caller-owned buffer.
 ///
 /// Returns the required byte count including the trailing `\0`.
+///
+/// # Safety
+/// `out` must be either null or valid for writes of `out_len` bytes, and
+/// `out_len` must be that allocation's true capacity. The buffer must not be
+/// aliased by another thread for the duration of the call. Passing a null `out`
+/// or `out_len == 0` is well defined: nothing is written and the required size
+/// is returned, which is how a caller sizes the buffer before allocating.
 pub unsafe fn copy_last_error_family(out: *mut c_char, out_len: usize) -> usize {
     copy_last_error_field(out, out_len, |report| report.family.as_str())
 }
@@ -204,6 +225,13 @@ pub unsafe fn copy_last_error_family(out: *mut c_char, out_len: usize) -> usize 
 /// Copies the current thread's last-error representation into a caller-owned buffer.
 ///
 /// Returns the required byte count including the trailing `\0`.
+///
+/// # Safety
+/// `out` must be either null or valid for writes of `out_len` bytes, and
+/// `out_len` must be that allocation's true capacity. The buffer must not be
+/// aliased by another thread for the duration of the call. Passing a null `out`
+/// or `out_len == 0` is well defined: nothing is written and the required size
+/// is returned, which is how a caller sizes the buffer before allocating.
 pub unsafe fn copy_last_error_representation(out: *mut c_char, out_len: usize) -> usize {
     copy_last_error_field(out, out_len, |report| report.representation.as_str())
 }
@@ -218,24 +246,56 @@ pub extern "C" fn cintrs_clear_last_error() {
     clear_last_error();
 }
 
+/// C ABI entry point for [`copy_last_error_message`].
+///
+/// # Safety
+/// `out` must be either null or valid for writes of `out_len` bytes, and
+/// `out_len` must be that allocation's true capacity. The buffer must not be
+/// aliased by another thread for the duration of the call. Passing a null `out`
+/// or `out_len == 0` is well defined: nothing is written and the required size
+/// is returned, which is how a caller sizes the buffer before allocating.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cintrs_copy_last_error_message(out: *mut c_char, out_len: usize) -> usize {
     // SAFETY: The caller provides `out`/`out_len`; we only write within bounds and NUL-terminate.
     unsafe { copy_last_error_message(out, out_len) }
 }
 
+/// C ABI entry point for [`copy_last_error_api`].
+///
+/// # Safety
+/// `out` must be either null or valid for writes of `out_len` bytes, and
+/// `out_len` must be that allocation's true capacity. The buffer must not be
+/// aliased by another thread for the duration of the call. Passing a null `out`
+/// or `out_len == 0` is well defined: nothing is written and the required size
+/// is returned, which is how a caller sizes the buffer before allocating.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cintrs_copy_last_error_api(out: *mut c_char, out_len: usize) -> usize {
     // SAFETY: The caller provides `out`/`out_len`; we only write within bounds and NUL-terminate.
     unsafe { copy_last_error_api(out, out_len) }
 }
 
+/// C ABI entry point for [`copy_last_error_family`].
+///
+/// # Safety
+/// `out` must be either null or valid for writes of `out_len` bytes, and
+/// `out_len` must be that allocation's true capacity. The buffer must not be
+/// aliased by another thread for the duration of the call. Passing a null `out`
+/// or `out_len == 0` is well defined: nothing is written and the required size
+/// is returned, which is how a caller sizes the buffer before allocating.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cintrs_copy_last_error_family(out: *mut c_char, out_len: usize) -> usize {
     // SAFETY: The caller provides `out`/`out_len`; we only write within bounds and NUL-terminate.
     unsafe { copy_last_error_family(out, out_len) }
 }
 
+/// C ABI entry point for [`copy_last_error_representation`].
+///
+/// # Safety
+/// `out` must be either null or valid for writes of `out_len` bytes, and
+/// `out_len` must be that allocation's true capacity. The buffer must not be
+/// aliased by another thread for the duration of the call. Passing a null `out`
+/// or `out_len == 0` is well defined: nothing is written and the required size
+/// is returned, which is how a caller sizes the buffer before allocating.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cintrs_copy_last_error_representation(
     out: *mut c_char,

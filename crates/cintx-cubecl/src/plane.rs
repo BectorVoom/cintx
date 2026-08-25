@@ -9,6 +9,21 @@
 //! - In-kernel (`#[cube]`) collective reductions, scans, votes, and leader election.
 //! - Plane-cooperative execution primitives for integral batch processing.
 
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+
 use cubecl::prelude::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -219,11 +234,7 @@ pub fn tiled_grid_cube_count_3d(
 #[inline]
 pub fn planes_per_cube(cube_dim: &CubeDim, plane_dim: u32) -> u32 {
     let total_units = cube_dim.num_elems();
-    if plane_dim == 0 {
-        1
-    } else {
-        total_units / plane_dim
-    }
+    total_units.checked_div(plane_dim).unwrap_or(1)
 }
 
 /// Compute a 1D [`CubeDim`] that is guaranteed to be an exact multiple of `plane_dim`,

@@ -7,11 +7,11 @@
 //!
 //! - `sph_ine_tab()`        — `_sph_ine_tab` (nr_ecp.c:30), `K_TAB_ENTRIES * K_TAB_COL
 //!                            = 400 * 24 = 9600` f64. The order>7 downward-recurrence
-//!                            table.
+//!   table.
 //! - `sph_ine_tab_order7()` — `_sph_ine_tab_order7` (nr_ecp.c:434),
-//!                            `K_TAB_ENTRIES * ORDER7OFFSET * (K_TAYLOR_MAX+1)
+//!   `K_TAB_ENTRIES * ORDER7OFFSET * (K_TAYLOR_MAX+1)
 //!                            = 400 * 8 * 8 = 25600` f64. The per-order (0..=7)
-//!                            Taylor-coefficient table (`ORDER7OFFSET = 8`).
+//!   Taylor-coefficient table (`ORDER7OFFSET = 8`).
 //!
 //! Source: `vendor/pyscf-nr-ecp/src/nr_ecp.c` lines 30 and 434.
 //!

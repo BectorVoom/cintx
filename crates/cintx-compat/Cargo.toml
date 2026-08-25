@@ -12,6 +12,9 @@ cpu = ["cintx-cubecl/cpu"]
 with-f12 = ["cintx-cubecl/with-f12"]
 with-4c1e = ["cintx-cubecl/with-4c1e"]
 unstable-source-api = ["cintx-cubecl/unstable-source-api"]
+# Task 33-03: forwarded so the extended device Rys path can be selected from
+# cintx-oracle / cintx-driver, which reach cintx-cubecl only through here.
+extended-device-rys = ["cintx-cubecl/extended-device-rys"]
 # Backend forwards. cintx-oracle / cintx-driver depend on cintx-compat rather
 # than on cintx-cubecl directly, so every backend cintx-cubecl exposes needs a
 # forward here or it is unreachable from those crates.

@@ -400,6 +400,7 @@ dependencies = [
  "cubecl-hip",
  "cubecl-runtime",
  "cubecl-wgpu",
+ "rayon",
  "serde",
  "serde_json",
  "smallvec",

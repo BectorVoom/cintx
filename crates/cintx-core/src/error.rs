@@ -32,6 +32,12 @@ pub enum CoreError {
     /// PySCF `ECP_LMAX = 5` (see `vendor/pyscf-nr-ecp/include/nr_ecp.h`).
     #[error("ECP projected angular momentum {requested} exceeds ECP_LMAX={max}")]
     EcpAngularMomentumTooHigh { requested: u8, max: u8 },
+    /// A spherical shell whose angular momentum the Cartesian-to-spherical
+    /// transform cannot express — see [`crate::SPHERIC_L_MAX`].
+    #[error(
+        "spherical shell angular momentum {requested} exceeds SPHERIC_L_MAX={max}          (the cart-to-sph coefficient table's ceiling)"
+    )]
+    SphericAngularMomentumTooHigh { requested: u8, max: u8 },
 }
 
 #[allow(non_camel_case_types)]

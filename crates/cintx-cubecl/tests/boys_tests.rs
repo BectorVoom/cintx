@@ -12,6 +12,16 @@
 //!
 //! All assertions use absolute tolerance 1e-12 per design decision D-19.
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+// `x = x - y` rather than `x -= y`: these are statement-for-statement ports of
+// the vendored libcint source, and keeping the assignment shape means a reviewer
+// can diff a routine against the C line by line.
+#![allow(clippy::assign_op_pattern)]
+
 use cintx_cubecl::math::boys::{SQRTPIE4, TURNOVER_POINT, boys_gamma_inc_host, erf_host};
 
 /// Helper: call boys_gamma_inc_host and return the result array.

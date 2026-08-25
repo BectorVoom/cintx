@@ -647,6 +647,9 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
         batched.stats.dispatch_ns as f64 / 1e6,
         batched.stats.host_transform_ns as f64 / 1e6,
     );
+    if let Some(split) = cintx_cubecl::transform::profile::format_split(&batched.stats) {
+        println!("  {split}");
+    }
     println!(
         "\n  {:<34} {:>12} {:>16} {:>16}",
         "engine", "wall (s)", "quartets/s", "us/quartet"

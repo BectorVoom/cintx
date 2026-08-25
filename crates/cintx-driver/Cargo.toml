@@ -14,6 +14,8 @@ wgpu = ["cintx-compat/wgpu"]
 cuda = ["cintx-compat/cuda"]
 rocm = ["cintx-compat/rocm"]
 metal = ["cintx-compat/metal"]
+# Task 33-03: the extended device Rys path (nroots 6..12), off by default.
+extended-device-rys = ["cintx-compat/extended-device-rys"]
 
 [dependencies]
 cintx-compat = { path = "../cintx-compat" }

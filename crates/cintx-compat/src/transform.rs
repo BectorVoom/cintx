@@ -1,7 +1,12 @@
 #![allow(non_snake_case)]
+// Transcribed verbatim from vendored libcint 6.1.3. Result compatibility with
+// upstream is decided by the exact bits these literals feed the kernels, so a
+// literal is never truncated to the shortest form that round-trips — the same
+// provenance rationale the `clippy::approx_constant` allows in this crate carry.
+#![allow(clippy::excessive_precision)]
 
 use cintx_core::cintxRsError;
-use cintx_cubecl::transform::c2s::{c2s_coeff, ncart, nsph};
+use cintx_cubecl::transform::c2s::{c2s_coeff, ensure_c2s_supported, ncart, nsph};
 use cintx_cubecl::transform::c2spinor;
 
 /// Apply the real per-l bra cart->sph transform, mirroring libcint's
@@ -13,16 +18,20 @@ use cintx_cubecl::transform::c2spinor;
 /// internal callers `CINTc2s_ket_sph` / `CINTc2s_ket_sph1` (which pass l=0) are
 /// preserved exactly.
 ///
-/// NOTE on l>4: `c2s::c2s_coeff` returns 0.0 for l>4 (its accessor contract).
-/// This transform therefore zeroes the output for l>4; the vendor gate only
-/// exercises l in 0..=4. l>4 support is intentionally not added here.
+/// Angular momentum is bounded by `c2s::C2S_LMAX` (15, libcint's own `g_c2s`
+/// ceiling) and rejected above it with a typed `UnsupportedApi`. It used to be
+/// bounded at 4 and *silently zeroed* above that; `cintc2s_bra_sph_matches_vendor`
+/// now sweeps the whole `0..=C2S_LMAX` range against vendored libcint.
 pub fn CINTc2s_bra_sph(
     sph: &mut [f64],
     nket: i32,
     cart: &[f64],
     l: i32,
 ) -> Result<(), cintxRsError> {
-    let lu = l.max(0) as u8;
+    let lu = u8::try_from(l.max(0)).map_err(|_| cintxRsError::UnsupportedApi {
+        requested: format!("CINTc2s_bra_sph: l={l} is out of range"),
+    })?;
+    ensure_c2s_supported(lu)?;
     let nc = ncart(lu);
     let ns = nsph(lu);
     let nk = nket.max(0) as usize;

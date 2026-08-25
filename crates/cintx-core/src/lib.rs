@@ -20,5 +20,5 @@ pub use env::{EnvBoundsError, EnvParams, EnvUnits};
 pub use error::{CoreError, cintxRsError};
 pub use operator::{AoSymmetry, OperatorId, Representation};
 pub use precision::{CintFloat, PrecisionKind};
-pub use shell::{Shell, ShellTuple, ShellTupleArityError};
+pub use shell::{SPHERIC_L_MAX, Shell, ShellTuple, ShellTupleArityError};
 pub use tensor::{TensorLayout, TensorShape};

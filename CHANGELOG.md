@@ -7,6 +7,228 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the host cart-to-sph transform is no longer the bottleneck (2026-08-25, Task 36-T0/T1/T2)
+- **Measured first, then acted on.** New opt-in instrumentation
+  (`CINTX_HOST_TRANSFORM_PROFILE=1`) splits `host_transform_ns` into allocate / c2s / scatter.
+  The plan expected allocation to be a candidate; it is 0-15 %. **The c2s arithmetic is
+  68-81 %** on every workload measured. It is opt-in because three clock reads per 27-element
+  block would otherwise make `host_transform_ns` a probe artifact.
+- **Identity axes are no longer transformed.** `C2S_L0` and `C2S_L1` are identity matrices, so
+  an `l <= 1` axis is a copy dressed as a matrix product. `cart_to_sph_2e_into` already skipped
+  them; the 1-, 2- and 3-index transforms did not, and on a def2-SVP work list that is most
+  axes. All four now route through one `c2s_apply` axis-plan driver. **The serial transform is
+  6x cheaper on the 3-index families.**
+- **Allocations hoisted**: `cart_to_sph_{1e,2c2e,3c1e,3c2e}` gained `_into` forms taking
+  caller-owned output and scratch, and all six batch transform loops allocate once per run
+  rather than once per contraction block.
+- **The transform runs across threads** (`rayon`), `unsafe`-free: `offsets` is a running total
+  in the caller's order, so repeated `split_at_mut` hands each tuple a disjoint `&mut [f64]`
+  and the borrow checker proves they do not alias. Each output element is produced by exactly
+  one tuple — the transform writes, it never accumulates — so **the split reorders no summation
+  and bit-identity holds by construction**, not by tolerance. Every element-by-element parity
+  gate is unchanged and green. `CINTX_HOST_TRANSFORM_THREADS` pins the worker count.
+- Below a measured threshold (4 096 tuples) the transform stays serial: after the change those
+  lists take a fraction of a millisecond and the fan-out costs more than it saves.
+- **Against vendored libcint 6.1.3, CPU backend**: `int2e` CH4/def2-SVP 1.42x -> **1.88x
+  faster**; `int2e` H2O 1.03-1.15x faster; `int3c2e_ip1` 1.59x slower -> **1.28x faster**;
+  RI-J def2/J ~2.3x -> 1.35x slower; RI-J def2/JK ~1.9x -> 1.23x slower.
+
+### Added — pair and triple batch surfaces on the safe API (2026-08-25, Task 35-F2)
+- `PairBatchRequest` and `TripleBatchRequest` join `QuartetBatchRequest`, returning a shared
+  `ShellListBatchOutput`. Before this a safe-API consumer could batch `int2e` and nothing else
+  without depending on the backend crate, which the project's API ordering says it should not
+  have to.
+- Scope is **symbol-exact**, resolved through the compiled manifest and refused before any
+  device work: `int1e_{ovlp,kin,nuc}_sph`, `int1e_ip{ovlp,kin,nuc}_sph`, `int2c2e_sph` for
+  pairs; `int3c2e_sph` and `int3c2e_ip{1,2}_sph` for triples. Symbol-exact rather than
+  family-wide because `int1e_ipovlp_sph` and `int1e_ovlp_sph` share a family and are different
+  integrals.
+- Five new `CubeClExecutor` methods carry backend resolution and the f64 capability check, so
+  no CubeCL type reaches the facade.
+
+### Added — device-resident basis for every batched family (2026-08-25, Task 34-C2)
+- `evaluate_{2c2e_pair,1e_pair,1e_deriv_pair}_batch_resident`. `int2e` and `int3c2e` already
+  had theirs.
+- `OneEFlatBasis` and `TwoC2eFlatBasis` are **removed**: they were a third and fourth spelling
+  of the four buffers `ResidentBasis` already holds, and every family now uploads through one
+  path.
+- Gated two-sidedly per family: `basis_upload_bytes` is the full upload on the first call and
+  **0** on every later one, transfer strictly decreases, **and** every value is bit-identical
+  to the throwaway-residency path. Either half alone is worthless.
+
+### Added — primitive screening for `int3c2e` and the 1e nuclear arm (2026-08-25, Task 34-D2)
+- `evaluate_3c2e_triple_batch_with` / `evaluate_1e_pair_batch_with` (and `_resident_with`) take
+  `BatchOptions` — the family-neutral alias for `TwoEBatchOptions`.
+- The 1e nuclear `fac1` carries `-Z_C` and is **negative**, so the test is on its magnitude;
+  the branch is on values uniform across the cube, so the `sync_cube` barriers inside it are
+  still reached by every lane or by none.
+- Landed in the same commit as its gate: at `primitive_tolerance == 0` the only primitives
+  dropped are those whose `fac1` underflowed to exactly zero, so the result is **bit-identical**.
+  A screening bug reads as a speed-up; that identity is the only thing between "faster" and
+  "wrong".
+
+### Changed — the last per-tuple families are batched (2026-08-25, Task 35-D wave 5)
+- **`int3c1e` and `int4c1e`**: the two genuine scalar families that were never batched. Both
+  already launched once per *contraction* tuple with the coefficient columns sliced host-side,
+  so a work row here is a *(shell tuple, contraction tuple)* pair — reproducing that arithmetic
+  exactly while collapsing `nctr_i * nctr_j * nctr_k` (`* nctr_l`) launches into one.
+  `int3c1e` also gained `evaluate_3c1e_triple_batch{,_resident}`.
+- **`center_4c1e` needed two independent slab strides** — its `[gx|gy|gz]` G-tensor and its 1D/2D
+  polynomial scratch are read at unrelated offsets, unlike every other family — and its host
+  loop *sums* the contraction blocks, so rows are emitted in the order that sum was performed
+  in. Any other order would reassociate the additions.
+- **The ten σ·p relativistic kernels**: `sigma_p`, `sigma_p_cg_sa10sp`, `sigma_p_spgsp`,
+  `sa01_rys`, `spgnucsp_rys`, `spgsa01_rys`, `sigma_nuc`, `sigma_nuc_gauge`, `sigma_ov`. All
+  reuse wave 3's `OneEDerivLaunchGroup` and `one_e_deriv_single_pair_group`, which is what made
+  ten conversions tractable.
+- **The two ECP angular kernels** now take one dispatch per shell pair instead of `nci * ncj`:
+  their host precompute is already laid out contraction-tuple-major, so the kernel indexes it by
+  row. The intra-cube split and accumulation order are untouched, so the byte-identity gate
+  holds. Batching across *shell pairs* still needs the radial precompute batched — host work.
+- **`f12_cart_contraction_kernel` is deliberately not converted**, and the reasoning is recorded
+  at the call site: it is launched once per *primitive quartet* with a host-computed `g`, so
+  collapsing the launches would mean materializing every `nprim^4` G tensor first while leaving
+  the dominant arithmetic on the host. The conversion worth doing is porting `fill_g_tensor_f12`
+  to the device.
+- **One real bug, caught by the existing gate.** Rewriting a launcher means rewriting its
+  comptime `match`, and `sigma_ov`'s four-family dispatch lost a case — `spsp` launched as
+  `srsr`. It surfaced as 24 mismatched elements in `int1e_spsp_spinor` at `nctr > 1` against
+  vendored libcint, on the full-suite run rather than the targeted one. Every converted
+  launcher's dispatch was then re-checked arm-by-arm against the original.
+
+### Changed — 13 more per-tuple families are batched (2026-08-25, Task 35-D waves 3 and 4)
+- **Wave 3, the 1e gradient/Hessian set**: `int1e_ipovlpip`, `int1e_ipkinip`, `int1e_ipnucip`,
+  `int1e_ipipovlp`, `int1e_ipipkin`, `int1e_ipipnuc`/`int1e_ipiprinv`.
+- **Wave 4, the 1e special families**: `int1e_rinv`, `int1e_drinv`, `int1e_p4`,
+  `int1e_irp`/`int1e_ipipr`, the eight moment operators, the five GIAO overlap-engine families
+  and the six GIAO nuclear-engine ones.
+- Same acceptance bar as waves 1-2: the per-tuple entry point is a **one-tuple batch through
+  the same kernel**, so every existing parity test covers the batched code. Each conversion
+  also collapsed a five-arm backend `match` into one dispatcher.
+- `int1e_irp`, the moments and both GIAO engines take `drj = rj - origin`, which is **per pair**
+  — the base families measure from a common origin and the `_origj` variants from `rj` itself.
+  The host resolves that choice and the batch carries the resolved vector.
+- The `#[cube]` recurrence helpers (`d_i_1e_into`, `d_j_1e_into`, `rcj_1e_into` and the five
+  `*_flat` tensor helpers) gained a `gbase` parameter, so a slot's slab base threads through
+  them rather than being patched at every call site.
+
+### Added — the f64:f32 arithmetic ratio on gfx1151 is measured (2026-08-25, Part 6)
+- `cintx_cubecl::measure_precision_ratio` plus an opt-in oracle test: a dependent FMA chain,
+  no memory traffic, both precisions through the same kernel source and launch geometry.
+- **gfx1151 is ~1:10 at saturation** (f64 saturates at ~43 GFMA/s, f32 reaches ~400) — not the
+  1:16 or 1:32 a consumer part is often assumed to be, nor the 1:2 of a discrete HPC card. In
+  the latency-bound regime a Rys/VRR recurrence chain actually occupies, it is ~1:2.5-3.5.
+- Reported as a sweep rather than a point, and with **no asserted bound**: what the ratio
+  "should" be is exactly what was unknown, so an assertion would be a guess dressed as a gate.
+
+### Added — an inline device diagonalizer (2026-08-25, groundwork for Task 33-01)
+- `eigh::cint_diagonalize_dev`, factored out of `cint_diagonalize_kernel` with the kernel
+  reduced to a one-line wrapper so both paths run the same code. The extended Rys path is
+  confined to the host because its solvers are reachable only by *launching* them, and the
+  Jacobi arm's eigensolve was the piece with no callable form at all.
+
+
+### Changed — the derivative families are batched, not just batch-capable (2026-08-25, Task 35-D)
+- **`int3c2e_ip1` / `int3c2e_ip2`** (RI-J gradients): 1 728 launches on the def2-SVP water
+  triple list become **4** — one per Rys order rather than one per triple. **25x** faster than
+  the per-triple path, and 1.5-1.6x of vendored libcint where it was ~40x slower.
+- **`int1e_ipovlp` / `int1e_ipkin` / `int1e_ipnuc`** (nuclear gradients): 144 launches become
+  **1**, **1** and **3**. The first two collapse to a single dispatch because, once the shape
+  scalars are per-pair, nothing is left to specialize on — `op_kind` is fixed by the caller's
+  operator. 25-33x faster than the per-pair path; `int1e_ipovlp` reaches **parity** with libcint.
+- The per-tuple compatibility API now evaluates its one tuple as a **one-tuple launch group
+  through the same kernel**, so every existing parity test covers the batched code rather than
+  a second path that merely ought to agree. Results are bit-identical to what the per-tuple
+  path produced, and match vendored libcint to 6.7e-16 … 1.4e-13.
+- New batched surface: `evaluate_3c2e_deriv_triple_batch{,_resident}` with
+  `ThreeC2eDerivFamily`, and `evaluate_1e_deriv_pair_batch` with `OneEDerivOperator`. Without
+  these the kernels would be batch-capable but no caller could batch.
+- Each conversion also collapsed a five-arm backend `match` — one arm per runtime, identical
+  apart from the type — into one dispatcher, removing ~110 lines per family.
+- All five run correctly on the ROCm cooperative path (0 mismatches vs vendored libcint). They
+  are gated on vendor agreement rather than the scalar families' eps-of-block-scale bound: a
+  gradient kernel builds second differences, and the cancellation there turns a 2-ULP
+  difference in an intermediate into 5.8e-14 in the result while the block scale stays O(10).
+
+### Added — def2/J and def2/JK auxiliary bases, and the RI-J work-list layout (2026-08-25)
+- `StandardBasis::{Def2JFit, Def2JkFit}`, vendored from the Basis Set Exchange at the same
+  software (0.12) and data (1, Turbomole 7.3) version as the three files already present, so
+  all five are one consistent snapshot. Resolvable by either the literature name (`def2/J`)
+  or the BSE export name (`def2-universal-jfit`).
+- `StandardBasis::is_auxiliary()`. A fitting basis is not an orbital basis, and mixing them
+  yields a plausible-looking calculation of the wrong thing, so the distinction is on the type
+  rather than left to the name.
+- `to_raw_arrays_with_auxiliary()` emits the orbital and auxiliary shells into one `bas` array,
+  with `RawArrays::{orbital_shells, auxiliary_shells}` naming the ranges — the layout a
+  `(mu nu | P)` list needs. It refuses an orbital basis in the auxiliary slot.
+  `RawArrays` gains `n_orbital_shells` as the split point.
+- `evaluate_3c2e_triple_batch_resident()` and the `ResidentBasis` alias: the flattened basis
+  form is family-independent, so `int3c2e` reuses the device residency `int2e` already had
+  instead of re-uploading exponents, coefficients and centres on every call (Task 34-C2).
+  `ThreeC2eFlatBasis` removed — it was a second spelling of the same four buffers.
+- `device_rys_ceiling`: a per-backend device Rys ceiling with a backend-generic FMA-fusion
+  probe (Phase 33, task 33-05 scaffolding). The ceiling stays at 5 unless *both* the new
+  `extended-device-rys` feature is on *and* the probe passed on that backend. Measured:
+  `fma` fuses bit-for-bit on **both** the CPU and ROCm backends.
+- `BatchExecutionStats::{launch_classes, max_g_slab_bytes}`, so the launch merge below and the
+  scratch it costs are observable rather than asserted.
+
+### Changed — one kernel dispatch per comptime signature, not per angular-momentum class (2026-08-25)
+- **`int2e` (Task 35-M1).** `two_electron_scalar_kernel` has exactly three comptime
+  parameters — `ibase`, `kbase`, `nroots`. Every other shape scalar was already a runtime
+  value, so they moved from the launch arguments into per-class device arrays and the quartet
+  row gained a class index. **69 launch classes collapse to 15 dispatches** on H2O/def2-SVP.
+- **`int3c2e` / `int2c2e` / `int1e_*` (Task 35-M2).** `nroots` alone is comptime for these,
+  so the merge is larger: 27→4, 9→3, and 9→**1** for overlap and kinetic, which are not Rys
+  quadratures at all.
+- Results are **bit-identical** to the per-tuple path and to vendored libcint throughout: each
+  class indexes only the leading `3 * g_size` of a slab sized to the widest class in its
+  dispatch, so a narrow class touches exactly what it did when it launched alone.
+- Measured against vendored libcint (single-threaded, best of 25, three repeats):
+  `int2e` on CH4/def2-SVP goes from 1.28x faster to **1.4–1.5x faster**; on H2O/def2-SVP from
+  **1.43x slower to parity**. `int3c2e` 1.40 → 1.17 ms; `int1e_ovlp` 0.28–0.30 → 0.11–0.14 ms.
+  Both remaining gaps are now ~40 % *serial host* cart-to-sph, which no backend change touches.
+- `cintx-rs`'s `BatchExecutionStats` now reports `bucket_count` as the angular-momentum class
+  count and `chunk_count`/`kernel_launch_count` as the dispatch count. They coincided before
+  this change.
+
+### Fixed — 1e batch normalization scaled a whole dispatch buffer (2026-08-25)
+- The `int1e_*` host transform applied `common_fac_sp(li) * common_fac_sp(lj)` to the entire
+  class buffer. Once Task 35-M2 let several angular-momentum classes share one dispatch buffer
+  that would have scaled neighbouring classes by the wrong factor. Each class now records its
+  half-open span and scales only that. Caught before it shipped by the bit-identity gate.
+
+### Fixed — `F::new(0.0)` was silently falling back to `f32` (2026-08-25)
+- 608 sites across the `#[cube]` kernels relied on an untyped float literal falling back to
+  `f32` because `f32: From<f64>` is not satisfied. rustc reports this as
+  *"previously accepted ... will become a hard error in a future release"*. The literals were
+  already `f32`, so appending the explicit suffix changes no value — only the reader's
+  certainty and the code's survival of a future compiler.
+
+### Fixed — a doubled comptime barrier guard and a vestigial oracle counter (2026-08-25)
+- `one_electron_scalar_kernel` had `if comptime!(per_unit == 0) { if comptime!(per_unit == 0)
+  { sync_cube(); } }`; the inner guard was redundant.
+- The oracle helper/transform comparison incremented a mismatch counter at 20 sites, each
+  immediately followed by `bail!`, making the final aggregate check unreachable. The function
+  is fail-fast by construction and each `bail!` already names the specific disagreement.
+
+### Added — ROCm executes the cooperative kernel decomposition for the first time (2026-08-25)
+- The `per_unit == 0` topology (one tuple per cube, the cube splitting the contraction, real
+  `sync_cube` barriers) was compiled for every backend and never *executed* in CI. All five
+  batched families now run on gfx1151 and match vendored libcint with **0 mismatches** at the
+  1e-10 oracle tolerance (max abs diff 4.4e-16 … 2.7e-14).
+- CPU and ROCm results are **not** bit-identical, and the reason is not the launch topology:
+  the AMD compiler contracts multiply-add pairs the CPU backend leaves separate. The measured
+  divergence is 0.26–2.72 eps of the block's largest element, and on `int2e` the ROCm result is
+  *closer* to vendored libcint than the CPU one. The gate is an eps-of-scale bound accordingly.
+
+### Changed — clippy is clean under `-D warnings` (2026-08-25)
+- `cargo clippy --workspace --all-targets -- -D warnings` passes, from ~2 078 unique warnings,
+  landed by lint rather than by sweep and never with `--fix` on a transcribed-table module.
+  Every `#[allow]` carries a reason. The `rys_wheeler` host long-double/`Dd` chain is recorded
+  as a superseded but independent cross-check of the device dd kernels that replaced it, rather
+  than deleted or silently allowed.
+
 ### Fixed — general contraction collapsed to one block on the device `int2c2e` and `int3c2e` paths (2026-08-24)
 - **`int2c2e` and `int3c2e` returned wrong values for any shell with `nctr > 1`.**
   Both device kernels summed every contraction-coefficient product into a single scalar

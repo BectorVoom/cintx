@@ -952,12 +952,12 @@ impl<'basis> SessionRequest<'basis> {
         // Phase 18 D-04: aosym preflight — only S1 (and None ≡ S1) is implemented.
         // Non-S1 packings return a typed FacadeError::UnsupportedAoSymmetry so callers
         // can pattern-match programmatically. Fails fast before any runtime work.
-        if let Some(aosym) = self.options.aosym {
-            if aosym != cintx_core::AoSymmetry::S1 {
-                return Err(FacadeError::UnsupportedAoSymmetry {
-                    requested: aosym.to_string(),
-                });
-            }
+        if let Some(aosym) = self.options.aosym
+            && aosym != cintx_core::AoSymmetry::S1
+        {
+            return Err(FacadeError::UnsupportedAoSymmetry {
+                requested: aosym.to_string(),
+            });
         }
 
         // Phase 19 D-06: ECP-basis preflight — operator.is_ecp() &&
@@ -1159,7 +1159,7 @@ impl<'basis> SessionQuery<'basis> {
             })?;
         owned_values.resize(staging_elements, F::zero());
 
-        let schedule = schedule_chunks(&plan.workspace);
+        let schedule = schedule_chunks(plan.workspace);
         let mut total_not0: i32 = 0;
         let mut total_transfer_bytes: usize = 0;
         let mut total_peak_workspace_bytes: usize = 0;
@@ -1254,7 +1254,7 @@ impl<'basis> SessionQuery<'basis> {
                     detail: "owned output byte size overflowed usize".to_owned(),
                 })?;
 
-        let chunk_count = schedule_chunks(&plan.workspace).len();
+        let chunk_count = schedule_chunks(plan.workspace).len();
         let runtime_stats = ExecutionStats {
             workspace_bytes: plan.workspace.bytes,
             required_workspace_bytes: plan.workspace.required_bytes,
@@ -2879,12 +2879,12 @@ impl<'basis> QuartetBatchRequest<'basis> {
                 ),
             });
         }
-        if let Some(aosym) = self.options.aosym {
-            if aosym != cintx_core::AoSymmetry::S1 {
-                return Err(FacadeError::UnsupportedAoSymmetry {
-                    requested: aosym.to_string(),
-                });
-            }
+        if let Some(aosym) = self.options.aosym
+            && aosym != cintx_core::AoSymmetry::S1
+        {
+            return Err(FacadeError::UnsupportedAoSymmetry {
+                requested: aosym.to_string(),
+            });
         }
         if self.options.precision != PrecisionKind::F64 {
             return Err(FacadeError::UnsupportedApi {
@@ -2991,4 +2991,479 @@ fn batch_shells_from_basis(basis: &BasisSet) -> Result<Vec<cintx_cubecl::BatchSh
         });
     }
     Ok(shells)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Shell-pair and shell-triple batch surfaces (Task 35-F2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Which batched backend routine a pair-arity operator symbol resolves to.
+///
+/// The mapping is symbol-exact rather than family-wide for the same reason
+/// [`QuartetBatchRequest`] insists on `int2e_sph`: `int1e_ipovlp_sph` and
+/// `int1e_ovlp_sph` share a family and are different integrals, and routing one
+/// through the other's kernel would return plausible numbers under the wrong
+/// name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PairBatchRoute {
+    /// `int1e_{ovlp,kin,nuc}_sph` — rank 1.
+    OneE(cintx_cubecl::OneEOperator),
+    /// `int1e_ip{ovlp,kin,nuc}_sph` — rank 3, component-leading.
+    OneEDeriv(cintx_cubecl::OneEDerivOperator),
+    /// `int2c2e_sph` — rank 1.
+    TwoC2e,
+}
+
+impl PairBatchRoute {
+    /// Resolve a symbol, or `None` when no batched kernel serves it.
+    fn from_symbol(symbol: &str) -> Option<Self> {
+        Some(match symbol {
+            "int1e_ovlp_sph" => Self::OneE(cintx_cubecl::OneEOperator::Overlap),
+            "int1e_kin_sph" => Self::OneE(cintx_cubecl::OneEOperator::Kinetic),
+            "int1e_nuc_sph" => Self::OneE(cintx_cubecl::OneEOperator::Nuclear),
+            "int1e_ipovlp_sph" => Self::OneEDeriv(cintx_cubecl::OneEDerivOperator::IpOvlp),
+            "int1e_ipkin_sph" => Self::OneEDeriv(cintx_cubecl::OneEDerivOperator::IpKin),
+            "int1e_ipnuc_sph" => Self::OneEDeriv(cintx_cubecl::OneEDerivOperator::IpNuc),
+            "int2c2e_sph" => Self::TwoC2e,
+            _ => return None,
+        })
+    }
+
+    /// Every symbol this route table serves, for the rejection message.
+    const SERVED: &'static [&'static str] = &[
+        "int1e_ovlp_sph",
+        "int1e_kin_sph",
+        "int1e_nuc_sph",
+        "int1e_ipovlp_sph",
+        "int1e_ipkin_sph",
+        "int1e_ipnuc_sph",
+        "int2c2e_sph",
+    ];
+}
+
+/// Which batched backend routine a triple-arity operator symbol resolves to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TripleBatchRoute {
+    /// `int3c2e_sph` — rank 1.
+    ThreeC2e,
+    /// `int3c2e_ip{1,2}_sph` — rank 3, component-leading.
+    ThreeC2eDeriv(cintx_cubecl::ThreeC2eDerivFamily),
+}
+
+impl TripleBatchRoute {
+    fn from_symbol(symbol: &str) -> Option<Self> {
+        Some(match symbol {
+            "int3c2e_sph" => Self::ThreeC2e,
+            "int3c2e_ip1_sph" => Self::ThreeC2eDeriv(cintx_cubecl::ThreeC2eDerivFamily::Ip1),
+            "int3c2e_ip2_sph" => Self::ThreeC2eDeriv(cintx_cubecl::ThreeC2eDerivFamily::Ip2),
+            _ => return None,
+        })
+    }
+
+    const SERVED: &'static [&'static str] = &["int3c2e_sph", "int3c2e_ip1_sph", "int3c2e_ip2_sph"];
+}
+
+/// Shared scope gate for the pair and triple surfaces.
+///
+/// Everything here is checked **before any device work**, so an out-of-scope
+/// request costs a manifest lookup and nothing else.
+fn check_batch_request_scope(
+    representation: Representation,
+    options: &ExecutionOptions,
+    label: &str,
+) -> Result<(), FacadeError> {
+    if representation != Representation::Spheric {
+        return Err(FacadeError::UnsupportedApi {
+            requested: format!("{label}:representation:{representation} (only Spheric is batched)"),
+        });
+    }
+    if let Some(aosym) = options.aosym
+        && aosym != cintx_core::AoSymmetry::S1
+    {
+        return Err(FacadeError::UnsupportedAoSymmetry {
+            requested: aosym.to_string(),
+        });
+    }
+    if options.precision != PrecisionKind::F64 {
+        return Err(FacadeError::UnsupportedApi {
+            requested: format!("{label}:precision (only F64 is batched)"),
+        });
+    }
+    Ok(())
+}
+
+/// Nuclear centres in the backend's batch form.
+///
+/// Only the nuclear-attraction routes read these; the others are given the same
+/// list rather than an empty one, because a caller should not have to know
+/// which operators sum over nuclei.
+fn batch_atoms_from_basis(basis: &BasisSet) -> Vec<cintx_cubecl::BatchAtom> {
+    basis
+        .atoms()
+        .iter()
+        .map(|atom| cintx_cubecl::BatchAtom {
+            // The nuclear charge the batched 1e kernels sum over, spelled the
+            // way every other cubecl entry point spells it.
+            charge: f64::from(atom.atomic_number),
+            center: atom.coord_bohr,
+        })
+        .collect()
+}
+
+/// Translate a backend batch statistic block into the facade's.
+fn facade_batch_stats(
+    planned: usize,
+    backend: &cintx_cubecl::TwoEBatchStats,
+    submit_ns: u64,
+) -> BatchExecutionStats {
+    BatchExecutionStats {
+        items_planned: planned,
+        items_executed: backend.quartets,
+        bucket_count: backend.launch_classes,
+        chunk_count: backend.kernel_launch_count,
+        kernel_launch_count: backend.kernel_launch_count,
+        readback_count: backend.readback_count,
+        transfer_bytes: backend.transfer_bytes,
+        pack_ns: 0,
+        submit_ns,
+        readback_ns: backend.dispatch_ns,
+        pilot_output_staging_allocations: 0,
+        pilot_output_staging_reuses: 0,
+        pilot_output_staging_growths: 0,
+    }
+}
+
+/// Spherical AO blocks for a pair or triple batch, plus its statistics.
+///
+/// The same shape [`QuartetBatchOutput`] has: a rank-3 operator's block is
+/// component-leading, exactly as the per-tuple path writes it, so `offsets`
+/// locates the whole tuple and the caller strides by the tuple's AO length to
+/// reach a component.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShellListBatchOutput {
+    /// Concatenated spherical AO blocks, in the request's tuple order.
+    pub values: Vec<f64>,
+    /// `offsets[n]` is where tuple `n`'s block starts in [`Self::values`].
+    pub offsets: Vec<usize>,
+    /// Submission-level counters for the whole batch.
+    pub stats: BatchExecutionStats,
+}
+
+/// A whole shell-**pair** work list submitted as one request.
+///
+/// The pair-arity companion to [`QuartetBatchRequest`]. Without it a safe-API
+/// caller could batch `int2e` and nothing else, and would have to depend on the
+/// backend crate to reach `evaluate_1e_pair_batch` and friends — which the
+/// project's API ordering says it should not have to.
+///
+/// Scope: the spherical `int1e_{ovlp,kin,nuc}`, `int1e_ip{ovlp,kin,nuc}` and
+/// `int2c2e` symbols, resolved through the compiled manifest. Anything else
+/// returns [`FacadeError::UnsupportedApi`] **before any device work**.
+///
+/// No CubeCL type appears in this surface. `pairs` are indices into
+/// `basis.shells()`, and results come back as ordinary `f64` AO blocks.
+#[derive(Clone, Debug)]
+pub struct PairBatchRequest<'basis> {
+    operator: OperatorId,
+    representation: Representation,
+    basis: &'basis BasisSet,
+    pairs: Vec<[u32; 2]>,
+    options: ExecutionOptions,
+}
+
+impl<'basis> PairBatchRequest<'basis> {
+    /// Build a request over `pairs`, each an `[i, j]` of indices into
+    /// `basis.shells()`.
+    pub fn new(
+        operator: OperatorId,
+        representation: Representation,
+        basis: &'basis BasisSet,
+        pairs: impl IntoIterator<Item = [u32; 2]>,
+        options: ExecutionOptions,
+    ) -> Self {
+        Self {
+            operator,
+            representation,
+            basis,
+            pairs: pairs.into_iter().collect(),
+            options,
+        }
+    }
+
+    pub fn operator(&self) -> OperatorId {
+        self.operator
+    }
+
+    pub fn representation(&self) -> Representation {
+        self.representation
+    }
+
+    pub fn basis(&self) -> &'basis BasisSet {
+        self.basis
+    }
+
+    pub fn pairs(&self) -> &[[u32; 2]] {
+        &self.pairs
+    }
+
+    pub fn options(&self) -> &ExecutionOptions {
+        &self.options
+    }
+
+    pub fn len(&self) -> usize {
+        self.pairs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pairs.is_empty()
+    }
+
+    /// Evaluate the whole list, allocating a fresh execution context.
+    pub fn evaluate(self) -> Result<ShellListBatchOutput, FacadeError> {
+        self.evaluate_in(&EvaluationContext::new())
+    }
+
+    /// Evaluate with a reusable context, so repeated builds share the backend
+    /// client rather than bootstrapping one per call.
+    pub fn evaluate_in(
+        self,
+        context: &EvaluationContext,
+    ) -> Result<ShellListBatchOutput, FacadeError> {
+        let descriptor =
+            Resolver::descriptor(self.operator).map_err(|error| FacadeError::UnsupportedApi {
+                requested: error.to_string(),
+            })?;
+        let symbol = descriptor.operator_symbol();
+        let route =
+            PairBatchRoute::from_symbol(symbol).ok_or_else(|| FacadeError::UnsupportedApi {
+                requested: format!(
+                    "pair-batch:operator:{symbol} (batched: {})",
+                    PairBatchRoute::SERVED.join(", ")
+                ),
+            })?;
+        check_batch_request_scope(self.representation, &self.options, "pair-batch")?;
+
+        let shells = batch_shells_from_basis(self.basis)?;
+        for pair in &self.pairs {
+            for &index in pair {
+                if index as usize >= shells.len() {
+                    return Err(FacadeError::Validation {
+                        detail: format!(
+                            "pair-batch:shell-index {index} out of range (nbas={})",
+                            shells.len()
+                        ),
+                    });
+                }
+            }
+        }
+        let atoms = batch_atoms_from_basis(self.basis);
+
+        let submit_start = Instant::now();
+        let (values, offsets, stats) = match route {
+            PairBatchRoute::OneE(operator) => {
+                let batch = context
+                    .executor
+                    .evaluate_1e_pairs(
+                        &self.options.backend_intent,
+                        operator,
+                        &shells,
+                        &atoms,
+                        &self.pairs,
+                    )
+                    .map_err(FacadeError::from)?;
+                (batch.values, batch.offsets, batch.stats)
+            }
+            PairBatchRoute::OneEDeriv(operator) => {
+                let batch = context
+                    .executor
+                    .evaluate_1e_deriv_pairs(
+                        &self.options.backend_intent,
+                        operator,
+                        &shells,
+                        &atoms,
+                        &self.pairs,
+                    )
+                    .map_err(FacadeError::from)?;
+                (batch.values, batch.offsets, batch.stats)
+            }
+            PairBatchRoute::TwoC2e => {
+                let batch = context
+                    .executor
+                    .evaluate_2c2e_pairs(&self.options.backend_intent, &shells, &self.pairs)
+                    .map_err(FacadeError::from)?;
+                (batch.values, batch.offsets, batch.stats)
+            }
+        };
+        let submit_ns = submit_start.elapsed().as_nanos() as u64;
+
+        Ok(ShellListBatchOutput {
+            values,
+            offsets,
+            stats: facade_batch_stats(self.pairs.len(), &stats, submit_ns),
+        })
+    }
+}
+
+/// A whole shell-**triple** work list submitted as one request.
+///
+/// The arity a resolution-of-the-identity Coulomb build needs: `(mu nu | P)`
+/// over the orbital basis and an auxiliary set, and its two gradient families.
+///
+/// Scope: the spherical `int3c2e`, `int3c2e_ip1` and `int3c2e_ip2` symbols,
+/// resolved through the compiled manifest. Anything else returns
+/// [`FacadeError::UnsupportedApi`] **before any device work**.
+#[derive(Clone, Debug)]
+pub struct TripleBatchRequest<'basis> {
+    operator: OperatorId,
+    representation: Representation,
+    basis: &'basis BasisSet,
+    triples: Vec<[u32; 3]>,
+    options: ExecutionOptions,
+}
+
+impl<'basis> TripleBatchRequest<'basis> {
+    /// Build a request over `triples`, each an `[i, j, k]` of indices into
+    /// `basis.shells()`; `k` is the auxiliary shell.
+    pub fn new(
+        operator: OperatorId,
+        representation: Representation,
+        basis: &'basis BasisSet,
+        triples: impl IntoIterator<Item = [u32; 3]>,
+        options: ExecutionOptions,
+    ) -> Self {
+        Self {
+            operator,
+            representation,
+            basis,
+            triples: triples.into_iter().collect(),
+            options,
+        }
+    }
+
+    pub fn operator(&self) -> OperatorId {
+        self.operator
+    }
+
+    pub fn representation(&self) -> Representation {
+        self.representation
+    }
+
+    pub fn basis(&self) -> &'basis BasisSet {
+        self.basis
+    }
+
+    pub fn triples(&self) -> &[[u32; 3]] {
+        &self.triples
+    }
+
+    pub fn options(&self) -> &ExecutionOptions {
+        &self.options
+    }
+
+    pub fn len(&self) -> usize {
+        self.triples.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.triples.is_empty()
+    }
+
+    /// Evaluate the whole list, allocating a fresh execution context.
+    pub fn evaluate(self) -> Result<ShellListBatchOutput, FacadeError> {
+        self.evaluate_in(&EvaluationContext::new())
+    }
+
+    /// Evaluate with a reusable context.
+    pub fn evaluate_in(
+        self,
+        context: &EvaluationContext,
+    ) -> Result<ShellListBatchOutput, FacadeError> {
+        let descriptor =
+            Resolver::descriptor(self.operator).map_err(|error| FacadeError::UnsupportedApi {
+                requested: error.to_string(),
+            })?;
+        let symbol = descriptor.operator_symbol();
+        let route =
+            TripleBatchRoute::from_symbol(symbol).ok_or_else(|| FacadeError::UnsupportedApi {
+                requested: format!(
+                    "triple-batch:operator:{symbol} (batched: {})",
+                    TripleBatchRoute::SERVED.join(", ")
+                ),
+            })?;
+        check_batch_request_scope(self.representation, &self.options, "triple-batch")?;
+
+        let shells = batch_shells_from_basis(self.basis)?;
+        for triple in &self.triples {
+            for &index in triple {
+                if index as usize >= shells.len() {
+                    return Err(FacadeError::Validation {
+                        detail: format!(
+                            "triple-batch:shell-index {index} out of range (nbas={})",
+                            shells.len()
+                        ),
+                    });
+                }
+            }
+        }
+
+        let submit_start = Instant::now();
+        let (values, offsets, stats) = match route {
+            TripleBatchRoute::ThreeC2e => {
+                let batch = context
+                    .executor
+                    .evaluate_3c2e_triples(&self.options.backend_intent, &shells, &self.triples)
+                    .map_err(FacadeError::from)?;
+                (batch.values, batch.offsets, batch.stats)
+            }
+            TripleBatchRoute::ThreeC2eDeriv(family) => {
+                let batch = context
+                    .executor
+                    .evaluate_3c2e_deriv_triples(
+                        &self.options.backend_intent,
+                        family,
+                        &shells,
+                        &self.triples,
+                    )
+                    .map_err(FacadeError::from)?;
+                (batch.values, batch.offsets, batch.stats)
+            }
+        };
+        let submit_ns = submit_start.elapsed().as_nanos() as u64;
+
+        Ok(ShellListBatchOutput {
+            values,
+            offsets,
+            stats: facade_batch_stats(self.triples.len(), &stats, submit_ns),
+        })
+    }
+}
+
+/// Evaluate a whole shell-pair work list. See [`PairBatchRequest`].
+pub fn evaluate_shell_pairs(
+    request: PairBatchRequest<'_>,
+) -> Result<ShellListBatchOutput, FacadeError> {
+    request.evaluate()
+}
+
+/// Evaluate a shell-pair work list on a reusable context.
+pub fn evaluate_shell_pairs_in(
+    request: PairBatchRequest<'_>,
+    context: &EvaluationContext,
+) -> Result<ShellListBatchOutput, FacadeError> {
+    request.evaluate_in(context)
+}
+
+/// Evaluate a whole shell-triple work list. See [`TripleBatchRequest`].
+pub fn evaluate_shell_triples(
+    request: TripleBatchRequest<'_>,
+) -> Result<ShellListBatchOutput, FacadeError> {
+    request.evaluate()
+}
+
+/// Evaluate a shell-triple work list on a reusable context.
+pub fn evaluate_shell_triples_in(
+    request: TripleBatchRequest<'_>,
+    context: &EvaluationContext,
+) -> Result<ShellListBatchOutput, FacadeError> {
+    request.evaluate_in(context)
 }

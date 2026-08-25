@@ -27,6 +27,11 @@ rocm = ["dep:cubecl-hip", "cintx-runtime/rocm"]
 # arm so the public `CINTX_BACKEND=metal` surface remains distinct from
 # `=wgpu` for capability fingerprints and error diagnostics.
 metal = ["wgpu", "cintx-runtime/metal"]
+# Task 33-03: unlocks the extended (Wheeler/Jacobi, double-double) device Rys
+# path for nroots 6..12. OFF by default and, even when on, effective only where
+# `device_rys_ceiling::fma_fusion_verified` passes for that backend — see that
+# module for why a passing probe is necessary but not sufficient.
+extended-device-rys = []
 with-f12 = []
 with-4c1e = []
 unstable-source-api = []
@@ -41,6 +46,10 @@ cubecl-wgpu = { version = "0.10.0", optional = true }
 cubecl-cuda = { version = "0.10.0", optional = true }
 cubecl-hip = { version = "0.10.0", optional = true }
 cubecl-runtime = "0.10.0"
+# Host-side staging and chunk-preparation parallelism — the batched cart-to-sph
+# transform (Task 36-T2). Already in the resolved graph through cubecl, so
+# naming it directly does not move the lockfile.
+rayon = "1.12"
 smallvec = "1"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }

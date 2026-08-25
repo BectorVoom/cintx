@@ -308,6 +308,15 @@ unsafe fn optional_slice_mut<'a, T>(ptr: *mut T, len: usize) -> Option<&'a mut [
     Some(unsafe { std::slice::from_raw_parts_mut(ptr, len) })
 }
 
+/// C ABI workspace query: reports the buffer size `cintrs_eval` will need.
+///
+/// # Safety
+/// Every `*_len` argument must be the true element count of the array its
+/// pointer names, and each non-null pointer must be valid for reads of that many
+/// elements (writes, for `out`) and properly aligned. A null pointer is accepted
+/// wherever the corresponding length may be zero; the shim then treats the
+/// argument as absent rather than dereferencing it. The arrays must not be
+/// aliased or mutated by another thread for the duration of the call.
 #[allow(clippy::too_many_arguments)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cintrs_query_workspace(
@@ -366,6 +375,15 @@ pub unsafe extern "C" fn cintrs_query_workspace(
     })
 }
 
+/// C ABI integral evaluation, writing into the caller's `out` buffer.
+///
+/// # Safety
+/// Every `*_len` argument must be the true element count of the array its
+/// pointer names, and each non-null pointer must be valid for reads of that many
+/// elements (writes, for `out`) and properly aligned. A null pointer is accepted
+/// wherever the corresponding length may be zero; the shim then treats the
+/// argument as absent rather than dereferencing it. The arrays must not be
+/// aliased or mutated by another thread for the duration of the call.
 #[allow(clippy::too_many_arguments)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cintrs_eval(

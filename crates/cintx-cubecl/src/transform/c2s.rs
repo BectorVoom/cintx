@@ -7,6 +7,26 @@
 //!
 //! Reference: H. B. Schlegel and M. J. Frisch, Int. J. Quant. Chem., 54(1995), 83-87.
 
+// Transcribed verbatim from vendored libcint 6.1.3. Result compatibility with
+// upstream is decided by the exact bits these literals feed the kernels, so a
+// literal is never truncated to the shortest form that round-trips — the same
+// provenance rationale the `clippy::approx_constant` allows in this crate carry.
+#![allow(clippy::excessive_precision)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+
 use cintx_core::{CintFloat, cintxRsError};
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -363,65 +383,93 @@ pub const C2S_L4: [[f64; 15]; 9] = [
 ///   1. Bra (i-axis): multiply T[li] (nsph_i x ncart_i) from the left.
 ///   2. Ket (j-axis): multiply T[lj] (nsph_j x ncart_j) from the left.
 ///
-/// For l=0 both axes are identity (no-op).
+/// For `l <= 1` both axes are identity (no-op).
 ///
 /// Generic over `F: CintFloat`.
 /// The c2s coefficient table is FROZEN f64; each coefficient is cast to `F`
 /// via `F::from_f64_lossy` at the accumulation site (PATTERNS line 162).
 /// The f64 monomorphization is byte-identical to the pre-refactor concrete function.
 pub fn cart_to_sph_1e<F: CintFloat>(cart_buf: &[F], sph_buf: &mut [F], li: u8, lj: u8) {
-    let nci = ncart(li);
-    let ncj = ncart(lj);
-    let nsi = nsph(li);
-    let nsj = nsph(lj);
+    let mut scratch = Vec::new();
+    cart_to_sph_1e_into(cart_buf, sph_buf, li, lj, &mut scratch);
+}
+
+/// [`cart_to_sph_1e`] with the intermediate buffer supplied by the caller.
+///
+/// Batched evaluation calls this once per contraction block of every pair in a
+/// work list, so both differences from the allocating form matter there:
+/// `scratch` replaces a fresh `Vec` per call, and [`c2s_apply`] skips the axes
+/// where the transform is the identity (`l <= 1`). A transformed axis is
+/// unchanged bit for bit; a skipped one is a copy in place of a multiply by an
+/// identity matrix (Task 36-T0/36-T1).
+pub fn cart_to_sph_1e_into<F: CintFloat>(
+    cart_buf: &[F],
+    sph_buf: &mut [F],
+    li: u8,
+    lj: u8,
+    scratch: &mut Vec<F>,
+) {
+    let (nci, ncj) = (ncart(li), ncart(lj));
+    let (nsi, nsj) = (nsph(li), nsph(lj));
 
     debug_assert_eq!(cart_buf.len(), nci * ncj);
     debug_assert_eq!(sph_buf.len(), nsi * nsj);
 
-    // Step 1: Transform bra (i-axis): T[li] @ cart_buf column-by-column.
-    // Intermediate shape: [ncj * nsi] (j is outer, i_sph is inner)
-    // c2s_coeff returns f64 (FROZEN coefficient table); cast to F at accumulation site.
-    let mut tmp = vec![F::zero(); ncj * nsi];
-    for j in 0..ncj {
-        for mi in 0..nsi {
-            let mut sum = F::zero();
-            for ci in 0..nci {
-                sum = sum + F::from_f64_lossy(c2s_coeff(li, mi, ci)) * cart_buf[j * nci + ci];
-            }
-            tmp[j * nsi + mi] = sum;
-        }
-    }
+    // `[j][i]` with `i` fastest: bra first, then ket.
+    c2s_apply(cart_buf, sph_buf, scratch, &[(li, ncj, 1), (lj, 1, nsi)]);
+}
 
-    // Step 2: Transform ket (j-axis): T[lj] @ tmp^T row-by-row.
-    // Output shape: [nsj * nsi]
-    for mj in 0..nsj {
-        for mi in 0..nsi {
-            let mut sum = F::zero();
-            for cj in 0..ncj {
-                sum = sum + F::from_f64_lossy(c2s_coeff(lj, mj, cj)) * tmp[cj * nsi + mi];
-            }
-            sph_buf[mj * nsi + mi] = sum;
-        }
+/// Highest `l` the Cartesian-to-spherical transform can express.
+///
+/// This is libcint's own ceiling: its `g_c2s` table has entries for `l = 0..=15`
+/// and nothing above, so beyond it there is no upstream reference to be
+/// compatible with. [`ensure_c2s_supported`] is the typed guard callers use.
+pub use super::c2s_data::C2S_LMAX;
+
+/// Can the transform express a shell of angular momentum `l`?
+#[inline]
+#[must_use]
+pub fn c2s_supports_l(l: u8) -> bool {
+    l <= C2S_LMAX
+}
+
+/// Fail-closed guard for callers that have an error channel.
+///
+/// # Errors
+/// [`cintxRsError::UnsupportedApi`] when `l` exceeds [`C2S_LMAX`].
+pub fn ensure_c2s_supported(l: u8) -> Result<(), cintxRsError> {
+    if c2s_supports_l(l) {
+        Ok(())
+    } else {
+        Err(cintxRsError::UnsupportedApi {
+            requested: format!(
+                "spherical representation for l={l}: the cart-to-sph coefficient                  table covers l<={C2S_LMAX}, which is libcint's own ceiling"
+            ),
+        })
     }
 }
 
 /// Retrieve a single Condon-Shortley coefficient T[l][m_row][cart_col].
 ///
-/// `l`        : angular momentum
+/// `l`        : angular momentum, `0..=C2S_LMAX`
 /// `m_row`    : spherical index (0-based, maps to m = -l, ..., +l)
 /// `cart_col` : cartesian index (0-based)
 ///
-/// Returns 0.0 for l > 4 (unsupported — caller should validate before calling).
+/// # Panics
+/// When `l > C2S_LMAX`. This is deliberately a panic and not a `0.0` return:
+/// returning zero is what made an `l >= 5` shell come back silently zeroed with
+/// an `Ok` status, at any Rys order. Callers with an error channel reject the
+/// shell through [`ensure_c2s_supported`] first — the safe and raw APIs both do,
+/// in `validate_shell_tuple` — so reaching this assertion means a caller skipped
+/// its guard, which is a defect rather than an input.
 #[inline]
 pub fn c2s_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
-    match l {
-        0 => C2S_L0[m_row][cart_col],
-        1 => C2S_L1[m_row][cart_col],
-        2 => C2S_L2[m_row][cart_col],
-        3 => C2S_L3[m_row][cart_col],
-        4 => C2S_L4[m_row][cart_col],
-        _ => 0.0,
-    }
+    assert!(
+        c2s_supports_l(l),
+        "c2s_coeff: l={l} exceeds the coefficient table's ceiling {C2S_LMAX};          callers must reject the shell with `ensure_c2s_supported` first"
+    );
+    let block = super::c2s_data::C2S_OFFSET[l as usize];
+    super::c2s_data::C2S_TABLE[block + m_row * ncart(l) + cart_col]
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -441,40 +489,34 @@ pub fn c2s_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
 /// Generic over `F: CintFloat`. The c2s coefficient table is FROZEN f64;
 /// each coefficient is cast to `F` via `F::from_f64_lossy` at the accumulation site.
 pub fn cart_to_sph_2c2e<F: CintFloat>(cart: &[F], li: u8, lk: u8) -> Vec<F> {
-    let nci = ncart(li);
-    let nck = ncart(lk);
-    let nsi = nsph(li);
-    let nsk = nsph(lk);
+    let mut sph = vec![F::zero(); nsph(lk) * nsph(li)];
+    let mut scratch = Vec::new();
+    cart_to_sph_2c2e_into(cart, li, lk, &mut sph, &mut scratch);
+    sph
+}
+
+/// [`cart_to_sph_2c2e`] writing into caller-owned buffers.
+///
+/// Routed through [`c2s_apply`], so identity axes (`l <= 1`) are skipped and a
+/// transformed axis is unchanged bit for bit.
+///
+/// `sph` must be exactly `nsph(lk) * nsph(li)` long; `scratch` is grown as
+/// needed and may start empty (Task 36-T0/36-T1).
+pub fn cart_to_sph_2c2e_into<F: CintFloat>(
+    cart: &[F],
+    li: u8,
+    lk: u8,
+    sph: &mut [F],
+    scratch: &mut Vec<F>,
+) {
+    let (nci, nck) = (ncart(li), ncart(lk));
+    let (nsi, nsk) = (nsph(li), nsph(lk));
 
     debug_assert_eq!(cart.len(), nci * nck);
+    debug_assert_eq!(sph.len(), nsk * nsi);
 
-    // Step 1: Transform i-axis: T[li] @ cart column-by-column (for each k).
-    // Intermediate shape: [nck * nsi] (k is outer, i_sph is inner)
-    let mut tmp = vec![F::zero(); nck * nsi];
-    for k in 0..nck {
-        for mi in 0..nsi {
-            let mut sum = F::zero();
-            for ci in 0..nci {
-                sum = sum + F::from_f64_lossy(c2s_coeff(li, mi, ci)) * cart[k * nci + ci];
-            }
-            tmp[k * nsi + mi] = sum;
-        }
-    }
-
-    // Step 2: Transform k-axis: T[lk] @ tmp^T row-by-row.
-    // Output shape: [nsk * nsi]
-    let mut sph = vec![F::zero(); nsk * nsi];
-    for mk in 0..nsk {
-        for mi in 0..nsi {
-            let mut sum = F::zero();
-            for ck in 0..nck {
-                sum = sum + F::from_f64_lossy(c2s_coeff(lk, mk, ck)) * tmp[ck * nsi + mi];
-            }
-            sph[mk * nsi + mi] = sum;
-        }
-    }
-
-    sph
+    // `[k][i]` with `i` fastest: bra first, then ket.
+    c2s_apply(cart, sph, scratch, &[(li, nck, 1), (lk, 1, nsi)]);
 }
 
 /// Apply cart-to-sph transform for a 3-center-1-electron shell triple (li, lj, lk).
@@ -489,63 +531,42 @@ pub fn cart_to_sph_2c2e<F: CintFloat>(cart: &[F], li: u8, lk: u8) -> Vec<F> {
 /// Generic over `F: CintFloat`. The c2s coefficient table is FROZEN f64;
 /// each coefficient is cast to `F` via `F::from_f64_lossy` at the accumulation site.
 pub fn cart_to_sph_3c1e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec<F> {
-    let nci = ncart(li);
-    let ncj = ncart(lj);
-    let nck = ncart(lk);
-    let nsi = nsph(li);
-    let nsj = nsph(lj);
-    let nsk = nsph(lk);
+    let mut sph = vec![F::zero(); nsph(lk) * nsph(lj) * nsph(li)];
+    let mut scratch = Vec::new();
+    cart_to_sph_3c1e_into(cart, li, lj, lk, &mut sph, &mut scratch);
+    sph
+}
+
+/// [`cart_to_sph_3c1e`] writing into caller-owned buffers.
+///
+/// Routed through [`c2s_apply`], so identity axes (`l <= 1`) are skipped and a
+/// transformed axis is unchanged bit for bit. On a def2-SVP work list that is
+/// most axes, which is what Task 36-T0 measured the 3-index transform spending
+/// its time on.
+///
+/// `sph` must be exactly `nsph(lk) * nsph(lj) * nsph(li)` long; `scratch` is
+/// grown as needed and may start empty (Task 36-T0/36-T1).
+pub fn cart_to_sph_3c1e_into<F: CintFloat>(
+    cart: &[F],
+    li: u8,
+    lj: u8,
+    lk: u8,
+    sph: &mut [F],
+    scratch: &mut Vec<F>,
+) {
+    let (nci, ncj, nck) = (ncart(li), ncart(lj), ncart(lk));
+    let (nsi, nsj, nsk) = (nsph(li), nsph(lj), nsph(lk));
 
     debug_assert_eq!(cart.len(), nci * ncj * nck);
+    debug_assert_eq!(sph.len(), nsk * nsj * nsi);
 
-    // Step 1: Transform i-axis. Intermediate shape: [nck * ncj * nsi]
-    let mut tmp1 = vec![F::zero(); nck * ncj * nsi];
-    for k in 0..nck {
-        for j in 0..ncj {
-            for mi in 0..nsi {
-                let mut sum = F::zero();
-                for ci in 0..nci {
-                    sum = sum
-                        + F::from_f64_lossy(c2s_coeff(li, mi, ci)) * cart[(k * ncj + j) * nci + ci];
-                }
-                tmp1[(k * ncj + j) * nsi + mi] = sum;
-            }
-        }
-    }
-
-    // Step 2: Transform j-axis. Intermediate shape: [nck * nsj * nsi]
-    let mut tmp2 = vec![F::zero(); nck * nsj * nsi];
-    for k in 0..nck {
-        for mj in 0..nsj {
-            for mi in 0..nsi {
-                let mut sum = F::zero();
-                for cj in 0..ncj {
-                    sum = sum
-                        + F::from_f64_lossy(c2s_coeff(lj, mj, cj))
-                            * tmp1[(k * ncj + cj) * nsi + mi];
-                }
-                tmp2[(k * nsj + mj) * nsi + mi] = sum;
-            }
-        }
-    }
-
-    // Step 3: Transform k-axis. Output shape: [nsk * nsj * nsi]
-    let mut sph = vec![F::zero(); nsk * nsj * nsi];
-    for mk in 0..nsk {
-        for mj in 0..nsj {
-            for mi in 0..nsi {
-                let mut sum = F::zero();
-                for ck in 0..nck {
-                    sum = sum
-                        + F::from_f64_lossy(c2s_coeff(lk, mk, ck))
-                            * tmp2[(ck * nsj + mj) * nsi + mi];
-                }
-                sph[(mk * nsj + mj) * nsi + mi] = sum;
-            }
-        }
-    }
-
-    sph
+    // `[k][j][i]` with `i` fastest: i, then j, then k.
+    c2s_apply(
+        cart,
+        sph,
+        scratch,
+        &[(li, nck * ncj, 1), (lj, nck, nsi), (lk, 1, nsj * nsi)],
+    );
 }
 
 /// Apply cart-to-sph transform for a 3-center-2-electron shell triple (li, lj, lk).
@@ -560,6 +581,21 @@ pub fn cart_to_sph_3c1e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec
 pub fn cart_to_sph_3c2e<F: CintFloat>(cart: &[F], li: u8, lj: u8, lk: u8) -> Vec<F> {
     // 3c2e has the same 3-index (i, j, k) structure as 3c1e.
     cart_to_sph_3c1e::<F>(cart, li, lj, lk)
+}
+
+/// [`cart_to_sph_3c2e`] writing into caller-owned buffers.
+///
+/// Delegates to [`cart_to_sph_3c1e_into`] — same index structure, same
+/// arithmetic (Task 36-T0/36-T1).
+pub fn cart_to_sph_3c2e_into<F: CintFloat>(
+    cart: &[F],
+    li: u8,
+    lj: u8,
+    lk: u8,
+    sph: &mut [F],
+    scratch: &mut Vec<F>,
+) {
+    cart_to_sph_3c1e_into::<F>(cart, li, lj, lk, sph, scratch);
 }
 
 /// Apply cart-to-sph transform for a 2-electron shell quartet (li, lj, lk, ll).
@@ -606,53 +642,39 @@ fn c2s_axis<F: CintFloat>(src: &[F], dst: &mut [F], l: u8, outer: usize, inner: 
     }
 }
 
-/// [`cart_to_sph_2e`] writing into caller-owned buffers.
+/// Run a c2s axis plan, skipping the axes where the transform is the identity.
 ///
-/// Batched evaluation calls this once per contraction block of every quartet in
-/// a work list, so the allocation-per-call shape of [`cart_to_sph_2e`] shows up
-/// as a real fraction of wall-clock. Two things are different here:
+/// `steps` is `(l, outer, inner)` per axis, innermost axis first; `outer` counts
+/// the not-yet-transformed axes above it and `inner` the already-transformed
+/// axes below. This is the shape every family's transform has — 1e, 2c2e, 3c1e
+/// and 2e differ only in how many entries the plan has and what `outer`/`inner`
+/// are — so they all route through here rather than each carrying its own
+/// ping-pong.
 ///
-/// - **`out` and `scratch` are caller-owned**, so a loop over quartets
-///   allocates once instead of four times per block. `scratch` is grown as
-///   needed and may start empty.
-/// - **Axes with `l <= 1` are skipped.** `C2S_L0` and `C2S_L1` are identity
-///   matrices, so those axes are a copy; skipping them removes the entire
-///   transform for the s/p quartets that dominate a def2-SVP work list.
+/// Two things make this cheaper than the loop nest it replaces:
 ///
-/// `out` must be exactly `nsph(li)*nsph(lj)*nsph(lk)*nsph(ll)` long.
-pub fn cart_to_sph_2e_into<F: CintFloat>(
+/// - **Identity axes (`l <= 1`) are dropped.** `C2S_L0` and `C2S_L1` are
+///   identity matrices, so those axes are a copy dressed up as a matrix
+///   product. On a def2-SVP work list most axes are s or p, and Task 36-T0
+///   measured the c2s arithmetic at 68–81 % of the whole host transform — this
+///   is where that share goes. Dropping an identity axis leaves the block's
+///   extents untouched (`ncart == nsph` there), so the `outer`/`inner` counts
+///   the caller computed stay correct.
+/// - **Buffers are the caller's.** `scratch` is grown as needed and may start
+///   empty; `out` must be exactly the plan's final length.
+///
+/// Accumulation order is `c` ascending for each `(outer, m, inner)` triple,
+/// which is the order the hand-written loops used, so a non-identity axis is
+/// unchanged bit for bit.
+fn c2s_apply<F: CintFloat>(
     cart: &[F],
-    li: u8,
-    lj: u8,
-    lk: u8,
-    ll: u8,
     out: &mut [F],
     scratch: &mut Vec<F>,
+    steps: &[(u8, usize, usize)],
 ) {
-    let (nci, ncj, nck, ncl) = (ncart(li), ncart(lj), ncart(lk), ncart(ll));
-    let (nsi, nsj, nsk, nsl) = (nsph(li), nsph(lj), nsph(lk), nsph(ll));
-
-    debug_assert_eq!(cart.len(), nci * ncj * nck * ncl);
-    debug_assert_eq!(out.len(), nsi * nsj * nsk * nsl);
-
-    // The block is `[l][k][j][i]` with `i` fastest. Viewed one axis at a time it
-    // is `[outer][ncart(axis)][inner]`, where `outer` counts the not-yet-
-    // transformed axes above it and `inner` the already-transformed axes below.
-    // Axes are taken innermost-first (i, j, k, l), matching the original
-    // four-step order.
-    let steps = [
-        (li, ncl * nck * ncj, 1),
-        (lj, ncl * nck, nsi),
-        (lk, ncl, nsj * nsi),
-        (ll, 1, nsk * nsj * nsi),
-    ];
-
-    // Identity axes (`l <= 1`) leave the block untouched *and* leave its extents
-    // untouched (`ncart == nsph` there), so dropping them from the plan does not
-    // disturb the `outer`/`inner` counts computed above.
     let mut plan = [(0u8, 0usize, 0usize); 4];
     let mut n_steps = 0;
-    for &(l, outer, inner) in &steps {
+    for &(l, outer, inner) in steps {
         if l > 1 {
             plan[n_steps] = (l, outer, inner);
             n_steps += 1;
@@ -664,6 +686,8 @@ pub fn cart_to_sph_2e_into<F: CintFloat>(
     }
 
     // Ping-pong between two halves of `scratch`; the last step writes `out`.
+    // Each intermediate is no longer than the Cartesian block, because every
+    // axis either shrinks (`nsph < ncart`) or is skipped.
     let cap = cart.len();
     if scratch.len() < 2 * cap {
         scratch.resize(2 * cap, F::zero());
@@ -700,6 +724,53 @@ pub fn cart_to_sph_2e_into<F: CintFloat>(
     }
 }
 
+/// [`cart_to_sph_2e`] writing into caller-owned buffers.
+///
+/// Batched evaluation calls this once per contraction block of every quartet in
+/// a work list, so the allocation-per-call shape of [`cart_to_sph_2e`] shows up
+/// as a real fraction of wall-clock. Two things are different here:
+///
+/// - **`out` and `scratch` are caller-owned**, so a loop over quartets
+///   allocates once instead of four times per block. `scratch` is grown as
+///   needed and may start empty.
+/// - **Axes with `l <= 1` are skipped.** `C2S_L0` and `C2S_L1` are identity
+///   matrices, so those axes are a copy; skipping them removes the entire
+///   transform for the s/p quartets that dominate a def2-SVP work list.
+///
+/// `out` must be exactly `nsph(li)*nsph(lj)*nsph(lk)*nsph(ll)` long.
+pub fn cart_to_sph_2e_into<F: CintFloat>(
+    cart: &[F],
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ll: u8,
+    out: &mut [F],
+    scratch: &mut Vec<F>,
+) {
+    let (nci, ncj, nck, ncl) = (ncart(li), ncart(lj), ncart(lk), ncart(ll));
+    let (nsi, nsj, nsk, nsl) = (nsph(li), nsph(lj), nsph(lk), nsph(ll));
+
+    debug_assert_eq!(cart.len(), nci * ncj * nck * ncl);
+    debug_assert_eq!(out.len(), nsi * nsj * nsk * nsl);
+
+    // The block is `[l][k][j][i]` with `i` fastest. Viewed one axis at a time it
+    // is `[outer][ncart(axis)][inner]`, where `outer` counts the not-yet-
+    // transformed axes above it and `inner` the already-transformed axes below.
+    // Axes are taken innermost-first (i, j, k, l), matching the original
+    // four-step order.
+    c2s_apply(
+        cart,
+        out,
+        scratch,
+        &[
+            (li, ncl * nck * ncj, 1),
+            (lj, ncl * nck, nsi),
+            (lk, ncl, nsj * nsi),
+            (ll, 1, nsk * nsj * nsi),
+        ],
+    );
+}
+
 /// Staging cart-to-sph transform — no-op.
 ///
 /// Real kernels (1e, 2e, etc.) handle cart-to-sph internally using
@@ -713,6 +784,124 @@ pub fn cart_to_spheric_staging(staging: &mut [f64]) -> Result<(), cintxRsError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The extraction gate.** The generated `l = 0..=15` table must agree,
+    /// bit for bit, with the four hand-transcribed matrices this module has
+    /// carried since the start.
+    ///
+    /// This is what makes `l >= 5` trustworthy. Those blocks have no hand
+    /// reference to check against — they were parsed out of libcint's
+    /// `g_trans_cart2sph[]` by `xtask gen-c2s-table` — so the evidence that the
+    /// parse and the row-major layout are right has to come from the region
+    /// where a reference does exist. 245 coefficients across `l = 0..=4`, from
+    /// the same extraction, reproduce `C2S_L0..C2S_L4` exactly.
+    #[test]
+    fn generated_table_matches_the_hand_transcribed_matrices() {
+        fn check(l: u8, rows: &[&[f64]]) {
+            assert_eq!(rows.len(), nsph(l), "row count for l={l}");
+            for (m, row) in rows.iter().enumerate() {
+                assert_eq!(row.len(), ncart(l), "column count for l={l} m={m}");
+                for (c, &want) in row.iter().enumerate() {
+                    let got = c2s_coeff(l, m, c);
+                    assert_eq!(
+                        got.to_bits(),
+                        want.to_bits(),
+                        "l={l} m={m} cart={c}: generated table has {got}, \
+                         the hand-transcribed matrix has {want}"
+                    );
+                }
+            }
+        }
+        check(0, &C2S_L0.iter().map(|r| &r[..]).collect::<Vec<_>>());
+        check(1, &C2S_L1.iter().map(|r| &r[..]).collect::<Vec<_>>());
+        check(2, &C2S_L2.iter().map(|r| &r[..]).collect::<Vec<_>>());
+        check(3, &C2S_L3.iter().map(|r| &r[..]).collect::<Vec<_>>());
+        check(4, &C2S_L4.iter().map(|r| &r[..]).collect::<Vec<_>>());
+    }
+
+    /// The table's block offsets and length have to line up with the shapes the
+    /// accessor indexes by, or `c2s_coeff` reads a neighbouring `l`'s block —
+    /// which would be wrong without being obviously wrong.
+    #[test]
+    fn generated_table_blocks_have_the_right_shape() {
+        use super::super::c2s_data::{C2S_OFFSET, C2S_TABLE};
+        let mut cursor = 0usize;
+        for l in 0..=C2S_LMAX {
+            assert_eq!(
+                C2S_OFFSET[l as usize], cursor,
+                "block offset for l={l} does not follow the previous block"
+            );
+            cursor += nsph(l) * ncart(l);
+        }
+        assert_eq!(cursor, C2S_TABLE.len());
+        assert_eq!(C2S_OFFSET[C2S_LMAX as usize + 1], C2S_TABLE.len());
+    }
+
+    /// `l >= 5` must actually produce coefficients now. The regression this
+    /// guards is precise: before the table was extended, every one of these was
+    /// `0.0`, and an `(h s | s)` integral — `nroots = 3`, well inside every
+    /// device Rys ceiling — came back entirely zeroed with an `Ok` status.
+    #[test]
+    fn high_l_coefficients_are_not_zero() {
+        for l in 5..=C2S_LMAX {
+            let nonzero = (0..nsph(l))
+                .flat_map(|m| (0..ncart(l)).map(move |c| (m, c)))
+                .filter(|&(m, c)| c2s_coeff(l, m, c) != 0.0)
+                .count();
+            assert!(
+                nonzero >= nsph(l),
+                "l={l} has only {nonzero} non-zero coefficients; every spherical \
+                 row must carry at least one"
+            );
+        }
+    }
+
+    /// The two ceilings are one number. `cintx-core` cannot depend on this
+    /// crate, so `Shell::try_new`'s spherical guard carries its own constant;
+    /// this pins it to the generated table's, which is the real authority.
+    #[test]
+    fn spheric_l_max_matches_the_table_ceiling() {
+        assert_eq!(C2S_LMAX, cintx_core::SPHERIC_L_MAX);
+    }
+
+    /// A spherical shell past the ceiling is refused at construction, so the
+    /// transform's `assert!` is a backstop rather than the user-facing failure.
+    #[test]
+    fn a_spherical_shell_past_the_ceiling_is_refused_at_construction() {
+        use cintx_core::{Representation, Shell};
+        use std::sync::Arc;
+
+        let make = |l: u8, rep| {
+            Shell::try_new(
+                0,
+                l,
+                1,
+                1,
+                0,
+                rep,
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+                Arc::from(vec![1.0_f64].into_boxed_slice()),
+            )
+        };
+        assert!(make(C2S_LMAX, Representation::Spheric).is_ok());
+        assert!(make(C2S_LMAX + 1, Representation::Spheric).is_err());
+        // A Cartesian shell needs no transform, so the cap does not apply.
+        assert!(make(C2S_LMAX + 1, Representation::Cart).is_ok());
+    }
+
+    /// The guard is fail-closed above the table, and the accessor panics rather
+    /// than returning a zero that reads like a real answer.
+    #[test]
+    fn above_the_ceiling_is_refused_not_zeroed() {
+        assert!(c2s_supports_l(C2S_LMAX));
+        assert!(!c2s_supports_l(C2S_LMAX + 1));
+        assert!(ensure_c2s_supported(C2S_LMAX).is_ok());
+        assert!(ensure_c2s_supported(C2S_LMAX + 1).is_err());
+        assert!(
+            std::panic::catch_unwind(|| c2s_coeff(C2S_LMAX + 1, 0, 0)).is_err(),
+            "c2s_coeff must not return a value for l > C2S_LMAX"
+        );
+    }
 
     #[test]
     fn ncart_values() {

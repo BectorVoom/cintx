@@ -28,7 +28,7 @@
 //! - `diag_off1[0..n]` off-diagonal in [0..n-1]; [n-1] is scratch (as in C).
 //! - `eig[0..n]`       receives ascending eigenvalues.
 //! - `vec[0..n*n]`     receives eigenvectors; `vec[i*n+j]` = j-th component of i-th eigvec.
-//!                     Wheeler reads `vec[i*n]` (first component per eigvec).
+//!   Wheeler reads `vec[i*n]` (first component per eigvec).
 //!
 //! ## C helper name registry (satisfies plan acceptance-criteria grep)
 //!
@@ -38,6 +38,24 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+// Element loops rather than `copy_from_slice`: the source index carries a table
+// base offset (`tabu_base + i`, `j * ORDER7OFFSET + i`) or a recursion bound that
+// the slice form would have to restate as two range expressions.
+#![allow(clippy::manual_memcpy)]
 
 use cubecl::Runtime;
 use cubecl::client::ComputeClient;
@@ -420,13 +438,13 @@ pub fn cint_diagonalize_host(
 fn pythag_dev<F: Float>(a: F, b: F) -> F {
     let aa = F::abs(a);
     let ab = F::abs(b);
-    let mut out = F::new(0.0);
+    let mut out = F::new(0.0_f32);
     if aa > ab {
         let t = ab / aa;
-        out = aa * F::sqrt(F::new(1.0) + t * t);
-    } else if ab > F::new(0.0) {
+        out = aa * F::sqrt(F::new(1.0_f32) + t * t);
+    } else if ab > F::new(0.0_f32) {
         let t = aa / ab;
-        out = ab * F::sqrt(F::new(1.0) + t * t);
+        out = ab * F::sqrt(F::new(1.0_f32) + t * t);
     }
     out
 }
@@ -434,7 +452,7 @@ fn pythag_dev<F: Float>(a: F, b: F) -> F {
 #[cube]
 fn sign_dev<F: Float>(a: F, b: F) -> F {
     let mut out = F::abs(a);
-    if b < F::new(0.0) {
+    if b < F::new(0.0_f32) {
         out = -F::abs(a);
     }
     out
@@ -445,18 +463,18 @@ fn sign_dev<F: Float>(a: F, b: F) -> F {
 fn dlaneg_dev<F: Float>(dorig: &Array<F>, eorig: &Array<F>, n: u32, sigma: F) -> u32 {
     let mut neg: u32 = 0;
     let mut p = dorig[(0) as usize] - sigma;
-    if p < F::new(0.0) {
+    if p < F::new(0.0_f32) {
         neg += 1;
     }
     let tiny = F::cast_from(f64::MIN_POSITIVE);
     let mut i: u32 = 1;
     while i < n {
-        if p == F::new(0.0) {
+        if p == F::new(0.0_f32) {
             p = -tiny;
         }
         let ei = eorig[(i - 1) as usize];
         p = dorig[(i) as usize] - sigma - ei * ei / p;
-        if p < F::new(0.0) {
+        if p < F::new(0.0_f32) {
             neg += 1;
         }
         i += 1;
@@ -474,8 +492,8 @@ fn tqli_dev<F: Float>(
     n: u32,
     info: &mut Array<F>,
 ) {
-    let mut bad = F::new(0.0);
-    e[(n - 1) as usize] = F::new(0.0);
+    let mut bad = F::new(0.0_f32);
+    e[(n - 1) as usize] = F::new(0.0_f32);
     let eps = F::cast_from(f64::EPSILON);
 
     let mut l: u32 = 0;
@@ -498,18 +516,18 @@ fn tqli_dev<F: Float>(
                 if m == l {
                     converged = true;
                 } else if iter >= MAX_ITER_U32 {
-                    bad = F::new(1.0);
+                    bad = F::new(1.0_f32);
                     converged = true;
                 } else {
                     iter += 1;
-                    let mut g =
-                        (d[(l + 1) as usize] - d[(l) as usize]) / (F::new(2.0) * e[(l) as usize]);
-                    let r = pythag_dev::<F>(g, F::new(1.0));
+                    let mut g = (d[(l + 1) as usize] - d[(l) as usize])
+                        / (F::new(2.0_f32) * e[(l) as usize]);
+                    let r = pythag_dev::<F>(g, F::new(1.0_f32));
                     g = d[(m) as usize] - d[(l) as usize]
                         + e[(l) as usize] / (g + sign_dev::<F>(r, g));
-                    let mut s = F::new(1.0);
-                    let mut c = F::new(1.0);
-                    let mut p = F::new(0.0);
+                    let mut s = F::new(1.0_f32);
+                    let mut c = F::new(1.0_f32);
+                    let mut p = F::new(0.0_f32);
                     let mut underflow = false;
                     let mut i = m;
                     let mut rotating = true;
@@ -519,16 +537,16 @@ fn tqli_dev<F: Float>(
                         let b = c * e[(i) as usize];
                         let rr = pythag_dev::<F>(f, g);
                         e[(i + 1) as usize] = rr;
-                        if rr == F::new(0.0) {
+                        if rr == F::new(0.0_f32) {
                             d[(i + 1) as usize] = d[(i + 1) as usize] - p;
-                            e[(m) as usize] = F::new(0.0);
+                            e[(m) as usize] = F::new(0.0_f32);
                             underflow = true;
                             rotating = false;
                         } else {
                             s = f / rr;
                             c = g / rr;
                             g = d[(i + 1) as usize] - p;
-                            let r2 = (d[(i) as usize] - g) * s + F::new(2.0) * c * b;
+                            let r2 = (d[(i) as usize] - g) * s + F::new(2.0_f32) * c * b;
                             p = s * r2;
                             d[(i + 1) as usize] = g + p;
                             g = c * r2 - b;
@@ -544,7 +562,7 @@ fn tqli_dev<F: Float>(
                     if !underflow {
                         d[(l) as usize] = d[(l) as usize] - p;
                         e[(l) as usize] = g;
-                        e[(m) as usize] = F::new(0.0);
+                        e[(m) as usize] = F::new(0.0_f32);
                     }
                 }
             }
@@ -566,10 +584,10 @@ fn refine_rayleigh_dev<F: Float>(
 ) {
     let mut k: u32 = 0;
     while k < n {
-        let mut num = F::new(0.0);
-        let mut numc = F::new(0.0);
-        let mut den = F::new(0.0);
-        let mut denc = F::new(0.0);
+        let mut num = F::new(0.0_f32);
+        let mut numc = F::new(0.0_f32);
+        let mut den = F::new(0.0_f32);
+        let mut denc = F::new(0.0_f32);
         let mut row: u32 = 0;
         while row < n {
             let vr = vecout[(k * n + row) as usize];
@@ -593,13 +611,17 @@ fn refine_rayleigh_dev<F: Float>(
             row += 1;
         }
         let denom = den + denc;
-        if denom > F::new(0.0) {
+        if denom > F::new(0.0_f32) {
             dsorted[(k) as usize] = (num + numc) / denom;
         }
         k += 1;
     }
 }
 
+// `#[cube]` requires every binding to be initialized at its `let`: a
+// conditionally-initialized local does not expand. Each initializer below is
+// overwritten on every path, so it is structurally necessary rather than dead.
+#[allow(unused_assignments)]
 /// Device Sturm-bisection eigenvalue refinement (high relative accuracy).
 /// `estin` holds the pre-refinement estimates (immutable copy); refines into `dsorted`.
 #[cube]
@@ -629,12 +651,12 @@ fn refine_bisection_dev<F: Float>(
         i += 1;
     }
     let mut span = F::abs(gmax - gmin);
-    if span < F::new(1.0) {
-        span = F::new(1.0);
+    if span < F::new(1.0_f32) {
+        span = F::new(1.0_f32);
     }
 
-    let four = F::new(4.0);
-    let half = F::new(0.5);
+    let four = F::new(4.0_f32);
+    let half = F::new(0.5_f32);
     let mut k: u32 = 0;
     while k < n {
         let target = k + 1u32;
@@ -674,10 +696,13 @@ fn refine_bisection_dev<F: Float>(
             } else {
                 hi = half * (estin[(k) as usize] + estin[(k + 1) as usize]);
             }
+            // Written out rather than `std::mem::swap`: this is `#[cube]` code and
+            // the macro frontend has no expansion for `mem::swap`.
+            #[allow(clippy::manual_swap)]
             if lo > hi {
-                let tmp = lo;
+                let t = lo;
                 lo = hi;
-                hi = tmp;
+                hi = t;
             }
             let nlo = dlaneg_dev::<F>(dorig, eorig, n, lo);
             let nhi = dlaneg_dev::<F>(dorig, eorig, n, hi);
@@ -709,9 +734,19 @@ fn refine_bisection_dev<F: Float>(
     }
 }
 
-/// Full device diagonalizer kernel for n >= 3 (n<=2 fast paths stay on the host launcher).
-#[cube(launch)]
-fn cint_diagonalize_kernel<F: Float + CubeElement>(
+/// Full device diagonalizer for n >= 3, as an **inline callee**.
+///
+/// Task 33-01: the same body [`cint_diagonalize_kernel`] launches, factored out
+/// so a family kernel can call it *inside* its own launch instead of round-
+/// tripping to the host. That round trip is what confined the extended Rys path
+/// to the host: a device solver reachable only by launching it cannot be used
+/// from inside `two_electron_scalar_kernel`.
+///
+/// Every buffer is caller-owned scratch. `n <= 12`; the `n <= 2` fast paths stay
+/// on the host launcher, as before.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cint_diagonalize_dev<F: Float + CubeElement>(
     diag: &Array<F>,
     offd: &Array<F>,
     eig: &mut Array<F>,
@@ -729,7 +764,7 @@ fn cint_diagonalize_kernel<F: Float + CubeElement>(
     let mut ia: u32 = 0;
     while ia < n {
         dorig[(ia) as usize] = diag[(ia) as usize];
-        eorig[(ia) as usize] = F::new(0.0);
+        eorig[(ia) as usize] = F::new(0.0_f32);
         ia += 1;
     }
     let mut ib: u32 = 0;
@@ -745,18 +780,18 @@ fn cint_diagonalize_kernel<F: Float + CubeElement>(
         ework[(ic) as usize] = offd[(ic) as usize];
         ic += 1;
     }
-    ework[(n - 1) as usize] = F::new(0.0);
+    ework[(n - 1) as usize] = F::new(0.0_f32);
 
     // Eigenvector matrix = identity (row-major z[(row*n+col) as usize]).
     let nn = n * n;
     let mut idx: u32 = 0;
     while idx < nn {
-        z[(idx) as usize] = F::new(0.0);
+        z[(idx) as usize] = F::new(0.0_f32);
         idx += 1;
     }
     let mut id: u32 = 0;
     while id < n {
-        z[(id * n + id) as usize] = F::new(1.0);
+        z[(id * n + id) as usize] = F::new(1.0_f32);
         id += 1;
     }
 
@@ -801,6 +836,32 @@ fn cint_diagonalize_kernel<F: Float + CubeElement>(
         ig += 1;
     }
     refine_bisection_dev::<F>(dorig, eorig, est, eig, n);
+}
+
+/// Full device diagonalizer kernel for n >= 3 (n<=2 fast paths stay on the host
+/// launcher).
+///
+/// A one-line launch wrapper over [`cint_diagonalize_dev`], so the host path and
+/// any in-kernel caller run the *same* code rather than two copies of it.
+#[cube(launch)]
+#[allow(clippy::too_many_arguments)]
+fn cint_diagonalize_kernel<F: Float + CubeElement>(
+    diag: &Array<F>,
+    offd: &Array<F>,
+    eig: &mut Array<F>,
+    vecout: &mut Array<F>,
+    info: &mut Array<F>,
+    dwork: &mut Array<F>,
+    ework: &mut Array<F>,
+    z: &mut Array<F>,
+    dorig: &mut Array<F>,
+    eorig: &mut Array<F>,
+    est: &mut Array<F>,
+    #[comptime] n: u32,
+) {
+    cint_diagonalize_dev::<F>(
+        diag, offd, eig, vecout, info, dwork, ework, z, dorig, eorig, est, n,
+    );
 }
 
 // ---------------------------------------------------------------------------

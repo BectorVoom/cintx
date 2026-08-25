@@ -122,8 +122,14 @@ impl DeviceResidentCache {
         Arc::clone(entries.entry(key).or_insert_with(|| Arc::clone(&metadata)))
     }
 
+    /// Number of distinct bases held resident.
     pub fn len(&self) -> usize {
         self.entries.read().expect("resident cache poisoned").len()
+    }
+
+    /// Is no basis resident yet?
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

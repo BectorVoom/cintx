@@ -31,6 +31,21 @@
 //! f32 parity gate is calibrated against, while moving the real arithmetic onto
 //! the device.
 
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+
 use crate::backend::ResolvedBackend;
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
@@ -81,6 +96,108 @@ fn validated_4c1e_error(reason: &str) -> cintxRsError {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Launch grouping (Task 35-D, wave 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `u32` shape scalars per class row of the device shape table: `li, lj, lk, ll`.
+const FOUR_C1E_SHAPE_STRIDE: usize = 4;
+
+/// `u32` per work row: `si, sj, sk, sl, out_off, class, ci, cj, ck, cl`.
+///
+/// A row is one *(shell quartet, contraction quartet)*, for the same reason the
+/// 3c1e row is: the per-tuple path already launched once per `(ci,cj,ck,cl)`
+/// column tuple with that tuple's coefficient columns extracted host-side, so
+/// naming the selectors in the row reproduces exactly that arithmetic while
+/// collapsing the launches.
+const FOUR_C1E_ROW_STRIDE: usize = 10;
+
+/// Per-slot `[gx | gy | gz]` slab stride, padded to a cache line of `f64`.
+fn four_c1e_g_slab_stride(max_g_size: usize) -> usize {
+    const LINE: usize = 8;
+    (3 * max_g_size).div_ceil(LINE) * LINE
+}
+
+/// Per-slot polynomial-scratch stride, padded the same way.
+fn four_c1e_buf_slab_stride(max_buf: usize) -> usize {
+    const LINE: usize = 8;
+    max_buf.div_ceil(LINE) * LINE
+}
+
+/// One dispatch of the 4c1e family: every work row in it.
+///
+/// The kernel has no comptime shape parameter — 4c1e is a polynomial recurrence,
+/// not a Rys quadrature, so there is no `nroots` to specialize on — and a whole
+/// work list is a single dispatch.
+#[derive(Clone, Debug, Default)]
+pub struct FourC1eLaunchGroup {
+    /// [`FOUR_C1E_SHAPE_STRIDE`] `u32` per merged class: `li, lj, lk, ll`.
+    pub class_shape: Vec<u32>,
+    /// One `common_factor` per class.
+    pub class_factor: Vec<f64>,
+    /// [`FOUR_C1E_ROW_STRIDE`] `u32` per work row.
+    pub rows: Vec<u32>,
+    /// Total Cartesian output elements across this group's rows.
+    pub out_len: usize,
+    /// Widest per-slot `g_size` in the group.
+    pub max_g_size: usize,
+    /// Widest per-slot polynomial scratch in the group.
+    pub max_buf: usize,
+}
+
+impl FourC1eLaunchGroup {
+    /// Append a class and return the index its rows carry.
+    pub fn push_class(&mut self, li: u32, lj: u32, lk: u32, ll: u32, common_factor: f64) -> u32 {
+        let index = self.class_factor.len() as u32;
+        self.class_shape.extend_from_slice(&[li, lj, lk, ll]);
+        self.class_factor.push(common_factor);
+        // `shape_sizes_4c1e` is the single host-side mirror of the kernel's
+        // inline layout arithmetic; the slab strides derive from it rather than
+        // from a second copy that could drift.
+        let (g_size, buf_len) =
+            shape_sizes_4c1e(li as usize, lj as usize, lk as usize, ll as usize);
+        self.max_g_size = self.max_g_size.max(g_size);
+        self.max_buf = self.max_buf.max(buf_len);
+        index
+    }
+
+    /// Append one `(shell quartet, contraction quartet)` row.
+    #[allow(clippy::too_many_arguments)]
+    pub fn push_row(&mut self, shells: [u32; 4], out_off: u32, class: u32, contraction: [u32; 4]) {
+        self.rows.extend_from_slice(&[
+            shells[0],
+            shells[1],
+            shells[2],
+            shells[3],
+            out_off,
+            class,
+            contraction[0],
+            contraction[1],
+            contraction[2],
+            contraction[3],
+        ]);
+    }
+
+    /// Number of work rows.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.rows.len() / FOUR_C1E_ROW_STRIDE
+    }
+
+    /// Is this group empty?
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
+
+    /// Bytes this group's row and class tables cost to upload.
+    #[must_use]
+    pub fn upload_bytes(&self) -> usize {
+        (self.rows.len() + self.class_shape.len()) * std::mem::size_of::<u32>()
+            + self.class_factor.len() * std::mem::size_of::<f64>()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Device kernel — `#[cube(launch)]`, generic over `F: Float`
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -110,357 +227,520 @@ fn validated_4c1e_error(reason: &str) -> cintxRsError {
 #[cube(launch, launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn center_4c1e_kernel<F: Float + CubeElement>(
-    exps_i: &Array<F>,
-    exps_j: &Array<F>,
-    exps_k: &Array<F>,
-    exps_l: &Array<F>,
-    coeff_i: &Array<F>,
-    coeff_j: &Array<F>,
-    coeff_k: &Array<F>,
-    coeff_l: &Array<F>,
+    exps: &Array<F>,
+    coeffs: &Array<F>,
+    centers: &Array<F>,
+    shell_meta: &Array<u32>,
+    rows: &Array<u32>,
+    class_shape: &Array<u32>,
+    class_factor: &Array<F>,
     g: &mut Array<F>,
     buf: &mut Array<F>,
     cart_out: &mut Array<F>,
-    rix: F,
-    riy: F,
-    riz: F,
-    rjx: F,
-    rjy: F,
-    rjz: F,
-    rkx: F,
-    rky: F,
-    rkz: F,
-    rlx: F,
-    rly: F,
-    rlz: F,
-    common_factor: F,
-    li: u32,
-    lj: u32,
-    lk: u32,
-    ll: u32,
-    nprim_i: u32,
-    nprim_j: u32,
-    nprim_k: u32,
-    nprim_l: u32,
-    nctr_i: u32,
-    nctr_j: u32,
-    nctr_k: u32,
-    nctr_l: u32,
+    n_rows: u32,
+    n_cubes: u32,
+    g_stride: u32,
+    buf_stride: u32,
+    #[comptime] per_unit: u32,
 ) {
-    if UNIT_POS == 0u32 {
-        // ── Shape4c1e layout (nroots = 1) ───────────────────────────────────
-        let nmax = li + lj;
-        let mmax = lk + ll;
-        // ibase = li > lj, kbase = lk > ll (strict >).
-        let mut ibase = false;
-        if li > lj {
-            ibase = true;
+    // Slot / lane decomposition — see `two_electron.rs` for why this is
+    // arithmetic on comptime-folded flags rather than a `comptime!` if/else.
+    let cube_pos = CUBE_POS as u32;
+    let unit_pos = UNIT_POS as u32;
+    let cube_dim = CUBE_DIM as u32;
+
+    let coop = if comptime!(per_unit == 1u32) {
+        0u32
+    } else {
+        1u32
+    };
+    let punit = 1u32 - coop;
+    let slots_per_cube = cube_dim * punit + coop;
+    let slot = cube_pos * slots_per_cube + unit_pos * punit;
+    let n_slots = n_cubes * slots_per_cube;
+    let lane = unit_pos * coop;
+
+    if lane == 0u32 {
+        // Two slabs with independent strides: the `[gx|gy|gz]` G-tensor and the
+        // 1D/2D polynomial scratch. They are read at unrelated offsets, so
+        // unlike the single-stride families they do not share one.
+        let gbase = slot * g_stride;
+        let bbase = slot * buf_stride;
+
+        #[allow(clippy::manual_div_ceil)]
+        let chunk = (n_rows + n_slots - 1u32) / n_slots;
+        let qi_start = slot * (chunk * punit + coop);
+        let mut qi_stop = (qi_start + chunk) * punit + n_rows * coop;
+        if qi_stop > n_rows {
+            qi_stop = n_rows;
         }
-        let mut kbase = false;
-        if lk > ll {
-            kbase = true;
-        }
+        let qi_step = n_slots * coop + punit;
 
-        // dli/dlj/dlk/dll from the branch selection.
-        let mut dli = li + 1u32;
-        let mut dlj = li + lj + 1u32;
-        if ibase {
-            dli = li + lj + 1u32;
-            dlj = lj + 1u32;
-        }
-        let mut dlk = lk + 1u32;
-        let mut dll = lk + ll + 1u32;
-        if kbase {
-            dlk = lk + ll + 1u32;
-            dll = ll + 1u32;
-        }
+        let mut qi = qi_start;
+        while qi < qi_stop {
+            // A row is one *(shell quartet, contraction quartet)* — see
+            // `FourC1eLaunchGroup` for why the contraction is in the row.
+            let rrow = qi * comptime!(FOUR_C1E_ROW_STRIDE as u32);
+            let si = rows[rrow as usize];
+            let sj = rows[(rrow + 1u32) as usize];
+            let sk = rows[(rrow + 2u32) as usize];
+            let sl = rows[(rrow + 3u32) as usize];
+            let out_off = rows[(rrow + 4u32) as usize];
+            let cls = rows[(rrow + 5u32) as usize];
+            let ci_sel = rows[(rrow + 6u32) as usize];
+            let cj_sel = rows[(rrow + 7u32) as usize];
+            let ck_sel = rows[(rrow + 8u32) as usize];
+            let cl_sel = rows[(rrow + 9u32) as usize];
 
-        // Strides (nroots = 1).
-        let di = 1u32;
-        let dk = dli;
-        let dl = dli * dlk;
-        let dj = dli * dlk * dll;
-        let g_size = dli * dlk * dll * dlj;
+            let srow = cls * comptime!(FOUR_C1E_SHAPE_STRIDE as u32);
+            let li = class_shape[srow as usize];
+            let lj = class_shape[(srow + 1u32) as usize];
+            let lk = class_shape[(srow + 2u32) as usize];
+            let ll = class_shape[(srow + 3u32) as usize];
+            let common_factor = class_factor[cls as usize];
 
-        // 1D polynomial scratch geometry.
-        let db = nmax + mmax + 1u32;
-        let mut bigger = nmax;
-        if mmax > bigger {
-            bigger = mmax;
-        }
+            let mi = si * 4u32;
+            let eoff_i = shell_meta[mi as usize];
+            let coff_i = shell_meta[(mi + 1u32) as usize];
+            let nprim_i = shell_meta[(mi + 2u32) as usize];
+            let nctr_i = shell_meta[(mi + 3u32) as usize];
+            let mj = sj * 4u32;
+            let eoff_j = shell_meta[mj as usize];
+            let coff_j = shell_meta[(mj + 1u32) as usize];
+            let nprim_j = shell_meta[(mj + 2u32) as usize];
+            let nctr_j = shell_meta[(mj + 3u32) as usize];
+            let mk = sk * 4u32;
+            let eoff_k = shell_meta[mk as usize];
+            let coff_k = shell_meta[(mk + 1u32) as usize];
+            let nprim_k = shell_meta[(mk + 2u32) as usize];
+            let nctr_k = shell_meta[(mk + 3u32) as usize];
+            let ml = sl * 4u32;
+            let eoff_l = shell_meta[ml as usize];
+            let coff_l = shell_meta[(ml + 1u32) as usize];
+            let nprim_l = shell_meta[(ml + 2u32) as usize];
+            let nctr_l = shell_meta[(ml + 3u32) as usize];
 
-        // Cartesian output dimensions.
-        let nfi = (li + 1u32) * (li + 2u32) / 2u32;
-        let nfj = (lj + 1u32) * (lj + 2u32) / 2u32;
-        let nfk = (lk + 1u32) * (lk + 2u32) / 2u32;
-        let nfl = (ll + 1u32) * (ll + 2u32) / 2u32;
-        let out_len = nfi * nfj * nfk * nfl;
+            let ci3 = si * 3u32;
+            let rix = centers[ci3 as usize];
+            let riy = centers[(ci3 + 1u32) as usize];
+            let riz = centers[(ci3 + 2u32) as usize];
+            let cj3 = sj * 3u32;
+            let rjx = centers[cj3 as usize];
+            let rjy = centers[(cj3 + 1u32) as usize];
+            let rjz = centers[(cj3 + 2u32) as usize];
+            let ck3 = sk * 3u32;
+            let rkx = centers[ck3 as usize];
+            let rky = centers[(ck3 + 1u32) as usize];
+            let rkz = centers[(ck3 + 2u32) as usize];
+            let cl3 = sl * 3u32;
+            let rlx = centers[cl3 as usize];
+            let rly = centers[(cl3 + 1u32) as usize];
+            let rlz = centers[(cl3 + 2u32) as usize];
 
-        // Contraction selection (this launch evaluates the (0,0,0,0) tuple).
-        let ci_sel = 0u32;
-        let cj_sel = 0u32;
-        let ck_sel = 0u32;
-        let cl_sel = 0u32;
+            // ── Shape4c1e layout (nroots = 1) ───────────────────────────────
+            let nmax = li + lj;
+            let mmax = lk + ll;
+            // ibase = li > lj, kbase = lk > ll (strict >).
+            let mut ibase = false;
+            if li > lj {
+                ibase = true;
+            }
+            let mut kbase = false;
+            if lk > ll {
+                kbase = true;
+            }
 
-        // Zero the accumulation buffer.
-        let mut oi = 0u32;
-        while oi < out_len {
-            cart_out[oi as usize] = F::new(0.0);
-            oi += 1u32;
-        }
+            // dli/dlj/dlk/dll from the branch selection.
+            let mut dli = li + 1u32;
+            let mut dlj = li + lj + 1u32;
+            if ibase {
+                dli = li + lj + 1u32;
+                dlj = lj + 1u32;
+            }
+            let mut dlk = lk + 1u32;
+            let mut dll = lk + ll + 1u32;
+            if kbase {
+                dlk = lk + ll + 1u32;
+                dll = ll + 1u32;
+            }
 
-        let total_g = 3u32 * g_size;
+            // Strides (nroots = 1).
+            let di = 1u32;
+            let dk = dli;
+            let dl = dli * dlk;
+            let dj = dli * dlk * dll;
+            let g_size = dli * dlk * dll * dlj;
 
-        // Primitive quartet loops: pi outer .. pl inner (matches host order).
-        let mut pi = 0u32;
-        while pi < nprim_i {
-            let ai = exps_i[pi as usize];
-            let ci_coeff = coeff_i[(pi * nctr_i + ci_sel) as usize];
-            let mut pj = 0u32;
-            while pj < nprim_j {
-                let aj = exps_j[pj as usize];
-                let cj_coeff = coeff_j[(pj * nctr_j + cj_sel) as usize];
-                let aij = ai + aj;
+            // 1D polynomial scratch geometry.
+            let db = nmax + mmax + 1u32;
+            let mut bigger = nmax;
+            if mmax > bigger {
+                bigger = mmax;
+            }
 
-                // Pair weighted center for ij.
-                let rijx = (ai * rix + aj * rjx) / aij;
-                let rijy = (ai * riy + aj * rjy) / aij;
-                let rijz = (ai * riz + aj * rjz) / aij;
+            // Cartesian output dimensions.
+            let nfi = (li + 1u32) * (li + 2u32) / 2u32;
+            let nfj = (lj + 1u32) * (lj + 2u32) / 2u32;
+            let nfk = (lk + 1u32) * (lk + 2u32) / 2u32;
+            let nfl = (ll + 1u32) * (ll + 2u32) / 2u32;
+            let out_len = nfi * nfj * nfk * nfl;
 
-                // ij overlap prefactor exp(-ai*aj/aij * |ri-rj|^2).
-                let dxij = rix - rjx;
-                let dyij = riy - rjy;
-                let dzij = riz - rjz;
-                let rr_ij = dxij * dxij + dyij * dyij + dzij * dzij;
-                let fac_ij = F::exp(-ai * aj / aij * rr_ij);
+            // Zero the accumulation buffer.
+            let mut oi = out_off;
+            while oi < out_off + out_len {
+                cart_out[oi as usize] = F::new(0.0_f32);
+                oi += 1u32;
+            }
 
-                let mut pk = 0u32;
-                while pk < nprim_k {
-                    let ak = exps_k[pk as usize];
-                    let ck_coeff = coeff_k[(pk * nctr_k + ck_sel) as usize];
-                    let mut pl = 0u32;
-                    while pl < nprim_l {
-                        let al = exps_l[pl as usize];
-                        let cl_coeff = coeff_l[(pl * nctr_l + cl_sel) as usize];
-                        let akl = ak + al;
+            let total_g = 3u32 * g_size;
 
-                        // Pair weighted center for kl.
-                        let rklx = (ak * rkx + al * rlx) / akl;
-                        let rkly = (ak * rky + al * rly) / akl;
-                        let rklz = (ak * rkz + al * rlz) / akl;
+            // Primitive quartet loops: pi outer .. pl inner (matches host order).
+            let mut pi = 0u32;
+            while pi < nprim_i {
+                let ai = exps[(eoff_i + pi) as usize];
+                let ci_coeff = coeffs[(coff_i + pi * nctr_i + ci_sel) as usize];
+                let mut pj = 0u32;
+                while pj < nprim_j {
+                    let aj = exps[(eoff_j + pj) as usize];
+                    let cj_coeff = coeffs[(coff_j + pj * nctr_j + cj_sel) as usize];
+                    let aij = ai + aj;
 
-                        // kl overlap prefactor exp(-ak*al/akl * |rk-rl|^2).
-                        let dxkl = rkx - rlx;
-                        let dykl = rky - rly;
-                        let dzkl = rkz - rlz;
-                        let rr_kl = dxkl * dxkl + dykl * dykl + dzkl * dzkl;
-                        let fac_kl = F::exp(-ak * al / akl * rr_kl);
+                    // Pair weighted center for ij.
+                    let rijx = (ai * rix + aj * rjx) / aij;
+                    let rijy = (ai * riy + aj * rjy) / aij;
+                    let rijz = (ai * riz + aj * rjz) / aij;
 
-                        // Cross-pair exponential exp(-a0 * |rij - rkl|^2),
-                        // a0 = aij*akl/(aij+akl).
-                        let aijkl = aij + akl;
-                        let a0 = aij * akl / aijkl;
-                        let dxijkl = rijx - rklx;
-                        let dyijkl = rijy - rkly;
-                        let dzijkl = rijz - rklz;
-                        let rr_ijkl = dxijkl * dxijkl + dyijkl * dyijkl + dzijkl * dzijkl;
-                        let fac_ijkl = F::exp(-a0 * rr_ijkl);
+                    // ij overlap prefactor exp(-ai*aj/aij * |ri-rj|^2).
+                    let dxij = rix - rjx;
+                    let dyij = riy - rjy;
+                    let dzij = riz - rjz;
+                    let rr_ij = dxij * dxij + dyij * dyij + dzij * dzij;
+                    let fac_ij = F::exp(-ai * aj / aij * rr_ij);
 
-                        // Quartet prefactor (also folds the contraction coeffs).
-                        let weight = ci_coeff * cj_coeff * ck_coeff * cl_coeff;
-                        let quartet_fac = common_factor * fac_ij * fac_kl * fac_ijkl * weight;
+                    let mut pk = 0u32;
+                    while pk < nprim_k {
+                        let ak = exps[(eoff_k + pk) as usize];
+                        let ck_coeff = coeffs[(coff_k + pk * nctr_k + ck_sel) as usize];
+                        let mut pl = 0u32;
+                        while pl < nprim_l {
+                            let al = exps[(eoff_l + pl) as usize];
+                            let cl_coeff = coeffs[(coff_l + pl * nctr_l + cl_sel) as usize];
+                            let akl = ak + al;
 
-                        // ── Zero the G-tensor ───────────────────────────────
-                        let mut gi = 0u32;
-                        while gi < total_g {
-                            g[gi as usize] = F::new(0.0);
-                            gi += 1u32;
-                        }
+                            // Pair weighted center for kl.
+                            let rklx = (ak * rkx + al * rlx) / akl;
+                            let rkly = (ak * rky + al * rly) / akl;
+                            let rklz = (ak * rkz + al * rlz) / akl;
 
-                        let inv_aijkl = F::new(1.0) / aijkl;
-                        let sqrt_aijkl = F::sqrt(aijkl);
+                            // kl overlap prefactor exp(-ak*al/akl * |rk-rl|^2).
+                            let dxkl = rkx - rlx;
+                            let dykl = rky - rly;
+                            let dzkl = rkz - rlz;
+                            let rr_kl = dxkl * dxkl + dykl * dykl + dzkl * dzkl;
+                            let fac_kl = F::exp(-ak * al / akl * rr_kl);
 
-                        // ── Fill the polynomial G-tensor per axis ───────────
-                        #[unroll]
-                        for axis in 0..3u32 {
-                            let off = axis * g_size;
+                            // Cross-pair exponential exp(-a0 * |rij - rkl|^2),
+                            // a0 = aij*akl/(aij+akl).
+                            let aijkl = aij + akl;
+                            let a0 = aij * akl / aijkl;
+                            let dxijkl = rijx - rklx;
+                            let dyijkl = rijy - rkly;
+                            let dzijkl = rijz - rklz;
+                            let rr_ijkl = dxijkl * dxijkl + dyijkl * dyijkl + dzijkl * dzijkl;
+                            let fac_ijkl = F::exp(-a0 * rr_ijkl);
 
-                            // Per-axis coordinates.
-                            let mut ri_a = rix;
-                            let mut rj_a = rjx;
-                            let mut rk_a = rkx;
-                            let mut rl_a = rlx;
-                            let mut rij_a = rijx;
-                            let mut rkl_a = rklx;
-                            if axis == 1u32 {
-                                ri_a = riy;
-                                rj_a = rjy;
-                                rk_a = rky;
-                                rl_a = rly;
-                                rij_a = rijy;
-                                rkl_a = rkly;
-                            } else if axis == 2u32 {
-                                ri_a = riz;
-                                rj_a = rjz;
-                                rk_a = rkz;
-                                rl_a = rlz;
-                                rij_a = rijz;
-                                rkl_a = rklz;
+                            // Quartet prefactor (also folds the contraction coeffs).
+                            let weight = ci_coeff * cj_coeff * ck_coeff * cl_coeff;
+                            let quartet_fac = common_factor * fac_ij * fac_kl * fac_ijkl * weight;
+
+                            // ── Zero the G-tensor ───────────────────────────────
+                            let mut gi = 0u32;
+                            while gi < total_g {
+                                g[gi as usize] = F::new(0.0_f32);
+                                gi += 1u32;
                             }
 
-                            // Base-center selection (nmax >= mmax branch).
-                            let mut r1 = rj_a;
-                            let mut r2 = rl_a;
-                            if nmax >= mmax {
-                                // ij pair is main, kl pair is auxiliary.
-                                if ibase {
-                                    r1 = ri_a;
+                            let inv_aijkl = F::new(1.0_f32) / aijkl;
+                            let sqrt_aijkl = F::sqrt(aijkl);
+
+                            // ── Fill the polynomial G-tensor per axis ───────────
+                            #[unroll]
+                            for axis in 0..3u32 {
+                                let off = gbase + axis * g_size;
+
+                                // Per-axis coordinates.
+                                let mut ri_a = rix;
+                                let mut rj_a = rjx;
+                                let mut rk_a = rkx;
+                                let mut rl_a = rlx;
+                                let mut rij_a = rijx;
+                                let mut rkl_a = rklx;
+                                if axis == 1u32 {
+                                    ri_a = riy;
+                                    rj_a = rjy;
+                                    rk_a = rky;
+                                    rl_a = rly;
+                                    rij_a = rijy;
+                                    rkl_a = rkly;
+                                } else if axis == 2u32 {
+                                    ri_a = riz;
+                                    rj_a = rjz;
+                                    rk_a = rkz;
+                                    rl_a = rlz;
+                                    rij_a = rijz;
+                                    rkl_a = rklz;
                                 }
-                                if kbase {
-                                    r2 = rk_a;
-                                }
-                            } else {
-                                // kl pair is main, ij pair is auxiliary.
-                                r1 = rl_a;
-                                if kbase {
-                                    r1 = rk_a;
-                                }
-                                r2 = rj_a;
-                                if ibase {
-                                    r2 = ri_a;
-                                }
-                            }
 
-                            // Weighted center P = (aij*Rij + akl*Rkl) / aijkl.
-                            let rp = (aij * rij_a + akl * rkl_a) * inv_aijkl;
-                            let r1r12 = r1 - rp;
-
-                            // Initial value: z-axis gets the prefactor; x/y = 1.
-                            let mut buf0 = F::new(1.0);
-                            if axis == 2u32 {
-                                buf0 = quartet_fac / (aijkl * sqrt_aijkl);
-                            }
-                            buf[0u32 as usize] = buf0;
-
-                            // Recurrence: buf[i+1] = 0.5*i/aijkl*buf[i-1]
-                            //                        - r1r12*buf[i].
-                            if nmax + mmax > 0u32 {
-                                buf[1u32 as usize] = -r1r12 * buf[0u32 as usize];
-                            }
-                            let mut ii = 1u32;
-                            while ii < nmax + mmax {
-                                let term = F::new(0.5)
-                                    * F::cast_from(ii)
-                                    * inv_aijkl
-                                    * buf[(ii - 1u32) as usize]
-                                    - r1r12 * buf[ii as usize];
-                                buf[(ii + 1u32) as usize] = term;
-                                ii += 1u32;
-                            }
-
-                            // 2D shift fill: buf[j*db + i]
-                            //   = buf[(j-1)*db + i+1] + r1r2*buf[(j-1)*db + i].
-                            let r1r2 = r1 - r2;
-                            let mut jj = 1u32;
-                            while jj <= bigger {
-                                // i in 0 .. (db - jj).
-                                let mut i_lim = 0u32;
-                                if db > jj {
-                                    i_lim = db - jj;
-                                }
-                                let mut ip = 0u32;
-                                while ip < i_lim {
-                                    let prev = (jj - 1u32) * db;
-                                    let val = buf[(prev + ip + 1u32) as usize]
-                                        + r1r2 * buf[(prev + ip) as usize];
-                                    buf[(jj * db + ip) as usize] = val;
-                                    ip += 1u32;
-                                }
-                                jj += 1u32;
-                            }
-
-                            // Map polynomial buf -> G-tensor.
-                            // g2d_ij / g2d_kl pick the ij/kl direction strides.
-                            let mut g2d_ij = dj;
-                            if ibase {
-                                g2d_ij = di;
-                            }
-                            let mut g2d_kl = dl;
-                            if kbase {
-                                g2d_kl = dk;
-                            }
-                            if nmax >= mmax {
-                                // n iterates ij (0..=nmax), m iterates kl (0..=mmax).
-                                let mut m = 0u32;
-                                while m <= mmax {
-                                    let mut n = 0u32;
-                                    while n <= nmax {
-                                        let idx = off + n * g2d_ij + m * g2d_kl;
-                                        g[idx as usize] = buf[(m * db + n) as usize];
-                                        n += 1u32;
+                                // Base-center selection (nmax >= mmax branch).
+                                let mut r1 = rj_a;
+                                let mut r2 = rl_a;
+                                if nmax >= mmax {
+                                    // ij pair is main, kl pair is auxiliary.
+                                    if ibase {
+                                        r1 = ri_a;
                                     }
-                                    m += 1u32;
+                                    if kbase {
+                                        r2 = rk_a;
+                                    }
+                                } else {
+                                    // kl pair is main, ij pair is auxiliary.
+                                    r1 = rl_a;
+                                    if kbase {
+                                        r1 = rk_a;
+                                    }
+                                    r2 = rj_a;
+                                    if ibase {
+                                        r2 = ri_a;
+                                    }
                                 }
-                            } else {
-                                // kl is main, ij is auxiliary — swap roles.
-                                let mut n = 0u32;
-                                while n <= nmax {
+
+                                // Weighted center P = (aij*Rij + akl*Rkl) / aijkl.
+                                let rp = (aij * rij_a + akl * rkl_a) * inv_aijkl;
+                                let r1r12 = r1 - rp;
+
+                                // Initial value: z-axis gets the prefactor; x/y = 1.
+                                let mut buf0 = F::new(1.0_f32);
+                                if axis == 2u32 {
+                                    buf0 = quartet_fac / (aijkl * sqrt_aijkl);
+                                }
+                                buf[bbase as usize] = buf0;
+
+                                // Recurrence: buf[i+1] = 0.5*i/aijkl*buf[i-1]
+                                //                        - r1r12*buf[i].
+                                if nmax + mmax > 0u32 {
+                                    buf[(bbase + 1u32) as usize] = -r1r12 * buf[bbase as usize];
+                                }
+                                let mut ii = 1u32;
+                                while ii < nmax + mmax {
+                                    let term = F::new(0.5_f32)
+                                        * F::cast_from(ii)
+                                        * inv_aijkl
+                                        * buf[(bbase + ii - 1u32) as usize]
+                                        - r1r12 * buf[(bbase + ii) as usize];
+                                    buf[(bbase + ii + 1u32) as usize] = term;
+                                    ii += 1u32;
+                                }
+
+                                // 2D shift fill: buf[j*db + i]
+                                //   = buf[(j-1)*db + i+1] + r1r2*buf[(j-1)*db + i].
+                                let r1r2 = r1 - r2;
+                                let mut jj = 1u32;
+                                while jj <= bigger {
+                                    // i in 0 .. (db - jj).
+                                    let mut i_lim = 0u32;
+                                    if db > jj {
+                                        i_lim = db - jj;
+                                    }
+                                    let mut ip = 0u32;
+                                    while ip < i_lim {
+                                        let prev = (jj - 1u32) * db;
+                                        let val = buf[(bbase + prev + ip + 1u32) as usize]
+                                            + r1r2 * buf[(bbase + prev + ip) as usize];
+                                        buf[(bbase + jj * db + ip) as usize] = val;
+                                        ip += 1u32;
+                                    }
+                                    jj += 1u32;
+                                }
+
+                                // Map polynomial buf -> G-tensor.
+                                // g2d_ij / g2d_kl pick the ij/kl direction strides.
+                                let mut g2d_ij = dj;
+                                if ibase {
+                                    g2d_ij = di;
+                                }
+                                let mut g2d_kl = dl;
+                                if kbase {
+                                    g2d_kl = dk;
+                                }
+                                if nmax >= mmax {
+                                    // n iterates ij (0..=nmax), m iterates kl (0..=mmax).
                                     let mut m = 0u32;
                                     while m <= mmax {
-                                        let idx = off + m * g2d_kl + n * g2d_ij;
-                                        g[idx as usize] = buf[(n * db + m) as usize];
+                                        let mut n = 0u32;
+                                        while n <= nmax {
+                                            let idx = off + n * g2d_ij + m * g2d_kl;
+                                            g[idx as usize] = buf[(bbase + m * db + n) as usize];
+                                            n += 1u32;
+                                        }
                                         m += 1u32;
                                     }
-                                    n += 1u32;
+                                } else {
+                                    // kl is main, ij is auxiliary — swap roles.
+                                    let mut n = 0u32;
+                                    while n <= nmax {
+                                        let mut m = 0u32;
+                                        while m <= mmax {
+                                            let idx = off + m * g2d_kl + n * g2d_ij;
+                                            g[idx as usize] = buf[(bbase + n * db + m) as usize];
+                                            m += 1u32;
+                                        }
+                                        n += 1u32;
+                                    }
                                 }
                             }
-                        }
 
-                        // ── 4-branch HRR (selected by kbase/ibase) ──────────
-                        let rirjx = rix - rjx;
-                        let rirjy = riy - rjy;
-                        let rirjz = riz - rjz;
-                        let rkrlx = rkx - rlx;
-                        let rkrly = rky - rly;
-                        let rkrlz = rkz - rlz;
+                            // ── 4-branch HRR (selected by kbase/ibase) ──────────
+                            let rirjx = rix - rjx;
+                            let rirjy = riy - rjy;
+                            let rirjz = riz - rjz;
+                            let rkrlx = rkx - rlx;
+                            let rkrly = rky - rly;
+                            let rkrlz = rkz - rlz;
 
-                        // Inlined per-axis HRR for each branch. nroots = 1, so
-                        // the host `for r in 0..nroots` loops become direct
-                        // single writes (offset 0).
-                        #[unroll]
-                        for haxis in 0..3u32 {
-                            let off = haxis * g_size;
-                            let mut rirj_d = rirjx;
-                            let mut rkrl_d = rkrlx;
-                            if haxis == 1u32 {
-                                rirj_d = rirjy;
-                                rkrl_d = rkrly;
-                            } else if haxis == 2u32 {
-                                rirj_d = rirjz;
-                                rkrl_d = rkrlz;
-                            }
+                            // Inlined per-axis HRR for each branch. nroots = 1, so
+                            // the host `for r in 0..nroots` loops become direct
+                            // single writes (offset 0).
+                            #[unroll]
+                            for haxis in 0..3u32 {
+                                let off = gbase + haxis * g_size;
+                                let mut rirj_d = rirjx;
+                                let mut rkrl_d = rkrlx;
+                                if haxis == 1u32 {
+                                    rirj_d = rirjy;
+                                    rkrl_d = rkrly;
+                                } else if haxis == 2u32 {
+                                    rirj_d = rirjz;
+                                    rkrl_d = rkrlz;
+                                }
 
-                            if kbase {
-                                if ibase {
-                                    // hrr_ik2d_4d: skip if lj==0 && ll==0.
-                                    if lj > 0u32 || ll > 0u32 {
-                                        // l-shift on kl: l=1..=ll, k=0..=mmax-l,
+                                if kbase {
+                                    if ibase {
+                                        // hrr_ik2d_4d: skip if lj==0 && ll==0.
+                                        if lj > 0u32 || ll > 0u32 {
+                                            // l-shift on kl: l=1..=ll, k=0..=mmax-l,
+                                            //   i=0..=nmax. ptr = l*dl + k*dk + i*di.
+                                            let mut l = 1u32;
+                                            while l <= ll {
+                                                let mut k = 0u32;
+                                                while k <= mmax - l {
+                                                    let mut i = 0u32;
+                                                    while i <= nmax {
+                                                        let idx = l * dl + k * dk + i * di;
+                                                        let v = rkrl_d
+                                                            * g[(off + idx - dl) as usize]
+                                                            + g[(off + idx - dl + dk) as usize];
+                                                        g[(off + idx) as usize] = v;
+                                                        i += 1u32;
+                                                    }
+                                                    k += 1u32;
+                                                }
+                                                l += 1u32;
+                                            }
+                                            // j-shift on ij: j=1..=lj, l=0..=ll,
+                                            //   k=0..=lk, i=0..=nmax-j.
+                                            let mut j = 1u32;
+                                            while j <= lj {
+                                                let mut l = 0u32;
+                                                while l <= ll {
+                                                    let mut k = 0u32;
+                                                    while k <= lk {
+                                                        let ptr = j * dj + l * dl + k * dk;
+                                                        let mut i = 0u32;
+                                                        while i <= nmax - j {
+                                                            let base = ptr + i * di;
+                                                            let v = rirj_d
+                                                                * g[(off + base - dj) as usize]
+                                                                + g[(off + base - dj + di)
+                                                                    as usize];
+                                                            g[(off + base) as usize] = v;
+                                                            i += 1u32;
+                                                        }
+                                                        k += 1u32;
+                                                    }
+                                                    l += 1u32;
+                                                }
+                                                j += 1u32;
+                                            }
+                                        }
+                                    } else {
+                                        // hrr_kj2d_4d: skip if li==0 && ll==0.
+                                        if li > 0u32 || ll > 0u32 {
+                                            // i-shift on ij: i=1..=li, j=0..=nmax-i,
+                                            //   k=0..=mmax. ptr = j*dj + k*dk + i*di.
+                                            let mut i = 1u32;
+                                            while i <= li {
+                                                let mut j = 0u32;
+                                                while j <= nmax - i {
+                                                    let mut k = 0u32;
+                                                    while k <= mmax {
+                                                        let idx = j * dj + k * dk + i * di;
+                                                        let v = rirj_d
+                                                            * g[(off + idx - di) as usize]
+                                                            + g[(off + idx - di + dj) as usize];
+                                                        g[(off + idx) as usize] = v;
+                                                        k += 1u32;
+                                                    }
+                                                    j += 1u32;
+                                                }
+                                                i += 1u32;
+                                            }
+                                            // l-shift on kl: j=0..=lj, l=1..=ll,
+                                            //   k=0..=mmax-l. ptr = j*dj+l*dl+k*dk;
+                                            //   inner n in 0..dk.
+                                            let mut j = 0u32;
+                                            while j <= lj {
+                                                let mut l = 1u32;
+                                                while l <= ll {
+                                                    let mut k = 0u32;
+                                                    while k <= mmax - l {
+                                                        let ptr = j * dj + l * dl + k * dk;
+                                                        let mut n = 0u32;
+                                                        while n < dk {
+                                                            let idx = ptr + n;
+                                                            let v = rkrl_d
+                                                                * g[(off + idx - dl) as usize]
+                                                                + g[(off + idx - dl + dk) as usize];
+                                                            g[(off + idx) as usize] = v;
+                                                            n += 1u32;
+                                                        }
+                                                        k += 1u32;
+                                                    }
+                                                    l += 1u32;
+                                                }
+                                                j += 1u32;
+                                            }
+                                        }
+                                    }
+                                } else if ibase {
+                                    // hrr_il2d_4d: skip if lj==0 && lk==0.
+                                    if lj > 0u32 || lk > 0u32 {
+                                        // k-shift on kl: k=1..=lk, l=0..=mmax-k,
                                         //   i=0..=nmax. ptr = l*dl + k*dk + i*di.
-                                        let mut l = 1u32;
-                                        while l <= ll {
-                                            let mut k = 0u32;
-                                            while k <= mmax - l {
+                                        let mut k = 1u32;
+                                        while k <= lk {
+                                            let mut l = 0u32;
+                                            while l <= mmax - k {
                                                 let mut i = 0u32;
                                                 while i <= nmax {
                                                     let idx = l * dl + k * dk + i * di;
-                                                    let v = rkrl_d * g[(off + idx - dl) as usize]
-                                                        + g[(off + idx - dl + dk) as usize];
+                                                    let v = rkrl_d * g[(off + idx - dk) as usize]
+                                                        + g[(off + idx - dk + dl) as usize];
                                                     g[(off + idx) as usize] = v;
                                                     i += 1u32;
                                                 }
-                                                k += 1u32;
+                                                l += 1u32;
                                             }
-                                            l += 1u32;
+                                            k += 1u32;
                                         }
                                         // j-shift on ij: j=1..=lj, l=0..=ll,
                                         //   k=0..=lk, i=0..=nmax-j.
@@ -488,241 +768,160 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                         }
                                     }
                                 } else {
-                                    // hrr_kj2d_4d: skip if li==0 && ll==0.
-                                    if li > 0u32 || ll > 0u32 {
+                                    // hrr_lj2d_4d: skip if li==0 && lk==0.
+                                    if li > 0u32 || lk > 0u32 {
                                         // i-shift on ij: i=1..=li, j=0..=nmax-i,
-                                        //   k=0..=mmax. ptr = j*dj + k*dk + i*di.
+                                        //   l=0..=mmax. ptr = j*dj + l*dl + i*di.
                                         let mut i = 1u32;
                                         while i <= li {
                                             let mut j = 0u32;
                                             while j <= nmax - i {
-                                                let mut k = 0u32;
-                                                while k <= mmax {
-                                                    let idx = j * dj + k * dk + i * di;
+                                                let mut l = 0u32;
+                                                while l <= mmax {
+                                                    let idx = j * dj + l * dl + i * di;
                                                     let v = rirj_d * g[(off + idx - di) as usize]
                                                         + g[(off + idx - di + dj) as usize];
                                                     g[(off + idx) as usize] = v;
-                                                    k += 1u32;
+                                                    l += 1u32;
                                                 }
                                                 j += 1u32;
                                             }
                                             i += 1u32;
                                         }
-                                        // l-shift on kl: j=0..=lj, l=1..=ll,
-                                        //   k=0..=mmax-l. ptr = j*dj+l*dl+k*dk;
+                                        // k-shift on kl: j=0..=lj, k=1..=lk,
+                                        //   l=0..=mmax-k. ptr = j*dj+l*dl+k*dk;
                                         //   inner n in 0..dk.
                                         let mut j = 0u32;
                                         while j <= lj {
-                                            let mut l = 1u32;
-                                            while l <= ll {
-                                                let mut k = 0u32;
-                                                while k <= mmax - l {
+                                            let mut k = 1u32;
+                                            while k <= lk {
+                                                let mut l = 0u32;
+                                                while l <= mmax - k {
                                                     let ptr = j * dj + l * dl + k * dk;
                                                     let mut n = 0u32;
                                                     while n < dk {
                                                         let idx = ptr + n;
                                                         let v = rkrl_d
-                                                            * g[(off + idx - dl) as usize]
-                                                            + g[(off + idx - dl + dk) as usize];
+                                                            * g[(off + idx - dk) as usize]
+                                                            + g[(off + idx - dk + dl) as usize];
                                                         g[(off + idx) as usize] = v;
                                                         n += 1u32;
                                                     }
-                                                    k += 1u32;
-                                                }
-                                                l += 1u32;
-                                            }
-                                            j += 1u32;
-                                        }
-                                    }
-                                }
-                            } else if ibase {
-                                // hrr_il2d_4d: skip if lj==0 && lk==0.
-                                if lj > 0u32 || lk > 0u32 {
-                                    // k-shift on kl: k=1..=lk, l=0..=mmax-k,
-                                    //   i=0..=nmax. ptr = l*dl + k*dk + i*di.
-                                    let mut k = 1u32;
-                                    while k <= lk {
-                                        let mut l = 0u32;
-                                        while l <= mmax - k {
-                                            let mut i = 0u32;
-                                            while i <= nmax {
-                                                let idx = l * dl + k * dk + i * di;
-                                                let v = rkrl_d * g[(off + idx - dk) as usize]
-                                                    + g[(off + idx - dk + dl) as usize];
-                                                g[(off + idx) as usize] = v;
-                                                i += 1u32;
-                                            }
-                                            l += 1u32;
-                                        }
-                                        k += 1u32;
-                                    }
-                                    // j-shift on ij: j=1..=lj, l=0..=ll,
-                                    //   k=0..=lk, i=0..=nmax-j.
-                                    let mut j = 1u32;
-                                    while j <= lj {
-                                        let mut l = 0u32;
-                                        while l <= ll {
-                                            let mut k = 0u32;
-                                            while k <= lk {
-                                                let ptr = j * dj + l * dl + k * dk;
-                                                let mut i = 0u32;
-                                                while i <= nmax - j {
-                                                    let base = ptr + i * di;
-                                                    let v = rirj_d * g[(off + base - dj) as usize]
-                                                        + g[(off + base - dj + di) as usize];
-                                                    g[(off + base) as usize] = v;
-                                                    i += 1u32;
+                                                    l += 1u32;
                                                 }
                                                 k += 1u32;
                                             }
-                                            l += 1u32;
-                                        }
-                                        j += 1u32;
-                                    }
-                                }
-                            } else {
-                                // hrr_lj2d_4d: skip if li==0 && lk==0.
-                                if li > 0u32 || lk > 0u32 {
-                                    // i-shift on ij: i=1..=li, j=0..=nmax-i,
-                                    //   l=0..=mmax. ptr = j*dj + l*dl + i*di.
-                                    let mut i = 1u32;
-                                    while i <= li {
-                                        let mut j = 0u32;
-                                        while j <= nmax - i {
-                                            let mut l = 0u32;
-                                            while l <= mmax {
-                                                let idx = j * dj + l * dl + i * di;
-                                                let v = rirj_d * g[(off + idx - di) as usize]
-                                                    + g[(off + idx - di + dj) as usize];
-                                                g[(off + idx) as usize] = v;
-                                                l += 1u32;
-                                            }
                                             j += 1u32;
                                         }
-                                        i += 1u32;
-                                    }
-                                    // k-shift on kl: j=0..=lj, k=1..=lk,
-                                    //   l=0..=mmax-k. ptr = j*dj+l*dl+k*dk;
-                                    //   inner n in 0..dk.
-                                    let mut j = 0u32;
-                                    while j <= lj {
-                                        let mut k = 1u32;
-                                        while k <= lk {
-                                            let mut l = 0u32;
-                                            while l <= mmax - k {
-                                                let ptr = j * dj + l * dl + k * dk;
-                                                let mut n = 0u32;
-                                                while n < dk {
-                                                    let idx = ptr + n;
-                                                    let v = rkrl_d * g[(off + idx - dk) as usize]
-                                                        + g[(off + idx - dk + dl) as usize];
-                                                    g[(off + idx) as usize] = v;
-                                                    n += 1u32;
-                                                }
-                                                l += 1u32;
-                                            }
-                                            k += 1u32;
-                                        }
-                                        j += 1u32;
                                     }
                                 }
                             }
-                        }
 
-                        // ── Contract [gx|gy|gz] into cart_out ───────────────
-                        // Reproduce contract_4c1e_cart ordering inline:
-                        //   l outer, then k, then j, then i (i fastest, l slowest);
-                        //   out_idx = i + j*nfi + k*nfi*nfj + l*nfi*nfj*nfk.
-                        let gx = 0u32;
-                        let gy = g_size;
-                        let gz = 2u32 * g_size;
+                            // ── Contract [gx|gy|gz] into cart_out ───────────────
+                            // Reproduce contract_4c1e_cart ordering inline:
+                            //   l outer, then k, then j, then i (i fastest, l slowest);
+                            //   out_idx = i + j*nfi + k*nfi*nfj + l*nfi*nfj*nfk.
+                            let gx = gbase;
+                            let gy = gbase + g_size;
+                            let gz = gbase + 2u32 * g_size;
 
-                        let mut cl_idx = 0u32;
-                        let mut la = 0u32;
-                        while la <= ll {
-                            let lx = ll - la;
-                            let ll_minus_lx = ll - lx;
-                            let mut lb = 0u32;
-                            while lb <= ll_minus_lx {
-                                let ly = ll_minus_lx - lb;
-                                let lz = ll - lx - ly;
+                            let mut cl_idx = 0u32;
+                            let mut la = 0u32;
+                            while la <= ll {
+                                let lx = ll - la;
+                                let ll_minus_lx = ll - lx;
+                                let mut lb = 0u32;
+                                while lb <= ll_minus_lx {
+                                    let ly = ll_minus_lx - lb;
+                                    let lz = ll - lx - ly;
 
-                                let mut ck_idx = 0u32;
-                                let mut ka = 0u32;
-                                while ka <= lk {
-                                    let kx = lk - ka;
-                                    let lk_minus_kx = lk - kx;
-                                    let mut kb = 0u32;
-                                    while kb <= lk_minus_kx {
-                                        let ky = lk_minus_kx - kb;
-                                        let kz = lk - kx - ky;
+                                    let mut ck_idx = 0u32;
+                                    let mut ka = 0u32;
+                                    while ka <= lk {
+                                        let kx = lk - ka;
+                                        let lk_minus_kx = lk - kx;
+                                        let mut kb = 0u32;
+                                        while kb <= lk_minus_kx {
+                                            let ky = lk_minus_kx - kb;
+                                            let kz = lk - kx - ky;
 
-                                        let mut cj_idx = 0u32;
-                                        let mut ja = 0u32;
-                                        while ja <= lj {
-                                            let jx = lj - ja;
-                                            let lj_minus_jx = lj - jx;
-                                            let mut jb = 0u32;
-                                            while jb <= lj_minus_jx {
-                                                let jy = lj_minus_jx - jb;
-                                                let jz = lj - jx - jy;
+                                            let mut cj_idx = 0u32;
+                                            let mut ja = 0u32;
+                                            while ja <= lj {
+                                                let jx = lj - ja;
+                                                let lj_minus_jx = lj - jx;
+                                                let mut jb = 0u32;
+                                                while jb <= lj_minus_jx {
+                                                    let jy = lj_minus_jx - jb;
+                                                    let jz = lj - jx - jy;
 
-                                                let mut ci_idx = 0u32;
-                                                let mut ia = 0u32;
-                                                while ia <= li {
-                                                    let ix = li - ia;
-                                                    let li_minus_ix = li - ix;
-                                                    let mut ib = 0u32;
-                                                    while ib <= li_minus_ix {
-                                                        let iy = li_minus_ix - ib;
-                                                        let iz = li - ix - iy;
+                                                    let mut ci_idx = 0u32;
+                                                    let mut ia = 0u32;
+                                                    while ia <= li {
+                                                        let ix = li - ia;
+                                                        let li_minus_ix = li - ix;
+                                                        let mut ib = 0u32;
+                                                        while ib <= li_minus_ix {
+                                                            let iy = li_minus_ix - ib;
+                                                            let iz = li - ix - iy;
 
-                                                        let x_idx =
-                                                            ix * di + kx * dk + lx * dl + jx * dj;
-                                                        let y_idx =
-                                                            iy * di + ky * dk + ly * dl + jy * dj;
-                                                        let z_idx =
-                                                            iz * di + kz * dk + lz * dl + jz * dj;
-                                                        let vx = g[(gx + x_idx) as usize];
-                                                        let vy = g[(gy + y_idx) as usize];
-                                                        let vz = g[(gz + z_idx) as usize];
-                                                        let out_idx = ci_idx
-                                                            + cj_idx * nfi
-                                                            + ck_idx * nfi * nfj
-                                                            + cl_idx * nfi * nfj * nfk;
-                                                        cart_out[out_idx as usize] += vx * vy * vz;
+                                                            let x_idx = ix * di
+                                                                + kx * dk
+                                                                + lx * dl
+                                                                + jx * dj;
+                                                            let y_idx = iy * di
+                                                                + ky * dk
+                                                                + ly * dl
+                                                                + jy * dj;
+                                                            let z_idx = iz * di
+                                                                + kz * dk
+                                                                + lz * dl
+                                                                + jz * dj;
+                                                            let vx = g[(gx + x_idx) as usize];
+                                                            let vy = g[(gy + y_idx) as usize];
+                                                            let vz = g[(gz + z_idx) as usize];
+                                                            let out_idx = ci_idx
+                                                                + cj_idx * nfi
+                                                                + ck_idx * nfi * nfj
+                                                                + cl_idx * nfi * nfj * nfk;
+                                                            cart_out
+                                                                [(out_off + out_idx) as usize] +=
+                                                                vx * vy * vz;
 
-                                                        ci_idx += 1u32;
-                                                        ib += 1u32;
+                                                            ci_idx += 1u32;
+                                                            ib += 1u32;
+                                                        }
+                                                        ia += 1u32;
                                                     }
-                                                    ia += 1u32;
+
+                                                    cj_idx += 1u32;
+                                                    jb += 1u32;
                                                 }
-
-                                                cj_idx += 1u32;
-                                                jb += 1u32;
+                                                ja += 1u32;
                                             }
-                                            ja += 1u32;
+
+                                            ck_idx += 1u32;
+                                            kb += 1u32;
                                         }
-
-                                        ck_idx += 1u32;
-                                        kb += 1u32;
+                                        ka += 1u32;
                                     }
-                                    ka += 1u32;
+
+                                    cl_idx += 1u32;
+                                    lb += 1u32;
                                 }
-
-                                cl_idx += 1u32;
-                                lb += 1u32;
+                                la += 1u32;
                             }
-                            la += 1u32;
-                        }
 
-                        pl += 1u32;
+                            pl += 1u32;
+                        }
+                        pk += 1u32;
                     }
-                    pk += 1u32;
+                    pj += 1u32;
                 }
-                pj += 1u32;
+                pi += 1u32;
             }
-            pi += 1u32;
+
+            qi += qi_step;
         }
     }
 }
@@ -750,118 +949,6 @@ fn shape_sizes_4c1e(li: usize, lj: usize, lk: usize, ll: usize) -> (usize, usize
     let bigger = nmax.max(mmax);
     let buf_size = db * (bigger + 1);
     (g_size, buf_size)
-}
-
-/// Dispatch [`center_4c1e_kernel`] at `f64` on a resolved backend's client and
-/// read back the Cartesian accumulation buffer (`nfi*nfj*nfk*nfl`, i fastest).
-///
-/// Generic over `R: Runtime` so the same path serves CPU, ROCm, etc. Intermediate
-/// device compute is `f64` (see module-level precision policy). The kernel runs
-/// the full primitive quartet loop and applies the contraction coefficients
-/// internally, so one launch produces a fully-contracted (single-nctr) buffer.
-#[allow(clippy::too_many_arguments)]
-fn run_4c1e_device<R: Runtime>(
-    client: &ComputeClient<R>,
-    li: u32,
-    lj: u32,
-    lk: u32,
-    ll: u32,
-    nprim_i: u32,
-    nprim_j: u32,
-    nprim_k: u32,
-    nprim_l: u32,
-    ri: [f64; 3],
-    rj: [f64; 3],
-    rk: [f64; 3],
-    rl: [f64; 3],
-    common_factor: f64,
-    exps_i: &[f64],
-    exps_j: &[f64],
-    exps_k: &[f64],
-    exps_l: &[f64],
-    coeff_i: &[f64],
-    coeff_j: &[f64],
-    coeff_k: &[f64],
-    coeff_l: &[f64],
-) -> Vec<f64> {
-    let li_u = li as usize;
-    let lj_u = lj as usize;
-    let lk_u = lk as usize;
-    let ll_u = ll as usize;
-
-    let (g_size, buf_size) = shape_sizes_4c1e(li_u, lj_u, lk_u, ll_u);
-
-    let nfi = (li_u + 1) * (li_u + 2) / 2;
-    let nfj = (lj_u + 1) * (lj_u + 2) / 2;
-    let nfk = (lk_u + 1) * (lk_u + 2) / 2;
-    let nfl = (ll_u + 1) * (ll_u + 2) / 2;
-    let out_len = nfi * nfj * nfk * nfl;
-
-    // Input buffers.
-    let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
-    let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
-    let exps_k_h = client.create_from_slice(f64::as_bytes(exps_k));
-    let exps_l_h = client.create_from_slice(f64::as_bytes(exps_l));
-    let coeff_i_h = client.create_from_slice(f64::as_bytes(coeff_i));
-    let coeff_j_h = client.create_from_slice(f64::as_bytes(coeff_j));
-    let coeff_k_h = client.create_from_slice(f64::as_bytes(coeff_k));
-    let coeff_l_h = client.create_from_slice(f64::as_bytes(coeff_l));
-
-    // Scratch + output buffers: allocate directly on device via client.empty
-    // (the kernel zeros `g` and `cart_out` before use, and fully overwrites `buf`).
-    let g_h = client.empty(3 * g_size * std::mem::size_of::<f64>());
-    let buf_h = client.empty(buf_size * std::mem::size_of::<f64>());
-    let out_h = client.empty(out_len * std::mem::size_of::<f64>());
-
-    // SAFETY: Input buffer lengths match exact lengths.
-    // Scratch and output buffers are allocated to their exact sizes.
-    // In-kernel loops strictly bound indices to valid array ranges.
-    unsafe {
-        center_4c1e_kernel::launch_unchecked::<f64, R>(
-            client,
-            crate::plane::single_cube_count(),
-            crate::plane::backend_plane_cube_dim::<R>(),
-            ArrayArg::from_raw_parts(exps_i_h, exps_i.len()),
-            ArrayArg::from_raw_parts(exps_j_h, exps_j.len()),
-            ArrayArg::from_raw_parts(exps_k_h, exps_k.len()),
-            ArrayArg::from_raw_parts(exps_l_h, exps_l.len()),
-            ArrayArg::from_raw_parts(coeff_i_h, coeff_i.len()),
-            ArrayArg::from_raw_parts(coeff_j_h, coeff_j.len()),
-            ArrayArg::from_raw_parts(coeff_k_h, coeff_k.len()),
-            ArrayArg::from_raw_parts(coeff_l_h, coeff_l.len()),
-            ArrayArg::from_raw_parts(g_h, 3 * g_size),
-            ArrayArg::from_raw_parts(buf_h, buf_size),
-            ArrayArg::from_raw_parts(out_h.clone(), out_len),
-            ri[0],
-            ri[1],
-            ri[2],
-            rj[0],
-            rj[1],
-            rj[2],
-            rk[0],
-            rk[1],
-            rk[2],
-            rl[0],
-            rl[1],
-            rl[2],
-            common_factor,
-            li,
-            lj,
-            lk,
-            ll,
-            nprim_i,
-            nprim_j,
-            nprim_k,
-            nprim_l,
-            1u32,
-            1u32,
-            1u32,
-            1u32,
-        );
-    }
-
-    let raw = client.read_one_unchecked(out_h);
-    f64::from_bytes(&raw)[0..out_len].to_vec()
 }
 
 fn ensure_validated_4c1e(
@@ -906,6 +993,231 @@ fn ensure_validated_4c1e(
     }
 
     Ok(())
+}
+
+/// Evaluate every launch group of a batched 4c1e run (Task 35-D, wave 5).
+///
+/// One dispatch and one readback per group; the flattened basis is the caller's
+/// and is uploaded once for the run.
+fn run_4c1e_batches<R: Runtime>(
+    client: &ComputeClient<R>,
+    basis: &crate::kernels::two_electron::TwoEBasisHandles,
+    groups: &[FourC1eLaunchGroup],
+) -> Vec<Vec<f64>> {
+    if groups.is_empty() {
+        return Vec::new();
+    }
+
+    let crate::kernels::two_electron::TwoEBasisHandles {
+        exps: exps_h,
+        coeffs: coeffs_h,
+        centers: centers_h,
+        shell_meta: meta_h,
+        exps_len,
+        coeffs_len,
+        centers_len,
+        shell_meta_len,
+    } = basis;
+
+    let mut results = Vec::with_capacity(groups.len());
+    for group in groups {
+        let n_rows = group.len();
+        if n_rows == 0 {
+            results.push(Vec::new());
+            continue;
+        }
+        let g_stride = four_c1e_g_slab_stride(group.max_g_size);
+        let buf_stride = four_c1e_buf_slab_stride(group.max_buf);
+        let (n_cubes, cube_dim, n_slots) =
+            four_c1e_launch_geometry::<R>(n_rows, g_stride + buf_stride);
+        let g_len = n_slots * g_stride;
+        let buf_len = n_slots * buf_stride;
+
+        let rows_h = client.create_from_slice(u32::as_bytes(&group.rows));
+        let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
+        let factor_h = client.create_from_slice(f64::as_bytes(&group.class_factor));
+        let g_h = client.empty(g_len * std::mem::size_of::<f64>());
+        let buf_h = client.empty(buf_len * std::mem::size_of::<f64>());
+        let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
+        let per_unit = u32::from(four_c1e_per_unit::<R>());
+
+        // SAFETY: every buffer is allocated at the exact length passed to
+        // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
+        // `n_rows`, by the class index in each row, by the per-shell
+        // `nprim`/`nctr` read from `shell_meta`, and by the per-class extents.
+        unsafe {
+            center_4c1e_kernel::launch_unchecked::<f64, R>(
+                client,
+                crate::plane::cube_count_1d(n_cubes),
+                cube_dim,
+                ArrayArg::from_raw_parts(exps_h.clone(), *exps_len),
+                ArrayArg::from_raw_parts(coeffs_h.clone(), *coeffs_len),
+                ArrayArg::from_raw_parts(centers_h.clone(), *centers_len),
+                ArrayArg::from_raw_parts(meta_h.clone(), *shell_meta_len),
+                ArrayArg::from_raw_parts(rows_h.clone(), group.rows.len()),
+                ArrayArg::from_raw_parts(shape_h.clone(), group.class_shape.len()),
+                ArrayArg::from_raw_parts(factor_h.clone(), group.class_factor.len()),
+                ArrayArg::from_raw_parts(g_h.clone(), g_len),
+                ArrayArg::from_raw_parts(buf_h.clone(), buf_len),
+                ArrayArg::from_raw_parts(out_h.clone(), group.out_len),
+                n_rows as u32,
+                n_cubes,
+                g_stride as u32,
+                buf_stride as u32,
+                per_unit,
+            );
+        }
+
+        let raw = client.read_one_unchecked(out_h);
+        results.push(f64::from_bytes(&raw)[0..group.out_len].to_vec());
+    }
+    results
+}
+
+/// Does this backend want the one-row-per-unit decomposition?
+fn four_c1e_per_unit<R: Runtime>() -> bool {
+    use std::sync::OnceLock;
+    static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
+    let pinned = *OVERRIDE.get_or_init(|| {
+        std::env::var("CINTX_4C1E_PER_UNIT")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+    });
+    match pinned {
+        Some(value) => value != 0,
+        None => crate::plane::runtime_is_cpu::<R>(),
+    }
+}
+
+/// `(n_cubes, cube_dim, n_slots)` for one 4c1e dispatch.
+///
+/// `slot_words` is the *combined* G-tensor and polynomial-scratch stride, so the
+/// memory bound accounts for both slabs rather than only the larger one.
+fn four_c1e_launch_geometry<R: Runtime>(n_rows: usize, slot_words: usize) -> (u32, CubeDim, usize) {
+    /// Ceiling on the per-launch scratch.
+    const MAX_BATCH_SCRATCH_BYTES: usize = 64 * 1024 * 1024;
+
+    let per_slot = slot_words * std::mem::size_of::<f64>();
+    let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slot.max(1)).max(1);
+
+    if four_c1e_per_unit::<R>() {
+        let units =
+            crate::plane::per_unit_width(n_rows, crate::plane::MIN_ITEMS_PER_UNIT_PAIR, by_memory);
+        return (1, CubeDim::new_1d(units), units as usize);
+    }
+    let cubes = n_rows.min(by_memory).clamp(1, 65535) as u32;
+    (cubes, CubeDim::new_1d(1), cubes as usize)
+}
+
+/// Backend dispatch for a whole batched 4c1e run.
+fn dispatch_4c1e_batches(
+    backend: &ResolvedBackend,
+    basis: &crate::kernels::two_electron::TwoEBasisHandles,
+    groups: &[FourC1eLaunchGroup],
+) -> Vec<Vec<f64>> {
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => {
+            run_4c1e_batches::<cubecl::cpu::CpuRuntime>(client, basis, groups)
+        }
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => {
+            run_4c1e_batches::<cubecl_wgpu::WgpuRuntime>(client, basis, groups)
+        }
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => {
+            run_4c1e_batches::<cubecl_cuda::CudaRuntime>(client, basis, groups)
+        }
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => {
+            run_4c1e_batches::<cubecl_hip::HipRuntime>(client, basis, groups)
+        }
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            run_4c1e_batches::<cubecl_wgpu::WgpuRuntime>(client, basis, groups)
+        }
+    }
+}
+
+/// One shell quartet through the batched 4c1e path, returning the Cartesian
+/// block of every `(ci, cj, ck, cl)` contraction tuple concatenated in
+/// `cl`-slowest order.
+///
+/// The per-tuple compatibility API evaluates exactly one shell quartet and must
+/// keep doing so, but it goes through the *same* kernel as a wide batch — one
+/// row per contraction tuple. That is Task 35-D's acceptance bar, and it
+/// collapses the `nctr_i * nctr_j * nctr_k * nctr_l` launches the
+/// general-contraction case used to cost into one.
+#[allow(clippy::too_many_arguments)]
+fn run_4c1e_contracted_on_backend(
+    backend: &ResolvedBackend,
+    l: [u32; 4],
+    nprim: [u32; 4],
+    nctr: [u32; 4],
+    centers: [[f64; 3]; 4],
+    common_factor: f64,
+    exps: [&[f64]; 4],
+    coeffs: [&[f64]; 4],
+) -> Vec<f64> {
+    let mut basis = crate::kernels::two_electron::TwoEFlatBasis::default();
+    for (index, center) in centers.into_iter().enumerate() {
+        basis.shell_meta.extend_from_slice(&[
+            basis.exps.len() as u32,
+            basis.coeffs.len() as u32,
+            nprim[index],
+            nctr[index],
+        ]);
+        basis.exps.extend_from_slice(exps[index]);
+        basis.coeffs.extend_from_slice(coeffs[index]);
+        basis.centers.extend_from_slice(&center);
+    }
+    let handles = upload_4c1e_basis(backend, &basis);
+
+    let block_len: usize = l.iter().map(|&li| ncart(li as u8)).product();
+    let mut group = FourC1eLaunchGroup::default();
+    let class = group.push_class(l[0], l[1], l[2], l[3], common_factor);
+    // `ci` outermost, `cl` innermost — the order the per-tuple launcher walked
+    // its contraction tuples. The caller *sums* these blocks, so the order is
+    // load-bearing: summing them in any other sequence would reassociate the
+    // additions and move the last bits.
+    for ci in 0..nctr[0] {
+        for cj in 0..nctr[1] {
+            for ck in 0..nctr[2] {
+                for cl in 0..nctr[3] {
+                    group.push_row([0, 1, 2, 3], group.out_len as u32, class, [ci, cj, ck, cl]);
+                    group.out_len += block_len;
+                }
+            }
+        }
+    }
+
+    dispatch_4c1e_batches(backend, &handles, std::slice::from_ref(&group))
+        .pop()
+        .unwrap_or_default()
+}
+
+/// Upload a flattened basis through whichever backend arm `backend` is.
+fn upload_4c1e_basis(
+    backend: &ResolvedBackend,
+    basis: &crate::kernels::two_electron::TwoEFlatBasis,
+) -> crate::kernels::two_electron::TwoEBasisHandles {
+    use crate::kernels::two_electron::upload_2e_basis;
+    match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => upload_2e_basis::<cubecl::cpu::CpuRuntime>(client, basis),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => {
+            upload_2e_basis::<cubecl_wgpu::WgpuRuntime>(client, basis)
+        }
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => upload_2e_basis::<cubecl_cuda::CudaRuntime>(client, basis),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => upload_2e_basis::<cubecl_hip::HipRuntime>(client, basis),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => {
+            upload_2e_basis::<cubecl_wgpu::WgpuRuntime>(client, basis)
+        }
+    }
 }
 
 /// Generic inner for the 4c1e launcher.
@@ -986,166 +1298,40 @@ fn launch_center_4c1e_typed<F: CintFloat>(
     let exps_k: Vec<f64> = (0..n_prim_k).map(|p| shell_k.exponents[p]).collect();
     let exps_l: Vec<f64> = (0..n_prim_l).map(|p| shell_l.exponents[p]).collect();
 
-    // Dispatch onto the resolved backend's device client (compute in f64), once
-    // per (ci, cj, ck, cl) contraction tuple with that tuple's coefficient
-    // columns. The kernel folds the per-primitive coefficient product. For the
-    // common nctr==1 case this is a single launch.
-    for ci in 0..n_ctr_i {
-        let coeff_i: Vec<f64> = (0..n_prim_i)
-            .map(|p| shell_i.coefficients[p * n_ctr_i + ci])
-            .collect();
-        for cj in 0..n_ctr_j {
-            let coeff_j: Vec<f64> = (0..n_prim_j)
-                .map(|p| shell_j.coefficients[p * n_ctr_j + cj])
-                .collect();
-            for ck in 0..n_ctr_k {
-                let coeff_k: Vec<f64> = (0..n_prim_k)
-                    .map(|p| shell_k.coefficients[p * n_ctr_k + ck])
-                    .collect();
-                for cl in 0..n_ctr_l {
-                    let coeff_l: Vec<f64> = (0..n_prim_l)
-                        .map(|p| shell_l.coefficients[p * n_ctr_l + cl])
-                        .collect();
+    // Task 35-D wave 5: every `(ci, cj, ck, cl)` contraction tuple is one row of
+    // a single batched dispatch, rather than one launch each. The arithmetic per
+    // row is what the per-tuple launch did — the row names its coefficient
+    // columns instead of the host slicing them out first — and the blocks are
+    // summed in the same order they were before.
+    let coeff_i_all: Vec<f64> = shell_i.coefficients[..n_prim_i * n_ctr_i].to_vec();
+    let coeff_j_all: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
+    let coeff_k_all: Vec<f64> = shell_k.coefficients[..n_prim_k * n_ctr_k].to_vec();
+    let coeff_l_all: Vec<f64> = shell_l.coefficients[..n_prim_l * n_ctr_l].to_vec();
 
-                    let prim_buf: Vec<f64> = match backend {
-                        #[cfg(feature = "cpu")]
-                        ResolvedBackend::Cpu(client) => run_4c1e_device::<cubecl::cpu::CpuRuntime>(
-                            client,
-                            li as u32,
-                            lj as u32,
-                            lk as u32,
-                            ll as u32,
-                            n_prim_i as u32,
-                            n_prim_j as u32,
-                            n_prim_k as u32,
-                            n_prim_l as u32,
-                            ri,
-                            rj,
-                            rk,
-                            rl,
-                            common_factor,
-                            &exps_i,
-                            &exps_j,
-                            &exps_k,
-                            &exps_l,
-                            &coeff_i,
-                            &coeff_j,
-                            &coeff_k,
-                            &coeff_l,
-                        ),
-                        #[cfg(feature = "wgpu")]
-                        ResolvedBackend::Wgpu(client, _) => {
-                            run_4c1e_device::<cubecl_wgpu::WgpuRuntime>(
-                                client,
-                                li as u32,
-                                lj as u32,
-                                lk as u32,
-                                ll as u32,
-                                n_prim_i as u32,
-                                n_prim_j as u32,
-                                n_prim_k as u32,
-                                n_prim_l as u32,
-                                ri,
-                                rj,
-                                rk,
-                                rl,
-                                common_factor,
-                                &exps_i,
-                                &exps_j,
-                                &exps_k,
-                                &exps_l,
-                                &coeff_i,
-                                &coeff_j,
-                                &coeff_k,
-                                &coeff_l,
-                            )
-                        }
-                        #[cfg(feature = "cuda")]
-                        ResolvedBackend::Cuda(client) => {
-                            run_4c1e_device::<cubecl_cuda::CudaRuntime>(
-                                client,
-                                li as u32,
-                                lj as u32,
-                                lk as u32,
-                                ll as u32,
-                                n_prim_i as u32,
-                                n_prim_j as u32,
-                                n_prim_k as u32,
-                                n_prim_l as u32,
-                                ri,
-                                rj,
-                                rk,
-                                rl,
-                                common_factor,
-                                &exps_i,
-                                &exps_j,
-                                &exps_k,
-                                &exps_l,
-                                &coeff_i,
-                                &coeff_j,
-                                &coeff_k,
-                                &coeff_l,
-                            )
-                        }
-                        #[cfg(feature = "rocm")]
-                        ResolvedBackend::Rocm(client) => run_4c1e_device::<cubecl_hip::HipRuntime>(
-                            client,
-                            li as u32,
-                            lj as u32,
-                            lk as u32,
-                            ll as u32,
-                            n_prim_i as u32,
-                            n_prim_j as u32,
-                            n_prim_k as u32,
-                            n_prim_l as u32,
-                            ri,
-                            rj,
-                            rk,
-                            rl,
-                            common_factor,
-                            &exps_i,
-                            &exps_j,
-                            &exps_k,
-                            &exps_l,
-                            &coeff_i,
-                            &coeff_j,
-                            &coeff_k,
-                            &coeff_l,
-                        ),
-                        #[cfg(feature = "metal")]
-                        ResolvedBackend::Metal(client, _) => {
-                            run_4c1e_device::<cubecl_wgpu::WgpuRuntime>(
-                                client,
-                                li as u32,
-                                lj as u32,
-                                lk as u32,
-                                ll as u32,
-                                n_prim_i as u32,
-                                n_prim_j as u32,
-                                n_prim_k as u32,
-                                n_prim_l as u32,
-                                ri,
-                                rj,
-                                rk,
-                                rl,
-                                common_factor,
-                                &exps_i,
-                                &exps_j,
-                                &exps_k,
-                                &exps_l,
-                                &coeff_i,
-                                &coeff_j,
-                                &coeff_k,
-                                &coeff_l,
-                            )
-                        }
-                    };
+    let cart_all = run_4c1e_contracted_on_backend(
+        backend,
+        [li as u32, lj as u32, lk as u32, ll as u32],
+        [
+            n_prim_i as u32,
+            n_prim_j as u32,
+            n_prim_k as u32,
+            n_prim_l as u32,
+        ],
+        [
+            n_ctr_i as u32,
+            n_ctr_j as u32,
+            n_ctr_k as u32,
+            n_ctr_l as u32,
+        ],
+        [ri, rj, rk, rl],
+        common_factor,
+        [&exps_i, &exps_j, &exps_k, &exps_l],
+        [&coeff_i_all, &coeff_j_all, &coeff_k_all, &coeff_l_all],
+    );
 
-                    for (dst, &src) in cart_buf.iter_mut().zip(prim_buf.iter()) {
-                        *dst += src;
-                    }
-                }
-            }
+    for block in cart_all.chunks_exact(cart_buf.len()) {
+        for (dst, &src) in cart_buf.iter_mut().zip(block.iter()) {
+            *dst += src;
         }
     }
 
@@ -1996,29 +2182,18 @@ mod tests {
                 rl,
                 common_factor,
             );
-            let dev = run_4c1e_device::<cubecl::cpu::CpuRuntime>(
-                &cpu_client(),
-                li as u32,
-                lj as u32,
-                lk as u32,
-                ll as u32,
-                1,
-                1,
-                1,
-                1,
-                ri,
-                rj,
-                rk,
-                rl,
+            // Task 35-D wave 5: the per-quartet entry point is now a one-row
+            // batch through the same kernel, so this unit test covers the
+            // batched path rather than a second implementation of it.
+            let dev = run_4c1e_contracted_on_backend(
+                &ResolvedBackend::Cpu(cpu_client()),
+                [li as u32, lj as u32, lk as u32, ll as u32],
+                [1, 1, 1, 1],
+                [1, 1, 1, 1],
+                [ri, rj, rk, rl],
                 common_factor,
-                &[ai],
-                &[aj],
-                &[ak],
-                &[al],
-                &[1.0],
-                &[1.0],
-                &[1.0],
-                &[1.0],
+                [&[ai], &[aj], &[ak], &[al]],
+                [&[1.0], &[1.0], &[1.0], &[1.0]],
             );
 
             assert_eq!(
@@ -2081,30 +2256,26 @@ mod tests {
             assert_device_matches_host(1, 0, 0, 1, 1.0, 0.8, 1.1, 0.7);
         }
 
-        /// Genericity evidence: launch center_4c1e_kernel at f32 on CpuRuntime
-        /// for s-s-s-s and assert the result is finite.
+        /// Genericity evidence: the kernel compiles and runs for `F = f32`.
+        /// Launch a one-row s-s-s-s batch on the CPU runtime and assert the
+        /// result is finite.
         #[test]
         fn test_center_4c1e_kernel_generic_f32() {
             let client = cpu_client();
             // s-s-s-s: nmax=0, mmax=0 → dli=dlj=dlk=dll=1, g_size=1, buf db=1
             // bigger=0 → buf_size = 1*(0+1)=1.
-            let exps = [1.0_f32];
-            let coeff = [1.0_f32];
-            let g_zero = [0.0_f32; 3];
-            let buf_zero = [0.0_f32; 1];
-            let out_zero = [0.0_f32; 1];
-
-            let exps_i_h = client.create_from_slice(f32::as_bytes(&exps));
-            let exps_j_h = client.create_from_slice(f32::as_bytes(&exps));
-            let exps_k_h = client.create_from_slice(f32::as_bytes(&exps));
-            let exps_l_h = client.create_from_slice(f32::as_bytes(&exps));
-            let coeff_i_h = client.create_from_slice(f32::as_bytes(&coeff));
-            let coeff_j_h = client.create_from_slice(f32::as_bytes(&coeff));
-            let coeff_k_h = client.create_from_slice(f32::as_bytes(&coeff));
-            let coeff_l_h = client.create_from_slice(f32::as_bytes(&coeff));
-            let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
-            let buf_h = client.create_from_slice(f32::as_bytes(&buf_zero));
-            let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
+            //
+            // Four s shells, one primitive and one contraction each, flattened
+            // the way `TwoEFlatBasis` lays a basis out.
+            let exps = [1.0_f32; 4];
+            let coeffs = [1.0_f32; 4];
+            let centers = [
+                0.0_f32, 0.0, 0.0, 0.7, -0.4, 0.2, -0.5, 0.9, 0.6, 0.3, 0.5, -0.8,
+            ];
+            let shell_meta: [u32; 16] = [0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 1, 1, 3, 3, 1, 1];
+            // `si, sj, sk, sl, out_off, class, ci, cj, ck, cl`.
+            let rows: [u32; 10] = [0, 1, 2, 3, 0, 0, 0, 0, 0, 0];
+            let class_shape: [u32; 4] = [0, 0, 0, 0];
 
             let common_factor = (SQRTPI
                 * std::f64::consts::PI
@@ -2112,47 +2283,42 @@ mod tests {
                 * common_fac_sp(0)
                 * common_fac_sp(0)
                 * common_fac_sp(0)) as f32;
+            let class_factor = [common_factor];
+
+            let g_zero = [0.0_f32; 3];
+            let buf_zero = [0.0_f32; 1];
+            let out_zero = [0.0_f32; 1];
+
+            let exps_h = client.create_from_slice(f32::as_bytes(&exps));
+            let coeffs_h = client.create_from_slice(f32::as_bytes(&coeffs));
+            let centers_h = client.create_from_slice(f32::as_bytes(&centers));
+            let meta_h = client.create_from_slice(u32::as_bytes(&shell_meta));
+            let rows_h = client.create_from_slice(u32::as_bytes(&rows));
+            let shape_h = client.create_from_slice(u32::as_bytes(&class_shape));
+            let factor_h = client.create_from_slice(f32::as_bytes(&class_factor));
+            let g_h = client.create_from_slice(f32::as_bytes(&g_zero));
+            let buf_h = client.create_from_slice(f32::as_bytes(&buf_zero));
+            let out_h = client.create_from_slice(f32::as_bytes(&out_zero));
 
             center_4c1e_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                 &client,
-                crate::plane::single_cube_count(),
-                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
-                unsafe { ArrayArg::from_raw_parts(exps_i_h, 1) },
-                unsafe { ArrayArg::from_raw_parts(exps_j_h, 1) },
-                unsafe { ArrayArg::from_raw_parts(exps_k_h, 1) },
-                unsafe { ArrayArg::from_raw_parts(exps_l_h, 1) },
-                unsafe { ArrayArg::from_raw_parts(coeff_i_h, 1) },
-                unsafe { ArrayArg::from_raw_parts(coeff_j_h, 1) },
-                unsafe { ArrayArg::from_raw_parts(coeff_k_h, 1) },
-                unsafe { ArrayArg::from_raw_parts(coeff_l_h, 1) },
+                crate::plane::cube_count_1d(1),
+                CubeDim::new_1d(1),
+                unsafe { ArrayArg::from_raw_parts(exps_h, exps.len()) },
+                unsafe { ArrayArg::from_raw_parts(coeffs_h, coeffs.len()) },
+                unsafe { ArrayArg::from_raw_parts(centers_h, centers.len()) },
+                unsafe { ArrayArg::from_raw_parts(meta_h, shell_meta.len()) },
+                unsafe { ArrayArg::from_raw_parts(rows_h, rows.len()) },
+                unsafe { ArrayArg::from_raw_parts(shape_h, class_shape.len()) },
+                unsafe { ArrayArg::from_raw_parts(factor_h, class_factor.len()) },
                 unsafe { ArrayArg::from_raw_parts(g_h, 3) },
                 unsafe { ArrayArg::from_raw_parts(buf_h, 1) },
                 unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
-                0.0_f32,
-                0.0,
-                0.0,
-                0.7,
-                -0.4,
-                0.2,
-                -0.5,
-                0.9,
-                0.6,
-                0.3,
-                0.5,
-                -0.8,
-                common_factor,
-                0,
-                0,
-                0,
-                0,
-                1,
-                1,
-                1,
-                1,
-                1,
-                1,
-                1,
-                1,
+                1u32, // n_rows
+                1u32, // n_cubes
+                3u32, // g_stride (one slab, unpadded)
+                1u32, // buf_stride
+                1u32, // per_unit
             );
 
             let raw = client.read_one_unchecked(out_h);

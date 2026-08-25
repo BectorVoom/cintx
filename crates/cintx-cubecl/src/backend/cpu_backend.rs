@@ -13,5 +13,5 @@ use cubecl::cpu::{CpuDevice, CpuRuntime};
 
 /// Resolve a CPU `ComputeClient` using the default `CpuDevice`.
 pub fn resolve_cpu_client() -> Result<ComputeClient<CpuRuntime>, cintxRsError> {
-    Ok(CpuRuntime::client(&CpuDevice::default()))
+    Ok(CpuRuntime::client(&CpuDevice))
 }

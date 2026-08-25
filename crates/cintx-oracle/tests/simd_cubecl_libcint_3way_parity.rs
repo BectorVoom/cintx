@@ -958,8 +958,35 @@ fn test_3way_high_l_2c2e_parity() {
 
         for k in 0..len {
             assert_relative_eq!(out_simd[k], out_libcint[k], epsilon = 1e-9);
-            assert_relative_eq!(out_cubecl[k], out_libcint[k], epsilon = 1e-9);
-            assert_relative_eq!(out_simd[k], out_cubecl[k], epsilon = 1e-9);
+            // The CubeCL comparison carries a relative term the other two do
+            // not. `(h|h)` is `nroots = 6`, so under `extended-device-rys` it
+            // is served by the on-device Wheeler entry rather than by the host
+            // primitive loop, and the two round differently. Measured against
+            // vendored libcint across this fixture's six pairs:
+            //
+            // | pair | max\|v\| | host loop rel | device rel |
+            // |---|---|---|---|
+            // | (g,s) (g,d) (g,g) (h,s) (h,f) | <= 682 | <= 6.4e-15 | <= 3.2e-14 |
+            // | (h,h) | 976 | 1.8e-15 | 1.8e-12 |
+            //
+            // A flat `epsilon = 1e-9` on a quantity reaching 976 is an absolute
+            // bound asking for 1e-12 relative — tighter at the top of the range
+            // than at the bottom, and tighter than the extended path's own
+            // documented floor. `max_relative` states the bound as a scale, at
+            // 1e-11: about six times the measurement, so a real regression
+            // still trips it.
+            assert_relative_eq!(
+                out_cubecl[k],
+                out_libcint[k],
+                epsilon = 1e-9,
+                max_relative = 1e-11
+            );
+            assert_relative_eq!(
+                out_simd[k],
+                out_cubecl[k],
+                epsilon = 1e-9,
+                max_relative = 1e-11
+            );
         }
     }
 }

@@ -1,6 +1,6 @@
 # Vendored basis-set data — provenance and terms
 
-The three `.nwchem` files in this directory are **verbatim, unmodified**
+The five `.nwchem` files in this directory are **verbatim, unmodified**
 exports from the [Basis Set Exchange](https://www.basissetexchange.org)
 (BSE). They are data inputs to `cintx-basis`, not source code, and are
 redistributed here so that `cintx`'s def2 fixtures and oracle parity gates are
@@ -13,6 +13,13 @@ reproducible without a network fetch.
 | `def2-svp.nwchem` | `def2-SVP` | orbital | H–Rn |
 | `def2-tzvp.nwchem` | `def2-TZVP` | orbital | H–Rn |
 | `def2-ecp.nwchem` | `def2-ECP` | ECP | Rb–Rn (Z ≥ 37) |
+| `def2-universal-jfit.nwchem` | `def2-universal-JFIT` (**def2/J**) | Coulomb-fitting auxiliary | H–Rn |
+| `def2-universal-jkfit.nwchem` | `def2-universal-JKFIT` (**def2/JK**) | Coulomb/exchange-fitting auxiliary | H–Rn |
+
+The two auxiliary sets are *universal*: one table serves every def2 orbital
+basis, which is why they are catalog entries in their own right rather than a
+property of def2-SVP or def2-TZVP. They are fitting functions, not orbital
+functions — see `StandardBasis::is_auxiliary`.
 
 ## Provenance
 
@@ -21,7 +28,10 @@ reproducible without a network fetch.
 - **Basis-set data version**: `1` — "Data from Turbomole 7.3" (recorded in
   each file's header block)
 - **Export format**: NWChem, spherical (`BASIS "ao basis" SPHERICAL PRINT`)
-- **Retrieved**: 2026-08-23, during the Phase 32 `cintx-basis` work
+- **Retrieved**: the three orbital/ECP files on 2026-08-23 during the Phase 32
+  `cintx-basis` work; the two auxiliary files on 2026-08-25 for the RI-J
+  benchmark (post-Phase-35 plan, Part 4). All five carry the same BSE version
+  and the same basis-set data version, so they are one consistent snapshot.
 - **Modifications**: none. The files are byte-for-byte as exported; the header
   comment block that BSE emits is retained deliberately so the provenance
   travels with the data.

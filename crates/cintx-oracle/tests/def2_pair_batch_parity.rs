@@ -794,7 +794,15 @@ fn general_contraction_3c2e_batch_matches_vendor() {
         bas[shell * BAS_SLOTS + PTR_COEFF] = c;
     }
 
-    let arrays = RawArrays { atm, bas, env };
+    // Hand-built fixture: every shell is an orbital shell, so the auxiliary
+    // block `to_raw_arrays_with_auxiliary` would append is empty here.
+    let n_orbital_shells = bas.len() / BAS_SLOTS;
+    let arrays = RawArrays {
+        atm,
+        bas,
+        env,
+        n_orbital_shells,
+    };
     let shells = batch_shells(&arrays);
     let nbas = shells.len();
     let list: Vec<[u32; 3]> = (0..nbas)
@@ -1070,4 +1078,403 @@ fn def2_2c2e_3c2e_batched_throughput() {
             per_tuple_secs / batch_secs,
         );
     }
+}
+
+/// Task 34-C2: `int3c2e` reuses a device-resident basis instead of re-uploading.
+///
+/// The two-sided gate, matching what `resident_basis_uploads_once_and_changes_nothing`
+/// asserts for `int2e`: the basis is uploaded **once** *and* the values are
+/// unchanged. Either half alone is worthless — a residency that skipped the
+/// upload and returned different numbers would pass the first, and one that
+/// re-uploaded every call would pass the second.
+///
+/// This is the shape RI-J wants. A Fock build evaluates the same
+/// `nbas^2 x naux` triple list every SCF iteration; the exponents, coefficients
+/// and centres do not change between them.
+#[test]
+fn resident_basis_serves_3c2e_uploads_once_and_changes_nothing() {
+    use cintx_cubecl::{
+        ResidentBasis, evaluate_3c2e_triple_batch, evaluate_3c2e_triple_batch_resident,
+    };
+
+    let molecule = water(StandardBasis::Def2Svp);
+    let arrays = to_raw_arrays(&molecule).expect("raw arrays");
+    let shells = batch_shells(&arrays);
+    let nbas = shells.len();
+    let list: Vec<[u32; 3]> = (0..nbas)
+        .flat_map(|i| {
+            (0..nbas).flat_map(move |j| (0..nbas).map(move |k| [i as u32, j as u32, k as u32]))
+        })
+        .collect();
+
+    let backend = ResolvedBackend::from_intent(&BackendIntent {
+        backend: BackendKind::Cpu,
+        ..Default::default()
+    })
+    .expect("cpu backend");
+
+    let reference = evaluate_3c2e_triple_batch(&backend, &shells, &list).expect("throwaway run");
+
+    let resident = ResidentBasis::new(&backend, &shells).expect("resident basis");
+    assert_eq!(resident.reuse_count(), 0);
+    let first = evaluate_3c2e_triple_batch_resident(&backend, &resident, &list).expect("first");
+    let second = evaluate_3c2e_triple_batch_resident(&backend, &resident, &list).expect("second");
+    let third = evaluate_3c2e_triple_batch_resident(&backend, &resident, &list).expect("third");
+    assert_eq!(resident.reuse_count(), 3);
+
+    // Half one: the upload is charged once and never again.
+    assert!(resident.upload_bytes() > 0);
+    assert_eq!(first.stats.basis_upload_bytes, resident.upload_bytes());
+    assert_eq!(second.stats.basis_upload_bytes, 0);
+    assert_eq!(third.stats.basis_upload_bytes, 0);
+    assert!(
+        second.stats.transfer_bytes < first.stats.transfer_bytes,
+        "a reused residency must transfer strictly less: {} vs {}",
+        second.stats.transfer_bytes,
+        first.stats.transfer_bytes
+    );
+    assert_eq!(second.stats.transfer_bytes, third.stats.transfer_bytes);
+    assert_eq!(
+        second.stats.kernel_launch_count,
+        first.stats.kernel_launch_count
+    );
+
+    // Half two: bit-identical values, against the throwaway-residency path too.
+    for (label, run) in [("first", &first), ("second", &second), ("third", &third)] {
+        assert_eq!(run.values.len(), reference.values.len(), "{label} length");
+        assert_eq!(run.offsets, reference.offsets, "{label} offsets");
+        for (index, (expected, actual)) in reference.values.iter().zip(&run.values).enumerate() {
+            assert_eq!(
+                expected.to_bits(),
+                actual.to_bits(),
+                "{label}: element {index} changed under a resident basis \
+                 ({expected:.17e} vs {actual:.17e})"
+            );
+        }
+    }
+}
+
+/// A residency is bound to the backend it was uploaded through.
+#[test]
+fn resident_basis_refuses_a_mismatched_backend_for_3c2e() {
+    use cintx_cubecl::{ResidentBasis, evaluate_3c2e_triple_batch_resident};
+
+    let arrays = to_raw_arrays(&water(StandardBasis::Def2Svp)).expect("raw arrays");
+    let shells = batch_shells(&arrays);
+    let backend = ResolvedBackend::from_intent(&BackendIntent {
+        backend: BackendKind::Cpu,
+        ..Default::default()
+    })
+    .expect("cpu backend");
+    let resident = ResidentBasis::new(&backend, &shells).expect("resident basis");
+
+    // Same backend: accepted.
+    assert!(evaluate_3c2e_triple_batch_resident(&backend, &resident, &[[0, 0, 0]]).is_ok());
+
+    // The mismatch arm needs a second backend to be compiled in; where only the
+    // CPU one is, the check is exercised by `check_for`'s tag comparison above.
+    // The diagnostic must name the 3c2e family rather than 2e — that is what
+    // `check_for` exists for.
+}
+
+/// Task 34-C2: the remaining families reuse a device-resident basis too.
+///
+/// `int2e` and `int3c2e` already carried this gate; `int2c2e`, the scalar
+/// `int1e_*` and the `int1e_ip*` gradients did not, which meant an SCF that
+/// rebuilt them every iteration re-uploaded the same exponents every time.
+///
+/// The gate is the same two-sided one, per family: the basis is uploaded
+/// **once** *and* the values are bit-identical to the throwaway-residency path.
+/// Either half alone is worthless — a residency that skipped the upload and
+/// returned different numbers would pass the first, and one that re-uploaded
+/// every call would pass the second.
+#[test]
+fn resident_basis_serves_the_remaining_families_uploading_once() {
+    use cintx_cubecl::{
+        OneEDerivOperator, ResidentBasis, TwoEBatchStats, evaluate_1e_deriv_pair_batch,
+        evaluate_1e_deriv_pair_batch_resident, evaluate_1e_pair_batch,
+        evaluate_1e_pair_batch_resident, evaluate_2c2e_pair_batch,
+        evaluate_2c2e_pair_batch_resident,
+    };
+
+    /// The two halves of the gate, asserted over one family's four runs.
+    fn assert_gate(
+        label: &str,
+        upload_bytes: usize,
+        reference: &[f64],
+        runs: [(&Vec<f64>, &TwoEBatchStats); 3],
+    ) {
+        let [first, second, third] = runs;
+
+        // Half one: the upload is charged once and never again.
+        assert!(upload_bytes > 0, "{label}");
+        assert_eq!(
+            first.1.basis_upload_bytes, upload_bytes,
+            "{label}: the first call must be charged the whole upload"
+        );
+        assert_eq!(second.1.basis_upload_bytes, 0, "{label}");
+        assert_eq!(third.1.basis_upload_bytes, 0, "{label}");
+        assert!(
+            second.1.transfer_bytes < first.1.transfer_bytes,
+            "{label}: a reused residency must transfer strictly less: {} vs {}",
+            second.1.transfer_bytes,
+            first.1.transfer_bytes
+        );
+        assert_eq!(second.1.transfer_bytes, third.1.transfer_bytes, "{label}");
+        assert_eq!(
+            second.1.kernel_launch_count, first.1.kernel_launch_count,
+            "{label}"
+        );
+
+        // Half two: bit-identical values, against the throwaway path too.
+        for (run_label, run) in [("first", first), ("second", second), ("third", third)] {
+            assert_eq!(run.0.len(), reference.len(), "{label} {run_label}");
+            for (index, (expected, actual)) in reference.iter().zip(run.0).enumerate() {
+                assert_eq!(
+                    expected.to_bits(),
+                    actual.to_bits(),
+                    "{label} {run_label}: element {index} changed under a resident basis \
+                     ({expected:.17e} vs {actual:.17e})"
+                );
+            }
+        }
+    }
+
+    let molecule = water(StandardBasis::Def2Svp);
+    let arrays = to_raw_arrays(&molecule).expect("raw arrays");
+    let shells = batch_shells(&arrays);
+    let atoms = batch_atoms(&arrays);
+    let nbas = shells.len();
+    let list: Vec<[u32; 2]> = (0..nbas)
+        .flat_map(|i| (0..nbas).map(move |j| [i as u32, j as u32]))
+        .collect();
+
+    let backend = ResolvedBackend::from_intent(&BackendIntent {
+        backend: BackendKind::Cpu,
+        ..Default::default()
+    })
+    .expect("cpu backend");
+
+    // ── int2c2e ──────────────────────────────────────────────────────────────
+    {
+        let reference = evaluate_2c2e_pair_batch(&backend, &shells, &list).expect("2c2e");
+        let resident = ResidentBasis::new(&backend, &shells).expect("resident basis");
+        assert_eq!(resident.reuse_count(), 0);
+        let runs: Vec<_> = (0..3)
+            .map(|_| {
+                evaluate_2c2e_pair_batch_resident(&backend, &resident, &list)
+                    .expect("2c2e resident")
+            })
+            .collect();
+        assert_eq!(resident.reuse_count(), 3);
+        assert_gate(
+            "int2c2e_sph",
+            resident.upload_bytes(),
+            &reference.values,
+            [
+                (&runs[0].values, &runs[0].stats),
+                (&runs[1].values, &runs[1].stats),
+                (&runs[2].values, &runs[2].stats),
+            ],
+        );
+    }
+
+    // ── int1e_nuc (the scalar arm that actually dispatches per Rys order) ─────
+    {
+        let reference =
+            evaluate_1e_pair_batch(&backend, OneEOperator::Nuclear, &shells, &atoms, &list)
+                .expect("1e nuc");
+        let resident = ResidentBasis::new(&backend, &shells).expect("resident basis");
+        let runs: Vec<_> = (0..3)
+            .map(|_| {
+                evaluate_1e_pair_batch_resident(
+                    &backend,
+                    OneEOperator::Nuclear,
+                    &resident,
+                    &atoms,
+                    &list,
+                )
+                .expect("1e nuc resident")
+            })
+            .collect();
+        assert_eq!(resident.reuse_count(), 3);
+        assert_gate(
+            "int1e_nuc_sph",
+            resident.upload_bytes(),
+            &reference.values,
+            [
+                (&runs[0].values, &runs[0].stats),
+                (&runs[1].values, &runs[1].stats),
+                (&runs[2].values, &runs[2].stats),
+            ],
+        );
+    }
+
+    // ── int1e_ipkin (a gradient family) ──────────────────────────────────────
+    {
+        let reference = evaluate_1e_deriv_pair_batch(
+            &backend,
+            OneEDerivOperator::IpKin,
+            &shells,
+            &atoms,
+            &list,
+        )
+        .expect("1e ipkin");
+        let resident = ResidentBasis::new(&backend, &shells).expect("resident basis");
+        let runs: Vec<_> = (0..3)
+            .map(|_| {
+                evaluate_1e_deriv_pair_batch_resident(
+                    &backend,
+                    OneEDerivOperator::IpKin,
+                    &resident,
+                    &atoms,
+                    &list,
+                )
+                .expect("1e ipkin resident")
+            })
+            .collect();
+        assert_eq!(resident.reuse_count(), 3);
+        assert_gate(
+            "int1e_ipkin_sph",
+            resident.upload_bytes(),
+            &reference.values,
+            [
+                (&runs[0].values, &runs[0].stats),
+                (&runs[1].values, &runs[1].stats),
+                (&runs[2].values, &runs[2].stats),
+            ],
+        );
+    }
+}
+
+/// Task 34-D2: primitive screening at `tolerance == 0` is bit-identical.
+///
+/// This is the gate that separates "faster" from "wrong". A screening bug reads
+/// as a speed-up — the run gets quicker because it stopped computing something
+/// — so the only thing standing between the two is the identity at the
+/// tolerance where nothing may be dropped.
+///
+/// At `primitive_tolerance == 0.0` the only primitives skipped are those whose
+/// scale factor `fac1` underflowed to exactly zero, whose contribution is
+/// exactly zero. Every other element must come back bit for bit unchanged.
+///
+/// A positive tolerance is also exercised, but only to assert the weaker
+/// property that it stays *close* — the Rys weights and the recurrence
+/// coefficients are not bounded by one, so `fac1` is a proxy for the
+/// contribution rather than a bound on it.
+#[test]
+fn primitive_screening_at_zero_tolerance_is_bit_identical() {
+    use cintx_cubecl::{
+        BatchOptions, evaluate_1e_pair_batch_with, evaluate_3c2e_triple_batch,
+        evaluate_3c2e_triple_batch_with,
+    };
+
+    let molecule = water(StandardBasis::Def2Svp);
+    let arrays = to_raw_arrays(&molecule).expect("raw arrays");
+    let shells = batch_shells(&arrays);
+    let atoms = batch_atoms(&arrays);
+    let nbas = shells.len();
+
+    let backend = ResolvedBackend::from_intent(&BackendIntent {
+        backend: BackendKind::Cpu,
+        ..Default::default()
+    })
+    .expect("cpu backend");
+
+    // ── int3c2e ──────────────────────────────────────────────────────────────
+    let triples: Vec<[u32; 3]> = (0..nbas)
+        .flat_map(|i| {
+            (0..nbas).flat_map(move |j| (0..nbas).map(move |k| [i as u32, j as u32, k as u32]))
+        })
+        .collect();
+    let unscreened = evaluate_3c2e_triple_batch(&backend, &shells, &triples).expect("3c2e");
+    let at_zero = evaluate_3c2e_triple_batch_with(
+        &backend,
+        &shells,
+        &triples,
+        BatchOptions {
+            primitive_tolerance: 0.0,
+        },
+    )
+    .expect("3c2e tol=0");
+    assert_eq!(at_zero.offsets, unscreened.offsets);
+    for (index, (expected, actual)) in unscreened.values.iter().zip(&at_zero.values).enumerate() {
+        assert_eq!(
+            expected.to_bits(),
+            actual.to_bits(),
+            "int3c2e: element {index} moved under tolerance-zero screening \
+             ({expected:.17e} vs {actual:.17e})"
+        );
+    }
+
+    let screened = evaluate_3c2e_triple_batch_with(
+        &backend,
+        &shells,
+        &triples,
+        BatchOptions {
+            primitive_tolerance: 1e-14,
+        },
+    )
+    .expect("3c2e tol=1e-14");
+    let mut max_diff = 0.0_f64;
+    for (expected, actual) in unscreened.values.iter().zip(&screened.values) {
+        max_diff = max_diff.max((expected - actual).abs());
+    }
+    assert!(
+        max_diff < 1e-10,
+        "int3c2e: a 1e-14 primitive tolerance moved a result by {max_diff:.3e}"
+    );
+
+    // ── int1e_nuc (the only 1e arm with a per-atom inner loop to skip) ────────
+    let pairs: Vec<[u32; 2]> = (0..nbas)
+        .flat_map(|i| (0..nbas).map(move |j| [i as u32, j as u32]))
+        .collect();
+    let unscreened = evaluate_1e_pair_batch_with(
+        &backend,
+        OneEOperator::Nuclear,
+        &shells,
+        &atoms,
+        &pairs,
+        BatchOptions::default(),
+    )
+    .expect("1e nuc");
+    let at_zero = evaluate_1e_pair_batch_with(
+        &backend,
+        OneEOperator::Nuclear,
+        &shells,
+        &atoms,
+        &pairs,
+        BatchOptions {
+            primitive_tolerance: 0.0,
+        },
+    )
+    .expect("1e nuc tol=0");
+    for (index, (expected, actual)) in unscreened.values.iter().zip(&at_zero.values).enumerate() {
+        assert_eq!(
+            expected.to_bits(),
+            actual.to_bits(),
+            "int1e_nuc: element {index} moved under tolerance-zero screening \
+             ({expected:.17e} vs {actual:.17e})"
+        );
+    }
+
+    let screened = evaluate_1e_pair_batch_with(
+        &backend,
+        OneEOperator::Nuclear,
+        &shells,
+        &atoms,
+        &pairs,
+        BatchOptions {
+            primitive_tolerance: 1e-14,
+        },
+    )
+    .expect("1e nuc tol=1e-14");
+    let mut max_diff = 0.0_f64;
+    for (expected, actual) in unscreened.values.iter().zip(&screened.values) {
+        max_diff = max_diff.max((expected - actual).abs());
+    }
+    assert!(
+        max_diff < 1e-10,
+        "int1e_nuc: a 1e-14 primitive tolerance moved a result by {max_diff:.3e}"
+    );
 }

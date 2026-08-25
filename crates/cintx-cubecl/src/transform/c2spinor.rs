@@ -7,10 +7,25 @@
 //! Output layout convention (for nd spinor components):
 //!   - Alpha upper component: gsp[i*2] = re, gsp[i*2+1] = im, for i in 0..nd
 //!   - Beta lower component: gsp[(nd+i)*2] = re, gsp[(nd+i)*2+1] = im, for i in 0..nd
-//!   Total buffer size: 2 * nd * 2 = 4*nd f64 values.
+//!     Total buffer size: 2 * nd * 2 = 4*nd f64 values.
 //!
 //! For kappa == 0, both GT (j=l+1/2) and LT (j=l-1/2) blocks are applied,
 //! with GT written first (rows 0..nd_gt) and LT next (rows nd_gt..nd_gt+nd_lt).
+
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
 
 use super::c2s::ncart;
 use super::c2spinor_coeffs as cj;
@@ -2423,7 +2438,7 @@ fn apply_bra1_zf_block(
     row_off: usize,
 ) {
     // dk_total = alpha_r.len() / ncl  (total k_spinor rows)
-    let dk_total = if ncl > 0 { alpha_r.len() / ncl } else { 0 };
+    let dk_total = alpha_r.len().checked_div(ncl).unwrap_or(0);
     for l_cart in 0..ncl {
         for k_sp in 0..nd {
             let out_idx = (row_off + k_sp) * ncl + l_cart;
@@ -2769,16 +2784,13 @@ pub fn cart_to_spinor_si_3c2e1<F: CintFloat>(
 }
 
 /// Retrieve a single cart-to-sph coefficient for the k auxiliary index transform.
+///
+/// Delegates to `c2s::c2s_coeff` rather than carrying its own `match`. The copy
+/// that stood here stopped at `l = 4` and returned `0.0` above it, so an `l >= 5`
+/// auxiliary index was silently zeroed; there is now one table and one accessor,
+/// covering `l <= C2S_LMAX`.
 fn c2s_k_coeff(l: u8, m_row: usize, cart_col: usize) -> f64 {
-    use super::c2s::{C2S_L0, C2S_L1, C2S_L2, C2S_L3, C2S_L4};
-    match l {
-        0 => C2S_L0[m_row][cart_col],
-        1 => C2S_L1[m_row][cart_col],
-        2 => C2S_L2[m_row][cart_col],
-        3 => C2S_L3[m_row][cart_col],
-        4 => C2S_L4[m_row][cart_col],
-        _ => 0.0,
-    }
+    super::c2s::c2s_coeff(l, m_row, cart_col)
 }
 
 /// Derivative (multi-component) spin-free cart→spinor transform for arity-2 families

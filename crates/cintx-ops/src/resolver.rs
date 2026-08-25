@@ -152,9 +152,7 @@ impl ManifestEntry {
     }
 
     pub fn is_compiled_in_profile(&self, profile: &str) -> bool {
-        self.compiled_in_profiles
-            .iter()
-            .any(|value| *value == profile)
+        self.compiled_in_profiles.contains(&profile)
     }
 
     pub fn is_source_only(&self) -> bool {

@@ -1,6 +1,10 @@
-use cintx_core::{Representation, Shell};
+use cintx_core::Representation;
 use cintx_runtime::ExecutionPlan;
 use smallvec::SmallVec;
+// `Shell` and `Arc` are named only by `hash_shell_tuple`, which is now test-only.
+#[cfg(test)]
+use cintx_core::Shell;
+#[cfg(test)]
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -79,6 +83,9 @@ impl SpecializationKey {
     }
 }
 
+// Exercised only by this module's own tests: the live specialization cache
+// keys on `SpecializationKey`, not on a shell-tuple hash.
+#[cfg(test)]
 pub(crate) fn hash_shell_tuple(shells: &[Arc<Shell>]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut state = std::collections::hash_map::DefaultHasher::new();

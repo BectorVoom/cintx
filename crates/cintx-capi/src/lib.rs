@@ -29,6 +29,9 @@ mod tests {
     use super::*;
 
     #[test]
+    // Asserting on constants is the point: this test exists to fail if the
+    // C ABI is ever flipped to expose the unstable source API.
+    #[allow(clippy::assertions_on_constants)]
     fn capi_boundary_remains_stable_only() {
         assert!(!CAPI_EXPOSES_UNSTABLE_SOURCE_API);
         assert_eq!(CAPI_STATUS_SUCCESS, 0);

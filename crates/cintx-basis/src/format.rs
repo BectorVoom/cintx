@@ -101,9 +101,13 @@ fn parse_float(token: &str) -> Result<f64, BasisError> {
 /// # Errors
 /// Returns [`BasisError`] on an unknown element symbol, an unknown angular
 /// label, a malformed number, or a block whose rows disagree on column count.
+/// One `(Z, l, exponents, contraction rows)` block, as the parser accumulates it
+/// before [`flush_block`] transposes the rows into contraction-major storage.
+type PendingBlock = (u16, u8, Vec<f64>, Vec<Vec<f64>>);
+
 pub fn parse_basis(text: &str) -> Result<BasisTable, BasisError> {
     let mut table: BasisTable = BTreeMap::new();
-    let mut current: Option<(u16, u8, Vec<f64>, Vec<Vec<f64>>)> = None;
+    let mut current: Option<PendingBlock> = None;
     // BSE emits the orbital basis and its ECP as two sections of one document;
     // the ECP rows have a different column meaning and must not be read here.
     let mut in_ecp_section = false;
@@ -180,10 +184,7 @@ pub fn parse_basis(text: &str) -> Result<BasisTable, BasisError> {
 
 /// Convert an accumulated row-major block into contraction-major storage and
 /// append it to the table.
-fn flush_block(
-    table: &mut BasisTable,
-    block: Option<(u16, u8, Vec<f64>, Vec<Vec<f64>>)>,
-) -> Result<(), BasisError> {
+fn flush_block(table: &mut BasisTable, block: Option<PendingBlock>) -> Result<(), BasisError> {
     let Some((z, l, exponents, rows)) = block else {
         return Ok(());
     };

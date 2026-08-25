@@ -1,7 +1,7 @@
-/// CubeCL wgpu backend capability snapshot and reason taxonomy.
-///
-/// This module implements D-02 (explicit typed failures), D-04 (adapter capability
-/// context for reproducibility), and D-12 (specific unsupported reason taxonomy).
+//! CubeCL wgpu backend capability snapshot and reason taxonomy.
+//!
+//! This module implements D-02 (explicit typed failures), D-04 (adapter capability
+//! context for reproducibility), and D-12 (specific unsupported reason taxonomy).
 
 /// A snapshot of the concrete wgpu adapter capabilities captured at bootstrap time.
 ///

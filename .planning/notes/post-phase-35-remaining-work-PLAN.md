@@ -6,6 +6,31 @@
 `artifacts/def2_remaining_work_report_2026-08-24.md`
 **Date**: 2026-08-24
 
+> **Execution status, 2026-08-25** — see
+> `artifacts/post_phase_35_progress_report_2026-08-25.md` for the measurements.
+>
+> | part | state |
+> |---|---|
+> | Part 1 — 35-M1, 35-M2 | **done**. 69→15 dispatches for 2e; 27→4, 9→3, 9→1 for the others. Bit-identical. |
+> | Part 6 — clippy | **done**. `-D warnings` clean, ~2 078 → 0. |
+> | Part 7 — ROCm | **done, with a correction**: the "byte-identical to the CPU results" bar is not achievable and the reason is not the launch topology (the AMD compiler contracts FMA where the CPU one does not). Correctness against vendored libcint is 0 mismatches for all five families. |
+> | Part 2 — 33-05 | **discharged for ROCm**, which the plan recorded as impossible on this host: `fma` fuses bit-for-bit. Per-backend ceiling scaffolding landed; the raise itself is untouched. |
+> | Part 4 — def2/J, def2/JK | **done**, with the RI-J benchmark. It reports cintx ~2x slower there, and shows def2-TZVP + def2/J falling outside the nroots ceiling — the first real workload Phase 33 would unblock. |
+> | Part 3 — 35-D | **first two waves done**: `int3c2e_ip1`/`ip2` (1 728 launches -> 4, 25x) and `int1e_ipovlp`/`ipkin`/`ipnuc` (144 -> 1/1/3, 25-33x). 10 more 1e kernels plus `sigma_p`, `ecp`, `f12`, `center_3c1e`/`4c1e` and the `unstable-source-api` set remain per-tuple. |
+> | Part 3 — 34-C2 | **done for `int3c2e`** (the family RI-J needs). 35-F2, 34-D2 and 34-C2 for the other families remain. |
+> | Part 5 | still blocked on open question 2. |
+>
+> **Successor**: `.planning/notes/post-phase-35-continuation-PLAN.md` carries
+> everything still open, re-prioritised against what the measurements below
+> turned up.
+>
+> **The headline correction**: Part 1's projection was 0.56–0.59 us/quartet on
+> H2O/def2-SVP. The measurement is 0.72–0.85, which is *parity* with libcint, not
+> the 1.3–1.4x the plan called its honest floor. CH4 does beat the projection's
+> spirit (1.4–1.5x faster, up from 1.28x). Both remaining gaps — 2e on H2O and
+> RI-J — now spend ~40 % of their wall-clock in the **serial host cart-to-sph**,
+> which no launch-count or backend work touches. That is the next bottleneck.
+
 ---
 
 ## 0. Where things actually stand

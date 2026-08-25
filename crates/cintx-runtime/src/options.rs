@@ -14,9 +14,10 @@ pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 /// only). `Wgpu`, `Cuda`, `Rocm`, `Metal` are each gated on their own feature
 /// flag and the cintx-cubecl feature wiring forwards every backend feature
 /// to the matching flag here so the enum stays in lockstep.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum BackendKind {
     /// CPU execution profile. Always available — `cpu` feature is default-on (D-06).
+    #[default]
     Cpu,
     /// wgpu-backed CubeCL runtime.
     #[cfg(feature = "wgpu")]
@@ -34,16 +35,6 @@ pub enum BackendKind {
     /// `.planning/notes/cuda-metal-verification-gap.md`.
     #[cfg(feature = "metal")]
     Metal,
-}
-
-impl Default for BackendKind {
-    fn default() -> Self {
-        // D-11: Cpu is the typed default — always, infallibly. Aligns with
-        // resolve_backend_kind()'s unset-env-var behavior and ROADMAP success
-        // criterion 5. Wave 0 (16-01) audited every implicit
-        // BackendIntent::default() callsite so this flip is mechanically safe.
-        Self::Cpu
-    }
 }
 
 /// Backend selection intent carried through the query/evaluate contract.

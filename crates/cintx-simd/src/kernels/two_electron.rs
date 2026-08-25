@@ -1,3 +1,13 @@
+// `as usize` on values the kernel also uses as `u8`/`u32` strides: the explicit
+// cast is what keeps a stride expression readable next to its untyped twin in the
+// CubeCL kernel this file mirrors.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`) index parallel arrays where the index
+// names an axis; an iterator rewrite would hide that.
+#![allow(clippy::needless_range_loop)]
+// Kernel entry points take the whole shape contract positionally, mirroring the
+// CubeCL kernels this crate is a SIMD twin of.
+#![allow(clippy::too_many_arguments)]
 use crate::boys::rys_roots_simd;
 use crate::kernels::one_electron::{SQRTPI, cart_comps, common_fac_sp, ncart};
 use crate::vector::SimdFloat;

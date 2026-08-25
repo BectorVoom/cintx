@@ -135,8 +135,22 @@ impl Molecule {
         let mut ecp_shells: Vec<Arc<EcpShell>> = Vec::new();
 
         for (atom_index, spec) in self.atoms.iter().enumerate() {
+            // `Atom::atomic_number` is the value that reaches `atm[CHARGE_OF]`,
+            // so on an ECP element it must be the ECP-REDUCED charge — the same
+            // `effective_charge` [`to_raw_arrays`] writes. Storing the bare `Z`
+            // here made the typed safe API disagree with its own raw marshaling
+            // for every `Z >= 37` element, and `int1e_nuc` — the operator whose
+            // value is linear in the nuclear charge — came out exactly
+            // `Z / (Z - n_core)` too large: 37/9 for Rb, 53/25 for I, 79/19 for
+            // Au. Gated by `def2_ecp_heavy_element_scope`.
+            let effective = u16::try_from(self.effective_charge(spec)).map_err(|_| {
+                BasisError::MissingElement {
+                    basis: self.basis.name(),
+                    atomic_number: spec.atomic_number,
+                }
+            })?;
             atoms.push(Atom::try_new(
-                spec.atomic_number,
+                effective,
                 spec.coord_bohr,
                 NuclearModel::Point,
                 None,

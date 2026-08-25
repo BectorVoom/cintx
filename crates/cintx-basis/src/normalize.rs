@@ -18,6 +18,12 @@
 //! integral rather than an obvious failure, which is why `normalization.rs`
 //! is gated by a dedicated parity test before any integral is evaluated.
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+
 /// `gaussian_int(n, alpha) = Gamma((n+1)/2) / (2 * alpha^((n+1)/2))`.
 ///
 /// Verbatim port of `_gaussian_int` (`libcint-master/src/misc.c:72`).

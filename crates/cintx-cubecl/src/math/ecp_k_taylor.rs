@@ -39,6 +39,30 @@
 //! `bessel.rs` / `boys.rs` Phase 8 P02 note, no `#[cube]` body appears in this
 //! file.
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+// Element loops rather than `copy_from_slice`: the source index carries a table
+// base offset (`tabu_base + i`, `j * ORDER7OFFSET + i`) or a recursion bound that
+// the slice form would have to restate as two range expressions.
+#![allow(clippy::manual_memcpy)]
+
 use crate::math::bessel::{
     K_TAB_COL, K_TAB_INTERVAL, K_TAYLOR_MAX, X_LARGE_THRESHOLD, X_SMALL_THRESHOLD,
 };
@@ -186,7 +210,7 @@ pub fn ecpsph_ine_opt_host(order: u32, z: f64) -> Vec<f64> {
     let order = order as usize;
     let mut out = vec![0.0f64; order + 1];
 
-    if z < X_SMALL_THRESHOLD || z > X_LARGE_THRESHOLD {
+    if !(X_SMALL_THRESHOLD..=X_LARGE_THRESHOLD).contains(&z) {
         ecpsph_ine(&mut out, order, z);
         return out;
     }
@@ -394,7 +418,7 @@ pub fn type1_rad_part_host(
     for n in 0..nrs {
         let mut tmp = rs[n * inc] - kaij;
         tmp = fac - aij * tmp * tmp;
-        if ur[n] == 0.0 || tmp > CUTOFF || tmp < -(EXPCUTOFF + 6.0 + 30.0) {
+        if ur[n] == 0.0 || !(-(EXPCUTOFF + 6.0 + 30.0)..=CUTOFF).contains(&tmp) {
             rur[n] = 0.0;
             for i in 0..lmax1 {
                 bval[n * lmax1 + i] = 0.0;
@@ -667,7 +691,7 @@ mod tests {
         for n in 0..nrs {
             let mut tmp = rs[n] - kaij;
             tmp = fac - aij * tmp * tmp;
-            if ur[n] == 0.0 || tmp > CUTOFF || tmp < -(EXPCUTOFF + 6.0 + 30.0) {
+            if ur[n] == 0.0 || !(-(EXPCUTOFF + 6.0 + 30.0)..=CUTOFF).contains(&tmp) {
                 rur[n] = 0.0;
             } else {
                 rur[n] = ur[n] * tmp.exp();

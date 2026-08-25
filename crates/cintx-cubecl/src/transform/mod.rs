@@ -1,6 +1,9 @@
 pub mod c2s;
+pub mod c2s_data;
 pub mod c2spinor;
 pub mod c2spinor_coeffs;
+pub mod host_batch;
+pub mod profile;
 
 use cintx_core::{Representation, cintxRsError};
 

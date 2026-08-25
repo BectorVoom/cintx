@@ -13,18 +13,18 @@
 //! ── Confirmed libcint nctr>1 output block ordering (the heart of WR-03) ──
 //! From `CINT3c1e_drv` + `c2s_{cart,sph}_3c2e1` (cint3c1e.c / cart2sph.c):
 //!   * The output is a SINGLE dense 3-D array of shape
-//!       [ni_full, nj_full, nk_full] = [di*nctr_i, dj*nctr_j, dk*nctr_k]
+//!     [ni_full, nj_full, nk_full] = [di*nctr_i, dj*nctr_j, dk*nctr_k]
 //!     in i-fastest / k-slowest (column-major i,j,k) order, where di/dj/dk are the
 //!     per-shell angular block lengths (ncart or nsph).
 //!   * Contraction is the MAJOR (outer / slow) index WITHIN each axis:
-//!       i_global = ci*di + i_idx ,  j_global = cj*dj + j_idx ,  k_global = ck*dk + k_idx
+//!     i_global = ci*di + i_idx ,  j_global = cj*dj + j_idx ,  k_global = ck*dk + k_idx
 //!     i.e. `pijk = ofk*ck + ofj*cj + di*ci` with ofj = ni_full*dj, ofk = ni_full*nj_full*dk,
 //!     then `dcopy_iklj` scatters the per-(ci,cj,ck) block with strides (1, ni_full, ni_full*nj_full).
 //!   * This is exactly the 1e contraction-MAJOR convention (AO = ctr*(2l+1)+m).
 //!     It is NOT a stack of independent (ci*nctr_j+cj)*block_len blocks — the
 //!     contraction index interleaves with the angular index per axis.
-//! For gradients (ip1 / iprinv) the 3 components are the OUTERMOST (component-leading)
-//! dimension: out[comp * (ni_full*nj_full*nk_full) + <interleaved nctr/angular index>].
+//!     For gradients (ip1 / iprinv) the 3 components are the OUTERMOST (component-leading)
+//!     dimension: out[comp * (ni_full*nj_full*nk_full) + <interleaved nctr/angular index>].
 //!
 //! Double gate: vendor parity assertions require `--features cpu` (cubecl cpu
 //! backend) AND `CINTX_ORACLE_BUILD_VENDOR=1` (the `has_vendor_libcint` cfg).

@@ -6,11 +6,34 @@
 //! 3. Branch-specific 4D HRR transfer (ibase/kbase adaptive stride choice).
 //! 4. Cartesian contraction + optional `cart_to_sph_2e` transform.
 
+// Transcribed verbatim from vendored libcint 6.1.3 (and, in `cintx-basis`, from the
+// Lanczos reference these normalization constants come from). Result compatibility
+// is decided by the exact bits these literals carry, so none is truncated to the
+// shortest form that round-trips.
+#![allow(clippy::excessive_precision)]
+// The `as usize` / `as u32` casts here are load-bearing under `#[cube]`: the
+// CubeCL builtins (`UNIT_POS`, `CUBE_DIM`, ...) expand to `NativeExpand<u32>`,
+// and `Array` indexing takes a `usize`, so the uniform `(expr) as usize` form is
+// what lets an index expression be swapped between a literal and a variable.
+// Clippy sees the post-expansion type and reads them as redundant.
+#![allow(clippy::unnecessary_cast)]
+// Index-carrying loops (`for axis in 0..3`, `for i in 0..n`) index several
+// parallel arrays or a strided buffer, and the index itself names an axis,
+// component or stride. An iterator rewrite would hide exactly that.
+#![allow(clippy::needless_range_loop)]
+// Kernel launches take the whole shape contract as positional arguments — that
+// is the CubeCL calling convention, not a design choice — and the host wrappers
+// mirror it so the two can be read side by side.
+#![allow(clippy::too_many_arguments)]
+
 use crate::backend::ResolvedBackend;
 use crate::kernels::f12::Gauge2eKind;
 use crate::math::pdata::compute_pdata_host;
 use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
+use crate::math::rys_wheeler::{
+    EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
+};
 use crate::specialization::SpecializationKey;
 use crate::transform::c2s::{cart_to_sph_2e, ncart, nsph};
 use crate::transform::c2spinor::{
@@ -34,14 +57,14 @@ const SQRTPI: f64 = 1.7724538509055159_f64;
 #[allow(clippy::approx_constant)]
 const PIE4: f64 = 0.78539816339744827900_f64;
 
-/// Maximum `nroots` the device Rys kernels (`rys_root1..5`) can evaluate.
-/// Scalar 2e `nroots = (li+lj+lk+ll)/2 + 1`, so this covers `l-sum <= 8`.
-const MAX_DEVICE_NROOTS: usize = 5;
-
 /// Maximum `nroots` the HOST Rys engine (`rys_roots_host` → `rys_wheeler`) evaluates
 /// (Phase 25 FND-02). The host gradient/Hessian path uses the Wheeler nroots 6..12
 /// engine; the vendor build caps at 12 (quadmath disabled), so nroots>12 stays
-/// fail-closed (T-25-03). Device kernels keep their own `MAX_DEVICE_NROOTS=5` cap.
+/// fail-closed (T-25-03). What the *device* kernels may serve is no longer a
+/// constant here: it is `device_rys_ceiling::device_nroots_ceiling(backend,
+/// RysFamily::Int2e)`, which is `BASE_DEVICE_NROOTS` (5) unless the
+/// `extended-device-rys` feature, the backend's FMA probe and this family's
+/// flip all agree (task 33-03).
 const HOST_RYS_NROOTS_CEILING: usize = 12;
 
 /// Spherical harmonic normalization prefactor for s and p shells.
@@ -710,6 +733,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     quartets: &Array<u32>,
     class_shape: &Array<u32>,
     class_factor: &Array<F>,
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     cart_out: &mut Array<F>,
     pie4: F,
@@ -766,10 +790,17 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
 
     // Rys roots/weights are written and read entirely inside the `lane == 0`
     // region below, so they are per-unit private storage rather than buffers.
-    // `MAX_DEVICE_NROOTS` (5) is this kernel's hard ceiling — enforced by the
-    // caller's fail-closed nroots guard.
-    let mut urys = Array::<F>::new(5usize);
-    let mut wrys = Array::<F>::new(5usize);
+    // The extent follows `nroots`: five for the polynomial-fit kernels, and
+    // exactly `nroots` once the inline extended entry (task 33-01) serves the
+    // class. The caller's fail-closed guard is what keeps `nroots` inside
+    // `device_nroots_ceiling(backend, RysFamily::Int2e)`.
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    // The extended entry is f64-only — its double-double arms are what buy the
+    // accuracy — so it lands in its own pair and is cast into `urys`/`wrys`.
+    // Both collapse to one element when the arm is not emitted.
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
 
     // Grid-stride over the quartet list: one quartet per slot when the grid is
     // wide enough, a strided sweep when it is capped. Under `per_unit == 0`
@@ -790,6 +821,9 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
     // Same `coop`/`punit` arithmetic as above, for the same reason:
     //   per-unit  -> [slot*chunk, slot*chunk + chunk)  step 1
     //   coop      -> [slot,       n_quartets)          step n_slots
+    // `u32::div_ceil` has no `#[cube]` expansion, so the blocked-walk
+    // chunk size is written out.
+    #[allow(clippy::manual_div_ceil)]
     let chunk = (n_quartets + n_slots - 1u32) / n_slots;
     let qi_start = slot * (chunk * punit + coop);
     let mut qi_stop = (qi_start + chunk) * punit + n_quartets * coop;
@@ -889,7 +923,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
         // Zero this quartet's accumulation block across the slot's lanes.
         let mut oi = lane;
         while oi < out_len {
-            cart_out[(out_off + oi) as usize] = F::new(0.0);
+            cart_out[(out_off + oi) as usize] = F::new(0.0_f32);
             oi += lanes;
         }
         if comptime!(per_unit == 0u32) {
@@ -974,8 +1008,25 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                     rys_root3::<F>(x_rys, &mut urys, &mut wrys, pie4);
                                 } else if comptime!(nroots == 4u32) {
                                     rys_root4::<F>(x_rys, &mut urys, &mut wrys, pie4);
-                                } else {
+                                } else if comptime!(nroots == 5u32) {
                                     rys_root5::<F>(x_rys, &mut urys, &mut wrys, pie4);
+                                } else {
+                                    // nroots 6..=12: the inline Wheeler/Jacobi
+                                    // entry (task 33-01), reachable only once
+                                    // `device_nroots_ceiling` was raised for
+                                    // this family on this backend.
+                                    rys_roots_ext_dev(
+                                        rys_tab,
+                                        f64::cast_from(x_rys),
+                                        &mut uext,
+                                        &mut wext,
+                                        nroots,
+                                    );
+                                    #[unroll]
+                                    for iext in 0..nroots {
+                                        urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                                        wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                                    }
                                 }
                             }
 
@@ -1021,17 +1072,17 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                 // ── Build the [gx|gy|gz] tensor ───────────────────────
                                 #[unroll]
                                 for irys in 0..nroots {
-                                    g[(gx_off + irys) as usize] = F::new(1.0);
-                                    g[(gy_off + irys) as usize] = F::new(1.0);
+                                    g[(gx_off + irys) as usize] = F::new(1.0_f32);
+                                    g[(gy_off + irys) as usize] = F::new(1.0_f32);
                                     g[(gz_off + irys) as usize] = wrys[irys as usize] * fac1;
                                 }
 
                                 #[unroll]
                                 for irys2 in 0..nroots {
                                     let u2 = a0 * urys[irys2 as usize];
-                                    let tmp4 = F::new(0.5) / (u2 * (aij + akl) + a1);
+                                    let tmp4 = F::new(0.5_f32) / (u2 * (aij + akl) + a1);
                                     let tmp5 = u2 * tmp4;
-                                    let tmp1 = F::new(2.0) * tmp5;
+                                    let tmp1 = F::new(2.0_f32) * tmp5;
                                     let tmp2 = tmp1 * akl;
                                     let tmp3 = tmp1 * aij;
                                     let b00 = tmp5;
@@ -1363,7 +1414,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                     * coeffs[(coff_k + pk) as usize]
                                     * coeffs[(coff_l + pl) as usize]
                             } else {
-                                F::new(0.0)
+                                F::new(0.0_f32)
                             };
 
                             // ── Contract into per-quad Cartesian blocks cooperatively ───────────
@@ -1427,7 +1478,7 @@ fn two_electron_scalar_kernel<F: Float + CubeElement>(
                                                                     + lz * dl
                                                                     + jz * dj;
 
-                                                                let mut sum = F::new(0.0);
+                                                                let mut sum = F::new(0.0_f32);
                                                                 #[unroll]
                                                                 for r in 0..nroots {
                                                                     sum += g[(gx_off + base_x + r)
@@ -1722,15 +1773,15 @@ fn two_e_cube_count<R: Runtime>(n_quartets: usize, g_size: usize) -> u32 {
 /// Uploaded **once per run** rather than once per class (Task 34-C): the whole
 /// point of batching is that the shell data stops being per-launch payload.
 #[derive(Clone, Debug, Default)]
-pub struct TwoEFlatBasis {
+pub(crate) struct TwoEFlatBasis {
     /// Every shell's primitive exponents, concatenated.
-    pub exps: Vec<f64>,
+    pub(crate) exps: Vec<f64>,
     /// Every shell's contraction coefficients, concatenated, primitive-major.
-    pub coeffs: Vec<f64>,
+    pub(crate) coeffs: Vec<f64>,
     /// Three coordinates per shell.
-    pub centers: Vec<f64>,
+    pub(crate) centers: Vec<f64>,
     /// `[exp_off, coeff_off, nprim, nctr]` per shell.
-    pub shell_meta: Vec<u32>,
+    pub(crate) shell_meta: Vec<u32>,
 }
 
 /// Flatten a shell list into the concatenated arrays the kernel indexes.
@@ -1757,7 +1808,7 @@ fn flatten_2e_basis(shells: &[BatchShell]) -> TwoEFlatBasis {
 impl TwoEFlatBasis {
     /// Bytes this basis costs to upload.
     #[must_use]
-    pub fn upload_bytes(&self) -> usize {
+    pub(crate) fn upload_bytes(&self) -> usize {
         (self.exps.len() + self.coeffs.len() + self.centers.len()) * std::mem::size_of::<f64>()
             + self.shell_meta.len() * std::mem::size_of::<u32>()
     }
@@ -1929,6 +1980,8 @@ fn run_2e_batches<R: Runtime>(
     } = basis;
 
     let mut results = Vec::with_capacity(groups.len());
+    let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+
     for group in groups {
         let n_quartets = group.len();
         if n_quartets == 0 {
@@ -1955,6 +2008,10 @@ fn run_2e_batches<R: Runtime>(
         let quartets_h = client.create_from_slice(u32::as_bytes(&group.quartets));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let factor_h = client.create_from_slice(f64::as_bytes(&group.class_factor));
+        // The extended-Rys constant tables (~4.7 KB), read only by a class whose
+        // Rys order is past the polynomial-fit ceiling. Uploaded per dispatch
+        // regardless, because the kernel signature does not vary with `nroots`.
+        let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
 
@@ -1976,6 +2033,7 @@ fn run_2e_batches<R: Runtime>(
                 ArrayArg::from_raw_parts(quartets_h, group.quartets.len()),
                 ArrayArg::from_raw_parts(shape_h, group.class_shape.len()),
                 ArrayArg::from_raw_parts(factor_h, group.class_factor.len()),
+                ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN),
                 ArrayArg::from_raw_parts(g_h, g_len),
                 ArrayArg::from_raw_parts(out_h.clone(), group.out_len),
                 PIE4,
@@ -2363,7 +2421,7 @@ fn launch_two_electron_ip1<F: CintFloat>(
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -2385,8 +2443,8 @@ fn launch_two_electron_ip1<F: CintFloat>(
 ///     `nabla1k_2e` can read up to index `lk+1`;
 ///   - the single-side contraction uses [`crate::kernels::f12::gout_ipn`] with
 ///     `Nabla1Center::K` and the per-primitive **k-shell** exponent `ak`.
-/// The s[0..2] mixing, the component-leading transpose, and the cart/sph output
-/// path are identical to ip1.
+///     The s[0..2] mixing, the component-leading transpose, and the cart/sph output
+///     path are identical to ip1.
 #[allow(clippy::too_many_arguments)]
 fn launch_two_electron_ip2<F: CintFloat>(
     plan: &ExecutionPlan<'_>,
@@ -2620,7 +2678,7 @@ fn launch_two_electron_ip2<F: CintFloat>(
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -2680,7 +2738,9 @@ impl Hess2eKind {
 /// Coulomb G-tensor is built with the per-family headroom and the launcher routes
 /// through the HOST `fill_g_tensor_2e` (→ `rys_roots_host`) so nroots 6..12
 /// Hessian-elevated d-quartets hit the FND-02 host Rys engine, not the device
-/// comptime kernel (capped at MAX_DEVICE_NROOTS=5). Spinor → UnsupportedApi (D-11).
+/// comptime kernel. This family was not flipped by task 33-03 — only the scalar
+/// `int2e` path was — so its device ceiling stays at `BASE_DEVICE_NROOTS`.
+/// Spinor → UnsupportedApi (D-11).
 #[allow(clippy::too_many_arguments)]
 fn launch_two_electron_hess2e<F: CintFloat>(
     plan: &ExecutionPlan<'_>,
@@ -2972,7 +3032,7 @@ fn launch_two_electron_hess2e<F: CintFloat>(
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -2990,7 +3050,7 @@ fn launch_two_electron_hess2e<F: CintFloat>(
 ///
 /// Mirrors [`launch_two_electron_hess2e`]: plain Coulomb G-tensor at the family's
 /// `ng[0..3]` headroom, verbatim-from-`intor2.c` gout, host Rys throughout. Every one
-/// of these families exceeds `MAX_DEVICE_NROOTS` already at a `d` quartet
+/// of these families exceeds `BASE_DEVICE_NROOTS` already at a `d` quartet
 /// (`(3+4+2+2)/2 + 1 = 6`), so there is no device path to fall back from.
 ///
 /// Unlike the Hessian families these are spin-free in BOTH electrons
@@ -3331,7 +3391,7 @@ fn launch_two_electron_gauge2e<F: CintFloat>(
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -3704,7 +3764,7 @@ fn launch_two_electron_giao2e<F: CintFloat>(
         .filter(|c| c[1].abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -3795,7 +3855,7 @@ fn launch_int2e_spsp1_spinor<F: CintFloat>(
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -4161,7 +4221,7 @@ fn launch_rel2e_sigma_spinor<F: CintFloat>(
         .iter()
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -5087,8 +5147,10 @@ fn launch_two_electron_typed<F: CintFloat>(
     // consumes it unchanged — the host part of the honest host/device split.
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Fail-closed nroots guard BEFORE any dispatch (mirrors 2c2e's MAX_DEVICE_NROOTS):
-    // scalar nroots = (li+lj+lk+ll)/2+1; >5 means l-sum>8, outside rys_root1..5.
+    // Fail-closed nroots guard BEFORE any dispatch: scalar
+    // nroots = (li+lj+lk+ll)/2+1, and 12 is where the vendor itself would need
+    // quadmath. Where the *device* stops inside that range is the family
+    // ceiling resolved below, not this constant.
     if shape.nroots > HOST_RYS_NROOTS_CEILING {
         return Err(cintxRsError::ChunkPlanFailed {
             from: "cubecl_2e",
@@ -5112,7 +5174,16 @@ fn launch_two_electron_typed<F: CintFloat>(
 
     let out_len = n_ctr_i * n_ctr_j * n_ctr_k * n_ctr_l * block_len;
 
-    let cart_blocks: Vec<f64> = if shape.nroots > MAX_DEVICE_NROOTS {
+    // Task 33-03: the boundary between the device kernel and the host
+    // primitive loop is the family's ceiling, not a constant. With `int2e`
+    // flipped onto the inline extended entry and this backend's FMA probe
+    // passing, orders 6..=12 stay on the device; otherwise they fall to the
+    // host loop below, exactly as before.
+    let device_ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+        backend,
+        crate::device_rys_ceiling::RysFamily::Int2e,
+    );
+    let cart_blocks: Vec<f64> = if shape.nroots > device_ceiling {
         let mut cart_accum = vec![0.0f64; out_len];
         for pi in 0..n_prim_i {
             let ai = exps_i[pi];
@@ -5579,7 +5650,7 @@ fn launch_two_electron_typed<F: CintFloat>(
         .filter(|&&v| v.abs() > nonzero_threshold)
         .count() as i32;
 
-    let staging_bytes = staging.len() * std::mem::size_of::<F>();
+    let staging_bytes = std::mem::size_of_val(staging);
     Ok(ExecutionStats {
         workspace_bytes: plan.workspace.bytes,
         required_workspace_bytes: plan.workspace.required_bytes,
@@ -5921,6 +5992,10 @@ mod device_tests {
             * common_fac_sp(0)
             * common_fac_sp(0)) as f32];
         let factor_h = client.create_from_slice(f32::as_bytes(&class_factor));
+        // The extended-Rys tables are an unconditional kernel argument; an
+        // `nroots = 1` smoke launch never reads them.
+        let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+        let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
 
         two_electron_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
@@ -5933,6 +6008,7 @@ mod device_tests {
             unsafe { ArrayArg::from_raw_parts(quartets_h, quartets.len()) },
             unsafe { ArrayArg::from_raw_parts(shape_h, class_shape.len()) },
             unsafe { ArrayArg::from_raw_parts(factor_h, class_factor.len()) },
+            unsafe { ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN) },
             unsafe { ArrayArg::from_raw_parts(g_h, 3 * g_size) },
             unsafe { ArrayArg::from_raw_parts(out_h.clone(), 1) },
             PIE4 as f32,
@@ -6628,6 +6704,16 @@ pub struct TwoEBatchOptions {
     pub primitive_tolerance: f64,
 }
 
+/// [`TwoEBatchOptions`] under a family-neutral name.
+///
+/// The options block is one field — a primitive-screening tolerance — and it
+/// means the same thing for every family that screens (Task 34-D2). The
+/// concrete type's name predates the generalization, and renaming a public type
+/// is not worth a break in the compatibility surface, so this alias carries the
+/// general meaning instead. Same arrangement as
+/// [`ResidentBasis`]/[`ResidentTwoEBasis`].
+pub type BatchOptions = TwoEBatchOptions;
+
 /// Auditable statistics for one batched evaluation.
 ///
 /// A claimed speed-up is only credible if the launch and transfer counts that
@@ -6664,6 +6750,25 @@ pub struct BatchExecutionStats {
     /// work that no backend change can touch — keeping the two apart is what
     /// makes a throughput claim attributable.
     pub host_transform_ns: u64,
+    /// Nanoseconds of [`Self::host_transform_ns`] spent allocating per-block
+    /// buffers, **`0` unless `CINTX_HOST_TRANSFORM_PROFILE` is set**.
+    ///
+    /// See [`crate::transform::profile`]: the split is opt-in because the clock
+    /// reads that produce it are not free against a 27-element block, and a
+    /// profiled `host_transform_ns` carries that overhead too. Read the three
+    /// as a ratio within one profiled run, never against an unprofiled one.
+    pub host_transform_alloc_ns: u64,
+    /// Nanoseconds of [`Self::host_transform_ns`] spent in the c2s arithmetic
+    /// itself, **`0` unless `CINTX_HOST_TRANSFORM_PROFILE` is set**.
+    pub host_transform_c2s_ns: u64,
+    /// Nanoseconds of [`Self::host_transform_ns`] spent scattering spherical
+    /// blocks into the caller's AO grid, **`0` unless
+    /// `CINTX_HOST_TRANSFORM_PROFILE` is set**.
+    ///
+    /// This is the strided write, and it is the one of the three that no
+    /// allocation removal or on-device transform can eliminate — an output
+    /// materialized on the host has to be written somewhere.
+    pub host_transform_scatter_ns: u64,
     /// Bytes of G-tensor scratch one slot owns in the widest dispatch.
     ///
     /// A merged dispatch sizes its slab to the widest `g_size` it carries, so a
@@ -6793,6 +6898,11 @@ fn evaluate_2e_batch_inner(
         return Ok(output);
     }
 
+    let ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+        backend,
+        crate::device_rys_ceiling::RysFamily::Int2e,
+    );
+
     // Group by launch class, preserving the caller's order within a class.
     let mut grouped: std::collections::BTreeMap<[u8; 4], Vec<usize>> = Default::default();
     for (index, &quartet) in quartets.iter().enumerate() {
@@ -6818,10 +6928,13 @@ fn evaluate_2e_batch_inner(
     for (class, members) in grouped {
         let [li, lj, lk, ll] = class;
         let params = TwoEClassParams::new(li, lj, lk, ll);
-        if params.nroots as usize > MAX_DEVICE_NROOTS {
+        // Per-backend ceiling (task 33-05): the base value everywhere, raised
+        // only on a backend whose FMA-fusion probe passed and only with the
+        // `extended-device-rys` opt-in. See `crate::device_rys_ceiling`.
+        if params.nroots as usize > ceiling {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "2e-batch:nroots={} exceeds device ceiling {MAX_DEVICE_NROOTS} \
+                    "2e-batch:nroots={} exceeds device ceiling {ceiling} \
                      for l=({li},{lj},{lk},{ll})",
                     params.nroots
                 ),
@@ -6879,10 +6992,7 @@ fn evaluate_2e_batch_inner(
     // The basis was uploaded when the residency was built. Count it against the
     // *first* evaluation only, so a repeated Fock build shows the quartet tables
     // alone and the amortization is visible rather than asserted.
-    let first_use = resident
-        .reuses
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        == 0;
+    let first_use = resident.take_first_use();
     output.stats.basis_upload_bytes = if first_use { resident.upload_bytes } else { 0 };
     output.stats.kernel_launch_count = groups.len();
     output.stats.readback_count = groups.len();
@@ -6905,24 +7015,56 @@ fn evaluate_2e_batch_inner(
     // loop runs once per contraction block of every quartet in the work list,
     // and the allocating form's four `vec!`s per call are a measurable fraction
     // of a batched run's wall-clock.
-    let mut sph_block: Vec<f64> = Vec::new();
-    let mut sph_scratch: Vec<f64> = Vec::new();
-    for class in &classes {
-        let (li, lj, lk, ll) = (
-            class.params.li as u8,
-            class.params.lj as u8,
-            class.params.lk as u8,
-            class.params.ll as u8,
-        );
-        let cart_block = class.cart_block;
-        let cart = &carts[class.group];
-        let members = &class.members;
-        let cart_offsets = &class.cart_offsets;
-        let (nsi, nsj, nsk, nsl) = (nsph(li), nsph(lj), nsph(lk), nsph(ll));
-        sph_block.clear();
-        sph_block.resize(nsi * nsj * nsk * nsl, 0.0);
+    //
+    // Task 36-T2: the work list is walked in the *caller's* quartet order, one
+    // job per quartet, so `split_output_blocks` can hand each job a disjoint
+    // `&mut [f64]` and the whole loop can run across threads. Each output
+    // element is produced by exactly one quartet — the transform writes, it
+    // never accumulates — so the split reorders no summation and the result is
+    // bit-identical to the serial loop by construction.
+    let mut placement = vec![(0_usize, 0_usize); quartets.len()];
+    for (class_index, class) in classes.iter().enumerate() {
+        for (slot, &index) in class.members.iter().enumerate() {
+            placement[index] = (class_index, slot);
+        }
+    }
+    let lens: Vec<usize> = quartets
+        .iter()
+        .map(|&quartet| batch_sph_len(shells, quartet))
+        .collect();
+    let jobs: Vec<(usize, &mut [f64])> =
+        crate::transform::host_batch::split_output_blocks(&mut output.values, &lens)
+            .into_iter()
+            .enumerate()
+            .collect();
 
-        for (slot, &index) in members.iter().enumerate() {
+    let states = crate::transform::host_batch::for_each_block(
+        jobs,
+        || {
+            (
+                Vec::<f64>::new(),
+                Vec::<f64>::new(),
+                crate::transform::profile::HostTransformProfile::new(),
+            )
+        },
+        |(sph_block, sph_scratch, profile), (index, block)| {
+            let (class_index, slot) = placement[index];
+            let class = &classes[class_index];
+            let (li, lj, lk, ll) = (
+                class.params.li as u8,
+                class.params.lj as u8,
+                class.params.lk as u8,
+                class.params.ll as u8,
+            );
+            let cart_block = class.cart_block;
+            let cart = &carts[class.group];
+            let (nsi, nsj, nsk, nsl) = (nsph(li), nsph(lj), nsph(lk), nsph(ll));
+
+            profile.start();
+            sph_block.clear();
+            sph_block.resize(nsi * nsj * nsk * nsl, 0.0);
+            profile.charge_alloc();
+
             let q = quartets[index];
             let (nci, ncj, nck, ncl) = (
                 shells[q[0] as usize].nctr as usize,
@@ -6931,8 +7073,7 @@ fn evaluate_2e_batch_inner(
                 shells[q[3] as usize].nctr as usize,
             );
             let (di, dj, dk) = (nci * nsi, ncj * nsj, nck * nsk);
-            let dst_base = output.offsets[index];
-            let src_base = cart_offsets[slot];
+            let src_base = class.cart_offsets[slot];
             for ci in 0..nci {
                 for cj in 0..ncj {
                     for ck in 0..nck {
@@ -6945,10 +7086,11 @@ fn evaluate_2e_batch_inner(
                                 lj,
                                 lk,
                                 ll,
-                                &mut sph_block,
-                                &mut sph_scratch,
+                                sph_block,
+                                sph_scratch,
                             );
-                            let sph = &sph_block;
+                            profile.charge_transform();
+                            let sph = &sph_block[..];
                             for ml in 0..nsl {
                                 let lidx = cl * nsl + ml;
                                 for mk in 0..nsk {
@@ -6959,19 +7101,26 @@ fn evaluate_2e_batch_inner(
                                             let iidx = ci * nsi + mi;
                                             let src = mi + nsi * (mj + nsj * (mk + nsk * ml));
                                             let dst = iidx + di * (jidx + dj * (kidx + dk * lidx));
-                                            output.values[dst_base + dst] = sph[src];
+                                            block[dst] = sph[src];
                                         }
                                     }
                                 }
                             }
+                            profile.charge_scatter();
                         }
                     }
                 }
             }
-        }
-    }
+            profile.pause();
+        },
+    );
 
+    let mut profile = crate::transform::profile::HostTransformProfile::new();
+    for (_, _, worker) in &states {
+        profile.merge(worker);
+    }
     output.stats.host_transform_ns = transform_start.elapsed().as_nanos() as u64;
+    profile.store_into(&mut output.stats);
     Ok(output)
 }
 
@@ -6981,18 +7130,18 @@ fn evaluate_2e_batch_inner(
 /// only to *build* the upload, while the handles are what a
 /// [`ResidentTwoEBasis`] keeps alive across calls.
 #[derive(Clone, Debug)]
-struct TwoEBasisHandles {
-    exps: cubecl::server::Handle,
-    coeffs: cubecl::server::Handle,
-    centers: cubecl::server::Handle,
-    shell_meta: cubecl::server::Handle,
-    exps_len: usize,
-    coeffs_len: usize,
-    centers_len: usize,
-    shell_meta_len: usize,
+pub(crate) struct TwoEBasisHandles {
+    pub(crate) exps: cubecl::server::Handle,
+    pub(crate) coeffs: cubecl::server::Handle,
+    pub(crate) centers: cubecl::server::Handle,
+    pub(crate) shell_meta: cubecl::server::Handle,
+    pub(crate) exps_len: usize,
+    pub(crate) coeffs_len: usize,
+    pub(crate) centers_len: usize,
+    pub(crate) shell_meta_len: usize,
 }
 
-fn upload_2e_basis<R: Runtime>(
+pub(crate) fn upload_2e_basis<R: Runtime>(
     client: &ComputeClient<R>,
     basis: &TwoEFlatBasis,
 ) -> TwoEBasisHandles {
@@ -7014,6 +7163,10 @@ fn upload_2e_basis<R: Runtime>(
 /// residency carries the arm it came from and refuses a mismatched backend
 /// rather than indexing another device's memory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// Each non-CPU variant is constructed only under its backend's feature, so a
+// single-feature build sees the rest as unconstructed. `name()` must still
+// cover them all for the mismatch diagnostic.
+#[allow(dead_code)]
 enum ResidentBackendTag {
     Cpu,
     Wgpu,
@@ -7049,7 +7202,21 @@ impl ResidentBackendTag {
     }
 }
 
+/// A shell basis held on the device, shared by every batched family.
+///
+/// The flattened form is family-independent — exponents, coefficients, centres
+/// and a shell table — so `int2e`, `int3c2e` and `int2c2e` all read the same
+/// four buffers. The alias exists because the concrete type's name predates
+/// that generalization (Task 34-C2) and renaming a public type is not worth a
+/// break in the compatibility surface.
+pub type ResidentBasis = ResidentTwoEBasis;
+
 /// A shell basis uploaded once and kept on the device across calls (Task 34-C).
+///
+/// Despite the name it is **not 2e-specific**: the flattened form
+/// (`exps` / `coeffs` / `centers` / `shell_meta`) is the same for every batched
+/// family, so `int3c2e` and `int2c2e` read the same four buffers rather than
+/// uploading their own copies (Task 34-C2). See [`ResidentBasis`].
 ///
 /// [`evaluate_2e_quartet_batch`] already uploads the flattened basis once per
 /// *run* rather than once per launch class. This type extends that to once per
@@ -7129,17 +7296,48 @@ impl ResidentTwoEBasis {
     }
 
     fn check(&self, backend: &ResolvedBackend) -> Result<(), cintxRsError> {
+        self.check_for("2e-batch", backend)
+    }
+
+    /// [`Self::check`] with the caller's family in the diagnostic.
+    ///
+    /// A residency is a set of device handles, and a handle is only meaningful
+    /// to the server that produced it — which is a property of the *backend*,
+    /// not of the integral family reading it. The other batched families
+    /// therefore share this residency rather than each keeping their own copy
+    /// of the same four buffers (Task 34-C2); `family` only labels the error.
+    pub(crate) fn check_for(
+        &self,
+        family: &str,
+        backend: &ResolvedBackend,
+    ) -> Result<(), cintxRsError> {
         let tag = ResidentBackendTag::of(backend);
         if tag == self.tag {
             return Ok(());
         }
         Err(cintxRsError::UnsupportedApi {
             requested: format!(
-                "2e-batch:resident-basis-backend-mismatch:uploaded-on-{}:used-on-{}",
+                "{family}:resident-basis-backend-mismatch:uploaded-on-{}:used-on-{}",
                 self.tag.name(),
                 tag.name()
             ),
         })
+    }
+
+    /// The device handles this residency keeps alive.
+    pub(crate) fn handles(&self) -> &TwoEBasisHandles {
+        &self.handles
+    }
+
+    /// Record one evaluation and report whether it was the *first*.
+    ///
+    /// The basis upload is charged to the first evaluation only, so a repeated
+    /// Fock build shows the per-call tables alone and the amortization is
+    /// observable rather than asserted.
+    pub(crate) fn take_first_use(&self) -> bool {
+        self.reuses
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            == 0
     }
 }
 

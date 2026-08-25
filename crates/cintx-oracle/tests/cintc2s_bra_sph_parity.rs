@@ -68,17 +68,29 @@ fn cintc2s_bra_sph_smoke() {
     }
 }
 
-/// Vendor parity: cintx CINTc2s_bra_sph vs libcint 6.1.3 over l in 0..=4, nket in {1,2}.
+/// Vendor parity: cintx `CINTc2s_bra_sph` vs libcint 6.1.3 over the **whole**
+/// `l = 0..=C2S_LMAX` range, `nket` in {1, 2}.
+///
+/// The sweep used to stop at `l = 4`, because that is where cintx's
+/// hand-transcribed coefficient tables stopped — and above it the accessor
+/// returned `0.0`, so an `l >= 5` shell came back silently zeroed with an `Ok`
+/// status at any Rys order. The table is now generated from libcint's own
+/// `g_trans_cart2sph[]` for `l = 0..=15` (`xtask gen-c2s-table`), so this gate
+/// covers every `l` the transform claims to support. `l >= 5` has no
+/// hand-checked reference in-tree, which is exactly why it is compared against
+/// the vendor's own routine here.
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
 #[test]
 fn cintc2s_bra_sph_matches_vendor() {
+    use cintx_cubecl::transform::c2s::C2S_LMAX;
     use cintx_oracle::vendor_ffi;
 
     let mut mismatches = 0usize;
     let mut report = String::new();
+    let mut high_l_nonzero = 0usize;
 
-    for l in 0i32..=4 {
+    for l in 0i32..=i32::from(C2S_LMAX) {
         let nc = ncart(l);
         let ns = nsph(l);
         for &nket in &[1i32, 2i32] {
@@ -102,6 +114,9 @@ fn cintc2s_bra_sph_matches_vendor() {
                         "  (l={l}, nket={nket}, idx={idx}): cintx={c} vendor={v} diff={diff}\n"
                     ));
                 }
+                if l >= 5 && c != 0.0 {
+                    high_l_nonzero += 1;
+                }
             }
         }
     }
@@ -109,5 +124,28 @@ fn cintc2s_bra_sph_matches_vendor() {
     assert_eq!(
         mismatches, 0,
         "CINTc2s_bra_sph vendor parity mismatches ({mismatches}):\n{report}"
+    );
+    // Agreement alone would be satisfied by both sides returning zero, which is
+    // the failure mode this sweep was extended to catch.
+    assert!(
+        high_l_nonzero > 0,
+        "no non-zero l>=5 output was produced; the transform is still zeroing \
+         the range this gate exists to cover"
+    );
+}
+
+/// Above `C2S_LMAX` the wrapper refuses rather than zeroing.
+#[cfg(feature = "cpu")]
+#[test]
+fn cintc2s_bra_sph_refuses_above_the_table_ceiling() {
+    use cintx_cubecl::transform::c2s::C2S_LMAX;
+
+    let l = i32::from(C2S_LMAX) + 1;
+    let cart = vec![1.0_f64; ncart(l)];
+    let mut sph = vec![0.0_f64; nsph(l)];
+    let status = cintx_compat::transform::CINTc2s_bra_sph(&mut sph, 1, &cart, l);
+    assert!(
+        status.is_err(),
+        "l={l} is past the coefficient table and must be refused, not zeroed"
     );
 }

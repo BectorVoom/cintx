@@ -126,13 +126,13 @@ impl EcpShell {
             return Err(CoreError::InvalidNuclearDetail);
         }
 
-        if let EcpChannel::Projected(l) = channel {
-            if l > ECP_LMAX {
-                return Err(CoreError::EcpAngularMomentumTooHigh {
-                    requested: l,
-                    max: ECP_LMAX,
-                });
-            }
+        if let EcpChannel::Projected(l) = channel
+            && l > ECP_LMAX
+        {
+            return Err(CoreError::EcpAngularMomentumTooHigh {
+                requested: l,
+                max: ECP_LMAX,
+            });
         }
 
         Ok(Self {
