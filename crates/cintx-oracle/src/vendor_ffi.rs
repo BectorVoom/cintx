@@ -5807,6 +5807,66 @@ pub fn vendor_int3c1e_ip1_r6_origk_sph(
     }
 }
 
+/// `int3c1e_ip1_r6_origk_sph` evaluated against an explicitly ZEROED cache.
+///
+/// This operator is the one place where upstream's result is not a function of
+/// its inputs. `CINTgout1e_int3c1e_ip1_r6_origk`
+/// (libcint-master/src/cint3c1e_a.c:627) reads `g76` in the `s[1]` term
+/// `6*g48[ix]*g76[iy]*g3[iz]`, but its `G1E_D_I` list (cint3c1e_a.c:604-609)
+/// covers g64/g67/g79/g112/g124/g127 and omits `G1E_D_I(g76, g12, ...)`. `g76`
+/// lies inside the `MALLOC_INSTACK` span but is never written, so the value read
+/// there is whatever the cache allocation happens to hold: a fresh mmap-backed
+/// `malloc` gives zero, a recycled heap chunk gives stale numbers. Calling the
+/// plain [`vendor_int3c1e_ip1_r6_origk_sph`] twice with identical arguments but
+/// different call histories can therefore return results differing by ~1e-1.
+///
+/// libcint's own ABI lets the caller own `cache` (pass `out == NULL` to learn the
+/// size), so handing it a zeroed buffer pins `g76` to 0 and makes the vendor
+/// result reproducible. That zero-`g76` behaviour is what cintx's
+/// `origk_ip1_kernel` reproduces, so this is the comparison that can actually be
+/// asserted byte-for-byte.
+pub fn vendor_int3c1e_ip1_r6_origk_sph_zeroed_cache(
+    out: &mut [f64],
+    shls: &[i32; 3],
+    atm: &[i32],
+    natm: i32,
+    bas: &[i32],
+    nbas: i32,
+    env: &[f64],
+) -> i32 {
+    // `out == NULL` makes libcint return the cache size it needs instead of
+    // evaluating.
+    let cache_len = unsafe {
+        ffi::int3c1e_ip1_r6_origk_sph(
+            ptr::null_mut(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    let mut cache = vec![0.0_f64; cache_len.max(0) as usize];
+    unsafe {
+        ffi::int3c1e_ip1_r6_origk_sph(
+            out.as_mut_ptr(),
+            ptr::null_mut(),
+            shls.as_ptr() as *mut i32,
+            atm.as_ptr() as *mut i32,
+            natm,
+            bas.as_ptr() as *mut i32,
+            nbas,
+            env.as_ptr() as *mut f64,
+            ptr::null_mut(),
+            cache.as_mut_ptr(),
+        )
+    }
+}
+
 /// Evaluate int3c2e_sph_ssc (spin-spin contact 3c2e) for a shell triple using vendored libcint.
 pub fn vendor_int3c2e_sph_ssc(
     out: &mut [f64],

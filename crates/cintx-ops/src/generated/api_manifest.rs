@@ -1,12 +1,7 @@
 // Generated manifest; do not edit.
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
-pub const PROFILE_SCOPE_APPROVED: &[&str] = &[
-    "base",
-    "with-f12",
-    "with-4c1e",
-    "with-f12+with-4c1e",
-    "unstable-source",
-];
+pub const PROFILE_SCOPE_APPROVED: &[&str] =
+    &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e", "unstable-source"];
 use crate::resolver::{
     FeatureFlag, HelperKind, ManifestEntry, OperatorDescriptor, RepresentationSupport, Stability,
     UnsupportedPolicy,
@@ -600,11 +595,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "no_upstream_oracle",
-            reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
-            owner: "wave-5-W5-01",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "no_upstream_oracle", reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false", owner: "wave-5-W5-01" }),
     },
     ManifestEntry {
         family_name: "helper",
@@ -3264,11 +3255,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9717 (Phase 24 Cluster B rinv)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9717 (Phase 24 Cluster B rinv)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3325,11 +3312,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor drinv rejected at one_electron.rs:9717 (Phase 24 Cluster B)",
-            owner: "wave-5-W5-03d",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor drinv rejected at one_electron.rs:9717 (Phase 24 Cluster B)", owner: "wave-5-W5-03d" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3386,11 +3369,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3447,11 +3426,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3508,11 +3483,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3569,11 +3540,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3630,11 +3597,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3691,11 +3654,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3752,11 +3711,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3813,11 +3768,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3874,11 +3825,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3935,11 +3882,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -3996,11 +3939,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -4057,11 +3996,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -4118,11 +4053,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -4179,11 +4110,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9597 (Phase 24 Cluster A moment path)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -4240,11 +4167,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9855 (Phase 24 Cluster C p4)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9855 (Phase 24 Cluster C p4)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -4301,11 +4224,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9952 (Phase 24 Cluster D irp)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-09 deferral: spinor rep registered for surface completeness, kernel fails closed at one_electron.rs:9952 (Phase 24 Cluster D irp)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4362,11 +4281,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 2e gradient rejected at two_electron.rs:1463",
-            owner: "wave-5-W5-03a",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 2e gradient rejected at two_electron.rs:1463", owner: "wave-5-W5-03a" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4423,11 +4338,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 2e gradient rejected at two_electron.rs:1730",
-            owner: "wave-5-W5-03a",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 2e gradient rejected at two_electron.rs:1730", owner: "wave-5-W5-03a" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4484,11 +4395,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
-            owner: "wave-5-W5-03b",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)", owner: "wave-5-W5-03b" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4545,11 +4452,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
-            owner: "wave-5-W5-03b",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)", owner: "wave-5-W5-03b" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4606,11 +4509,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
-            owner: "wave-5-W5-03b",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)", owner: "wave-5-W5-03b" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -4667,11 +4566,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
-            owner: "wave-5-W5-03b",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)", owner: "wave-5-W5-03b" }),
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4842,11 +4737,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "no_upstream_oracle",
-            reason: "upstream int2c2e_ip1_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:384-388) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
-            owner: "wave-5-W5-01",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "no_upstream_oracle", reason: "upstream int2c2e_ip1_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:384-388) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false", owner: "wave-5-W5-01" }),
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -4903,11 +4794,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "no_upstream_oracle",
-            reason: "upstream int2c2e_ip2_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:462-466) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
-            owner: "wave-5-W5-01",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "no_upstream_oracle", reason: "upstream int2c2e_ip2_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:462-466) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false", owner: "wave-5-W5-01" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -4964,11 +4851,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "ecp",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "W5-04 DECISION (2026-08-22): permanently deferred for v1.4, not merely unimplemented. Rejected at kernels/ecp.rs:2047 (Phase 21 R5). No oracle exists in ANY vendored source: libcint has no ECP at all, and PySCF's nr_ecp_deriv.c contains zero spinor code (only nr_ecp.c's ECPso_spinor, a different operator), so RULE 4 byte-identity is unobtainable and the row could never flip to oracle_covered=true even if implemented",
-            owner: "deferred-v1.4",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "W5-04 DECISION (2026-08-22): permanently deferred for v1.4, not merely unimplemented. Rejected at kernels/ecp.rs:2047 (Phase 21 R5). No oracle exists in ANY vendored source: libcint has no ECP at all, and PySCF's nr_ecp_deriv.c contains zero spinor code (only nr_ecp.c's ECPso_spinor, a different operator), so RULE 4 byte-identity is unobtainable and the row could never flip to oracle_covered=true even if implemented", owner: "deferred-v1.4" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5424,11 +5307,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "no_upstream_oracle",
-            reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
-            owner: "wave-5-W5-01",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "no_upstream_oracle", reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false", owner: "wave-5-W5-01" }),
     },
     ManifestEntry {
         family_name: "3c1e",
@@ -5485,11 +5364,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "no_upstream_oracle",
-            reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
-            owner: "wave-5-W5-01",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "no_upstream_oracle", reason: "CINT3c1e_spinor_drv is an unconditional stub (libcint-master/src/cint3c1e.c:450-455: fprintf + exit(1)) — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false", owner: "wave-5-W5-01" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -5945,11 +5820,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6006,11 +5877,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6067,11 +5934,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6128,11 +5991,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6189,11 +6048,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6250,11 +6105,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6311,11 +6162,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6372,11 +6219,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6433,11 +6276,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9378 (Phase 26 GIAO-01 overlap engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6494,11 +6333,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -6555,11 +6390,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at one_electron.rs:9467 (Phase 26 GIAO-01 nuclear engine)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -6616,11 +6447,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -6677,11 +6504,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -6738,11 +6561,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "2e",
@@ -6799,11 +6618,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)",
-            owner: "phase-24-26-spinor-completion",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "D-11 deferral: spinor GIAO rep registered for surface completeness, kernel fails closed at two_electron.rs:2729 (Phase 26 2e GIAO)", owner: "phase-24-26-spinor-completion" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -7316,11 +7131,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "GIAO x sigma slice: 1e operator 'spgsa01' rejected at one_electron.rs:9378 region",
-            owner: "phase-30",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "GIAO x sigma slice: 1e operator 'spgsa01' rejected at one_electron.rs:9378 region", owner: "phase-30" }),
     },
     ManifestEntry {
         family_name: "1e",
@@ -7605,11 +7416,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)",
-            owner: "wave-5-W5-03b",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 2e Hessian rejected at two_electron.rs:2025 (Hess2eKind set)", owner: "wave-5-W5-03b" }),
     },
     ManifestEntry {
         family_name: "2c2e",
@@ -7666,11 +7473,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "2c2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "no_upstream_oracle",
-            reason: "upstream int2c2e_ip1ip2_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:1366-1370); cintx also rejects this row at center_2c2e.rs:829 — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false",
-            owner: "wave-5-W5-01",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "no_upstream_oracle", reason: "upstream int2c2e_ip1ip2_spinor is a stub that writes nothing and returns 0 (libcint-master/src/autocode/int3c2e.c:1366-1370); cintx also rejects this row at center_2c2e.rs:829 — cintx evaluates (or could), but RULE 4 byte-identity is unobtainable, so oracle_covered stays false", owner: "wave-5-W5-01" }),
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -7727,11 +7530,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 3c2e Hessian rejected at center_3c2e.rs:3119-3122",
-            owner: "wave-5-W5-03c",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 3c2e Hessian rejected at center_3c2e.rs:3119-3122", owner: "wave-5-W5-03c" }),
     },
     ManifestEntry {
         family_name: "3c2e",
@@ -7788,11 +7587,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         helper_kind: HelperKind::Operator,
         canonical_family: "3c2e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy {
-            policy: "fail_closed",
-            reason: "spinor 3c2e Hessian rejected at center_3c2e.rs:3119-3122",
-            owner: "wave-5-W5-03c",
-        }),
+        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "spinor 3c2e Hessian rejected at center_3c2e.rs:3119-3122", owner: "wave-5-W5-03c" }),
     },
     ManifestEntry {
         family_name: "1e",

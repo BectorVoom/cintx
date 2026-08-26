@@ -5,6 +5,7 @@
 //! only visibility was widened to `pub(crate)` so the family submodules
 //! can reference them).
 
+use crate::transform::c2s::{cart_to_sph_1e_into, cart_to_sph_3c1e_into, ncart, nsph};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 
 /// sqrt(pi) constant — matches libcint `SQRTPI`.
@@ -181,5 +182,144 @@ pub(crate) fn make_exec_stats(plan: &ExecutionPlan<'_>, staging: &[f64]) -> Exec
         transfer_bytes: staging_bytes,
         not0,
         fallback_reason: plan.workspace.fallback_reason,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  General-contraction (`nctr > 1`) output scatter
+//
+//  libcint emits ONE dense array per component whose per-axis extent is
+//  `nblk * nctr`, with the contraction index the MAJOR (outer) one WITHIN each
+//  axis: `i_global = ci*nblk_i + i_idx` (`CINT1e_drv` / `CINT3c1e_drv` +
+//  `c2s_{cart,sph}_{1e,3c2e1}`; see `counts[0] = (i_l*2+1) * x_ctr[0]`). It is
+//  NOT a stack of independent per-contraction blocks, so a launcher cannot just
+//  concatenate them — the contraction and angular indices interleave per axis.
+//
+//  Device kernels in this module hand back the per-`(ci,cj[,ck])` Cartesian
+//  blocks back to back, component-slowest. These two helpers apply the cart→sph
+//  transform per block and place each block at its interleaved offsets. With
+//  `nctr == 1` they reduce to a single block written at the natural offsets.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Scatter the per-`(ci,cj)` Cartesian blocks of a 1e family into `staging`.
+///
+/// `cart` is `[comp][cj][ci][j_idx][i_idx]` (i fastest) with `cj` the slower
+/// contraction index; `staging` receives
+/// `[comp][j_global][i_global]` with `i_global = ci*nblk_i + i_idx`.
+pub(crate) fn scatter_1e_ctr_blocks(
+    cart: &[f64],
+    li: u8,
+    lj: u8,
+    spheric: bool,
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    ncomp: usize,
+    staging: &mut [f64],
+) {
+    let (nci, ncj) = (ncart(li), ncart(lj));
+    let cart_block = nci * ncj;
+    let (nblk_i, nblk_j) = if spheric {
+        (nsph(li), nsph(lj))
+    } else {
+        (nci, ncj)
+    };
+    let ni_full = n_ctr_i * nblk_i;
+    let nj_full = n_ctr_j * nblk_j;
+    let comp_stride = ni_full * nj_full;
+    let ctr_total = n_ctr_i * n_ctr_j;
+
+    let mut block = vec![0.0_f64; nblk_i * nblk_j];
+    let mut scratch = Vec::new();
+
+    for comp in 0..ncomp {
+        for cj in 0..n_ctr_j {
+            for ci in 0..n_ctr_i {
+                let src = (comp * ctr_total + cj * n_ctr_i + ci) * cart_block;
+                let Some(src_block) = cart.get(src..src + cart_block) else {
+                    continue;
+                };
+                if spheric {
+                    cart_to_sph_1e_into(src_block, &mut block, li, lj, &mut scratch);
+                } else {
+                    block.copy_from_slice(src_block);
+                }
+                let comp_base = comp * comp_stride;
+                for j_idx in 0..nblk_j {
+                    let j_global = cj * nblk_j + j_idx;
+                    let row = comp_base + j_global * ni_full + ci * nblk_i;
+                    let Some(dst) = staging.get_mut(row..row + nblk_i) else {
+                        continue;
+                    };
+                    dst.copy_from_slice(&block[j_idx * nblk_i..(j_idx + 1) * nblk_i]);
+                }
+            }
+        }
+    }
+}
+
+/// Scatter the per-`(ci,cj,ck)` Cartesian blocks of a 3c1e family into `staging`.
+///
+/// `cart` is `[comp][ck][cj][ci][k_idx][j_idx][i_idx]` (i fastest); `staging`
+/// receives `[comp][k_global][j_global][i_global]`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn scatter_3c1e_ctr_blocks(
+    cart: &[f64],
+    li: u8,
+    lj: u8,
+    lk: u8,
+    spheric: bool,
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    n_ctr_k: usize,
+    ncomp: usize,
+    staging: &mut [f64],
+) {
+    let (nci, ncj, nck) = (ncart(li), ncart(lj), ncart(lk));
+    let cart_block = nci * ncj * nck;
+    let (nblk_i, nblk_j, nblk_k) = if spheric {
+        (nsph(li), nsph(lj), nsph(lk))
+    } else {
+        (nci, ncj, nck)
+    };
+    let ni_full = n_ctr_i * nblk_i;
+    let nj_full = n_ctr_j * nblk_j;
+    let nk_full = n_ctr_k * nblk_k;
+    let comp_stride = ni_full * nj_full * nk_full;
+    let ctr_total = n_ctr_i * n_ctr_j * n_ctr_k;
+
+    let mut block = vec![0.0_f64; nblk_i * nblk_j * nblk_k];
+    let mut scratch = Vec::new();
+
+    for comp in 0..ncomp {
+        for ck in 0..n_ctr_k {
+            for cj in 0..n_ctr_j {
+                for ci in 0..n_ctr_i {
+                    let slot = (ck * n_ctr_j + cj) * n_ctr_i + ci;
+                    let src = (comp * ctr_total + slot) * cart_block;
+                    let Some(src_block) = cart.get(src..src + cart_block) else {
+                        continue;
+                    };
+                    if spheric {
+                        cart_to_sph_3c1e_into(src_block, li, lj, lk, &mut block, &mut scratch);
+                    } else {
+                        block.copy_from_slice(src_block);
+                    }
+                    let comp_base = comp * comp_stride;
+                    for k_idx in 0..nblk_k {
+                        let k_global = ck * nblk_k + k_idx;
+                        for j_idx in 0..nblk_j {
+                            let j_global = cj * nblk_j + j_idx;
+                            let row =
+                                comp_base + (k_global * nj_full + j_global) * ni_full + ci * nblk_i;
+                            let Some(dst) = staging.get_mut(row..row + nblk_i) else {
+                                continue;
+                            };
+                            let src_row = (k_idx * nblk_j + j_idx) * nblk_i;
+                            dst.copy_from_slice(&block[src_row..src_row + nblk_i]);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

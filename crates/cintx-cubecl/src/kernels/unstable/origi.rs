@@ -10,12 +10,15 @@
 //! The kernel builds the per-primitive overlap G-tensor (VRR + HRR) at the origi
 //! ceiling angular momentum and performs the r2/r4 Cartesian contraction
 //! ON-DEVICE, in f64-internal / F-output, accumulating ONE `nci*ncj` Cartesian
-//! block (i-major: `out[ci_idx*ncj + cj_idx]`) summed over every primitive pair
-//! AND contraction pair -- exactly matching the host scalar path.
+//! block PER `(ci,cj)` CONTRACTION PAIR (i-fastest within a block:
+//! `out[cj_idx*nci + ci_idx]`, blocks ordered `cj*nctr_i + ci`), summed over
+//! every primitive pair.
 //!
-//! ON HOST (host part of the split, UNCHANGED): the `cart_to_sph_1e`
-//! coefficient-table transform (its tables are host-only) + the `common_fac_sp`
-//! s/p normalization + the AO scatter into `staging`.
+//! ON HOST (host part of the split): the `cart_to_sph_1e` coefficient-table
+//! transform (its tables are host-only) + the `common_fac_sp` s/p normalization
+//! + the AO scatter into `staging`, which places each contraction block at its
+//! interleaved offsets (`i_global = ci*nblk_i + i_idx`) -- see
+//! [`super::shared::scatter_1e_ctr_blocks`].
 //!
 //! DEFERRED-TO-HOST (documented, mirrors the 1e/2e ports deferring derivative
 //! sub-paths): the `ip2` variants (`int1e_r2_origi_ip2_sph`,
@@ -24,13 +27,13 @@
 //! that is a separable port; it is left on host this task and selected by an
 //! early branch on `origi_variant` inside `launch_origi`.
 
-use super::shared::{SQRTPI, cart_comps, common_fac_sp, make_exec_stats};
+use super::shared::{SQRTPI, cart_comps, common_fac_sp, make_exec_stats, scatter_1e_ctr_blocks};
 use crate::backend::ResolvedBackend;
 use crate::math::obara_saika::{hrr_step_host, vrr_step_host};
 use crate::math::pdata::PairData;
 use crate::math::pdata::compute_pdata_host;
 use crate::specialization::SpecializationKey;
-use crate::transform::c2s::{cart_to_sph_1e, ncart, nsph};
+use crate::transform::c2s::ncart;
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -165,7 +168,7 @@ fn contract_origi_r2(g0: &[f64], g_size: usize, li: u8, lj: u8, dj: usize) -> Ve
             let s = g0[0 * g_size + base_x + 2] * g0[1 * g_size + base_y] * g0[2 * g_size + base_z]
                 + g0[0 * g_size + base_x] * g0[1 * g_size + base_y + 2] * g0[2 * g_size + base_z]
                 + g0[0 * g_size + base_x] * g0[1 * g_size + base_y] * g0[2 * g_size + base_z + 2];
-            out[ci_idx * ncj + cj_idx] += s;
+            out[cj_idx * nci + ci_idx] += s;
         }
     }
     out
@@ -231,7 +234,7 @@ fn contract_origi_r4(g0: &[f64], g_size: usize, li: u8, lj: u8, dj: usize) -> Ve
                 + g0[gx + bx] * g0[gy + by + 4] * g0[gz + bz]
                 + 2.0 * g0[gx + bx] * g0[gy + by + 2] * g0[gz + bz + 2]
                 + g0[gx + bx] * g0[gy + by] * g0[gz + bz + 4];
-            out[ci_idx * ncj + cj_idx] += s;
+            out[cj_idx * nci + ci_idx] += s;
         }
     }
     out
@@ -283,7 +286,7 @@ fn contract_origi_r2_ip2(
             let by = jy as usize * dj + iy as usize;
             let bz = jz as usize * dj + iz as usize;
 
-            let n = ci_idx * ncj + cj_idx;
+            let n = cj_idx * nci + ci_idx;
 
             // g6 = g0[..+2], g7 = g1[..+2], g1 = D_J(g0)
             let g0x = g0[gx + bx];
@@ -364,7 +367,7 @@ fn contract_origi_r4_ip2(
             let by = jy as usize * dj + iy as usize;
             let bz = jz as usize * dj + iz as usize;
 
-            let n = ci_idx * ncj + cj_idx;
+            let n = cj_idx * nci + ci_idx;
 
             // Shortcuts for g0 and g1 at various i-shifts
             let g0v = |axis_off: usize, base: usize, shift: usize| g0[axis_off + base + shift];
@@ -438,20 +441,20 @@ pub fn launch_origi(
 
     let nci = ncart(li);
     let ncj = ncart(lj);
-    let nsi = nsph(li);
-    let nsj = nsph(lj);
 
     // Ceiling angular momenta include the i_inc and j_inc from the variant ng array.
     let li_ceil = li as u32 + variant.i_inc as u32;
     let lj_ceil = lj as u32 + variant.j_inc as u32;
     let nmax = li_ceil + lj_ceil;
 
-    let mut cart_buf = vec![0.0_f64; nci * ncj * variant.ncomp];
-
     let n_prim_i = shell_i.nprim as usize;
     let n_prim_j = shell_j.nprim as usize;
     let n_ctr_i = shell_i.nctr as usize;
     let n_ctr_j = shell_j.nctr as usize;
+
+    // WR-03: one Cartesian block per (ci,cj) contraction pair, component-slowest.
+    // `nctr == 1` leaves this a single block — the pre-existing shape.
+    let mut cart_buf = vec![0.0_f64; n_ctr_i * n_ctr_j * nci * ncj * variant.ncomp];
 
     // r_power encodes the scalar r^n operator: r2 -> 2, r4 -> 4. The ip2 variants
     // carry j_inc>0 and stay on host (deferred -- see module doc).
@@ -530,45 +533,20 @@ pub fn launch_origi(
         }
     }
 
-    // For multi-component ip2: apply c2s to each component separately
-    if variant.ncomp == 1 {
-        match plan.representation {
-            Representation::Spheric => {
-                let sph_size = nsi * nsj;
-                if staging.len() >= sph_size {
-                    cart_to_sph_1e(&cart_buf, &mut staging[..sph_size], li, lj);
-                }
-            }
-            _ => {
-                let copy_len = staging.len().min(cart_buf.len());
-                staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
-            }
-        }
-    } else {
-        // ncomp > 1: c2s each component, layout: comp slowest
-        match plan.representation {
-            Representation::Spheric => {
-                let sph_size = nsi * nsj;
-                let cart_size = nci * ncj;
-                for comp in 0..variant.ncomp {
-                    let cart_slice = &cart_buf[comp * cart_size..(comp + 1) * cart_size];
-                    let sph_off = comp * sph_size;
-                    if sph_off + sph_size <= staging.len() {
-                        cart_to_sph_1e(
-                            cart_slice,
-                            &mut staging[sph_off..sph_off + sph_size],
-                            li,
-                            lj,
-                        );
-                    }
-                }
-            }
-            _ => {
-                let copy_len = staging.len().min(cart_buf.len());
-                staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
-            }
-        }
-    }
+    // Transform each (ci,cj) block and place it at its interleaved AO offsets.
+    // libcint's 1e output extent is `nblk * nctr` per axis with the contraction
+    // index the MAJOR one, so the blocks cannot simply be concatenated; with
+    // `nctr == 1` this writes the lone block at the natural offsets.
+    scatter_1e_ctr_blocks(
+        &cart_buf,
+        li,
+        lj,
+        matches!(plan.representation, Representation::Spheric),
+        n_ctr_i,
+        n_ctr_j,
+        variant.ncomp,
+        staging,
+    );
 
     Ok(make_exec_stats(plan, staging))
 }
@@ -617,9 +595,10 @@ fn fill_g_tensor_origi(pd: &PairData, ri: [f64; 3], rj: [f64; 3], nmax: u32, lj:
 //  On-device port of the host scalar origi pipeline
 //  (`fill_g_tensor_origi` -> `contract_origi_r2` / `contract_origi_r4`).
 //  Single work item (`UNIT_POS == 0`): iterates primitive pairs (pi,pj) and
-//  contraction pairs (ci,cj) in-kernel and accumulates ONE `nci*ncj` Cartesian
-//  block (i-major: `out[ci_idx*ncj + cj_idx]`) summed over all (pi,pj)x(ci,cj),
-//  matching the host `cart_buf` exactly. f64-internal / F-output.
+//  contraction pairs (ci,cj) in-kernel and accumulates one `nci*ncj` Cartesian
+//  block PER (ci,cj) -- i-fastest within a block (`out[cj_idx*nci + ci_idx]`),
+//  blocks ordered `cj*nctr_i + ci` -- summed over all (pi,pj). f64-internal /
+//  F-output.
 //
 //  The `#[comptime] r_power` arg (2 or 4) selects the r2 vs r4 contraction
 //  branch via `comptime!`. The overlap G-tensor is built at the origi ceiling
@@ -704,10 +683,11 @@ fn origi_scalar_kernel<F: Float + CubeElement>(
         let nci = (li + 1u32) * (li + 2u32) / 2u32;
         let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
         let block_len = nci * ncj;
+        let out_total = nctr_i * nctr_j * block_len;
 
-        // Zero the single accumulation block.
+        // Zero every (ci,cj) accumulation block.
         let mut oi = 0u32;
-        while oi < block_len {
+        while oi < out_total {
             cart_out[oi as usize] = F::new(0.0);
             oi += 1u32;
         }
@@ -753,7 +733,10 @@ fn origi_scalar_kernel<F: Float + CubeElement>(
                     origi_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
                 }
 
-                // Contract into the single block over all (ci,cj).
+                // Contract into the per-(ci,cj) block. Contraction columns must
+                // stay SEPARATE: libcint's output extent is `nblk * nctr` per axis
+                // with the contraction index the major one, so folding them into a
+                // single block would return a sum where a matrix is expected.
                 let mut ci = 0u32;
                 while ci < nctr_i {
                     let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
@@ -761,9 +744,12 @@ fn origi_scalar_kernel<F: Float + CubeElement>(
                     while cj < nctr_j {
                         let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
                         let weight = coeff_i_val * coeff_j_val;
+                        let base = (cj * nctr_i + ci) * block_len;
 
-                        // Cartesian component loops: ci outer, cj inner; lx descending
-                        // (matches host cart_comps). Output index = ci_idx*ncj + cj_idx.
+                        // Cartesian component loops: i outer, j inner; lx descending
+                        // (matches host cart_comps). Output index is i-FASTEST
+                        // (`cj_idx*nci + ci_idx`) — the `[j][i]` order libcint's
+                        // `CINTg1e_index_xyz` emits and `cart_to_sph_1e` consumes.
                         let mut ci_idx = 0u32;
                         let mut ia = 0u32;
                         while ia <= li {
@@ -816,7 +802,8 @@ fn origi_scalar_kernel<F: Float + CubeElement>(
                                                 + g0x * g0y * g4z;
                                         }
 
-                                        cart_out[(ci_idx * ncj + cj_idx) as usize] += weight * val;
+                                        cart_out[(base + cj_idx * nci + ci_idx) as usize] +=
+                                            weight * val;
 
                                         cj_idx += 1u32;
                                         jb += 1u32;
@@ -843,7 +830,8 @@ fn origi_scalar_kernel<F: Float + CubeElement>(
 }
 
 /// Dispatch [`origi_scalar_kernel`] at `f64` on a resolved backend's client and
-/// read back the i-major Cartesian accumulator (one `nci*ncj` block). Generic
+/// read back the Cartesian accumulator (`nctr_i*nctr_j` blocks of `nci*ncj`,
+/// i-fastest within a block). Generic
 /// over `R: Runtime`; device compute is `f64` (module precision policy). The
 /// `r_power` comptime arg is selected at the `launch::<f64, R>` call site by a
 /// host-side match (CubeCL cannot pass comptime args dynamically).
@@ -870,7 +858,7 @@ fn run_origi_scalar_device<R: Runtime>(
     let g_per_axis = (nmax_u + 1) * (lj_u + 1);
     let nci = (li_u + 1) * (li_u + 2) / 2;
     let ncj = (lj_u + 1) * (lj_u + 2) / 2;
-    let out_len = nci * ncj;
+    let out_len = (nctr_i as usize) * (nctr_j as usize) * nci * ncj;
 
     let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
     let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
@@ -1074,9 +1062,10 @@ fn origi_ip2_kernel<F: Float + CubeElement>(
         let nci = (li + 1u32) * (li + 2u32) / 2u32;
         let ncj = (lj + 1u32) * (lj + 2u32) / 2u32;
         let block_len = nci * ncj;
-        let total_out = 3u32 * block_len;
+        let comp_span = nctr_i * nctr_j * block_len;
+        let total_out = 3u32 * comp_span;
 
-        // Zero the 3-component accumulation block.
+        // Zero every component's (ci,cj) accumulation blocks.
         let mut oi = 0u32;
         while oi < total_out {
             cart_out[oi as usize] = F::new(0.0);
@@ -1139,7 +1128,8 @@ fn origi_ip2_kernel<F: Float + CubeElement>(
                 origi_dj_axis::<F>(g, g1, gy, gy, li_dj, lj, dj, aj2);
                 origi_dj_axis::<F>(g, g1, gz, gz, li_dj, lj, dj, aj2);
 
-                // Contract into the 3-component block over all (ci,cj).
+                // Contract into the per-(ci,cj) block of each component. The
+                // contraction columns stay SEPARATE — see the scalar kernel.
                 let mut ci = 0u32;
                 while ci < nctr_i {
                     let coeff_i_val = coeff_i[(pi * nctr_i + ci) as usize];
@@ -1147,9 +1137,11 @@ fn origi_ip2_kernel<F: Float + CubeElement>(
                     while cj < nctr_j {
                         let coeff_j_val = coeff_j[(pj * nctr_j + cj) as usize];
                         let weight = coeff_i_val * coeff_j_val;
+                        let base = (cj * nctr_i + ci) * block_len;
 
-                        // Cartesian component loops: ci outer, cj inner; lx descending
-                        // (matches host cart_comps). Block index = ci_idx*ncj + cj_idx.
+                        // Cartesian component loops: i outer, j inner; lx descending
+                        // (matches host cart_comps). Block index is i-FASTEST
+                        // (`cj_idx*nci + ci_idx`), matching `cart_to_sph_1e`.
                         let mut ci_idx = 0u32;
                         let mut ia = 0u32;
                         while ia <= li {
@@ -1241,10 +1233,10 @@ fn origi_ip2_kernel<F: Float + CubeElement>(
                                                 + g0x * g0y * g1z4;
                                         }
 
-                                        let blk = ci_idx * ncj + cj_idx;
+                                        let blk = base + cj_idx * nci + ci_idx;
                                         cart_out[blk as usize] += weight * s0;
-                                        cart_out[(block_len + blk) as usize] += weight * s1;
-                                        cart_out[(2u32 * block_len + blk) as usize] += weight * s2;
+                                        cart_out[(comp_span + blk) as usize] += weight * s1;
+                                        cart_out[(2u32 * comp_span + blk) as usize] += weight * s2;
 
                                         cj_idx += 1u32;
                                         jb += 1u32;
@@ -1272,7 +1264,8 @@ fn origi_ip2_kernel<F: Float + CubeElement>(
 
 /// Dispatch [`origi_ip2_kernel`] at `f64` on a resolved backend's client and read
 /// back the comp-slowest 3-component Cartesian accumulator
-/// (`out[comp*nci*ncj + ci*ncj + cj]`). Generic over `R: Runtime`; device compute
+/// (`out[comp*span + (cj*nctr_i+ci)*nci*ncj + cj_idx*nci + ci_idx]`). Generic over
+/// `R: Runtime`; device compute
 /// is `f64` (module precision policy). The `r_power` comptime arg is selected at
 /// the `launch::<f64, R>` call site by a host-side match.
 #[allow(clippy::too_many_arguments)]
@@ -1300,7 +1293,7 @@ fn run_origi_ip2_device<R: Runtime>(
     let g_per_axis = (nmax_u + 1) * (lj_ceil_u + 1);
     let nci = (li_u + 1) * (li_u + 2) / 2;
     let ncj = (lj_u + 1) * (lj_u + 2) / 2;
-    let out_len = 3 * nci * ncj;
+    let out_len = 3 * (nctr_i as usize) * (nctr_j as usize) * nci * ncj;
 
     let exps_i_h = client.create_from_slice(f64::as_bytes(exps_i));
     let exps_j_h = client.create_from_slice(f64::as_bytes(exps_j));
@@ -1458,7 +1451,7 @@ mod tests {
         let ai = 0.9_f64;
         let aj = 1.3_f64;
         for &r_power in &[2u32, 4u32] {
-            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1), (2, 0)] {
+            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1), (2, 0), (1, 2), (2, 1)] {
                 let host = host_origi_block(ai, aj, ri, rj, li, lj, r_power);
                 let dev = run_origi_scalar_device::<cubecl::cpu::CpuRuntime>(
                     &cpu_client(),
@@ -1492,7 +1485,7 @@ mod tests {
         let coeff_i = [0.6_f64, 0.4]; // nprim=2, nctr=1
         let coeff_j = [0.7_f64, 0.3];
         for &r_power in &[2u32, 4u32] {
-            for &(li, lj) in &[(0u8, 0u8), (1, 0), (1, 1)] {
+            for &(li, lj) in &[(0u8, 0u8), (1, 0), (1, 1), (1, 2), (2, 1)] {
                 // Host reference: full primitive + contraction accumulation.
                 let li_ceil = li as u32 + r_power;
                 let nmax = li_ceil + lj as u32;
@@ -1599,7 +1592,7 @@ mod tests {
     // ── ip2 device-vs-host ────────────────────────────────────────────────
 
     /// Host reference: single-primitive, single-contraction origi ip2
-    /// 3-component block (comp-slowest `out[comp*nci*ncj + ci*ncj + cj]`).
+    /// 3-component block (comp-slowest `out[comp*nci*ncj + cj_idx*nci + ci_idx]`).
     fn host_origi_ip2_block(
         ai: f64,
         aj: f64,
@@ -1633,7 +1626,7 @@ mod tests {
         let ai = 0.9_f64;
         let aj = 1.3_f64;
         for &r_power in &[2u32, 4u32] {
-            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1), (2, 0)] {
+            for &(li, lj) in &[(0u8, 0u8), (1, 0), (0, 1), (1, 1), (2, 0), (1, 2), (2, 1)] {
                 let host = host_origi_ip2_block(ai, aj, ri, rj, li, lj, r_power);
                 let dev = run_origi_ip2_device::<cubecl::cpu::CpuRuntime>(
                     &cpu_client(),
@@ -1671,7 +1664,7 @@ mod tests {
         let coeff_i = [0.6_f64, 0.4]; // nprim=2, nctr=1
         let coeff_j = [0.7_f64, 0.3];
         for &r_power in &[2u32, 4u32] {
-            for &(li, lj) in &[(0u8, 0u8), (1, 0), (1, 1)] {
+            for &(li, lj) in &[(0u8, 0u8), (1, 0), (1, 1), (1, 2), (2, 1)] {
                 let li_ceil = li as u32 + r_power;
                 let lj_ceil = lj as u32 + 1;
                 let nmax = li_ceil + lj_ceil;

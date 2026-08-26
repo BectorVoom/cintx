@@ -11,7 +11,10 @@
 //! the SCALAR origk symbols `int3c1e_{r2,r4,r6}_origk_sph`.
 //!
 //! ON HOST: the `cart_to_sph_3c1e` representation transform (its coefficient
-//! tables are host-only) + the AO scatter into `staging`.
+//! tables are host-only) + the AO scatter into `staging`, applied PER
+//! `(ci,cj,ck)` contraction block so each lands at its interleaved offsets
+//! (`i_global = ci*nblk_i + i_idx`) -- see
+//! [`super::shared::scatter_3c1e_ctr_blocks`].
 //!
 //! DEFERRED-TO-HOST (documented, mirrors the 1e/2e ports deferring derivative
 //! sub-paths): the `ip1` bra-gradient variants `int3c1e_ip1_{r2,r4,r6}_origk_sph`
@@ -26,10 +29,10 @@
 //! parity with the family-port template but is numerically unused; the
 //! `MAX_DEVICE_NROOTS` guard fail-closes on the angular-momentum sum instead.
 
-use super::shared::{SQRTPI, cart_comps, common_fac_sp, make_exec_stats};
+use super::shared::{SQRTPI, cart_comps, common_fac_sp, make_exec_stats, scatter_3c1e_ctr_blocks};
 use crate::backend::ResolvedBackend;
 use crate::specialization::SpecializationKey;
-use crate::transform::c2s::{cart_to_sph_3c1e, ncart, nsph};
+use crate::transform::c2s::ncart;
 use cintx_core::{Representation, cintxRsError};
 use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
@@ -329,11 +332,13 @@ fn contract_origk_ip1(
                             + 3.0 * di(0, bx, 0) * g(1, by, 4) * g(2, bz, 2)
                             + 3.0 * di(0, bx, 0) * g(1, by, 2) * g(2, bz, 4)
                             + di(0, bx, 0) * g(1, by, 0) * g(2, bz, 6);
+                        // UPSTREAM-BUG PARITY: no `6 * g[x+2] * D_I[y+2] * g[z+2]`
+                        // term — libcint's `g76` is never initialized, so upstream
+                        // reads zero there. See the same note in `origk_ip1_kernel`.
                         let s1 = g(0, bx, 6) * di(1, by, 0) * g(2, bz, 0)
                             + 3.0 * g(0, bx, 4) * di(1, by, 2) * g(2, bz, 0)
                             + 3.0 * g(0, bx, 4) * di(1, by, 0) * g(2, bz, 2)
                             + 3.0 * g(0, bx, 2) * di(1, by, 4) * g(2, bz, 0)
-                            + 6.0 * g(0, bx, 2) * di(1, by, 2) * g(2, bz, 2)
                             + 3.0 * g(0, bx, 2) * di(1, by, 0) * g(2, bz, 4)
                             + g(0, bx, 0) * di(1, by, 6) * g(2, bz, 0)
                             + 3.0 * g(0, bx, 0) * di(1, by, 4) * g(2, bz, 2)
@@ -1237,6 +1242,22 @@ fn origk_ip1_kernel<F: Float + CubeElement>(
                                                                         * g[(gy + by) as usize]
                                                                         * g[(gz + bz + 6u32 * dk)
                                                                             as usize];
+                                                                // UPSTREAM-BUG PARITY: the `6 * g[x+2] * D_I(g)[y+2] * g[z+2]`
+                                                                // term that belongs here by symmetry with `s0`/`s2` is
+                                                                // DELIBERATELY ABSENT. libcint 6.1.3 writes it as
+                                                                // `6*g48[ix]*g76[iy]*g3[iz]`
+                                                                // (cint3c1e_a.c:627) but never initializes `g76` — its
+                                                                // `G1E_D_I` list (cint3c1e_a.c:604-609) covers
+                                                                // g64/g67/g79/g112/g124/g127 and omits
+                                                                // `G1E_D_I(g76, g12, ...)`. `g76` sits inside the
+                                                                // `MALLOC_INSTACK` span but unwritten, so upstream reads
+                                                                // zero there and the term drops out of its result.
+                                                                // Result compatibility is this project's primary goal
+                                                                // (CLAUDE.md), so cintx reproduces the omission rather
+                                                                // than the mathematically complete expansion; restoring
+                                                                // the term breaks vendor byte-identity on the
+                                                                // y-gradient component of EVERY shell triple. Gated by
+                                                                // `origk_genctr_parity.rs`.
                                                                 s1 = g[(gx + bx + 6u32 * dk)
                                                                     as usize]
                                                                     * g_di[(gy + by) as usize]
@@ -1259,13 +1280,6 @@ fn origk_ip1_kernel<F: Float + CubeElement>(
                                                                         * g_di[(gy + by + 4u32 * dk)
                                                                             as usize]
                                                                         * g[(gz + bz) as usize]
-                                                                    + F::new(6.0)
-                                                                        * g[(gx + bx + 2u32 * dk)
-                                                                            as usize]
-                                                                        * g_di[(gy + by + 2u32 * dk)
-                                                                            as usize]
-                                                                        * g[(gz + bz + 2u32 * dk)
-                                                                            as usize]
                                                                     + F::new(3.0)
                                                                         * g[(gx + bx + 2u32 * dk)
                                                                             as usize]
@@ -2020,13 +2034,6 @@ pub fn launch_origk(
 
     let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
 
-    let nci = ncart(li);
-    let ncj = ncart(lj);
-    let nck = ncart(lk);
-    let nsi = nsph(li);
-    let nsj = nsph(lj);
-    let nsk = nsph(lk);
-
     // Ceiling angular momenta
     let li_ceil = li as u32 + variant.i_inc as u32;
     let lk_ceil = lk as u32 + variant.k_inc as u32;
@@ -2143,46 +2150,24 @@ pub fn launch_origk(
         )
     };
 
-    // Apply c2s transform (host part of the split).
-    if variant.ncomp == 1 {
-        match plan.representation {
-            Representation::Spheric => {
-                let sph = cart_to_sph_3c1e(&cart_buf, li, lj, lk);
-                let sph_size = nsi * nsj * nsk;
-                let copy_len = staging.len().min(sph.len()).min(sph_size);
-                staging[..copy_len].copy_from_slice(&sph[..copy_len]);
-            }
-            _ => {
-                let copy_len = staging.len().min(cart_buf.len());
-                staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
-            }
-        }
-    } else {
-        // ncomp > 1: c2s each component
-        let cart_size = nci * ncj * nck;
-        let sph_size = nsi * nsj * nsk;
-        match plan.representation {
-            Representation::Spheric => {
-                for comp in 0..variant.ncomp {
-                    let cart_slice = &cart_buf[comp * cart_size..(comp + 1) * cart_size];
-                    let sph = cart_to_sph_3c1e(cart_slice, li, lj, lk);
-                    let sph_off = comp * sph_size;
-                    let copy_len = staging
-                        .len()
-                        .saturating_sub(sph_off)
-                        .min(sph.len())
-                        .min(sph_size);
-                    if copy_len > 0 {
-                        staging[sph_off..sph_off + copy_len].copy_from_slice(&sph[..copy_len]);
-                    }
-                }
-            }
-            _ => {
-                let copy_len = staging.len().min(cart_buf.len());
-                staging[..copy_len].copy_from_slice(&cart_buf[..copy_len]);
-            }
-        }
-    }
+    // Apply c2s and scatter (host part of the split). The device kernels hand
+    // back one Cartesian block per (ci,cj,ck) contraction triple; libcint's
+    // output extent is `nblk * nctr` per axis with the contraction index the
+    // MAJOR one, so each block goes to its own interleaved offsets rather than
+    // the buffer being transformed as if it were one block. With `nctr == 1`
+    // this is the single block at the natural offsets.
+    scatter_3c1e_ctr_blocks(
+        &cart_buf,
+        li,
+        lj,
+        lk,
+        matches!(plan.representation, Representation::Spheric),
+        n_ctr_i,
+        n_ctr_j,
+        n_ctr_k,
+        variant.ncomp,
+        staging,
+    );
 
     Ok(make_exec_stats(plan, staging))
 }
@@ -2458,9 +2443,11 @@ mod tests {
 
     /// Device-vs-host parity for the ip1 origk path across the required triples
     /// and {r2,r4,r6}. This INCLUDES r6: the device must reproduce the HOST
-    /// `contract_origk_ip1`, which it will (both compute the same expansion). The
-    /// known ~6% r6 *vendor* divergence is a separate, documented residual and is
-    /// NOT exercised here. Tolerance atol=1e-12 (+ tiny rel slack).
+    /// `contract_origk_ip1`, which it will (both compute the same expansion,
+    /// including the deliberately-omitted `g76` term that keeps r6 byte-identical
+    /// to upstream — see the note on `s1` in both). Vendor byte-identity is gated
+    /// separately by `origk_genctr_parity.rs`. Tolerance atol=1e-12 (+ tiny rel
+    /// slack).
     #[test]
     fn test_device_matches_host_origk_ip1() {
         let ri = [0.0_f64, 0.0, 0.0];
