@@ -173,7 +173,7 @@ fn run_probe<R: Runtime>(client: &ComputeClient<R>, target: ProbeTarget) -> FmaP
     let n = PROBE_A.len();
     let a_h = client.create_from_slice(f64::as_bytes(&PROBE_A));
     let b_h = client.create_from_slice(f64::as_bytes(&PROBE_B));
-    let out_h = client.create_from_slice(f64::as_bytes(&vec![0.0_f64; n]));
+    let out_h = client.empty(n * std::mem::size_of::<f64>());
 
     fma_fusion_probe_kernel::launch::<R>(
         client,

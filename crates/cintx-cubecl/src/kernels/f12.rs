@@ -5217,14 +5217,6 @@ fn f12_contract_dev<F: Float + CubeElement>(
         let gy_off = gbase + g_size;
         let gz_off = gbase + 2u32 * g_size;
 
-        // Zero the output block.
-        let out_len = nfi * nfj * nfk * nfl;
-        let mut oz = 0u32;
-        while oz < out_len {
-            out[(out_off + oz) as usize] = F::new(0.0_f32);
-            oz += 1u32;
-        }
-
         // 4-nested component loop (l outer, then k, j, i) × inner irys
         // accumulation — IDENTICAL order to the host `contract_f12_cart`.
         let mut l_idx = 0u32;
@@ -5232,37 +5224,51 @@ fn f12_contract_dev<F: Float + CubeElement>(
             let lx = comps_l[(l_idx * 3u32) as usize];
             let ly = comps_l[(l_idx * 3u32 + 1u32) as usize];
             let lz = comps_l[(l_idx * 3u32 + 2u32) as usize];
+            let base_lx = lx * dl;
+            let base_ly = ly * dl;
+            let base_lz = lz * dl;
+            let l_out_off = l_idx * nfi * nfj * nfk;
+
             let mut k_idx = 0u32;
             while k_idx < nfk {
                 let kx = comps_k[(k_idx * 3u32) as usize];
                 let ky = comps_k[(k_idx * 3u32 + 1u32) as usize];
                 let kz = comps_k[(k_idx * 3u32 + 2u32) as usize];
+                let base_klx = base_lx + kx * dk;
+                let base_kly = base_ly + ky * dk;
+                let base_klz = base_lz + kz * dk;
+                let kl_out_off = l_out_off + k_idx * nfi * nfj;
+
                 let mut j_idx = 0u32;
                 while j_idx < nfj {
                     let jx = comps_j[(j_idx * 3u32) as usize];
                     let jy = comps_j[(j_idx * 3u32 + 1u32) as usize];
                     let jz = comps_j[(j_idx * 3u32 + 2u32) as usize];
+                    let base_jklx = base_klx + jx * dj;
+                    let base_jkly = base_kly + jy * dj;
+                    let base_jklz = base_klz + jz * dj;
+                    let jkl_out_off = kl_out_off + j_idx * nfi;
+
                     let mut i_idx = 0u32;
                     while i_idx < nfi {
                         let ix = comps_i[(i_idx * 3u32) as usize];
                         let iy = comps_i[(i_idx * 3u32 + 1u32) as usize];
                         let iz = comps_i[(i_idx * 3u32 + 2u32) as usize];
+                        let base_x = ix * di + base_jklx;
+                        let base_y = iy * di + base_jkly;
+                        let base_z = iz * di + base_jklz;
 
                         let mut sum = F::new(0.0_f32);
                         let mut irys = 0u32;
                         while irys < nroots {
-                            let x_idx = irys + ix * di + kx * dk + lx * dl + jx * dj;
-                            let y_idx = irys + iy * di + ky * dk + ly * dl + jy * dj;
-                            let z_idx = irys + iz * di + kz * dk + lz * dl + jz * dj;
-                            let gx = g[(gx_off + x_idx) as usize];
-                            let gy = g[(gy_off + y_idx) as usize];
-                            let gz = g[(gz_off + z_idx) as usize];
+                            let gx = g[(gx_off + base_x + irys) as usize];
+                            let gy = g[(gy_off + base_y + irys) as usize];
+                            let gz = g[(gz_off + base_z + irys) as usize];
                             sum += gx * gy * gz;
                             irys += 1u32;
                         }
 
-                        let out_idx =
-                            i_idx + j_idx * nfi + k_idx * nfi * nfj + l_idx * nfi * nfj * nfk;
+                        let out_idx = jkl_out_off + i_idx;
                         out[(out_off + out_idx) as usize] = sum;
                         i_idx += 1u32;
                     }

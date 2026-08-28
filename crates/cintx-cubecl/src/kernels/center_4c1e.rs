@@ -452,14 +452,6 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                             // Quartet prefactor (also folds the contraction coeffs).
                             let weight = ci_coeff * cj_coeff * ck_coeff * cl_coeff;
                             let quartet_fac = common_factor * fac_ij * fac_kl * fac_ijkl * weight;
-
-                            // ── Zero the G-tensor ───────────────────────────────
-                            let mut gi = 0u32;
-                            while gi < total_g {
-                                g[gi as usize] = F::new(0.0_f32);
-                                gi += 1u32;
-                            }
-
                             let inv_aijkl = F::new(1.0_f32) / aijkl;
                             let sqrt_aijkl = F::sqrt(aijkl);
 
@@ -834,6 +826,10 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                 while lb <= ll_minus_lx {
                                     let ly = ll_minus_lx - lb;
                                     let lz = ll - lx - ly;
+                                    let base_lx = lx * dl;
+                                    let base_ly = ly * dl;
+                                    let base_lz = lz * dl;
+                                    let l_out_off = cl_idx * nfi * nfj * nfk;
 
                                     let mut ck_idx = 0u32;
                                     let mut ka = 0u32;
@@ -844,6 +840,10 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                         while kb <= lk_minus_kx {
                                             let ky = lk_minus_kx - kb;
                                             let kz = lk - kx - ky;
+                                            let base_klx = base_lx + kx * dk;
+                                            let base_kly = base_ly + ky * dk;
+                                            let base_klz = base_lz + kz * dk;
+                                            let kl_out_off = l_out_off + ck_idx * nfi * nfj;
 
                                             let mut cj_idx = 0u32;
                                             let mut ja = 0u32;
@@ -854,6 +854,10 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                                 while jb <= lj_minus_jx {
                                                     let jy = lj_minus_jx - jb;
                                                     let jz = lj - jx - jy;
+                                                    let base_jklx = base_klx + jx * dj;
+                                                    let base_jkly = base_kly + jy * dj;
+                                                    let base_jklz = base_klz + jz * dj;
+                                                    let jkl_out_off = kl_out_off + cj_idx * nfi;
 
                                                     let mut ci_idx = 0u32;
                                                     let mut ia = 0u32;
@@ -865,25 +869,13 @@ fn center_4c1e_kernel<F: Float + CubeElement>(
                                                             let iy = li_minus_ix - ib;
                                                             let iz = li - ix - iy;
 
-                                                            let x_idx = ix * di
-                                                                + kx * dk
-                                                                + lx * dl
-                                                                + jx * dj;
-                                                            let y_idx = iy * di
-                                                                + ky * dk
-                                                                + ly * dl
-                                                                + jy * dj;
-                                                            let z_idx = iz * di
-                                                                + kz * dk
-                                                                + lz * dl
-                                                                + jz * dj;
+                                                            let x_idx = ix * di + base_jklx;
+                                                            let y_idx = iy * di + base_jkly;
+                                                            let z_idx = iz * di + base_jklz;
                                                             let vx = g[(gx + x_idx) as usize];
                                                             let vy = g[(gy + y_idx) as usize];
                                                             let vz = g[(gz + z_idx) as usize];
-                                                            let out_idx = ci_idx
-                                                                + cj_idx * nfi
-                                                                + ck_idx * nfi * nfj
-                                                                + cl_idx * nfi * nfj * nfk;
+                                                            let out_idx = jkl_out_off + ci_idx;
                                                             cart_out
                                                                 [(out_off + out_idx) as usize] +=
                                                                 vx * vy * vz;

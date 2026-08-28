@@ -446,10 +446,11 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                             //   dijk = exp(-eijk) / (aijk * sqrt(aijk))
                             //   fac  = common_factor * dijk * ci*cj*ck
                             let weight = ci_coeff * cj_coeff * ck_coeff;
-                            let dijk = F::exp(-eijk) / (aijk * F::sqrt(aijk));
+                            let inv_aijk = F::new(1.0_f32) / aijk;
+                            let dijk = F::exp(-eijk) * inv_aijk / F::sqrt(aijk);
                             let fac = common_factor * dijk * weight;
 
-                            let aijk1 = F::new(0.5_f32) / aijk;
+                            let aijk1 = F::new(0.5_f32) * inv_aijk;
 
                             // ── Fill the G-tensor ─────────────────────────────────
                             // Base case: gx[0]=1, gy[0]=1, gz[0]=fac.
@@ -574,6 +575,10 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                                 while kb <= lk_minus_kx {
                                     let ky = lk_minus_kx - kb;
                                     let kz = lk - kx - ky;
+                                    let base_kx = kx * dk;
+                                    let base_ky = ky * dk;
+                                    let base_kz = kz * dk;
+                                    let ck_out_off = out_off + ck_idx * ncj * nci;
 
                                     let mut cj_idx = 0u32;
                                     let mut ja = 0u32;
@@ -584,6 +589,10 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                                         while jb <= lj_minus_jx {
                                             let jy = lj_minus_jx - jb;
                                             let jz = lj - jx - jy;
+                                            let base_jkx = base_kx + jx * dj;
+                                            let base_jky = base_ky + jy * dj;
+                                            let base_jkz = base_kz + jz * dj;
+                                            let cjk_out_off = ck_out_off + cj_idx * nci;
 
                                             let mut ci_idx = 0u32;
                                             let mut ia = 0u32;
@@ -595,15 +604,10 @@ fn center_3c1e_kernel<F: Float + CubeElement>(
                                                     let iy = li_minus_ix - ib;
                                                     let iz = li - ix - iy;
 
-                                                    let vx =
-                                                        g[(gx + ix + jx * dj + kx * dk) as usize];
-                                                    let vy =
-                                                        g[(gy + iy + jy * dj + ky * dk) as usize];
-                                                    let vz =
-                                                        g[(gz + iz + jz * dj + kz * dk) as usize];
-                                                    let out_idx = out_off
-                                                        + (ck_idx * ncj + cj_idx) * nci
-                                                        + ci_idx;
+                                                    let vx = g[(gx + ix + base_jkx) as usize];
+                                                    let vy = g[(gy + iy + base_jky) as usize];
+                                                    let vz = g[(gz + iz + base_jkz) as usize];
+                                                    let out_idx = cjk_out_off + ci_idx;
                                                     cart_out[out_idx as usize] += vx * vy * vz;
 
                                                     ci_idx += 1u32;
