@@ -397,19 +397,339 @@ fn long_range_is_supported_at_every_rys_order() {
     }
 }
 
-/// A non-zero `env[8]` on a family libcint DOES read it in, but cintx has not
-/// implemented range separation for, must refuse rather than evaluate the
-/// full-range kernel. `int2e_ip1` shares `CINTg0_2e` (`g2e.c:171`) and so honours
-/// omega upstream.
+// ─────────────────────────────────────────────────────────────────────────────
+// 2c. The derivative rows (D-PBC-24 P2-1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One row of the derivative sweep.
+struct DerivRow {
+    label: &'static str,
+    api: RawApiId,
+    /// Indices into [`SHELL_L`].
+    shls: Vec<i32>,
+    /// Component count (3 for a gradient, 9 for a Hessian).
+    ncomp: usize,
+    /// `(canonical_family, operator_name)` — the key
+    /// `cintx_runtime::range_omega::derivative_headroom` is looked up by.
+    key: (&'static str, &'static str),
+    /// `rys_order` AFTER the `ng[..INC]` raises, hand-computed from
+    /// [`SHELL_L`]. Cross-checked against `derivative_headroom` below, so a
+    /// table that drifts from the launchers' own `build_2e_shape(li + i_inc, ..)`
+    /// calls fails here rather than returning a wrong number.
+    rys_order: usize,
+}
+
+fn row(
+    label: &'static str,
+    api: RawApiId,
+    shls: &[i32],
+    ncomp: usize,
+    key: (&'static str, &'static str),
+    rys_order: usize,
+) -> DerivRow {
+    DerivRow {
+        label,
+        api,
+        shls: shls.to_vec(),
+        ncomp,
+        key,
+        rys_order,
+    }
+}
+
+/// Every derivative row admitted by `supports_range_omega`.
+///
+/// `int2e_ipip1` on `(p,p|p,p)` raises `li` by 2, so `rys_order = 4` and short
+/// range takes the lower-bounded `sr_rys_roots` arm; `int2e_ip1` on the same
+/// quartet is `rys_order = 3`, where short range DOUBLES to `nroots = 6` —
+/// above `BASE_DEVICE_NROOTS`, which is why these rows route to the host Rys
+/// engine and why the raise has to reach the WORKSPACE query and not only the
+/// kernel. Both regimes are covered deliberately.
+fn derivative_rows() -> Vec<DerivRow> {
+    vec![
+        // 2e — tuple (i, j, k, l).
+        row(
+            "int2e_ip1(s,s|s,s)",
+            RawApiId::INT2E_IP1_SPH,
+            &[0, 4, 0, 4],
+            3,
+            ("2e", "ip1"),
+            1,
+        ),
+        row(
+            "int2e_ip1(p,p|p,p)",
+            RawApiId::INT2E_IP1_SPH,
+            &[1, 5, 1, 5],
+            3,
+            ("2e", "ip1"),
+            3,
+        ),
+        row(
+            "int2e_ip2(p,p|p,p)",
+            RawApiId::INT2E_IP2_SPH,
+            &[1, 5, 1, 5],
+            3,
+            ("2e", "ip2"),
+            3,
+        ),
+        row(
+            "int2e_ipip1(s,s|s,s)",
+            RawApiId::INT2E_IPIP1_SPH,
+            &[0, 4, 0, 4],
+            9,
+            ("2e", "ipip1"),
+            2,
+        ),
+        row(
+            "int2e_ipip1(p,p|p,p)",
+            RawApiId::INT2E_IPIP1_SPH,
+            &[1, 5, 1, 5],
+            9,
+            ("2e", "ipip1"),
+            4,
+        ),
+        row(
+            "int2e_ipvip1(p,p|p,p)",
+            RawApiId::INT2E_IPVIP1_SPH,
+            &[1, 5, 1, 5],
+            9,
+            ("2e", "ipvip1"),
+            4,
+        ),
+        row(
+            "int2e_ip1ip2(p,p|p,p)",
+            RawApiId::INT2E_IP1IP2_SPH,
+            &[1, 5, 1, 5],
+            9,
+            ("2e", "ip1ip2"),
+            4,
+        ),
+        // 3c2e — tuple (i, j, aux). ip1/ip2 are the rows a range-separated
+        // `aux_e2` gradient needs, and the ones that had NO host arm before P2-1.
+        row(
+            "int3c2e_ip1(s,s|d)",
+            RawApiId::INT3C2E_IP1_SPH,
+            &[0, 4, 6],
+            3,
+            ("3c2e", "ip1"),
+            2,
+        ),
+        row(
+            "int3c2e_ip1(p,p|d)",
+            RawApiId::INT3C2E_IP1_SPH,
+            &[1, 5, 6],
+            3,
+            ("3c2e", "ip1"),
+            3,
+        ),
+        row(
+            "int3c2e_ip2(p,p|d)",
+            RawApiId::INT3C2E_IP2_SPH,
+            &[1, 5, 6],
+            3,
+            ("3c2e", "ip2"),
+            3,
+        ),
+        row(
+            "int3c2e_ipip1(s,s|d)",
+            RawApiId::INT3C2E_IPIP1_SPH,
+            &[0, 4, 6],
+            9,
+            ("3c2e", "ipip1"),
+            3,
+        ),
+        row(
+            "int3c2e_ipip2(s,s|d)",
+            RawApiId::INT3C2E_IPIP2_SPH,
+            &[0, 4, 6],
+            9,
+            ("3c2e", "ipip2"),
+            3,
+        ),
+        row(
+            "int3c2e_ipvip1(p,p|d)",
+            RawApiId::INT3C2E_IPVIP1_SPH,
+            &[1, 5, 6],
+            9,
+            ("3c2e", "ipvip1"),
+            4,
+        ),
+        row(
+            "int3c2e_ip1ip2(p,p|d)",
+            RawApiId::INT3C2E_IP1IP2_SPH,
+            &[1, 5, 6],
+            9,
+            ("3c2e", "ip1ip2"),
+            4,
+        ),
+        // 2c2e — tuple (i, k).
+        row(
+            "int2c2e_ip1(p,p)",
+            RawApiId::INT2C2E_IP1_SPH,
+            &[1, 5],
+            3,
+            ("2c2e", "ip1"),
+            2,
+        ),
+        row(
+            "int2c2e_ip2(p,p)",
+            RawApiId::INT2C2E_IP2_SPH,
+            &[1, 5],
+            3,
+            ("2c2e", "ip2"),
+            2,
+        ),
+        row(
+            "int2c2e_ipip1(p,p)",
+            RawApiId::INT2C2E_IPIP1_SPH,
+            &[1, 5],
+            9,
+            ("2c2e", "ipip1"),
+            3,
+        ),
+        row(
+            "int2c2e_ip1ip2(p,p)",
+            RawApiId::INT2C2E_IP1IP2_SPH,
+            &[1, 5],
+            9,
+            ("2c2e", "ip1ip2"),
+            3,
+        ),
+    ]
+}
+
+/// The headroom table matches the hand-computed `rys_order` of every row.
+///
+/// This is the check that says the planner and the launchers agree: the planner
+/// sizes the workspace from `derivative_headroom`, and each launcher builds its
+/// G tensor from its own `build_2e_shape(li + i_inc, ..)` literal. If the two
+/// ever disagree the kernel writes past the queried root count, which is a wrong
+/// number rather than a crash — so it is pinned here, cheaply, before the
+/// numerics run.
 #[test]
-fn a_derivative_operator_refuses_a_set_omega() {
+fn the_headroom_table_reproduces_each_rows_rys_order() {
+    use cintx_runtime::range_omega::{derivative_headroom, rys_order_with_headroom};
+
+    for r in derivative_rows() {
+        let headroom = derivative_headroom(r.key.0, r.key.1)
+            .unwrap_or_else(|| panic!("{}: {:?} is not in the headroom table", r.label, r.key));
+        assert_eq!(
+            headroom.len(),
+            r.shls.len(),
+            "{}: the headroom entry must have one raise per tuple position",
+            r.label
+        );
+        let got = rys_order_with_headroom(
+            r.shls.iter().map(|&s| SHELL_L[s as usize] as usize),
+            headroom,
+        );
+        assert_eq!(
+            got, r.rys_order,
+            "{}: headroom table gives rys_order {got}, hand count says {}",
+            r.label, r.rys_order
+        );
+    }
+}
+
+/// The derivative rows honour ω, and close `SR + LR == full` on every
+/// component.
+///
+/// They refused before P2-1, and correctly so: their `rys_order` is
+/// `(Σ l + Σ ng[..INC])/2 + 1`, not `(Σ l)/2 + 1`, so a workspace sized from the
+/// unraised sum would have been short of the roots the kernel then writes.
+/// `derivative_headroom` is the table that closed that, and this sweep is what
+/// says the table matches the launchers' own `build_2e_shape(li + i_inc, ..)`
+/// calls — a mismatch shows up here as a wrong number, not as a crash.
+#[test]
+fn derivative_rows_honour_a_set_omega_and_close_sr_plus_lr() {
+    let (atm, bas, env) = build_spdf_fixture();
+
+    let mut checked = 0usize;
+    for DerivRow {
+        label,
+        api,
+        shls,
+        ncomp,
+        rys_order,
+        ..
+    } in derivative_rows()
+    {
+        let n = out_len(&shls, &bas) * ncomp;
+
+        let full = eval_cintx(api, &shls, n, &atm, &bas, &env)
+            .unwrap_or_else(|e| panic!("{label} full range: {e:?}"));
+        let scale = full.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+        assert!(
+            scale > 1e-12,
+            "{label}: the full-range derivative block is all zeros, so nothing below \
+             asserts anything"
+        );
+
+        for omega in [0.3_f64, 0.8] {
+            let lr = eval_cintx(api, &shls, n, &atm, &bas, &env_with_omega(&env, omega))
+                .unwrap_or_else(|e| panic!("{label} LR omega={omega}: {e:?}"));
+            let sr = eval_cintx(api, &shls, n, &atm, &bas, &env_with_omega(&env, -omega))
+                .unwrap_or_else(|e| panic!("{label} SR omega=-{omega}: {e:?}"));
+
+            let moved = (0..n).fold(0.0_f64, |m, i| m.max((sr[i] - full[i]).abs()));
+            assert!(
+                moved > 1e-3 * scale,
+                "{label} omega=-{omega}: the derivative block is (almost) the full-range \
+                 one; max |SR - full| = {moved:.3e} against scale {scale:.3e}"
+            );
+
+            // Same split as the scalar sweep: the doubled-root regime computes
+            // SR as "full minus long range" over one shared `fac1`, so the
+            // identity closes to round-off; above `rys_order = 3` it comes from
+            // an INDEPENDENTLY constructed lower-bounded Gauss rule and closes
+            // to that rule's accuracy instead.
+            let rel_tol = if rys_order <= 3 { 1e-12 } else { 1e-10 };
+            for idx in 0..n {
+                let residual = (sr[idx] + lr[idx] - full[idx]).abs();
+                assert!(
+                    residual <= rel_tol * full[idx].abs().max(scale),
+                    "{label} omega={omega} idx={idx}: SR({:.17e}) + LR({:.17e}) != \
+                     full({:.17e}), residual={residual:.3e}",
+                    sr[idx],
+                    lr[idx],
+                    full[idx]
+                );
+            }
+            checked += 1;
+        }
+
+        // An explicit zero is the full-range operator, bit for bit.
+        assert_eq!(
+            eval_cintx(api, &shls, n, &atm, &bas, &env_with_omega(&env, 0.0))
+                .unwrap_or_else(|e| panic!("{label} zero omega: {e:?}")),
+            full,
+            "{label}: env[8] = 0 must be byte-identical to an unset slot"
+        );
+    }
+
+    assert!(
+        checked >= 36,
+        "every derivative row must be checked at both omegas, got {checked}"
+    );
+}
+
+/// A row of the SAME families that `derivative_headroom` does not cover must
+/// still refuse.
+///
+/// The GIAO/gauge rows read `env[8]` upstream just as `ip1` does, and their
+/// launchers are host-routed too — so they would very likely just work. They are
+/// refused anyway, because nothing gates them under a set ω, and a scope widened
+/// past its gate is how a full-range substitute ships. The refusal is the
+/// difference between "not yet verified" and "quietly wrong".
+#[test]
+fn a_row_outside_the_headroom_table_still_refuses_a_set_omega() {
     let (atm, bas, env) = build_spdf_fixture();
     let sr_env = env_with_omega(&env, -0.8);
     let shls = [0_i32, 4, 0, 4];
     let n = out_len(&shls, &bas) * 3;
 
-    let err = eval_cintx(RawApiId::INT2E_IP1_SPH, &shls, n, &atm, &bas, &sr_env)
-        .expect_err("int2e_ip1 under a set omega must refuse, not run full range");
+    let err = eval_cintx(RawApiId::INT2E_G1_SPH, &shls, n, &atm, &bas, &sr_env)
+        .expect_err("int2e_g1 under a set omega must refuse, not run full range");
     let text = format!("{err}");
     assert!(
         text.contains("range_omega"),
@@ -725,6 +1045,131 @@ mod vendor {
         eprintln!(
             "range_omega wide SR sweep: {evaluated} blocks, worst scaled |diff| = {worst:.3e} \
              at {worst_at}"
+        );
+    }
+
+    /// Derivative-row vendor parity across the ω sweep (D-PBC-24 P2-1).
+    ///
+    /// The `SR + LR == full` identity above is self-checking but blind to the
+    /// CONVENTION: a row whose `ng[..INC]` raise landed on the wrong tuple
+    /// position would satisfy it at every ω and disagree with libcint
+    /// everywhere. This is the check that settles that, on the same tolerance
+    /// as the scalar sweep.
+    ///
+    /// It is also the gate that licenses the widened
+    /// `supports_range_omega`: every row admitted there appears here.
+    #[test]
+    fn cintx_matches_vendored_libcint_for_the_derivative_rows() {
+        let (atm, bas, env) = build_spdf_fixture();
+        let natm = (atm.len() / ATM_SLOTS) as i32;
+        let nbas = (bas.len() / BAS_SLOTS) as i32;
+
+        // One vendor entry point per row, keyed by the same label.
+        type V2 = fn(&mut [f64], &[i32; 2], &[i32], i32, &[i32], i32, &[f64]) -> i32;
+        type V3 = fn(&mut [f64], &[i32; 3], &[i32], i32, &[i32], i32, &[f64]) -> i32;
+        type V4 = fn(&mut [f64], &[i32; 4], &[i32], i32, &[i32], i32, &[f64]) -> i32;
+
+        fn vendor_for(
+            label: &str,
+            shls: &[i32],
+            out: &mut [f64],
+            atm: &[i32],
+            natm: i32,
+            bas: &[i32],
+            nbas: i32,
+            env: &[f64],
+        ) {
+            use cintx_oracle::vendor_ffi as v;
+            match shls.len() {
+                2 => {
+                    let f: V2 = match label.split('(').next().unwrap() {
+                        "int2c2e_ip1" => v::vendor_int2c2e_ip1_sph,
+                        "int2c2e_ip2" => v::vendor_int2c2e_ip2_sph,
+                        "int2c2e_ipip1" => v::vendor_int2c2e_ipip1_sph,
+                        "int2c2e_ip1ip2" => v::vendor_int2c2e_ip1ip2_sph,
+                        other => panic!("no vendor arity-2 entry point for {other}"),
+                    };
+                    f(out, &[shls[0], shls[1]], atm, natm, bas, nbas, env);
+                }
+                3 => {
+                    let f: V3 = match label.split('(').next().unwrap() {
+                        "int3c2e_ip1" => v::vendor_int3c2e_ip1_sph,
+                        "int3c2e_ip2" => v::vendor_int3c2e_ip2_sph,
+                        "int3c2e_ipip1" => v::vendor_int3c2e_ipip1_sph,
+                        "int3c2e_ipip2" => v::vendor_int3c2e_ipip2_sph,
+                        "int3c2e_ipvip1" => v::vendor_int3c2e_ipvip1_sph,
+                        "int3c2e_ip1ip2" => v::vendor_int3c2e_ip1ip2_sph,
+                        other => panic!("no vendor arity-3 entry point for {other}"),
+                    };
+                    f(out, &[shls[0], shls[1], shls[2]], atm, natm, bas, nbas, env);
+                }
+                4 => {
+                    let f: V4 = match label.split('(').next().unwrap() {
+                        "int2e_ip1" => v::vendor_int2e_ip1_sph,
+                        "int2e_ip2" => v::vendor_int2e_ip2_sph,
+                        "int2e_ipip1" => v::vendor_int2e_ipip1_sph,
+                        "int2e_ipvip1" => v::vendor_int2e_ipvip1_sph,
+                        "int2e_ip1ip2" => v::vendor_int2e_ip1ip2_sph,
+                        other => panic!("no vendor arity-4 entry point for {other}"),
+                    };
+                    f(
+                        out,
+                        &[shls[0], shls[1], shls[2], shls[3]],
+                        atm,
+                        natm,
+                        bas,
+                        nbas,
+                        env,
+                    );
+                }
+                other => panic!("no scalar Coulomb derivative of arity {other}"),
+            }
+        }
+
+        let mut compared = 0usize;
+        let mut worst = 0.0_f64;
+        let mut worst_label = String::new();
+
+        for r in derivative_rows() {
+            let n = out_len(&r.shls, &bas) * r.ncomp;
+            for omega in OMEGA_SWEEP {
+                let env_omega = env_with_omega(&env, omega);
+                let got = eval_cintx(r.api, &r.shls, n, &atm, &bas, &env_omega)
+                    .unwrap_or_else(|e| panic!("{} omega={omega}: {e:?}", r.label));
+
+                let mut want = vec![0.0_f64; n];
+                vendor_for(
+                    r.label, &r.shls, &mut want, &atm, natm, &bas, nbas, &env_omega,
+                );
+
+                for idx in 0..n {
+                    let diff = (got[idx] - want[idx]).abs();
+                    if diff > worst {
+                        worst = diff;
+                        worst_label = format!("{} omega={omega} idx={idx}", r.label);
+                    }
+                    assert!(
+                        diff <= 1e-12 + 1e-11 * want[idx].abs(),
+                        "{} rys_order={} omega={omega} idx={idx}: cintx={:.17e} \
+                         libcint={:.17e} diff={diff:.3e}",
+                        r.label,
+                        r.rys_order,
+                        got[idx],
+                        want[idx]
+                    );
+                }
+                compared += 1;
+            }
+        }
+
+        assert_eq!(
+            compared,
+            derivative_rows().len() * OMEGA_SWEEP.len(),
+            "every derivative row must be compared at every omega"
+        );
+        eprintln!(
+            "range_omega derivative vendor parity: {compared} evaluations, \
+             worst |diff| = {worst:.3e} at {worst_label}"
         );
     }
 

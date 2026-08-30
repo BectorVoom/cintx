@@ -210,8 +210,9 @@ pub fn validate_range_omega_value(
             requested: format!(
                 "range_omega on {canonical_family}/{operator_name}: range separation \
                  (env[8]) is implemented for the scalar Coulomb operators int2e, \
-                 int3c2e and int2c2e only; refusing rather than evaluating the \
-                 full-range kernel (D-PBC-24)"
+                 int3c2e and int2c2e and their ip-family gradient/Hessian rows \
+                 (ip1, ip2, ipip1, ipvip1, ip1ip2, ...); refusing rather than \
+                 evaluating the full-range kernel (D-PBC-24)"
             ),
         });
     }

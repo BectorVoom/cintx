@@ -125,8 +125,9 @@ impl<'basis> SessionBuilder<'basis> {
     ///
     /// Range separation is a *parameter on the ordinary Coulomb operator*, not
     /// a separate integral symbol — libcint has no `int2e_sr_*` and PySCF never
-    /// asks for one. So the operator stays `int2e` / `int3c2e` / `int2c2e` and
-    /// only this value changes.
+    /// asks for one. So the operator stays `int2e` / `int3c2e` / `int2c2e` (or
+    /// one of their `ip`-family gradient/Hessian rows) and only this value
+    /// changes.
     ///
     /// Short range doubles the Rys root count for `rys_order <= 3`, so this
     /// must be set BEFORE `query_workspace`: it sizes the workspace, and
@@ -134,9 +135,10 @@ impl<'basis> SessionBuilder<'basis> {
     /// drift.
     ///
     /// Setting a non-zero ω on any other operator returns `UnsupportedApi`
-    /// rather than silently evaluating the full-range kernel (D-PBC-24); short
-    /// range at `rys_order > 3` likewise fails closed pending the
-    /// lower-bounded `CINTsr_rys_roots` quadrature.
+    /// rather than silently evaluating the full-range kernel (D-PBC-24). The
+    /// batch surfaces (`QuartetBatchRequest`, `PairBatchRequest`,
+    /// `TripleBatchRequest`) refuse it outright: their device kernels have no
+    /// omega branch, so this scalar path is the route that serves ω.
     pub fn with_range_omega(mut self, omega: f64) -> Self {
         self.options.range_omega = Some(omega);
         self

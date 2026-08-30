@@ -69,7 +69,9 @@
 
 use crate::backend::ResolvedBackend;
 use crate::kernels::f12::{Nabla1Center, gout_ip1ip2, gout_ipip1, gout_ipn};
-use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
+use crate::kernels::two_electron::{
+    build_2e_shape_omega, fill_g_tensor_2e_range, two_e_shape_as_f12,
+};
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
@@ -1307,7 +1309,11 @@ fn launch_center_2c2e_grad<F: CintFloat>(
         // 2c2e has only centers i and k; J/L are never requested here.
         _ => unreachable!("int2c2e gradient only nablas center I or K"),
     };
-    let grad_shape = build_2e_shape(li_ceil, 0, lk_ceil, 0);
+    // D-PBC-24 P2-1: ω sizes the shape (short range doubles `nroots`, which sets
+    // the G-tensor strides), not only the root evaluation. `None` leaves this
+    // byte-identical to `build_2e_shape`.
+    let range_omega = plan.operator_env_params.range_omega;
+    let grad_shape = build_2e_shape_omega(li_ceil, 0, lk_ceil, 0, range_omega);
 
     // Phase 25 FND-02: HOST gradient path (fill_g_tensor_2e → rys_roots_host); the host
     // Wheeler engine supports nroots 6..12. Route elevated-headroom 2c2e gradients here
@@ -1353,7 +1359,7 @@ fn launch_center_2c2e_grad<F: CintFloat>(
 
             // 2c2e G-tensor via the 2e builder with phantom j,l (aj=al=0). No
             // Gaussian-overlap prefactor (Rys weights encode it): fac_env = common_factor.
-            let g = fill_g_tensor_2e(
+            let Some(g) = fill_g_tensor_2e_range(
                 ai,
                 0.0,
                 ak,
@@ -1364,7 +1370,13 @@ fn launch_center_2c2e_grad<F: CintFloat>(
                 &rl,
                 grad_shape,
                 common_factor,
-            );
+                range_omega,
+            )?
+            else {
+                // Short range past EXPCUTOFF_SR: this primitive pair contributes
+                // nothing (g2e.c:4460). Not zeros — nothing.
+                continue;
+            };
 
             let exponent = match center {
                 Nabla1Center::I => ai,
@@ -1523,10 +1535,14 @@ fn launch_center_2c2e_hess<F: CintFloat>(
     let li = shell_i.ang_momentum;
     let lk = shell_k.ang_momentum;
 
+    // D-PBC-24 P2-1: these raises must mirror
+    // `cintx_runtime::range_omega::derivative_headroom("2c2e", "ip1ip2" | "ipip1")`,
+    // which is what the planner sizes the workspace from.
+    let range_omega = plan.operator_env_params.range_omega;
     let hess_shape = if mixed_centers {
-        build_2e_shape(li as usize + 1, 0, lk as usize + 1, 0)
+        build_2e_shape_omega(li as usize + 1, 0, lk as usize + 1, 0, range_omega)
     } else {
-        build_2e_shape(li as usize + 2, 0, lk as usize, 0)
+        build_2e_shape_omega(li as usize + 2, 0, lk as usize, 0, range_omega)
     };
 
     // FND-02: route to the HOST path; the +2 raise can push nroots to 6..12.
@@ -1566,7 +1582,7 @@ fn launch_center_2c2e_hess<F: CintFloat>(
         for pk in 0..n_prim_k {
             let ak = shell_k.exponents[pk];
 
-            let g = fill_g_tensor_2e(
+            let Some(g) = fill_g_tensor_2e_range(
                 ai,
                 0.0,
                 ak,
@@ -1577,7 +1593,13 @@ fn launch_center_2c2e_hess<F: CintFloat>(
                 &rl,
                 hess_shape,
                 common_factor,
-            );
+                range_omega,
+            )?
+            else {
+                // Short range past EXPCUTOFF_SR: this primitive pair contributes
+                // nothing (g2e.c:4460). Not zeros — nothing.
+                continue;
+            };
 
             let gout = if mixed_centers {
                 gout_ip1ip2(&g, &hess_f12_shape, li as usize, 0, lk as usize, 0, ai, ak)

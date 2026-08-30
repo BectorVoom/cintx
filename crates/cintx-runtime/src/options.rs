@@ -133,10 +133,13 @@ pub struct ExecutionOptions {
     /// `query_workspace` folds the short-range Rys-root doubling
     /// ([`crate::range_omega::nrys_roots_for`]) into the workspace request.
     ///
-    /// Accepted only for the three scalar Coulomb operators (`int2e`,
-    /// `int3c2e`, `int2c2e`); every other operator rejects a set value with
-    /// `UnsupportedApi` rather than silently evaluating the full-range kernel
-    /// (see [`crate::validator::validate_range_omega_env_params`]).
+    /// Accepted for the three scalar Coulomb operators (`int2e`, `int3c2e`,
+    /// `int2c2e`) and their `ip`-family gradient/Hessian rows; every other
+    /// operator rejects a set value with `UnsupportedApi` rather than silently
+    /// evaluating the full-range kernel. The admitted set is exactly what
+    /// [`crate::range_omega::derivative_headroom`] knows the `ng[]` raises for,
+    /// because those raises size the workspace (see
+    /// [`crate::validator::validate_range_omega_env_params`]).
     pub range_omega: Option<f64>,
     /// AO symmetry packing requested by the caller. Phase 18 implements `S1` only;
     /// every other variant returns `FacadeError::UnsupportedAoSymmetry` from

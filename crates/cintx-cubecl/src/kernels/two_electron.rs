@@ -2279,7 +2279,20 @@ fn launch_two_electron_ip1<F: CintFloat>(
     }
 
     // li → li+1 headroom shape (D-06). gout_ip1's nabla1i_2e reads up to index li+1.
-    let grad_shape = build_2e_shape(li as usize + 1, lj as usize, lk as usize, ll as usize);
+    //
+    // D-PBC-24 P2-1: ω is part of the SHAPE, not only of the root evaluation —
+    // short range doubles `nroots`, which sets `di`/`dk`/`g_size`. The raise and
+    // the doubling compose: `rys_order = (li+1 + lj + lk + ll)/2 + 1`, then
+    // `nroots = 2 * rys_order` under short range. `range_omega = None` leaves
+    // this byte-identical to `build_2e_shape`.
+    let range_omega = plan.operator_env_params.range_omega;
+    let grad_shape = build_2e_shape_omega(
+        li as usize + 1,
+        lj as usize,
+        lk as usize,
+        ll as usize,
+        range_omega,
+    );
 
     // Phase 25 FND-02: this is the HOST gradient path (the loop below calls
     // `fill_g_tensor_2e` → `rys_roots_host`, NOT the device comptime kernel). The host
@@ -2344,7 +2357,7 @@ fn launch_two_electron_ip1<F: CintFloat>(
                     let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
                     // Plain Coulomb G-tensor at the elevated li (li+1 headroom).
-                    let g = fill_g_tensor_2e(
+                    let Some(g) = fill_g_tensor_2e_range(
                         ai,
                         aj,
                         ak,
@@ -2355,7 +2368,13 @@ fn launch_two_electron_ip1<F: CintFloat>(
                         &rl,
                         grad_shape,
                         quartet_fac,
-                    );
+                        range_omega,
+                    )?
+                    else {
+                        // Short range past EXPCUTOFF_SR: this primitive quartet
+                        // contributes nothing (g2e.c:4460). Not zeros — nothing.
+                        continue;
+                    };
 
                     // Reuse gout_ip1 verbatim (f12.rs). It returns interleaved
                     // out[n*3+comp]; n walks [cl, ck, cj, ci] (ll slowest, li fastest).
@@ -2546,7 +2565,15 @@ fn launch_two_electron_ip2<F: CintFloat>(
     }
 
     // lk → lk+1 headroom shape (D-06). gout_ipn's nabla1k_2e reads up to index lk+1.
-    let grad_shape = build_2e_shape(li as usize, lj as usize, lk as usize + 1, ll as usize);
+    // D-PBC-24 P2-1: see `launch_two_electron_ip1` — ω sizes the shape.
+    let range_omega = plan.operator_env_params.range_omega;
+    let grad_shape = build_2e_shape_omega(
+        li as usize,
+        lj as usize,
+        lk as usize + 1,
+        ll as usize,
+        range_omega,
+    );
 
     // Phase 25 FND-02: HOST gradient path (fill_g_tensor_2e → rys_roots_host). The host
     // Rys engine supports nroots 6..12 (rys_wheeler.rs); route Hessian-elevated quartets
@@ -2605,7 +2632,7 @@ fn launch_two_electron_ip2<F: CintFloat>(
                     let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
                     // Plain Coulomb G-tensor at the elevated lk (lk+1 headroom).
-                    let g = fill_g_tensor_2e(
+                    let Some(g) = fill_g_tensor_2e_range(
                         ai,
                         aj,
                         ak,
@@ -2616,7 +2643,13 @@ fn launch_two_electron_ip2<F: CintFloat>(
                         &rl,
                         grad_shape,
                         quartet_fac,
-                    );
+                        range_omega,
+                    )?
+                    else {
+                        // Short range past EXPCUTOFF_SR: this primitive quartet
+                        // contributes nothing (g2e.c:4460). Not zeros — nothing.
+                        continue;
+                    };
 
                     // ∇ on the ket bra-center k (Nabla1Center::K, exponent ak).
                     // gout_ipn is called at BASE lk (the G-tensor carries lk+1 headroom).
@@ -2847,11 +2880,16 @@ fn launch_two_electron_hess2e<F: CintFloat>(
 
     // Per-family headroom shape (D-09): raise the G-tensor angular momenta so the
     // gout's nabla compositions can read up to the elevated indices.
-    let grad_shape = build_2e_shape(
+    // D-PBC-24 P2-1: ω sizes the shape as well as selecting the `CINTg0_2e` arm.
+    // `Hess2eKind::headroom` and `cintx_runtime::range_omega::derivative_headroom`
+    // must agree — the planner sizes the workspace from the latter.
+    let range_omega = plan.operator_env_params.range_omega;
+    let grad_shape = build_2e_shape_omega(
         li as usize + i_inc,
         lj as usize + j_inc,
         lk as usize + k_inc,
         ll as usize + l_inc,
+        range_omega,
     );
 
     // FND-02 host Rys ceiling: nroots 6..12 route here; >12 stays fail-closed.
@@ -2909,7 +2947,7 @@ fn launch_two_electron_hess2e<F: CintFloat>(
                     let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
 
                     // Plain Coulomb G-tensor at the elevated headroom.
-                    let g = fill_g_tensor_2e(
+                    let Some(g) = fill_g_tensor_2e_range(
                         ai,
                         aj,
                         ak,
@@ -2920,7 +2958,13 @@ fn launch_two_electron_hess2e<F: CintFloat>(
                         &rl,
                         grad_shape,
                         quartet_fac,
-                    );
+                        range_omega,
+                    )?
+                    else {
+                        // Short range past EXPCUTOFF_SR: this primitive quartet
+                        // contributes nothing (g2e.c:4460). Not zeros — nothing.
+                        continue;
+                    };
 
                     // Reuse the verbatim hess.c gout permutation. gout is called at
                     // BASE (li,lj,lk,ll); the G-tensor carries the headroom. Returns

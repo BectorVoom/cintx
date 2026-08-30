@@ -26,8 +26,8 @@ pub use planner::{
     query_workspace,
 };
 pub use range_omega::{
-    EXPCUTOFF_SR, PTR_RANGE_OMEGA, SR_DOUBLED_ROOT_MAX_ORDER, is_range_separated, is_short_range,
-    nrys_roots_for, supports_range_omega,
+    EXPCUTOFF_SR, PTR_RANGE_OMEGA, SR_DOUBLED_ROOT_MAX_ORDER, derivative_headroom,
+    is_range_separated, is_short_range, nrys_roots_for, supports_range_omega,
 };
 pub use scheduler::schedule_chunks;
 pub use validator::{

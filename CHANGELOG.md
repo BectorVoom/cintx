@@ -49,11 +49,33 @@ asks for one — `pyscf/pbc/df/rsjk.py:186` sets `supmol_sr.omega = -self.omega`
   ones it does not (`1e`, `3c1e`, `ecp`, `f12` — whose `CINTg0_2e_stg`/`_yp` have no omega
   branch). That is what makes `pyscf-gto`'s existing `OmegaGuard` work end to end.
 
+**The `ip`-family derivative rows too.** `int2e_ip1`/`ip2`/`ipip1`/`ipvip1`/`ip1ip2`/
+`ipip1ipip2`/`ipvip1ipvip2`, `int3c2e_ip1`/`ip2`/`ipip1`/`ipip2`/`ipvip1`/`ip1ip2` and
+`int2c2e_ip1`/`ip2`/`ipip1`/`ip1ip2` — the set a range-separated *gradient* or Hessian needs.
+They all read `env[8]` upstream (`g2e.c:171` shares `CINTg0_2e` with the whole `int2e_*` symbol
+space), and they refused at first for a reason that was not about the kernel: a derivative row's
+`rys_order` is `(Σ l + Σ ng[..INC])/2 + 1`, not `(Σ l)/2 + 1`, so a workspace sized from the
+unraised sum would have been short of the roots the kernel then writes. `range_omega`'s doubling
+is applied to the RAISED order.
+
+- **`range_omega::derivative_headroom`** is the single table of `ng[]` raises, indexed by tuple
+  position so one entry serves all three families despite their different `CINTg0_2e` slot
+  mappings. The planner sizes the workspace from it and each launcher's own
+  `build_2e_shape(li + i_inc, …)` literal is its mirror; a parity test cross-checks the two,
+  because a drift there is a wrong number rather than a crash.
+- **`int3c2e_ip1`/`ip2` gained a host arm** (`host_3c2e_deriv_cart_blocks`). They were the only
+  admitted rows with no host path at all — the whole per-triple core ran on
+  `center_3c2e_{ip1,ip2}_kernel` — and they are the rows a range-separated `aux_e2` gradient
+  reaches first. Every other admitted row was already host-routed.
+
 **Fail closed, never substitute.** A set, non-zero ω on an operator cintx has not implemented
 range separation for returns `UnsupportedApi` rather than evaluating the full-range kernel — it
-would run, it would converge, and it would silently be a different method. Implemented for the
-three scalar Coulomb operators `int2e`, `int3c2e`, `int2c2e`; every other operator, including
-the `ip1`/`ipip1`/… derivative rows of the same families, refuses.
+would run, it would converge, and it would silently be a different method. Still refused, and
+deliberately: the GIAO/gauge rows (`g1`, `gg1`, `g1g2`, `ig1`, `ipvg{1,2}_xp1`, `ip1v_r{c,}1`)
+and the relativistic σ·p/σ·r spinor rows. They share `CINTg0_2e` too and their launchers are
+host-routed, so they would very likely just work — but nothing gates them under a set ω, and a
+scope widened past its gate is how a full-range substitute ships. The scope is exactly what
+`derivative_headroom` covers, and that is exactly what the vendor sweep compares.
 
 That applies to the **batch surfaces** too, and it did not at first. `TripleBatchRequest`,
 `PairBatchRequest` and `QuartetBatchRequest` each held an `ExecutionOptions` and never read ω
@@ -92,6 +114,7 @@ incidentally. `int3c2e` gained a host arm (`host_3c2e_cart_blocks`) for this; `i
 | `range_omega_parity` — wide sweep: 4 exponent scales × 3 separations × 4 ω, `rys_order` 4/4/5/7, driving `lower` past 0.999 | worst scaled \|diff\| **< 1e-8** |
 | `SR(ω) + LR(ω) == full` on every tuple | ≤ 1e-12 relative (doubled roots), ≤ 1e-10 (`sr_rys_roots`) |
 | `sr_rys_roots_parity` — kernel-shaped functionals across every `lower`/`x` dispatch threshold, `nroots` 1..12 | **≤ 1e-9** (`nroots ≤ 10`), ≤ 1e-7 (11–12) |
+| `range_omega_parity` — 18 `ip`-family derivative rows vs vendor over the ω sweep, `rys_order` 1..4, gradients and Hessians | 90 evaluations, worst \|diff\| **2.776e-15** |
 | `range_omega_parity` — `int2e_spinor` vs vendor over the ω sweep, `rys_order` 1 and 3 | worst \|diff\| **≤ 1e-12 + 1e-11·\|ref\|** |
 | `range_omega_batch_scope` — every batch surface refuses a set ω and still batches at `None`/`Some(0.0)` | 5 tests |
 | `range_omega_safe_api_roundtrip` — f32 vs f64 at each ω, and not the full-range block | at the `2c2e` f32 floor |

@@ -3,13 +3,87 @@ carryover: D-PBC-24
 title: "Remaining tasks after D-PBC-24 stages 0–3"
 parent: ".planning/notes/D-PBC-24-cintx-range-omega-PLAN.md"
 recorded: 2026-08-30
-status: OPEN
+updated: 2026-08-30
+status: PARTIALLY DONE — see "Status as of 2026-08-30 (second pass)" below
 repos:
   cintx: /home/user/Documents/workspace/cintx
   pyscf_rs: /home/user/Documents/workspace/pyscf_rs
 ---
 
 # D-PBC-24 — what is left
+
+## Status as of 2026-08-30 (second pass)
+
+Worked in the order this file's own §"Suggested order" gives.
+
+| item | state | where |
+|---|---|---|
+| **P0** — batch surfaces fail closed | **DONE** | cintx `d-pbc-24-range-omega`; `range_omega_batch_scope.rs` (5 tests) |
+| **Commit the cintx work** | **DONE** | cintx `74bec6c` |
+| **P3-1** — ω into `aux_e2` / `fill_2c2e` / `pbc_intor` | **DONE** | pyscf_rs `d-pbc-24-stage-5-omega`; `tests/incore.rs` gates `SR + LR == full` on the assembled tensor |
+| **P3-8** — Phase 4's RSH assertion | **DONE**, and it was worse than recorded | pyscf_rs; see below |
+| **P2-1** — derivative rows | **DONE** for the `ip` family | cintx; 18 rows vs vendor, worst \|diff\| 2.776e-15 |
+| **P2-3** — f32 under ω | **DONE** | `range_omega_safe_api_roundtrip.rs` |
+| **P2-4** — `int2e_spinor` under ω | **DONE** | `range_omega_parity.rs`, vendor-gated |
+| **P4** — `orig{i,k}_genctr_parity` module gate | **DONE** | one line each |
+| **P1** — device omega arms | **NOT STARTED** | unchanged; see below |
+| **P2-2** — `int1e_grids` | **NOT STARTED** (a decision, not code) | nothing asks for it yet |
+| **P3-2 … P3-7** — `_RSGDFBuilder`, `_RSMDFBuilder`, `RSDF`, `rsjk`, Gate 3 | **NOT STARTED** | the blocker is gone; the port is not written |
+
+**Two corrections to this file, found while doing the work.**
+
+1. **P3-1's ⚠️ is answered: `aux_e2` uses the SCALAR path**, not
+   `TripleBatchRequest`/`PairBatchRequest`. `incore/int3c.rs::eval3c` builds a
+   plain `SessionRequest` per triple. So P0 was never a prerequisite for stage
+   5 — though it was still a live silent-substitution path for anyone who did
+   batch.
+
+2. **P3-8 understated its own severity.** This file says "that slot is now read
+   by cintx's raw path, so the contract test can become a numerical one". The
+   raw path does read it — but `pyscf_gto::intor` does not go through the raw
+   path: it builds cintx's `BasisSet` from `mol._atom`/`_basis` and calls the
+   SAFE API, which takes its parameters from `ExecutionOptions` and never sees
+   the caller's `_env`. So `intor_with_omega` and `get_k_with_omega` were not
+   merely untested — they were returning **full-range** integrals under a
+   range-separated name, which is the exact failure this whole carryover exists
+   to prevent. The fix was an `intor_with_options` seam, not a test.
+
+**P2-1 came in far cheaper than the 2–4 days estimated here**, for a reason
+worth recording: §"Priority 1" is right that the DEVICE kernels have no omega
+branch, but almost every derivative launcher was already a HOST path
+(`launch_two_electron_ip1`'s own comment says so). So step 4 of P2-1's recipe
+("route each to the host under a set ω") was already true for all but two rows.
+The exceptions were `int3c2e_ip1`/`ip2`, whose whole per-triple core runs on
+`center_3c2e_{ip1,ip2}_kernel`; they got a host arm
+(`host_3c2e_deriv_cart_blocks`), the same move the scalar `int3c2e` made in
+stage 2.
+
+**What P2-1 deliberately did NOT widen:** the GIAO/gauge rows (`g1`, `gg1`,
+`g1g2`, `ig1`, `ipvg{1,2}_xp1`, `ip1v_r{c,}1`) and the relativistic σ·p/σ·r
+spinor rows. They read `env[8]` upstream and their launchers are host-routed,
+so they would very likely just work — but nothing gates them under a set ω, and
+`supports_range_omega` is now defined as exactly what
+`range_omega::derivative_headroom` covers, which is exactly what the vendor
+sweep compares. Widening the scope past the gate is how a full-range substitute
+ships.
+
+**What is genuinely left**, in the order this file already recommends:
+
+* **P3-2 … P3-7** — the value. `_RSGDFBuilder`'s `get_2c2e` / `outcore_auxe2` /
+  `add_ft_j3c` / `solve_cderi` / `_RSNucBuilder`, then `_RSMDFBuilder`, then
+  `Gdf::prefer_ccdf = false`, then `rsjk`, then Gate 3. Every integral they
+  need now exists and is gated; what is missing is the several hundred lines of
+  `rsdf_builder.py` / `rsjk.py` that assemble them. The refusals and their
+  tests are still in place and their MESSAGES have been rewritten to say so —
+  `CINTX_SR_GAP` is now `RS_BUILDER_GAP` — because leaving them naming a cintx
+  gap that no longer exists would send the next reader to re-derive it.
+* **P1** — the device omega arms, if the host route proves too slow. Unchanged,
+  except that P2-1 added `int3c2e_ip1`/`ip2` to the list of families with a
+  host arm to fall back to.
+* **P2-2** — `int1e_grids`. Still nothing asks for it.
+
+---
+
 
 Stages 0–3 landed in cintx on 2026-08-30 (see §9 of the parent plan). `int2e`,
 `int3c2e` and `int2c2e` honour `env[PTR_RANGE_OMEGA]` end to end on the

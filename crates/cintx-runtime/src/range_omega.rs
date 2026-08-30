@@ -86,25 +86,114 @@ pub fn is_range_separated(range_omega: Option<f64>) -> bool {
     matches!(range_omega, Some(omega) if omega != 0.0)
 }
 
+/// The `ng[]` angular-momentum raises a derivative row applies, **per shell of
+/// the tuple** rather than per `CINTg0_2e` slot.
+///
+/// `CINTinit_int2e_EnvVars` builds the G tensor at
+/// `l_ceil = l + ng[{I,J,K,L}INC]` and takes `rys_order` from the raised sum
+/// (`g2e.c:74-79`), so a derivative row's `rys_order` is NOT `(Σ l)/2 + 1`.
+/// That is precisely why [`supports_range_omega`] was narrow before D-PBC-24
+/// P2-1: an unraised estimate would size the workspace for fewer Rys roots than
+/// the kernel then writes.
+///
+/// Indexing is by TUPLE POSITION, which makes one table serve all three
+/// families even though they map onto the four `CINTg0_2e` slots differently
+/// (`int3c2e` puts its auxiliary shell in the `ll` slot with `lk_ceil = 0`;
+/// `int2c2e` zeroes `lj_ceil`/`ll_ceil`). Only the SUM enters `rys_order`, so
+/// the slot permutation does not matter here — but it does in the launchers,
+/// and each of these entries is the mirror of a `build_2e_shape(...)` call
+/// there:
+///
+/// | family | tuple | site |
+/// |---|---|---|
+/// | `2e` | `(i, j, k, l)` | `Hess2eKind::headroom`, `launch_two_electron_ip{1,2}` |
+/// | `3c2e` | `(i, j, aux)` | `launch_center_3c2e_{ip1,ip2,hess}` |
+/// | `2c2e` | `(i, k)` | `launch_center_2c2e_{grad,hess}` |
+///
+/// Returns `None` for an operator this table does not cover, which
+/// [`supports_range_omega`] treats as "not admitted" — a refusal, never a
+/// guess at the raises.
+pub fn derivative_headroom(
+    canonical_family: &str,
+    operator_name: &str,
+) -> Option<&'static [usize]> {
+    match canonical_family {
+        // (i, j, k, l)
+        "2e" => Some(match operator_name {
+            "electron-repulsion" => &[0, 0, 0, 0],
+            "ip1" => &[1, 0, 0, 0],
+            "ip2" => &[0, 0, 1, 0],
+            "ipip1" => &[2, 0, 0, 0],
+            "ipvip1" => &[1, 1, 0, 0],
+            "ip1ip2" => &[1, 0, 1, 0],
+            "ipip1ipip2" => &[2, 0, 2, 0],
+            "ipvip1ipvip2" => &[1, 1, 1, 1],
+            _ => return None,
+        }),
+        // (i, j, aux) — the auxiliary shell occupies the 2e `ll` slot.
+        "3c2e" => Some(match operator_name {
+            "electron-repulsion" => &[0, 0, 0],
+            "ip1" => &[1, 0, 0],
+            "ip2" => &[0, 0, 1],
+            "ipip1" => &[2, 0, 0],
+            "ipip2" => &[0, 0, 2],
+            "ipvip1" => &[1, 1, 0],
+            "ip1ip2" => &[1, 0, 1],
+            _ => return None,
+        }),
+        // (i, k) — both kets are phantom s.
+        "2c2e" => Some(match operator_name {
+            "electron-repulsion" => &[0, 0],
+            "ip1" => &[1, 0],
+            "ip2" => &[0, 1],
+            "ipip1" => &[2, 0],
+            "ip1ip2" => &[1, 1],
+            _ => return None,
+        }),
+        _ => None,
+    }
+}
+
 /// Whether this `(canonical_family, operator_name)` pair honours `range_omega`.
 ///
-/// # Scope (D-PBC-24 stage 2)
+/// # Scope
 ///
-/// The three scalar Coulomb operators — `int2e`, `int3c2e`, `int2c2e` — are the
-/// ones that share `CINTg0_2e` *and* whose `rys_order` is exactly
-/// `(Σ l)/2 + 1`, which is what makes the workspace estimate below exact. They
-/// are also the complete set the range-separated consumers need: `aux_e2`
-/// (`int3c2e` + `int2c2e`) for RSDF/RSMDF, and `int2e` for `rsjk` and for
-/// molecular RSH.
+/// Everything that shares `CINTg0_2e` (`g2e.c:171`, `g3c2e.c:131`,
+/// `g2c2e.c:104`) reads `env[8]` upstream, so in principle every row of the
+/// `2e`, `3c2e` and `2c2e` families could be served. What gates the scope here
+/// is not the kernel but the WORKSPACE: `rys_order` has to be known exactly
+/// before evaluation, because short range doubles the Rys roots and the root
+/// count sizes the G tensor. So a row is admitted exactly when
+/// [`derivative_headroom`] knows its `ng[]` raises.
 ///
-/// Every other operator — the `ip1`/`ipip1`/… derivative rows of the same
-/// families, and the `f12`, `breit`, `origi`, `origk`, `ssc`, `4c1e`, `1e`,
-/// `3c1e`, `ecp` and `grids` families — **rejects** a set `range_omega` rather
-/// than silently evaluating the full-range operator. A full-range substitute
-/// runs, converges, and is silently a different method; that is the one outcome
-/// D-PBC-24 forbids in writing.
+/// Admitted, as of D-PBC-24 P2-1:
+///
+/// * the scalar Coulomb rows `int2e`, `int3c2e`, `int2c2e` (stage 2) — the set
+///   `aux_e2` (`int3c2e` + `int2c2e`) needs for RSDF/RSMDF, and `int2e` for
+///   `rsjk` and molecular RSH;
+/// * their `ip`-family gradient and Hessian rows, which is what a
+///   range-separated GRADIENT needs.
+///
+/// Still refused, and deliberately:
+///
+/// * the GIAO/gauge rows of the `2e` family (`g1`, `gg1`, `g1g2`, `ig1`,
+///   `ipvg{1,2}_xp1`, `ip1v_r{c,}1`). They read `env[8]` upstream and their
+///   launchers are host-routed, so they would very likely just work — but each
+///   carries its own `common_factor` scale and position-operator composition,
+///   and none is gated against the vendor under a set ω. Widening a scope
+///   without extending the gate is how a full-range substitute ships.
+/// * the relativistic σ·p / σ·r spinor rows (`spsp1`, `ipspsp1`, `srsr1`, …),
+///   for the same reason.
+/// * every other family: `f12` (whose `CINTg0_2e_stg`/`_yp` have no omega
+///   branch at all), `breit`, `origi`, `origk`, `ssc`, `4c1e`, `1e`, `3c1e`,
+///   `ecp`, `grids`.
+///
+/// A refused row returns `UnsupportedApi` rather than silently evaluating the
+/// full-range operator. A full-range substitute runs, converges, and is
+/// silently a different method; that is the one outcome D-PBC-24 forbids in
+/// writing.
 pub fn supports_range_omega(canonical_family: &str, operator_name: &str) -> bool {
-    matches!(canonical_family, "2e" | "3c2e" | "2c2e") && operator_name == "electron-repulsion"
+    derivative_headroom(canonical_family, operator_name).is_some()
 }
 
 /// Whether libcint's counterpart of this family READS `env[PTR_RANGE_OMEGA]`.
@@ -139,14 +228,35 @@ pub fn family_consumes_range_omega(canonical_family: &str) -> bool {
 
 /// `rys_order = (Σ l_ceil)/2 + 1` for a scalar Coulomb shell tuple.
 ///
-/// Exact for the operators [`supports_range_omega`] admits, where every
-/// `l_ceil` equals the shell's own angular momentum (no `ng[IINC]` raises).
-/// `int3c2e` folds its auxiliary shell into the `ll` slot with `lk_ceil = 0`
-/// and `int2c2e` zeroes `lj_ceil`/`ll_ceil`, so in all three cases the sum is
-/// simply the sum over the shells actually present in the tuple
-/// (`g2e.c:74-77`, `g3c2e.c:70`, `g2c2e.c:60`).
+/// Exact for the SCALAR rows, where every `l_ceil` equals the shell's own
+/// angular momentum. `int3c2e` folds its auxiliary shell into the `ll` slot
+/// with `lk_ceil = 0` and `int2c2e` zeroes `lj_ceil`/`ll_ceil`, so in all three
+/// cases the sum is simply the sum over the shells actually present in the
+/// tuple (`g2e.c:74-77`, `g3c2e.c:70`, `g2c2e.c:60`).
+///
+/// Derivative rows raise it; use [`rys_order_with_headroom`].
 pub fn rys_order_for_angular_momenta(angular_momenta: impl IntoIterator<Item = usize>) -> usize {
     angular_momenta.into_iter().sum::<usize>() / 2 + 1
+}
+
+/// [`rys_order_for_angular_momenta`] with a derivative row's `ng[]` raises
+/// applied, `headroom` indexed by tuple position as
+/// [`derivative_headroom`] returns it.
+///
+/// A shorter `headroom` than `angular_momenta` raises nothing on the tail,
+/// which is what makes the scalar `&[0, 0, ..]` entries and a mismatched arity
+/// both behave conservatively rather than panicking.
+pub fn rys_order_with_headroom(
+    angular_momenta: impl IntoIterator<Item = usize>,
+    headroom: &[usize],
+) -> usize {
+    angular_momenta
+        .into_iter()
+        .enumerate()
+        .map(|(idx, l)| l + headroom.get(idx).copied().unwrap_or(0))
+        .sum::<usize>()
+        / 2
+        + 1
 }
 
 #[cfg(test)]
@@ -199,16 +309,79 @@ mod tests {
         }
     }
 
+    /// The scope is the scalar Coulomb rows plus their `ip`-family derivatives,
+    /// and nothing else.
+    ///
+    /// The exclusions matter as much as the inclusions: `g1` and `spsp1` share
+    /// `CINTg0_2e` with `ip1` and would very likely just work, and they are
+    /// refused anyway because nothing gates them under a set ω (see
+    /// [`supports_range_omega`]'s docs). This test is what stops the scope from
+    /// drifting past the gate.
     #[test]
-    fn only_the_three_scalar_coulomb_operators_take_omega() {
-        assert!(supports_range_omega("2e", "electron-repulsion"));
-        assert!(supports_range_omega("3c2e", "electron-repulsion"));
-        assert!(supports_range_omega("2c2e", "electron-repulsion"));
-        assert!(!supports_range_omega("2e", "ip1"));
-        assert!(!supports_range_omega("3c2e", "ip2"));
+    fn the_scope_is_the_scalar_coulomb_rows_plus_their_ip_derivatives() {
+        for family in ["2e", "3c2e", "2c2e"] {
+            assert!(supports_range_omega(family, "electron-repulsion"), "{family}");
+            for op in ["ip1", "ip2", "ipip1", "ip1ip2"] {
+                assert!(supports_range_omega(family, op), "{family}:{op}");
+            }
+        }
+        assert!(supports_range_omega("2e", "ipvip1"));
+        assert!(supports_range_omega("2e", "ipip1ipip2"));
+        assert!(supports_range_omega("2e", "ipvip1ipvip2"));
+        assert!(supports_range_omega("3c2e", "ipvip1"));
+        assert!(supports_range_omega("3c2e", "ipip2"));
+
+        // 2c2e has only centres i and k — no `ipvip1`, and no `ipip2`.
+        assert!(!supports_range_omega("2c2e", "ipvip1"));
+        assert!(!supports_range_omega("2c2e", "ipip2"));
+        // GIAO/gauge and relativistic spinor rows: not gated, so not admitted.
+        for op in ["g1", "gg1", "g1g2", "ig1", "ip1v_r1", "spsp1", "ipspsp1"] {
+            assert!(!supports_range_omega("2e", op), "2e:{op}");
+        }
+        // Other families entirely.
         assert!(!supports_range_omega("1e", "electron-repulsion"));
         assert!(!supports_range_omega("f12", "stg"));
         assert!(!supports_range_omega("ecp", "ecp"));
         assert!(!supports_range_omega("grids", "grids"));
+    }
+
+    /// Each headroom entry has one raise per shell of its family's tuple, and
+    /// the scalar rows raise nothing.
+    ///
+    /// The arity check is the one that matters: an entry one element short
+    /// would silently under-raise the LAST shell — the auxiliary one for
+    /// `3c2e`, which is exactly the position `ip2` differentiates.
+    #[test]
+    fn the_headroom_table_has_one_raise_per_tuple_position() {
+        for (family, arity) in [("2e", 4usize), ("3c2e", 3), ("2c2e", 2)] {
+            let scalar = derivative_headroom(family, "electron-repulsion").unwrap();
+            assert_eq!(scalar.len(), arity, "{family} scalar arity");
+            assert!(scalar.iter().all(|&r| r == 0), "{family} scalar raises nothing");
+
+            for op in ["ip1", "ip2", "ipip1", "ip1ip2"] {
+                let h = derivative_headroom(family, op).unwrap();
+                assert_eq!(h.len(), arity, "{family}:{op} arity");
+                assert!(h.iter().sum::<usize>() > 0, "{family}:{op} must raise something");
+            }
+        }
+        assert_eq!(derivative_headroom("2e", "unknown-row"), None);
+        assert_eq!(derivative_headroom("f12", "ip1"), None);
+    }
+
+    /// `rys_order` with the raises applied — the number the workspace is sized
+    /// from, and the whole reason the derivative rows were out of scope before.
+    #[test]
+    fn headroom_raises_the_rys_order() {
+        // int2e_ip1 over four p shells: (1+1 + 1 + 1 + 1)/2 + 1 = 3, where the
+        // scalar row is (1+1+1+1)/2 + 1 = 3 as well — same here, so pick a case
+        // where they differ.
+        assert_eq!(rys_order_for_angular_momenta([1, 1, 1, 1]), 3);
+        assert_eq!(rys_order_with_headroom([1, 1, 1, 1], &[2, 0, 0, 0]), 4);
+        // Short range then doubles the RAISED order, not the bare one.
+        assert_eq!(nrys_roots_for(3, Some(-0.8)), 6);
+        // int3c2e_ip2 on (s,s|d): (0 + 0 + 2+1)/2 + 1 = 2.
+        assert_eq!(rys_order_with_headroom([0, 0, 2], &[0, 0, 1]), 2);
+        // A short headroom raises nothing on the tail rather than panicking.
+        assert_eq!(rys_order_with_headroom([1, 1, 1, 1], &[1]), 3);
     }
 }

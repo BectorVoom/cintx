@@ -478,14 +478,20 @@ fn rys_roots_for_request(
     shells: &ValidatedShellTuple,
     range_omega: Option<f64>,
 ) -> usize {
-    if !range_omega::supports_range_omega(
+    let Some(headroom) = range_omega::derivative_headroom(
         descriptor.entry.canonical_family,
         descriptor.operator_name(),
-    ) {
+    ) else {
         return 0;
-    }
-    let rys_order = range_omega::rys_order_for_angular_momenta(
+    };
+    // The derivative rows raise `l_ceil` before `rys_order` is taken
+    // (`g2e.c:74-79`), so the estimate has to apply the same `ng[]` raises the
+    // launcher's `build_2e_shape(li + i_inc, ..)` does. `derivative_headroom`
+    // is the single table both read; a scalar row's entry is all zeros and
+    // reduces this to `(Σ l)/2 + 1` exactly as before.
+    let rys_order = range_omega::rys_order_with_headroom(
         shells.as_slice().iter().map(|s| s.ang_momentum as usize),
+        headroom,
     );
     range_omega::nrys_roots_for(rys_order, range_omega)
 }

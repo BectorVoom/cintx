@@ -39,7 +39,9 @@
 use crate::backend::ResolvedBackend;
 use crate::kernels::two_electron::fill_g_tensor_2e;
 use crate::kernels::two_electron::{BatchOptions, ResidentBasis};
-use crate::kernels::two_electron::{build_2e_shape, two_e_shape_as_f12};
+use crate::kernels::two_electron::{
+    build_2e_shape, build_2e_shape_omega, fill_g_tensor_2e_range, two_e_shape_as_f12,
+};
 // Phase 25 HESS-03: verbatim Hessian gout helpers (bra-i ∇² + ket-k ∇²).
 use crate::kernels::f12::{gout_ip1ip2_l, gout_ipip1, gout_ipip2_l, gout_ipvip1};
 use crate::math::pdata::PairData;
@@ -3988,6 +3990,141 @@ fn center_3c2e_ip2_kernel<F: Float + CubeElement>(
 ///     any rys dispatch.
 ///
 /// No `swap_ij` canonicalization: the derivative acts on the first (`i`) shell, and
+/// Host `cart_blocks` for the `int3c2e_ip1` / `int3c2e_ip2` gradients — the arm
+/// range separation routes to.
+///
+/// The device kernels (`center_3c2e_{ip1,ip2}_kernel`) select their Rys roots
+/// from a comptime `nroots` at a single argument; short range needs two
+/// evaluations plus a per-root rescaling, and at `rys_order = 3` its doubled
+/// `nroots = 6` is above the base device ceiling anyway. So a set ω routes here
+/// instead, exactly as the SCALAR `int3c2e` path already does
+/// (`host_3c2e_cart_blocks`) — explicitly, not by falling off the ceiling.
+///
+/// Produces the identical layout the device arm does, because the staging tail
+/// below is shared: `cart_blocks[((ci*ncj + cj)*nck + ck) * 3*block_len +
+/// comp*block_len + n]`, with `n` walking the i-fastest `[nck][ncj][nci]`
+/// Cartesian block. The per-triple numeric core is the one the device kernel
+/// transcribes — `fill_g_tensor_2e_range` → `gout_ip1`/`gout_ipn(L)` →
+/// component-leading transpose — so the two arms are the same arithmetic in the
+/// same order, and `ip1_device_tests`/`ip2_device_tests` gate that at ω = 0.
+///
+/// `shape` must already carry BOTH the derivative raise and the short-range
+/// root doubling (`build_2e_shape_omega(li+1, lj, 0, lk, range_omega)` for
+/// `Ip1`, `(li, lj, 0, lk+1, ..)` for `Ip2`).
+#[allow(clippy::too_many_arguments)]
+fn host_3c2e_deriv_cart_blocks(
+    family: ThreeC2eDerivFamily,
+    shape: crate::kernels::two_electron::TwoEShape,
+    shell_i: &cintx_core::Shell,
+    shell_j: &cintx_core::Shell,
+    shell_k: &cintx_core::Shell,
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    common_factor: f64,
+    range_omega: Option<f64>,
+) -> Result<Vec<f64>, cintxRsError> {
+    let f12_shape = two_e_shape_as_f12(&shape);
+
+    let block_len = ncart(li) * ncart(lj) * ncart(lk);
+    let total_len = 3 * block_len;
+
+    let n_prim_i = shell_i.nprim as usize;
+    let n_prim_j = shell_j.nprim as usize;
+    let n_prim_k = shell_k.nprim as usize;
+    let n_ctr_i = shell_i.nctr as usize;
+    let n_ctr_j = shell_j.nctr as usize;
+    let n_ctr_k = shell_k.nctr as usize;
+
+    let mut cart_blocks = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * total_len];
+
+    for pi in 0..n_prim_i {
+        let ai = shell_i.exponents[pi];
+        for pj in 0..n_prim_j {
+            let aj = shell_j.exponents[pj];
+            let pdata_ij =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            for pk in 0..n_prim_k {
+                let ak = shell_k.exponents[pk];
+                // The 2e `lk` slot is a phantom s on the aux centre, so the ket
+                // Gaussian product is `(0, ak)` on `(rk, rk)` — `fac = 1`, but it
+                // is computed rather than assumed so this reads like the hess arm.
+                let pdata_kl =
+                    compute_pdata_host(0.0, ak, rk[0], rk[1], rk[2], rk[0], rk[1], rk[2], 1.0, 1.0);
+                let fac_env = common_factor * pdata_ij.fac * pdata_kl.fac;
+
+                let Some(g) = fill_g_tensor_2e_range(
+                    ai,
+                    aj,
+                    0.0,
+                    ak,
+                    &ri,
+                    &rj,
+                    &rk,
+                    &rk,
+                    shape,
+                    fac_env,
+                    range_omega,
+                )?
+                else {
+                    // Short range past EXPCUTOFF_SR: this primitive triple
+                    // contributes nothing (g2e.c:4460). Not zeros — nothing.
+                    continue;
+                };
+
+                // gout is called at BASE (li, lj, lk); the G-tensor carries the
+                // raise. Returns interleaved `gout[n*3 + comp]`.
+                let gout = match family {
+                    ThreeC2eDerivFamily::Ip1 => crate::kernels::f12::gout_ip1(
+                        &g,
+                        &f12_shape,
+                        li as usize,
+                        lj as usize,
+                        0,
+                        lk as usize,
+                        ai,
+                    ),
+                    ThreeC2eDerivFamily::Ip2 => crate::kernels::f12::gout_ipn(
+                        &g,
+                        &f12_shape,
+                        li as usize,
+                        lj as usize,
+                        0,
+                        lk as usize,
+                        crate::kernels::f12::Nabla1Center::L,
+                        ak,
+                    ),
+                };
+
+                // `Shell::coefficients` is PRIMITIVE-major (`coeff[p*nctr + c]`,
+                // WR-03) — the same layout the device kernel reads.
+                for ci in 0..n_ctr_i {
+                    let ci_coeff = shell_i.coefficients[pi * n_ctr_i + ci];
+                    for cj in 0..n_ctr_j {
+                        let cj_coeff = shell_j.coefficients[pj * n_ctr_j + cj];
+                        for ck in 0..n_ctr_k {
+                            let weight =
+                                ci_coeff * cj_coeff * shell_k.coefficients[pk * n_ctr_k + ck];
+                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * total_len;
+                            for n in 0..block_len {
+                                for comp in 0..3usize {
+                                    cart_blocks[base + comp * block_len + n] +=
+                                        weight * gout[n * 3 + comp];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cart_blocks)
+}
+
 /// the output keeps the caller's `(i, j, k)` shell order.
 #[allow(clippy::too_many_arguments)]
 fn launch_center_3c2e_ip1<F: CintFloat>(
@@ -4007,11 +4144,24 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
 
     // 3c2e kl mapping into the 2e shape (Pitfall-4): real k → 2e `ll` slot, phantom
     // 2e `lk` slot = 0; bra `i` raised to `li+1` so `nabla1i_2e` can read index li+1.
-    let grad_shape = build_2e_shape(li as usize + 1, lj as usize, 0, lk as usize);
+    // D-PBC-24 P2-1: ω sizes the shape (short range doubles `nroots`, which sets
+    // the G-tensor strides) AND selects the arm. The device kernel has no omega
+    // branch, so a set ω routes to `host_3c2e_deriv_cart_blocks` — explicitly and
+    // logged, exactly as the scalar `int3c2e` path does.
+    let range_omega = plan.operator_env_params.range_omega;
+    let route_host = cintx_runtime::range_omega::is_range_separated(range_omega);
+    let grad_shape =
+        build_2e_shape_omega(li as usize + 1, lj as usize, 0, lk as usize, range_omega);
 
-    // R2 / T-21-06-04: the elevated li can push nroots past the rys_root1..5 ceiling.
-    // Reject fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
-    if grad_shape.nroots > 5 {
+    // The device arm selects `rys_root1..5` at a comptime `nroots`; the host
+    // Wheeler engine serves 1..=12. Both are fail-closed above their own ceiling
+    // — never a fall-through to a different quadrature.
+    let nroots_ceiling = if route_host {
+        HOST_RYS_NROOTS_CEILING
+    } else {
+        5
+    };
+    if grad_shape.nroots > nroots_ceiling {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
         });
@@ -4063,22 +4213,45 @@ fn launch_center_3c2e_ip1<F: CintFloat>(
     // per-tuple compatibility API and a wide batch execute the *same* code
     // (Task 35-D). The five backend arms this replaced were identical apart from
     // their runtime type.
-    let cart_blocks: Vec<f64> = run_3c2e_deriv_single(
-        backend,
-        ThreeC2eDerivFamily::Ip1,
-        li as u32,
-        lj as u32,
-        lk as u32,
-        &grad_shape,
-        common_factor,
-        ri,
-        rj,
-        rk,
-        [n_prim_i as u32, n_prim_j as u32, n_prim_k as u32],
-        [n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32],
-        [&exps_i, &exps_j, &exps_k],
-        [&coeff_i, &coeff_j, &coeff_k],
-    );
+    let cart_blocks: Vec<f64> = if route_host {
+        tracing::debug!(
+            omega = range_omega.unwrap_or(0.0),
+            nroots = grad_shape.nroots,
+            "range_omega:3c2e_ip1: routing to the host Rys engine (no device omega arm)"
+        );
+        host_3c2e_deriv_cart_blocks(
+            ThreeC2eDerivFamily::Ip1,
+            grad_shape,
+            shell_i,
+            shell_j,
+            shell_k,
+            li,
+            lj,
+            lk,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            range_omega,
+        )?
+    } else {
+        run_3c2e_deriv_single(
+            backend,
+            ThreeC2eDerivFamily::Ip1,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            &grad_shape,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            [n_prim_i as u32, n_prim_j as u32, n_prim_k as u32],
+            [n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32],
+            [&exps_i, &exps_j, &exps_k],
+            [&coeff_i, &coeff_j, &coeff_k],
+        )
+    };
 
     // Write component-leading `[3, nk, nj, ni]` F-order to staging. Per component,
     // the per-triple block is the i-fastest `[nk][nj][ni]` Cartesian tensor — run
@@ -4240,11 +4413,24 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
     // 3c2e kl mapping into the 2e shape (Pitfall 2): real k → 2e `ll` slot, phantom
     // 2e `lk` slot = 0. For ip2 the bra `i` is NOT raised; the real aux k (`ll` slot)
     // is raised to `lk+1` so `nabla1l_2e` can read index lk+1.
-    let grad_shape = build_2e_shape(li as usize, lj as usize, 0, lk as usize + 1);
+    // D-PBC-24 P2-1: ω sizes the shape (short range doubles `nroots`, which sets
+    // the G-tensor strides) AND selects the arm. The device kernel has no omega
+    // branch, so a set ω routes to `host_3c2e_deriv_cart_blocks` — explicitly and
+    // logged, exactly as the scalar `int3c2e` path does.
+    let range_omega = plan.operator_env_params.range_omega;
+    let route_host = cintx_runtime::range_omega::is_range_separated(range_omega);
+    let grad_shape =
+        build_2e_shape_omega(li as usize, lj as usize, 0, lk as usize + 1, range_omega);
 
-    // D-13: the elevated ll can push nroots past the rys_root1..5 ceiling. Reject
-    // fail-closed BEFORE any rys_roots_host call (which would otherwise panic).
-    if grad_shape.nroots > 5 {
+    // The device arm selects `rys_root1..5` at a comptime `nroots`; the host
+    // Wheeler engine serves 1..=12. Both are fail-closed above their own ceiling
+    // — never a fall-through to a different quadrature.
+    let nroots_ceiling = if route_host {
+        HOST_RYS_NROOTS_CEILING
+    } else {
+        5
+    };
+    if grad_shape.nroots > nroots_ceiling {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{}", grad_shape.nroots),
         });
@@ -4295,22 +4481,45 @@ fn launch_center_3c2e_ip2<F: CintFloat>(
     // per-tuple compatibility API and a wide batch execute the *same* code
     // (Task 35-D). The five backend arms this replaced were identical apart from
     // their runtime type.
-    let cart_blocks: Vec<f64> = run_3c2e_deriv_single(
-        backend,
-        ThreeC2eDerivFamily::Ip2,
-        li as u32,
-        lj as u32,
-        lk as u32,
-        &grad_shape,
-        common_factor,
-        ri,
-        rj,
-        rk,
-        [n_prim_i as u32, n_prim_j as u32, n_prim_k as u32],
-        [n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32],
-        [&exps_i, &exps_j, &exps_k],
-        [&coeff_i, &coeff_j, &coeff_k],
-    );
+    let cart_blocks: Vec<f64> = if route_host {
+        tracing::debug!(
+            omega = range_omega.unwrap_or(0.0),
+            nroots = grad_shape.nroots,
+            "range_omega:3c2e_ip2: routing to the host Rys engine (no device omega arm)"
+        );
+        host_3c2e_deriv_cart_blocks(
+            ThreeC2eDerivFamily::Ip2,
+            grad_shape,
+            shell_i,
+            shell_j,
+            shell_k,
+            li,
+            lj,
+            lk,
+            ri,
+            rj,
+            rk,
+            common_factor,
+            range_omega,
+        )?
+    } else {
+        run_3c2e_deriv_single(
+            backend,
+            ThreeC2eDerivFamily::Ip2,
+            li as u32,
+            lj as u32,
+            lk as u32,
+            &grad_shape,
+            common_factor,
+            ri,
+            rj,
+            rk,
+            [n_prim_i as u32, n_prim_j as u32, n_prim_k as u32],
+            [n_ctr_i as u32, n_ctr_j as u32, n_ctr_k as u32],
+            [&exps_i, &exps_j, &exps_k],
+            [&coeff_i, &coeff_j, &coeff_k],
+        )
+    };
 
     // Write component-leading `[3, nk, nj, ni]` F-order to staging. Per component,
     // the per-triple block is the i-fastest `[nk][nj][ni]` Cartesian tensor — run
@@ -4478,11 +4687,32 @@ fn launch_center_3c2e_hess<F: CintFloat>(
 
     // ipip1: bra i raised +2; real aux k (ll slot) at base lk.
     // ipip2: bra i at base; real aux k (ll slot) raised +2.
+    // D-PBC-24 P2-1: ω sizes the shape — short range doubles `nroots`, which sets
+    // the G-tensor strides. These raises mirror
+    // `cintx_runtime::range_omega::derivative_headroom("3c2e", ..)`, which is what
+    // the planner sizes the workspace from; the two must not drift.
+    let range_omega = plan.operator_env_params.range_omega;
     let hess_shape = match kind {
-        HessKind::Ipip1 => build_2e_shape(li as usize + 2, lj as usize, 0, lk as usize),
-        HessKind::Ipip2 => build_2e_shape(li as usize, lj as usize, 0, lk as usize + 2),
-        HessKind::Ipvip1 => build_2e_shape(li as usize + 1, lj as usize + 1, 0, lk as usize),
-        HessKind::Ip1ip2 => build_2e_shape(li as usize + 1, lj as usize, 0, lk as usize + 1),
+        HessKind::Ipip1 => {
+            build_2e_shape_omega(li as usize + 2, lj as usize, 0, lk as usize, range_omega)
+        }
+        HessKind::Ipip2 => {
+            build_2e_shape_omega(li as usize, lj as usize, 0, lk as usize + 2, range_omega)
+        }
+        HessKind::Ipvip1 => build_2e_shape_omega(
+            li as usize + 1,
+            lj as usize + 1,
+            0,
+            lk as usize,
+            range_omega,
+        ),
+        HessKind::Ip1ip2 => build_2e_shape_omega(
+            li as usize + 1,
+            lj as usize,
+            0,
+            lk as usize + 1,
+            range_omega,
+        ),
     };
 
     if hess_shape.nroots > HOST_RYS_NROOTS_CEILING {
@@ -4552,7 +4782,7 @@ fn launch_center_3c2e_hess<F: CintFloat>(
                 // 2e G-tensor with the real aux k in the `ll` slot (al = ak) and a
                 // phantom s in the `lk` slot (ak_2e = 0). Mirrors the 3c2e ip1/ip2
                 // host bridge (host_ip1_cart_blocks in the test module).
-                let g = fill_g_tensor_2e(
+                let Some(g) = fill_g_tensor_2e_range(
                     ai,
                     aj,
                     0.0,
@@ -4563,7 +4793,13 @@ fn launch_center_3c2e_hess<F: CintFloat>(
                     &rl,
                     hess_shape,
                     fac_env,
-                );
+                    range_omega,
+                )?
+                else {
+                    // Short range past EXPCUTOFF_SR: this primitive triple
+                    // contributes nothing (g2e.c:4460). Not zeros — nothing.
+                    continue;
+                };
 
                 // Verbatim Hessian gout: ipip1 nabla²_i (bra), ipip2 nabla²_l (ket aux).
                 let gout = match kind {
