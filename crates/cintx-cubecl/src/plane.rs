@@ -37,6 +37,97 @@ pub const DEFAULT_PLANE_DIM: u32 = 32;
 /// 32-wide warps (Nvidia), 64-wide wavefronts (AMD/Metal), and Vulkan/WebGPU subgroups.
 pub const STANDARD_PLANE_ALIGNED_CUBE_DIM: u32 = 256;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Hardware-Adaptive Launch Geometry
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The launch-relevant facts about a backend, read from its [`ComputeClient`].
+///
+/// Every launch decision in this crate — cube dimension, cube count, per-unit
+/// width — is a function of these five numbers and the work available. Reading
+/// them from the client rather than from the runtime *type* is what makes the
+/// geometry adapt: a backend is treated as CPU-like because it reports
+/// `plane_size_max == 1`, not because it happens to be `cubecl::cpu`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LaunchHardware {
+    /// Plane (warp / wavefront / subgroup) width, floored at 1.
+    pub plane_dim: u32,
+    /// Does this backend execute in hardware planes? `plane_dim > 1`.
+    ///
+    /// When false, a cube unit is an OS worker thread rather than a SIMD lane:
+    /// dispatch costs microseconds instead of nanoseconds, `sync_cube` is a
+    /// software barrier, and shared memory is ordinary cache. Cube width then
+    /// has to be bought with work, not spent for occupancy.
+    pub has_planes: bool,
+    /// Independent hardware execution contexts: CPU cores on a CPU backend, SMs
+    /// / CUs on a GPU one, falling back to host parallelism if the backend
+    /// reports neither.
+    pub parallel_units: u32,
+    /// Hardware ceiling on units in one cube.
+    pub max_units_per_cube: u32,
+    /// Hardware ceiling on cubes along the x axis of the dispatch grid.
+    pub max_cubes_x: u32,
+}
+
+/// Host parallelism, queried once, as the fallback when a backend reports
+/// neither a core count nor an SM count.
+fn host_parallelism() -> u32 {
+    static HW: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *HW.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(1)
+    })
+}
+
+/// Read the launch-relevant hardware facts off a client.
+///
+/// `client.properties()` is a borrow of a struct the runtime filled in at
+/// device creation, so this is field reads and no device round-trip; it is
+/// cheap enough to call once per dispatch.
+#[inline]
+pub fn launch_hardware<R: cubecl::Runtime>(client: &ComputeClient<R>) -> LaunchHardware {
+    let hardware = &client.properties().hardware;
+    let plane_dim = hardware.plane_size_max.max(1);
+    let parallel_units = hardware
+        .num_cpu_cores
+        .or(hardware.num_streaming_multiprocessors)
+        .map(|n| n.max(1))
+        .unwrap_or_else(host_parallelism);
+    LaunchHardware {
+        plane_dim,
+        has_planes: plane_dim > 1,
+        parallel_units,
+        max_units_per_cube: hardware.max_units_per_cube.max(1),
+        max_cubes_x: hardware.max_cube_count.0.max(1),
+    }
+}
+
+/// Does this backend execute in hardware planes (warps / wavefronts /
+/// subgroups)?
+///
+/// This is the branch every geometry helper below takes, and it replaces the
+/// runtime-type test [`runtime_is_cpu`] for that purpose: the property that
+/// decides launch shape is "are units SIMD lanes or OS threads", and
+/// `plane_size_max` answers exactly that for any backend, present or future.
+#[inline]
+pub fn has_planes<R: cubecl::Runtime>(client: &ComputeClient<R>) -> bool {
+    client.properties().hardware.plane_size_max > 1
+}
+
+/// Clamp a wanted cube count to what the backend's grid can actually dispatch.
+///
+/// Replaces the hardcoded 65535 that used to cap every family's cube count.
+/// 65535 is the WebGPU/Vulkan limit; CUDA and HIP allow `2^31 - 1` along x, so
+/// the constant was leaving parallelism unclaimed on exactly the backends that
+/// could use it. Callers bound `want_cubes` by their scratch budget first, so
+/// raising this ceiling cannot raise peak memory.
+#[inline]
+pub fn grid_cube_count<R: cubecl::Runtime>(client: &ComputeClient<R>, want_cubes: usize) -> u32 {
+    let max_cubes = launch_hardware(client).max_cubes_x;
+    (want_cubes.min(max_cubes as usize).max(1)) as u32
+}
+
 /// Return a standard plane-aligned 1D [`CubeDim`] of 256 threads.
 #[inline]
 pub fn standard_plane_cube_dim() -> CubeDim {
@@ -45,9 +136,11 @@ pub fn standard_plane_cube_dim() -> CubeDim {
 
 /// Is `R` the CubeCL **CPU** runtime?
 ///
-/// The CPU runtime's execution model is fundamentally unlike a GPU's, and the
-/// difference is not a tuning detail — it decides launch topology
-/// (see [`cooperative_cube_dim`]).
+/// This answers a question about the runtime *type*. It is **not** what decides
+/// launch topology any more — [`has_planes`] is, because the property that
+/// matters is whether a unit is a SIMD lane or an OS thread, and a backend
+/// answers that itself through `plane_size_max`. Keep this for the rare case
+/// that genuinely needs to know which runtime it is holding.
 #[inline]
 pub fn runtime_is_cpu<R: cubecl::Runtime>() -> bool {
     #[cfg(feature = "cpu")]
@@ -93,16 +186,33 @@ pub fn runtime_is_cpu<R: cubecl::Runtime>() -> bool {
 /// Kernels remain written cooperatively and stay correct at any cube
 /// dimension — `UNIT_POS == 0` guards and `idx % CUBE_DIM == UNIT_POS`
 /// partitioning both degenerate correctly at 1.
+///
+/// # Plane alignment (hardware-adaptive)
+///
+/// The GPU arm rounds the useful width **up to a whole multiple of the
+/// backend's plane size**, read from the client, rather than up to a power of
+/// two. A workgroup occupies whole planes whichever number it asks for, so a
+/// cube of 4 on a 32-wide warp does not cost less than a cube of 32 — it just
+/// idles 28 of the 32 lanes the hardware already allocated. Many 1e and 2e
+/// classes have contraction blocks in the single digits, so the power-of-two
+/// rounding was leaving most of every warp unused; plane alignment claims those
+/// lanes for free. It also fixes the 64-wide wavefront case, where a
+/// power-of-two dim of 32 is half a wavefront.
 #[inline]
-pub fn cooperative_cube_dim<R: cubecl::Runtime>(work_items: u32) -> CubeDim {
-    if runtime_is_cpu::<R>() {
+pub fn cooperative_cube_dim<R: cubecl::Runtime>(
+    client: &ComputeClient<R>,
+    work_items: u32,
+) -> CubeDim {
+    let hw = launch_hardware(client);
+    if !hw.has_planes {
         return CubeDim::new_1d(1);
     }
-    let mut dim = 1u32;
-    while dim < work_items && dim < STANDARD_PLANE_ALIGNED_CUBE_DIM {
-        dim *= 2;
-    }
-    CubeDim::new_1d(dim.min(STANDARD_PLANE_ALIGNED_CUBE_DIM))
+    let ceiling = STANDARD_PLANE_ALIGNED_CUBE_DIM.min(hw.max_units_per_cube);
+    let aligned = plane_aligned_cube_dim(work_items.max(1), hw.plane_dim).num_elems();
+    // The alignment ceiling is itself rounded down to a whole plane so the
+    // clamp can never hand back a partial plane.
+    let ceiling = (ceiling / hw.plane_dim).max(1) * hw.plane_dim;
+    CubeDim::new_1d(aligned.min(ceiling))
 }
 
 /// Cube dimension for a cooperative kernel whose useful parallel width is not
@@ -119,11 +229,14 @@ pub fn cooperative_cube_dim<R: cubecl::Runtime>(work_items: u32) -> CubeDim {
 /// stride loops. All three cover the full index space at any cube dimension,
 /// so a single unit changes cost, never results.
 #[inline]
-pub fn backend_plane_cube_dim<R: cubecl::Runtime>() -> CubeDim {
-    if runtime_is_cpu::<R>() {
+pub fn backend_plane_cube_dim<R: cubecl::Runtime>(client: &ComputeClient<R>) -> CubeDim {
+    let hw = launch_hardware(client);
+    if !hw.has_planes {
         return CubeDim::new_1d(1);
     }
-    standard_plane_cube_dim()
+    // 256 is only the *request*; the returned dim is a whole number of this
+    // backend's planes and never exceeds its per-cube unit ceiling.
+    cooperative_cube_dim(client, STANDARD_PLANE_ALIGNED_CUBE_DIM)
 }
 
 /// `min_items_per_unit` for the shell-pair and shell-triple families
@@ -152,15 +265,22 @@ pub const MIN_ITEMS_PER_UNIT_PAIR: usize = 4;
 /// 2c2e pair runs `nprim^2` through a much smaller one. Pass 1 for a family
 /// whose single item already dwarfs the dispatch, and a larger value for one
 /// where it does not.
-pub fn per_unit_width(n_items: usize, min_items_per_unit: usize, by_memory: usize) -> u32 {
-    static HW: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    let hw = *HW.get_or_init(|| {
-        std::thread::available_parallelism()
-            .map(std::num::NonZeroUsize::get)
-            .unwrap_or(1)
-    });
+/// The parallel width comes from the **client**
+/// (`hardware.num_cpu_cores`), not from `available_parallelism`. The CubeCL CPU
+/// runtime sizes its worker pool from its own core count, so asking it for more
+/// units than that oversubscribes the pool — and a runtime configured with a
+/// smaller pool than the host has (a shared CI runner, a pinned device) is
+/// invisible to a host-side query.
+pub fn per_unit_width<R: cubecl::Runtime>(
+    client: &ComputeClient<R>,
+    n_items: usize,
+    min_items_per_unit: usize,
+    by_memory: usize,
+) -> u32 {
+    let hw = launch_hardware(client);
+    let by_hardware = (hw.parallel_units as usize).min(hw.max_units_per_cube as usize);
     let by_work = (n_items / min_items_per_unit.max(1)).max(1);
-    hw.min(by_work).min(by_memory).max(1) as u32
+    by_hardware.min(by_work).min(by_memory).max(1) as u32
 }
 
 /// Return a standard single-cube [`CubeCount`] dispatch (`1, 1, 1`).
@@ -319,6 +439,96 @@ pub fn occupancy_launch_geometry(
     let num_cubes = (total_items as u32)
         .div_ceil(units_per_cube)
         .clamp(1, max_cubes.max(1));
+    (CubeCount::Static(num_cubes, 1, 1), cube_dim)
+}
+
+/// Scalar operations one unit should be worth before another CPU unit is
+/// allocated.
+///
+/// A CubeCL CPU unit is an OS thread dispatched through a task queue, costing
+/// on the order of a microsecond to wake — a few thousand cycles, so tens of
+/// thousands of scalar operations. Below this threshold a second thread is a
+/// net loss, and the work belongs on the one that is already awake.
+pub const WORK_PER_CPU_UNIT: usize = 32 * 1024;
+
+/// Ceiling on CPU cube units, so an anomalous virtual-core count cannot turn
+/// one launch into hundreds of thread wakeups.
+pub const CPU_CUBE_DIM_MAX: u32 = 64;
+
+/// Hardware-adaptive launch geometry for a **grid-stride** kernel: one whose
+/// body is `let mut i = ABSOLUTE_POS; while i < n { ...; i += CUBE_COUNT_X *
+/// CUBE_DIM_X }` and is therefore correct at any geometry, so the geometry is
+/// free to be chosen purely for speed.
+///
+/// `work_per_item` is the caller's estimate of the scalar operations one item
+/// costs; it only has to be right to an order of magnitude, and it is what lets
+/// the CPU arm tell a batch of cheap items from a batch of expensive ones.
+///
+/// # Why the two arms are shaped so differently
+///
+/// - **CPU-like backends** (`plane_size_max == 1`): the parallel axis is
+///   `CUBE_DIM_X` — a unit is an OS thread — while `cube_count` lowers to a
+///   sequential `scf.for` *inside* each unit. So the units are sized to the
+///   work (one thread per [`WORK_PER_CPU_UNIT`] scalar ops, capped by the
+///   backend's core count, the item count and [`CPU_CUBE_DIM_MAX`]) and the
+///   grid stays at one cube; the kernel's own stride loop covers the tail.
+///
+///   Note this is the opposite of the rule for *cooperative* kernels
+///   ([`cooperative_cube_dim`], which returns 1 unit on CPU). The difference is
+///   `sync_cube`: a cooperative kernel barriers inside its inner loop, where a
+///   wide CPU cube costs a scheduler round per barrier, whereas a grid-stride
+///   kernel never barriers and a wide cube is pure parallelism.
+///
+/// - **GPU backends**: the grid is the parallel axis. The cube is a whole
+///   number of *this* backend's planes, and the grid is sized to the item count
+///   but capped at a few resident cubes per streaming multiprocessor, read from
+///   the client — enough to hide memory latency behind other cubes without a
+///   grid so wide that its tail dominates.
+///
+/// `CINTX_GRID_STRIDE_CUBE_DIM` pins the cube dimension for A/B measurement, in
+/// the same spirit as `CINTX_2E_CUBE_DIM`, and is not part of the public
+/// contract. The grid is still sized to cover the items at the pinned width, so
+/// a pinned run stays correct.
+#[inline]
+pub fn adaptive_grid_stride_geometry<R: cubecl::Runtime>(
+    client: &ComputeClient<R>,
+    total_items: usize,
+    work_per_item: usize,
+) -> (CubeCount, CubeDim) {
+    /// Resident cubes per SM to aim for.
+    const CUBES_PER_SM: u32 = 4;
+
+    static PINNED: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    let pinned = *PINNED.get_or_init(|| {
+        std::env::var("CINTX_GRID_STRIDE_CUBE_DIM")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|value| *value > 0)
+    });
+    if let Some(dim) = pinned {
+        let cubes = (total_items as u32).div_ceil(dim).max(1);
+        return (CubeCount::Static(cubes, 1, 1), CubeDim::new_1d(dim));
+    }
+
+    let hw = launch_hardware(client);
+    if !hw.has_planes {
+        let total_work = total_items.saturating_mul(work_per_item.max(1));
+        let by_work = (total_work / WORK_PER_CPU_UNIT).max(1);
+        let units = by_work
+            .min(hw.parallel_units as usize)
+            .min(total_items.max(1))
+            .max(1) as u32;
+        let units = units.min(CPU_CUBE_DIM_MAX).min(hw.max_units_per_cube);
+        return (CubeCount::Static(1, 1, 1), CubeDim::new_1d(units));
+    }
+    let cube_dim = backend_plane_cube_dim(client);
+    let max_cubes = hw
+        .parallel_units
+        .saturating_mul(CUBES_PER_SM)
+        .clamp(1, hw.max_cubes_x);
+    let num_cubes = (total_items as u32)
+        .div_ceil(cube_dim.num_elems())
+        .clamp(1, max_cubes);
     (CubeCount::Static(num_cubes, 1, 1), cube_dim)
 }
 
@@ -650,24 +860,153 @@ mod tests {
         }
     }
 
+    /// A CPU client for the hardware-adaptive tests below.
+    #[cfg(feature = "cpu")]
+    fn cpu_client() -> ComputeClient<cubecl::cpu::CpuRuntime> {
+        use cubecl::Runtime;
+        cubecl::cpu::CpuRuntime::client(&cubecl::cpu::CpuDevice::default())
+    }
+
     /// Task 34-A0: the CPU runtime maps one cube unit to one OS thread and
     /// `sync_cube` to a global spin barrier, so a cooperative launch there must
     /// be a single unit. GPU runtimes keep the plane-aligned cube.
+    ///
+    /// The decision now comes from the client's reported `plane_size_max`, so
+    /// this also pins that the CPU backend is recognised through its properties
+    /// and not through its runtime type.
     #[cfg(feature = "cpu")]
     #[test]
     fn cpu_runtime_gets_a_single_unit_cube() {
+        let client = cpu_client();
         assert!(runtime_is_cpu::<cubecl::cpu::CpuRuntime>());
+        assert!(
+            !has_planes(&client),
+            "the cpu backend must report plane_size_max == 1"
+        );
         for work in [1u32, 81, 256, 1296] {
             assert_eq!(
-                cooperative_cube_dim::<cubecl::cpu::CpuRuntime>(work).num_elems(),
+                cooperative_cube_dim(&client, work).num_elems(),
                 1,
                 "cooperative_cube_dim must be 1 on the cpu runtime (work={work})"
             );
         }
+        assert_eq!(backend_plane_cube_dim(&client).num_elems(), 1);
+    }
+
+    /// `launch_hardware` must report the CPU backend's own core count, not the
+    /// host's, and must never hand back a zero in any field a divisor uses.
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn launch_hardware_reads_the_backend_not_the_host() {
+        let client = cpu_client();
+        let hw = launch_hardware(&client);
+        assert_eq!(hw.plane_dim, 1);
+        assert!(!hw.has_planes);
+        assert!(hw.parallel_units >= 1);
+        assert!(hw.max_units_per_cube >= 1);
+        assert!(hw.max_cubes_x >= 1);
         assert_eq!(
-            backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>().num_elems(),
-            1
+            hw.parallel_units,
+            client
+                .properties()
+                .hardware
+                .num_cpu_cores
+                .expect("cpu backend reports a core count")
         );
+    }
+
+    /// The per-unit width is bounded by work, by the scratch budget, and by the
+    /// backend's parallelism — whichever binds first.
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn per_unit_width_takes_the_tightest_bound() {
+        let client = cpu_client();
+        let cores = launch_hardware(&client).parallel_units as usize;
+
+        // Work-bound: 8 items at 4 items per unit is 2 units, whatever the host has.
+        assert_eq!(per_unit_width(&client, 8, 4, usize::MAX), 2);
+        // Memory-bound.
+        assert_eq!(per_unit_width(&client, 1_000_000, 1, 3), 3);
+        // Hardware-bound, and never zero.
+        assert_eq!(
+            per_unit_width(&client, usize::MAX, 1, usize::MAX) as usize,
+            cores
+        );
+        assert_eq!(per_unit_width(&client, 0, 4, usize::MAX), 1);
+    }
+
+    /// The grid ceiling comes from `max_cube_count.x`, so it can exceed the
+    /// 65535 literal it replaced on backends that allow more.
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn grid_cube_count_clamps_to_hardware() {
+        let client = cpu_client();
+        let max = launch_hardware(&client).max_cubes_x as usize;
+        assert_eq!(grid_cube_count(&client, 0), 1);
+        assert_eq!(grid_cube_count(&client, 7), 7);
+        assert_eq!(grid_cube_count(&client, usize::MAX) as usize, max);
+        assert!(
+            max > 65_535,
+            "the cpu backend allows more cubes than the old literal"
+        );
+    }
+
+    /// On a plane-less backend the grid-stride parallel axis is the cube
+    /// dimension (one unit is one OS thread) and `cube_count` is a sequential
+    /// loop inside each unit — so the units carry the work and the grid stays
+    /// at one cube.
+    #[cfg(feature = "cpu")]
+    #[test]
+    fn grid_stride_geometry_puts_cpu_parallelism_in_the_cube() {
+        let client = cpu_client();
+        let cores = launch_hardware(&client).parallel_units;
+        let ceiling = cores.min(CPU_CUBE_DIM_MAX);
+
+        // Plenty of work: every unit the backend reports, up to the cap.
+        let (count, dim) = adaptive_grid_stride_geometry(&client, 1_000_000, 50);
+        assert!(
+            matches!(count, CubeCount::Static(1, 1, 1)),
+            "the cpu grid must stay at one cube; got {count:?}"
+        );
+        assert_eq!(dim.num_elems(), ceiling);
+
+        // A batch too small to pay for a second thread wakeup stays on one.
+        let (_, tiny) = adaptive_grid_stride_geometry(&client, 4, 50);
+        assert_eq!(
+            tiny.num_elems(),
+            1,
+            "200 scalar ops must not buy a second OS thread"
+        );
+
+        // Work-proportional in between: 32K ops buys exactly one unit.
+        let (_, two) = adaptive_grid_stride_geometry(&client, 2 * WORK_PER_CPU_UNIT, 1);
+        assert_eq!(two.num_elems(), 2u32.min(ceiling));
+
+        // Never more units than there are items to take.
+        let (_, capped) = adaptive_grid_stride_geometry(&client, 3, usize::MAX / 4);
+        assert_eq!(capped.num_elems(), 3u32.min(ceiling));
+
+        // Empty batches still produce a launchable geometry.
+        let (_, empty) = adaptive_grid_stride_geometry(&client, 0, 50);
+        assert_eq!(empty.num_elems(), 1);
+    }
+
+    /// Plane alignment is the point of the GPU arm: whatever the useful width,
+    /// the cube is a whole number of planes and within the per-cube ceiling.
+    #[test]
+    fn plane_alignment_is_exact_for_every_useful_width() {
+        for plane_dim in [32u32, 64] {
+            for requested in [1u32, 3, 7, 31, 33, 65, 200, 257, 4096] {
+                let dim = plane_aligned_cube_dim(requested, plane_dim);
+                assert_eq!(
+                    dim.num_elems() % plane_dim,
+                    0,
+                    "dim {} is not a whole number of {plane_dim}-wide planes",
+                    dim.num_elems()
+                );
+                assert!(dim.num_elems() >= requested.min(plane_dim));
+            }
+        }
     }
 
     #[test]

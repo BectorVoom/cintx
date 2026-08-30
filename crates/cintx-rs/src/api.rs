@@ -8,8 +8,8 @@ use cintx_ops::resolver::Resolver;
 use cintx_runtime::{
     BackendExecutor, BatchExecutionPlan, BatchItemRequest, ExecutionIo, ExecutionOptions,
     ExecutionPlan, ExecutionStats, KernelClass, ReusableWorkspaceAllocator, WorkspaceAllocator,
-    WorkspaceQuery as RuntimeWorkspaceQuery, query_workspace as runtime_query_workspace,
-    schedule_chunks,
+    WorkspaceQuery as RuntimeWorkspaceQuery, is_range_separated,
+    query_workspace as runtime_query_workspace, schedule_chunks,
 };
 use std::mem::size_of;
 use std::sync::{Arc, Mutex};
@@ -787,7 +787,8 @@ fn ss_batch_inputs(
 ///
 /// The predicate is intentionally narrower than the 1e pilot: all four
 /// shells must be uncontracted s shells with exactly one primitive.  Any
-/// other two-electron input keeps the scalar compatibility execution path.
+/// other two-electron input keeps the scalar compatibility execution path,
+/// as does any request carrying a non-zero `range_omega` (D-PBC-24).
 fn eri_ssss_batch_inputs(
     requests: &[SessionRequest<'_>],
 ) -> Option<(cintx_runtime::BackendIntent, Vec<EriSsssInput>)> {
@@ -804,6 +805,13 @@ fn eri_ssss_batch_inputs(
             || request.representation != Representation::Cart
             || request.options.precision != PrecisionKind::F64
             || request.options.backend_intent != intent
+            // D-PBC-24: the (s,s|s,s) pilot kernel evaluates full-range Coulomb
+            // unconditionally. `int2e_cart` is one of the three operators that
+            // DO accept `range_omega`, so a set omega must decline the pilot and
+            // fall through to the scalar route, which honours it. Returning
+            // `None` here is a fallback, not a refusal: the batch still
+            // evaluates, on the path that reads omega.
+            || is_range_separated(request.options.range_omega)
         {
             return None;
         }
@@ -1090,6 +1098,20 @@ impl<'basis> SessionQuery<'basis> {
         if let Some(origin) = self.request.options().common_orig {
             plan.operator_env_params.common_orig = Some(origin);
         }
+        // D-PBC-24: propagate range_omega (env[8]) on the safe-API path, and
+        // validate it here so `.with_range_omega(..)` on an operator that has no
+        // 1/r₁₂ kernel is a typed refusal rather than a silent full-range
+        // evaluation. `query_workspace` already applied the same gate before
+        // sizing; this keeps the contract symmetric on both API entry points.
+        if let Some(omega) = self.request.options().range_omega {
+            plan.operator_env_params.range_omega = Some(omega);
+        }
+        cintx_runtime::validator::validate_range_omega_env_params(
+            plan.descriptor.entry.canonical_family,
+            plan.descriptor.operator_name(),
+            &plan.operator_env_params,
+        )
+        .map_err(FacadeError::from)?;
         // Phase 22 FND-01 (gap closure): finiteness-validate the gauge origin on the safe-API
         // path too. Mirrors the raw-path guard in cintx-compat raw.rs so the builder doc
         // contract ("NaN/inf rejected by validate_common_orig_env_params") holds on BOTH paths
@@ -1384,6 +1406,15 @@ pub struct WorkspacePlan {
     pub chunks: Vec<WorkspaceChunk>,
     pub memory_limit_bytes: Option<usize>,
     pub chunk_size_override: Option<usize>,
+    /// `nrys_roots` this workspace was sized for, or `0` for operators with no
+    /// Rys-quadrature component (D-PBC-24).
+    ///
+    /// Short range doubles the root count for `rys_order <= 3`
+    /// (libcint `g2e.c:76-79`) and `nrys_roots` sets the G-tensor strides, so a
+    /// `.with_range_omega(ω < 0)` request genuinely asks for a bigger workspace.
+    /// Surfaced here so a caller can see that rather than infer it from
+    /// `required_bytes`.
+    pub rys_roots: usize,
     pub execution_token: WorkspaceExecutionToken,
 }
 
@@ -1407,6 +1438,7 @@ impl WorkspacePlan {
                 .collect(),
             memory_limit_bytes: runtime.memory_limit_bytes,
             chunk_size_override: runtime.chunk_size_override,
+            rys_roots: runtime.rys_roots,
             execution_token: WorkspaceExecutionToken::from_request(request, runtime),
         }
     }
@@ -2871,26 +2903,7 @@ impl<'basis> QuartetBatchRequest<'basis> {
                 ),
             });
         }
-        if self.representation != Representation::Spheric {
-            return Err(FacadeError::UnsupportedApi {
-                requested: format!(
-                    "quartet-batch:representation:{} (only Spheric is batched)",
-                    self.representation
-                ),
-            });
-        }
-        if let Some(aosym) = self.options.aosym
-            && aosym != cintx_core::AoSymmetry::S1
-        {
-            return Err(FacadeError::UnsupportedAoSymmetry {
-                requested: aosym.to_string(),
-            });
-        }
-        if self.options.precision != PrecisionKind::F64 {
-            return Err(FacadeError::UnsupportedApi {
-                requested: "quartet-batch:precision (only F64 is batched)".to_owned(),
-            });
-        }
+        check_batch_request_scope(self.representation, &self.options, "quartet-batch")?;
 
         let shells = batch_shells_from_basis(self.basis)?;
         for quartet in &self.quartets {
@@ -3087,6 +3100,20 @@ fn check_batch_request_scope(
     if options.precision != PrecisionKind::F64 {
         return Err(FacadeError::UnsupportedApi {
             requested: format!("{label}:precision (only F64 is batched)"),
+        });
+    }
+    // D-PBC-24: the batched device kernels evaluate the full-range Coulomb
+    // operator unconditionally -- none of them reads `range_omega`. Accepting a
+    // set omega here would return full-range integrals under a range-separated
+    // request: it runs, it converges, and it is silently a different method.
+    // Fail closed and name the route that does honour omega.
+    if is_range_separated(options.range_omega) {
+        return Err(FacadeError::UnsupportedApi {
+            requested: format!(
+                "{label}:range_omega={} (range separation is served only by the scalar \
+                 SessionRequest path; the batch kernels evaluate full-range Coulomb)",
+                options.range_omega.unwrap_or(0.0)
+            ),
         });
     }
     Ok(())

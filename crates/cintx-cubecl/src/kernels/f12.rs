@@ -5364,7 +5364,7 @@ fn run_f12_cart_contraction_device<R: Runtime>(
         f12_cart_contraction_kernel::launch_unchecked::<f64, R>(
             client,
             crate::plane::single_cube_count(),
-            crate::plane::backend_plane_cube_dim::<R>(),
+            crate::plane::backend_plane_cube_dim::<R>(client),
             ArrayArg::from_raw_parts(g_h, g.len()),
             ArrayArg::from_raw_parts(comps_i_h, comps_i.len()),
             ArrayArg::from_raw_parts(comps_j_h, comps_j.len()),
@@ -7301,7 +7301,7 @@ mod tests {
             f12_cart_contraction_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                 &client,
                 crate::plane::single_cube_count(),
-                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
+                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
                 unsafe { ArrayArg::from_raw_parts(g_h, g_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(comps_i_h, comps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(comps_j_h, comps_j.len()) },

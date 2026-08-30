@@ -1555,6 +1555,23 @@ pub fn vendor_CINTrys_roots(nroots: i32, x: f64) -> (Vec<f64>, Vec<f64>) {
     (u, w)
 }
 
+/// `CINTsr_rys_roots` — the LOWER-BOUNDED Rys quadrature (`rys_roots.c:145`).
+///
+/// D-PBC-24 stage 3. `lower = sqrt(theta)` is the short-range integration bound
+/// `CINTg0_2e` hands down (`g2e.c:4472`); `lower == 0` degenerates to the
+/// ordinary `CINTrys_roots` family. Returns `(roots, weights, error_code)`.
+///
+/// NOTE the vendored build has quadmath DISABLED, so the `CINTqrys_*` arms of
+/// the dispatch resolve to the `CINTlrys_*` long-double ones — which is exactly
+/// what the cintx double-double port models.
+pub fn vendor_CINTsr_rys_roots(nroots: i32, x: f64, lower: f64) -> (Vec<f64>, Vec<f64>, i32) {
+    let n = nroots.max(0) as usize;
+    let mut u = vec![0.0f64; n];
+    let mut w = vec![0.0f64; n];
+    let err = unsafe { ffi::CINTsr_rys_roots(nroots, x, lower, u.as_mut_ptr(), w.as_mut_ptr()) };
+    (u, w, err)
+}
+
 /// Evaluate int1e_iprinv_sph for a single shell pair using vendored libcint.
 ///
 /// `out` must be pre-allocated with 3 * ni * nj elements (3 gradient components).

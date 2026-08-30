@@ -1292,7 +1292,7 @@ fn run_1e_grad_bra_batches<R: Runtime>(
         // the contraction reads them at identical relative offsets.
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -1302,7 +1302,7 @@ fn run_1e_grad_bra_batches<R: Runtime>(
         let d2g0_h = client.empty(g_len * std::mem::size_of::<f64>());
         let d2g1_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -1919,7 +1919,7 @@ fn run_1e_grad_both_batches<R: Runtime>(
         // the contraction reads them at identical relative offsets.
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -1929,7 +1929,7 @@ fn run_1e_grad_both_batches<R: Runtime>(
         let g2_h = client.empty(g_len * std::mem::size_of::<f64>());
         let g3_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -2387,7 +2387,7 @@ fn run_1e_gradgrad_bra_ovlp_batches<R: Runtime>(
         // Four scratch slabs, all `3 * g_per_axis`, sharing a stride and a slot.
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -2397,7 +2397,7 @@ fn run_1e_gradgrad_bra_ovlp_batches<R: Runtime>(
         let g2_h = client.empty(g_len * std::mem::size_of::<f64>());
         let g3_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -2919,7 +2919,7 @@ fn run_1e_p4_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -2932,7 +2932,7 @@ fn run_1e_p4_batches<R: Runtime>(
         let t1_h = client.empty(g_len * std::mem::size_of::<f64>());
         let di2dj2_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -3605,7 +3605,7 @@ fn run_1e_irp_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -3619,7 +3619,7 @@ fn run_1e_irp_batches<R: Runtime>(
         let di2_h = slab();
         let di2rcj_h = slab();
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -4242,7 +4242,7 @@ fn run_1e_giao_ovlp_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -4258,7 +4258,7 @@ fn run_1e_giao_ovlp_batches<R: Runtime>(
         let t6_h = slab();
         let t7_h = slab();
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -5094,7 +5094,7 @@ fn run_1e_giao_nuc_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -5102,7 +5102,7 @@ fn run_1e_giao_nuc_batches<R: Runtime>(
         let drj_h = client.create_from_slice(f64::as_bytes(&pair_drj[index]));
         let gbuf_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -5650,7 +5650,7 @@ fn run_1e_grad_kin_both_batches<R: Runtime>(
         // slot: the contraction reads them at identical relative offsets.
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -5665,7 +5665,7 @@ fn run_1e_grad_kin_both_batches<R: Runtime>(
         let di2_h = slab(());
         let di3_h = slab(());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -6149,7 +6149,7 @@ fn run_1e_nuc_grad_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -6157,7 +6157,7 @@ fn run_1e_nuc_grad_batches<R: Runtime>(
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let g1_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -6997,14 +6997,14 @@ fn run_1e_rinv_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -7468,7 +7468,7 @@ fn run_1e_drinv_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -7477,7 +7477,7 @@ fn run_1e_drinv_batches<R: Runtime>(
         let g1_h = client.empty(g_len * std::mem::size_of::<f64>());
         let g2_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -7988,7 +7988,7 @@ fn run_1e_nuc_grad_both_batches<R: Runtime>(
         // Four scratch slabs, all `3 * g_per_axis`, sharing a stride and a slot.
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -7998,7 +7998,7 @@ fn run_1e_nuc_grad_both_batches<R: Runtime>(
         let g2_h = client.empty(g_len * std::mem::size_of::<f64>());
         let g3_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -8455,7 +8455,7 @@ fn run_1e_nuc_gradgrad_bra_batches<R: Runtime>(
         // Four scratch slabs, all `3 * g_per_axis`, sharing a stride and a slot.
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -8465,7 +8465,7 @@ fn run_1e_nuc_gradgrad_bra_batches<R: Runtime>(
         let g2_h = client.empty(g_len * std::mem::size_of::<f64>());
         let g3_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -9220,14 +9220,14 @@ fn run_1e_gradgrad_bra_kin_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -9429,7 +9429,7 @@ pub(crate) fn one_e_g_slab_stride(g_per_axis: usize) -> usize {
 /// `two_electron::two_e_per_unit`: on the CubeCL CPU runtime a unit is an OS
 /// thread and `cube_count` lowers to a sequential loop, so the cube is the only
 /// parallelism axis; on GPU backends the grid is.
-pub(crate) fn one_e_per_unit<R: Runtime>() -> bool {
+pub(crate) fn one_e_per_unit<R: Runtime>(client: &ComputeClient<R>) -> bool {
     use std::sync::OnceLock;
     static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
     let pinned = *OVERRIDE.get_or_init(|| {
@@ -9439,12 +9439,13 @@ pub(crate) fn one_e_per_unit<R: Runtime>() -> bool {
     });
     match pinned {
         Some(value) => value != 0,
-        None => crate::plane::runtime_is_cpu::<R>(),
+        None => !crate::plane::has_planes(client),
     }
 }
 
 /// Launch geometry for one 1e class: `(cube_count, cube_dim, n_slots)`.
 pub(crate) fn one_e_launch_geometry<R: Runtime>(
+    client: &ComputeClient<R>,
     n_pairs: usize,
     g_per_axis: usize,
     block_len: u32,
@@ -9455,15 +9456,19 @@ pub(crate) fn one_e_launch_geometry<R: Runtime>(
     let per_slab = one_e_g_slab_stride(g_per_axis) * std::mem::size_of::<f64>();
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slab.max(1)).max(1);
 
-    if one_e_per_unit::<R>() {
-        let units =
-            crate::plane::per_unit_width(n_pairs, crate::plane::MIN_ITEMS_PER_UNIT_PAIR, by_memory);
+    if one_e_per_unit::<R>(client) {
+        let units = crate::plane::per_unit_width(
+            client,
+            n_pairs,
+            crate::plane::MIN_ITEMS_PER_UNIT_PAIR,
+            by_memory,
+        );
         return (1, CubeDim::new_1d(units), units as usize);
     }
-    let cubes = n_pairs.min(by_memory).clamp(1, 65535) as u32;
+    let cubes = crate::plane::grid_cube_count(client, n_pairs.min(by_memory));
     (
         cubes,
-        crate::plane::cooperative_cube_dim::<R>(block_len),
+        crate::plane::cooperative_cube_dim(client, block_len),
         cubes as usize,
     )
 }
@@ -9528,7 +9533,7 @@ fn run_1e_batches<R: Runtime>(
         let nroots = class.nroots as usize;
 
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, g_per_axis, class.max_block_len);
+            one_e_launch_geometry::<R>(client, n_pairs, g_per_axis, class.max_block_len);
         let g_stride = one_e_g_slab_stride(g_per_axis);
         let g_len = n_slots * g_stride;
 
@@ -9539,7 +9544,7 @@ fn run_1e_batches<R: Runtime>(
         let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(class.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -10865,7 +10870,7 @@ fn run_1e_moment_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -10873,7 +10878,7 @@ fn run_1e_moment_batches<R: Runtime>(
         let drj_h = client.create_from_slice(f64::as_bytes(&pair_drj[index]));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -15505,7 +15510,7 @@ mod tests {
         one_electron_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::cooperative_cube_dim::<cubecl::cpu::CpuRuntime>(1),
+            crate::plane::cooperative_cube_dim::<cubecl::cpu::CpuRuntime>(&client, 1),
             unsafe { ArrayArg::from_raw_parts(exps_h, exps.len()) },
             unsafe { ArrayArg::from_raw_parts(coeffs_h, coeffs.len()) },
             unsafe { ArrayArg::from_raw_parts(centers_h, centers.len()) },

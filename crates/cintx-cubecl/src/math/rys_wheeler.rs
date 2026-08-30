@@ -1,12 +1,21 @@
 //! Host Wheeler/Jacobi Rys root+weight engine for `nroots >= 6` (Phase 25 FND-02, Task 1b).
 //!
-//! Verbatim host-side port of libcint 6.1.3's `n > 5` Rys root/weight path
-//! (`lower == 0` only — the short-range `lower != 0` path is out of scope for Phase 25
-//! and is not exercised by any Hessian family). The control flow mirrors
+//! Verbatim host-side port of libcint 6.1.3's `n > 5` Rys root/weight path.
+//! The control flow mirrors
 //! `libcint-master/src/rys_roots.c::CINTrys_roots` (per-nroots dispatch), feeding into
 //! the Flocke modified-moments -> Wheeler recursion -> vendored-MRRR eigensolve
 //! (`eigh::cint_diagonalize`, Task 1a) -> root transform chain, plus the large-x Schmidt
 //! / Laguerre tails.
+//!
+//! ## The `lower != 0` family (D-PBC-24)
+//!
+//! This module was `lower == 0` only until D-PBC-24: the short-range
+//! `∫_lower^1` quadrature was out of scope for Phase 25 and no Hessian family
+//! exercised it. It is now carried too — see [`sr_rys_roots_host`] and the
+//! section that opens with "D-PBC-24 stage 3" near the bottom of this file.
+//! `lower` enters in exactly one place, the FMT moments, so the Schmidt
+//! orthogonalization, Wheeler recursion, polynomial root finder and eigensolve
+//! below are shared between the two families verbatim.
 //!
 //! ## Dispatch table (rys_roots.c:97-114, lower==0)
 //!
@@ -62,6 +71,7 @@
 
 use super::eigh;
 use super::roots_jacobi_data as data;
+use super::roots_jacobi_dd_data as dd_data;
 use cubecl::prelude::*;
 
 /// libcint `MXRYSROOTS` (cint.h: 32).
@@ -431,7 +441,8 @@ fn rys_jacobi(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 {
     )
 }
 
-#[allow(dead_code)] // superseded host long-double reference; see the note above
+// D-PBC-24: no longer dead — the lower-bounded short-range quadrature at
+// the bottom of this file builds on it. See `sr_rys_roots_host`.
 /// `lflocke_jacobi_moments` (rys_wheeler.c:3553) in double-double precision.
 /// Emulates the vendor's 80-bit long-double Miller recursion.
 fn lflocke_jacobi_moments_dd(n: usize, t: f64, mus: &mut [Dd]) {
@@ -536,7 +547,8 @@ fn lrys_jacobi(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) -> i32 
     lrys_wheeler_partial_dd(n, &alpha, &beta, &moments, roots, weights)
 }
 
-#[allow(dead_code)] // superseded host long-double reference; see the note above
+// D-PBC-24: no longer dead — the lower-bounded short-range quadrature at
+// the bottom of this file builds on it. See `sr_rys_roots_host`.
 /// `lrys_wheeler_partial` (rys_wheeler.c:3625) — long-double partial via double-double
 /// intermediates, rounded to f64 before the shared f64 eigensolve (matches the vendor's
 /// long-double -> double cast at `_CINTdiagonalize`).
@@ -715,7 +727,8 @@ fn rys_schmidt(nroots: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) ->
     rdk_rys_roots(nroots, &fmt_ints, roots, weights)
 }
 
-#[allow(dead_code)] // superseded host long-double reference; see the note above
+// D-PBC-24: no longer dead — the lower-bounded short-range quadrature at
+// the bottom of this file builds on it. See `sr_rys_roots_host`.
 /// `lgamma_inc_like` (fmt.c:248) in double-double — the long-double FMT moments.
 fn lgamma_inc_like_dd(f: &mut [Dd], t: f64, m: usize) {
     if t == 0.0 {
@@ -759,7 +772,8 @@ fn lgamma_inc_like_dd(f: &mut [Dd], t: f64, m: usize) {
     }
 }
 
-#[allow(dead_code)] // superseded host long-double reference; see the note above
+// D-PBC-24: no longer dead — the lower-bounded short-range quadrature at
+// the bottom of this file builds on it. See `sr_rys_roots_host`.
 /// `R_lsmit` (rys_roots.c:1798) in double-double — Schmidt orthogonalization of the
 /// long-double FMT moments. `cs` is column-major n×n (dd). Returns 0 / j>0 / 1.
 fn r_lsmit_dd(cs: &mut [Dd], fmt_ints: &[Dd], n: usize) -> i32 {
@@ -1143,7 +1157,8 @@ fn r_dnode(a: &[f64], roots: &mut [f64], order: usize) -> i32 {
 // Laguerre path (long double) — large-x tail for nroots 9..12.
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)] // superseded host long-double reference; see the note above
+// D-PBC-24: no longer dead — the lower-bounded short-range quadrature at
+// the bottom of this file builds on it. See `sr_rys_roots_host`.
 /// `llaguerre_moments` (rys_wheeler.c:3479, lower==0) in double-double precision.
 /// alpha/beta are double-double (the vendor computes them in long double).
 fn llaguerre_moments_dd(n: usize, t: f64, alpha: &mut [Dd], beta: &mut [Dd], moments: &mut [Dd]) {
@@ -4104,6 +4119,652 @@ fn fma_probe_kernel<F: Float + CubeElement>(a: &Array<F>, b: &Array<F>, out: &mu
         // If the backend fuses, this is exact; if it pre-rounds the product, it is 0.
         out[i] = fma(ai, bi, -p);
     }
+}
+
+// ===========================================================================
+//  D-PBC-24 stage 3 — the LOWER-BOUNDED Rys quadrature (`CINTsr_rys_roots`).
+//
+//  Everything above this line evaluates `int_0^1 u^{2m} e^{-t u^2} du`, the
+//  `lower == 0` family. Short-range Coulomb at `rys_order > 3` needs
+//  `int_lower^1` instead (`libcint-master/src/rys_roots.c:145`), and `lower`
+//  enters in EXACTLY one place: the FMT moments. `gamma_inc_like` becomes
+//  `fmt_erfc_like`, `lgamma_inc_like` becomes `fmt_lerfc_like`,
+//  `lflocke_jacobi_moments` becomes `lnaive_jacobi_moments`, and the
+//  `lower == 0` branch of `llaguerre_moments` becomes its `else`. Every stage
+//  downstream — Schmidt orthogonalization, the Wheeler recursion, the
+//  polynomial root finder, the eigensolve — is shared verbatim, which is why
+//  this section is short despite covering a whole new quadrature family.
+//
+//  The vendored oracle build compiles libcint with quadmath DISABLED
+//  (`crates/cintx-oracle/build.rs` blanks `HAVE_QUADMATH_H`), so
+//  `rys_roots.h:36-38` maps `CINTqrys_jacobi`/`CINTqrys_laguerre`/
+//  `CINTqrys_schmidt` onto the `CINTlrys_*` long-double entries. cintx models
+//  long double as double-double (`Dd`), so the `q` and `l` arms below are the
+//  same function — matching what the reference this is gated against actually
+//  runs. `WITH_POLYNOMIAL_FIT` is likewise not defined in that build, so the
+//  `CINTsr_rys_polyfits` fast paths at `lower < 0.6` are not part of the
+//  dispatch being reproduced.
+// ===========================================================================
+
+/// libcint `ERFC_bound` (`fmt.c:25`) — above `t * lower²` this, every moment is 0.
+const ERFC_BOUND: f64 = 200.0;
+
+/// libcint `SML_FLOAT80` (`fmt.c:21`) — the long-double series tolerance.
+const SML_FLOAT80: f64 = 2.0e-20;
+
+/// `pow_` (`fmt.c:270`) — binary exponentiation, bit-for-bit the vendor's
+/// multiply order (which `f64::powi` does NOT guarantee).
+fn pow_int(mut base: f64, exponent: usize) -> f64 {
+    let mut result = 1.0;
+    let mut i = 1usize;
+    while i <= exponent {
+        if i & exponent != 0 {
+            result *= base;
+        }
+        base *= base;
+        i <<= 1;
+    }
+    result
+}
+
+/// `pow_` in double-double.
+fn dd_pow_int(mut base: Dd, exponent: usize) -> Dd {
+    let mut result = Dd::from(1.0);
+    let mut i = 1usize;
+    while i <= exponent {
+        if i & exponent != 0 {
+            result = dd_mul(result, base);
+        }
+        base = dd_mul(base, base);
+        i <<= 1;
+    }
+    result
+}
+
+/// `fmt1_erfc_like` (`fmt.c:310`) — power series for the lower-bounded
+/// `F[m] = e^{t s²} ∫_lower^1 u^{2m} e^{-t u²} du`, used for small `t`.
+fn fmt1_erfc_like(f: &mut [f64], t: f64, lower: f64, m: usize) {
+    let lower2 = lower * lower;
+    let mut b = m as f64 + 0.5;
+    let e = 0.5 * (-t).exp();
+    let mut e1 = 0.5 * (-t * lower2).exp() * lower;
+    e1 *= pow_int(lower2, m);
+    let x = e;
+    let mut x1 = e1;
+    let mut s = e - e1;
+    let mut div = 1.0;
+    let mut delta = s;
+    let tol = SML_FLOAT64 * delta.abs();
+    let mut bi = b + 1.0;
+    // The vendor's loop is unbounded; the iteration cap is cintx's standing
+    // no-hang guard (same shape as `lgamma_inc_like_dd`'s) and is never the
+    // reason the loop ends inside the validated envelope.
+    let mut iter = 0;
+    while delta.abs() > tol && iter < 4096 {
+        div *= t / bi;
+        x1 *= lower2;
+        delta = (x - x1) * div;
+        s += delta;
+        bi += 1.0;
+        iter += 1;
+    }
+    let mut val = s / b;
+    f[m] = val;
+    let mut i = m;
+    while i > 0 {
+        b -= 1.0;
+        e1 /= lower2;
+        val = (e - e1 + t * val) / b;
+        f[i - 1] = val;
+        i -= 1;
+    }
+}
+
+/// `fmt_erfc_like` (`fmt.c:340`) — the lower-bounded FMT moments in f64.
+///
+/// `lower == 0` delegates to [`gamma_inc_like`], so this is a strict superset of
+/// the full-range moments and the two can share every caller.
+fn fmt_erfc_like(f: &mut [f64], t: f64, lower: f64, m: usize) {
+    if lower == 0.0 {
+        gamma_inc_like(f, t, m);
+        return;
+    }
+
+    let lower2 = lower * lower;
+    // F[m] < .5*sqrt(pi/t) * erfc(lower*sqrt(t)) — below this it is exactly 0.
+    if t * lower2 > ERFC_BOUND {
+        for v in f.iter_mut().take(m + 1) {
+            *v = 0.0;
+        }
+        return;
+    }
+
+    if t == 0.0 {
+        let mut e1 = lower;
+        f[0] = 1.0 - e1;
+        for i in 1..=m {
+            e1 *= lower2;
+            f[i] = (1.0 - e1) / (2 * i + 1) as f64;
+        }
+    } else if t < data::TURNOVER_POINT[m] {
+        fmt1_erfc_like(f, t, lower, m);
+    } else {
+        let tt = t.sqrt();
+        // erfc(a) - erfc(b) is more accurate than erf(b) - erf(a).
+        let mut val = SQRTPIE4 / tt * (erfc_cody(lower * tt) - erfc_cody(tt));
+        f[0] = val;
+        let e = (-t).exp();
+        let mut e1 = (-t * lower2).exp() * lower;
+        let b = 0.5 / t;
+        for i in 0..m {
+            val = b * ((2 * i + 1) as f64 * val - e + e1);
+            e1 *= lower2;
+            f[i + 1] = val;
+        }
+    }
+}
+
+/// `fmt1_lerfc_like` (`fmt.c:422`) in double-double.
+fn fmt1_lerfc_like_dd(f: &mut [Dd], t: f64, lower: f64, m: usize) {
+    let lower2 = dd_mul(Dd::from(lower), Dd::from(lower));
+    let mut b = Dd::from(m as f64 + 0.5);
+    let e = dd_mul_f64(Dd::from((-t).exp()), 0.5);
+    let mut e1 = dd_mul(
+        dd_mul_f64(Dd::from((-t * lower * lower).exp()), 0.5),
+        Dd::from(lower),
+    );
+    e1 = dd_mul(e1, dd_pow_int(lower2, m));
+    let x = e;
+    let mut x1 = e1;
+    let mut s = dd_sub(e, e1);
+    let mut div = Dd::from(1.0);
+    let mut delta = s;
+    let tol = SML_FLOAT80 * delta.hi.abs();
+    let mut bi = dd_add(b, Dd::from(1.0));
+    let mut iter = 0;
+    while delta.hi.abs() > tol && iter < 4096 {
+        div = dd_mul(div, dd_div(Dd::from(t), bi));
+        x1 = dd_mul(x1, lower2);
+        delta = dd_mul(dd_sub(x, x1), div);
+        s = dd_add(s, delta);
+        bi = dd_add(bi, Dd::from(1.0));
+        iter += 1;
+    }
+    let mut val = dd_div(s, b);
+    f[m] = val;
+    let mut i = m;
+    while i > 0 {
+        b = dd_sub(b, Dd::from(1.0));
+        e1 = dd_div(e1, lower2);
+        val = dd_div(dd_add(dd_sub(e, e1), dd_mul_f64(val, t)), b);
+        f[i - 1] = val;
+        i -= 1;
+    }
+}
+
+/// `fmt_lerfc_like` (`fmt.c:381`) in double-double.
+fn fmt_lerfc_like_dd(f: &mut [Dd], t: f64, lower: f64, m: usize) {
+    if lower == 0.0 {
+        lgamma_inc_like_dd(f, t, m);
+        return;
+    }
+
+    let lower2f = lower * lower;
+    if t * lower2f > ERFC_BOUND {
+        for v in f.iter_mut().take(m + 1) {
+            *v = Dd::from(0.0);
+        }
+        return;
+    }
+
+    if t == 0.0 {
+        let mut e1 = Dd::from(lower);
+        f[0] = dd_sub(Dd::from(1.0), e1);
+        let lower2 = dd_mul(Dd::from(lower), Dd::from(lower));
+        for i in 1..=m {
+            e1 = dd_mul(e1, lower2);
+            f[i] = dd_div(dd_sub(Dd::from(1.0), e1), Dd::from((2 * i + 1) as f64));
+        }
+    } else if t < data::TURNOVER_POINT[m] {
+        fmt1_lerfc_like_dd(f, t, lower, m);
+    } else {
+        let tt = t.sqrt();
+        // The vendor evaluates erfcl in long double; cintx's dd emulation lifts
+        // the f64 Cody erfc, exactly as `lgamma_inc_like_dd` lifts f64 `erf`.
+        let mut val = Dd::from(SQRTPIE4 / tt * (erfc_cody(lower * tt) - erfc_cody(tt)));
+        f[0] = val;
+        let e = Dd::from((-t).exp());
+        let mut e1 = dd_mul(Dd::from((-t * lower2f).exp()), Dd::from(lower));
+        let lower2 = dd_mul(Dd::from(lower), Dd::from(lower));
+        let b = dd_div(Dd::from(0.5), Dd::from(t));
+        for i in 0..m {
+            let inner = dd_add(dd_sub(dd_mul_f64(val, (2 * i + 1) as f64), e), e1);
+            val = dd_mul(b, inner);
+            e1 = dd_mul(e1, lower2);
+            f[i + 1] = val;
+        }
+    }
+}
+
+/// `CINTrys_schmidt` (`rys_roots.c:1758`) with a general `lower`.
+fn sr_rys_schmidt(
+    nroots: usize,
+    x: f64,
+    lower: f64,
+    roots: &mut [f64],
+    weights: &mut [f64],
+) -> i32 {
+    let mut fmt_ints = vec![0.0f64; MXRYSROOTS * 2];
+    fmt_erfc_like(&mut fmt_ints, x, lower, nroots * 2);
+    rdk_rys_roots(nroots, &fmt_ints, roots, weights)
+}
+
+/// `CINTlrys_schmidt` (`rys_roots.c:1851`) with a general `lower`.
+///
+/// Body identical to [`lrys_schmidt`] apart from the moment source; kept as its
+/// own function rather than a `lower` parameter on that one so the validated
+/// full-range path is untouched by D-PBC-24.
+fn sr_lrys_schmidt(
+    nroots: usize,
+    x: f64,
+    lower: f64,
+    roots: &mut [f64],
+    weights: &mut [f64],
+) -> i32 {
+    let nroots1 = nroots + 1;
+    let mut fmt_dd = vec![Dd::from(0.0); MXRYSROOTS * 2];
+    fmt_lerfc_like_dd(&mut fmt_dd, x, lower, nroots * 2);
+
+    if fmt_dd[0].hi == 0.0 {
+        for k in 0..nroots {
+            roots[k] = 0.0;
+            weights[k] = 0.0;
+        }
+        return 0;
+    }
+
+    let mut rt = vec![0.0f64; nroots];
+    let mut qcs = vec![Dd::from(0.0); nroots1 * nroots1];
+    if nroots == 1 {
+        rt[0] = fmt_dd[1].to_f64() / fmt_dd[0].to_f64();
+    } else {
+        let e = r_lsmit_dd(&mut qcs, &fmt_dd, nroots1);
+        if e != 0 {
+            return e;
+        }
+        let cs: Vec<f64> = qcs.iter().map(|d| d.to_f64()).collect();
+        let e = cint_polynomial_roots(&mut rt, &cs, nroots, nroots1);
+        if e != 0 {
+            return e;
+        }
+    }
+
+    let cs: Vec<f64> = qcs.iter().map(|d| d.to_f64()).collect();
+    let dum0 = 1.0 / fmt_dd[0].to_f64();
+    for k in 0..nroots {
+        let root = rt[k];
+        if root == 1.0 {
+            roots[k] = 0.0;
+            weights[k] = 0.0;
+            continue;
+        }
+        let mut dum = dum0;
+        for j in 1..nroots {
+            let a = &cs[j * nroots1..];
+            let poly = polynomial_value1(a, j, root);
+            dum += poly * poly;
+        }
+        roots[k] = root / (1.0 - root);
+        weights[k] = 1.0 / dum;
+    }
+    0
+}
+
+/// `lnaive_jacobi_moments` (`rys_wheeler.c:3530`) in double-double.
+///
+/// The Flocke Miller recursion is a `lower == 0` construction, so the
+/// lower-bounded Jacobi path always takes this direct
+/// `lJACOBI_COEF · fmt_lerfc_like` route (`rys_wheeler.c:3703-3713`).
+fn lnaive_jacobi_moments_dd(n: usize, t: f64, lower: f64, mus: &mut [Dd]) {
+    let mut fmt = vec![Dd::from(0.0); MXRYSROOTS * 2];
+    fmt_lerfc_like_dd(&mut fmt, t, lower, n - 1);
+    for i in 0..n {
+        let tri = i * (i + 1) / 2;
+        let mut s = Dd::from(0.0);
+        for j in 0..=i {
+            let k = data::JACOBI_COEF_ORDER[tri + j] as usize;
+            // FULL-precision coefficients. As `lower → 1` this sum cancels
+            // catastrophically — the interval `[lower, 1]` is a sliver — and the
+            // COEFFICIENT precision becomes the accuracy floor of the whole
+            // quadrature. `roots_jacobi_data::LJACOBI_COEF` truncates the
+            // vendor's 34-digit long-double literals to f64, which left cintx
+            // ~1000x behind libcint's 80-bit arithmetic at nroots >= 8 and
+            // `lower > 0.99`. The double-double image carries the same digits.
+            let (hi, lo) = dd_data::LJACOBI_COEF_DD[tri + k];
+            s = dd_add(s, dd_mul(Dd::new(hi, lo), fmt[k]));
+        }
+        mus[i] = s;
+    }
+}
+
+/// `CINTlrys_jacobi` (`rys_wheeler.c:3703`) with a general `lower`.
+fn sr_lrys_jacobi(
+    nroots: usize,
+    x: f64,
+    lower: f64,
+    roots: &mut [f64],
+    weights: &mut [f64],
+) -> i32 {
+    let mut moments = vec![Dd::from(0.0); MXRYSROOTS * 2];
+    if lower == 0.0 {
+        lflocke_jacobi_moments_dd(nroots * 2, x, &mut moments);
+    } else {
+        lnaive_jacobi_moments_dd(nroots * 2, x, lower, &mut moments);
+    }
+    // Full-precision alpha/beta for the same reason as the coefficients above.
+    let alpha: Vec<Dd> = dd_data::LJACOBI_ALPHA_DD
+        .iter()
+        .map(|&(hi, lo)| Dd::new(hi, lo))
+        .collect();
+    let beta: Vec<Dd> = dd_data::LJACOBI_BETA_DD
+        .iter()
+        .map(|&(hi, lo)| Dd::new(hi, lo))
+        .collect();
+    lrys_wheeler_partial_dd(nroots, &alpha, &beta, &moments, roots, weights)
+}
+
+/// `llaguerre_moments` (`rys_wheeler.c:3479`) in double-double, `lower != 0` arm.
+///
+/// The recursion runs TWO Laguerre ladders — `l0*` for the upper limit 1 and
+/// `l1*` for the lower limit — and differences them, which is what makes the
+/// moments those of `∫_lower^1` rather than `∫_0^1`.
+fn llaguerre_moments_dd_lower(
+    n: usize,
+    t: f64,
+    lower: f64,
+    alpha: &mut [Dd],
+    beta: &mut [Dd],
+    moments: &mut [Dd],
+) {
+    if lower == 0.0 {
+        llaguerre_moments_dd(n, t, alpha, beta, moments);
+        return;
+    }
+
+    let tt = t.sqrt();
+    let t_inv = dd_div(Dd::from(0.5), Dd::from(t));
+    let t2_inv = dd_div(Dd::from(0.5), dd_mul(Dd::from(t), Dd::from(t)));
+    let e0 = dd_mul(Dd::from((-t).exp()), t_inv);
+    let lower2 = dd_mul(Dd::from(lower), Dd::from(lower));
+    let et = dd_mul(
+        dd_mul(Dd::from((-t * lower * lower).exp()), Dd::from(lower)),
+        t_inv,
+    );
+
+    let mut l00 = Dd::from(0.0);
+    let mut l01 = Dd::from(1.0);
+    let mut l10 = Dd::from(0.0);
+    let mut l11 = Dd::from(1.0);
+
+    alpha[0] = t_inv;
+    beta[0] = Dd::from(0.0);
+    moments[0] = Dd::from(SQRTPIE4 / tt * (erfc_cody(lower * tt) - erfc_cody(tt)));
+    moments[1] = dd_sub(dd_mul(l11, et), dd_mul(l01, e0));
+    for i in 1..n - 1 {
+        alpha[i] = dd_mul_f64(t_inv, (i * 4 + 1) as f64);
+        beta[i] = dd_mul_f64(t2_inv, (i * (i * 2 - 1)) as f64);
+        let fac0 = dd_mul_f64(t_inv, (i * 4 - 1) as f64);
+        let fac1 = dd_mul_f64(t2_inv, ((i - 1) * (i * 2 - 1)) as f64);
+        let l12 = dd_sub(dd_mul(dd_sub(lower2, fac0), l11), dd_mul(fac1, l10));
+        l10 = l11;
+        l11 = l12;
+        let l02 = dd_sub(dd_mul(dd_sub(Dd::from(1.0), fac0), l01), dd_mul(fac1, l00));
+        l00 = l01;
+        l01 = l02;
+        moments[i + 1] = dd_sub(dd_mul(l11, et), dd_mul(l01, e0));
+    }
+}
+
+/// `CINTlrys_laguerre` (`rys_wheeler.c:3692`) with a general `lower`.
+fn sr_lrys_laguerre(
+    nroots: usize,
+    x: f64,
+    lower: f64,
+    roots: &mut [f64],
+    weights: &mut [f64],
+) -> i32 {
+    let mut moments = vec![Dd::from(0.0); MXRYSROOTS * 2];
+    let mut alpha = vec![Dd::from(0.0); nroots * 2];
+    let mut beta = vec![Dd::from(0.0); nroots * 2];
+    llaguerre_moments_dd_lower(nroots * 2, x, lower, &mut alpha, &mut beta, &mut moments);
+    lrys_wheeler_partial_dd(nroots, &alpha, &beta, &moments, roots, weights)
+}
+
+type SrQuadrature = fn(usize, f64, f64, &mut [f64], &mut [f64]) -> i32;
+
+/// `segment_solve` (`rys_roots.c:42`) — pick by `x`, fall back to `qrys_schmidt`.
+#[allow(clippy::too_many_arguments)]
+fn sr_segment_solve(
+    n: usize,
+    x: f64,
+    lower: f64,
+    u: &mut [f64],
+    w: &mut [f64],
+    breakpoint: f64,
+    fn1: SrQuadrature,
+    fn2: SrQuadrature,
+) -> i32 {
+    let mut error = if x <= breakpoint {
+        fn1(n, x, lower, u, w)
+    } else {
+        fn2(n, x, lower, u, w)
+    };
+    if error != 0 {
+        error = sr_lrys_schmidt(n, x, lower, u, w);
+    }
+    error
+}
+
+/// `segment_solve1` (`rys_roots.c:126`) — pick by `lower` first, then by `x`.
+#[allow(clippy::too_many_arguments)]
+fn sr_segment_solve1(
+    n: usize,
+    x: f64,
+    lower: f64,
+    u: &mut [f64],
+    w: &mut [f64],
+    lower_bp1: f64,
+    lower_bp2: f64,
+    breakpoint: f64,
+    fn1: SrQuadrature,
+    fn2: SrQuadrature,
+    fn3: SrQuadrature,
+) -> i32 {
+    // `lower_bp2` is threaded to keep the signature faithful to the vendor's;
+    // every SR call site passes a value the `lower < lower_bp1` test already
+    // subsumes (rys_roots.c:218-244), so it is unused in the body there too.
+    let _ = lower_bp2;
+    if lower < lower_bp1 {
+        if x <= breakpoint {
+            fn1(n, x, lower, u, w)
+        } else {
+            fn2(n, x, lower, u, w)
+        }
+    } else {
+        fn3(n, x, lower, u, w)
+    }
+}
+
+/// `CINTsr_rys_roots` (`rys_roots.c:145`) — the lower-bounded Rys quadrature.
+///
+/// `lower = sqrt(theta)` is the short-range integration bound handed down by
+/// `CINTg0_2e` (`g2e.c:4472`). Returns `Err(code)` on a solver failure, which
+/// the caller must surface rather than substitute anything for.
+///
+/// The dispatch thresholds (`0.4 / 0.8 / 0.9 / 0.93 / 0.97 / 0.99`) and
+/// breakpoints (`10 / 50 / 60`) are accuracy-critical and reproduced exactly.
+/// `CINTqrys_*` collapses onto `CINTlrys_*` in the reference build this is
+/// gated against, so `sr_lrys_jacobi` serves both.
+pub fn sr_rys_roots_host(nroots: usize, x: f64, lower: f64) -> Result<(Vec<f64>, Vec<f64>), i32> {
+    assert!(
+        (1..=12).contains(&nroots),
+        "sr_rys_roots_host: nroots={nroots} outside the validated 1..=12 range"
+    );
+
+    if lower == 0.0 {
+        // Defensive: `CINTg0_2e` only ever calls this with
+        // `lower = sqrt(theta)`, and `theta = ω²/(ω² + a0)` is strictly
+        // positive for the ω ≠ 0 that reaches the short-range branch — so
+        // `lower == 0` is unreachable from the integral path.
+        //
+        // Should some other caller hand it in, the lower-bounded quadrature
+        // degenerates to the ordinary one, and cintx already has a gated
+        // implementation of that: route there instead of through the
+        // lower-bounded arms. The vendor's own `lower == 0` route is the legacy
+        // long-double Flocke path, which cintx models with the superseded
+        // double-double reference and which fails below `SMALLX_LIMIT` for
+        // nroots >= 7.
+        let (u, w) = crate::math::rys::rys_roots_host::<f64>(nroots, x);
+        return Ok((u, w));
+    }
+
+    let mut roots = vec![0.0f64; nroots];
+    let mut weights = vec![0.0f64; nroots];
+
+    let err = match nroots {
+        1 => sr_rys_schmidt(nroots, x, lower, &mut roots, &mut weights),
+        2 => {
+            if lower < 0.99 {
+                sr_rys_schmidt(nroots, x, lower, &mut roots, &mut weights)
+            } else {
+                sr_lrys_jacobi(nroots, x, lower, &mut roots, &mut weights)
+            }
+        }
+        3 => {
+            if lower < 0.93 {
+                sr_rys_schmidt(nroots, x, lower, &mut roots, &mut weights)
+            } else if lower < 0.97 {
+                sr_segment_solve(
+                    nroots,
+                    x,
+                    lower,
+                    &mut roots,
+                    &mut weights,
+                    10.0,
+                    sr_lrys_jacobi,
+                    sr_lrys_laguerre,
+                )
+            } else {
+                sr_lrys_jacobi(nroots, x, lower, &mut roots, &mut weights)
+            }
+        }
+        4 => {
+            if lower < 0.8 {
+                sr_rys_schmidt(nroots, x, lower, &mut roots, &mut weights)
+            } else if lower < 0.9 {
+                sr_segment_solve(
+                    nroots,
+                    x,
+                    lower,
+                    &mut roots,
+                    &mut weights,
+                    10.0,
+                    sr_lrys_jacobi,
+                    sr_lrys_laguerre,
+                )
+            } else {
+                sr_lrys_jacobi(nroots, x, lower, &mut roots, &mut weights)
+            }
+        }
+        5 => {
+            if lower < 0.4 {
+                sr_segment_solve(
+                    nroots,
+                    x,
+                    lower,
+                    &mut roots,
+                    &mut weights,
+                    50.0,
+                    sr_rys_schmidt,
+                    sr_lrys_laguerre,
+                )
+            } else if lower < 0.8 {
+                sr_segment_solve(
+                    nroots,
+                    x,
+                    lower,
+                    &mut roots,
+                    &mut weights,
+                    10.0,
+                    sr_lrys_jacobi,
+                    sr_lrys_laguerre,
+                )
+            } else {
+                sr_lrys_jacobi(nroots, x, lower, &mut roots, &mut weights)
+            }
+        }
+        6 => {
+            if lower < 0.25 {
+                sr_segment_solve(
+                    nroots,
+                    x,
+                    lower,
+                    &mut roots,
+                    &mut weights,
+                    60.0,
+                    sr_rys_schmidt,
+                    sr_lrys_laguerre,
+                )
+            } else if lower < 0.8 {
+                sr_segment_solve(
+                    nroots,
+                    x,
+                    lower,
+                    &mut roots,
+                    &mut weights,
+                    10.0,
+                    sr_lrys_jacobi,
+                    sr_lrys_laguerre,
+                )
+            } else {
+                sr_lrys_jacobi(nroots, x, lower, &mut roots, &mut weights)
+            }
+        }
+        7 => sr_segment_solve1(
+            nroots,
+            x,
+            lower,
+            &mut roots,
+            &mut weights,
+            0.5,
+            1.0,
+            60.0,
+            sr_lrys_jacobi,
+            sr_lrys_laguerre,
+            sr_lrys_jacobi,
+        ),
+        // 8..=12: the vendor names CINTqrys_*, which without quadmath IS
+        // CINTlrys_* (rys_roots.h:36-38).
+        8..=12 => sr_segment_solve1(
+            nroots,
+            x,
+            lower,
+            &mut roots,
+            &mut weights,
+            0.15,
+            1.0,
+            60.0,
+            sr_lrys_jacobi,
+            sr_lrys_laguerre,
+            sr_lrys_jacobi,
+        ),
+        _ => unreachable!("nroots range asserted above"),
+    };
+
+    if err != 0 {
+        return Err(err);
+    }
+    Ok((roots, weights))
 }
 
 #[cfg(test)]

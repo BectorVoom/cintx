@@ -116,6 +116,28 @@ pub struct ExecutionOptions {
     /// Unset (None) defaults to [0,0,0] (libcint reads unset env as zero); finiteness-
     /// validated by `validate_common_orig_env_params`, NOT presence-validated (D-01).
     pub common_orig: Option<[f64; 3]>,
+    /// Range-separation parameter ω (env[8], `PTR_RANGE_OMEGA` in the raw API).
+    ///
+    /// libcint's sign convention, which is also the one
+    /// `pyscf_pbc_df::traits::JkOpts::omega` and
+    /// `pyscf_pbc_df::rsdf_builder::omega` already use, so no second convention
+    /// enters the workspace:
+    ///
+    /// * `Some(ω)` with `ω > 0` — long range, `erf(ω r₁₂)/r₁₂`
+    /// * `Some(ω)` with `ω < 0` — short range, `erfc(|ω| r₁₂)/r₁₂`
+    /// * `None` or `Some(0.0)` — full Coulomb `1/r₁₂` (the default)
+    ///
+    /// Range separation is NOT a distinct integral symbol: libcint has no
+    /// `int2e_sr_*` and PySCF never asks for one. When set, this populates
+    /// `operator_env_params.range_omega` on the `ExecutionPlan`, and
+    /// `query_workspace` folds the short-range Rys-root doubling
+    /// ([`crate::range_omega::nrys_roots_for`]) into the workspace request.
+    ///
+    /// Accepted only for the three scalar Coulomb operators (`int2e`,
+    /// `int3c2e`, `int2c2e`); every other operator rejects a set value with
+    /// `UnsupportedApi` rather than silently evaluating the full-range kernel
+    /// (see [`crate::validator::validate_range_omega_env_params`]).
+    pub range_omega: Option<f64>,
     /// AO symmetry packing requested by the caller. Phase 18 implements `S1` only;
     /// every other variant returns `FacadeError::UnsupportedAoSymmetry` from
     /// `SessionRequest::query_workspace`. `None` is the default and is treated as

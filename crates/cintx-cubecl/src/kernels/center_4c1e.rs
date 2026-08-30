@@ -1021,7 +1021,7 @@ fn run_4c1e_batches<R: Runtime>(
         let g_stride = four_c1e_g_slab_stride(group.max_g_size);
         let buf_stride = four_c1e_buf_slab_stride(group.max_buf);
         let (n_cubes, cube_dim, n_slots) =
-            four_c1e_launch_geometry::<R>(n_rows, g_stride + buf_stride);
+            four_c1e_launch_geometry::<R>(client, n_rows, g_stride + buf_stride);
         let g_len = n_slots * g_stride;
         let buf_len = n_slots * buf_stride;
 
@@ -1031,7 +1031,7 @@ fn run_4c1e_batches<R: Runtime>(
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let buf_h = client.empty(buf_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(four_c1e_per_unit::<R>());
+        let per_unit = u32::from(four_c1e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -1067,7 +1067,7 @@ fn run_4c1e_batches<R: Runtime>(
 }
 
 /// Does this backend want the one-row-per-unit decomposition?
-fn four_c1e_per_unit<R: Runtime>() -> bool {
+fn four_c1e_per_unit<R: Runtime>(client: &ComputeClient<R>) -> bool {
     use std::sync::OnceLock;
     static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
     let pinned = *OVERRIDE.get_or_init(|| {
@@ -1077,7 +1077,7 @@ fn four_c1e_per_unit<R: Runtime>() -> bool {
     });
     match pinned {
         Some(value) => value != 0,
-        None => crate::plane::runtime_is_cpu::<R>(),
+        None => !crate::plane::has_planes(client),
     }
 }
 
@@ -1085,19 +1085,27 @@ fn four_c1e_per_unit<R: Runtime>() -> bool {
 ///
 /// `slot_words` is the *combined* G-tensor and polynomial-scratch stride, so the
 /// memory bound accounts for both slabs rather than only the larger one.
-fn four_c1e_launch_geometry<R: Runtime>(n_rows: usize, slot_words: usize) -> (u32, CubeDim, usize) {
+fn four_c1e_launch_geometry<R: Runtime>(
+    client: &ComputeClient<R>,
+    n_rows: usize,
+    slot_words: usize,
+) -> (u32, CubeDim, usize) {
     /// Ceiling on the per-launch scratch.
     const MAX_BATCH_SCRATCH_BYTES: usize = 64 * 1024 * 1024;
 
     let per_slot = slot_words * std::mem::size_of::<f64>();
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slot.max(1)).max(1);
 
-    if four_c1e_per_unit::<R>() {
-        let units =
-            crate::plane::per_unit_width(n_rows, crate::plane::MIN_ITEMS_PER_UNIT_PAIR, by_memory);
+    if four_c1e_per_unit::<R>(client) {
+        let units = crate::plane::per_unit_width(
+            client,
+            n_rows,
+            crate::plane::MIN_ITEMS_PER_UNIT_PAIR,
+            by_memory,
+        );
         return (1, CubeDim::new_1d(units), units as usize);
     }
-    let cubes = n_rows.min(by_memory).clamp(1, 65535) as u32;
+    let cubes = crate::plane::grid_cube_count(client, n_rows.min(by_memory));
     (cubes, CubeDim::new_1d(1), cubes as usize)
 }
 

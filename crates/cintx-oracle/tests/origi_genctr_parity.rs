@@ -25,6 +25,12 @@
 //! AND `CINTX_ORACLE_BUILD_VENDOR=1` (the `has_vendor_libcint` cfg).
 
 #![cfg(any(feature = "cpu", feature = "rocm"))]
+// `origi`/`origk` are unstable-source families: without this feature every
+// `eval_raw` below returns `source-only symbol ... requires feature
+// 'unstable-source-api'`, so the file must cfg out rather than fail. Same
+// gate as `orig{i,k}_*_random_rocm_parity.rs`; this file's own header asks
+// for `--features cpu,unstable-source-api`.
+#![cfg(feature = "unstable-source-api")]
 
 use cintx_compat::raw::{
     ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NPRIM_OF, NUC_MOD_OF, POINT_NUC,

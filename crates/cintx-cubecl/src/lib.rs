@@ -60,11 +60,13 @@ pub use kernels::two_electron::{
     evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with,
 };
 pub use plane::{
-    DEFAULT_PLANE_DIM, STANDARD_PLANE_ALIGNED_CUBE_DIM, backend_plane_cube_dim,
-    cooperative_cube_dim, cube_count_1d, cube_count_2d, cube_count_3d, linear_grid_cube_count,
-    occupancy_launch_geometry, plane_aligned_cube_dim, plane_aligned_cube_dim_2d,
-    plane_aligned_cube_dim_3d, plane_cooperative_launch_geometry, planes_per_cube, runtime_is_cpu,
-    single_cube_count, standard_plane_cube_dim, tiled_grid_cube_count_2d, tiled_grid_cube_count_3d,
+    CPU_CUBE_DIM_MAX, DEFAULT_PLANE_DIM, LaunchHardware, STANDARD_PLANE_ALIGNED_CUBE_DIM,
+    WORK_PER_CPU_UNIT, adaptive_grid_stride_geometry, backend_plane_cube_dim, cooperative_cube_dim,
+    cube_count_1d, cube_count_2d, cube_count_3d, grid_cube_count, has_planes, launch_hardware,
+    linear_grid_cube_count, occupancy_launch_geometry, plane_aligned_cube_dim,
+    plane_aligned_cube_dim_2d, plane_aligned_cube_dim_3d, plane_cooperative_launch_geometry,
+    planes_per_cube, runtime_is_cpu, single_cube_count, standard_plane_cube_dim,
+    tiled_grid_cube_count_2d, tiled_grid_cube_count_3d,
 };
 pub use precision_ratio::{PrecisionRatio, measure_precision_ratio};
 pub use resident_cache::{DeviceResidentCache, ResidentCache};

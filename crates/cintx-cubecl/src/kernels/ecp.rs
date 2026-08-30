@@ -1203,7 +1203,7 @@ fn run_ecp_angular_device<R: Runtime>(
         ecp_angular_kernel::launch_unchecked::<f64, R>(
             client,
             crate::plane::cube_count_1d(n_cubes),
-            crate::plane::backend_plane_cube_dim::<R>(),
+            crate::plane::backend_plane_cube_dim::<R>(client),
             ArrayArg::from_raw_parts(rad_h, rad_ang_all.len()),
             ArrayArg::from_raw_parts(ifac_h, ifac.len()),
             ArrayArg::from_raw_parts(jfac_h, jfac.len()),
@@ -1447,7 +1447,7 @@ fn run_ecp_type2_angular_device<R: Runtime>(
         ecp_type2_angular_kernel::launch_unchecked::<f64, R>(
             client,
             crate::plane::cube_count_1d(n_cubes),
-            crate::plane::backend_plane_cube_dim::<R>(),
+            crate::plane::backend_plane_cube_dim::<R>(client),
             ArrayArg::from_raw_parts(prad_h, prad.len()),
             ArrayArg::from_raw_parts(angi_h, angi.len()),
             ArrayArg::from_raw_parts(angj_h, angj.len()),
@@ -2933,7 +2933,7 @@ mod tests {
             ecp_angular_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                 &client,
                 crate::plane::cube_count_1d(1),
-                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
+                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
                 unsafe { ArrayArg::from_raw_parts(rad_h, rad_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(ifac_h, ifac_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(jfac_h, jfac_f32.len()) },
@@ -3136,7 +3136,7 @@ mod tests {
             ecp_type2_angular_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                 &client,
                 crate::plane::cube_count_1d(1),
-                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
+                crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
                 unsafe { ArrayArg::from_raw_parts(prad_h, prad_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(angi_h, angi_f32.len()) },
                 unsafe { ArrayArg::from_raw_parts(angj_h, angj_f32.len()) },

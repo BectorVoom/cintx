@@ -42,11 +42,8 @@ use crate::kernels::two_electron::{BatchOptions, ResidentBasis};
 use crate::kernels::two_electron::{build_2e_shape, two_e_shape_as_f12};
 // Phase 25 HESS-03: verbatim Hessian gout helpers (bra-i ∇² + ket-k ∇²).
 use crate::kernels::f12::{gout_ip1ip2_l, gout_ipip1, gout_ipip2_l, gout_ipvip1};
-#[cfg(test)]
 use crate::math::pdata::PairData;
 use crate::math::pdata::compute_pdata_host;
-#[cfg(test)]
-use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
@@ -117,7 +114,8 @@ fn common_fac_sp(l: u8) -> f64 {
 ///
 /// Follows libcint `CINTcart_comp` ordering. Host reference (the device kernels
 /// reproduce this ordering inline) kept for the host-vs-device cross-checks.
-#[cfg(test)]
+/// D-PBC-24: no longer `#[cfg(test)]` — the range-separated host arm
+/// (`host_3c2e_cart_blocks`) is production code and needs it.
 fn cart_comps(l: u8) -> Vec<(usize, usize, usize)> {
     let mut comps = Vec::new();
     let l = l as i32;
@@ -143,9 +141,14 @@ fn cart_comps(l: u8) -> Vec<(usize, usize, usize)> {
 /// - `n` corresponds to combined `(i+j)` angular order
 /// - `m` corresponds to real third-center `k` angular order (2e ll-slot)
 ///
-/// Host f64 reference of the exact device algorithm — kept under `#[cfg(test)]`
-/// as the device-vs-host cross-check reference (the device kernel inlines it).
-#[cfg(test)]
+/// Host f64 reference of the exact device algorithm, and — since D-PBC-24 — the
+/// PRODUCTION path whenever `range_omega` is set, because the device kernel has
+/// no omega branch yet (stage 4). It is therefore no longer `#[cfg(test)]`.
+///
+/// `nrys_roots` is the caller's, already doubled where short range demands it
+/// (`g3c2e.c:70-77`); `range_omega` selects the `CINTg0_2e` arm. Returns
+/// `Ok(None)` when the short-range integrand is past `EXPCUTOFF_SR`.
+#[allow(clippy::too_many_arguments)]
 fn fill_g_tensor_3c2e(
     pair: &PairData,
     ak: f64,
@@ -156,7 +159,8 @@ fn fill_g_tensor_3c2e(
     lk: u8,
     nrys_roots: usize,
     fac_env: f64,
-) -> Vec<f64> {
+    range_omega: Option<f64>,
+) -> Result<Option<Vec<f64>>, cintxRsError> {
     let nmax = li as usize + lj as usize;
     let mmax = lk as usize;
     let dn = nrys_roots;
@@ -179,7 +183,25 @@ fn fill_g_tensor_3c2e(
     let a0 = a1 / (aij + akl);
     let fac1 = (a0 / (a1 * a1 * a1)).sqrt() * fac_env;
     let x_rys = a0 * rr;
-    let (u_roots, w_weights) = rys_roots_host(nrys_roots, x_rys);
+
+    // D-PBC-24: the shared `CINTg0_2e` omega branch (g2e.c:4443-4512). 3c2e
+    // reaches it through `g3c2e.c:131`'s `envs->f_g0_2e = &CINTg0_2e`, with
+    // `lk_ceil = 0` and the real auxiliary shell in the `ll` slot — so its
+    // `rys_order` is `(li + lj + lk)/2 + 1` (g3c2e.c:70). The `omega == 0` arm is
+    // the plain `rys_roots_host(nrys_roots, x_rys)` this used to call.
+    let rys_order = (li as usize + lj as usize + lk as usize) / 2 + 1;
+    let Some(roots) = crate::math::range_separation::rys_roots_range_separated(
+        rys_order,
+        nrys_roots,
+        x_rys,
+        a0,
+        fac1,
+        range_omega,
+    )?
+    else {
+        return Ok(None);
+    };
+    let (u_roots, w_weights, fac1) = (roots.u, roots.w, roots.fac1);
 
     // 3c2e uses 2e recurrence with rx_in_rijrx = Ri and rx_in_rklrx = Rk.
     let rijrx = [p[0] - ri[0], p[1] - ri[1], p[2] - ri[2]];
@@ -266,7 +288,100 @@ fn fill_g_tensor_3c2e(
         }
     }
 
-    g
+    Ok(Some(g))
+}
+
+/// Cartesian contraction blocks for one 3c2e shell triple, on the HOST.
+///
+/// # D-PBC-24 stage 4
+///
+/// The scalar 3c2e production path is the `#[cube]` device kernel, which has no
+/// omega branch: its comptime `nroots` arms evaluate `rys_root{1..5}` at a
+/// single argument, and short range needs two evaluations plus a root
+/// rescaling. Until the device arms land, range separation routes here.
+///
+/// The output layout is EXACTLY `run_3c2e_device`'s, so the caller's
+/// canonical-order restore, cart→sph/spinor transform and AO scatter consume it
+/// unchanged: `n_ctr_i * n_ctr_j * n_ctr_k` Cartesian blocks, contraction-major
+/// as `((ci * n_ctr_j + cj) * n_ctr_k + ck) * nci*ncj*nck`, with `i` fastest
+/// inside each block. Shells arrive in canonical `li >= lj` order.
+///
+/// The chain is the one the `scalar_device_tests` cross-check already proves
+/// device-equivalent: `fill_g_tensor_3c2e` → `split_ij_hrr` → `contract_3c2e`.
+/// Coefficients are PRIMITIVE-major (`coeff[p * nctr + c]`, WR-03).
+#[allow(clippy::too_many_arguments)]
+fn host_3c2e_cart_blocks(
+    li: u8,
+    lj: u8,
+    lk: u8,
+    ri: [f64; 3],
+    rj: [f64; 3],
+    rk: [f64; 3],
+    exps_i: &[f64],
+    exps_j: &[f64],
+    exps_k: &[f64],
+    coeff_i: &[f64],
+    coeff_j: &[f64],
+    coeff_k: &[f64],
+    n_ctr_i: usize,
+    n_ctr_j: usize,
+    n_ctr_k: usize,
+    nrys_roots: usize,
+    common_factor: f64,
+    range_omega: Option<f64>,
+) -> Result<Vec<f64>, cintxRsError> {
+    let nci = ncart(li);
+    let ncj = ncart(lj);
+    let nck = ncart(lk);
+    let block_len = nci * ncj * nck;
+    let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
+
+    let mut cart_accum = vec![0.0_f64; n_ctr_i * n_ctr_j * n_ctr_k * block_len];
+
+    for (pi, &ai) in exps_i.iter().enumerate() {
+        for (pj, &aj) in exps_j.iter().enumerate() {
+            let pair =
+                compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
+            for (pk, &ak) in exps_k.iter().enumerate() {
+                let fac_env = common_factor * pair.fac;
+                let Some(g2d) = fill_g_tensor_3c2e(
+                    &pair,
+                    ak,
+                    ri,
+                    rk,
+                    li,
+                    lj,
+                    lk,
+                    nrys_roots,
+                    fac_env,
+                    range_omega,
+                )?
+                else {
+                    // Short-range integrand past EXPCUTOFF_SR: this primitive
+                    // triple contributes nothing (g2e.c:4460).
+                    continue;
+                };
+                let g_split = split_ij_hrr(&g2d, li, lj, lk, nrys_roots, rirj);
+                let prim = contract_3c2e(&g_split, li, lj, lk, nrys_roots);
+
+                for ci in 0..n_ctr_i {
+                    let ci_coeff = coeff_i[pi * n_ctr_i + ci];
+                    for cj in 0..n_ctr_j {
+                        let cj_coeff = coeff_j[pj * n_ctr_j + cj];
+                        for ck in 0..n_ctr_k {
+                            let weight = ci_coeff * cj_coeff * coeff_k[pk * n_ctr_k + ck];
+                            let base = ((ci * n_ctr_j + cj) * n_ctr_k + ck) * block_len;
+                            for idx in 0..block_len {
+                                cart_accum[base + idx] += weight * prim[idx];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(cart_accum)
 }
 
 /// Split ij angular momentum for ibase=true layout.
@@ -278,8 +393,7 @@ fn fill_g_tensor_3c2e(
 /// Input:  `[axis][m][n][root]` from `fill_g_tensor_3c2e`
 /// Output: `[axis][root][k][j][i]` (i fastest inside each root block).
 ///
-/// Host f64 reference — kept under `#[cfg(test)]` (the device kernel inlines it).
-#[cfg(test)]
+/// Host f64 reference, and the production path under `range_omega` (D-PBC-24).
 fn split_ij_hrr(
     g2d: &[f64],
     li: u8,
@@ -340,8 +454,7 @@ fn split_ij_hrr(
 /// Output layout: i fastest, j middle, k slowest:
 /// `out[(k * ncj + j) * nci + i]`.
 ///
-/// Host f64 reference — kept under `#[cfg(test)]` (the device kernel inlines it).
-#[cfg(test)]
+/// Host f64 reference, and the production path under `range_omega` (D-PBC-24).
 fn contract_3c2e(g: &[f64], li: u8, lj: u8, lk: u8, nrys_roots: usize) -> Vec<f64> {
     let nci = ncart(li);
     let ncj = ncart(lj);
@@ -1184,7 +1297,7 @@ fn three_c2e_slab_stride(elements: usize) -> usize {
 
 /// Does this backend want the one-triple-per-unit decomposition? Same reasoning
 /// and override knob as `two_electron::two_e_per_unit`.
-fn three_c2e_per_unit<R: Runtime>() -> bool {
+fn three_c2e_per_unit<R: Runtime>(client: &ComputeClient<R>) -> bool {
     use std::sync::OnceLock;
     static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
     let pinned = *OVERRIDE.get_or_init(|| {
@@ -1194,12 +1307,13 @@ fn three_c2e_per_unit<R: Runtime>() -> bool {
     });
     match pinned {
         Some(value) => value != 0,
-        None => crate::plane::runtime_is_cpu::<R>(),
+        None => !crate::plane::has_planes(client),
     }
 }
 
 /// Launch geometry for one 3c2e class: `(cube_count, cube_dim, n_slots)`.
 fn three_c2e_launch_geometry<R: Runtime>(
+    client: &ComputeClient<R>,
     n_triples: usize,
     bytes_per_slot: usize,
 ) -> (u32, CubeDim, usize) {
@@ -1208,8 +1322,9 @@ fn three_c2e_launch_geometry<R: Runtime>(
 
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / bytes_per_slot.max(1)).max(1);
 
-    if three_c2e_per_unit::<R>() {
+    if three_c2e_per_unit::<R>(client) {
         let units = crate::plane::per_unit_width(
+            client,
             n_triples,
             crate::plane::MIN_ITEMS_PER_UNIT_PAIR,
             by_memory,
@@ -1218,7 +1333,7 @@ fn three_c2e_launch_geometry<R: Runtime>(
     }
     // The kernel's arithmetic is not split across a cube, so a wider cube would
     // only add idle lanes.
-    let cubes = n_triples.min(by_memory).clamp(1, 65535) as u32;
+    let cubes = crate::plane::grid_cube_count(client, n_triples.min(by_memory));
     (cubes, CubeDim::new_1d(1), cubes as usize)
 }
 
@@ -1267,7 +1382,7 @@ fn run_3c2e_batches<R: Runtime>(
         let bytes_per_slot = (g_stride + split_stride + work_slab) * std::mem::size_of::<f64>();
 
         let (n_cubes, cube_dim, n_slots) =
-            three_c2e_launch_geometry::<R>(n_triples, bytes_per_slot);
+            three_c2e_launch_geometry::<R>(client, n_triples, bytes_per_slot);
 
         let triples_h = client.create_from_slice(u32::as_bytes(&class.triples));
         let shape_h = client.create_from_slice(u32::as_bytes(&class.class_shape));
@@ -1280,7 +1395,7 @@ fn run_3c2e_batches<R: Runtime>(
         let gs_h = client.empty(n_slots * split_stride * std::mem::size_of::<f64>());
         let work_h = client.empty(n_slots * work_slab * std::mem::size_of::<f64>());
         let out_h = client.empty(class.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(three_c2e_per_unit::<R>());
+        let per_unit = u32::from(three_c2e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -2624,7 +2739,7 @@ fn run_3c2e_deriv_batches<R: Runtime>(
         // Two slabs per slot.
         let bytes_per_slot = 2 * g_stride * std::mem::size_of::<f64>();
         let (n_cubes, cube_dim, n_slots) =
-            three_c2e_launch_geometry::<R>(n_triples, bytes_per_slot);
+            three_c2e_launch_geometry::<R>(client, n_triples, bytes_per_slot);
         let g_len = n_slots * g_stride;
 
         let triples_h = client.create_from_slice(u32::as_bytes(&group.triples));
@@ -2633,7 +2748,7 @@ fn run_3c2e_deriv_batches<R: Runtime>(
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let g1_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(three_c2e_per_unit::<R>());
+        let per_unit = u32::from(three_c2e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -4982,7 +5097,29 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     } else {
         (shell_i_in, shell_j_in, li_in, lj_in)
     };
-    let nrys_roots = (li as usize + lj as usize + lk as usize) / 2 + 1;
+    // D-PBC-24: `rys_order` is `(li + lj + lk)/2 + 1` — 3c2e folds the auxiliary
+    // shell into the 2e `ll` slot with `lk_ceil = 0` (g3c2e.c:70). Short range
+    // DOUBLES the root count for `rys_order <= 3` (g3c2e.c:70-77), and that is
+    // what `g_stride_i` / `g_size` are built from, so it has to be applied here.
+    let range_omega = plan.operator_env_params.range_omega;
+    let rys_order = (li as usize + lj as usize + lk as usize) / 2 + 1;
+    let nrys_roots = cintx_runtime::range_omega::nrys_roots_for(rys_order, range_omega);
+    // D-PBC-24 stage 4: the device `#[cube]` kernel has no omega branch, so a
+    // range-separated 3c2e routes to the host engine — explicitly and logged.
+    // The host chain (`fill_g_tensor_3c2e` → `split_ij_hrr` → `contract_3c2e`)
+    // is the one `scalar_device_tests` already proves device-equivalent, and it
+    // serves nroots up to the host Rys ceiling, so the device ceiling below does
+    // not apply to it.
+    let route_host = cintx_runtime::range_omega::is_range_separated(range_omega);
+    if route_host {
+        tracing::debug!(
+            family = "3c2e",
+            omega = range_omega.unwrap_or(0.0),
+            rys_order,
+            nrys_roots,
+            "range-separated 3c2e routed to the host Rys engine (D-PBC-24 stage 4)"
+        );
+    }
     // Task 33-03: the ceiling is the backend's and the family's, not a
     // constant. It is `MAX_DEVICE_NROOTS` unless `extended-device-rys` is
     // compiled in, this backend's FMA-fusion probe passed, *and* `int3c2e` has
@@ -4992,7 +5129,17 @@ fn launch_center_3c2e_typed<F: CintFloat>(
         backend,
         crate::device_rys_ceiling::RysFamily::Int3c2e,
     );
-    if nrys_roots > nrys_ceiling {
+    // The HOST engine's own ceiling. `rys_roots_host` panics above 12 (that is
+    // where the vendor itself would need quadmath), so the range-separated route
+    // fails closed with a typed error instead of reaching it.
+    if route_host && nrys_roots > 12 {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!(
+                "range_omega:3c2e:nroots={nrys_roots}: the host Rys engine serves                  nroots<=12 (l=({li},{lj},{lk}))"
+            ),
+        });
+    }
+    if !route_host && nrys_roots > nrys_ceiling {
         return Err(cintxRsError::UnsupportedApi {
             requested: format!("unsupported_nrys_roots:{nrys_roots}"),
         });
@@ -5037,128 +5184,152 @@ fn launch_center_3c2e_typed<F: CintFloat>(
     let coeff_j: Vec<f64> = shell_j.coefficients[..n_prim_j * n_ctr_j].to_vec();
     let coeff_k: Vec<f64> = shell_k.coefficients[..n_prim_k * n_ctr_k].to_vec();
 
-    // Dispatch onto the resolved backend's device client (compute in f64).
-    let cart_buf: Vec<f64> = match backend {
-        #[cfg(feature = "cpu")]
-        ResolvedBackend::Cpu(client) => run_3c2e_device::<cubecl::cpu::CpuRuntime>(
-            client,
-            li as u32,
-            lj as u32,
-            lk as u32,
-            n_prim_i as u32,
-            n_prim_j as u32,
-            n_prim_k as u32,
-            n_ctr_i as u32,
-            n_ctr_j as u32,
-            n_ctr_k as u32,
-            nrys_roots as u32,
+    // Dispatch onto the resolved backend's device client (compute in f64), or
+    // onto the host engine when range separation is in play (D-PBC-24).
+    let cart_buf: Vec<f64> = if route_host {
+        host_3c2e_cart_blocks(
+            li,
+            lj,
+            lk,
             ri,
             rj,
             rk,
-            common_factor,
             &exps_i,
             &exps_j,
             &exps_k,
             &coeff_i,
             &coeff_j,
             &coeff_k,
-        ),
-        #[cfg(feature = "wgpu")]
-        ResolvedBackend::Wgpu(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
-            client,
-            li as u32,
-            lj as u32,
-            lk as u32,
-            n_prim_i as u32,
-            n_prim_j as u32,
-            n_prim_k as u32,
-            n_ctr_i as u32,
-            n_ctr_j as u32,
-            n_ctr_k as u32,
-            nrys_roots as u32,
-            ri,
-            rj,
-            rk,
+            n_ctr_i,
+            n_ctr_j,
+            n_ctr_k,
+            nrys_roots,
             common_factor,
-            &exps_i,
-            &exps_j,
-            &exps_k,
-            &coeff_i,
-            &coeff_j,
-            &coeff_k,
-        ),
-        #[cfg(feature = "cuda")]
-        ResolvedBackend::Cuda(client) => run_3c2e_device::<cubecl_cuda::CudaRuntime>(
-            client,
-            li as u32,
-            lj as u32,
-            lk as u32,
-            n_prim_i as u32,
-            n_prim_j as u32,
-            n_prim_k as u32,
-            n_ctr_i as u32,
-            n_ctr_j as u32,
-            n_ctr_k as u32,
-            nrys_roots as u32,
-            ri,
-            rj,
-            rk,
-            common_factor,
-            &exps_i,
-            &exps_j,
-            &exps_k,
-            &coeff_i,
-            &coeff_j,
-            &coeff_k,
-        ),
-        #[cfg(feature = "rocm")]
-        ResolvedBackend::Rocm(client) => run_3c2e_device::<cubecl_hip::HipRuntime>(
-            client,
-            li as u32,
-            lj as u32,
-            lk as u32,
-            n_prim_i as u32,
-            n_prim_j as u32,
-            n_prim_k as u32,
-            n_ctr_i as u32,
-            n_ctr_j as u32,
-            n_ctr_k as u32,
-            nrys_roots as u32,
-            ri,
-            rj,
-            rk,
-            common_factor,
-            &exps_i,
-            &exps_j,
-            &exps_k,
-            &coeff_i,
-            &coeff_j,
-            &coeff_k,
-        ),
-        #[cfg(feature = "metal")]
-        ResolvedBackend::Metal(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
-            client,
-            li as u32,
-            lj as u32,
-            lk as u32,
-            n_prim_i as u32,
-            n_prim_j as u32,
-            n_prim_k as u32,
-            n_ctr_i as u32,
-            n_ctr_j as u32,
-            n_ctr_k as u32,
-            nrys_roots as u32,
-            ri,
-            rj,
-            rk,
-            common_factor,
-            &exps_i,
-            &exps_j,
-            &exps_k,
-            &coeff_i,
-            &coeff_j,
-            &coeff_k,
-        ),
+            range_omega,
+        )?
+    } else {
+        match backend {
+            #[cfg(feature = "cpu")]
+            ResolvedBackend::Cpu(client) => run_3c2e_device::<cubecl::cpu::CpuRuntime>(
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                nrys_roots as u32,
+                ri,
+                rj,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+            ),
+            #[cfg(feature = "wgpu")]
+            ResolvedBackend::Wgpu(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                nrys_roots as u32,
+                ri,
+                rj,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+            ),
+            #[cfg(feature = "cuda")]
+            ResolvedBackend::Cuda(client) => run_3c2e_device::<cubecl_cuda::CudaRuntime>(
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                nrys_roots as u32,
+                ri,
+                rj,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+            ),
+            #[cfg(feature = "rocm")]
+            ResolvedBackend::Rocm(client) => run_3c2e_device::<cubecl_hip::HipRuntime>(
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                nrys_roots as u32,
+                ri,
+                rj,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+            ),
+            #[cfg(feature = "metal")]
+            ResolvedBackend::Metal(client, _) => run_3c2e_device::<cubecl_wgpu::WgpuRuntime>(
+                client,
+                li as u32,
+                lj as u32,
+                lk as u32,
+                n_prim_i as u32,
+                n_prim_j as u32,
+                n_prim_k as u32,
+                n_ctr_i as u32,
+                n_ctr_j as u32,
+                n_ctr_k as u32,
+                nrys_roots as u32,
+                ri,
+                rj,
+                rk,
+                common_factor,
+                &exps_i,
+                &exps_j,
+                &exps_k,
+                &coeff_i,
+                &coeff_j,
+                &coeff_k,
+            ),
+        }
     };
 
     // `cart_buf` holds `n_ctr_i * n_ctr_j * n_ctr_k` Cartesian blocks in the
@@ -5536,7 +5707,9 @@ mod tests {
         let rk = [0.0_f64, 0.1, 0.2];
         let pair = compute_pdata_host(1.0, 1.0, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
-        let g = fill_g_tensor_3c2e(&pair, 1.0, ri, rk, 0, 0, 0, 1, 1.0);
+        let g = fill_g_tensor_3c2e(&pair, 1.0, ri, rk, 0, 0, 0, 1, 1.0, None)
+            .expect("full range is supported")
+            .expect("full range is never screened out");
         assert_eq!(g.len(), 3, "s-s-s should produce one root x one n x one m");
         assert!(
             g[2].abs() > 1e-20,
@@ -5551,7 +5724,9 @@ mod tests {
         let rk = [0.0_f64, 0.1, 0.2];
         let pair = compute_pdata_host(1.0, 1.0, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
 
-        let g2d = fill_g_tensor_3c2e(&pair, 1.0, ri, rk, 0, 0, 0, 1, 1.0);
+        let g2d = fill_g_tensor_3c2e(&pair, 1.0, ri, rk, 0, 0, 0, 1, 1.0, None)
+            .expect("full range is supported")
+            .expect("full range is never screened out");
         let g_split = split_ij_hrr(
             &g2d,
             0,
@@ -5598,7 +5773,9 @@ mod scalar_device_tests {
         let nrys = (li as usize + lj as usize + lk as usize) / 2 + 1;
         let pair = compute_pdata_host(ai, aj, ri[0], ri[1], ri[2], rj[0], rj[1], rj[2], 1.0, 1.0);
         let fac_env = common_factor * pair.fac;
-        let g2d = fill_g_tensor_3c2e(&pair, ak, ri, rk, li, lj, lk, nrys, fac_env);
+        let g2d = fill_g_tensor_3c2e(&pair, ak, ri, rk, li, lj, lk, nrys, fac_env, None)
+            .expect("full range is supported")
+            .expect("full range is never screened out");
         let rirj = [ri[0] - rj[0], ri[1] - rj[1], ri[2] - rj[2]];
         let g_split = split_ij_hrr(&g2d, li, lj, lk, nrys, rirj);
         let prim = contract_3c2e(&g_split, li, lj, lk, nrys);

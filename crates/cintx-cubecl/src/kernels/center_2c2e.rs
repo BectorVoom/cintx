@@ -70,7 +70,6 @@
 use crate::backend::ResolvedBackend;
 use crate::kernels::f12::{Nabla1Center, gout_ip1ip2, gout_ipip1, gout_ipn};
 use crate::kernels::two_electron::{build_2e_shape, fill_g_tensor_2e, two_e_shape_as_f12};
-use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
@@ -610,7 +609,7 @@ fn two_c2e_g_slab_stride(g_size: usize) -> usize {
 
 /// Does this backend want the one-pair-per-unit decomposition? Same reasoning
 /// and override knob as `two_electron::two_e_per_unit`.
-fn two_c2e_per_unit<R: Runtime>() -> bool {
+fn two_c2e_per_unit<R: Runtime>(client: &ComputeClient<R>) -> bool {
     use std::sync::OnceLock;
     static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
     let pinned = *OVERRIDE.get_or_init(|| {
@@ -620,26 +619,34 @@ fn two_c2e_per_unit<R: Runtime>() -> bool {
     });
     match pinned {
         Some(value) => value != 0,
-        None => crate::plane::runtime_is_cpu::<R>(),
+        None => !crate::plane::has_planes(client),
     }
 }
 
 /// Launch geometry for one 2c2e class: `(cube_count, cube_dim, n_slots)`.
-fn two_c2e_launch_geometry<R: Runtime>(n_pairs: usize, g_size: usize) -> (u32, CubeDim, usize) {
+fn two_c2e_launch_geometry<R: Runtime>(
+    client: &ComputeClient<R>,
+    n_pairs: usize,
+    g_size: usize,
+) -> (u32, CubeDim, usize) {
     /// Ceiling on the per-launch G-tensor scratch slab.
     const MAX_BATCH_SCRATCH_BYTES: usize = 64 * 1024 * 1024;
 
     let per_slab = two_c2e_g_slab_stride(g_size) * std::mem::size_of::<f64>();
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slab.max(1)).max(1);
 
-    if two_c2e_per_unit::<R>() {
-        let units =
-            crate::plane::per_unit_width(n_pairs, crate::plane::MIN_ITEMS_PER_UNIT_PAIR, by_memory);
+    if two_c2e_per_unit::<R>(client) {
+        let units = crate::plane::per_unit_width(
+            client,
+            n_pairs,
+            crate::plane::MIN_ITEMS_PER_UNIT_PAIR,
+            by_memory,
+        );
         return (1, CubeDim::new_1d(units), units as usize);
     }
     // The kernel's arithmetic is not split across a cube, so a wider cube would
     // only add idle lanes.
-    let cubes = n_pairs.min(by_memory).clamp(1, 65535) as u32;
+    let cubes = crate::plane::grid_cube_count(client, n_pairs.min(by_memory));
     (cubes, CubeDim::new_1d(1), cubes as usize)
 }
 
@@ -679,7 +686,7 @@ fn run_2c2e_batches<R: Runtime>(
         // Sized to the widest class merged into this dispatch.
         let g_size = class.max_g_size;
 
-        let (n_cubes, cube_dim, n_slots) = two_c2e_launch_geometry::<R>(n_pairs, g_size);
+        let (n_cubes, cube_dim, n_slots) = two_c2e_launch_geometry::<R>(client, n_pairs, g_size);
         let g_stride = two_c2e_g_slab_stride(g_size);
         let g_len = n_slots * g_stride;
 
@@ -691,7 +698,7 @@ fn run_2c2e_batches<R: Runtime>(
         let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(class.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(two_c2e_per_unit::<R>());
+        let per_unit = u32::from(two_c2e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -1121,6 +1128,16 @@ fn run_2c2e_device<R: Runtime>(
 /// Returns flat `[gx | gy | gz]` each of size `g_size = nrys * (li+1) * (lk+1)`.
 ///
 /// Source: libcint-master/src/g2e.c `CINTg0_2e` + `CINTg0_2e_2d`.
+///
+/// # D-PBC-24: `range_omega`
+///
+/// `nrys_roots` is supplied by the caller rather than recomputed, because short
+/// range DOUBLES it (`g2c2e.c:61-68`) and the caller has to size its own
+/// contraction loop from the same value. Pass
+/// [`cintx_runtime::range_omega::nrys_roots_for`]`(rys_order, range_omega)`.
+///
+/// Returns `Ok(None)` when the short-range integrand is past `EXPCUTOFF_SR` and
+/// libcint would contribute nothing for this primitive pair.
 fn fill_g_tensor_2c2e(
     ai: f64,
     ak: f64,
@@ -1129,10 +1146,12 @@ fn fill_g_tensor_2c2e(
     li: u8,
     lk: u8,
     fac_env: f64,
-) -> Vec<f64> {
+    nrys_roots: usize,
+    range_omega: Option<f64>,
+) -> Result<Option<Vec<f64>>, cintxRsError> {
     let nmax = li as usize;
     let mmax = lk as usize;
-    let nrys_roots = (li as usize + lk as usize) / 2 + 1;
+    let rys_order = (li as usize + lk as usize) / 2 + 1;
 
     let dn = nrys_roots;
     let dm = nrys_roots * (li as usize + 1);
@@ -1153,7 +1172,21 @@ fn fill_g_tensor_2c2e(
     let fac1 = (a0 / (a1 * a1 * a1)).sqrt() * fac_env;
     let x_rys = a0 * rr;
 
-    let (u_roots, w_weights) = rys_roots_host(nrys_roots, x_rys);
+    // D-PBC-24: the shared `CINTg0_2e` omega branch. `omega == 0` reduces to the
+    // plain `rys_roots_host(nrys_roots, x_rys)` this used to call, with `fac1`
+    // returned unchanged, so the full-range path stays byte-identical.
+    let Some(roots) = crate::math::range_separation::rys_roots_range_separated(
+        rys_order,
+        nrys_roots,
+        x_rys,
+        a0,
+        fac1,
+        range_omega,
+    )?
+    else {
+        return Ok(None);
+    };
+    let (u_roots, w_weights, fac1) = (roots.u, roots.w, roots.fac1);
 
     for irys in 0..nrys_roots {
         let u2 = a0 * u_roots[irys];
@@ -1226,7 +1259,7 @@ fn fill_g_tensor_2c2e(
         }
     }
 
-    g
+    Ok(Some(g))
 }
 
 /// int2c2e first-derivative launcher (Phase 23 DRV1-04).
@@ -1718,7 +1751,14 @@ fn launch_center_2c2e_typed<F: CintFloat>(
         _ => {} // fall through to the existing scalar path
     }
 
-    let nroots = (li as usize + lk as usize) / 2 + 1;
+    // D-PBC-24: `rys_order` is the plain `(li + lk)/2 + 1` (g2c2e.c:60); `nroots`
+    // is that DOUBLED under short range at `rys_order <= 3` (g2c2e.c:61-68). The
+    // doubling is what makes SR "full minus long range" at the root level, and it
+    // is the same value `query_workspace` sized the workspace for
+    // (`WorkspaceQuery::rys_roots`).
+    let range_omega = plan.operator_env_params.range_omega;
+    let rys_order = (li as usize + lk as usize) / 2 + 1;
+    let nroots = cintx_runtime::range_omega::nrys_roots_for(rys_order, range_omega);
     if nroots > 12 {
         return Err(cintxRsError::ChunkPlanFailed {
             from: "cubecl_center_2c2e",
@@ -1757,7 +1797,22 @@ fn launch_center_2c2e_typed<F: CintFloat>(
         backend,
         crate::device_rys_ceiling::RysFamily::Int2c2e,
     );
-    let cart_buf: Vec<f64> = if nroots > device_ceiling {
+    // D-PBC-24 stage 4: the device `#[cube]` kernel has no omega branch — its
+    // comptime `nroots` arms select `rys_root{1..5}` at a single argument, and
+    // short range needs two evaluations plus a root rescaling. Until the device
+    // arms land, range separation routes to the HOST engine, explicitly and
+    // logged rather than incidentally.
+    let route_host = cintx_runtime::range_omega::is_range_separated(range_omega);
+    if route_host {
+        tracing::debug!(
+            family = "2c2e",
+            omega = range_omega.unwrap_or(0.0),
+            rys_order,
+            nroots,
+            "range-separated 2c2e routed to the host Rys engine (D-PBC-24 stage 4)"
+        );
+    }
+    let cart_buf: Vec<f64> = if route_host || nroots > device_ceiling {
         let nci = ncart(li);
         let nck = ncart(lk);
         let block_len = nci * nck;
@@ -1766,7 +1821,22 @@ fn launch_center_2c2e_typed<F: CintFloat>(
             let ai = exps_i[pi];
             for pk in 0..n_prim_k {
                 let ak = exps_k[pk];
-                let g = fill_g_tensor_2c2e(ai, ak, &ri, &rk, li, lk, common_factor);
+                let Some(g) = fill_g_tensor_2c2e(
+                    ai,
+                    ak,
+                    &ri,
+                    &rk,
+                    li,
+                    lk,
+                    common_factor,
+                    nroots,
+                    range_omega,
+                )?
+                else {
+                    // Short-range integrand past EXPCUTOFF_SR: this primitive
+                    // pair contributes nothing (g2e.c:4460).
+                    continue;
+                };
                 let dn = nroots;
                 let dm = nroots * (li as usize + 1);
                 let g_size = nroots * (li as usize + 1) * (lk as usize + 1);
@@ -2038,7 +2108,9 @@ mod tests {
         let ak = 1.0_f64;
         let fac_env = 1.0_f64;
 
-        let g = fill_g_tensor_2c2e(ai, ak, &ri, &rk, 0, 0, fac_env);
+        let g = fill_g_tensor_2c2e(ai, ak, &ri, &rk, 0, 0, fac_env, 1, None)
+            .expect("full range is supported")
+            .expect("full range is never screened out");
 
         assert_eq!(g.len(), 3, "s-s G-tensor should have 3 elements");
         let gz = g[2];
@@ -2054,7 +2126,9 @@ mod tests {
         let ak = 0.5_f64;
         let fac_env = 1.0_f64;
 
-        let g = fill_g_tensor_2c2e(ai, ak, &ri, &rk, 1, 1, fac_env);
+        let g = fill_g_tensor_2c2e(ai, ak, &ri, &rk, 1, 1, fac_env, 2, None)
+            .expect("full range is supported")
+            .expect("full range is never screened out");
         assert_eq!(g.len(), 3 * 8, "p-p G-tensor size mismatch");
 
         let gz = &g[2 * 8..3 * 8];
@@ -2088,7 +2162,9 @@ mod tests {
         let g_size = nrys * (li as usize + 1) * (lk as usize + 1);
 
         let fac_env = common_factor * coeff_i * coeff_k;
-        let g = fill_g_tensor_2c2e(ai, ak, &ri, &rk, li, lk, fac_env);
+        let g = fill_g_tensor_2c2e(ai, ak, &ri, &rk, li, lk, fac_env, nrys, None)
+            .expect("full range is supported")
+            .expect("full range is never screened out");
 
         let ci_comps = cart_comps(li);
         let ck_comps = cart_comps(lk);

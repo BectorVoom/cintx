@@ -170,6 +170,63 @@ pub fn validate_f12_env_params(
     Ok(())
 }
 
+/// Validates the range-separation parameter ω (env[8], `PTR_RANGE_OMEGA`).
+///
+/// # D-PBC-24
+///
+/// Two things are checked, both fail-closed:
+///
+/// 1. **Finiteness.** A `NaN`/`inf` ω would propagate silently through
+///    `theta = ω²/(ω² + a0)` into every Rys weight.
+/// 2. **Operator support.** A set, non-zero ω on an operator that does not
+///    consume it is rejected with `UnsupportedApi`, never ignored. Ignoring it
+///    would evaluate the FULL-range kernel: it runs, it converges, and it is
+///    silently a different method — for an exact builder like `rsjk` the wrong
+///    answer lands inside the fitted builders' own error and looks plausible.
+///
+/// `None` and `Some(0.0)` are the full-Coulomb default and are always accepted,
+/// for every operator, so nothing that does not ask for range separation is
+/// gated. See [`crate::range_omega::supports_range_omega`] for the operator set.
+pub fn validate_range_omega_value(
+    canonical_family: &str,
+    operator_name: &str,
+    range_omega: Option<f64>,
+) -> Result<(), cintxRsError> {
+    let Some(omega) = range_omega else {
+        return Ok(());
+    };
+    if !omega.is_finite() {
+        return Err(cintxRsError::InvalidEnvParam {
+            param: "PTR_RANGE_OMEGA",
+            reason: format!("env[8] (PTR_RANGE_OMEGA) must be finite, got {omega}"),
+        });
+    }
+    if omega == 0.0 {
+        // Explicit full Coulomb — indistinguishable from unset, per libcint.
+        return Ok(());
+    }
+    if !crate::range_omega::supports_range_omega(canonical_family, operator_name) {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: format!(
+                "range_omega on {canonical_family}/{operator_name}: range separation \
+                 (env[8]) is implemented for the scalar Coulomb operators int2e, \
+                 int3c2e and int2c2e only; refusing rather than evaluating the \
+                 full-range kernel (D-PBC-24)"
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// [`validate_range_omega_value`] over an [`OperatorEnvParams`].
+pub fn validate_range_omega_env_params(
+    canonical_family: &str,
+    operator_name: &str,
+    params: &OperatorEnvParams,
+) -> Result<(), cintxRsError> {
+    validate_range_omega_value(canonical_family, operator_name, params.range_omega)
+}
+
 /// Validates that iprinv-family operator env params include a rinv origin.
 ///
 /// Returns `InvalidEnvParam` if `rinv_orig` is `None` for an operator whose name

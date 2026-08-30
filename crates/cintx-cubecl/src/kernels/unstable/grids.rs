@@ -425,7 +425,7 @@ fn run_grids_nuclear_device<R: Runtime>(
             grids_scalar_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::backend_plane_cube_dim::<R>(),
+                crate::plane::backend_plane_cube_dim::<R>(client),
                 unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3 * g_per_axis as usize) },
                 unsafe { ArrayArg::from_raw_parts(u_h.clone(), nroots as usize) },
                 unsafe { ArrayArg::from_raw_parts(w_h.clone(), nroots as usize) },
@@ -930,7 +930,7 @@ fn run_grids_deriv_device<R: Runtime>(
             grids_deriv_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::backend_plane_cube_dim::<R>(),
+                crate::plane::backend_plane_cube_dim::<R>(client),
                 unsafe { ArrayArg::from_raw_parts(g0_h.clone(), axis_len) },
                 unsafe { ArrayArg::from_raw_parts(g1_h.clone(), axis_len) },
                 unsafe { ArrayArg::from_raw_parts(g2_h.clone(), axis_len) },
@@ -2037,7 +2037,7 @@ mod tests {
         grids_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
+            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
             unsafe { ArrayArg::from_raw_parts(g_h.clone(), 3) },
             unsafe { ArrayArg::from_raw_parts(u_h, 1) },
             unsafe { ArrayArg::from_raw_parts(w_h, 1) },
@@ -2307,7 +2307,7 @@ mod tests {
                     grids_deriv_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
                         &client,
                         crate::plane::single_cube_count(),
-                        crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
+                        crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
                         unsafe { ArrayArg::from_raw_parts(g0_h.clone(), axis_len) },
                         unsafe { ArrayArg::from_raw_parts(g1_h.clone(), axis_len) },
                         unsafe { ArrayArg::from_raw_parts(g2_h.clone(), axis_len) },

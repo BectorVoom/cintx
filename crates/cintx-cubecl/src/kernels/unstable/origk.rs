@@ -1466,7 +1466,7 @@ fn run_origk_ip1_device<R: Runtime>(
             origk_ip1_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::backend_plane_cube_dim::<R>(),
+                crate::plane::backend_plane_cube_dim::<R>(client),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_k_h.clone(), exps_k.len()) },
@@ -1757,7 +1757,7 @@ fn run_origk_scalar_device<R: Runtime>(
             origk_scalar_kernel::launch::<f64, R>(
                 client,
                 crate::plane::single_cube_count(),
-                crate::plane::backend_plane_cube_dim::<R>(),
+                crate::plane::backend_plane_cube_dim::<R>(client),
                 unsafe { ArrayArg::from_raw_parts(exps_i_h.clone(), exps_i.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_j_h.clone(), exps_j.len()) },
                 unsafe { ArrayArg::from_raw_parts(exps_k_h.clone(), exps_k.len()) },
@@ -2548,7 +2548,7 @@ mod tests {
         origk_ip1_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
+            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
             unsafe { ArrayArg::from_raw_parts(ei_h, 1) },
             unsafe { ArrayArg::from_raw_parts(ej_h, 1) },
             unsafe { ArrayArg::from_raw_parts(ek_h, 1) },
@@ -2634,7 +2634,7 @@ mod tests {
         origk_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(),
+            crate::plane::backend_plane_cube_dim::<cubecl::cpu::CpuRuntime>(&client),
             unsafe { ArrayArg::from_raw_parts(ei_h, 1) },
             unsafe { ArrayArg::from_raw_parts(ej_h, 1) },
             unsafe { ArrayArg::from_raw_parts(ek_h, 1) },

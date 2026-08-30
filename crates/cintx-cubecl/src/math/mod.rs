@@ -1,12 +1,16 @@
 pub mod boys;
 pub mod obara_saika;
 pub mod pdata;
+pub mod range_separation;
 pub mod rys;
 // Phase 25 FND-02 — host Wheeler/Jacobi nroots>=6 root engine.
 // Task 1a: eigh MRRR symmetric-tridiagonal eigensolver.
 // Task 1b: Wheeler/Jacobi modified-moments engine.
 pub mod eigh;
 pub mod roots_jacobi_data;
+// D-PBC-24 stage 3: double-double images of the long-double Jacobi tables,
+// needed by the lower-bounded short-range quadrature.
+pub mod roots_jacobi_dd_data;
 pub mod roots_xw_data;
 pub mod rys_wheeler;
 pub mod stg;

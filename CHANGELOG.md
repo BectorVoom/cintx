@@ -7,6 +7,190 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — range-separated Coulomb: `env[PTR_RANGE_OMEGA]` is honoured end to end (2026-08-30)
+
+`cintx` evaluated `1/r₁₂` and nothing else. `env[8]` was named in a comment in
+`cintx-compat::raw` — "do not overwrite this slot" — and consumed by nothing, so a caller
+asking for `erfc(ω r)/r` silently got the full-range operator back. That blocked
+range-separated density fitting and exact range-separated JK in `pyscf_rs` (Phase 14 Gate 3)
+and the molecular RSH assertion in its Phase 4. Closes **D-PBC-24**.
+
+Range separation is **not** a new integral symbol. libcint has no `int2e_sr_*` and PySCF never
+asks for one — `pyscf/pbc/df/rsjk.py:186` sets `supmol_sr.omega = -self.omega` and calls the
+*standard* `int2e`. So the operator table is unchanged and only a parameter moves.
+
+- **`ExecutionOptions::range_omega`, `OperatorEnvParams::range_omega`,
+  `SessionBuilder::with_range_omega`.** libcint's sign convention, which is also the one
+  `pyscf_pbc_df::traits::JkOpts::omega` already uses, so no second convention enters the
+  workspace: `> 0` long range `erf(ω r)/r`, `< 0` short range `erfc(|ω| r)/r`, `None`/`0` full
+  Coulomb.
+- **`query_workspace` is omega-aware.** Short range DOUBLES `nrys_roots` for `rys_order <= 3`
+  (`g2e.c:76-79`), and `nrys_roots` sets `g_stride_i`/`g_stride_k`/`g_size` — the workspace. So
+  this is a control-plane change, not only a kernel-body one. `WorkspaceRequest` gained
+  `rys_roots`, `WorkspaceQuery` gained `range_omega`, and `planning_matches` now treats a
+  changed ω between query and evaluate as the backend contract drift it is. With
+  `range_omega = None` every request is byte-identical to before.
+- **The `CINTg0_2e` omega branch, ported once.** `cintx-cubecl::math::range_separation` is the
+  single implementation; `two_electron.rs`, `center_3c2e.rs` and `center_2c2e.rs` each call it
+  from their own Rys prologue. A wrong ω does not fail loudly — it produces a plausible 1e-6 —
+  and three copies would have been three chances to drift.
+- **`cintx-cubecl::math::rys_wheeler::sr_rys_roots_host`** ports `CINTsr_rys_roots`
+  (`rys_roots.c:145`), the lower-bounded `∫_lower^1` quadrature short range needs above
+  `rys_order = 3`, including `fmt_erfc_like` / `fmt_lerfc_like`, the `lower ≠ 0` Jacobi and
+  Laguerre moments, and `segment_solve` / `segment_solve1` with every dispatch threshold. The
+  module docs previously said `lower == 0` only.
+- **`math::roots_jacobi_dd_data`** carries libcint's `lJACOBI_COEF`/`ALPHA`/`BETA` as
+  double-double pairs. The existing `f64` tables truncate the vendor's 34-digit `long double`
+  literals to ~16 digits, which is invisible at `lower == 0` but becomes the accuracy floor of
+  the whole quadrature as `lower → 1`, where `∫_lower^1` cancels catastrophically. Measured
+  10³–10⁶ improvement at `nroots >= 8`.
+- **`env[8]` is read on the raw path**, for the families whose libcint counterpart reads it
+  (`2e`, `3c2e`, `2c2e`, `4c1e`, `breit`, `origi`, `origk`, `ssc`, `grids`) and ignored for the
+  ones it does not (`1e`, `3c1e`, `ecp`, `f12` — whose `CINTg0_2e_stg`/`_yp` have no omega
+  branch). That is what makes `pyscf-gto`'s existing `OmegaGuard` work end to end.
+
+**Fail closed, never substitute.** A set, non-zero ω on an operator cintx has not implemented
+range separation for returns `UnsupportedApi` rather than evaluating the full-range kernel — it
+would run, it would converge, and it would silently be a different method. Implemented for the
+three scalar Coulomb operators `int2e`, `int3c2e`, `int2c2e`; every other operator, including
+the `ip1`/`ipip1`/… derivative rows of the same families, refuses.
+
+That applies to the **batch surfaces** too, and it did not at first. `TripleBatchRequest`,
+`PairBatchRequest` and `QuartetBatchRequest` each held an `ExecutionOptions` and never read ω
+out of it, so `.with_range_omega(-0.8)` followed by a batch returned the full-range integrals
+with no error — the very substitution named above, on the route `pyscf-pbc-df`'s `aux_e2` would
+have reached first. All three now refuse through the shared `check_batch_request_scope`
+(`QuartetBatchRequest`'s inline copy of the scope checks is folded onto it), naming
+`range_omega` and the scalar `SessionRequest` path that serves it. `range_omega = None` and
+`Some(0.0)` still batch, byte-identically.
+
+The `(s,s|s,s)` `int2e_cart` pilot inside `BatchRequest` is the one exception, and it is a
+fallback rather than a refusal: `eri_ssss_batch_inputs` declines itself under a set ω and the
+batch completes on the scalar route, which reads ω. `ss_batch_inputs` is unaffected — it admits
+only `int1e_ovlp`/`int1e_kin`, and `query_workspace` refuses a set ω on those before the pilot
+is consulted.
+
+**Also covered:** `int2e_spinor` (admitted by `supports_range_omega` — same
+`operator_name`/`canonical_family` as `int2e_sph` — and now gated against the vendor across the
+whole ω sweep, so the interleaved-complex spinor transform is shown to preserve ω rather than
+assumed to), and `PrecisionKind::F32` (the three prologues call the `f64`-only
+`rys_roots_range_separated` regardless of `plan.precision`, exactly as the full-range host arms
+do; gated at the family's f32 floor).
+
+**Routing.** The device `#[cube]` kernels have no omega branch: their comptime `nroots` arms
+select `rys_root{1..5}` at a single argument, while short range needs two evaluations plus a
+root rescaling, and its doubled `nroots = 6` at `rys_order = 3` is above `BASE_DEVICE_NROOTS`
+anyway. Range separation therefore routes to the host Rys engine — explicitly and logged, not
+incidentally. `int3c2e` gained a host arm (`host_3c2e_cart_blocks`) for this; `int2e` and
+`int2c2e` reuse the ones they already had above the device ceiling.
+
+**Verification** (`CINTX_ORACLE_BUILD_VENDOR=1`):
+
+| gate | result |
+| --- | --- |
+| `range_omega_parity` — cintx vs vendored libcint 6.1.3 over ω ∈ {0, ±0.3, ±0.8} × 10 tuples spanning `rys_order` 1..5 | worst \|diff\| **3.4e-14** |
+| `range_omega_parity` — wide sweep: 4 exponent scales × 3 separations × 4 ω, `rys_order` 4/4/5/7, driving `lower` past 0.999 | worst scaled \|diff\| **< 1e-8** |
+| `SR(ω) + LR(ω) == full` on every tuple | ≤ 1e-12 relative (doubled roots), ≤ 1e-10 (`sr_rys_roots`) |
+| `sr_rys_roots_parity` — kernel-shaped functionals across every `lower`/`x` dispatch threshold, `nroots` 1..12 | **≤ 1e-9** (`nroots ≤ 10`), ≤ 1e-7 (11–12) |
+| `range_omega_parity` — `int2e_spinor` vs vendor over the ω sweep, `rys_order` 1 and 3 | worst \|diff\| **≤ 1e-12 + 1e-11·\|ref\|** |
+| `range_omega_batch_scope` — every batch surface refuses a set ω and still batches at `None`/`Some(0.0)` | 5 tests |
+| `range_omega_safe_api_roundtrip` — f32 vs f64 at each ω, and not the full-range block | at the `2c2e` f32 floor |
+
+The stage-0 pre-implementation measurement is committed at
+`.planning/notes/D-PBC-24-range-omega-sweep.out`.
+
+**A limit worth naming.** Past roughly `nroots >= 8` with `lower > 0.99`, libcint's own
+`CINTsr_rys_roots` breaks down — it returns zero-padded weights and negative roots below the
+`lower²/(1−lower²)` floor while still reporting success. Cross-checked against a 60-digit
+mpmath Gauss rule at `(12, 11, 0.999)`. Those points are skipped by an explicit
+`reference_is_a_valid_gauss_rule` filter with a pinned count, rather than absorbed into a loose
+tolerance.
+
+
+### Fixed — `origi`/`origk` general-contraction oracles now carry their own feature gate (2026-08-30)
+
+`origi_genctr_parity.rs` and `origk_genctr_parity.rs` are `unstable-source` families, and their
+own headers say so — "requires `--features cpu,unstable-source-api`". Neither carried the
+`#![cfg(feature = "unstable-source-api")]` module gate its siblings
+(`orig{i,k}_*_random_rocm_parity.rs`) do, so a plain `cargo test --workspace --features cpu` ran
+them and got six panics reading `source-only symbol ... requires feature
+'unstable-source-api'`. One line per file; all six pass with the feature enabled, and the files
+now cfg out without it rather than failing.
+
+
+### Changed — launch geometry is derived from the backend, not from constants (2026-08-28)
+
+Every launch decision in `cintx-cubecl` used to be a function of the runtime *type* and a
+handful of literals. It is now a function of what the backend reports about itself through
+`client.properties().hardware`, per the CubeCL hardware-adaptive launch geometry pattern.
+
+- **`plane::LaunchHardware` / `plane::launch_hardware(client)`** read the five numbers every
+  geometry decision needs — plane width, plane-ness, parallel unit count, per-cube unit
+  ceiling, grid x ceiling — in one place, with fallbacks that can never be zero.
+- **`plane::has_planes(client)` replaces `runtime_is_cpu::<R>()` as the launch-shape branch.**
+  The property that decides the shape is whether a unit is a SIMD lane or an OS thread, and
+  `plane_size_max` answers that for any backend; a `TypeId` comparison only answers it for the
+  one CPU runtime that existed when it was written. `runtime_is_cpu` stays for callers that
+  genuinely need the runtime identity. Behaviour on the CPU and wgpu backends is unchanged —
+  both already answered this question the same way.
+- **Cooperative cubes are plane-aligned instead of power-of-two.** `cooperative_cube_dim` used
+  to round the useful width up to a power of two, so a class with a 5-element contraction block
+  launched a 8-unit cube — a *fraction of a warp*, with the other 24 lanes allocated by the
+  hardware and left idle. It now rounds up to a whole multiple of the backend's own plane size
+  and clamps to `max_units_per_cube`. Same hardware cost, up to 8x the useful lanes on a 32-wide
+  warp and 16x on a 64-wide wavefront. `backend_plane_cube_dim` follows the same rule.
+- **The 65535 cube-count literal is gone.** All six batched families clamped their grid to
+  65535, which is the WebGPU/Vulkan limit; CUDA and HIP allow `2^31 - 1` along x. They now go
+  through `plane::grid_cube_count(client, ..)`. The scratch budget still binds first, so peak
+  memory is unchanged.
+- **`plane::per_unit_width` sizes the per-unit decomposition from the backend's core count**
+  (`hardware.num_cpu_cores`) rather than the host's `available_parallelism`, and is additionally
+  clamped by `max_units_per_cube`. A runtime with a smaller worker pool than the host — a
+  shared runner, a pinned device — was previously oversubscribed by exactly that difference.
+- **`plane::adaptive_grid_stride_geometry(client, items, work_per_item)`** replaces the
+  `occupancy_launch_geometry(items, 64, DEFAULT_PLANE_DIM)` calls in the batch pilot, which had
+  been assuming a 32-wide plane and a 64-cube ceiling on every backend. It is work-proportional
+  on plane-less backends (one OS thread per `WORK_PER_CPU_UNIT` scalar ops, capped by the core
+  count, the item count and `CPU_CUBE_DIM_MAX`) and occupancy-proportional on GPU ones (a
+  plane-aligned cube, the grid capped at a few resident cubes per reported SM).
+
+  Note this arm is deliberately the *opposite* of the cooperative rule, which collapses the CPU
+  cube to a single unit: a cooperative kernel barriers inside its inner loop, where a wide CPU
+  cube costs a scheduler round per barrier, while a grid-stride kernel never barriers and a wide
+  cube there is pure parallelism.
+
+  **Measured** on the `int2e_ssss` batch pilot, CPU backend, 16 cores, release build
+  (`batch_pilot::tests::grid_stride_launch_ab`, A/B via `CINTX_GRID_STRIDE_CUBE_DIM=256` for the
+  old shape). Output checksums are bit-identical across every geometry:
+
+  | batch | before (dim 256) | after | speedup |
+  | --- | --- | --- | --- |
+  | 1 024 ERIs | 4.101 ms | 126.8 us | **32x** |
+  | 16 384 ERIs | 14.199 ms | 11.150 ms | 1.27x |
+
+  The 1 024 case is where the old shape hurt most: it dispatched 4 cubes x 256 units = 1 024 OS
+  thread wakeups to do 1 024 ERIs of ~50 flops each, so essentially all of the 4 ms was the
+  thread pool. The new geometry finds 51 200 scalar ops — under two `WORK_PER_CPU_UNIT` — and
+  runs it on one unit.
+
+The geometry helpers now take `&ComputeClient<R>`; this is a source-breaking change to
+`plane::{cooperative_cube_dim, backend_plane_cube_dim, per_unit_width}`. No kernel body,
+buffer layout, or accumulation order changed.
+
+**Verified** against vendored libcint 6.1.3 with `CINTX_ORACLE_BUILD_VENDOR=1`, which is what
+actually compiles the `has_vendor_libcint` gates in — a plain `--all-features` run leaves every
+`def2_*` parity file as an empty binary reporting `ok. 0 passed`. The batched class-dispatch
+paths whose geometry changed are byte-identical to vendor and to the per-item route:
+`def2_svp_{1e,2c2e}_batch_matches_vendor_and_per_pair`,
+`def2_svp_3c2e_batch_matches_vendor_and_per_triple`,
+`def2_svp_batch_matches_vendor_and_per_quartet`,
+`def2_svp_1e_deriv_batch_matches_vendor_and_per_pair`,
+`def2_svp_3c2e_deriv_batch_matches_vendor_and_per_triple`,
+`general_contraction_3c2e_batch_matches_vendor`, `auxiliary_int{2c2e,3c2e}_matches_vendor`,
+`primitive_screening_at_zero_tolerance_is_bit_identical` and
+`resident_basis_uploads_once_and_changes_nothing` — 37 vendor-gated tests, 0 failures.
+
+
 ### Changed — the host cart-to-sph transform is no longer the bottleneck (2026-08-25, Task 36-T0/T1/T2)
 - **Measured first, then acted on.** New opt-in instrumentation
   (`CINTX_HOST_TRANSFORM_PROFILE=1`) splits `host_transform_ns` into allocate / c2s / scatter.

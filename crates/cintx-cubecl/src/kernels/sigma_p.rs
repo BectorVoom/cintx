@@ -451,7 +451,7 @@ fn run_sigma_p_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
@@ -459,7 +459,7 @@ fn run_sigma_p_batches<R: Runtime>(
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let g1_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -959,14 +959,14 @@ fn run_sigma_p_cg_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -1949,14 +1949,14 @@ fn run_sigma_p_spgsp_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -3004,14 +3004,14 @@ fn run_sa01_rys_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -3949,14 +3949,14 @@ fn run_spgnucsp_rys_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by
@@ -4908,14 +4908,14 @@ fn run_spgsa01_rys_batches<R: Runtime>(
         }
         let g_stride = one_e_g_slab_stride(group.max_g_per_axis);
         let (n_cubes, cube_dim, n_slots) =
-            one_e_launch_geometry::<R>(n_pairs, group.max_g_per_axis, 1);
+            one_e_launch_geometry::<R>(client, n_pairs, group.max_g_per_axis, 1);
         let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&group.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>());
+        let per_unit = u32::from(one_e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`; in-kernel indices are bounded by

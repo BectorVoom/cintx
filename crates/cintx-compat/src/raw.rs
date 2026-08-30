@@ -57,6 +57,22 @@ pub const PTR_COMMON_ORIG: usize = 1;
 /// `PTR_RINV_ORIG`, `PTR_RINV_ORIG + 1`, `PTR_RINV_ORIG + 2`.
 pub const PTR_RINV_ORIG: usize = 4;
 
+/// Index of the range-separation parameter ω in the libcint env array.
+///
+/// libcint defines `PTR_RANGE_OMEGA = 8`. Raw callers set `env[8] = omega`
+/// before calling a range-separated integral, using libcint's sign convention:
+/// `> 0` long range `erf(ω r)/r`, `< 0` short range `erfc(|ω| r)/r`, `0` (or
+/// unset) full Coulomb `1/r`. Range separation is a parameter on the ordinary
+/// Coulomb operator, not a separate symbol — libcint has no `int2e_sr_*` and
+/// PySCF never asks for one (`pyscf/pbc/df/rsjk.py:186` sets
+/// `supmol_sr.omega = -self.omega` and calls the standard `int2e`).
+///
+/// D-PBC-24: this slot is now READ by [`eval_raw`] / [`query_workspace_raw`],
+/// for the families whose libcint counterpart reads it. It used to be named
+/// here only in the "do not overwrite this slot" warning on
+/// [`PTR_ENV_START`].
+pub const PTR_RANGE_OMEGA: usize = 8;
+
 /// Index of the F12/STG/YP zeta parameter in the libcint env array.
 ///
 /// libcint defines `PTR_F12_ZETA = 9` in `cint_bas.h`. Raw callers set `env[9] = zeta`
@@ -928,6 +944,19 @@ pub unsafe fn eval_raw(
         &prepared.query,
     )?;
 
+    // D-PBC-24: thread the range-separation parameter from env[PTR_RANGE_OMEGA].
+    // `prepare_raw_call` already read the SAME slot into the ExecutionOptions the
+    // workspace query was sized with, and `query_workspace` already refused any
+    // operator that cannot honour it — so by here this is a plain hand-off, and
+    // the kernel and the workspace agree on the Rys root count by construction.
+    plan.operator_env_params.range_omega =
+        read_range_omega_env(env, plan.descriptor.entry.canonical_family);
+    cintx_runtime::validator::validate_range_omega_env_params(
+        plan.descriptor.entry.canonical_family,
+        plan.descriptor.operator_name(),
+        &plan.operator_env_params,
+    )?;
+
     // Extract f12_zeta from env[PTR_F12_ZETA] for F12/STG/YP integrals (raw compat path).
     // Raw callers are expected to set env[9] = zeta before calling any F12 integral.
     // The manifest canonical_family for STG/YP operators is "f12"; operator_name is "stg"/"yp".
@@ -1515,7 +1544,17 @@ fn prepare_raw_call(
         &env,
     )?;
 
-    let options = execution_options_from_opt(opt);
+    // D-PBC-24: env[PTR_RANGE_OMEGA] is read BEFORE the workspace query, because
+    // short range doubles `nrys_roots` and therefore sizes the workspace. This is
+    // what makes `pyscf-gto`'s existing `OmegaGuard` (`range_coulomb.rs`, which
+    // writes `mol._env[8]` and restores it on drop) start working end-to-end: the
+    // raw caller sets the slot, and cintx honours it from here on.
+    let options = {
+        let mut options = execution_options_from_opt(opt);
+        options.range_omega =
+            read_range_omega_env(env_slice, resolved.descriptor.entry.canonical_family);
+        options
+    };
     let query = query_workspace(
         resolved.descriptor.id,
         resolved.representation,
@@ -1621,6 +1660,35 @@ fn representation_from_descriptor(
                 descriptor.operator_symbol()
             ),
         }),
+    }
+}
+
+/// Read `env[PTR_RANGE_OMEGA]` for a family whose libcint counterpart consumes it.
+///
+/// # D-PBC-24
+///
+/// Returns `None` — meaning "full Coulomb, nothing to thread" — when the slot is
+/// absent, zero, or when this family's libcint counterpart never reads env[8]
+/// (`1e`, `3c1e`, `ecp`, `f12`). That last case matters in practice: a caller
+/// inside a PySCF-style `range_coulomb(omega)` block leaves the slot set for
+/// every integral it evaluates there, and ignoring it for the families libcint
+/// also ignores it for is correct, not a silent substitution.
+///
+/// A non-zero value on a consuming family IS returned, even for operators cintx
+/// has not implemented range separation for — `query_workspace` then refuses it
+/// with a typed `UnsupportedApi`. That refusal is the point: evaluating the
+/// full-range kernel under a set omega runs, converges, and is silently a
+/// different method.
+///
+/// A non-finite slot is passed through as `Some(..)` so the validator can reject
+/// it with `InvalidEnvParam` rather than having it disappear here.
+fn read_range_omega_env(env: &[f64], canonical_family: &str) -> Option<f64> {
+    if !cintx_runtime::range_omega::family_consumes_range_omega(canonical_family) {
+        return None;
+    }
+    match env.get(PTR_RANGE_OMEGA).copied() {
+        Some(omega) if omega != 0.0 => Some(omega),
+        _ => None,
     }
 }
 

@@ -465,11 +465,11 @@ pub fn run_eri_ssss_batch_chunks_device<R: Runtime>(
             .saturating_add(centers.len())
             .saturating_add(inputs.len())
             .saturating_mul(std::mem::size_of::<f64>());
-        let (cube_count, cube_dim) = crate::plane::occupancy_launch_geometry(
-            inputs.len(),
-            64,
-            crate::plane::DEFAULT_PLANE_DIM,
-        );
+        // One item is a single primitive [ss|ss] ERI: a handful of adds and
+        // multiplies plus a Boys evaluation, on the order of 50 scalar ops.
+        const OPS_PER_ERI: usize = 50;
+        let (cube_count, cube_dim) =
+            crate::plane::adaptive_grid_stride_geometry(client, inputs.len(), OPS_PER_ERI);
 
         // SAFETY: every table is packed at its fixed tuple stride and the
         // grid-stride guard bounds all accesses by `item_count`.
@@ -586,10 +586,13 @@ fn run_ss_batch_chunks_device<R: Runtime>(
                     .saturating_mul(std::mem::size_of::<u32>()),
             )
             .saturating_add(inputs.len().saturating_mul(std::mem::size_of::<f64>()));
-        let (cube_count, cube_dim) = crate::plane::occupancy_launch_geometry(
+        // One item walks every primitive pair of the shell pair, each pair
+        // costing on the order of 30 scalar ops.
+        const OPS_PER_PRIMITIVE_PAIR: usize = 30;
+        let (cube_count, cube_dim) = crate::plane::adaptive_grid_stride_geometry(
+            client,
             inputs.len(),
-            64,
-            crate::plane::DEFAULT_PLANE_DIM,
+            max_primitives_i.saturating_mul(max_primitives_j) * OPS_PER_PRIMITIVE_PAIR,
         );
 
         // SAFETY: Every table has exactly the item-count-scaled length indexed by
@@ -1086,6 +1089,53 @@ mod tests {
             assert!(
                 (actual - expected).abs() <= 1e-12 * expected.abs().max(1.0),
                 "item {index}: actual={actual:.17e}, expected={expected:.17e}"
+            );
+        }
+    }
+
+    /// A/B harness for the grid-stride launch geometry, kept out of the normal
+    /// run because it is a timing measurement, not an assertion.
+    ///
+    /// ```text
+    /// cargo test --release -p cintx-cubecl --features cpu -- --ignored --nocapture grid_stride_launch_ab
+    /// CINTX_GRID_STRIDE_CUBE_DIM=256 cargo test --release ...   # the pre-change shape
+    /// ```
+    #[test]
+    #[ignore = "timing measurement; run explicitly with --ignored --nocapture"]
+    fn grid_stride_launch_ab() {
+        use std::time::Instant;
+
+        let client = CpuRuntime::client(&Default::default());
+        let hw = crate::plane::launch_hardware(&client);
+        println!("hardware: {hw:?}");
+
+        for n in [64usize, 1_024, 16_384] {
+            let inputs: Vec<EriSsssInput> = (0..n)
+                .map(|i| {
+                    let t = i as f64 * 1e-3;
+                    EriSsssInput {
+                        exponents: [0.5 + t, 0.8 + t, 1.1 + t, 1.4 + t],
+                        coefficients: [1.0, 1.0, 1.0, 1.0],
+                        centers: [[0.0; 3], [0.0, 0.0, 1.0 + t], [t, 0.0, 0.0], [0.0, t, 0.5]],
+                    }
+                })
+                .collect();
+            let chunks: Vec<&[EriSsssInput]> = vec![&inputs];
+
+            // Warm the JIT and the worker pool so the timing is steady state.
+            let warm = run_eri_ssss_batch_chunks_device(&client, &chunks);
+            let checksum: f64 = warm.chunks[0].iter().sum();
+
+            let reps = 20;
+            let started = Instant::now();
+            for _ in 0..reps {
+                std::hint::black_box(run_eri_ssss_batch_chunks_device(&client, &chunks));
+            }
+            let per_run = started.elapsed() / reps;
+            let (count, dim) = crate::plane::adaptive_grid_stride_geometry(&client, n, 50);
+            println!(
+                "n={n:>6}  {per_run:>12.3?}/launch  count={count:?} dim={}  checksum={checksum:.9e}",
+                dim.num_elems()
             );
         }
     }

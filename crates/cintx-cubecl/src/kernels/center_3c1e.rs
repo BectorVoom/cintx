@@ -953,7 +953,7 @@ fn run_3c1e_batches<R: Runtime>(
             continue;
         }
         let g_stride = three_c1e_g_slab_stride(group.max_g_alloc);
-        let (n_cubes, cube_dim, n_slots) = three_c1e_launch_geometry::<R>(n_rows, g_stride);
+        let (n_cubes, cube_dim, n_slots) = three_c1e_launch_geometry::<R>(client, n_rows, g_stride);
         let g_len = n_slots * g_stride;
 
         let rows_h = client.create_from_slice(u32::as_bytes(&group.rows));
@@ -961,7 +961,7 @@ fn run_3c1e_batches<R: Runtime>(
         let factor_h = client.create_from_slice(f64::as_bytes(&group.class_factor));
         let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(three_c1e_per_unit::<R>());
+        let per_unit = u32::from(three_c1e_per_unit::<R>(client));
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -1001,7 +1001,7 @@ fn run_3c1e_batches<R: Runtime>(
 /// `two_electron::two_e_per_unit`: on the CubeCL CPU runtime a unit is an OS
 /// thread and `cube_count` lowers to a sequential loop, so the cube is the only
 /// parallelism axis; on GPU backends the grid is.
-fn three_c1e_per_unit<R: Runtime>() -> bool {
+fn three_c1e_per_unit<R: Runtime>(client: &ComputeClient<R>) -> bool {
     use std::sync::OnceLock;
     static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
     let pinned = *OVERRIDE.get_or_init(|| {
@@ -1011,24 +1011,32 @@ fn three_c1e_per_unit<R: Runtime>() -> bool {
     });
     match pinned {
         Some(value) => value != 0,
-        None => crate::plane::runtime_is_cpu::<R>(),
+        None => !crate::plane::has_planes(client),
     }
 }
 
 /// `(n_cubes, cube_dim, n_slots)` for one 3c1e dispatch.
-fn three_c1e_launch_geometry<R: Runtime>(n_rows: usize, g_stride: usize) -> (u32, CubeDim, usize) {
+fn three_c1e_launch_geometry<R: Runtime>(
+    client: &ComputeClient<R>,
+    n_rows: usize,
+    g_stride: usize,
+) -> (u32, CubeDim, usize) {
     /// Ceiling on the per-launch G-tensor scratch slab.
     const MAX_BATCH_SCRATCH_BYTES: usize = 64 * 1024 * 1024;
 
     let per_slab = g_stride * std::mem::size_of::<f64>();
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slab.max(1)).max(1);
 
-    if three_c1e_per_unit::<R>() {
-        let units =
-            crate::plane::per_unit_width(n_rows, crate::plane::MIN_ITEMS_PER_UNIT_PAIR, by_memory);
+    if three_c1e_per_unit::<R>(client) {
+        let units = crate::plane::per_unit_width(
+            client,
+            n_rows,
+            crate::plane::MIN_ITEMS_PER_UNIT_PAIR,
+            by_memory,
+        );
         return (1, CubeDim::new_1d(units), units as usize);
     }
-    let cubes = n_rows.min(by_memory).clamp(1, 65535) as u32;
+    let cubes = crate::plane::grid_cube_count(client, n_rows.min(by_memory));
     (cubes, CubeDim::new_1d(1), cubes as usize)
 }
 

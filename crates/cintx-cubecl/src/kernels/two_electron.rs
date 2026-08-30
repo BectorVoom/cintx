@@ -29,7 +29,6 @@
 use crate::backend::ResolvedBackend;
 use crate::kernels::f12::Gauge2eKind;
 use crate::math::pdata::compute_pdata_host;
-use crate::math::rys::rys_roots_host;
 use crate::math::rys::{rys_root1, rys_root2, rys_root3, rys_root4, rys_root5};
 use crate::math::rys_wheeler::{
     EXT_TABLES_LEN, ext_rys_out_slots, ext_rys_slots, rys_roots_ext_dev,
@@ -111,6 +110,11 @@ fn cart_comps(l: u8) -> Vec<(u8, u8, u8)> {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TwoEShape {
     pub(crate) nroots: usize,
+    /// `rys_order = (Σ l_ceil)/2 + 1` BEFORE any short-range doubling
+    /// (`g2e.c:74-79`). Equal to `nroots` for full and long range; half of it
+    /// under short range at `rys_order <= 3`, where libcint evaluates SR as
+    /// "full minus long range" over `2 * rys_order` roots (D-PBC-24 §3.1).
+    pub(crate) rys_order: usize,
     pub(crate) nmax: usize,
     pub(crate) mmax: usize,
     pub(crate) li: usize,
@@ -134,7 +138,25 @@ pub(crate) struct TwoEShape {
 /// 3c2e kl mapping `build_2e_shape(li+1, lj, 0, lk)` (phantom `lk=0`, real k in the
 /// `ll` slot, bra `i` raised to `li+1` for the `∇_i` headroom).
 pub(crate) fn build_2e_shape(li: usize, lj: usize, lk: usize, ll: usize) -> TwoEShape {
-    let nroots = (li + lj + lk + ll) / 2 + 1;
+    build_2e_shape_omega(li, lj, lk, ll, None)
+}
+
+/// [`build_2e_shape`] with the D-PBC-24 short-range Rys-root doubling applied.
+///
+/// `g2e.c:76-79` doubles `nrys_roots` when `omega < 0 && rys_order <= 3`, and
+/// `nrys_roots` is what `g_stride_i` / `g_stride_k` / `g_size` are built from —
+/// so the doubling has to happen HERE, in the stride/layout metadata, not just
+/// in the root evaluation. `nmax`, `mmax`, `ibase` and `kbase` are unaffected:
+/// they depend on the angular momenta only.
+pub(crate) fn build_2e_shape_omega(
+    li: usize,
+    lj: usize,
+    lk: usize,
+    ll: usize,
+    range_omega: Option<f64>,
+) -> TwoEShape {
+    let rys_order = (li + lj + lk + ll) / 2 + 1;
+    let nroots = cintx_runtime::range_omega::nrys_roots_for(rys_order, range_omega);
     let nmax = li + lj;
     let mmax = lk + ll;
 
@@ -164,6 +186,7 @@ pub(crate) fn build_2e_shape(li: usize, lj: usize, lk: usize, ll: usize) -> TwoE
 
     TwoEShape {
         nroots,
+        rys_order,
         nmax,
         mmax,
         li,
@@ -432,6 +455,34 @@ pub(crate) fn fill_g_tensor_2e(
     shape: TwoEShape,
     fac_env: f64,
 ) -> Vec<f64> {
+    // `range_omega = None` is the `omega == 0` arm of `CINTg0_2e`: it can
+    // neither fail closed nor screen a primitive out, so both layers unwrap.
+    fill_g_tensor_2e_range(ai, aj, ak, al, ri, rj, rk, rl, shape, fac_env, None)
+        .expect("full-range Coulomb is always supported")
+        .expect("full-range Coulomb never screens a primitive out")
+}
+
+/// [`fill_g_tensor_2e`] under a range-separation parameter ω (D-PBC-24).
+///
+/// `shape` must come from
+/// [`build_2e_shape_omega`]`(.., range_omega)` so its `nroots` strides match the
+/// root count this evaluates. Returns `Ok(None)` when the short-range integrand
+/// is past `EXPCUTOFF_SR` and libcint would contribute nothing for this
+/// primitive quartet (`g2e.c:4460`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fill_g_tensor_2e_range(
+    ai: f64,
+    aj: f64,
+    ak: f64,
+    al: f64,
+    ri: &[f64; 3],
+    rj: &[f64; 3],
+    rk: &[f64; 3],
+    rl: &[f64; 3],
+    shape: TwoEShape,
+    fac_env: f64,
+    range_omega: Option<f64>,
+) -> Result<Option<Vec<f64>>, cintxRsError> {
     let aij = ai + aj;
     let akl = ak + al;
 
@@ -456,7 +507,21 @@ pub(crate) fn fill_g_tensor_2e(
     let fac1 = (a0 / (a1 * a1 * a1)).sqrt() * fac_env;
     let x_rys = a0 * rr;
 
-    let (u_roots, mut w_weights) = rys_roots_host(shape.nroots, x_rys);
+    // D-PBC-24: the shared `CINTg0_2e` omega branch (g2e.c:4443-4512). The
+    // `omega == 0` arm is the plain `rys_roots_host(shape.nroots, x_rys)` with
+    // `fac1` unchanged, so full range stays byte-identical.
+    let Some(roots) = crate::math::range_separation::rys_roots_range_separated(
+        shape.rys_order,
+        shape.nroots,
+        x_rys,
+        a0,
+        fac1,
+        range_omega,
+    )?
+    else {
+        return Ok(None);
+    };
+    let (u_roots, mut w_weights, fac1) = (roots.u, roots.w, roots.fac1);
     for w in &mut w_weights {
         *w *= fac1;
     }
@@ -572,7 +637,7 @@ pub(crate) fn fill_g_tensor_2e(
         hrr_lj2d_4d(&mut g, shape, rirj, rkrl);
     }
 
-    g
+    Ok(Some(g))
 }
 
 /// Contract `[gx|gy|gz]` into Cartesian 2e tensor with output order:
@@ -1617,7 +1682,7 @@ fn env_u32_override(var: &'static str) -> Option<u32> {
 /// one-quartet-per-cube shape from Task 34-B.
 ///
 /// `CINTX_2E_PER_UNIT=0|1` pins it for A/B measurement.
-fn two_e_per_unit<R: Runtime>() -> bool {
+fn two_e_per_unit<R: Runtime>(client: &ComputeClient<R>) -> bool {
     use std::sync::OnceLock;
     static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
     let pinned = *OVERRIDE.get_or_init(|| {
@@ -1627,7 +1692,7 @@ fn two_e_per_unit<R: Runtime>() -> bool {
     });
     match pinned {
         Some(value) => value != 0,
-        None => crate::plane::runtime_is_cpu::<R>(),
+        None => !crate::plane::has_planes(client),
     }
 }
 
@@ -1637,13 +1702,14 @@ fn two_e_per_unit<R: Runtime>() -> bool {
 ///
 /// - **per-unit (CPU)** — the cube dimension *is* the thread count, because
 ///   each unit owns a whole quartet. It is sized to
-///   `available_parallelism`, clamped by the quartet count (no point spawning
-///   threads with no quartet to take) and by the per-unit G-slab budget.
+///   the backend's own core count (`hardware.num_cpu_cores`), clamped by the
+///   quartet count (no point spawning threads with no quartet to take) and by
+///   the per-unit G-slab budget.
 /// - **cooperative (GPU)** — the contraction block is split across the cube
 ///   (`q_elem % lanes == lane`) and the G build runs on lane 0, so the useful
 ///   width is the contraction block length;
-///   [`crate::plane::cooperative_cube_dim`] rounds it to a plane-aligned power
-///   of two.
+///   [`crate::plane::cooperative_cube_dim`] rounds it up to a whole number of
+///   the backend's planes.
 ///
 /// Task 34-A0 measured why the CPU case must never take the cooperative shape:
 /// the kernel's two `sync_cube()` calls sit **inside** the primitive-quartet
@@ -1652,17 +1718,22 @@ fn two_e_per_unit<R: Runtime>() -> bool {
 ///
 /// `CINTX_2E_CUBE_DIM` pins it for A/B measurement and is not part of the
 /// public contract.
-fn two_e_cube_dim<R: Runtime>(block_len: u32, n_quartets: usize, g_size: usize) -> CubeDim {
+fn two_e_cube_dim<R: Runtime>(
+    client: &ComputeClient<R>,
+    block_len: u32,
+    n_quartets: usize,
+    g_size: usize,
+) -> CubeDim {
     use std::sync::OnceLock;
     static OVERRIDE: OnceLock<Option<u32>> = OnceLock::new();
     let pinned = *OVERRIDE.get_or_init(|| env_u32_override("CINTX_2E_CUBE_DIM"));
     if let Some(dim) = pinned {
         return CubeDim::new_1d(dim);
     }
-    if two_e_per_unit::<R>() {
-        return CubeDim::new_1d(per_unit_cube_dim(n_quartets, g_size));
+    if two_e_per_unit::<R>(client) {
+        return CubeDim::new_1d(per_unit_cube_dim(client, n_quartets, g_size));
     }
-    crate::plane::cooperative_cube_dim::<R>(block_len)
+    crate::plane::cooperative_cube_dim(client, block_len)
 }
 
 /// Unit count for the per-unit decomposition.
@@ -1670,14 +1741,18 @@ fn two_e_cube_dim<R: Runtime>(block_len: u32, n_quartets: usize, g_size: usize) 
 /// Each unit needs its own `3 * g_size` G slab, so the thread count is capped
 /// by [`MAX_BATCH_SCRATCH_BYTES`] as well as by hardware parallelism and by the
 /// number of quartets actually available to take.
-fn per_unit_cube_dim(n_quartets: usize, g_size: usize) -> u32 {
+fn per_unit_cube_dim<R: Runtime>(
+    client: &ComputeClient<R>,
+    n_quartets: usize,
+    g_size: usize,
+) -> u32 {
     let per_slab = g_slab_stride(g_size) * std::mem::size_of::<f64>();
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slab.max(1)).max(1);
     // One quartet is `nprim^4` primitive quartets through the full VRR/HRR build —
     // far more than the ~2 us it costs to wake a unit, so every available unit is
     // worth using even for a class of a few dozen quartets (measured: 16 units beat
     // 4 by ~1.8x on a 45-quartet class).
-    crate::plane::per_unit_width(n_quartets, 1, by_memory)
+    crate::plane::per_unit_width(client, n_quartets, 1, by_memory)
 }
 
 /// Stride, in `f64` elements, between one slot's G slab and the next.
@@ -1757,15 +1832,19 @@ impl TwoEClassParams {
 /// list grid-stride, is both fastest and smallest. On GPU backends the grid is
 /// the parallelism axis, so it is one cube per quartet, capped so the scratch
 /// slab stays within `MAX_BATCH_SCRATCH_BYTES`.
-fn two_e_cube_count<R: Runtime>(n_quartets: usize, g_size: usize) -> u32 {
-    if two_e_per_unit::<R>() {
+fn two_e_cube_count<R: Runtime>(
+    client: &ComputeClient<R>,
+    n_quartets: usize,
+    g_size: usize,
+) -> u32 {
+    if two_e_per_unit::<R>(client) {
         // The units carry the parallelism; `cube_count` on the CPU runtime is a
         // sequential loop, so a second cube would only duplicate G slabs.
         return 1;
     }
     let per_cube = g_slab_stride(g_size) * std::mem::size_of::<f64>();
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_cube.max(1)).max(1);
-    n_quartets.min(by_memory).clamp(1, 65535) as u32
+    crate::plane::grid_cube_count(client, n_quartets.min(by_memory))
 }
 
 /// Flattened basis shared by every launch class in one batched run.
@@ -1992,9 +2071,9 @@ fn run_2e_batches<R: Runtime>(
         // indexes only the leading `3 * g_size` of the slab, so a narrow class
         // touches exactly the elements it did when it launched alone.
         let g_size_u = group.max_g_size as usize;
-        let n_cubes = two_e_cube_count::<R>(n_quartets, g_size_u);
-        let cube_dim = two_e_cube_dim::<R>(group.max_block_len, n_quartets, g_size_u);
-        let per_unit = two_e_per_unit::<R>();
+        let n_cubes = two_e_cube_count::<R>(client, n_quartets, g_size_u);
+        let cube_dim = two_e_cube_dim::<R>(client, group.max_block_len, n_quartets, g_size_u);
+        let per_unit = two_e_per_unit::<R>(client);
         // One private G slab per *slot*: a slot is a cube in the cooperative
         // decomposition and a unit in the per-unit one.
         let n_slots = if per_unit {
@@ -5147,6 +5226,24 @@ fn launch_two_electron_typed<F: CintFloat>(
     // consumes it unchanged — the host part of the honest host/device split.
     // ─────────────────────────────────────────────────────────────────────────
 
+    // D-PBC-24: re-derive the shape under the range-separation parameter. Short
+    // range doubles `nrys_roots` (g2e.c:76-79) and `nrys_roots` sets
+    // `g_stride_i` / `g_stride_k` / `g_size`, so the omega has to reach the
+    // stride metadata, not only the root evaluation. With `range_omega == None`
+    // this is bit-for-bit the shape built above.
+    //
+    // Only the SCALAR int2e path is reached here — every derivative operator
+    // returned above with its own `grad_shape`, and the validator refuses a set
+    // omega on those rather than letting them run full range (D-PBC-24 §1).
+    let range_omega = plan.operator_env_params.range_omega;
+    let shape = build_2e_shape_omega(
+        li as usize,
+        lj as usize,
+        lk as usize,
+        ll as usize,
+        range_omega,
+    );
+
     // Fail-closed nroots guard BEFORE any dispatch: scalar
     // nroots = (li+lj+lk+ll)/2+1, and 12 is where the vendor itself would need
     // quadmath. Where the *device* stops inside that range is the family
@@ -5183,7 +5280,22 @@ fn launch_two_electron_typed<F: CintFloat>(
         backend,
         crate::device_rys_ceiling::RysFamily::Int2e,
     );
-    let cart_blocks: Vec<f64> = if shape.nroots > device_ceiling {
+    // D-PBC-24 stage 4: the device `#[cube]` kernel selects `rys_root{1..5}` on a
+    // comptime `nroots` at ONE argument; short range needs two evaluations plus a
+    // root rescaling, and its doubled `nroots = 6` at `rys_order = 3` is above
+    // `BASE_DEVICE_NROOTS` anyway. Until the device arms land, range separation
+    // routes to the host engine — explicitly and logged, not incidentally.
+    let route_host = cintx_runtime::range_omega::is_range_separated(range_omega);
+    if route_host {
+        tracing::debug!(
+            family = "2e",
+            omega = range_omega.unwrap_or(0.0),
+            rys_order = shape.rys_order,
+            nroots = shape.nroots,
+            "range-separated 2e routed to the host Rys engine (D-PBC-24 stage 4)"
+        );
+    }
+    let cart_blocks: Vec<f64> = if route_host || shape.nroots > device_ceiling {
         let mut cart_accum = vec![0.0f64; out_len];
         for pi in 0..n_prim_i {
             let ai = exps_i[pi];
@@ -5211,7 +5323,7 @@ fn launch_two_electron_typed<F: CintFloat>(
                             ak, al, rk[0], rk[1], rk[2], rl[0], rl[1], rl[2], 1.0, 1.0,
                         );
                         let quartet_fac = common_factor * pdata_ij.fac * pdata_kl.fac;
-                        let g = fill_g_tensor_2e(
+                        let Some(g) = fill_g_tensor_2e_range(
                             ai,
                             aj,
                             ak,
@@ -5222,7 +5334,13 @@ fn launch_two_electron_typed<F: CintFloat>(
                             &rl,
                             shape,
                             quartet_fac,
-                        );
+                            range_omega,
+                        )?
+                        else {
+                            // Short-range integrand past EXPCUTOFF_SR: this
+                            // primitive quartet contributes nothing (g2e.c:4460).
+                            continue;
+                        };
                         let cart_prim = contract_2e_cart(&g, shape, li, lj, lk, ll);
                         // `Shell::coefficients` is PRIMITIVE-major (`coeff[p*nctr + c]`,
                         // WR-03 in `cintx_compat::raw`) — the same layout the device
@@ -6000,7 +6118,7 @@ mod device_tests {
         two_electron_scalar_kernel::launch::<f32, cubecl::cpu::CpuRuntime>(
             &client,
             crate::plane::single_cube_count(),
-            crate::plane::cooperative_cube_dim::<cubecl::cpu::CpuRuntime>(1),
+            crate::plane::cooperative_cube_dim::<cubecl::cpu::CpuRuntime>(&client, 1),
             unsafe { ArrayArg::from_raw_parts(exps_h, exps.len()) },
             unsafe { ArrayArg::from_raw_parts(coeffs_h, coeffs.len()) },
             unsafe { ArrayArg::from_raw_parts(centers_h, centers.len()) },

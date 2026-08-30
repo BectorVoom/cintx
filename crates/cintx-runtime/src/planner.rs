@@ -1,8 +1,9 @@
 use crate::dispatch::{BackendExecutor, DispatchDecision, ExecutionIo, OutputOwnership};
 use crate::metrics::{ExecutionStats, RunMetrics};
 use crate::options::ExecutionOptions;
+use crate::range_omega;
 use crate::scheduler::schedule_chunks;
-use crate::validator::{ValidatedShellTuple, validate_shell_tuple};
+use crate::validator::{ValidatedShellTuple, validate_range_omega_value, validate_shell_tuple};
 use crate::workspace::{
     ChunkInfo, ChunkPlanner, DEFAULT_ALIGNMENT_BYTES, WorkspaceAllocator, WorkspaceQuery,
     WorkspaceRequest,
@@ -55,6 +56,14 @@ pub struct OperatorEnvParams {
     /// None defaults to [0,0,0] (libcint reads unset env as zero); consumers use
     /// `common_orig.unwrap_or([0.0; 3])`. Validator checks finiteness only (D-01).
     pub common_orig: Option<[f64; 3]>,
+    /// PTR_RANGE_OMEGA value (env[8]) — the range-separation parameter ω.
+    ///
+    /// D-PBC-24. `> 0` long range `erf(ω r)/r`, `< 0` short range
+    /// `erfc(|ω| r)/r`, `None`/`0` full Coulomb. Consumed by the shared
+    /// `CINTg0_2e` prologue of the `int2e` / `int3c2e` / `int2c2e` kernels;
+    /// rejected for every other operator by
+    /// [`crate::validator::validate_range_omega_env_params`].
+    pub range_omega: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,7 +105,12 @@ impl<'a> ExecutionPlan<'a> {
     ) -> Result<Self, cintxRsError> {
         let descriptor = Resolver::descriptor(op).map_err(|err| map_resolver_error(op, err))?;
         let shells = validate_shell_tuple(descriptor, rep, basis, &shells)?;
-        let expected_request = estimate_workspace_request(descriptor, basis, &shells)?;
+        // D-PBC-24: re-derive the request from the omega the QUERY captured, not
+        // from a caller-supplied one, so the doubled-root sizing cannot drift
+        // between query and evaluate. `evaluate`'s `planning_matches` is what
+        // catches a caller that changed `opts.range_omega` in between.
+        let expected_request =
+            estimate_workspace_request(descriptor, basis, &shells, workspace.range_omega)?;
         if workspace.request() != expected_request {
             return Err(cintxRsError::ChunkPlanFailed {
                 from: "planner",
@@ -148,7 +162,15 @@ pub fn query_workspace(
 
     let descriptor = Resolver::descriptor(op).map_err(|err| map_resolver_error(op, err))?;
     let validated = validate_shell_tuple(descriptor, rep, basis, &shells)?;
-    let request = estimate_workspace_request(descriptor, basis, &validated)?;
+    // D-PBC-24: reject a range_omega the operator cannot honour BEFORE sizing
+    // anything, so a caller never gets a capability token for an evaluation
+    // that would silently run the full-range kernel.
+    validate_range_omega_value(
+        descriptor.entry.canonical_family,
+        descriptor.operator_name(),
+        opts.range_omega,
+    )?;
+    let request = estimate_workspace_request(descriptor, basis, &validated, opts.range_omega)?;
     let chunk_plan = ChunkPlanner::from_options(opts).plan(&request)?;
     let chunk_count = chunk_plan.chunks.len();
     let bytes = chunk_plan
@@ -183,6 +205,8 @@ pub fn query_workspace(
         chunk_size_override: opts.chunk_size_override,
         backend_intent: opts.backend_intent.clone(),
         backend_capability_token: opts.backend_capability_token.clone(),
+        range_omega: opts.range_omega,
+        rys_roots: request.rys_roots,
     })
 }
 
@@ -197,6 +221,15 @@ pub fn evaluate(
     // This ensures kernel dispatchers from Plans 04/05 receive the caller's
     // precision selection rather than the default F64.
     plan.precision = opts.precision;
+
+    // D-PBC-24: thread the range-separation parameter the same way. Doing it
+    // here (rather than only at the two API boundaries) means the kernel can
+    // never see a different omega from the one `query_workspace` sized the
+    // doubled Rys roots for — `planning_matches` below rejects the mismatch
+    // first, so by this point `opts.range_omega == plan.workspace.range_omega`.
+    if let Some(omega) = opts.range_omega {
+        plan.operator_env_params.range_omega = Some(omega);
+    }
 
     let _parent = opts.trace_span.as_ref().map(tracing::Span::enter);
     let span = info_span!(
@@ -432,11 +465,58 @@ fn assert_staging_size(staging_len: usize, required_elements: usize) -> Result<(
     Ok(())
 }
 
+/// `nrys_roots` this operator/tuple needs under `range_omega`, or `0` when the
+/// operator has no Rys-quadrature workspace component (D-PBC-24 §3.2).
+///
+/// Only the three scalar Coulomb operators are Rys-sized here, because they are
+/// the only ones that accept `range_omega` at all
+/// ([`crate::range_omega::supports_range_omega`]) and the only ones whose
+/// `rys_order` is exactly `(Σ l)/2 + 1` with no derivative raises. Everything
+/// else reports `0`, leaving its request byte-identical to before D-PBC-24.
+fn rys_roots_for_request(
+    descriptor: &OperatorDescriptor,
+    shells: &ValidatedShellTuple,
+    range_omega: Option<f64>,
+) -> usize {
+    if !range_omega::supports_range_omega(
+        descriptor.entry.canonical_family,
+        descriptor.operator_name(),
+    ) {
+        return 0;
+    }
+    let rys_order = range_omega::rys_order_for_angular_momenta(
+        shells.as_slice().iter().map(|s| s.ang_momentum as usize),
+    );
+    range_omega::nrys_roots_for(rys_order, range_omega)
+}
+
+/// Extra workspace bytes the SHORT-RANGE doubled Rys roots demand.
+///
+/// libcint holds `u[nrys_roots]` alongside the `w` block that aliases `gz`, and
+/// sizes `g_stride_i = nrys_roots`, so doubling the roots doubles the Rys
+/// footprint of the G-tensor. Only the *extra* roots are charged here, so a
+/// full-range or long-range request (where `nrys_roots == rys_order`) keeps the
+/// byte count it had before D-PBC-24 — stage 1's byte-identity gate.
+fn sr_root_extra_bytes(rys_roots: usize, range_omega: Option<f64>) -> usize {
+    if !range_omega::is_short_range(range_omega) || rys_roots == 0 {
+        return 0;
+    }
+    let rys_order = rys_roots / 2;
+    if rys_roots != rys_order * 2 {
+        // Not in the doubled-root regime (rys_order > 3): no extra roots.
+        return 0;
+    }
+    // The extra `rys_order` roots each carry a root and a weight.
+    rys_order * 2 * std::mem::size_of::<f64>()
+}
+
 fn estimate_workspace_request(
     descriptor: &OperatorDescriptor,
     basis: &BasisSet,
     shells: &ValidatedShellTuple,
+    range_omega: Option<f64>,
 ) -> Result<WorkspaceRequest, cintxRsError> {
+    let rys_roots = rys_roots_for_request(descriptor, shells, range_omega);
     let component_multiplier = component_multiplier_for_descriptor(descriptor)?;
     let output_bytes = shells
         .output_elements()
@@ -465,6 +545,7 @@ fn estimate_workspace_request(
     let required_bytes = output_bytes
         .checked_add(basis_bytes)
         .and_then(|value| value.checked_add(shell_bytes))
+        .and_then(|value| value.checked_add(sr_root_extra_bytes(rys_roots, range_omega)))
         .ok_or_else(|| cintxRsError::ChunkPlanFailed {
             from: "workspace_estimator",
             detail: "workspace byte estimate overflowed usize".to_owned(),
@@ -479,6 +560,7 @@ fn estimate_workspace_request(
         alignment: DEFAULT_ALIGNMENT_BYTES,
         work_units,
         min_chunk_bytes,
+        rys_roots,
     })
 }
 
@@ -664,6 +746,129 @@ mod tests {
         assert_eq!(
             component_multiplier_for_descriptor(grids_ipip).expect("multiplier"),
             9
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // D-PBC-24 stage 1 — the control plane sees omega
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// `sample_basis` builds two l=1 shells, so `int2c2e` has
+    /// `rys_order = (1+1)/2 + 1 = 2` — squarely in the doubled-root regime.
+    fn int2c2e_cart_id() -> OperatorId {
+        Resolver::descriptor_by_symbol("int2c2e_cart")
+            .expect("int2c2e_cart descriptor")
+            .id
+    }
+
+    #[test]
+    fn short_range_doubles_the_queried_rys_roots_and_query_evaluate_agree() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let op = int2c2e_cart_id();
+
+        let full = query_workspace(
+            op,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &ExecutionOptions::default(),
+        )
+        .expect("full-range query");
+
+        let sr_opts = ExecutionOptions {
+            range_omega: Some(-0.8),
+            ..ExecutionOptions::default()
+        };
+        let sr = query_workspace(op, Representation::Cart, &basis, shells.clone(), &sr_opts)
+            .expect("short-range query");
+
+        // g2c2e.c:61-68 — rys_order = (li + lk)/2 + 1 = 2, doubled to 4.
+        assert_eq!(full.rys_roots, 2, "full range keeps rys_order roots");
+        assert_eq!(
+            sr.rys_roots,
+            2 * full.rys_roots,
+            "short range at rys_order <= 3 must query EXACTLY twice the roots"
+        );
+        assert_eq!(sr.range_omega, Some(-0.8));
+        assert!(
+            sr.required_bytes > full.required_bytes,
+            "the doubled roots must show up in the workspace request"
+        );
+
+        // query → evaluate must agree on the SR-sized request. `ExecutionPlan::new`
+        // re-derives it from `query.range_omega`; a plan built against the
+        // full-range query would fail the request equality check.
+        let plan = ExecutionPlan::new(op, Representation::Cart, &basis, shells.clone(), &sr)
+            .expect("SR plan must match the SR query");
+        let mut allocator = HostWorkspaceAllocator::default();
+        let backend = MockBackend { supports: true };
+        let stats = evaluate(plan, &sr_opts, &mut allocator, &backend).expect("SR evaluate");
+        assert_eq!(stats.required_workspace_bytes, sr.required_bytes);
+
+        let mismatched = ExecutionPlan::new(op, Representation::Cart, &basis, shells, &full)
+            .expect("full-range plan builds against its own query");
+        let err = evaluate(mismatched, &sr_opts, &mut allocator, &backend)
+            .expect_err("changing range_omega after query is backend contract drift");
+        assert!(
+            matches!(
+                err,
+                cintxRsError::ChunkPlanFailed {
+                    from: "evaluate",
+                    ..
+                }
+            ),
+            "expected a typed drift stop, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn long_range_and_full_range_leave_the_request_byte_identical() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let op = int2c2e_cart_id();
+
+        let full = query_workspace(
+            op,
+            Representation::Cart,
+            &basis,
+            shells.clone(),
+            &ExecutionOptions::default(),
+        )
+        .expect("full-range query");
+
+        for omega in [Some(0.0), Some(0.3), Some(0.8)] {
+            let opts = ExecutionOptions {
+                range_omega: omega,
+                ..ExecutionOptions::default()
+            };
+            let q = query_workspace(op, Representation::Cart, &basis, shells.clone(), &opts)
+                .expect("query");
+            assert_eq!(
+                q.required_bytes, full.required_bytes,
+                "omega={omega:?} must not change the workspace: only SR doubles roots"
+            );
+            assert_eq!(q.rys_roots, full.rys_roots, "omega={omega:?}");
+        }
+    }
+
+    #[test]
+    fn query_workspace_refuses_omega_on_an_operator_without_a_coulomb_kernel() {
+        let (basis, shells) = sample_basis(Representation::Cart);
+        let opts = ExecutionOptions {
+            range_omega: Some(-0.8),
+            ..ExecutionOptions::default()
+        };
+        // OperatorId::new(0) is a 1e row — libcint's 1e kernels never read env[8].
+        let err = query_workspace(
+            OperatorId::new(0),
+            Representation::Cart,
+            &basis,
+            shells,
+            &opts,
+        )
+        .expect_err("a set omega on a non-Coulomb operator must be refused");
+        assert!(
+            matches!(err, cintxRsError::UnsupportedApi { .. }),
+            "expected UnsupportedApi, got {err:?}"
         );
     }
 

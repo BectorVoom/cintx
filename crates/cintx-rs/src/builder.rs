@@ -114,6 +114,34 @@ impl<'basis> SessionBuilder<'basis> {
         self
     }
 
+    /// Set the range-separation parameter ω (env[8], `PTR_RANGE_OMEGA`).
+    ///
+    /// libcint's sign convention, which is also the one PySCF and
+    /// `pyscf_pbc_df::traits::JkOpts::omega` use:
+    ///
+    /// * `omega > 0` — long range, `erf(ω r₁₂)/r₁₂`
+    /// * `omega < 0` — short range, `erfc(|ω| r₁₂)/r₁₂`
+    /// * `omega == 0` — full Coulomb `1/r₁₂` (identical to leaving it unset)
+    ///
+    /// Range separation is a *parameter on the ordinary Coulomb operator*, not
+    /// a separate integral symbol — libcint has no `int2e_sr_*` and PySCF never
+    /// asks for one. So the operator stays `int2e` / `int3c2e` / `int2c2e` and
+    /// only this value changes.
+    ///
+    /// Short range doubles the Rys root count for `rys_order <= 3`, so this
+    /// must be set BEFORE `query_workspace`: it sizes the workspace, and
+    /// changing it between query and evaluate is rejected as backend contract
+    /// drift.
+    ///
+    /// Setting a non-zero ω on any other operator returns `UnsupportedApi`
+    /// rather than silently evaluating the full-range kernel (D-PBC-24); short
+    /// range at `rys_order > 3` likewise fails closed pending the
+    /// lower-bounded `CINTsr_rys_roots` quadrature.
+    pub fn with_range_omega(mut self, omega: f64) -> Self {
+        self.options.range_omega = Some(omega);
+        self
+    }
+
     pub fn build(self) -> SessionRequest<'basis> {
         SessionRequest::new(
             self.operator,
@@ -231,6 +259,40 @@ mod tests {
             request.options().f12_zeta,
             Some(1.5),
             "f12_zeta must be carried in ExecutionOptions after builder call"
+        );
+    }
+
+    /// D-PBC-24: `with_range_omega` carries ω into `ExecutionOptions`, in
+    /// libcint's sign convention, so `query_workspace` can size the
+    /// short-range doubled Rys roots before anything is evaluated.
+    #[test]
+    fn builder_range_omega_propagates_into_options() {
+        let (basis, shells) = sample_basis(Representation::Spheric);
+
+        for omega in [-0.8_f64, 0.8] {
+            let request = SessionBuilder::new(
+                OperatorId::new(3),
+                Representation::Spheric,
+                &basis,
+                shells.clone(),
+            )
+            .with_range_omega(omega)
+            .build();
+
+            assert_eq!(
+                request.options().range_omega,
+                Some(omega),
+                "range_omega must be carried in ExecutionOptions after builder call"
+            );
+        }
+
+        let unset =
+            SessionBuilder::new(OperatorId::new(3), Representation::Spheric, &basis, shells)
+                .build();
+        assert_eq!(
+            unset.options().range_omega,
+            None,
+            "unset range_omega must stay None (full Coulomb)"
         );
     }
 }

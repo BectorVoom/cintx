@@ -6,7 +6,12 @@ use tracing::debug;
 
 pub const DEFAULT_ALIGNMENT_BYTES: usize = 64;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A planned workspace.
+///
+/// D-PBC-24: `PartialEq` but **not** `Eq` — `range_omega` is an `Option<f64>`,
+/// and the query/evaluate drift check ([`WorkspaceQuery::planning_matches`])
+/// wants exact bit equality on it, not a total order.
+#[derive(Clone, Debug, PartialEq)]
 pub struct WorkspaceQuery {
     pub bytes: usize,
     pub alignment: usize,
@@ -22,6 +27,18 @@ pub struct WorkspaceQuery {
     pub backend_intent: BackendIntent,
     /// Backend capability token captured at query time.
     pub backend_capability_token: BackendCapabilityToken,
+    /// Range-separation parameter ω captured at query time (D-PBC-24).
+    ///
+    /// Short range doubles `nrys_roots` for `rys_order <= 3`, which is a
+    /// workspace-sizing change, so omega is part of the query/evaluate
+    /// contract: `ExecutionPlan::new` re-derives the request from THIS value
+    /// (not from a caller-supplied one), and `planning_matches` fails closed if
+    /// the caller changed it between query and evaluate.
+    pub range_omega: Option<f64>,
+    /// Rys root count this workspace was sized for, or `0` for families whose
+    /// workspace has no Rys component. Carried so `ExecutionPlan::new` can
+    /// reconstruct the exact request the query produced.
+    pub rys_roots: usize,
 }
 
 impl WorkspaceQuery {
@@ -31,18 +48,26 @@ impl WorkspaceQuery {
             alignment: self.alignment,
             work_units: self.work_units,
             min_chunk_bytes: self.min_chunk_bytes,
+            rys_roots: self.rys_roots,
         }
     }
 
-    /// Returns `true` only when all four contract fields match `opts`.
+    /// Returns `true` only when all five contract fields match `opts`.
     ///
     /// Per D-08, backend policy drift between query and evaluate must be
     /// detected here so `evaluate()` can fail closed with a typed error.
+    ///
+    /// D-PBC-24 added `range_omega`: it sizes the workspace (through the
+    /// short-range Rys-root doubling), so changing it after `query_workspace`
+    /// is exactly the kind of drift this check exists to catch. Bit-comparison
+    /// via `Option<f64>`'s `PartialEq` — `NaN` is rejected upstream by
+    /// [`crate::validator::validate_range_omega_env_params`].
     pub fn planning_matches(&self, opts: &ExecutionOptions) -> bool {
         self.memory_limit_bytes == opts.memory_limit_bytes
             && self.chunk_size_override == opts.chunk_size_override
             && self.backend_intent == opts.backend_intent
             && self.backend_capability_token == opts.backend_capability_token
+            && self.range_omega == opts.range_omega
     }
 }
 
@@ -52,6 +77,16 @@ pub struct WorkspaceRequest {
     pub alignment: usize,
     pub work_units: usize,
     pub min_chunk_bytes: usize,
+    /// `nrys_roots` this request was sized for (D-PBC-24), or `0` when the
+    /// operator has no Rys quadrature component.
+    ///
+    /// For the scalar Coulomb operators this is
+    /// [`crate::range_omega::nrys_roots_for`]`(rys_order, range_omega)` — i.e.
+    /// `2 * rys_order` under short range with `rys_order <= 3`, and
+    /// `rys_order` otherwise. It is part of the request (and so of the
+    /// `ExecutionPlan::new` equality check) because the doubled roots are a
+    /// workspace-sizing fact, not a kernel-body detail.
+    pub rys_roots: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -337,6 +372,7 @@ mod tests {
             alignment: DEFAULT_ALIGNMENT_BYTES,
             work_units: 12,
             min_chunk_bytes: 64,
+            rys_roots: 0,
         };
 
         let plan = planner.plan(&request).expect("chunk plan should fit");
@@ -358,6 +394,7 @@ mod tests {
             alignment: DEFAULT_ALIGNMENT_BYTES,
             work_units: 4,
             min_chunk_bytes: 64,
+            rys_roots: 0,
         };
 
         let err = planner.plan(&request).unwrap_err();
@@ -383,6 +420,7 @@ mod tests {
             alignment: DEFAULT_ALIGNMENT_BYTES,
             work_units: 12,
             min_chunk_bytes: 64,
+            rys_roots: 0,
         };
 
         let plan = planner.plan(&request).expect("chunk plan should fit");
@@ -406,6 +444,7 @@ mod tests {
             alignment: DEFAULT_ALIGNMENT_BYTES,
             work_units: 12,
             min_chunk_bytes: 64,
+            rys_roots: 0,
         };
 
         let plan = planner.plan(&request).expect("chunk plan should fit");
