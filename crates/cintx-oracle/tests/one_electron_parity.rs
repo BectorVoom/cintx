@@ -310,8 +310,9 @@ fn count_mismatches(reference: &[f64], observed: &[f64], atol: f64, rtol: f64) -
 fn test_int1e_ovlp_sph_h2o_sto3g_parity() {
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT1E_OVLP_SPH;
-    let atol = 1e-11_f64;
-    let rtol = 1e-9_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     // Reference call
     let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
@@ -367,8 +368,9 @@ fn test_int1e_ovlp_sph_h2o_sto3g_parity() {
 fn test_int1e_kin_sph_h2o_sto3g_parity() {
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT1E_KIN_SPH;
-    let atol = 1e-11_f64;
-    let rtol = 1e-9_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
     let observed = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
@@ -419,8 +421,9 @@ fn test_int1e_kin_sph_h2o_sto3g_parity() {
 fn test_int1e_nuc_sph_h2o_sto3g_parity() {
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT1E_NUC_SPH;
-    let atol = 1e-11_f64;
-    let rtol = 1e-9_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
     let observed = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
@@ -705,8 +708,9 @@ fn test_int1e_ovlp_sph_h2o_sto3g_rocm_parity() {
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT1E_OVLP_SPH;
     // D-15: rocm oracle uses tighter atol=1e-12 / rtol=1e-10 than the cpu suite
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
     let observed = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
@@ -727,8 +731,9 @@ fn test_int1e_kin_sph_h2o_sto3g_rocm_parity() {
 
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT1E_KIN_SPH;
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
     let observed = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
@@ -749,8 +754,9 @@ fn test_int1e_nuc_sph_h2o_sto3g_rocm_parity() {
 
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT1E_NUC_SPH;
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let reference = collect_1e_sph_matrix(api_id, &atm, &bas, &env);
     let observed = collect_1e_sph_matrix(api_id, &atm, &bas, &env);

@@ -12,6 +12,7 @@ pub mod roots_jacobi_data;
 // needed by the lower-bounded short-range quadrature.
 pub mod roots_jacobi_dd_data;
 pub mod roots_xw_data;
+mod rys_smallx_data;
 pub mod rys_wheeler;
 pub mod stg;
 // Phase 19 Plan 01 Wave 0 scaffolding — algorithm bodies land in Plan 02.

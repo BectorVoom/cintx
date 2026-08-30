@@ -295,7 +295,7 @@ fn test_int3c1e_sph_h2o_sto3g_vendor_parity() {
 
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT3C1E_SPH;
-    let atol = 1e-7_f64;
+    let atol = cintx_oracle::compare::tolerance_for_family("3c1e").atol;
 
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
@@ -417,8 +417,9 @@ fn test_int3c1e_sph_h2o_sto3g_rocm_parity() {
 
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT3C1E_SPH;
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("3c1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nsph: Vec<usize> = ang.iter().map(|&l| nsph_for_l(l)).collect();
@@ -650,8 +651,9 @@ fn test_int3c1e_sph_random_rocm_idempotency() {
          Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
     );
 
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("3c1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
     let n_cases = 64usize;
     let mut rng = Lcg::new(0x5ec0_3c1e_1234_5678);
 

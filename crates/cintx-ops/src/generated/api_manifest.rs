@@ -7127,11 +7127,11 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         stability: Stability::Stable,
         declared_in: "unknown",
         compiled_in_profiles: &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"],
-        oracle_covered: false,
+        oracle_covered: true,
         helper_kind: HelperKind::Operator,
         canonical_family: "1e",
         representation: RepresentationSupport::new(false, false, true),
-        unsupported_policy: Some(UnsupportedPolicy { policy: "fail_closed", reason: "GIAO x sigma slice: 1e operator 'spgsa01' rejected at one_electron.rs:9378 region", owner: "phase-30" }),
+        unsupported_policy: None,
     },
     ManifestEntry {
         family_name: "1e",

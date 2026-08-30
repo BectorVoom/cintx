@@ -5094,7 +5094,7 @@ pub fn launch_int1e_spgsa01_spinor_pair<F: CintFloat>(
     }
 
     // Fail-closed Rys-nroots guard (T-30-01d-05): never clamp.
-    let order = li as usize + lj as usize + 2;
+    let order = li as usize + lj as usize + 4;
     let nroots = (order / 2 + 1) as u32;
     if nroots > SA01_MAX_DEVICE_NROOTS {
         return Err(cintxRsError::UnsupportedApi {

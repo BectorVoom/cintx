@@ -250,8 +250,9 @@ fn build_h2_sto3g() -> (Vec<i32>, Vec<i32>, Vec<f64>) {
 
 #[cfg(has_vendor_libcint)]
 fn run_vendor_parity(label: &str, n_shells: usize, atm: &[i32], bas: &[i32], env: &[f64]) {
-    let atol = 1.0e-12_f64;
-    let rtol = 1.0e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("2e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let ang: Vec<i32> = (0..n_shells).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nsph: Vec<usize> = ang.iter().map(|&l| nsph_for_l(l)).collect();
@@ -340,8 +341,9 @@ fn test_int2e_sph_h2o_sto3g_rocm_parity() {
     );
 
     let (atm, bas, env) = build_h2o_sto3g();
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("2e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
     let n_shells = 5_usize;
 
     let ang: Vec<i32> = (0..n_shells).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();

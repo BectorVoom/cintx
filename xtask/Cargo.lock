@@ -4207,6 +4207,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "cintx-compat",
+ "cintx-cubecl",
  "cintx-ops",
  "cintx-oracle",
  "serde_json",

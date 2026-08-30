@@ -118,6 +118,10 @@ jobs:
               run: |
                   CINTX_BACKEND=cpu cargo run --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${{ matrix.profile }}" --include-unstable-source false
 
+            - name: Ratchet precision headroom for ${{ matrix.profile }}
+              run: |
+                  CINTX_ORACLE_BUILD_VENDOR=1 CINTX_BACKEND=cpu cargo run --release --manifest-path xtask/Cargo.toml --features cpu -- error-budget --profiles "${{ matrix.profile }}" --check-headroom
+
     helper_legacy_parity_gate:
         name: helper_legacy_parity_gate
         runs-on: ubuntu-latest

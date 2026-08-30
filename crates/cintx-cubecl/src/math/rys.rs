@@ -32,7 +32,8 @@ use cubecl::prelude::*;
 // with upstream is decided by the exact bits this file feeds the Rys kernels, so
 // the constant is transcribed from `rys_roots.c` rather than recomputed.
 #[allow(clippy::approx_constant)]
-const PIE4: f64 = 0.78539816339744827900_f64;
+pub const LIBCINT_PIE4: f64 = 0.78539816339744827900_f64;
+const PIE4: f64 = LIBCINT_PIE4;
 
 /// Clenshaw backward recurrence for a 14-coefficient Chebyshev polynomial.
 ///
@@ -7743,6 +7744,78 @@ mod tests_rys_host {
                 nroots,
                 "weights length mismatch for nroots={nroots}"
             );
+        }
+    }
+
+    /// Every implemented f64 Rys segmentation point gets its immediate
+    /// predecessor, exact value, and immediate successor. This keeps a future
+    /// fit/dispatch edit from creating a NaN, a negative weight, or an
+    /// unordered root exactly at a boundary even when ordinary corpus points
+    /// remain green.
+    #[test]
+    fn rys_host_f64_segmentation_boundaries_are_well_formed() {
+        const SHARED_BOUNDARIES: [f64; 4] = [3.0e-7, 10.0, 15.0, 33.0];
+
+        for nroots in 1_usize..=5 {
+            let mut boundaries = SHARED_BOUNDARIES.to_vec();
+            boundaries.push(35.0 + nroots as f64 * 5.0);
+
+            for boundary in boundaries {
+                for x in [boundary.next_down(), boundary, boundary.next_up()] {
+                    let (roots, weights) = rys_roots_host(nroots, x);
+                    assert_eq!(roots.len(), nroots, "nroots={nroots}, x={x}");
+                    assert_eq!(weights.len(), nroots, "nroots={nroots}, x={x}");
+
+                    for index in 0..nroots {
+                        assert!(
+                            roots[index].is_finite() && roots[index] >= 0.0,
+                            "nroots={nroots}, x={x}: root[{index}]={}",
+                            roots[index]
+                        );
+                        assert!(
+                            weights[index].is_finite() && weights[index] >= 0.0,
+                            "nroots={nroots}, x={x}: weight[{index}]={}",
+                            weights[index]
+                        );
+                        if index > 0 {
+                            assert!(
+                                roots[index - 1] < roots[index],
+                                "nroots={nroots}, x={x}: roots are not strictly ordered at {index}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // The nroots 6..12 Wheeler implementation deliberately supports its
+        // per-order Jacobi/Laguerre split only. Its global 3e-7 and
+        // 35+5*nroots polynomial-fit arms are not yet implemented, so claiming
+        // boundary coverage there would hide a capability gap instead of
+        // testing it. Exercise every split it does implement.
+        for nroots in 6_usize..=12 {
+            let boundary = crate::math::rys_wheeler::ext_breakpoint(nroots as u32);
+            for x in [boundary.next_down(), boundary, boundary.next_up()] {
+                let (roots, weights) = rys_roots_host(nroots, x);
+                for index in 0..nroots {
+                    assert!(
+                        roots[index].is_finite() && roots[index] >= 0.0,
+                        "nroots={nroots}, x={x}: root[{index}]={}",
+                        roots[index]
+                    );
+                    assert!(
+                        weights[index].is_finite() && weights[index] >= 0.0,
+                        "nroots={nroots}, x={x}: weight[{index}]={}",
+                        weights[index]
+                    );
+                    if index > 0 {
+                        assert!(
+                            roots[index - 1] < roots[index],
+                            "nroots={nroots}, x={x}: roots are not strictly ordered at {index}"
+                        );
+                    }
+                }
+            }
         }
     }
 

@@ -3898,9 +3898,23 @@ pub fn rys_roots_host_wheeler(nroots: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
     let mut roots = vec![0.0f64; nroots];
     let mut weights = vec![0.0f64; nroots];
 
-    // Global polynomial-fit regimes (rys_roots.c:58-78) are out of the Phase-25 corpus
-    // envelope (SMALLX=3e-7, LARGEX=35+nroots*5); the intermediate path below covers the
-    // validated x grid. The per-nroots dispatch (rys_roots.c:97-114):
+    // This is the global `CINTrys_roots` branch, before the per-order Wheeler
+    // dispatch. The recurrence is ill-conditioned here (especially at orders
+    // 10--12), so falling through produces finite but materially wrong roots.
+    // Keep the vendor's affine table verbatim instead.
+    if x <= SMALLX_LIMIT {
+        let offset = nroots * (nroots - 1) / 2;
+        for index in 0..nroots {
+            roots[index] = crate::math::rys_smallx_data::POLY_SMALLX_R0[offset + index]
+                + crate::math::rys_smallx_data::POLY_SMALLX_R1[offset + index] * x;
+            weights[index] = crate::math::rys_smallx_data::POLY_SMALLX_W0[offset + index]
+                + crate::math::rys_smallx_data::POLY_SMALLX_W1[offset + index] * x;
+        }
+        return (roots, weights);
+    }
+
+    // The large-x polynomial regime remains routed through the validated
+    // Laguerre/Schmidt path. The per-nroots dispatch (rys_roots.c:97-114):
     let err = match nroots {
         // nroots 6,7: PARITY-HONEST ESCAPE HATCH (quick task 260531-aw1).
         // The pure-f64 #[cube] device wheeler kernels (rys_jacobi_device / rys_schmidt_device)

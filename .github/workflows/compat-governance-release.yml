@@ -88,6 +88,10 @@ jobs:
               run: |
                   CINTX_BACKEND=cpu cargo run --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${CINTX_REQUIRED_PROFILES}" --include-unstable-source false
 
+            - name: Ratchet precision headroom
+              run: |
+                  CINTX_ORACLE_BUILD_VENDOR=1 CINTX_BACKEND=cpu cargo run --release --manifest-path xtask/Cargo.toml --features cpu -- error-budget --profiles "${CINTX_REQUIRED_PROFILES}" --check-headroom
+
             - name: Verify requirement traceability gate
               run: |
                   test -f /tmp/cintx_artifacts/cintx_phase_04_oracle_compare_summary.json

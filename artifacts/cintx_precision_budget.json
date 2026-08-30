@@ -1,0 +1,5942 @@
+{
+  "entries": [
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_a01gp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_a01gp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_a01gp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_cg_a11part_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_cg_a11part_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_cg_a11part_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_cg_irxp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_cg_irxp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_cg_irxp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_cg_sa10nucsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_cg_sa10sa01_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_cg_sa10sp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_drinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_drinv_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_drinv_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_giao_a11part_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_giao_a11part_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_giao_a11part_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_giao_irjxp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_giao_irjxp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_giao_irjxp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_giao_sa10nucsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_giao_sa10sa01_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_giao_sa10sp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_gnuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_gnuc_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_gnuc_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_govlp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_govlp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_govlp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ia01p_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ia01p_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ia01p_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_igkin_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_igkin_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_igkin_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ignuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ignuc_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ignuc_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_igovlp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 18,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_igovlp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_igovlp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 243,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipipiprinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 243,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipipiprinv_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1944,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipipiprinv_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipipnuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipipnuc_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 648,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipipnuc_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipiprinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipiprinv_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 648,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipiprinv_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 243,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipiprinvip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 243,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipiprinvip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1944,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipiprinvip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipkin_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipkin_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipkin_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipnuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipnuc_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipnuc_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipnucip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipnucip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 648,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipnucip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipovlp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipovlp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipovlp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipippnucp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipippnucp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipippnucp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipprinvp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipprinvp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipprinvp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipipr_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipipr_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 648,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipr_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipiprinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipiprinv_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipiprinv_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipiprinvip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipiprinvip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 648,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipiprinvip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 243,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipiprinvipip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 243,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipiprinvipip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1944,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipiprinvipip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipspnucsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipipsprinvsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipkin_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipkin_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ipkin_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipkinip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipkinip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipkinip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipnuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipnuc_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ipnuc_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipnucip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipnucip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipnucip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipovlp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipovlp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ipovlp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipovlpip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipovlpip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipovlpip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ippnucp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ippnucp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ippnucp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ippnucpip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ippnucpip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ippnucpip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipprinvp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipprinvp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ipprinvp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipprinvpip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipprinvpip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipprinvpip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_iprinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_iprinv_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_iprinv_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_iprinvip_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_iprinvip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_iprinvip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ipspnucsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipspnucspip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_ipsprinvsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ipsprinvspip_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_irp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_irp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_irp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_kin_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_kin_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_kin_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_nuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_nuc_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_nuc_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ovlp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ovlp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_ovlp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_p4_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_p4_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_p4_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_pnucp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_pnucp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_pnucp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_prinvp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_prinvp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int1e_prinvp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_r2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_r2_origj_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r2_origj_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_r2_origj_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_r2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_r4_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_r4_origj_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r4_origj_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_r4_origj_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r4_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_r4_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_r_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_r_origj_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r_origj_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_r_origj_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_r_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_rinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_rinv_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_rinv_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_rr_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_rr_origj_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_rr_origj_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_rr_origj_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_rr_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_rr_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_rrr_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_rrr_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 648,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_rrr_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 243,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_rrrr_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 243,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_rrrr_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1944,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_rrrr_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_sigma_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_sp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_spgnucsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_spgsa01_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_spgsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_spnucsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_sprinvsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_spsp_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_sr_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_srnucsr_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_srsr_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_z_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_z_origj_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_z_origj_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_z_origj_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_z_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_z_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_zz_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_zz_origj_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_zz_origj_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_zz_origj_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_zz_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int1e_zz_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2c2e_ip1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_ip1ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_ip1ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2c2e_ip1ip2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2c2e_ip2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_ipip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_ipip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2c2e_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_g1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_g1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_g1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 162,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_g1g2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 162,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_g1g2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_g1g2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 162,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_gg1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 162,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_gg1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_gg1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ig1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 54,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ig1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ig1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ip1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip1ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip1ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ip1ip2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ip1spsp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ip1srsr2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip1v_r1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip1v_r1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_ip1v_r1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip1v_rc1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip1v_rc1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_ip1v_rc1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ip2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ipip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ipip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ipip1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 729,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ipip1ipip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 729,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ipip1ipip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 23328,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ipip1ipip2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ipspsp1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ipspsp1spsp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ipsrsr1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 864,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ipsrsr1srsr2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ipvg1_xp1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ipvg1_xp1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_ipvg1_xp1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ipvg2_xp1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ipvg2_xp1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_ipvg2_xp1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ipvip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ipvip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2592,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ipvip1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 729,
+      "nroots_class": "nroots_1_5",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ipvip1ipvip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 729,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ipvip1ipvip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 23328,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_ipvip1ipvip2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_sps1sps2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_sps1ssp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_spsp1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_spsp1spsp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_spsp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_spv1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_spv1spsp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_spv1spv2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_spv1vsp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_srsr1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_srsr1srsr2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_ssp1sps2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_ssp1ssp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_stg_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_stg_ip1ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_stg_ipip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_stg_ipvip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_stg_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_vsp1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_vsp1spsp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_vsp1spv2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "pass",
+      "symbol": "int2e_vsp1vsp2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_yp_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_yp_ip1ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_yp_ipip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 81,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_yp_ipvip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_yp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c1e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c1e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int3c1e_ip1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c1e_iprinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_iprinv_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int3c1e_iprinv_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c1e_p2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_p2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_2",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 24,
+      "nroots_class": "nroots_1_2",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int3c1e_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_4",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_4",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_4",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_4",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int3c2e_ip1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_4",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ip1ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_4",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ip1ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_4",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int3c2e_ip1ip2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_4",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_4",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_4",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int3c2e_ip2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_4",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ipip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_4",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ipip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_4",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ipip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_4",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ipip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 72,
+      "nroots_class": "nroots_1_4",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int3c2e_ipspsp1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_4",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ipvip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_4",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ipvip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 216,
+      "nroots_class": "nroots_1_4",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int3c2e_ipvip1_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_4",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "4c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int4c1e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "4c1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int4c1e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::breit",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_breit_r1p2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::breit",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 288,
+      "nroots_class": "nroots_1_5",
+      "representation": "spinor",
+      "status": "skipped",
+      "symbol": "int2e_breit_r2p2_spinor"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::grids",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_grids_ip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::grids",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_grids_ipip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::grids",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 27,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_grids_ipvip_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::grids",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_grids_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::grids",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 12,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_grids_spvsp_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origi",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r2_origi_ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origi",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r2_origi_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origi",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r4_origi_ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origi",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_r4_origi_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origk",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_ip1_r2_origk_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origk",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_ip1_r4_origk_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origk",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 9,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_ip1_r6_origk_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origk",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_r2_origk_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origk",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_r4_origk_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::origk",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c1e_r6_origk_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "unstable::source::ssc",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3,
+      "nroots_class": "nroots_1_5",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_sph_ssc"
+    }
+  ],
+  "measurement": {
+    "perturbation": false,
+    "profiles": [
+      "base",
+      "with-f12",
+      "with-4c1e",
+      "with-f12+with-4c1e",
+      "unstable-source"
+    ]
+  },
+  "summary": {
+    "evaluated_entries": 264,
+    "min_headroom_abs": "inf",
+    "min_headroom_rel": "inf",
+    "mismatched": 0,
+    "passed": 264,
+    "total_unique_entries": 348,
+    "worst_max_abs_error": 0.0,
+    "worst_max_rel_error": 0.0
+  },
+  "timestamp": "2026-08-30",
+  "tolerance_policy": "unified_1e-12"
+}

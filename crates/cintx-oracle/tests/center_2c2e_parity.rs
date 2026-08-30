@@ -248,7 +248,7 @@ fn test_int2c2e_sph_h2o_sto3g_idempotency() {
     let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
 
-    let atol = 1e-15_f64;
+    let atol = cintx_oracle::compare::tolerance_for_family("2c2e").atol;
     let mut mismatch_count = 0usize;
     let mut any_nonzero = false;
 
@@ -307,7 +307,7 @@ fn test_int2c2e_sph_h2o_sto3g_vendor_parity() {
     let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
 
-    let atol = 1e-9_f64;
+    let atol = cintx_oracle::compare::tolerance_for_family("2c2e").atol;
     let mut mismatch_count = 0usize;
     let mut any_nonzero_vendor = false;
     let mut any_nonzero_cintx = false;
@@ -412,8 +412,9 @@ fn test_int2c2e_sph_h2o_sto3g_rocm_parity() {
     );
 
     let (atm, bas, env) = build_h2o_sto3g();
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("2c2e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nao: Vec<usize> = ang.iter().map(|&l| nsph(l)).collect();
@@ -588,8 +589,9 @@ fn test_int2c2e_sph_random_rocm_idempotency() {
          Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
     );
 
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("2c2e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
     let n_cases = 64usize;
     let mut rng = Lcg::new(0x5ec0_2c2e_1234_5678);
 

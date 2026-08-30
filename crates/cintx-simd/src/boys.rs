@@ -1,7 +1,11 @@
 use crate::vector::SimdFloat;
-use std::f64::consts::FRAC_PI_4;
 
-const PIE4: f64 = FRAC_PI_4;
+/// Verbatim `PIE4` from libcint `rys_roots.c`, not a recomputed mathematical
+/// constant.  This keeps SIMD and CubeCL on the same result-compatibility
+/// provenance policy.
+#[allow(clippy::approx_constant)]
+pub const LIBCINT_PIE4: f64 = 0.78539816339744827900_f64;
+const PIE4: f64 = LIBCINT_PIE4;
 
 /// Compute 1-root Rys quadrature root & weight for a scalar f64.
 /// Reference: libcint rys_roots.c line 267 `rys_root1`.
@@ -543,4 +547,21 @@ pub fn rys_roots_simd<V: SimdFloat>(nroots: usize, x: V) -> (Vec<V>, Vec<V>) {
     }
 
     (u_res, w_res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PIE4;
+
+    #[test]
+    fn pie4_is_the_verbatim_libcint_bit_pattern_in_every_implementation() {
+        // `#define PIE4 0.78539816339744827900` in libcint rys_roots.c.
+        const LIBCINT_PIE4_BITS: u64 = 0x3fe9_21fb_5444_2d18;
+        assert_eq!(PIE4.to_bits(), LIBCINT_PIE4_BITS);
+        assert_eq!(
+            PIE4.to_bits(),
+            cintx_cubecl::math::rys::LIBCINT_PIE4.to_bits(),
+            "SIMD and CubeCL must share the transcribed libcint constant"
+        );
+    }
 }

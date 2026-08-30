@@ -1,10 +1,10 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use cintx_oracle::compare::{generate_profile_parity_report, verify_helper_surface_coverage};
 use cintx_oracle::fixtures::{
-    MATRIX_ARTIFACT_FALLBACK_NAME, OracleRawInputs,
-    REPORT_ARTIFACT_FALLBACK_NAME, REQUIRED_MATRIX_ARTIFACT, REQUIRED_REPORT_ARTIFACT,
+    MATRIX_ARTIFACT_FALLBACK_NAME, OracleRawInputs, REPORT_ARTIFACT_FALLBACK_NAME,
+    REQUIRED_MATRIX_ARTIFACT, REQUIRED_REPORT_ARTIFACT,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,11 +23,14 @@ const ALL_KNOWN_PROFILES: &[&str] = &[
 const FALLBACK_ARTIFACT_DIR_ENV: &str = "CINTX_ARTIFACT_DIR";
 const FALLBACK_ARTIFACT_DIR_DEFAULT: &str = "/tmp/cintx_artifacts";
 
-const ORACLE_SUMMARY_REQUIRED_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_oracle_compare_summary.json";
+const ORACLE_SUMMARY_REQUIRED_PATH: &str =
+    "/tmp/cintx_artifacts/cintx_phase_04_oracle_compare_summary.json";
 const ORACLE_SUMMARY_FALLBACK_NAME: &str = "cintx_phase_04_oracle_compare_summary.json";
-const HELPER_SUMMARY_REQUIRED_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_helper_legacy_parity.json";
+const HELPER_SUMMARY_REQUIRED_PATH: &str =
+    "/tmp/cintx_artifacts/cintx_phase_04_helper_legacy_parity.json";
 const HELPER_SUMMARY_FALLBACK_NAME: &str = "cintx_phase_04_helper_legacy_parity.json";
-const OOM_SUMMARY_REQUIRED_PATH: &str = "/tmp/cintx_artifacts/cintx_phase_04_oom_contract_check.json";
+const OOM_SUMMARY_REQUIRED_PATH: &str =
+    "/tmp/cintx_artifacts/cintx_phase_04_oom_contract_check.json";
 const OOM_SUMMARY_FALLBACK_NAME: &str = "cintx_phase_04_oom_contract_check.json";
 
 pub fn run_oracle_compare(profiles: &[String], include_unstable_source: bool) -> Result<()> {
@@ -37,25 +40,34 @@ pub fn run_oracle_compare(profiles: &[String], include_unstable_source: bool) ->
     let mut profile_reports = Vec::new();
     let mut profile_failures = Vec::new();
     for profile in ordered_profiles {
-        let compare_result = generate_profile_parity_report(&inputs, &profile, include_unstable_source);
+        let compare_result =
+            generate_profile_parity_report(&inputs, &profile, include_unstable_source);
         let profile_slug = profile_slug(&profile);
 
         let matrix_source = source_path_from_result(
-            compare_result.as_ref().ok().map(|report| report.matrix_artifact.actual_path.as_path()),
+            compare_result
+                .as_ref()
+                .ok()
+                .map(|report| report.matrix_artifact.actual_path.as_path()),
             REQUIRED_MATRIX_ARTIFACT,
             MATRIX_ARTIFACT_FALLBACK_NAME,
         )
         .context("resolve matrix artifact source path")?;
         let parity_source = source_path_from_result(
-            compare_result.as_ref().ok().map(|report| report.parity_artifact.actual_path.as_path()),
+            compare_result
+                .as_ref()
+                .ok()
+                .map(|report| report.parity_artifact.actual_path.as_path()),
             REQUIRED_REPORT_ARTIFACT,
             REPORT_ARTIFACT_FALLBACK_NAME,
         )
         .context("resolve parity artifact source path")?;
 
-        let matrix_required = format!("/tmp/cintx_artifacts/cintx_phase_04_oracle_matrix_{profile_slug}.json");
+        let matrix_required =
+            format!("/tmp/cintx_artifacts/cintx_phase_04_oracle_matrix_{profile_slug}.json");
         let matrix_fallback = format!("cintx_phase_04_oracle_matrix_{profile_slug}.json");
-        let parity_required = format!("/tmp/cintx_artifacts/cintx_phase_04_oracle_compare_{profile_slug}.json");
+        let parity_required =
+            format!("/tmp/cintx_artifacts/cintx_phase_04_oracle_compare_{profile_slug}.json");
         let parity_fallback = format!("cintx_phase_04_oracle_compare_{profile_slug}.json");
 
         let matrix_persisted =
@@ -172,7 +184,11 @@ pub fn run_oom_contract_check() -> Result<()> {
         "gate": "oom-contract-check",
         "executed_commands": commands,
     });
-    let write = write_json_with_fallback(OOM_SUMMARY_REQUIRED_PATH, OOM_SUMMARY_FALLBACK_NAME, &summary)?;
+    let write = write_json_with_fallback(
+        OOM_SUMMARY_REQUIRED_PATH,
+        OOM_SUMMARY_FALLBACK_NAME,
+        &summary,
+    )?;
     summary["artifact_write"] = write.to_json();
     rewrite_json(&write.actual_path, &summary)?;
 
@@ -204,7 +220,9 @@ fn validate_required_profile_scope(profiles: &[String]) -> Result<Vec<String>> {
     // If requesting unstable-source, it runs standalone (per D-02)
     if profiles.iter().any(|p| p == "unstable-source") {
         if profiles.len() != 1 || profiles[0] != "unstable-source" {
-            bail!("unstable-source profile must be run standalone, not combined with other profiles");
+            bail!(
+                "unstable-source profile must be run standalone, not combined with other profiles"
+            );
         }
         return Ok(vec!["unstable-source".to_owned()]);
     }
@@ -227,9 +245,7 @@ fn ensure_known_profile(profile: &str) -> Result<()> {
 }
 
 fn profile_slug(profile: &str) -> String {
-    profile
-        .replace('+', "_plus_")
-        .replace('-', "_")
+    profile.replace('+', "_plus_").replace('-', "_")
 }
 
 fn source_path_from_result(
@@ -262,7 +278,8 @@ fn copy_artifact_with_fallback(
     required_target: &str,
     fallback_name: &str,
 ) -> Result<ArtifactWrite> {
-    let payload = fs::read(source).with_context(|| format!("read source artifact `{}`", source.display()))?;
+    let payload =
+        fs::read(source).with_context(|| format!("read source artifact `{}`", source.display()))?;
     write_bytes_with_fallback(required_target, fallback_name, &payload)
 }
 

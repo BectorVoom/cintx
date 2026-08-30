@@ -20,7 +20,13 @@ use std::collections::BTreeSet;
 
 const UNIFIED_ATOL: f64 = 1e-12;
 const UNIFIED_RTOL: f64 = 1e-12;
-const ZERO_THRESHOLD: f64 = 1e-18;
+// The f64 parity contract has no separate near-zero regime: the normal mixed
+// comparison already reduces to `abs_error <= atol` when the reference is
+// exactly zero.  Keeping the old 1e-18 branch only made the policy look
+// meaningful while changing no verdict at f64 precision.
+const F64_ZERO_THRESHOLD: f64 = 0.0;
+// Frozen f32 policy (D-09): do not couple this plan's f64 cleanup to it.
+const F32_ZERO_THRESHOLD: f64 = 1e-18;
 
 const BASE_PROFILE: &str = "base";
 
@@ -84,15 +90,30 @@ pub struct FixtureParityResult {
     pub symbol: String,
     pub family: String,
     pub representation: String,
+    pub backend: String,
+    pub nroots_class: String,
+    pub n_elements: usize,
     pub tolerance: FamilyTolerance,
     pub raw_vs_upstream: DiffSummary,
     pub raw_vs_optimizer: DiffSummary,
+    pub headroom_abs: f64,
+    pub headroom_rel: f64,
     pub layout_ok: bool,
     /// True when the fixture carries no numeric parity obligation and was recorded as
     /// passing without evaluation (e.g. spinor gradients, UnsupportedApi by design per
     /// R5/D-03). Consumers like `oracle-covered-update` MUST NOT treat a skipped fixture
     /// as oracle-covered.
     pub skipped: bool,
+}
+
+pub fn nroots_class_for_family(family: &str) -> &'static str {
+    match family {
+        "2e" | "unstable::source::2e" | "f12" => "nroots_1_5",
+        "3c2e" | "unstable::source::3c2e" => "nroots_1_4",
+        "4c1e" => "nroots_1_3",
+        "2c2e" | "3c1e" | "unstable::source::3c1e" | "1e" | "unstable::source::1e" => "nroots_1_2",
+        _ => "nroots_1_5",
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -151,7 +172,7 @@ pub fn tolerance_for_family(family: &str) -> FamilyTolerance {
         family: static_family,
         atol: UNIFIED_ATOL,
         rtol: UNIFIED_RTOL,
-        zero_threshold: ZERO_THRESHOLD,
+        zero_threshold: F64_ZERO_THRESHOLD,
     }
 }
 
@@ -179,8 +200,8 @@ pub const F32_UNIFIED_RTOL: f64 = 1e-4;
 /// Absolute tolerance floor for f32 oracle comparisons.
 ///
 /// Matches the magnitude of subnormal f32 output: integrals below ~1e-7 are
-/// indistinguishable from zero at f32 precision. The f64 oracle uses ZERO_THRESHOLD
-/// to gate relative-error checks; the f32 gate uses F32_UNIFIED_ATOL in the same
+/// indistinguishable from zero at f32 precision. The f64 oracle has no separate
+/// near-zero threshold; the f32 gate uses F32_UNIFIED_ATOL in the same
 /// role. Set to 1e-7 (half the f32 machine epsilon relative to 1.0).
 pub const F32_UNIFIED_ATOL: f64 = 1e-7;
 
@@ -224,7 +245,7 @@ pub fn f32_tolerance_for_family(family: &str) -> FamilyTolerance {
         family: static_family,
         atol: F32_UNIFIED_ATOL,
         rtol,
-        zero_threshold: ZERO_THRESHOLD,
+        zero_threshold: F32_ZERO_THRESHOLD,
     }
 }
 
@@ -253,7 +274,7 @@ fn diff_summary(reference: &[f64], observed: &[f64], tolerance: FamilyTolerance)
         };
         max_rel_error = max_rel_error.max(rel_error);
 
-        let passed = if abs_ref < tolerance.zero_threshold {
+        let passed = if tolerance.zero_threshold > 0.0 && abs_ref < tolerance.zero_threshold {
             abs_error <= tolerance.atol
         } else {
             abs_error <= tolerance.atol + tolerance.rtol * abs_ref
@@ -1168,13 +1189,19 @@ fn build_profile_parity_report(
                 max_rel_error: 0.0,
                 within_tolerance: true,
             };
+            let nroots_class = nroots_class_for_family(&fixture.family);
             fixture_results.push(FixtureParityResult {
                 symbol: fixture.symbol.clone(),
                 family: fixture.family.clone(),
                 representation: fixture.representation.clone(),
+                backend: "cpu".to_string(),
+                nroots_class: nroots_class.to_string(),
+                n_elements: fixture.required_elements(),
                 tolerance,
                 raw_vs_upstream: noop_diff,
                 raw_vs_optimizer: noop_diff,
+                headroom_abs: f64::INFINITY,
+                headroom_rel: f64::INFINITY,
                 layout_ok: true,
                 skipped: true,
             });
@@ -1190,12 +1217,19 @@ fn build_profile_parity_report(
                 "symbol": fixture.symbol,
                 "family": fixture.family,
                 "representation": fixture.representation,
+                "backend": "cpu",
+                "nroots_class": nroots_class,
+                "n_elements": fixture.required_elements(),
                 "skipped": skip_reason,
                 "tolerance": {
                     "family": tolerance.family,
                     "atol": tolerance.atol,
                     "rtol": tolerance.rtol,
                     "zero_threshold": tolerance.zero_threshold,
+                },
+                "headroom": {
+                    "abs": f64::INFINITY,
+                    "rel": f64::INFINITY,
                 },
                 "fixture_mismatches": [],
             }));
@@ -1518,13 +1552,30 @@ fn build_profile_parity_report(
             );
         }
 
+        let nroots_class = nroots_class_for_family(&fixture.family);
+        let headroom_abs = if raw_vs_upstream.max_abs_error > 0.0 {
+            tolerance.atol / raw_vs_upstream.max_abs_error
+        } else {
+            f64::INFINITY
+        };
+        let headroom_rel = if raw_vs_upstream.max_rel_error > 0.0 {
+            tolerance.rtol / raw_vs_upstream.max_rel_error
+        } else {
+            f64::INFINITY
+        };
+
         fixture_results.push(FixtureParityResult {
             symbol: fixture.symbol.clone(),
             family: fixture.family.clone(),
             representation: fixture.representation.clone(),
+            backend: "cpu".to_string(),
+            nroots_class: nroots_class.to_string(),
+            n_elements: required_elements,
             tolerance,
             raw_vs_upstream,
             raw_vs_optimizer,
+            headroom_abs,
+            headroom_rel,
             layout_ok: layout,
             skipped: false,
         });
@@ -1532,6 +1583,9 @@ fn build_profile_parity_report(
             "symbol": fixture.symbol,
             "family": fixture.family,
             "representation": fixture.representation,
+            "backend": "cpu",
+            "nroots_class": nroots_class,
+            "n_elements": required_elements,
             "workspace_bytes": workspace_bytes,
             "raw_summary": raw_summary.unwrap_or(Value::Null),
             "upstream_summary": upstream_summary.unwrap_or(Value::Null),
@@ -1544,6 +1598,10 @@ fn build_profile_parity_report(
             },
             "raw_vs_upstream": raw_vs_upstream_json.unwrap_or(Value::Null),
             "raw_vs_optimizer": raw_vs_optimizer_json.unwrap_or(Value::Null),
+            "headroom": {
+                "abs": headroom_abs,
+                "rel": headroom_rel,
+            },
             "layout_assertions": {
                 "flat-buffer_contract": layout_ok.unwrap_or(false),
                 "spinor_interleaved_doubles": fixture.complex_interleaved,
@@ -1570,8 +1628,9 @@ fn build_profile_parity_report(
         "tolerance_table": {
             "unified_atol": UNIFIED_ATOL,
             "unified_rtol": UNIFIED_RTOL,
-            "zero_threshold": ZERO_THRESHOLD,
-            "note": "All families use unified atol=1e-12, rtol=1e-10",
+            "f64_zero_threshold": F64_ZERO_THRESHOLD,
+            "f32_zero_threshold": F32_ZERO_THRESHOLD,
+            "note": "All f64 families use unified atol=1e-12, rtol=1e-12",
         },
         "upstream_reference": "vendored upstream compatibility proxy through cintx_compat::legacy wrappers",
         "cart_spheric_spinor_flat-buffer_interleaved_assertions": true,
@@ -1661,7 +1720,7 @@ mod tests {
             "f32 tolerance for '1e' must use F32_UNIFIED_RTOL"
         );
         assert_eq!(
-            tol.zero_threshold, ZERO_THRESHOLD,
+            tol.zero_threshold, F64_ZERO_THRESHOLD,
             "zero_threshold must be shared"
         );
 

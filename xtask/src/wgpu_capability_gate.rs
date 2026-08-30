@@ -1,5 +1,5 @@
-use anyhow::{anyhow, bail, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow, bail};
+use serde_json::{Value, json};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -418,7 +418,10 @@ mod tests {
 
         let probe = probe_wgpu_adapter();
         // When both vars are absent, probe must fail.
-        assert!(probe.is_err(), "probe should fail when no adapter env vars set");
+        assert!(
+            probe.is_err(),
+            "probe should fail when no adapter env vars set"
+        );
     }
 
     // Test 7: Required mode (require_adapter=true) fails when probe returns Err.
@@ -429,7 +432,10 @@ mod tests {
         let adapter_found = probe_result.is_ok();
         // Simulate the gate's exit logic.
         let should_fail = require_adapter && !adapter_found;
-        assert!(should_fail, "required gate must fail when adapter not found");
+        assert!(
+            should_fail,
+            "required gate must fail when adapter not found"
+        );
     }
 
     // ── helper for env isolation in tests ───────────────────────────────
@@ -444,7 +450,10 @@ mod tests {
             let prior = env::var(key).ok();
             // SAFETY: single-threaded test; no concurrent env access.
             unsafe { env::remove_var(key) };
-            Self { key: key.to_owned(), prior }
+            Self {
+                key: key.to_owned(),
+                prior,
+            }
         }
     }
 

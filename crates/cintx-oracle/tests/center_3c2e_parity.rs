@@ -4,7 +4,7 @@
 //! - cintx values via `eval_raw` (dispatches through `launch_center_3c2e`)
 //! - reference values from vendored libcint 6.1.3 FFI (when enabled)
 //!
-//! Tolerance: atol 1e-9 for 3c2e per phase research D-06.
+//! Tolerance: atol 1e-12 for 3c2e (unified tolerance).
 
 // Module gate widened to allow `--features rocm` (without cpu) for the
 // Phase 16-04 ROCm oracle suite (D-15). Cpu tests remain unconditional under
@@ -233,7 +233,7 @@ fn test_center_3c2e_sph_h2o_sto3g_vendor_parity() {
 
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT3C2E_IP1_SPH;
-    let atol = 1e-12_f64;
+    let atol = cintx_oracle::compare::tolerance_for_family("3c2e").atol;
 
     let natm = (atm.len() / ATM_SLOTS) as i32;
     let nbas = (bas.len() / BAS_SLOTS) as i32;
@@ -326,8 +326,9 @@ fn test_int3c2e_sph_h2o_sto3g_rocm_parity() {
 
     let (atm, bas, env) = build_h2o_sto3g();
     let api_id = RawApiId::INT3C2E_IP1_SPH;
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("3c2e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
 
     let ang: Vec<i32> = (0..N_SHELLS).map(|s| bas[s * BAS_SLOTS + ANG_OF]).collect();
     let shell_nsph: Vec<usize> = ang.iter().map(|&l| nsph_for_l(l)).collect();
@@ -563,8 +564,9 @@ fn test_int3c2e_ip1_sph_random_rocm_idempotency() {
          Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
     );
 
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("3c2e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
     let n_cases = 64usize;
     let mut rng = Lcg::new(0x5ec0_3c2e_1234_5678);
 

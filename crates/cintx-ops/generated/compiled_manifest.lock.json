@@ -11847,19 +11847,14 @@
         "representation": "spinor",
         "symbol": "int1e_spgsa01_spinor"
       },
-      "oracle_covered": false,
+      "oracle_covered": true,
       "profiles": [
         "base",
         "with-f12",
         "with-4c1e",
         "with-f12+with-4c1e"
       ],
-      "stability": "stable",
-      "unsupported_policy": {
-        "owner": "phase-30",
-        "policy": "fail_closed",
-        "reason": "GIAO x sigma slice: 1e operator 'spgsa01' rejected at one_electron.rs:9378 region"
-      }
+      "stability": "stable"
     },
     {
       "arity": 2,

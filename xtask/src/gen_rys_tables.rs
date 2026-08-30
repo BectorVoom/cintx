@@ -23,7 +23,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 /// Vendored libcint source dir (relative to workspace root).
 const LIBCINT_SRC_REL: &str = "libcint-master/src";
@@ -38,18 +38,66 @@ struct TableSpec {
 }
 
 const TABLES: &[TableSpec] = &[
-    TableSpec { name: "JACOBI_ALPHA", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "JACOBI_BETA", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "JACOBI_RN_PART2", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "JACOBI_SN", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "JACOBI_COEF", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "JACOBI_COEF_ORDER", file: "rys_wheeler.c", is_int: true },
-    TableSpec { name: "lJACOBI_ALPHA", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "lJACOBI_BETA", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "lJACOBI_RN_PART2", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "lJACOBI_SN", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "lJACOBI_COEF", file: "rys_wheeler.c", is_int: false },
-    TableSpec { name: "TURNOVER_POINT", file: "fmt.c", is_int: false },
+    TableSpec {
+        name: "JACOBI_ALPHA",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "JACOBI_BETA",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "JACOBI_RN_PART2",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "JACOBI_SN",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "JACOBI_COEF",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "JACOBI_COEF_ORDER",
+        file: "rys_wheeler.c",
+        is_int: true,
+    },
+    TableSpec {
+        name: "lJACOBI_ALPHA",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "lJACOBI_BETA",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "lJACOBI_RN_PART2",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "lJACOBI_SN",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "lJACOBI_COEF",
+        file: "rys_wheeler.c",
+        is_int: false,
+    },
+    TableSpec {
+        name: "TURNOVER_POINT",
+        file: "fmt.c",
+        is_int: false,
+    },
 ];
 
 fn workspace_root() -> PathBuf {
@@ -222,9 +270,11 @@ pub fn run_gen_rys_tables(check: bool) -> Result<()> {
             target.display()
         );
     } else {
-        fs::write(&target, &rendered)
-            .with_context(|| format!("write {}", target.display()))?;
-        println!("gen-rys-tables: wrote {} from the vendored libcint source", target.display());
+        fs::write(&target, &rendered).with_context(|| format!("write {}", target.display()))?;
+        println!(
+            "gen-rys-tables: wrote {} from the vendored libcint source",
+            target.display()
+        );
     }
     Ok(())
 }

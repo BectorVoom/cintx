@@ -336,8 +336,9 @@ fn test_int4c1e_sph_random_rocm_idempotency() {
          Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
     );
 
-    let atol = 1e-12_f64;
-    let rtol = 1e-10_f64;
+    let tol = cintx_oracle::compare::tolerance_for_family("4c1e");
+    let atol = tol.atol;
+    let rtol = tol.rtol;
     let n_cases = 64usize;
     let mut rng = Lcg::new(0x5ec0_4c1e_1234_5678);
 

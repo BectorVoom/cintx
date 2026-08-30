@@ -9,12 +9,12 @@ use std::path::Path;
 const COMPILED_MANIFEST_LOCK_PATH: &str = "crates/cintx-ops/generated/compiled_manifest.lock.json";
 
 pub fn run_oracle_covered_update() -> Result<()> {
-    let lock_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../{COMPILED_MANIFEST_LOCK_PATH}"));
+    let lock_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../{COMPILED_MANIFEST_LOCK_PATH}"));
     let lock_text = fs::read_to_string(&lock_path)
         .with_context(|| format!("read lock at {}", lock_path.display()))?;
-    let mut lock: Value = serde_json::from_str(&lock_text)
-        .context("parse compiled manifest lock")?;
+    let mut lock: Value =
+        serde_json::from_str(&lock_text).context("parse compiled manifest lock")?;
 
     let inputs = OracleRawInputs::sample();
 
@@ -72,10 +72,7 @@ pub fn run_oracle_covered_update() -> Result<()> {
 
     let mut stamped_count = 0usize;
     for entry in entries.iter_mut() {
-        let stability = entry
-            .get("stability")
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let stability = entry.get("stability").and_then(Value::as_str).unwrap_or("");
         // Only stamp stable and optional entries (not unstable_source per D-07).
         if !matches!(stability, "stable" | "optional") {
             continue;

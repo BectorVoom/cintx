@@ -887,19 +887,8 @@ fn giao_sigma_1e_spgnucsp() {
 /// spgsa01 byte-identity vs vendor at atol=1e-12 on the non-square block. ALL 9
 /// rank components must be non-zero (Pitfall 3 / T-30-01d-02: a rank-3 truncation
 /// would drop 6 of 9).
-///
-/// WIP (30-01d, NOT byte-identical yet): the rank-9 spg-Rys/London engine builds
-/// and both arms RUN producing all-9-non-zero output, but spgsa01 diverges from
-/// vendor by a small (~0.5%) UNIFORM residual concentrated in the BOTH-SIDE
-/// `g1 = D_J(g0) + D_I(g0)` contribution that spgnucsp (g1 = D_J only, byte-PERFECT)
-/// does not carry. Isolation confirmed: D_J-only g1 gives ~1.2e-2 error; full
-/// both-side gives ~6e-5 residual; headroom +4/+6 identical (not headroom). The
-/// per-index recurrence matches libcint g2e.c line-by-line; the residual needs the
-/// cart-discriminator dual-verification (spike-findings method) to localize. Gate
-/// `#[ignore]`d; `oracle_covered` NOT flipped (T-30-01d-06: no over-claim).
 #[cfg(has_vendor_libcint)]
 #[cfg(feature = "cpu")]
-#[ignore = "30-01d WIP: rank-9 spgsa01 both-side-g1 ~0.5% residual; spgnucsp green, sa01 deferred"]
 #[test]
 fn giao_sigma_1e_spgsa01() {
     let (atm, bas, env) = cintx_oracle::fixtures::build_gauge_kappa_spinor_fixture();
@@ -916,13 +905,10 @@ fn giao_sigma_1e_spgsa01() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// No-silent-skip integrity (FULL 9-family Wave-1 scope). The two rank-3 nucsp families
-// MUST be oracle_covered=true AND component_rank==3 (Sub-wave 1b, this plan). The
-// two rank-9 sa01 families stay oracle_covered=false (30-01c WIP, NOT this plan's
-// scope) but MUST carry component_rank==9; the deferred spgsa01/spgnucsp rows stay
-// false. This test is gated under `has_vendor_libcint` so it FAILS (compiles out →
-// absent) rather than silently passing without CINTX_ORACLE_BUILD_VENDOR=1
-// (T-30-01b-04): the manifest invariants are meaningless unless the vendor arms ran.
+// No-silent-skip integrity for the fully-covered 9-family wave. This test is gated
+// under `has_vendor_libcint` so it is absent rather than silently passing without
+// CINTX_ORACLE_BUILD_VENDOR=1: the manifest invariants are meaningful only after
+// the vendor arms ran.
 // ─────────────────────────────────────────────────────────────────────────────
 /// Read (oracle_covered, component_rank) for a symbol from the committed manifest
 /// lock JSON (the source of truth; the `MANIFEST_ENTRIES`/api_manifest mirror is
@@ -1013,11 +999,9 @@ fn test_no_silent_skip() {
         );
     }
 
-    // (C) Sub-wave 1d spgnucsp (rank 3, NUCLEAR Rys + 8-G London): RUNs (no silent
-    //     skip), all-3 non-zero, AND byte-identical to vendor. (spgsa01 — rank 9,
-    //     both-side-g1 — RUNs + non-zero but is NOT yet byte-identical: a small ~0.5%
-    //     uniform residual in the D_I-in-g1 chain, WIP — its byte-identity gate is
-    //     `#[ignore]`d and oracle_covered stays FALSE, asserted in (E) below.)
+    // (C) Sub-wave 1d spgnucsp (rank 3, NUCLEAR Rys + 8-G London) and spgsa01
+    //     (rank 9, RINV Rys + 8-G London): RUNs (no silent skip), produce all
+    //     non-zero components, AND byte-identical to vendor.
     {
         let vendor = collect_vendor_spg("int1e_spgnucsp_spinor", &atm, &bas, &env);
         let cintx = collect_cintx_spg("spgnucsp", &atm, &bas, &env);
@@ -1034,8 +1018,6 @@ fn test_no_silent_skip() {
             "int1e_spgnucsp_spinor: must be byte-identical to vendor at atol={ATOL} (rank 3)"
         );
     }
-    // spgsa01 still RUNs (no silent skip) and produces all-9 non-zero output, but is
-    // NOT asserted byte-identical (WIP).
     {
         let vendor = collect_vendor_spg("int1e_spgsa01_spinor", &atm, &bas, &env);
         let cintx = collect_cintx_spg("spgsa01", &atm, &bas, &env);
@@ -1046,11 +1028,15 @@ fn test_no_silent_skip() {
         );
         assert_all_components_nonzero(&cintx, 9, "int1e_spgsa01_spinor cintx");
         assert_all_components_nonzero(&vendor, 9, "int1e_spgsa01_spinor vendor");
+        assert_eq!(
+            count_mismatches(&vendor, &cintx, ATOL, RTOL),
+            0,
+            "int1e_spgsa01_spinor: must be byte-identical to vendor at atol={ATOL} (rank 9)"
+        );
     }
 
-    // (D) Manifest: EIGHT of the nine rows are oracle_covered=true. The five
-    //     rank-3 sp/nucsp/spgnucsp + the spgsp + the two *_sa01-cg/giao rows; the
-    //     three *_sa01 rows carry component_rank 9 (Pitfall 3 truncation guard).
+    // (D) Manifest: ALL NINE of the rows are oracle_covered=true. The six
+    //     rank-3 sp/nucsp/spgnucsp/spgsp + the three *_sa01 rows at rank 9.
     let covered_rank3 = [
         "int1e_spgsp_spinor",
         "int1e_spgnucsp_spinor",
@@ -1059,7 +1045,11 @@ fn test_no_silent_skip() {
         "int1e_giao_sa10sp_spinor",
         "int1e_giao_sa10nucsp_spinor",
     ];
-    let covered_rank9 = ["int1e_cg_sa10sa01_spinor", "int1e_giao_sa10sa01_spinor"];
+    let covered_rank9 = [
+        "int1e_cg_sa10sa01_spinor",
+        "int1e_giao_sa10sa01_spinor",
+        "int1e_spgsa01_spinor",
+    ];
     for sym in covered_rank3 {
         let (covered, rank) = manifest_lock_entry(sym);
         assert_eq!(rank, Some(3), "{sym} must carry component_rank 3");
@@ -1078,21 +1068,6 @@ fn test_no_silent_skip() {
         assert!(
             covered,
             "{sym} must be oracle_covered=true (rank-9 byte-identity green)"
-        );
-    }
-
-    // (E) spgsa01 stays oracle_covered=FALSE (rank 9) — NOT yet byte-identical
-    //     (T-30-01d-06: never over-claim coverage on a non-byte-identical family).
-    {
-        let (covered, rank) = manifest_lock_entry("int1e_spgsa01_spinor");
-        assert_eq!(
-            rank,
-            Some(9),
-            "int1e_spgsa01_spinor must carry component_rank 9"
-        );
-        assert!(
-            !covered,
-            "int1e_spgsa01_spinor must stay oracle_covered=false (rank-9 both-side-g1 WIP)"
         );
     }
 }

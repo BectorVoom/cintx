@@ -1,4 +1,5 @@
 mod bench_report;
+mod error_budget;
 mod gen_c2s_table;
 mod gen_ecp_tables;
 mod gen_rys_tables;
@@ -6,11 +7,13 @@ mod manifest_audit;
 mod oracle_covered_update;
 mod oracle_update;
 mod rocm_oracle;
+mod rys_accuracy;
 mod wgpu_capability_gate;
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 
 const REQUIRED_PROFILES_CSV: &str = "base,with-f12,with-4c1e,with-f12+with-4c1e";
 const REQUIRED_PROFILES: [&str; 4] = ["base", "with-f12", "with-4c1e", "with-f12+with-4c1e"];
@@ -37,6 +40,16 @@ enum Command {
     OracleCompare {
         profiles: Vec<String>,
         include_unstable_source: bool,
+    },
+    ErrorBudget {
+        profiles: Vec<String>,
+        check_headroom: bool,
+        perturb_test: bool,
+        record_baseline: bool,
+        baseline_path: PathBuf,
+    },
+    RysAbsoluteAccuracy {
+        reference_path: PathBuf,
     },
     HelperLegacyParity {
         profile: String,
@@ -89,6 +102,8 @@ fn run() -> Result<()> {
         "manifest-audit" => parse_manifest_audit(args)?,
         "bench-report" => parse_bench_report(args)?,
         "oracle-compare" => parse_oracle_compare(args)?,
+        "error-budget" => parse_error_budget(args)?,
+        "rys-absolute-accuracy" => parse_rys_absolute_accuracy(args)?,
         "helper-legacy-parity" => parse_helper_legacy_parity(args)?,
         "oom-contract-check" => parse_oom_contract_check(args)?,
         "oracle-covered-update" => Command::OracleCoveredUpdate,
@@ -118,7 +133,25 @@ fn execute(command: Command) -> Result<()> {
             profiles,
             include_unstable_source,
         } => oracle_update::run_oracle_compare(&profiles, include_unstable_source),
-        Command::HelperLegacyParity { profile } => oracle_update::run_helper_legacy_parity(&profile),
+        Command::ErrorBudget {
+            profiles,
+            check_headroom,
+            perturb_test,
+            record_baseline,
+            baseline_path,
+        } => error_budget::run_error_budget(
+            &profiles,
+            check_headroom,
+            perturb_test,
+            record_baseline,
+            &baseline_path,
+        ),
+        Command::RysAbsoluteAccuracy { reference_path } => {
+            rys_accuracy::run_rys_absolute_accuracy(&reference_path)
+        }
+        Command::HelperLegacyParity { profile } => {
+            oracle_update::run_helper_legacy_parity(&profile)
+        }
         Command::OomContractCheck => oracle_update::run_oom_contract_check(),
         Command::OracleCoveredUpdate => oracle_covered_update::run_oracle_covered_update(),
         Command::RocmOracle { profile } => rocm_oracle::run_rocm_oracle(profile.as_deref()),
@@ -247,6 +280,81 @@ fn parse_helper_legacy_parity(args: impl Iterator<Item = String>) -> Result<Comm
     Ok(Command::HelperLegacyParity { profile })
 }
 
+fn parse_error_budget(args: impl Iterator<Item = String>) -> Result<Command> {
+    let items: Vec<String> = args.collect();
+    let mut profiles = vec![
+        "base".to_string(),
+        "with-f12".to_string(),
+        "with-4c1e".to_string(),
+        "with-f12+with-4c1e".to_string(),
+        "unstable-source".to_string(),
+    ];
+    let mut check_headroom = false;
+    let mut perturb_test = false;
+    let mut record_baseline = false;
+    let mut baseline_path = PathBuf::from(error_budget::DEFAULT_BASELINE_PATH);
+    let mut index = 0;
+    while let Some(flag) = items.get(index) {
+        match flag.as_str() {
+            "--profiles" => {
+                let csv = items
+                    .get(index + 1)
+                    .context("expected csv value after --profiles")?;
+                profiles = parse_oracle_compare_profiles_csv(csv)?;
+                index += 2;
+            }
+            "--check-headroom" => {
+                check_headroom = true;
+                index += 1;
+            }
+            "--perturb-test" => {
+                perturb_test = true;
+                index += 1;
+            }
+            "--record" => {
+                record_baseline = true;
+                index += 1;
+            }
+            "--baseline" => {
+                let path = items
+                    .get(index + 1)
+                    .context("expected path after --baseline")?;
+                baseline_path = PathBuf::from(path);
+                index += 2;
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => return Err(anyhow!("unknown error-budget flag: {other}")),
+        }
+    }
+    Ok(Command::ErrorBudget {
+        profiles,
+        check_headroom,
+        perturb_test,
+        record_baseline,
+        baseline_path,
+    })
+}
+
+fn parse_rys_absolute_accuracy(args: impl Iterator<Item = String>) -> Result<Command> {
+    let items: Vec<String> = args.collect();
+    let mut reference_path = PathBuf::from(rys_accuracy::DEFAULT_REFERENCE_PATH);
+    let mut index = 0;
+    while let Some(flag) = items.get(index) {
+        match flag.as_str() {
+            "--reference" => {
+                let path = items
+                    .get(index + 1)
+                    .context("expected path after --reference")?;
+                reference_path = PathBuf::from(path);
+                index += 2;
+            }
+            "--help" | "-h" => return Ok(Command::Help),
+            other => return Err(anyhow!("unknown rys-absolute-accuracy flag: {other}")),
+        }
+    }
+    Ok(Command::RysAbsoluteAccuracy { reference_path })
+}
+
 fn parse_rocm_oracle(args: impl Iterator<Item = String>) -> Result<Command> {
     let items: Vec<String> = args.collect();
     let mut profile: Option<String> = None;
@@ -301,11 +409,7 @@ fn parse_wgpu_capability_gate(args: impl Iterator<Item = String>) -> Result<Comm
                 index += 2;
             }
             "--help" | "-h" => return Ok(Command::Help),
-            other => {
-                return Err(anyhow!(
-                    "unknown wgpu-capability-gate flag: {other}"
-                ))
-            }
+            other => return Err(anyhow!("unknown wgpu-capability-gate flag: {other}")),
         }
     }
     Ok(Command::WgpuCapabilityGate {
@@ -370,11 +474,7 @@ fn parse_profiles_csv(csv: &str) -> Result<Vec<String>> {
 }
 
 fn parse_oracle_compare_profiles_csv(csv: &str) -> Result<Vec<String>> {
-    parse_profiles_csv_with_allowlist(
-        csv,
-        &ORACLE_COMPARE_PROFILES,
-        ORACLE_COMPARE_PROFILES_CSV,
-    )
+    parse_profiles_csv_with_allowlist(csv, &ORACLE_COMPARE_PROFILES, ORACLE_COMPARE_PROFILES_CSV)
 }
 
 fn parse_profiles_csv_with_allowlist(
@@ -443,16 +543,30 @@ fn print_help() {
     println!();
     println!("Commands:");
     println!("  manifest-audit [--profiles {REQUIRED_PROFILES_CSV}] [--check-lock]");
-    println!("  bench-report [--thresholds ci/benchmark-thresholds.json] [--mode enforce|calibration]");
+    println!(
+        "  bench-report [--thresholds ci/benchmark-thresholds.json] [--mode enforce|calibration]"
+    );
     println!(
         "  oracle-compare [--profiles {ORACLE_COMPARE_PROFILES_CSV}] [--include-unstable-source true|false]"
     );
+    println!(
+        "  error-budget [--profiles {ORACLE_COMPARE_PROFILES_CSV}] [--check-headroom] [--record] [--baseline PATH] [--perturb-test]"
+    );
+    println!("  rys-absolute-accuracy [--reference PATH]");
     println!("  helper-legacy-parity [--profile base]");
     println!("  oom-contract-check");
-    println!("  oracle-covered-update                      Run oracle parity for all 4 profiles and stamp oracle_covered=true in manifest lock");
-    println!("  rocm-oracle [--profile base]               Run ROCm oracle base-family suite (env-gated; requires --features rocm and ROCm 7.x on dev host; D-15: not in CI)");
-    println!("  wgpu-capability-gate [--profiles {REQUIRED_PROFILES_CSV}] [--require-adapter true|false]");
-    println!("  gen-ecp-tables [--check]                   Extract PySCF K-Taylor tables to .bin blobs; --check is a byte-exact drift gate (Phase 19 D-15)");
+    println!(
+        "  oracle-covered-update                      Run oracle parity for all 4 profiles and stamp oracle_covered=true in manifest lock"
+    );
+    println!(
+        "  rocm-oracle [--profile base]               Run ROCm oracle base-family suite (env-gated; requires --features rocm and ROCm 7.x on dev host; D-15: not in CI)"
+    );
+    println!(
+        "  wgpu-capability-gate [--profiles {REQUIRED_PROFILES_CSV}] [--require-adapter true|false]"
+    );
+    println!(
+        "  gen-ecp-tables [--check]                   Extract PySCF K-Taylor tables to .bin blobs; --check is a byte-exact drift gate (Phase 19 D-15)"
+    );
     println!();
     println!("Defaults:");
     println!("  profiles: {REQUIRED_PROFILES_CSV}");

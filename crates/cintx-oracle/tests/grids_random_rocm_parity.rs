@@ -182,7 +182,7 @@ fn test_int1e_grids_random_rocm_parity() {
          Direct `cargo test --features rocm -- --ignored` is intentionally blocked."
     );
 
-    let atol = 1e-11_f64;
+    let atol = cintx_oracle::compare::tolerance_for_family("1e").atol;
     let ngrids = 4usize;
     let n_cases = 8usize;
     let mut rng = Lcg::new(0x6a17_d3c0_2605_29b1_u64);

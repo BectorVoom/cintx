@@ -30,29 +30,6 @@ use cintx_compat::raw::{
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tolerances per family (D-06)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Absolute tolerance for 1e integrals.
-#[cfg(has_vendor_libcint)]
-const ATOL_1E: f64 = 1e-11;
-/// Absolute tolerance for 2e integrals.
-#[cfg(has_vendor_libcint)]
-const ATOL_2E: f64 = 1e-12;
-/// Relative tolerance for 2e integrals.
-#[cfg(has_vendor_libcint)]
-const RTOL_2E: f64 = 1e-10;
-/// Absolute tolerance for 2c2e integrals.
-#[cfg(has_vendor_libcint)]
-const ATOL_2C2E: f64 = 1e-9;
-/// Absolute tolerance for 3c1e integrals.
-#[cfg(has_vendor_libcint)]
-const ATOL_3C1E: f64 = 1e-7;
-/// Absolute tolerance for 3c2e integrals.
-#[cfg(has_vendor_libcint)]
-const ATOL_3C2E: f64 = 1e-9;
-
-// ─────────────────────────────────────────────────────────────────────────────
 // H2O STO-3G basis data (with PTR_ENV_START-aligned env for all families)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -384,6 +361,7 @@ fn oracle_gate_all_five_families() {
 
     // ── Family: 1e (int1e_ovlp_sph) shells (0, 1) ─────────────────────────
     {
+        let atol = cintx_oracle::compare::tolerance_for_family("1e").atol;
         let (si, sj) = (0usize, 1usize);
         let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
         let nj = nsph(bas[sj * BAS_SLOTS + ANG_OF]);
@@ -404,14 +382,14 @@ fn oracle_gate_all_five_families() {
             }
         }
 
-        let mc = count_mismatches_atol(&vendor_row, &cintx_out, ATOL_1E);
+        let mc = count_mismatches_atol(&vendor_row, &cintx_out, atol);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
         assert!(
             nonzero > 0,
             "1e output is all zeros — kernel not implemented"
         );
         if mc > 0 {
-            eprintln!("FAIL: 1e family: {mc} mismatches at atol={ATOL_1E:.1e}");
+            eprintln!("FAIL: 1e family: {mc} mismatches at atol={atol:.1e}");
             all_passed = false;
         } else {
             println!("  PASS: 1e (int1e_ovlp_sph) shells ({si},{sj}): mismatch_count=0");
@@ -421,6 +399,7 @@ fn oracle_gate_all_five_families() {
 
     // ── Family: 2e (int2e_sph) shells (0, 1, 2, 3) ────────────────────────
     {
+        let tol = cintx_oracle::compare::tolerance_for_family("2e");
         let (si, sj, sk, sl) = (0usize, 1usize, 2usize, 3usize);
         let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
         let nj = nsph(bas[sj * BAS_SLOTS + ANG_OF]);
@@ -433,14 +412,14 @@ fn oracle_gate_all_five_families() {
         let mut vendor_out = vec![0.0_f64; ni * nj * nk * nl];
         vendor_ffi::vendor_int2e_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
 
-        let mc = count_mismatches_atol_rtol(&vendor_out, &cintx_out, ATOL_2E, RTOL_2E);
+        let mc = count_mismatches_atol_rtol(&vendor_out, &cintx_out, tol.atol, tol.rtol);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
         assert!(
             nonzero > 0,
             "2e output is all zeros — kernel not implemented"
         );
         if mc > 0 {
-            eprintln!("FAIL: 2e family: {mc} mismatches at atol={ATOL_2E:.1e}/rtol={RTOL_2E:.1e}");
+            eprintln!("FAIL: 2e family: {mc} mismatches at atol={:.1e}/rtol={:.1e}", tol.atol, tol.rtol);
             all_passed = false;
         } else {
             println!("  PASS: 2e (int2e_sph) shells ({si},{sj},{sk},{sl}): mismatch_count=0");
@@ -450,6 +429,7 @@ fn oracle_gate_all_five_families() {
 
     // ── Family: 2c2e (int2c2e_sph) shells (0, 1) ──────────────────────────
     {
+        let atol = cintx_oracle::compare::tolerance_for_family("2c2e").atol;
         let (si, sk) = (0usize, 1usize);
         let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
         let nk = nsph(bas[sk * BAS_SLOTS + ANG_OF]);
@@ -461,14 +441,14 @@ fn oracle_gate_all_five_families() {
         vendor_ffi::vendor_int2c2e_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
 
         // 2c2e output: column-major (i fastest, k slowest) = same as cintx.
-        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_2C2E);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, atol);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
         assert!(
             nonzero > 0,
             "2c2e output is all zeros — kernel not implemented"
         );
         if mc > 0 {
-            eprintln!("FAIL: 2c2e family: {mc} mismatches at atol={ATOL_2C2E:.1e}");
+            eprintln!("FAIL: 2c2e family: {mc} mismatches at atol={atol:.1e}");
             all_passed = false;
         } else {
             println!("  PASS: 2c2e (int2c2e_sph) shells ({si},{sk}): mismatch_count=0");
@@ -480,6 +460,7 @@ fn oracle_gate_all_five_families() {
     // Shell 3: H1 1s, shell 4: H2 1s, shell 0: O 1s (three different centers)
     // This avoids the same-center s-s-p = 0 symmetry case.
     {
+        let atol = cintx_oracle::compare::tolerance_for_family("3c1e").atol;
         let (si, sj, sk) = (3usize, 4usize, 0usize);
         let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
         let nj = nsph(bas[sj * BAS_SLOTS + ANG_OF]);
@@ -492,14 +473,14 @@ fn oracle_gate_all_five_families() {
         vendor_ffi::vendor_int3c1e_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
 
         // Note: libcint 3c1e output is column-major (i fastest = same order as cintx).
-        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_3C1E);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, atol);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
         assert!(
             nonzero > 0,
             "3c1e output is all zeros for shells ({si},{sj},{sk}) — kernel not implemented or symmetry issue"
         );
         if mc > 0 {
-            eprintln!("FAIL: 3c1e family: {mc} mismatches at atol={ATOL_3C1E:.1e}");
+            eprintln!("FAIL: 3c1e family: {mc} mismatches at atol={atol:.1e}");
             all_passed = false;
         } else {
             println!("  PASS: 3c1e (int3c1e_sph) shells ({si},{sj},{sk}): mismatch_count=0");
@@ -510,6 +491,7 @@ fn oracle_gate_all_five_families() {
     // ── Family: 3c2e (int3c2e_sph) shells (3, 4, 0) ───────────────────────
     // Shell 3: H1 1s, shell 4: H2 1s, shell 0: O 1s (three different centers)
     {
+        let atol = cintx_oracle::compare::tolerance_for_family("3c2e").atol;
         let (si, sj, sk) = (3usize, 4usize, 0usize);
         let ni = nsph(bas[si * BAS_SLOTS + ANG_OF]);
         let nj = nsph(bas[sj * BAS_SLOTS + ANG_OF]);
@@ -523,14 +505,14 @@ fn oracle_gate_all_five_families() {
         let mut vendor_out = vec![0.0_f64; ni * nj * nk];
         vendor_ffi::vendor_int3c2e_sph(&mut vendor_out, &shls, &atm, natm, &bas, nbas, &env);
 
-        let mc = count_mismatches_atol(&vendor_out, &cintx_out, ATOL_3C2E);
+        let mc = count_mismatches_atol(&vendor_out, &cintx_out, atol);
         let nonzero = cintx_out.iter().filter(|&&v| v.abs() > 1e-18).count();
         assert!(
             nonzero > 0,
             "3c2e output is all zeros — kernel not implemented"
         );
         if mc > 0 {
-            eprintln!("FAIL: 3c2e family: {mc} mismatches at atol={ATOL_3C2E:.1e}");
+            eprintln!("FAIL: 3c2e family: {mc} mismatches at atol={atol:.1e}");
             all_passed = false;
         } else {
             println!("  PASS: 3c2e (int3c2e_sph) shells ({si},{sj},{sk}): mismatch_count=0");

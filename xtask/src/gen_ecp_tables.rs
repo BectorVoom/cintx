@@ -27,7 +27,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 // --- Table dimensions (cite vendor/pyscf-nr-ecp/include/gto/nr_ecp.h:19-22) ---
 // K_TAB_ENTRIES = 400, K_TAB_COL = 24, K_TAYLOR_MAX = 7; ORDER7OFFSET = 8 is

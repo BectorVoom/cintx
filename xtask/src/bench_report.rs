@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -1212,9 +1212,11 @@ mod tests {
             .collect::<BTreeSet<_>>();
 
         assert_eq!(paths.len(), 7);
-        assert!(paths
-            .iter()
-            .all(|path| path.starts_with("/tmp/cintx_artifacts/cintx_cubecl_")));
+        assert!(
+            paths
+                .iter()
+                .all(|path| path.starts_with("/tmp/cintx_artifacts/cintx_cubecl_"))
+        );
         assert!(paths.contains("/tmp/cintx_artifacts/cintx_cubecl_profile.jsonl"));
     }
 }
