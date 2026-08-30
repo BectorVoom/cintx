@@ -27,7 +27,7 @@ Worked in the order this file's own §"Suggested order" gives.
 | **P2-4** — `int2e_spinor` under ω | **DONE** | `range_omega_parity.rs`, vendor-gated |
 | **P4** — `orig{i,k}_genctr_parity` module gate | **DONE** | one line each |
 | **P1** — device omega arms | **NOT STARTED** | unchanged; see below |
-| **P2-2** — `int1e_grids` | **NOT STARTED** (a decision, not code) | nothing asks for it yet |
+| **P2-2** — `int1e_grids` | **DECIDED: no** — leave it refused | no consumer exists; see below |
 | **P3-2 … P3-7** — `_RSGDFBuilder`, `_RSMDFBuilder`, `RSDF`, `rsjk`, Gate 3 | **NOT STARTED** | the blocker is gone; the port is not written |
 
 **Two corrections to this file, found while doing the work.**
@@ -77,10 +77,22 @@ ships.
   tests are still in place and their MESSAGES have been rewritten to say so —
   `CINTX_SR_GAP` is now `RS_BUILDER_GAP` — because leaving them naming a cintx
   gap that no longer exists would send the next reader to re-derive it.
-* **P1** — the device omega arms, if the host route proves too slow. Unchanged,
-  except that P2-1 added `int3c2e_ip1`/`ip2` to the list of families with a
-  host arm to fall back to.
-* **P2-2** — `int1e_grids`. Still nothing asks for it.
+* **P1** — the device omega arms. **Deliberately not started**, on this file's
+  own gating: "P1-a — long range on-device, *if stage 5 finds the host route
+  too slow*". Stage 5 has measured nothing yet, because P3-2 … P3-7 are not
+  written, so doing P1-a now would be optimising against no evidence. The
+  analysis in §"Priority 1" still holds unchanged, except that P2-1 added
+  `int3c2e_ip1`/`ip2` to the list of families with a host arm to fall back to.
+* **P2-2** — `int1e_grids`. **Decided: leave it refused.** The task was "decide
+  whether any consumer needs it before spending anything here", and the answer
+  is no: the only mention of `int1e_grids` anywhere in `pyscf_rs` is a
+  `layout_table.rs` row (`pyscf-gto/src/layout_table.rs:172`) — no caller, no
+  test, and nothing in the periodic or RSH paths reaches it. The fail-closed
+  posture is correct and costs nothing until something does. Revisit if a
+  consumer appears; the work is then the same shape as P2-1 (a headroom entry
+  plus a launcher that reads ω), except that `g1e_grids.c:31,98` reads the slot
+  through a DIFFERENT prologue than `CINTg0_2e`, so
+  `math::range_separation` would not be reusable as-is.
 
 ---
 
