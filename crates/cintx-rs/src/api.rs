@@ -2961,6 +2961,78 @@ impl<'basis> QuartetBatchRequest<'basis> {
     }
 }
 
+/// What a [`prewarm_quartet_classes`] pass did.
+///
+/// No CubeCL type appears here: the backend's own report is translated, so a
+/// caller can log the cost it moved without depending on the backend crate.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct PrewarmReport {
+    /// Distinct angular-momentum classes the basis can produce.
+    pub classes: usize,
+    /// Distinct kernel programs those classes compile to.
+    pub signatures: usize,
+    /// Dispatches the pass issued.
+    pub launches: usize,
+    /// Wall time the pass took, including compilation.
+    pub elapsed: std::time::Duration,
+    /// Classes the backend refused, as `([li, lj, lk, ll], reason)`.
+    ///
+    /// Not an error. A basis may contain a class this backend cannot serve —
+    /// past the device Rys ceiling, say — and the caller's own batch will get
+    /// the same typed refusal from the same check. Failing the warm-up would
+    /// turn an optional optimization into a new way for a program not to start.
+    pub refused: Vec<([u8; 4], String)>,
+}
+
+/// JIT-compile every `int2e` launch class `basis` can produce, before the first
+/// timed batch.
+///
+/// # Why a caller would want this
+///
+/// A CubeCL backend specializes a program per launch signature, and the first
+/// batch through a fresh process pays that compilation *inside* whatever the
+/// caller is timing — measured at 6.8 s for H2O/def2-TZVP's 23 signatures on
+/// the dev host's CPU runtime. The cost is unavoidable but it belongs to
+/// start-up rather than to throughput, and the only way to put it there is to
+/// ask for it. An SCF driver that calls this once after building its basis pays
+/// nothing per iteration for it.
+///
+/// **Pass the work list when you have it.** `cube_dim` is part of a program's
+/// compiled identity and shrinks with the group, so warming the class set alone
+/// covers only groups that reach the backend's full launch width; a list with a
+/// thin class still pays one compilation for it. With `quartets = Some(list)`
+/// the pass reproduces exactly that list's specializations, for less work.
+/// `None` is for the driver that has a basis at start-up and will not see its
+/// first work list until later.
+///
+/// The warmth lives on `context`'s cached backend client, so pass the same
+/// context to the batches that follow — a prewarm against a throwaway context
+/// warms a client nobody will use again.
+///
+/// # Errors
+/// Propagates a backend-resolution or capability failure, and rejects an empty
+/// basis. A per-class refusal is reported in [`PrewarmReport::refused`].
+pub fn prewarm_quartet_classes(
+    basis: &BasisSet,
+    quartets: Option<&[[u32; 4]]>,
+    options: &ExecutionOptions,
+    context: &EvaluationContext,
+) -> Result<PrewarmReport, FacadeError> {
+    check_batch_request_scope(Representation::Spheric, options, "prewarm")?;
+    let shells = batch_shells_from_basis(basis)?;
+    let report = context
+        .executor
+        .prewarm_2e_classes(&options.backend_intent, &shells, quartets)
+        .map_err(FacadeError::from)?;
+    Ok(PrewarmReport {
+        classes: report.classes,
+        signatures: report.signatures,
+        launches: report.launches,
+        elapsed: report.elapsed,
+        refused: report.refused,
+    })
+}
+
 /// Evaluate a whole shell-quartet work list. See [`QuartetBatchRequest`].
 pub fn evaluate_shell_quartets(
     request: QuartetBatchRequest<'_>,

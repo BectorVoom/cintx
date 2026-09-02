@@ -165,6 +165,29 @@ fn bucket_rows(basis: &BasisView<'_>, buckets: &[cintx_driver::Bucket]) -> Vec<V
                     .iter()
                     .map(|&q| cintx_driver::primitive_work(basis, q))
                     .sum::<u64>(),
+                // D2.4's contraction shape. `nprim_product` is the primitive
+                // trip count of one quartet, `nctr_product` the number of
+                // contraction blocks it writes. A class whose cost is dominated
+                // by the second is contraction-bound and is the candidate for
+                // the cooperative (`per_unit == 0`) kernel arm; one dominated by
+                // the first is not. Recorded, not acted on: on this CPU runtime
+                // the cooperative arm measured 28x to ~4.9e5x slower
+                // (`artifacts/34-A0_cube_dim_ab.md`), because the kernel's two
+                // `sync_cube()` calls sit inside the primitive loop — so the
+                // decision belongs to the tuner on a backend where the arm is
+                // viable, which is what D3 is for.
+                "max_nprim_product": bucket
+                    .quartets
+                    .iter()
+                    .map(|q| q.shls().iter().map(|&s| u64::from(basis.nprim(s as usize))).product::<u64>())
+                    .max()
+                    .unwrap_or(0),
+                "max_nctr_product": bucket
+                    .quartets
+                    .iter()
+                    .map(|q| q.shls().iter().map(|&s| u64::from(basis.nctr(s as usize))).product::<u64>())
+                    .max()
+                    .unwrap_or(0),
             })
         })
         .collect()
@@ -735,9 +758,16 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
     })
     .expect("cpu backend");
 
-    // Warm-up: pay the per-class CubeCL specialization once, outside the timer.
+    // Warm-up through the library's own prewarm (D2.1), not a hand-rolled
+    // first call. `prewarm_2e_work_list` reduces this list to
+    // `min(group, parallel_units)` quartets per launch signature, which
+    // reproduces every group's `cube_dim` — and therefore every compiled
+    // program — while evaluating a small fraction of the arithmetic. Using the
+    // shipped entry point here is what keeps the benchmark's cold column and a
+    // caller's start-up cost the same measurement.
     let warm_start = std::time::Instant::now();
-    let _ = evaluate_2e_quartet_batch(&backend, &shells, &list).expect("batched warm-up");
+    let prewarm = cintx_cubecl::prewarm_2e_work_list(&backend, &shells, &list)
+        .expect("batched prewarm");
     let warm_secs = warm_start.elapsed().as_secs_f64();
 
     let mut act_secs = f64::INFINITY;
@@ -782,8 +812,11 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
         batched.stats.max_g_slab_bytes,
     );
     println!(
-        "  first-call cost incl. per-class specialization: {warm_secs:.4} s  \
-         (timed runs: best of {repeats})"
+        "  prewarm (D2.1): {} classes -> {} signatures in {warm_secs:.4} s \
+         ({:.0} ms/signature)  (timed runs: best of {repeats})",
+        prewarm.classes,
+        prewarm.signatures,
+        prewarm.ms_per_signature(),
     );
     println!("  max|diff| vs vendor={max_diff:.3e}  mismatched elements={mismatches}");
     println!(
@@ -844,7 +877,20 @@ fn run_batch_case(label: &str, molecule: &Molecule, tolerance: f64) {
         "shells": basis.nbas(),
         "quartets_enumerated": quartets.len(),
         "quartets_kept": kept.len(),
+        // D2.3: the screened fraction, per case, in the artifact rather than
+        // only in the console. Screening is an algorithmic win and attributing
+        // it to a kernel would be dishonest, so it is recorded beside the
+        // timings rather than folded into them.
+        "kept_fraction": kept.len() as f64 / quartets.len().max(1) as f64,
         "buckets": buckets.len(),
+        "prewarm": {
+            "classes": prewarm.classes,
+            "signatures": prewarm.signatures,
+            "launches": prewarm.launches,
+            "items_per_class": prewarm.items_per_class,
+            "seconds": prewarm.elapsed.as_secs_f64(),
+            "refused": prewarm.refused.len(),
+        },
         "envelope": envelope_split(&buckets),
         "bucket_rows": bucket_rows(&basis, &buckets),
         "kernel_launch_count": batched.stats.kernel_launch_count,

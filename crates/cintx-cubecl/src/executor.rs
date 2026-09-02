@@ -209,6 +209,32 @@ impl CubeClExecutor {
         )
     }
 
+    /// JIT-compile every 2e launch class `shells` can produce, on this
+    /// executor's cached client (def2 plan D2.1).
+    ///
+    /// Compilation is per backend program, and the program cache lives on the
+    /// client, so warming through the executor is what makes the warmth
+    /// *reusable*: a prewarm against a throwaway client would be paid again by
+    /// the first real batch.
+    ///
+    /// # Errors
+    /// Propagates a backend-resolution or capability failure. A per-class
+    /// refusal is reported in the returned
+    /// [`kernels::two_electron::PrewarmReport`], not returned as an error.
+    pub fn prewarm_2e_classes(
+        &self,
+        intent: &BackendIntent,
+        shells: &[kernels::two_electron::BatchShell],
+        quartets: Option<&[[u32; 4]]>,
+    ) -> Result<kernels::two_electron::PrewarmReport, cintxRsError> {
+        let backend = self.backend_cache.resolve(intent)?;
+        self.check_f64_capability(&backend)?;
+        match quartets {
+            Some(list) => kernels::two_electron::prewarm_2e_work_list(&backend, shells, list),
+            None => kernels::two_electron::prewarm_2e_quartet_classes(&backend, shells),
+        }
+    }
+
     /// Evaluate a shell-pair work list as `int1e_{ovlp,kin,nuc}_sph` through
     /// this executor's cached client (Task 35-F2).
     ///

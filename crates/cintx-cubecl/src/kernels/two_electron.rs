@@ -7730,3 +7730,289 @@ fn dispatch_2e_batches(
         )),
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Specialization prewarm (def2 plan D2.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// What a prewarm pass did.
+///
+/// Reported rather than swallowed because the cost it moves is real and has to
+/// land somewhere in a benchmark's books: a def2-TZVP class set measured ~6.8 s
+/// of first-call JIT on the dev host's CPU runtime, and a "warm" number that
+/// quietly included it would be the general plan's cold/warm gate violated in a
+/// new place.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct PrewarmReport {
+    /// Distinct angular-momentum classes the shell set can produce.
+    pub classes: usize,
+    /// Distinct [`TwoELaunchSignature`]s among them — the number of kernel
+    /// programs the JIT actually has to build, since Task 35-M1 merges every
+    /// class sharing a signature into one dispatch.
+    pub signatures: usize,
+    /// Dispatches the prewarm issued.
+    pub launches: usize,
+    /// Quartets per class in the warm-up list.
+    pub items_per_class: usize,
+    /// Wall time the pass took, including compilation.
+    pub elapsed: std::time::Duration,
+    /// Classes the backend refused, by `(class, reason)`. A refusal here is not
+    /// an error: a shell set may contain a class above the device ceiling, and
+    /// the right response is to leave it for the caller's own error handling
+    /// rather than to fail the warm-up.
+    pub refused: Vec<([u8; 4], String)>,
+}
+
+impl PrewarmReport {
+    /// Milliseconds of compilation amortized per signature — the number to
+    /// quote when saying what a prewarm buys.
+    #[must_use]
+    pub fn ms_per_signature(&self) -> f64 {
+        self.elapsed.as_secs_f64() * 1000.0 / self.signatures.max(1) as f64
+    }
+}
+
+/// Quartets per class in a prewarm list, on this backend.
+///
+/// The compiled identity of a dispatch includes its `CubeDim`, and on the
+/// per-unit (CPU) decomposition that width is
+/// `min(parallel_units, n_quartets, memory_cap)`. A one-quartet warm-up would
+/// therefore compile a *one-lane* kernel and leave the real batch to compile its
+/// own — the warm-up would cost time and buy nothing. Saturating `n_quartets`
+/// past `parallel_units` is what makes the compiled program the same one the
+/// real batch asks for.
+fn prewarm_items_per_class(backend: &ResolvedBackend) -> usize {
+    fn width<R: Runtime>(client: &ComputeClient<R>) -> usize {
+        crate::plane::launch_hardware(client).parallel_units as usize
+    }
+    let units = match backend {
+        #[cfg(feature = "cpu")]
+        ResolvedBackend::Cpu(client) => width(client),
+        #[cfg(feature = "wgpu")]
+        ResolvedBackend::Wgpu(client, _) => width(client),
+        #[cfg(feature = "cuda")]
+        ResolvedBackend::Cuda(client) => width(client),
+        #[cfg(feature = "rocm")]
+        ResolvedBackend::Rocm(client) => width(client),
+        #[cfg(feature = "metal")]
+        ResolvedBackend::Metal(client, _) => width(client),
+    };
+    // A small floor so a backend that reports one unit still warms a list wide
+    // enough to exercise the grid-stride walk rather than a single slot.
+    units.max(8)
+}
+
+/// JIT-compile exactly the kernel programs `quartets` will dispatch, before the
+/// first timed batch (`def2_speed_precision_plan.md` D2.1).
+///
+/// # Why this takes a work list rather than just a basis
+///
+/// A backend specializes a program per `(nroots, ibase, kbase, per_unit,
+/// cube_dim)`, and on the per-unit (CPU) decomposition `cube_dim` is
+/// `min(parallel_units, quartets_in_this_group, memory_cap)`. The middle term is
+/// the problem: **the compiled identity depends on how much work the group
+/// holds**, so warming the class set at one width leaves every group smaller
+/// than `parallel_units` to compile its own program inside the caller's timing.
+///
+/// Measured on the dev host (16 units, H2O/def2-SVP): after warming all 16
+/// signatures at 16 items each, a batch of 16 quartets was already warm (1.4x
+/// its steady state) while batches of 1, 8, 32, 64 and 3081 still cost 780x,
+/// 500x, 830x, 1130x and 173x — one compilation per newly reached width.
+///
+/// So the prewarm reduces the caller's *own* list instead of guessing: it groups
+/// the quartets exactly as [`evaluate_2e_quartet_batch`] will, then keeps
+/// `min(group_size, parallel_units)` of each group — one quartet per
+/// angular-momentum class first, so the group's widest `g_size` (and hence its
+/// memory cap) is preserved, then padded. That reproduces every group's
+/// `cube_dim` exactly while evaluating a small fraction of the arithmetic.
+///
+/// # What it costs
+///
+/// One dispatch per launch signature over a few dozen quartets each, plus the
+/// compilation itself — which is the whole point, and is reported in
+/// [`PrewarmReport::elapsed`] so a benchmark can put it in the cold column
+/// rather than the warm one.
+///
+/// A class the backend refuses (above the device Rys ceiling, say) is recorded
+/// in [`PrewarmReport::refused`] and skipped. Refusing to warm is not refusing
+/// to run: the caller's own batch will get the same typed error from the same
+/// check, and failing the warm-up would turn an optional optimization into a new
+/// way for a program not to start.
+///
+/// # Errors
+/// Only for a malformed input — an empty shell set, or one the basis upload
+/// rejects. A per-class refusal is reported, not returned.
+pub fn prewarm_2e_work_list(
+    backend: &ResolvedBackend,
+    shells: &[BatchShell],
+    quartets: &[[u32; 4]],
+) -> Result<PrewarmReport, cintxRsError> {
+    let start = std::time::Instant::now();
+    if shells.is_empty() {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "prewarm:empty-shell-set".to_owned(),
+        });
+    }
+    let units = prewarm_items_per_class(backend);
+    let mut report = PrewarmReport {
+        items_per_class: units,
+        ..Default::default()
+    };
+    if quartets.is_empty() {
+        report.elapsed = start.elapsed();
+        return Ok(report);
+    }
+
+    // Group by the caller's `(li, lj, lk, ll)`, the same key
+    // `evaluate_2e_batch_inner` uses — it applies no canonical swap, so mirroring
+    // it is a matter of reading the same four `l` values.
+    let mut by_class: std::collections::BTreeMap<[u8; 4], (usize, [u32; 4])> = Default::default();
+    for &quartet in quartets {
+        for &s in &quartet {
+            if s as usize >= shells.len() {
+                return Err(cintxRsError::UnsupportedApi {
+                    requested: format!("prewarm:shell-index-out-of-range:{s}"),
+                });
+            }
+        }
+        let key = [
+            shells[quartet[0] as usize].l,
+            shells[quartet[1] as usize].l,
+            shells[quartet[2] as usize].l,
+            shells[quartet[3] as usize].l,
+        ];
+        let entry = by_class.entry(key).or_insert((0, quartet));
+        entry.0 += 1;
+    }
+    report.classes = by_class.len();
+
+    // Collect each signature's classes, widest `g_size` first: a truncation must
+    // never drop the class that sets the group's memory cap.
+    let mut by_signature: std::collections::BTreeMap<
+        (u32, u32, u32),
+        (usize, Vec<(u32, [u32; 4])>),
+    > = Default::default();
+    for (class, (count, representative)) in by_class {
+        let [li, lj, lk, ll] = class;
+        let params = TwoEClassParams::new(li, lj, lk, ll);
+        let signature = TwoELaunchSignature::of(&params);
+        let entry = by_signature
+            .entry((signature.ibase, signature.kbase, signature.nroots))
+            .or_default();
+        entry.0 += count;
+        entry.1.push((params.g_size, representative));
+    }
+    report.signatures = by_signature.len();
+
+    let mut list: Vec<[u32; 4]> = Vec::new();
+    for (_, (count, mut classes)) in by_signature {
+        classes.sort_by(|a, b| b.0.cmp(&a.0));
+        let target = count.min(units);
+        let widest = classes[0].1;
+        for (_, quartet) in &classes {
+            list.push(*quartet);
+        }
+        // `target` can sit below the class count only when the group already
+        // holds at least `parallel_units` quartets, in which case the width has
+        // saturated and the extra representatives cost nothing. Otherwise pad
+        // up to it so the width matches the real group's exactly.
+        let sublist_start = list.len() - classes.len();
+        while list.len() - sublist_start < target {
+            list.push(widest);
+        }
+    }
+
+    let resident = ResidentTwoEBasis::new(backend, shells)?;
+    match evaluate_2e_quartet_batch_resident(backend, &resident, &list) {
+        Ok(output) => report.launches = output.stats.kernel_launch_count,
+        Err(_) => {
+            // The whole-list call is refused if *any* class is, so warm class by
+            // class and record which ones the backend will not take. Slower, but
+            // it is the path that produces the diagnosis.
+            for quartet in &list {
+                let one: Vec<[u32; 4]> = std::iter::repeat_n(*quartet, units).collect();
+                match evaluate_2e_quartet_batch_resident(backend, &resident, &one) {
+                    Ok(output) => report.launches += output.stats.kernel_launch_count,
+                    Err(error) => report.refused.push((
+                        [
+                            shells[quartet[0] as usize].l,
+                            shells[quartet[1] as usize].l,
+                            shells[quartet[2] as usize].l,
+                            shells[quartet[3] as usize].l,
+                        ],
+                        error.to_string(),
+                    )),
+                }
+            }
+            report.refused.sort();
+            report.refused.dedup();
+        }
+    }
+
+    report.elapsed = start.elapsed();
+    tracing::debug!(
+        classes = report.classes,
+        signatures = report.signatures,
+        launches = report.launches,
+        refused = report.refused.len(),
+        elapsed_ms = report.elapsed.as_millis(),
+        "2e work-list prewarm complete"
+    );
+    Ok(report)
+}
+
+/// JIT-compile every launch class a *shell set* can produce, at the saturated
+/// launch width.
+///
+/// The basis-only prewarm: it enumerates the angular-momentum combinations the
+/// shell set admits and warms each signature at `parallel_units` quartets, which
+/// is the width every group of a steady-state batch reaches.
+///
+/// **It does not cover a group smaller than `parallel_units`.** `cube_dim` is
+/// part of a program's compiled identity and shrinks with the group, so a work
+/// list with a thin class still pays one compilation for it. Use
+/// [`prewarm_2e_work_list`] when the list is known — it is exact, and costs
+/// less. This entry point is for the case where it is not: a driver that has a
+/// basis at start-up and will not see its first work list until later.
+///
+/// # Errors
+/// Only for an empty shell set, or one the basis upload rejects.
+pub fn prewarm_2e_quartet_classes(
+    backend: &ResolvedBackend,
+    shells: &[BatchShell],
+) -> Result<PrewarmReport, cintxRsError> {
+    if shells.is_empty() {
+        return Err(cintxRsError::UnsupportedApi {
+            requested: "prewarm:empty-shell-set".to_owned(),
+        });
+    }
+    // One representative shell index per distinct angular momentum. `nprim` and
+    // `nctr` do not enter the compiled identity — only `l` does, through the
+    // G-tensor extents — so the first shell of each `l` is as good as any.
+    let mut representative: std::collections::BTreeMap<u8, u32> = Default::default();
+    for (index, shell) in shells.iter().enumerate() {
+        representative.entry(shell.l).or_insert(index as u32);
+    }
+    let momenta: Vec<u8> = representative.keys().copied().collect();
+    let units = prewarm_items_per_class(backend);
+
+    let mut list = Vec::new();
+    for &li in &momenta {
+        for &lj in &momenta {
+            for &lk in &momenta {
+                for &ll in &momenta {
+                    let quartet = [
+                        representative[&li],
+                        representative[&lj],
+                        representative[&lk],
+                        representative[&ll],
+                    ];
+                    for _ in 0..units {
+                        list.push(quartet);
+                    }
+                }
+            }
+        }
+    }
+    prewarm_2e_work_list(backend, shells, &list)
+}

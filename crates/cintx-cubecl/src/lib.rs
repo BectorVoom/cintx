@@ -56,9 +56,10 @@ pub use kernels::one_electron::{
     evaluate_1e_pair_batch_with,
 };
 pub use kernels::two_electron::{
-    BatchExecutionStats as TwoEBatchStats, BatchOptions, BatchShell, ResidentBasis,
+    BatchExecutionStats as TwoEBatchStats, BatchOptions, BatchShell, PrewarmReport, ResidentBasis,
     ResidentTwoEBasis, TwoEBatchOptions, TwoEBatchOutput, evaluate_2e_quartet_batch,
     evaluate_2e_quartet_batch_resident, evaluate_2e_quartet_batch_with,
+    prewarm_2e_quartet_classes, prewarm_2e_work_list,
 };
 pub use plane::{
     CPU_CUBE_DIM_MAX, DEFAULT_PLANE_DIM, LaunchHardware, STANDARD_PLANE_ALIGNED_CUBE_DIM,

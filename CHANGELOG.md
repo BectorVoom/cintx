@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — specialization prewarm, and one launch per signature verified on the def2 lists (2026-09-02)
+
+`docs/design/def2_speed_precision_plan.md` D2.
+
+**D2.1 — the prewarm, and the thing that makes it hard.** A CubeCL backend specializes a
+program per `(nroots, ibase, kbase, per_unit, cube_dim)`, and the first batch through a
+process pays that compilation inside whatever the caller is timing. The obvious prewarm —
+warm one quartet per class — does not work, because **`cube_dim` is part of the compiled
+identity** and on the per-unit (CPU) decomposition it is
+`min(parallel_units, quartets_in_this_group, memory_cap)`. Measured on the dev host (16
+units, H2O/def2-SVP): after warming all 16 signatures at 16 items each, a 16-quartet batch
+was already warm (1.4x its steady state) while batches of 1, 8, 32, 64 and 3081 still cost
+780x, 500x, 830x, 1130x and 173x — one compilation per newly reached width.
+
+So `prewarm_2e_work_list` reduces the caller's *own* list instead of guessing: it groups the
+quartets exactly as `evaluate_2e_quartet_batch` will, keeps `min(group, parallel_units)` of
+each group — one quartet per angular-momentum class first, so the group's widest `g_size`
+and hence its memory cap survive, then padded — and dispatches that. Every group's `cube_dim`
+is reproduced exactly, over a small fraction of the arithmetic.
+
+It works: on H2O/def2-SVP the prewarm costs 5.14 s and the first real batch then costs
+**4.7 ms against a 3.3 ms steady state (1.4x)**, where without it that first batch cost 1.70 s
+(600x). `prewarm_2e_quartet_classes` remains for the driver that has a basis but not yet a
+work list, and says plainly in its own docs that it covers only groups reaching the full
+launch width.
+
+- `cintx_rs::prewarm_quartet_classes(basis, quartets, options, context)` is the safe-API
+  surface; no CubeCL type crosses it. The warmth lives on the context's cached client, so it
+  must be the context the batches then use.
+- A class the backend refuses is reported in `PrewarmReport::refused`, never returned as an
+  error. Failing a warm-up would turn an optional optimization into a new way for a program
+  not to start — the caller's own batch gets the same typed refusal from the same check.
+- The benchmark now warms through the shipped entry point rather than a hand-rolled first
+  call, so its cold column and a caller's start-up cost are the same measurement. The
+  def2-TZVP rows improved accordingly: **H2O 1.39x -> 1.50x, SO2 1.26x -> 1.40x** faster than
+  single-threaded libcint 6.1.3.
+
+**D2.2 — consolidation, verified on the def2 lists.** `def2_batches_launch_once_per_signature`
+derives the signature count from the work list independently (`(ibase, kbase, nroots)` off
+the bucket list) and asserts the backend issued exactly that many dispatches, with one
+readback each and no per-quartet residue. H2O/def2-SVP: 3081 quartets, 69 classes, **15
+launches**. SO2/def2-SVP: 22 155 quartets, 81 classes, **16 launches**. H2O/def2-TZVP: 18 145
+quartets, 172 classes, **23 launches**.
+
+**D2.3 / D2.4 — recorded, not acted on.** The screened fraction is now a field on every
+artifact row rather than a console line. So is the per-bucket contraction shape
+(`max_nprim_product`, `max_nctr_product`): a class dominated by the second is
+contraction-bound and is the candidate for the cooperative kernel arm. It is recorded rather
+than switched on because on this CPU runtime the cooperative arm measured 28x to ~4.9e5x
+slower (`artifacts/34-A0_cube_dim_ab.md`) — its two `sync_cube()` calls sit inside the
+primitive loop — so the decision belongs to the tuner on a backend where the arm is viable.
+
 ### Added — def2 coverage census, a second-row fixture, and machine-readable throughput rows (2026-09-02)
 
 `docs/design/def2_speed_precision_plan.md` D0, and the executable form of gates G1 and G2.
