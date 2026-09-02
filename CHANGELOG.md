@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the 1e derivative set on the extended device Rys path (2026-09-02)
+
+`docs/design/def2_speed_precision_plan.md` D1.2, and the end of task 33-03's family list:
+every family `RysFamily` declares is now flipped. `Int1eDeriv` covers six device kernels —
+the nuclear gradient, `rinv`/`drinv`, the both-side and bra-side second derivatives, and
+the GIAO nuclear engine. All six stopped at `rys_root5`, and **five separate per-tuple
+guards spelled a literal `MAX_DEVICE_NROOTS`** rather than asking the family for its
+ceiling, so raising the family alone would have changed nothing on that route.
+
+One of those refusals was not hypothetical for def2-TZVP. The GIAO nuclear engine's shape
+carries `nmax = li + lj + 5`, so `nroots = (li + lj + 5) / 2 + 1` reaches **6 at `l = 3`** —
+an `(f|f)` pair, which def2-TZVP has on oxygen. Every other family in this set needs
+`l >= 4` and is therefore out of reach of any def2 orbital basis, but the GIAO families were
+being refused on a basis this project targets. That is the concrete coverage this flip buys;
+the rest of the range is reached through synthetic high-`l` classes and is an asymmetry
+removed rather than a bottleneck.
+
+- **Six kernels** take the extended-Rys constant table, size `urys`/`wrys` by
+  `ext_rys_slots(nroots)`, and gain the `nroots >= 6` arm that casts the f64 double-double
+  roots back into `F`.
+- **Six launchers** upload the table once per call and enumerate the 6..=12 arms under the
+  feature, so no catch-all arm can silently clamp a higher order to 5.
+- **The five hardcoded guards** now read `device_nroots_ceiling(backend, family)`.
+  `int1e_rinv` asks `Int1e` and `int1e_drinv` asks `Int1eDeriv` — the two ceilings are equal
+  today, and naming them separately is what keeps that a coincidence rather than an
+  assumption. `MAX_DEVICE_NROOTS` survives as the documented base the raised ceiling is
+  raised *from*, read by no launcher.
+
+`ext_rys_1e_deriv_parity` is the gate: nine tests covering all six kernels against vendored
+libcint — `ipnuc`, `rinv`, `drinv`, `ipnucip`, `ipipnuc`, `ipiprinv` (each swept over the
+extended orders its own headroom formula can reach), the GIAO `ignuc` engine through the
+complex `[re, im]` reconciliation with its `(f|f)` def2-TZVP class leading, and the
+fail-closed refusal at 13.
+
+Because every declared family is now flipped, the "unflipped sibling" checks in four gates
+had nothing left to point at. They are replaced by one assertion in
+`device_rys_ceiling::tests::a_familys_ceiling_follows_its_own_flip`, which checks each
+family's ceiling against its own `runs_extended_rys` flag in both directions — so the next
+family added to the enum is still held to the base ceiling until its own gate lands.
+
 ### Added — the 3c2e derivative set on the extended device Rys path (2026-09-02)
 
 `docs/design/def2_speed_precision_plan.md` D1.1. `int3c2e` was flipped onto the inline

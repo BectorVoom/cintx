@@ -108,10 +108,15 @@ fn ext_rys_ceiling_is_raised_for_int2c2e() {
         device_nroots_ceiling(&backend, RysFamily::Int2c2e),
         EXTENDED_DEVICE_NROOTS
     );
-    assert_eq!(
-        device_nroots_ceiling(&backend, RysFamily::Int1eDeriv),
-        BASE_DEVICE_NROOTS,
-        "the 1e derivative set has not been flipped and must keep the base ceiling"
+    // Every declared family is now flipped (def2 plan D1), so this gate can no
+    // longer point at a sibling that is still on the base ceiling. What replaces
+    // that check is `device_rys_ceiling::tests::a_familys_ceiling_follows_its_own_flip`,
+    // which asserts the ceiling of every family against its own
+    // `runs_extended_rys` flag rather than against a neighbour's.
+    assert!(
+        RysFamily::Int1eDeriv.runs_extended_rys(),
+        "if the 1e derivative set is ever unflipped, this gate's sibling check \
+         has to come back with it"
     );
 }
 

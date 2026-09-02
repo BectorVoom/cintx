@@ -14,11 +14,9 @@
 //!
 //! `RysFamily::Int1e` covers `one_electron_scalar_kernel`. The one-electron
 //! *derivative* set — the nuclear gradient, `drinv`, the second-derivative and
-//! GIAO kernels — is `RysFamily::Int1eDeriv` and stays on the base ceiling.
-//! Those are six further kernels with their own
-//! guards, and flipping them is a separate change with its own gate; nothing
-//! here silently drags them along, which is what
-//! [`ext_rys_ceiling_is_raised_for_scalar_int1e_only`] asserts.
+//! GIAO kernels — is `RysFamily::Int1eDeriv`, six further kernels with their own
+//! guards. They were flipped separately, under the def2 plan's D1.2, with their
+//! own gate in `ext_rys_1e_deriv_parity`; nothing here covers them.
 //!
 //! # Why this file is Cartesian
 //!
@@ -108,19 +106,20 @@ fn cpu_backend() -> ResolvedBackend {
     .expect("cpu backend")
 }
 
-/// The precondition and its complement: the scalar 1e family is flipped, the 1e
-/// derivative set is not, in the same build.
+/// The precondition: the scalar 1e family is flipped, so the classes below
+/// reach the extended entry rather than being refused.
+///
+/// This used to carry a complement — `Int1eDeriv` on the base ceiling in the
+/// same build — which the def2 plan's D1.2 flip retired. The per-family
+/// mechanism is now asserted in one place,
+/// `device_rys_ceiling::tests::a_familys_ceiling_follows_its_own_flip`, against
+/// each family's own `runs_extended_rys` flag rather than against a neighbour's.
 #[test]
-fn ext_rys_ceiling_is_raised_for_scalar_int1e_only() {
+fn ext_rys_ceiling_is_raised_for_scalar_int1e() {
     let backend = cpu_backend();
     assert_eq!(
         device_nroots_ceiling(&backend, RysFamily::Int1e),
         EXTENDED_DEVICE_NROOTS
-    );
-    assert_eq!(
-        device_nroots_ceiling(&backend, RysFamily::Int1eDeriv),
-        BASE_DEVICE_NROOTS,
-        "the 1e derivative set has not been flipped and must keep the base ceiling"
     );
 }
 

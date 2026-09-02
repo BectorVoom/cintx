@@ -73,9 +73,16 @@ const SQRTPI: f64 = 1.7724538509055159_f64;
 #[allow(clippy::approx_constant)]
 const PIE4: f64 = 0.78539816339744827900_f64;
 
-/// Maximum `nroots` the device Rys kernels (`rys_root1..5`) can evaluate for the
-/// on-device nuclear-attraction arm. `nrys = (li + lj) / 2 + 1`, so this covers
-/// `li + lj <= 8`. Same `MAX_DEVICE_NROOTS` guard the 2c2e device kernel uses.
+/// Maximum `nroots` the polynomial-fit device Rys kernels (`rys_root1..5`) can
+/// evaluate. `nrys = (li + lj) / 2 + 1`, so this covers `li + lj <= 8`.
+///
+/// **Not a ceiling any launcher reads.** Every 1e device path now asks
+/// `device_rys_ceiling::device_nroots_ceiling(backend, family)`, which returns
+/// this value unless `extended-device-rys` is compiled in, the backend's
+/// FMA-fusion probe passed, and the family has been flipped onto the inline
+/// Wheeler entry. The constant stays as the documented base so a reader can see
+/// what the raised ceiling is raised *from*.
+#[allow(dead_code)]
 const MAX_DEVICE_NROOTS: usize = 5;
 
 /// Host Rys nroots ceiling for the 1e nuclear/rinv path (FND-02). The host
@@ -4426,6 +4433,7 @@ fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
     pair_drj: &Array<F>,
     origin_coords: &Array<F>,
     origin_charges: &Array<F>,
+    rys_tab: &Array<f64>,
     gbuf: &mut Array<F>,
     cart_out: &mut Array<F>,
     pie4: F,
@@ -4458,8 +4466,14 @@ fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
 
     // Written and read entirely inside the `lane == 0` region, so per-unit
     // private storage rather than buffers.
-    let mut urys = Array::<F>::new(5usize);
-    let mut wrys = Array::<F>::new(5usize);
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    // The extended (`nroots >= 6`) entry is f64-only — its double-double arms
+    // are what buy the accuracy — so it lands in its own pair of buffers and is
+    // cast into `urys`/`wrys`, which stay `F`. Both collapse to one element when
+    // the arm is not emitted, exactly as in `one_electron_scalar_kernel`.
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
 
     if lane == 0u32 {
         let nrys = nroots;
@@ -4607,8 +4621,26 @@ fn one_electron_giao_nuc_kernel<F: Float + CubeElement>(
                             rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
                         } else if comptime!(nroots == 4u32) {
                             rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else {
+                        } else if comptime!(nroots == 5u32) {
                             rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        } else {
+                            // nroots 6..=12: the inline Wheeler/Jacobi entry (task
+                            // 33-01). Reachable only once `device_nroots_ceiling` was
+                            // raised for the 1e derivative family on this backend,
+                            // which needs both the `extended-device-rys` feature and a
+                            // passing FMA probe.
+                            rys_roots_ext_dev(
+                                rys_tab,
+                                f64::cast_from(x_boys),
+                                &mut uext,
+                                &mut wext,
+                                nroots,
+                            );
+                            #[unroll]
+                            for iext in 0..nroots {
+                                urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                                wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                            }
                         }
 
                         let fac1 = F::new(2.0_f32) * pi_const * charge_factor * fac / zeta;
@@ -5059,6 +5091,13 @@ fn run_1e_giao_nuc_batches<R: Runtime>(
         return Vec::new();
     }
 
+    // The extended-Rys constant tables (~4.7 KB), uploaded once per launcher
+    // call and shared by every dispatch: the kernel signature is the same for
+    // every `nroots`, and only a group with `nroots >= 6` reads it.
+    let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+    let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
+
+
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -5124,6 +5163,7 @@ fn run_1e_giao_nuc_batches<R: Runtime>(
                         ArrayArg::from_raw_parts(drj_h.clone(), pair_drj[index].len()),
                         ArrayArg::from_raw_parts(oc_h.clone(), coords_src.len()),
                         ArrayArg::from_raw_parts(och_h.clone(), charges_src.len()),
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(gbuf_h.clone(), g_len),
                         ArrayArg::from_raw_parts(out_h.clone(), group.out_len),
                         PIE4,
@@ -5151,6 +5191,20 @@ fn run_1e_giao_nuc_batches<R: Runtime>(
                     2u32 => launch_with!($kind, $rank, 2u32),
                     3u32 => launch_with!($kind, $rank, 3u32),
                     4u32 => launch_with!($kind, $rank, 4u32),
+                    #[cfg(feature = "extended-device-rys")]
+                    6 => launch_with!($kind, $rank, 6u32),
+                    #[cfg(feature = "extended-device-rys")]
+                    7 => launch_with!($kind, $rank, 7u32),
+                    #[cfg(feature = "extended-device-rys")]
+                    8 => launch_with!($kind, $rank, 8u32),
+                    #[cfg(feature = "extended-device-rys")]
+                    9 => launch_with!($kind, $rank, 9u32),
+                    #[cfg(feature = "extended-device-rys")]
+                    10 => launch_with!($kind, $rank, 10u32),
+                    #[cfg(feature = "extended-device-rys")]
+                    11 => launch_with!($kind, $rank, 11u32),
+                    #[cfg(feature = "extended-device-rys")]
+                    12 => launch_with!($kind, $rank, 12u32),
                     _ => launch_with!($kind, $rank, 5u32),
                 }
             };
@@ -5810,6 +5864,7 @@ fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
     class_shape: &Array<u32>,
     origin_coords: &Array<F>,
     origin_charges: &Array<F>,
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     g1: &mut Array<F>,
     cart_out: &mut Array<F>,
@@ -5841,8 +5896,14 @@ fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
 
     // Written and read entirely inside the `lane == 0` region, so per-unit
     // private storage rather than buffers.
-    let mut urys = Array::<F>::new(5usize);
-    let mut wrys = Array::<F>::new(5usize);
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    // The extended (`nroots >= 6`) entry is f64-only — its double-double arms
+    // are what buy the accuracy — so it lands in its own pair of buffers and is
+    // cast into `urys`/`wrys`, which stay `F`. Both collapse to one element when
+    // the arm is not emitted, exactly as in `one_electron_scalar_kernel`.
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
 
     if lane == 0u32 {
         let nrys = nroots;
@@ -5956,8 +6017,26 @@ fn one_electron_nuc_grad_kernel<F: Float + CubeElement>(
                             rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
                         } else if comptime!(nroots == 4u32) {
                             rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else {
+                        } else if comptime!(nroots == 5u32) {
                             rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        } else {
+                            // nroots 6..=12: the inline Wheeler/Jacobi entry (task
+                            // 33-01). Reachable only once `device_nroots_ceiling` was
+                            // raised for the 1e derivative family on this backend,
+                            // which needs both the `extended-device-rys` feature and a
+                            // passing FMA probe.
+                            rys_roots_ext_dev(
+                                rys_tab,
+                                f64::cast_from(x_boys),
+                                &mut uext,
+                                &mut wext,
+                                nroots,
+                            );
+                            #[unroll]
+                            for iext in 0..nroots {
+                                urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                                wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                            }
                         }
 
                         // fac1 = 2*PI * charge_factor * fac / zeta.
@@ -6114,6 +6193,13 @@ fn run_1e_nuc_grad_batches<R: Runtime>(
         return Vec::new();
     }
 
+    // The extended-Rys constant tables (~4.7 KB), uploaded once per launcher
+    // call and shared by every dispatch: the kernel signature is the same for
+    // every `nroots`, and only a group with `nroots >= 6` reads it.
+    let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+    let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
+
+
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -6178,6 +6264,7 @@ fn run_1e_nuc_grad_batches<R: Runtime>(
                         ArrayArg::from_raw_parts(shape_h.clone(), group.class_shape.len()),
                         ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()),
                         ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()),
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(g_h.clone(), g_len),
                         ArrayArg::from_raw_parts(g1_h.clone(), g_len),
                         ArrayArg::from_raw_parts(out_h.clone(), group.out_len),
@@ -6194,11 +6281,31 @@ fn run_1e_nuc_grad_batches<R: Runtime>(
             };
         }
 
+        // Every reachable order gets its own arm. The upstream ceiling check
+        // already refused anything above `device_nroots_ceiling(backend,
+        // RysFamily::Int1eDeriv)`, which is 5 unless the feature, the
+        // backend's FMA probe and this family's flip all agree — so the
+        // 6..=12 arms are both feature-gated and unreachable without that
+        // evidence, and the `_` arm can never silently clamp a higher order.
         match group.nroots {
             1 => launch_with!(1u32),
             2 => launch_with!(2u32),
             3 => launch_with!(3u32),
             4 => launch_with!(4u32),
+            #[cfg(feature = "extended-device-rys")]
+            6 => launch_with!(6u32),
+            #[cfg(feature = "extended-device-rys")]
+            7 => launch_with!(7u32),
+            #[cfg(feature = "extended-device-rys")]
+            8 => launch_with!(8u32),
+            #[cfg(feature = "extended-device-rys")]
+            9 => launch_with!(9u32),
+            #[cfg(feature = "extended-device-rys")]
+            10 => launch_with!(10u32),
+            #[cfg(feature = "extended-device-rys")]
+            11 => launch_with!(11u32),
+            #[cfg(feature = "extended-device-rys")]
+            12 => launch_with!(12u32),
             _ => launch_with!(5u32),
         }
 
@@ -6716,6 +6823,7 @@ fn one_electron_rinv_kernel<F: Float + CubeElement>(
     shell_meta: &Array<u32>,
     pairs: &Array<u32>,
     class_shape: &Array<u32>,
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     cart_out: &mut Array<F>,
     rcx: F,
@@ -6749,8 +6857,14 @@ fn one_electron_rinv_kernel<F: Float + CubeElement>(
 
     // Written and read entirely inside the `lane == 0` region, so per-unit
     // private storage rather than buffers.
-    let mut urys = Array::<F>::new(5usize);
-    let mut wrys = Array::<F>::new(5usize);
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    // The extended (`nroots >= 6`) entry is f64-only — its double-double arms
+    // are what buy the accuracy — so it lands in its own pair of buffers and is
+    // cast into `urys`/`wrys`, which stay `F`. Both collapse to one element when
+    // the arm is not emitted, exactly as in `one_electron_scalar_kernel`.
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
 
     if lane == 0u32 {
         let nrys = nroots;
@@ -6849,8 +6963,26 @@ fn one_electron_rinv_kernel<F: Float + CubeElement>(
                         rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
                     } else if comptime!(nroots == 4u32) {
                         rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else {
+                    } else if comptime!(nroots == 5u32) {
                         rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                    } else {
+                        // nroots 6..=12: the inline Wheeler/Jacobi entry (task
+                        // 33-01). Reachable only once `device_nroots_ceiling` was
+                        // raised for the 1e derivative family on this backend,
+                        // which needs both the `extended-device-rys` feature and a
+                        // passing FMA probe.
+                        rys_roots_ext_dev(
+                            rys_tab,
+                            f64::cast_from(x_boys),
+                            &mut uext,
+                            &mut wext,
+                            nroots,
+                        );
+                        #[unroll]
+                        for iext in 0..nroots {
+                            urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                            wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                        }
                     }
 
                     // fac1 = 2*PI * charge * fac / zeta  (charge=+1, NO -Z_C).
@@ -6978,6 +7110,13 @@ fn run_1e_rinv_batches<R: Runtime>(
         return Vec::new();
     }
 
+    // The extended-Rys constant tables (~4.7 KB), uploaded once per launcher
+    // call and shared by every dispatch: the kernel signature is the same for
+    // every `nroots`, and only a group with `nroots >= 6` reads it.
+    let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+    let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
+
+
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -7023,6 +7162,7 @@ fn run_1e_rinv_batches<R: Runtime>(
                         ArrayArg::from_raw_parts(meta_h.clone(), *shell_meta_len),
                         ArrayArg::from_raw_parts(pairs_h.clone(), group.pairs.len()),
                         ArrayArg::from_raw_parts(shape_h.clone(), group.class_shape.len()),
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(g_h.clone(), g_len),
                         ArrayArg::from_raw_parts(out_h.clone(), group.out_len),
                         rc[0],
@@ -7041,11 +7181,31 @@ fn run_1e_rinv_batches<R: Runtime>(
             };
         }
 
+        // Every reachable order gets its own arm. The upstream ceiling check
+        // already refused anything above `device_nroots_ceiling(backend,
+        // RysFamily::Int1eDeriv)`, which is 5 unless the feature, the
+        // backend's FMA probe and this family's flip all agree — so the
+        // 6..=12 arms are both feature-gated and unreachable without that
+        // evidence, and the `_` arm can never silently clamp a higher order.
         match group.nroots {
             1 => launch_with!(1u32),
             2 => launch_with!(2u32),
             3 => launch_with!(3u32),
             4 => launch_with!(4u32),
+            #[cfg(feature = "extended-device-rys")]
+            6 => launch_with!(6u32),
+            #[cfg(feature = "extended-device-rys")]
+            7 => launch_with!(7u32),
+            #[cfg(feature = "extended-device-rys")]
+            8 => launch_with!(8u32),
+            #[cfg(feature = "extended-device-rys")]
+            9 => launch_with!(9u32),
+            #[cfg(feature = "extended-device-rys")]
+            10 => launch_with!(10u32),
+            #[cfg(feature = "extended-device-rys")]
+            11 => launch_with!(11u32),
+            #[cfg(feature = "extended-device-rys")]
+            12 => launch_with!(12u32),
             _ => launch_with!(5u32),
         }
 
@@ -7160,6 +7320,7 @@ fn one_electron_drinv_kernel<F: Float + CubeElement>(
     shell_meta: &Array<u32>,
     pairs: &Array<u32>,
     class_shape: &Array<u32>,
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     g1: &mut Array<F>,
     g2: &mut Array<F>,
@@ -7195,8 +7356,14 @@ fn one_electron_drinv_kernel<F: Float + CubeElement>(
 
     // Written and read entirely inside the `lane == 0` region, so per-unit
     // private storage rather than buffers.
-    let mut urys = Array::<F>::new(5usize);
-    let mut wrys = Array::<F>::new(5usize);
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    // The extended (`nroots >= 6`) entry is f64-only — its double-double arms
+    // are what buy the accuracy — so it lands in its own pair of buffers and is
+    // cast into `urys`/`wrys`, which stay `F`. Both collapse to one element when
+    // the arm is not emitted, exactly as in `one_electron_scalar_kernel`.
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
 
     if lane == 0u32 {
         let nrys = nroots;
@@ -7300,8 +7467,26 @@ fn one_electron_drinv_kernel<F: Float + CubeElement>(
                         rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
                     } else if comptime!(nroots == 4u32) {
                         rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                    } else {
+                    } else if comptime!(nroots == 5u32) {
                         rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                    } else {
+                        // nroots 6..=12: the inline Wheeler/Jacobi entry (task
+                        // 33-01). Reachable only once `device_nroots_ceiling` was
+                        // raised for the 1e derivative family on this backend,
+                        // which needs both the `extended-device-rys` feature and a
+                        // passing FMA probe.
+                        rys_roots_ext_dev(
+                            rys_tab,
+                            f64::cast_from(x_boys),
+                            &mut uext,
+                            &mut wext,
+                            nroots,
+                        );
+                        #[unroll]
+                        for iext in 0..nroots {
+                            urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                            wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                        }
                     }
 
                     let fac1 = F::new(2.0_f32) * pi_const * charge * fac / zeta;
@@ -7449,6 +7634,13 @@ fn run_1e_drinv_batches<R: Runtime>(
         return Vec::new();
     }
 
+    // The extended-Rys constant tables (~4.7 KB), uploaded once per launcher
+    // call and shared by every dispatch: the kernel signature is the same for
+    // every `nroots`, and only a group with `nroots >= 6` reads it.
+    let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+    let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
+
+
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -7496,6 +7688,7 @@ fn run_1e_drinv_batches<R: Runtime>(
                         ArrayArg::from_raw_parts(meta_h.clone(), *shell_meta_len),
                         ArrayArg::from_raw_parts(pairs_h.clone(), group.pairs.len()),
                         ArrayArg::from_raw_parts(shape_h.clone(), group.class_shape.len()),
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(g_h.clone(), g_len),
                         ArrayArg::from_raw_parts(g1_h.clone(), g_len),
                         ArrayArg::from_raw_parts(g2_h.clone(), g_len),
@@ -7516,11 +7709,31 @@ fn run_1e_drinv_batches<R: Runtime>(
             };
         }
 
+        // Every reachable order gets its own arm. The upstream ceiling check
+        // already refused anything above `device_nroots_ceiling(backend,
+        // RysFamily::Int1eDeriv)`, which is 5 unless the feature, the
+        // backend's FMA probe and this family's flip all agree — so the
+        // 6..=12 arms are both feature-gated and unreachable without that
+        // evidence, and the `_` arm can never silently clamp a higher order.
         match group.nroots {
             1 => launch_with!(1u32),
             2 => launch_with!(2u32),
             3 => launch_with!(3u32),
             4 => launch_with!(4u32),
+            #[cfg(feature = "extended-device-rys")]
+            6 => launch_with!(6u32),
+            #[cfg(feature = "extended-device-rys")]
+            7 => launch_with!(7u32),
+            #[cfg(feature = "extended-device-rys")]
+            8 => launch_with!(8u32),
+            #[cfg(feature = "extended-device-rys")]
+            9 => launch_with!(9u32),
+            #[cfg(feature = "extended-device-rys")]
+            10 => launch_with!(10u32),
+            #[cfg(feature = "extended-device-rys")]
+            11 => launch_with!(11u32),
+            #[cfg(feature = "extended-device-rys")]
+            12 => launch_with!(12u32),
             _ => launch_with!(5u32),
         }
 
@@ -7631,6 +7844,7 @@ fn one_electron_nuc_grad_both_kernel<F: Float + CubeElement>(
     class_shape: &Array<u32>,
     origin_coords: &Array<F>,
     origin_charges: &Array<F>,
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     g1: &mut Array<F>,
     g2: &mut Array<F>,
@@ -7664,8 +7878,14 @@ fn one_electron_nuc_grad_both_kernel<F: Float + CubeElement>(
 
     // Written and read entirely inside the `lane == 0` region, so per-unit
     // private storage rather than buffers.
-    let mut urys = Array::<F>::new(5usize);
-    let mut wrys = Array::<F>::new(5usize);
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    // The extended (`nroots >= 6`) entry is f64-only — its double-double arms
+    // are what buy the accuracy — so it lands in its own pair of buffers and is
+    // cast into `urys`/`wrys`, which stay `F`. Both collapse to one element when
+    // the arm is not emitted, exactly as in `one_electron_scalar_kernel`.
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
 
     if lane == 0u32 {
         let nrys = nroots;
@@ -7779,8 +7999,26 @@ fn one_electron_nuc_grad_both_kernel<F: Float + CubeElement>(
                             rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
                         } else if comptime!(nroots == 4u32) {
                             rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else {
+                        } else if comptime!(nroots == 5u32) {
                             rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        } else {
+                            // nroots 6..=12: the inline Wheeler/Jacobi entry (task
+                            // 33-01). Reachable only once `device_nroots_ceiling` was
+                            // raised for the 1e derivative family on this backend,
+                            // which needs both the `extended-device-rys` feature and a
+                            // passing FMA probe.
+                            rys_roots_ext_dev(
+                                rys_tab,
+                                f64::cast_from(x_boys),
+                                &mut uext,
+                                &mut wext,
+                                nroots,
+                            );
+                            #[unroll]
+                            for iext in 0..nroots {
+                                urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                                wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                            }
                         }
 
                         let fac1 = F::new(2.0_f32) * pi_const * charge_factor * fac / zeta;
@@ -7952,6 +8190,13 @@ fn run_1e_nuc_grad_both_batches<R: Runtime>(
         return Vec::new();
     }
 
+    // The extended-Rys constant tables (~4.7 KB), uploaded once per launcher
+    // call and shared by every dispatch: the kernel signature is the same for
+    // every `nroots`, and only a group with `nroots >= 6` reads it.
+    let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+    let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
+
+
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -8019,6 +8264,7 @@ fn run_1e_nuc_grad_both_batches<R: Runtime>(
                         ArrayArg::from_raw_parts(shape_h.clone(), group.class_shape.len()),
                         ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()),
                         ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()),
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(g_h.clone(), g_len),
                         ArrayArg::from_raw_parts(g1_h.clone(), g_len),
                         ArrayArg::from_raw_parts(g2_h.clone(), g_len),
@@ -8037,11 +8283,31 @@ fn run_1e_nuc_grad_both_batches<R: Runtime>(
             };
         }
 
+        // Every reachable order gets its own arm. The upstream ceiling check
+        // already refused anything above `device_nroots_ceiling(backend,
+        // RysFamily::Int1eDeriv)`, which is 5 unless the feature, the
+        // backend's FMA probe and this family's flip all agree — so the
+        // 6..=12 arms are both feature-gated and unreachable without that
+        // evidence, and the `_` arm can never silently clamp a higher order.
         match group.nroots {
             1 => launch_with!(1u32),
             2 => launch_with!(2u32),
             3 => launch_with!(3u32),
             4 => launch_with!(4u32),
+            #[cfg(feature = "extended-device-rys")]
+            6 => launch_with!(6u32),
+            #[cfg(feature = "extended-device-rys")]
+            7 => launch_with!(7u32),
+            #[cfg(feature = "extended-device-rys")]
+            8 => launch_with!(8u32),
+            #[cfg(feature = "extended-device-rys")]
+            9 => launch_with!(9u32),
+            #[cfg(feature = "extended-device-rys")]
+            10 => launch_with!(10u32),
+            #[cfg(feature = "extended-device-rys")]
+            11 => launch_with!(11u32),
+            #[cfg(feature = "extended-device-rys")]
+            12 => launch_with!(12u32),
             _ => launch_with!(5u32),
         }
 
@@ -8184,6 +8450,7 @@ fn one_electron_nuc_gradgrad_bra_kernel<F: Float + CubeElement>(
     class_shape: &Array<u32>,
     origin_coords: &Array<F>,
     origin_charges: &Array<F>,
+    rys_tab: &Array<f64>,
     g: &mut Array<F>,
     g1: &mut Array<F>,
     g2: &mut Array<F>,
@@ -8217,8 +8484,14 @@ fn one_electron_nuc_gradgrad_bra_kernel<F: Float + CubeElement>(
 
     // Written and read entirely inside the `lane == 0` region, so per-unit
     // private storage rather than buffers.
-    let mut urys = Array::<F>::new(5usize);
-    let mut wrys = Array::<F>::new(5usize);
+    let mut urys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    let mut wrys = Array::<F>::new(comptime!(ext_rys_slots(nroots)));
+    // The extended (`nroots >= 6`) entry is f64-only — its double-double arms
+    // are what buy the accuracy — so it lands in its own pair of buffers and is
+    // cast into `urys`/`wrys`, which stay `F`. Both collapse to one element when
+    // the arm is not emitted, exactly as in `one_electron_scalar_kernel`.
+    let mut uext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
+    let mut wext = Array::<f64>::new(comptime!(ext_rys_out_slots(nroots)));
 
     if lane == 0u32 {
         let nrys = nroots;
@@ -8331,8 +8604,26 @@ fn one_electron_nuc_gradgrad_bra_kernel<F: Float + CubeElement>(
                             rys_root3::<F>(x_boys, &mut urys, &mut wrys, pie4);
                         } else if comptime!(nroots == 4u32) {
                             rys_root4::<F>(x_boys, &mut urys, &mut wrys, pie4);
-                        } else {
+                        } else if comptime!(nroots == 5u32) {
                             rys_root5::<F>(x_boys, &mut urys, &mut wrys, pie4);
+                        } else {
+                            // nroots 6..=12: the inline Wheeler/Jacobi entry (task
+                            // 33-01). Reachable only once `device_nroots_ceiling` was
+                            // raised for the 1e derivative family on this backend,
+                            // which needs both the `extended-device-rys` feature and a
+                            // passing FMA probe.
+                            rys_roots_ext_dev(
+                                rys_tab,
+                                f64::cast_from(x_boys),
+                                &mut uext,
+                                &mut wext,
+                                nroots,
+                            );
+                            #[unroll]
+                            for iext in 0..nroots {
+                                urys[iext as usize] = F::cast_from(uext[iext as usize]);
+                                wrys[iext as usize] = F::cast_from(wext[iext as usize]);
+                            }
                         }
 
                         let fac1 = F::new(2.0_f32) * pi_const * charge_factor * fac / zeta;
@@ -8419,6 +8710,13 @@ fn run_1e_nuc_gradgrad_bra_batches<R: Runtime>(
         return Vec::new();
     }
 
+    // The extended-Rys constant tables (~4.7 KB), uploaded once per launcher
+    // call and shared by every dispatch: the kernel signature is the same for
+    // every `nroots`, and only a group with `nroots >= 6` reads it.
+    let rys_tables = crate::math::rys_wheeler::ext_rys_tables();
+    let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
+
+
     let crate::kernels::two_electron::TwoEBasisHandles {
         exps: exps_h,
         coeffs: coeffs_h,
@@ -8486,6 +8784,7 @@ fn run_1e_nuc_gradgrad_bra_batches<R: Runtime>(
                         ArrayArg::from_raw_parts(shape_h.clone(), group.class_shape.len()),
                         ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()),
                         ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()),
+                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(g_h.clone(), g_len),
                         ArrayArg::from_raw_parts(g1_h.clone(), g_len),
                         ArrayArg::from_raw_parts(g2_h.clone(), g_len),
@@ -8504,11 +8803,31 @@ fn run_1e_nuc_gradgrad_bra_batches<R: Runtime>(
             };
         }
 
+        // Every reachable order gets its own arm. The upstream ceiling check
+        // already refused anything above `device_nroots_ceiling(backend,
+        // RysFamily::Int1eDeriv)`, which is 5 unless the feature, the
+        // backend's FMA probe and this family's flip all agree — so the
+        // 6..=12 arms are both feature-gated and unreachable without that
+        // evidence, and the `_` arm can never silently clamp a higher order.
         match group.nroots {
             1 => launch_with!(1u32),
             2 => launch_with!(2u32),
             3 => launch_with!(3u32),
             4 => launch_with!(4u32),
+            #[cfg(feature = "extended-device-rys")]
+            6 => launch_with!(6u32),
+            #[cfg(feature = "extended-device-rys")]
+            7 => launch_with!(7u32),
+            #[cfg(feature = "extended-device-rys")]
+            8 => launch_with!(8u32),
+            #[cfg(feature = "extended-device-rys")]
+            9 => launch_with!(9u32),
+            #[cfg(feature = "extended-device-rys")]
+            10 => launch_with!(10u32),
+            #[cfg(feature = "extended-device-rys")]
+            11 => launch_with!(11u32),
+            #[cfg(feature = "extended-device-rys")]
+            12 => launch_with!(12u32),
             _ => launch_with!(5u32),
         }
 
@@ -12524,10 +12843,19 @@ fn launch_one_electron_typed<F: CintFloat>(
         // IN-03: nroots from the shared `giao_nuc_nroots` const fn — same source as
         // the host-side device nuclear buffer sizing, so they cannot drift.
         let nuc_nroots = giao_nuc_nroots(li as u32, lj as u32);
-        if nuc_nroots as usize > MAX_DEVICE_NROOTS {
+        // Task 33-03 / def2 D1.2: the ceiling is the backend's and the
+        // family's, not a constant. It stays at `MAX_DEVICE_NROOTS` unless
+        // `extended-device-rys` is compiled in, this backend's FMA probe
+        // passed, *and* the 1e derivative set has been flipped onto the
+        // inline Wheeler entry.
+        let deriv_ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+            backend,
+            crate::device_rys_ceiling::RysFamily::Int1eDeriv,
+        );
+        if nuc_nroots as usize > deriv_ceiling {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "device int1e_{op_name} kernel supports nroots<={MAX_DEVICE_NROOTS}; \
+                    "device int1e_{op_name} kernel supports nroots<={deriv_ceiling}; \
                      got nroots={nuc_nroots} for l_i={li}, l_j={lj}"
                 ),
             });
@@ -12793,11 +13121,27 @@ fn launch_one_electron_typed<F: CintFloat>(
         } else {
             (li as u32 + lj as u32 + 2) / 2 + 1
         };
-        if nuc_nroots as usize > MAX_DEVICE_NROOTS {
+        // Task 33-03 / def2 D1.2: the ceiling is the backend's and the
+        // family's, not a constant. It stays at `MAX_DEVICE_NROOTS` unless
+        // `extended-device-rys` is compiled in, this backend's FMA probe
+        // passed, *and* that family has been flipped onto the inline Wheeler
+        // entry. `int1e_rinv` is a scalar one-electron integral (`Int1e`);
+        // `int1e_drinv` is its derivative (`Int1eDeriv`). The two ceilings
+        // happen to be equal today, and naming them separately is what keeps
+        // that a coincidence rather than an assumption.
+        let deriv_ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+            backend,
+            if is_rinv {
+                crate::device_rys_ceiling::RysFamily::Int1e
+            } else {
+                crate::device_rys_ceiling::RysFamily::Int1eDeriv
+            },
+        );
+        if nuc_nroots as usize > deriv_ceiling {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "device int1e_{op_name} kernel supports nroots<={MAX_DEVICE_NROOTS} \
-                     (l_i+l_j<=8); got nroots={nuc_nroots} for l_i={li}, l_j={lj}"
+                    "device int1e_{op_name} kernel supports nroots<={deriv_ceiling}; \
+                     got nroots={nuc_nroots} for l_i={li}, l_j={lj}"
                 ),
             });
         }
@@ -13119,10 +13463,19 @@ fn launch_one_electron_typed<F: CintFloat>(
         // ipnucip Rys nroots: one extra root vs single-side nuclear grad for the
         // added ket headroom. nmax = li+lj+2 → nroots = nmax/2 + 1. Fail closed.
         let nuc_nroots_both = (li as u32 + lj as u32 + 2) / 2 + 1;
-        if (is_ipnucip || is_iprinvip) && nuc_nroots_both as usize > MAX_DEVICE_NROOTS {
+        // Task 33-03 / def2 D1.2: the ceiling is the backend's and the
+        // family's, not a constant. It stays at `MAX_DEVICE_NROOTS` unless
+        // `extended-device-rys` is compiled in, this backend's FMA probe
+        // passed, *and* the 1e derivative set has been flipped onto the
+        // inline Wheeler entry.
+        let deriv_ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+            backend,
+            crate::device_rys_ceiling::RysFamily::Int1eDeriv,
+        );
+        if (is_ipnucip || is_iprinvip) && nuc_nroots_both as usize > deriv_ceiling {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "device int1e_{op_name} kernel supports nroots<={MAX_DEVICE_NROOTS}; \
+                    "device int1e_{op_name} kernel supports nroots<={deriv_ceiling}; \
                      got nroots={nuc_nroots_both} for l_i={li}, l_j={lj}"
                 ),
             });
@@ -13501,10 +13854,19 @@ fn launch_one_electron_typed<F: CintFloat>(
         // Fail closed before any device/Rys call (FND-02 routes nroots≥6 to host;
         // the device comptime kernel caps at MAX_DEVICE_NROOTS).
         let nuc_nroots = (li as u32 + lj as u32 + 2) / 2 + 1;
-        if (is_ipipnuc || is_ipiprinv) && nuc_nroots as usize > MAX_DEVICE_NROOTS {
+        // Task 33-03 / def2 D1.2: the ceiling is the backend's and the
+        // family's, not a constant. It stays at `MAX_DEVICE_NROOTS` unless
+        // `extended-device-rys` is compiled in, this backend's FMA probe
+        // passed, *and* the 1e derivative set has been flipped onto the
+        // inline Wheeler entry.
+        let deriv_ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+            backend,
+            crate::device_rys_ceiling::RysFamily::Int1eDeriv,
+        );
+        if (is_ipipnuc || is_ipiprinv) && nuc_nroots as usize > deriv_ceiling {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "device int1e_{op_name} kernel supports nroots<={MAX_DEVICE_NROOTS}; \
+                    "device int1e_{op_name} kernel supports nroots<={deriv_ceiling}; \
                      got nroots={nuc_nroots} for l_i={li}, l_j={lj}"
                 ),
             });
@@ -13965,11 +14327,21 @@ fn launch_one_electron_typed<F: CintFloat>(
         // one root vs the scalar nuclear path). Mirror center_3c2e_ip1's guard and
         // the scalar nuclear guard. T-j7d-01.
         let nuc_nroots = (li as u32 + lj as u32).div_ceil(2) + 1;
-        if (is_ipnuc || is_iprinv) && nuc_nroots as usize > MAX_DEVICE_NROOTS {
+        // Task 33-03 / def2 D1.2: the ceiling is the backend's and the
+        // family's, not a constant. It stays at `MAX_DEVICE_NROOTS` unless
+        // `extended-device-rys` is compiled in, this backend's FMA probe
+        // passed, *and* the 1e derivative set has been flipped onto the
+        // inline Wheeler entry.
+        let deriv_ceiling = crate::device_rys_ceiling::device_nroots_ceiling(
+            backend,
+            crate::device_rys_ceiling::RysFamily::Int1eDeriv,
+        );
+        if (is_ipnuc || is_iprinv) && nuc_nroots as usize > deriv_ceiling {
             return Err(cintxRsError::UnsupportedApi {
                 requested: format!(
-                    "device 1e nuclear-gradient kernel supports nroots<={MAX_DEVICE_NROOTS} \
-                     (l_i+l_j<=8); got nroots={nuc_nroots} for l_i={li}, l_j={lj}"
+                    "device 1e nuclear-gradient kernel supports \
+                     nroots<={deriv_ceiling}; got nroots={nuc_nroots} \
+                     for l_i={li}, l_j={lj}"
                 ),
             });
         }

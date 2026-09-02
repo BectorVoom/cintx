@@ -293,11 +293,22 @@ impl RysFamily {
     /// RI-J), then `int2e`, `int2c2e`, `int1e_*`, and finally the derivative
     /// sets under `def2_speed_precision_plan.md` D1. Each entry landed in the
     /// same commit as the parity gate that justifies it.
+    ///
+    /// The list is now every variant this enum declares. It is still written as
+    /// an explicit `matches!` rather than `true`, because the next family added
+    /// to the enum must start unflipped and earn its own gate — a bare `true`
+    /// would flip it the moment it is declared, which is precisely the failure
+    /// mode the per-family ceiling exists to prevent.
     #[must_use]
     pub const fn runs_extended_rys(self) -> bool {
         matches!(
             self,
-            Self::Int3c2e | Self::Int3c2eDeriv | Self::Int2e | Self::Int2c2e | Self::Int1e
+            Self::Int3c2e
+                | Self::Int3c2eDeriv
+                | Self::Int2e
+                | Self::Int2c2e
+                | Self::Int1e
+                | Self::Int1eDeriv
         )
     }
 
@@ -406,53 +417,75 @@ mod tests {
     /// set here means a family cannot join it as a side effect of an edit
     /// somewhere else — and gives the per-family gates one place to read from
     /// instead of each guessing which of its neighbours is still unflipped.
+    /// Every family this enum declares, in declaration order. The per-family
+    /// tests below sweep this rather than each rewriting the list.
+    const ALL_FAMILIES: [RysFamily; 6] = [
+        RysFamily::Int3c2e,
+        RysFamily::Int3c2eDeriv,
+        RysFamily::Int2e,
+        RysFamily::Int2c2e,
+        RysFamily::Int1e,
+        RysFamily::Int1eDeriv,
+    ];
+
     #[test]
     fn the_flipped_set_is_exactly_the_gated_families() {
-        let flipped: Vec<&str> = [
-            RysFamily::Int3c2e,
-            RysFamily::Int3c2eDeriv,
-            RysFamily::Int2e,
-            RysFamily::Int2c2e,
-            RysFamily::Int1e,
-            RysFamily::Int1eDeriv,
-        ]
-        .into_iter()
-        .filter(|f| f.runs_extended_rys())
-        .map(RysFamily::name)
-        .collect();
+        let flipped: Vec<&str> = ALL_FAMILIES
+            .into_iter()
+            .filter(|f| f.runs_extended_rys())
+            .map(RysFamily::name)
+            .collect();
         assert_eq!(
             flipped,
-            ["int3c2e", "int3c2e-deriv", "int2e", "int2c2e", "int1e"]
+            [
+                "int3c2e",
+                "int3c2e-deriv",
+                "int2e",
+                "int2c2e",
+                "int1e",
+                "int1e-deriv"
+            ],
+            "every declared family is flipped and has a gate; a family added to \
+             the enum must start unflipped and appear here only with its own \
+             oracle parity gate"
         );
     }
 
-    /// **The per-family gate.** A family that has not been flipped keeps the
-    /// base ceiling even with the feature compiled in and the probe passing.
+    /// **The per-family gate.** The ceiling a family gets is decided by its own
+    /// flip, never by a neighbour's.
     ///
     /// This is not belt-and-braces. Raising the ceiling globally the first time
     /// made the unflipped `int2e` batch accept an `(f f | f f)` class and
     /// evaluate it through its launcher's catch-all `nroots = 5` arm, and made
     /// the CubeCL optimizer panic on a five-element root array indexed at 6.
     /// A silently wrong answer is the failure mode this test exists to prevent.
+    ///
+    /// Every declared family is flipped as of `def2_speed_precision_plan.md`
+    /// D1, so today the second branch is the one that runs for all six. The
+    /// first branch is not dead: it is what will hold the *next* family added to
+    /// the enum to the base ceiling until its own gate lands, and asserting both
+    /// directions here is what makes that a test rather than a hope.
     #[test]
-    fn an_unflipped_family_keeps_the_base_ceiling() {
+    fn a_familys_ceiling_follows_its_own_flip() {
         let backend = cpu();
-        for family in [
-            RysFamily::Int3c2eDeriv,
-            RysFamily::Int2e,
-            RysFamily::Int2c2e,
-            RysFamily::Int1e,
-            RysFamily::Int1eDeriv,
-        ] {
-            if family.runs_extended_rys() {
-                continue;
-            }
+        assert!(
+            fma_fusion_verified(&backend),
+            "precondition: the CPU probe passes"
+        );
+        for family in ALL_FAMILIES {
+            let expected = if family.runs_extended_rys() && cfg!(feature = "extended-device-rys") {
+                EXTENDED_DEVICE_NROOTS
+            } else {
+                BASE_DEVICE_NROOTS
+            };
             assert_eq!(
                 device_nroots_ceiling(&backend, family),
-                BASE_DEVICE_NROOTS,
-                "{} has not been flipped onto the inline extended entry, so its \
-                 ceiling must stay at {BASE_DEVICE_NROOTS}",
-                family.name()
+                expected,
+                "{}: runs_extended_rys={}, feature={} — the ceiling must follow \
+                 that pair and nothing else",
+                family.name(),
+                family.runs_extended_rys(),
+                cfg!(feature = "extended-device-rys"),
             );
         }
     }
