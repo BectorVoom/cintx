@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — autotuned launch geometry with a persistent cache (2026-08-30)
+
+Every batched dispatch picked its cube width from a hand-fitted heuristic: `two_e_cube_dim`,
+`one_e_launch_geometry`, `per_unit_width`'s `MIN_ITEMS_PER_UNIT_PAIR = 4`. Those constants came
+from measurements taken on one machine, on one backend, at one problem size, with `CINTX_2E_CUBE_DIM`
+and `CINTX_GRID_STRIDE_CUBE_DIM` left behind as the A/B harness that found them. Nothing carried
+those measurements to anyone else's device. This is Phase 6 of
+`docs/design/cubecl_speed_optimization_plan.md`, built on the two techniques in the CubeCL manual's
+*Autotune Optimization* chapter.
+
+- **`cintx-cubecl::tuning`** is the new module the plan calls for. It owns the coarse
+  device-and-workload key (`LaunchGeometryKey`), the candidate cube widths, the viability rules that
+  prune them, the tuning policy, and the CubeCL configuration install.
+- **Early-stop pruning via intra-group priorities.** All ten candidate widths sit in one `TuneGroup`
+  whose priority closure returns `-1` for any width the key cannot honour — past
+  `max_units_per_cube`, past the family's scratch budget with one slab per unit, past the
+  parallelism the work can fill, or not a whole number of planes. A pruned width is dropped from the
+  tuning plan before it is compiled or launched, which is what lets the candidate list stay wider
+  than any one backend can use. On the 16-core dev host, six of eleven 2e candidates are measured
+  and five are skipped outright.
+- **Persistent caching.** The winner is written per device and key under CubeCL's autotune cache and
+  reloaded on the next run, so the benchmark is a one-off rather than a per-process cost.
+  `CINTX_AUTOTUNE_CACHE` pins the location — CubeCL's own default is relative to the current working
+  directory, which retunes an application launched from elsewhere.
+- **Wired into the `int2e` and `int1e` batch paths.** `run_2e_batches` and `run_1e_batches` now build
+  a cloneable dispatch record and hand it to a `LocalTuner`; each candidate runs the *real* kernel on
+  the *real* basis, so a measurement is of the thing being chosen, not of a proxy. The heuristic
+  geometry is registered as the ungrouped first candidate, which puts it in the same measured batch
+  as every viable width — the search always includes the geometry it is trying to beat, and falls
+  back to it whenever tuning is off.
+- **Bounded cold start.** Dispatches below `MIN_TUNE_ITEMS` are never tuned; the benchmark runs on a
+  work-aware prefix (`tune_sample_items` — many quartets for a cheap `ssss` class, few for an
+  expensive one, so each pass costs about the same and a short prefix cannot bias the ranking toward
+  narrow cubes); and `MAX_TUNED_KEYS` caps distinct keys per process, past which new keys fall back
+  to the heuristic instead of growing the cache without limit.
+  `CINTX_AUTOTUNE=off|balanced|extensive`, or `tuning::set_policy`, is the knob; the two enabled
+  levels map onto CubeCL's `AutotuneLevel`, which sets how coarsely the workload fields of the key
+  are bucketed.
+
+**It is off by default, on the evidence.** On the 16-core CPU-runtime dev host, a 4096-quartet
+`s`/`p`/`d` batch over 8 launch classes measured (release, median of 25 repeats) 75.7 ms and 81.5 ms
+under `off`, against 88.8 ms and 273 ms under `balanced` with a warm cache. The tuner's own profiled
+samples ranked most of its picks ahead of the heuristic and the wall clock did not agree, for two
+reasons that are not fixable from this side: the CPU runtime's profiled timings spread ~2x between a
+candidate's min and its median, wider than the differences being ranked, and this host moves by more
+than that between identical runs. A cold pass also costs one JIT compilation per surviving
+candidate, because `CubeDim` is part of a kernel's compiled identity — 65 s for those 8 classes in
+one run. So the machinery ships complete, tested and documented, with the default left on the
+geometry that is already measured. Turn it on where the result can be measured: a quiet machine, and
+especially a GPU backend, where the ranking is a device-timestamp profile rather than host wall
+clock and the cooperative arm has a real plane-width search to do.
+
+**Tuning changes speed and nothing else, and that is a test, not a claim.** The batch kernels cover
+their whole index space grid-stride and split each item's contraction block across the cube's lanes,
+so the cube width decides how work is divided and never which values are produced.
+`crates/cintx-cubecl/tests/tuned_geometry_parity.rs` pins it with the kernel as its own reference: a
+work list past the tuning floor goes through the tuner, the same items in sub-floor chunks never
+reach it, and the two must agree bit for bit — for `int2e` and for all three `int1e` operators.
+
+**One exit-gate criterion is not met, deliberately.** The plan asks that the selected variant beat
+the safe default *beyond a noise threshold*. CubeCL 0.10 has no such threshold: it ranks by
+`0.8·min + 0.2·median` inflated by the coefficient of variation and keeps the best score, so
+candidates that are indistinguishable within noise can resolve either way. The exposure is bounded
+rather than removed — the heuristic geometry is itself one of the measured candidates, and the
+pruning keeps the plainly-wrong widths out of the ranking — and it is one more reason the default is
+`off`. The derivative and σ-family launchers still use `one_e_launch_geometry` untuned; the tuning
+module is family-generic and they are the obvious next callers. `xtask bench-report` still emits its
+`cintx_cubecl_autotune` artifact as `not_collected`: the benchmark row contract carries no tuner
+candidates or device identity yet, and wiring the cache into it is separate work.
+
 ### Added — range-separated Coulomb: `env[PTR_RANGE_OMEGA]` is honoured end to end (2026-08-30)
 
 `cintx` evaluated `1/r₁₂` and nothing else. `env[8]` was named in a comment in

@@ -344,6 +344,21 @@ Exit gate:
 
 Files: new `tuning.rs`; batch kernels; context configuration/cache.
 
+Status (2026-08-30): the cube-dimension axis is implemented, and **off by default** — see the
+measurement table in `cintx-cubecl::tuning`'s module docs, which found no end-to-end win on the
+CPU-runtime dev host. It is implemented in
+`crates/cintx-cubecl/src/tuning.rs` and wired into the `int2e` and `int1e` batch dispatches
+(`run_2e_batches`, `run_1e_batches`). Work items 1, 2 and 3 below are covered — capability-based
+candidate rejection before compilation via `TuneGroup` intra-priorities, persistent caching with a
+schema version in the key, and `off`/`balanced`/`extensive` policies over a safe default — with
+cold-start work and cache cardinality bounded by `MIN_TUNE_ITEMS`, `tune_sample_items` and
+`MAX_TUNED_KEYS`. Result-invariance is pinned by
+`crates/cintx-cubecl/tests/tuned_geometry_parity.rs`. Still open: the remaining candidate
+dimensions (kernel mode, vectorization factor, scratch/shared-memory tile, fused vs staged
+transform), the derivative and σ-family launchers, prewarming, and the noise-threshold clause of
+the exit gate — CubeCL 0.10's tuner ranks by score with no noise band, which
+`cintx-cubecl::tuning`'s module docs record as a known deviation.
+
 Tune by device fingerprint and coarse workload key, not exact dimensions. Candidate dimensions include:
 
 - Kernel mode: lane-per-tuple, vectorized lane-per-tuple, plane-per-tuple, cube-per-tuple.

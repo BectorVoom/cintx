@@ -23,6 +23,7 @@ pub mod shared_memory;
 pub mod specialization;
 pub mod transfer;
 pub mod transform;
+pub mod tuning;
 
 pub use backend::{ResolvedBackend, compiled_backends};
 pub use batch_pilot::{EriSsssInput, OverlapSsInput, PilotOutputArenaStats};
@@ -80,6 +81,12 @@ pub use shared_memory::{
 };
 pub use specialization::{ComponentRank, SpecializationKey};
 pub use transfer::{TransferPlan, TransferWorkspaceBuffers};
+pub use tuning::{
+    AutotunePolicy, CANDIDATE_CUBE_WIDTHS, Decomposition, LaunchGeometryKey, MAX_TUNED_KEYS,
+    MIN_TUNE_ITEMS, TUNE_SAMPLE_MAX_ITEMS, TUNE_SAMPLE_MIN_ITEMS, TUNE_SAMPLE_WORK_BUDGET,
+    TUNING_SCHEMA_VERSION, TunedFamily, cube_width_priority, device_fingerprint,
+    install_runtime_config, policy, set_policy, tune_sample_items, tuned_key_count,
+};
 
 #[cfg(test)]
 mod tests {
@@ -91,7 +98,7 @@ mod tests {
             DeviceResidentCache, ResolvedBackend, TransferPlan, TransferWorkspaceBuffers,
             WgpuCapabilitySnapshot, WgpuPreflightReport, backend, capability,
             capability_fingerprint, check_shader_f64_in_features, compiled_backends, executor,
-            kernels, resident_cache, shared_memory, specialization, transfer, transform,
+            kernels, resident_cache, shared_memory, specialization, transfer, transform, tuning,
         };
         #[cfg(feature = "wgpu")]
         #[allow(unused_imports)]

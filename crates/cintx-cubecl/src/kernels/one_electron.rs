@@ -59,6 +59,7 @@ use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
 use cubecl::client::ComputeClient;
 use cubecl::prelude::*;
+use cubecl::tune::{LocalTuner, Tunable, TunableSet, TuneGroup, local_tuner};
 
 /// sqrt(pi) constant — used in G-tensor base case normalization.
 /// Matches libcint `g1e.c` `SQRTPI = sqrt(M_PI)`.
@@ -9443,6 +9444,13 @@ pub(crate) fn one_e_per_unit<R: Runtime>(client: &ComputeClient<R>) -> bool {
     }
 }
 
+/// Ceiling on the per-launch 1e G-tensor scratch slab.
+///
+/// Module-level rather than local to [`one_e_launch_geometry`] because the
+/// launch-geometry tuner prunes candidate cube widths against the same budget
+/// (`crate::tuning::cube_width_priority`), and the two must not drift apart.
+pub(crate) const ONE_E_MAX_BATCH_SCRATCH_BYTES: usize = 64 * 1024 * 1024;
+
 /// Launch geometry for one 1e class: `(cube_count, cube_dim, n_slots)`.
 pub(crate) fn one_e_launch_geometry<R: Runtime>(
     client: &ComputeClient<R>,
@@ -9450,8 +9458,7 @@ pub(crate) fn one_e_launch_geometry<R: Runtime>(
     g_per_axis: usize,
     block_len: u32,
 ) -> (u32, CubeDim, usize) {
-    /// Ceiling on the per-launch G-tensor scratch slab.
-    const MAX_BATCH_SCRATCH_BYTES: usize = 64 * 1024 * 1024;
+    const MAX_BATCH_SCRATCH_BYTES: usize = ONE_E_MAX_BATCH_SCRATCH_BYTES;
 
     let per_slab = one_e_g_slab_stride(g_per_axis) * std::mem::size_of::<f64>();
     let by_memory = (MAX_BATCH_SCRATCH_BYTES / per_slab.max(1)).max(1);
@@ -9532,19 +9539,123 @@ fn run_1e_batches<R: Runtime>(
         let g_per_axis = class.max_g_per_axis;
         let nroots = class.nroots as usize;
 
-        let (n_cubes, cube_dim, n_slots) =
+        let (n_cubes, heuristic_cube_dim, _) =
             one_e_launch_geometry::<R>(client, n_pairs, g_per_axis, class.max_block_len);
-        let g_stride = one_e_g_slab_stride(g_per_axis);
-        let g_len = n_slots * g_stride;
 
         let pairs_h = client.create_from_slice(u32::as_bytes(&class.pairs));
         let shape_h = client.create_from_slice(u32::as_bytes(&class.class_shape));
         // The extended-Rys constant tables (~4.7 KB), read only by a nuclear
         // class whose Rys order is past the polynomial-fit ceiling.
         let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
-        let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(class.out_len * std::mem::size_of::<f64>());
-        let per_unit = u32::from(one_e_per_unit::<R>(client));
+
+        dispatch_1e_group(OneEGroupDispatch::<R> {
+            client: client.clone(),
+            exps: exps_h.clone(),
+            coeffs: coeffs_h.clone(),
+            centers: centers_h.clone(),
+            shell_meta: meta_h.clone(),
+            exps_len: *exps_len,
+            coeffs_len: *coeffs_len,
+            centers_len: *centers_len,
+            shell_meta_len: *shell_meta_len,
+            pairs: pairs_h,
+            class_shape: shape_h,
+            atom_coords: coords_h.clone(),
+            atom_charges: charges_h.clone(),
+            rys_tables: rys_tab_h,
+            out: out_h.clone(),
+            pairs_len: class.pairs.len(),
+            class_shape_len: class.class_shape.len(),
+            atom_coords_len: coords_src.len(),
+            atom_charges_len: charges_src.len(),
+            out_len: class.out_len,
+            natm,
+            n_pairs: n_pairs as u32,
+            n_cubes,
+            g_per_axis,
+            per_unit: one_e_per_unit::<R>(client),
+            block_len: class.max_block_len,
+            op_kind,
+            nroots: nroots as u32,
+            prim_tol,
+            heuristic_cube_dim,
+        });
+
+        let raw = client.read_one_unchecked(out_h);
+        results.push(f64::from_bytes(&raw)[0..class.out_len].to_vec());
+    }
+    results
+}
+
+/// Everything one 1e launch class binds, in a form that can be cloned and
+/// re-launched under a different cube width.
+///
+/// The launch-geometry autotuner (Phase 6 of
+/// `docs/design/cubecl_speed_optimization_plan.md`) benchmarks candidates by
+/// running *this* dispatch, so a measurement is of the real kernel on the real
+/// basis. The G-tensor scratch is allocated inside
+/// [`OneEGroupDispatch::launch`] because its size is the one thing the cube
+/// width changes.
+#[derive(Clone)]
+struct OneEGroupDispatch<R: Runtime> {
+    client: ComputeClient<R>,
+    exps: cubecl::server::Handle,
+    coeffs: cubecl::server::Handle,
+    centers: cubecl::server::Handle,
+    shell_meta: cubecl::server::Handle,
+    exps_len: usize,
+    coeffs_len: usize,
+    centers_len: usize,
+    shell_meta_len: usize,
+    pairs: cubecl::server::Handle,
+    class_shape: cubecl::server::Handle,
+    atom_coords: cubecl::server::Handle,
+    atom_charges: cubecl::server::Handle,
+    rys_tables: cubecl::server::Handle,
+    out: cubecl::server::Handle,
+    pairs_len: usize,
+    class_shape_len: usize,
+    atom_coords_len: usize,
+    atom_charges_len: usize,
+    out_len: usize,
+    natm: u32,
+    n_pairs: u32,
+    n_cubes: u32,
+    g_per_axis: usize,
+    per_unit: bool,
+    block_len: u32,
+    op_kind: u32,
+    nroots: u32,
+    prim_tol: f64,
+    /// The geometry [`one_e_launch_geometry`] picked — the safe default, and
+    /// the candidate every tuned width has to beat.
+    heuristic_cube_dim: CubeDim,
+}
+
+impl<R: Runtime> OneEGroupDispatch<R> {
+    /// Launch this class at `cube_dim`.
+    ///
+    /// The kernel walks its pair list grid-stride and splits each pair's
+    /// contraction block across the cube's lanes, so it covers the same index
+    /// space and writes the same values at every geometry.
+    fn launch(&self, cube_dim: CubeDim) {
+        let client = &self.client;
+        // One private G slab per *slot*: a slot is a cube in the cooperative
+        // decomposition and a unit in the per-unit one.
+        let n_slots = if self.per_unit {
+            self.n_cubes as usize * cube_dim.num_elems() as usize
+        } else {
+            self.n_cubes as usize
+        };
+        let g_stride = one_e_g_slab_stride(self.g_per_axis);
+        let g_len = n_slots * g_stride;
+        let g_h = client.empty(g_len * std::mem::size_of::<f64>());
+        let per_unit = u32::from(self.per_unit);
+        let n_cubes = self.n_cubes;
+        let n_pairs = self.n_pairs;
+        let natm = self.natm;
+        let prim_tol = self.prim_tol;
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -9557,23 +9668,23 @@ fn run_1e_batches<R: Runtime>(
                         client,
                         crate::plane::cube_count_1d(n_cubes),
                         cube_dim,
-                        ArrayArg::from_raw_parts(exps_h.clone(), *exps_len),
-                        ArrayArg::from_raw_parts(coeffs_h.clone(), *coeffs_len),
-                        ArrayArg::from_raw_parts(centers_h.clone(), *centers_len),
-                        ArrayArg::from_raw_parts(meta_h.clone(), *shell_meta_len),
-                        ArrayArg::from_raw_parts(pairs_h.clone(), class.pairs.len()),
-                        ArrayArg::from_raw_parts(shape_h.clone(), class.class_shape.len()),
-                        ArrayArg::from_raw_parts(coords_h.clone(), coords_src.len()),
-                        ArrayArg::from_raw_parts(charges_h.clone(), charges_src.len()),
-                        ArrayArg::from_raw_parts(rys_tab_h.clone(), EXT_TABLES_LEN),
+                        ArrayArg::from_raw_parts(self.exps.clone(), self.exps_len),
+                        ArrayArg::from_raw_parts(self.coeffs.clone(), self.coeffs_len),
+                        ArrayArg::from_raw_parts(self.centers.clone(), self.centers_len),
+                        ArrayArg::from_raw_parts(self.shell_meta.clone(), self.shell_meta_len),
+                        ArrayArg::from_raw_parts(self.pairs.clone(), self.pairs_len),
+                        ArrayArg::from_raw_parts(self.class_shape.clone(), self.class_shape_len),
+                        ArrayArg::from_raw_parts(self.atom_coords.clone(), self.atom_coords_len),
+                        ArrayArg::from_raw_parts(self.atom_charges.clone(), self.atom_charges_len),
+                        ArrayArg::from_raw_parts(self.rys_tables.clone(), EXT_TABLES_LEN),
                         ArrayArg::from_raw_parts(g_h.clone(), g_len),
-                        ArrayArg::from_raw_parts(out_h.clone(), class.out_len),
+                        ArrayArg::from_raw_parts(self.out.clone(), self.out_len),
                         PIE4,
                         prim_tol,
                         SQRTPI,
                         std::f64::consts::PI,
                         natm,
-                        n_pairs as u32,
+                        n_pairs,
                         n_cubes,
                         g_stride as u32,
                         $op,
@@ -9586,9 +9697,9 @@ fn run_1e_batches<R: Runtime>(
 
         // overlap (op_kind=0) / kinetic (op_kind=1) use nroots=1 (no Rys).
         // nuclear (op_kind=2) selects rys_rootN for nroots in 1..=5.
-        if op_kind == 0 {
+        if self.op_kind == 0 {
             launch_with!(0u32, 1u32);
-        } else if op_kind == 1 {
+        } else if self.op_kind == 1 {
             launch_with!(1u32, 1u32);
         } else {
             // Every reachable order gets its own arm. The upstream ceiling
@@ -9596,7 +9707,7 @@ fn run_1e_batches<R: Runtime>(
             // `device_nroots_ceiling(backend, RysFamily::Int1e)`, which is 5
             // unless the feature, the backend's FMA probe and this family's
             // flip all agree.
-            match nroots {
+            match self.nroots {
                 1 => launch_with!(2u32, 1u32),
                 2 => launch_with!(2u32, 2u32),
                 3 => launch_with!(2u32, 3u32),
@@ -9618,11 +9729,98 @@ fn run_1e_batches<R: Runtime>(
                 _ => launch_with!(2u32, 5u32),
             }
         }
-
-        let raw = client.read_one_unchecked(out_h);
-        results.push(f64::from_bytes(&raw)[0..class.out_len].to_vec());
     }
-    results
+
+    /// The coarse device-and-workload key this dispatch's geometry is measured
+    /// against.
+    ///
+    /// The kernel specializes on `(op_kind, nroots)` — overlap, kinetic and
+    /// each nuclear Rys order compile to different programs — so both go into
+    /// the key's specialization field.
+    fn tuning_key(&self) -> crate::tuning::LaunchGeometryKey {
+        crate::tuning::LaunchGeometryKey::new(
+            crate::tuning::TunedFamily::OneE,
+            &crate::plane::launch_hardware(&self.client),
+            if self.per_unit {
+                crate::tuning::Decomposition::PerUnit
+            } else {
+                crate::tuning::Decomposition::Cooperative
+            },
+            self.op_kind * 100 + self.nroots,
+            self.n_pairs as usize,
+            self.block_len,
+            one_e_g_slab_stride(self.g_per_axis) * std::mem::size_of::<f64>(),
+        )
+    }
+
+    /// The same dispatch over a bounded, work-aware prefix of the pair list,
+    /// for the benchmark passes. Only the winning candidate is re-executed on
+    /// the full list.
+    fn truncated_for_tuning(&self) -> Self {
+        let n_pairs =
+            crate::tuning::tune_sample_items(self.n_pairs as usize, self.g_per_axis.max(1));
+        let (n_cubes, _, _) =
+            one_e_launch_geometry::<R>(&self.client, n_pairs, self.g_per_axis, self.block_len);
+        let mut truncated = self.clone();
+        truncated.n_pairs = n_pairs as u32;
+        truncated.n_cubes = n_cubes;
+        truncated
+    }
+}
+
+/// The launch-geometry tuner for the batched 1e kernel.
+static ONE_E_GEOMETRY_TUNER: LocalTuner<crate::tuning::LaunchGeometryKey, String> =
+    local_tuner!("1e-geometry");
+
+/// The candidate cube widths for the 1e dispatch, with their viability
+/// priorities. See [`crate::tuning`] for what the group and the `-1` priorities
+/// do to the tuning plan.
+fn one_e_geometry_tunables<R: Runtime>()
+-> TunableSet<crate::tuning::LaunchGeometryKey, OneEGroupDispatch<R>, ()> {
+    let mut set = TunableSet::new(
+        |dispatch: &OneEGroupDispatch<R>| dispatch.tuning_key(),
+        |_key: &crate::tuning::LaunchGeometryKey, dispatch: &OneEGroupDispatch<R>| {
+            dispatch.truncated_for_tuning()
+        },
+    )
+    .with(Tunable::new(
+        "1e-geometry:heuristic",
+        |dispatch: OneEGroupDispatch<R>| {
+            dispatch.launch(dispatch.heuristic_cube_dim);
+            Ok::<(), String>(())
+        },
+    ));
+
+    let viable = TuneGroup::<crate::tuning::LaunchGeometryKey>::new("viable-widths", |_| 1);
+    for width in crate::tuning::CANDIDATE_CUBE_WIDTHS {
+        set = set.with(
+            Tunable::new(
+                &format!("1e-geometry:width-{width}"),
+                move |dispatch: OneEGroupDispatch<R>| {
+                    dispatch.launch(CubeDim::new_1d(width));
+                    Ok::<(), String>(())
+                },
+            )
+            .group(&viable, move |key| {
+                crate::tuning::cube_width_priority(key, width, ONE_E_MAX_BATCH_SCRATCH_BYTES)
+            }),
+        );
+    }
+    set
+}
+
+/// Launch one 1e class, tuning its cube width when the policy and the workload
+/// both justify it.
+fn dispatch_1e_group<R: Runtime>(dispatch: OneEGroupDispatch<R>) {
+    let key = dispatch.tuning_key();
+    if !crate::tuning::should_tune(&key, dispatch.n_pairs as usize) {
+        dispatch.launch(dispatch.heuristic_cube_dim);
+        return;
+    }
+    let client = dispatch.client.clone();
+    let device = crate::tuning::device_fingerprint(&client);
+    let tunables = ONE_E_GEOMETRY_TUNER.init(one_e_geometry_tunables::<R>);
+    ONE_E_GEOMETRY_TUNER.execute(&device, &client, tunables, dispatch);
 }
 
 /// The scalar 1e operator a batched run evaluates.

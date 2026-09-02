@@ -44,6 +44,7 @@ use cintx_runtime::{ExecutionPlan, ExecutionStats};
 use cubecl::Runtime;
 use cubecl::client::ComputeClient;
 use cubecl::prelude::*;
+use cubecl::tune::{LocalTuner, Tunable, TunableSet, TuneGroup, local_tuner};
 use std::f64::consts::PI;
 
 /// sqrt(pi) constant — matches libcint `SQRTPI`.
@@ -2071,18 +2072,7 @@ fn run_2e_batches<R: Runtime>(
         // indexes only the leading `3 * g_size` of the slab, so a narrow class
         // touches exactly the elements it did when it launched alone.
         let g_size_u = group.max_g_size as usize;
-        let n_cubes = two_e_cube_count::<R>(client, n_quartets, g_size_u);
-        let cube_dim = two_e_cube_dim::<R>(client, group.max_block_len, n_quartets, g_size_u);
         let per_unit = two_e_per_unit::<R>(client);
-        // One private G slab per *slot*: a slot is a cube in the cooperative
-        // decomposition and a unit in the per-unit one.
-        let n_slots = if per_unit {
-            n_cubes as usize * cube_dim.num_elems() as usize
-        } else {
-            n_cubes as usize
-        };
-        let g_stride = g_slab_stride(g_size_u);
-        let g_len = n_slots * g_stride;
 
         let quartets_h = client.create_from_slice(u32::as_bytes(&group.quartets));
         let shape_h = client.create_from_slice(u32::as_bytes(&group.class_shape));
@@ -2091,8 +2081,108 @@ fn run_2e_batches<R: Runtime>(
         // Rys order is past the polynomial-fit ceiling. Uploaded per dispatch
         // regardless, because the kernel signature does not vary with `nroots`.
         let rys_tab_h = client.create_from_slice(f64::as_bytes(&rys_tables));
-        let g_h = client.empty(g_len * std::mem::size_of::<f64>());
         let out_h = client.empty(group.out_len * std::mem::size_of::<f64>());
+
+        let dispatch = TwoEGroupDispatch::<R> {
+            client: client.clone(),
+            exps: exps_h.clone(),
+            coeffs: coeffs_h.clone(),
+            centers: centers_h.clone(),
+            shell_meta: meta_h.clone(),
+            exps_len: *exps_len,
+            coeffs_len: *coeffs_len,
+            centers_len: *centers_len,
+            shell_meta_len: *shell_meta_len,
+            quartets: quartets_h,
+            class_shape: shape_h,
+            class_factor: factor_h,
+            rys_tables: rys_tab_h,
+            out: out_h.clone(),
+            quartets_len: group.quartets.len(),
+            class_shape_len: group.class_shape.len(),
+            class_factor_len: group.class_factor.len(),
+            out_len: group.out_len,
+            n_quartets: n_quartets as u32,
+            n_cubes: two_e_cube_count::<R>(client, n_quartets, g_size_u),
+            g_size: g_size_u,
+            per_unit,
+            block_len: group.max_block_len,
+            signature: group.signature,
+            primitive_tolerance: options.primitive_tolerance,
+            heuristic_cube_dim: two_e_cube_dim::<R>(
+                client,
+                group.max_block_len,
+                n_quartets,
+                g_size_u,
+            ),
+        };
+        dispatch_2e_group(dispatch);
+
+        let raw = client.read_one_unchecked(out_h);
+        results.push(f64::from_bytes(&raw)[0..group.out_len].to_vec());
+    }
+    results
+}
+
+/// Everything one launch group's dispatch binds, in a form that can be cloned
+/// and re-launched under a different cube width.
+///
+/// This is what the launch-geometry autotuner (Phase 6 of
+/// `docs/design/cubecl_speed_optimization_plan.md`) benchmarks: each candidate
+/// runs *this* dispatch, so a measurement is of the real kernel on the real
+/// basis, not of a proxy. Every field but the cube width is held fixed, and the
+/// G-tensor scratch is allocated inside [`TwoEGroupDispatch::launch`] because
+/// its size is the one thing the width changes.
+#[derive(Clone)]
+struct TwoEGroupDispatch<R: Runtime> {
+    client: ComputeClient<R>,
+    exps: cubecl::server::Handle,
+    coeffs: cubecl::server::Handle,
+    centers: cubecl::server::Handle,
+    shell_meta: cubecl::server::Handle,
+    exps_len: usize,
+    coeffs_len: usize,
+    centers_len: usize,
+    shell_meta_len: usize,
+    quartets: cubecl::server::Handle,
+    class_shape: cubecl::server::Handle,
+    class_factor: cubecl::server::Handle,
+    rys_tables: cubecl::server::Handle,
+    out: cubecl::server::Handle,
+    quartets_len: usize,
+    class_shape_len: usize,
+    class_factor_len: usize,
+    out_len: usize,
+    n_quartets: u32,
+    n_cubes: u32,
+    g_size: usize,
+    per_unit: bool,
+    block_len: u32,
+    signature: TwoELaunchSignature,
+    primitive_tolerance: f64,
+    /// The geometry [`two_e_cube_dim`] picked — the safe default, and the
+    /// candidate every tuned width has to beat.
+    heuristic_cube_dim: CubeDim,
+}
+
+impl<R: Runtime> TwoEGroupDispatch<R> {
+    /// Launch this group at `cube_dim`.
+    ///
+    /// The kernel walks its quartet list grid-stride and splits each quartet's
+    /// contraction block across the cube's lanes, so it covers the same index
+    /// space and writes the same values at every geometry: `cube_dim` buys
+    /// speed, never results.
+    fn launch(&self, cube_dim: CubeDim) {
+        // One private G slab per *slot*: a slot is a cube in the cooperative
+        // decomposition and a unit in the per-unit one.
+        let n_slots = if self.per_unit {
+            self.n_cubes as usize * cube_dim.num_elems() as usize
+        } else {
+            self.n_cubes as usize
+        };
+        let g_stride = g_slab_stride(self.g_size);
+        let g_len = n_slots * g_stride;
+        let g_h = self.client.empty(g_len * std::mem::size_of::<f64>());
 
         // SAFETY: every buffer is allocated at the exact length passed to
         // `ArrayArg::from_raw_parts`. In-kernel indices are bounded by
@@ -2102,35 +2192,139 @@ fn run_2e_batches<R: Runtime>(
         // the single-quartet path has always satisfied.
         unsafe {
             two_electron_scalar_kernel::launch_unchecked::<f64, R>(
-                client,
-                crate::plane::cube_count_1d(n_cubes),
+                &self.client,
+                crate::plane::cube_count_1d(self.n_cubes),
                 cube_dim,
-                ArrayArg::from_raw_parts(exps_h.clone(), *exps_len),
-                ArrayArg::from_raw_parts(coeffs_h.clone(), *coeffs_len),
-                ArrayArg::from_raw_parts(centers_h.clone(), *centers_len),
-                ArrayArg::from_raw_parts(meta_h.clone(), *shell_meta_len),
-                ArrayArg::from_raw_parts(quartets_h, group.quartets.len()),
-                ArrayArg::from_raw_parts(shape_h, group.class_shape.len()),
-                ArrayArg::from_raw_parts(factor_h, group.class_factor.len()),
-                ArrayArg::from_raw_parts(rys_tab_h, EXT_TABLES_LEN),
+                ArrayArg::from_raw_parts(self.exps.clone(), self.exps_len),
+                ArrayArg::from_raw_parts(self.coeffs.clone(), self.coeffs_len),
+                ArrayArg::from_raw_parts(self.centers.clone(), self.centers_len),
+                ArrayArg::from_raw_parts(self.shell_meta.clone(), self.shell_meta_len),
+                ArrayArg::from_raw_parts(self.quartets.clone(), self.quartets_len),
+                ArrayArg::from_raw_parts(self.class_shape.clone(), self.class_shape_len),
+                ArrayArg::from_raw_parts(self.class_factor.clone(), self.class_factor_len),
+                ArrayArg::from_raw_parts(self.rys_tables.clone(), EXT_TABLES_LEN),
                 ArrayArg::from_raw_parts(g_h, g_len),
-                ArrayArg::from_raw_parts(out_h.clone(), group.out_len),
+                ArrayArg::from_raw_parts(self.out.clone(), self.out_len),
                 PIE4,
-                options.primitive_tolerance,
-                n_quartets as u32,
-                n_cubes,
+                self.primitive_tolerance,
+                self.n_quartets,
+                self.n_cubes,
                 g_stride as u32,
-                group.signature.ibase,
-                group.signature.kbase,
-                group.signature.nroots,
-                u32::from(per_unit),
+                self.signature.ibase,
+                self.signature.kbase,
+                self.signature.nroots,
+                u32::from(self.per_unit),
             );
         }
-
-        let raw = client.read_one_unchecked(out_h);
-        results.push(f64::from_bytes(&raw)[0..group.out_len].to_vec());
     }
-    results
+
+    /// The coarse device-and-workload key this dispatch's geometry is measured
+    /// against.
+    fn tuning_key(&self) -> crate::tuning::LaunchGeometryKey {
+        crate::tuning::LaunchGeometryKey::new(
+            crate::tuning::TunedFamily::TwoE,
+            &crate::plane::launch_hardware(&self.client),
+            if self.per_unit {
+                crate::tuning::Decomposition::PerUnit
+            } else {
+                crate::tuning::Decomposition::Cooperative
+            },
+            self.signature.nroots,
+            self.n_quartets as usize,
+            self.block_len,
+            g_slab_stride(self.g_size) * std::mem::size_of::<f64>(),
+        )
+    }
+
+    /// The same dispatch over a bounded prefix of the quartet list, for the
+    /// benchmark passes.
+    ///
+    /// The kernel reads its quartet count from a scalar, so this is the same
+    /// program on the same shapes with a shorter list — same specialization,
+    /// same G extents, same decomposition. Only the winning candidate is then
+    /// re-executed on the full list, so the truncation can cost ranking
+    /// accuracy and nothing else. `n_cubes` is re-derived because the grid is
+    /// sized to the item count in the cooperative arm.
+    ///
+    /// The prefix length is work-aware: `g_size` is this group's per-quartet
+    /// G-tensor cost, so a cheap `ssss` class is benchmarked over many quartets
+    /// and an expensive `dddd` one over few, and each pass costs about the same.
+    fn truncated_for_tuning(&self) -> Self {
+        let n_quartets =
+            crate::tuning::tune_sample_items(self.n_quartets as usize, self.g_size.max(1));
+        let mut truncated = self.clone();
+        truncated.n_quartets = n_quartets as u32;
+        truncated.n_cubes = two_e_cube_count::<R>(&self.client, n_quartets, self.g_size);
+        truncated
+    }
+}
+
+/// The launch-geometry tuner for the batched 2e kernel.
+///
+/// One tuner for the whole crate-and-family: it is keyed by device inside, and
+/// its persistent cache lives under that device's directory.
+static TWO_E_GEOMETRY_TUNER: LocalTuner<crate::tuning::LaunchGeometryKey, String> =
+    local_tuner!("2e-geometry");
+
+/// The candidate cube widths for the 2e dispatch, with their viability
+/// priorities.
+///
+/// The heuristic candidate is registered **without** a group, which is what
+/// puts it in the first batch of the tuning plan alongside the highest-priority
+/// group: the search always measures the geometry it is trying to beat. Every
+/// width candidate is in one group whose intra-group priority prunes
+/// (`-1`) the widths this device or this workload cannot honour, so the plan
+/// skips them before compilation.
+fn two_e_geometry_tunables<R: Runtime>()
+-> TunableSet<crate::tuning::LaunchGeometryKey, TwoEGroupDispatch<R>, ()> {
+    let mut set = TunableSet::new(
+        |dispatch: &TwoEGroupDispatch<R>| dispatch.tuning_key(),
+        |_key: &crate::tuning::LaunchGeometryKey, dispatch: &TwoEGroupDispatch<R>| {
+            dispatch.truncated_for_tuning()
+        },
+    )
+    .with(Tunable::new(
+        "2e-geometry:heuristic",
+        |dispatch: TwoEGroupDispatch<R>| {
+            dispatch.launch(dispatch.heuristic_cube_dim);
+            Ok::<(), String>(())
+        },
+    ));
+
+    let viable = TuneGroup::<crate::tuning::LaunchGeometryKey>::new("viable-widths", |_| 1);
+    for width in crate::tuning::CANDIDATE_CUBE_WIDTHS {
+        set = set.with(
+            Tunable::new(
+                &format!("2e-geometry:width-{width}"),
+                move |dispatch: TwoEGroupDispatch<R>| {
+                    dispatch.launch(CubeDim::new_1d(width));
+                    Ok::<(), String>(())
+                },
+            )
+            .group(&viable, move |key| {
+                crate::tuning::cube_width_priority(key, width, MAX_BATCH_SCRATCH_BYTES)
+            }),
+        );
+    }
+    set
+}
+
+/// Launch one group, tuning its cube width when the policy and the workload
+/// both justify it.
+///
+/// Falls back to the heuristic geometry whenever tuning is off, the dispatch is
+/// too small to pay for a benchmark, or the process has already tuned as many
+/// distinct keys as it is allowed to — see [`crate::tuning`] for those bounds.
+fn dispatch_2e_group<R: Runtime>(dispatch: TwoEGroupDispatch<R>) {
+    let key = dispatch.tuning_key();
+    if !crate::tuning::should_tune(&key, dispatch.n_quartets as usize) {
+        dispatch.launch(dispatch.heuristic_cube_dim);
+        return;
+    }
+    let client = dispatch.client.clone();
+    let device = crate::tuning::device_fingerprint(&client);
+    let tunables = TWO_E_GEOMETRY_TUNER.init(two_e_geometry_tunables::<R>);
+    TWO_E_GEOMETRY_TUNER.execute(&device, &client, tunables, dispatch);
 }
 
 /// Single-quartet dispatch — a one-class, one-quartet batch.
