@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the inline extended-Rys entry skipped the vendor's small-x branch (2026-09-02)
+
+`rys_roots_host_wheeler` takes the vendor's global `x <= SMALLX_LIMIT (3e-7)` affine table
+(`rys_roots.c:58-78`) before its per-order Wheeler dispatch, because the moment recursion is
+ill-conditioned there and falling through to it "produces finite but materially wrong roots"
+— the host path's own words. The inline `#[cube]` entry `rys_roots_ext_dev`, which is what a
+family kernel actually calls on the extended device path, had no such branch and fell
+through.
+
+**Measured, against the host dispatch over `1e-12 ..= 3e-7`:** 1.5e-10 relative at
+`nroots = 6`, 2.0e-7 at 8, 6.7e-4 at 10, and 3.6 — i.e. 360% — at 12. Above 3e-7 the two
+agree bit for bit, which is why every existing gate was green: they sweep multi-centre
+classes, where `x` is comfortably above the limit.
+
+**It was reachable from an ordinary def2 work list.** `x_rys = a0 * rr`, and a single-centre
+quartet has `rr = 0`, so `x` is *exactly* zero. The def2-TZVP `(f f | f f)` block on oxygen
+(`nroots = 7`, shells `[10,10,10,10]`) missed vendored libcint by **6.5e-11 absolute — 65x
+the project's unified 1e-12 tolerance**. After the fix the worst same-centre TZVP
+`nroots > 5` error is 7.8e-16.
+
+- The four `POLY_SMALLX_*` blocks join the extended-Rys table blob (`EXT_TABLES_LEN`
+  584 → 896, +2.5 KB per dispatch, uploaded once), so the device reads the same vendor
+  constants the host does at the same triangular offset.
+- `rys_roots_ext_dev` takes the branch at a comptime-folded offset; no solver runs below the
+  limit, on either path.
+- `ext_table_offsets_match_lengths` now walks all thirteen blocks and checks the small-x
+  lookup element-wise for every order, so the device's comptime index and the host's runtime
+  index cannot drift apart.
+- `rys_ext_inline_below_corpus_envelope_is_bounded` was a *record* — it bounded the
+  divergence at 1e-7 for `nroots` 6 and 7 and asserted bit-identity only for 8..=12, an
+  assertion that had been failing. It is now
+  `rys_ext_inline_below_corpus_envelope_is_bit_identical`: bit-identity for every order
+  6..=12, with the host-solver-failure count asserted to zero for all of them (it was
+  non-zero at 11 and 12, in exactly the region the branch now short-circuits).
+
 ### Added — the 1e derivative set on the extended device Rys path (2026-09-02)
 
 `docs/design/def2_speed_precision_plan.md` D1.2, and the end of task 33-03's family list:

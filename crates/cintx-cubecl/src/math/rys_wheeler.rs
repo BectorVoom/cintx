@@ -3314,11 +3314,24 @@ pub(crate) const EXT_TAB_LJACOBI_SN: u32 = 456;
 /// Offset of `TURNOVER_POINT` (40 f64). Read at `EXT_TAB_TURNOVER + nroots * 2`,
 /// which is a comptime index because `nroots` is comptime.
 pub(crate) const EXT_TAB_TURNOVER: u32 = 544;
+/// Offset of `POLY_SMALLX_R0` (78 f64) — the vendor's global `x <= 3e-7` affine
+/// table, read at `EXT_TAB_SMALLX_R0 + nroots * (nroots - 1) / 2 + i`.
+///
+/// These four blocks carry the whole `nroots` 1..=12 triangle even though the
+/// inline entry only serves 6..=12, because the offset formula is the vendor's
+/// and slicing the table would mean re-deriving it.
+pub(crate) const EXT_TAB_SMALLX_R0: u32 = 584;
+/// Offset of `POLY_SMALLX_R1` (78 f64).
+pub(crate) const EXT_TAB_SMALLX_R1: u32 = 662;
+/// Offset of `POLY_SMALLX_W0` (78 f64).
+pub(crate) const EXT_TAB_SMALLX_W0: u32 = 740;
+/// Offset of `POLY_SMALLX_W1` (78 f64).
+pub(crate) const EXT_TAB_SMALLX_W1: u32 = 818;
 /// Total length of the concatenated blob, in f64.
 ///
 /// Public because a family launcher that opts into the extended path has to
 /// create the buffer at exactly this length.
-pub const EXT_TABLES_LEN: usize = 584;
+pub const EXT_TABLES_LEN: usize = 896;
 
 /// Build the concatenated extended-Rys table blob the inline entry reads.
 ///
@@ -3336,6 +3349,10 @@ pub fn ext_rys_tables() -> Vec<f64> {
     blob.extend_from_slice(&data::LJACOBI_RN_PART2);
     blob.extend_from_slice(&data::LJACOBI_SN);
     blob.extend_from_slice(&data::TURNOVER_POINT);
+    blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_SMALLX_R0);
+    blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_SMALLX_R1);
+    blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_SMALLX_W0);
+    blob.extend_from_slice(&crate::math::rys_smallx_data::POLY_SMALLX_W1);
     debug_assert_eq!(blob.len(), EXT_TABLES_LEN);
     blob
 }
@@ -3725,9 +3742,21 @@ fn ext_lwheeler_dev(
 /// | 10, 11 | dd Jacobi | dd Laguerre | 18 |
 /// | 12 | dd Jacobi | dd Laguerre | 22 |
 ///
+/// Below `SMALLX_LIMIT_DEV` none of that runs: the vendor leaves the Wheeler
+/// dispatch entirely for a global affine table, and so does this entry. That
+/// branch is not an optimization — the moment recursion is ill-conditioned at
+/// small `x`, and falling through to it produces finite but materially wrong
+/// roots. Measured against `rys_roots_host_wheeler` over `1e-12 ..= 3e-7`, the
+/// fall-through was 1.5e-10 relative at `nroots = 6`, 2.0e-7 at 8, 6.7e-4 at 10
+/// and 3.6 — i.e. 360% — at 12. It is reachable from an ordinary work list: a
+/// single-centre quartet has `rr = 0`, so `x_rys = 0` exactly, and the
+/// def2-TZVP `(f f | f f)` block on oxygen (`nroots = 7`) missed vendored
+/// libcint by 6.5e-11 absolute, 65x the project's unified 1e-12 tolerance.
+///
 /// `tab` is the blob [`ext_rys_tables`] builds. `nroots` is comptime, so the
-/// breakpoint, the turnover index and the arm selection all fold away and a
-/// given instantiation emits exactly one solver pair plus the recovery arm.
+/// breakpoint, the turnover index, the small-x table offset and the arm
+/// selection all fold away, and a given instantiation emits exactly one solver
+/// pair plus the recovery arm.
 #[cube]
 pub(crate) fn rys_roots_ext_dev(
     tab: &Array<f64>,
@@ -3741,29 +3770,46 @@ pub(crate) fn rys_roots_ext_dev(
 
     let bp = comptime!(ext_breakpoint(nroots));
     let turnover = tab[comptime!((EXT_TAB_TURNOVER + nroots * 2) as usize)];
+    // The vendor's own triangular index into the small-x table
+    // (`rys_roots.c:58-78`), folded at JIT time.
+    let smallx_r0 = comptime!(EXT_TAB_SMALLX_R0 + nroots * (nroots - 1) / 2);
+    let smallx_r1 = comptime!(EXT_TAB_SMALLX_R1 + nroots * (nroots - 1) / 2);
+    let smallx_w0 = comptime!(EXT_TAB_SMALLX_W0 + nroots * (nroots - 1) / 2);
+    let smallx_w1 = comptime!(EXT_TAB_SMALLX_W1 + nroots * (nroots - 1) / 2);
 
-    if comptime!(nroots <= 7) {
-        if x <= bp {
-            ext_jacobi_f64_dev(tab, x, u, w, &mut flag, nroots);
-        } else {
-            ext_schmidt_f64_dev(x, turnover, u, w, &mut flag, nroots);
-        }
-    } else if comptime!(nroots == 8) {
-        if x <= bp {
-            ext_jacobi_f64_dev(tab, x, u, w, &mut flag, nroots);
-        } else {
-            ext_lschmidt_dev(x, turnover, u, w, &mut flag, nroots);
+    if x <= comptime!(SMALLX_LIMIT_DEV) {
+        // The global `CINTrys_roots` branch, before the per-order dispatch.
+        #[unroll]
+        for i in 0..nroots {
+            u[(i) as usize] =
+                tab[(smallx_r0 + i) as usize] + tab[(smallx_r1 + i) as usize] * x;
+            w[(i) as usize] =
+                tab[(smallx_w0 + i) as usize] + tab[(smallx_w1 + i) as usize] * x;
         }
     } else {
-        ext_lwheeler_dev(tab, x, x > bp, u, w, &mut flag, nroots);
-    }
+        if comptime!(nroots <= 7) {
+            if x <= bp {
+                ext_jacobi_f64_dev(tab, x, u, w, &mut flag, nroots);
+            } else {
+                ext_schmidt_f64_dev(x, turnover, u, w, &mut flag, nroots);
+            }
+        } else if comptime!(nroots == 8) {
+            if x <= bp {
+                ext_jacobi_f64_dev(tab, x, u, w, &mut flag, nroots);
+            } else {
+                ext_lschmidt_dev(x, turnover, u, w, &mut flag, nroots);
+            }
+        } else {
+            ext_lwheeler_dev(tab, x, x > bp, u, w, &mut flag, nroots);
+        }
 
-    // `segment_solve`'s recovery path (rys_roots.c:42): on a solver error the
-    // host retries through the f64 Schmidt solver and returns that result.
-    // Inline, that is the same callee — and, as on the host, its own error is
-    // not retried.
-    if flag[(0) as usize] != 0.0 {
-        ext_schmidt_f64_dev(x, turnover, u, w, &mut flag, nroots);
+        // `segment_solve`'s recovery path (rys_roots.c:42): on a solver error
+        // the host retries through the f64 Schmidt solver and returns that
+        // result. Inline, that is the same callee — and, as on the host, its
+        // own error is not retried.
+        if flag[(0) as usize] != 0.0 {
+            ext_schmidt_f64_dev(x, turnover, u, w, &mut flag, nroots);
+        }
     }
 }
 
@@ -4792,7 +4838,10 @@ mod tests {
     /// the offsets claim.
     #[test]
     fn ext_table_offsets_match_lengths() {
-        let expected: [(u32, usize); 9] = [
+        use crate::math::rys_smallx_data::{
+            POLY_SMALLX_R0, POLY_SMALLX_R1, POLY_SMALLX_W0, POLY_SMALLX_W1,
+        };
+        let expected: [(u32, usize); 13] = [
             (EXT_TAB_JACOBI_ALPHA, data::JACOBI_ALPHA.len()),
             (EXT_TAB_JACOBI_BETA, data::JACOBI_BETA.len()),
             (EXT_TAB_JACOBI_RN_PART2, data::JACOBI_RN_PART2.len()),
@@ -4802,6 +4851,10 @@ mod tests {
             (EXT_TAB_LJACOBI_RN_PART2, data::LJACOBI_RN_PART2.len()),
             (EXT_TAB_LJACOBI_SN, data::LJACOBI_SN.len()),
             (EXT_TAB_TURNOVER, data::TURNOVER_POINT.len()),
+            (EXT_TAB_SMALLX_R0, POLY_SMALLX_R0.len()),
+            (EXT_TAB_SMALLX_R1, POLY_SMALLX_R1.len()),
+            (EXT_TAB_SMALLX_W0, POLY_SMALLX_W0.len()),
+            (EXT_TAB_SMALLX_W1, POLY_SMALLX_W1.len()),
         ];
         let mut cursor = 0usize;
         for (offset, len) in expected {
@@ -4823,6 +4876,24 @@ mod tests {
                 data::TURNOVER_POINT[nroots * 2],
                 "turnover lookup for nroots={nroots}"
             );
+            // The small-x lookup uses the vendor's triangular offset. Checking
+            // it here means `rys_roots_ext_dev`'s comptime index and
+            // `rys_roots_host_wheeler`'s runtime one are pinned to the same
+            // element, which is the whole content of "the two paths agree
+            // below 3e-7".
+            let triangle = nroots * (nroots - 1) / 2;
+            for i in 0..nroots {
+                assert_eq!(
+                    blob[EXT_TAB_SMALLX_R0 as usize + triangle + i],
+                    POLY_SMALLX_R0[triangle + i],
+                    "small-x R0 lookup for nroots={nroots} root {i}"
+                );
+                assert_eq!(
+                    blob[EXT_TAB_SMALLX_W1 as usize + triangle + i],
+                    POLY_SMALLX_W1[triangle + i],
+                    "small-x W1 lookup for nroots={nroots} root {i}"
+                );
+            }
         }
     }
 

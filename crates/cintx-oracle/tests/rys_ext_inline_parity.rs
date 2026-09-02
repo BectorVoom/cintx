@@ -18,22 +18,28 @@
 //! would fold in the dd-vs-80-bit divergence that sweep already characterises,
 //! and a regression here would be indistinguishable from it.
 //!
-//! # Two regimes, one gate and one record
+//! # Two regimes, two gates
 //!
-//! The sweep the plan asks for is log-spaced over 1e-8 … 1e6. That range
-//! straddles a boundary the reference itself has:
+//! The sweep the plan asks for is log-spaced over 1e-8 … 1e6, and it straddles
+//! `SMALLX_LIMIT = 3e-7`, where the vendor leaves the Wheeler dispatch entirely
+//! for the global affine fits of `rys_roots.c:58-78`:
 //!
-//! * **x >= 1e-4 — [`rys_ext_inline_matches_host_wheeler`], the gate.** Zero
-//!   divergences beyond `max(atol=1e-12, rtol=1e-9·|host|)`, and in practice
-//!   bit-identity almost everywhere.
-//! * **x < 1e-4 — [`rys_ext_inline_below_corpus_envelope_is_bounded`], the
-//!   record.** Below `SMALLX_LIMIT = 3e-7` the vendor leaves the Wheeler path
-//!   entirely for the global polynomial fits of `rys_roots.c:58-78`, which
-//!   neither implementation ports; and the host reference's own solver reports
-//!   error 1 across roughly `[1.5e-8, 8.7e-5]` at `nroots = 12` (and at one
-//!   point at `nroots = 11`), tripping its `debug_assert`. That region is
-//!   therefore measured and bounded rather than gated — see that test for the
-//!   numbers and for why `nroots` 6 and 7 are the only orders that move at all.
+//! * **x >= 1e-4 — [`rys_ext_inline_matches_host_wheeler`].** Zero divergences
+//!   beyond `max(atol=1e-12, rtol=1e-9·|host|)`, and in practice bit-identity
+//!   everywhere.
+//! * **x < 1e-4 — [`rys_ext_inline_below_corpus_envelope_is_bit_identical`].**
+//!   Both paths take the vendor's affine table below the limit and the same
+//!   Wheeler arms above it, so this is bit-identity too.
+//!
+//! The second one used to be a *record* rather than a gate, bounding a
+//! divergence instead of forbidding it, because only the host had the small-x
+//! branch and the inline entry fell through to the moment recursion. That
+//! fall-through was 1.5e-10 relative at `nroots = 6` and 3.6 — 360% — at 12,
+//! and it was reachable from ordinary work: a single-centre quartet has
+//! `rr = 0`, hence `x_rys = 0` exactly, and the def2-TZVP `(f f | f f)` block on
+//! oxygen missed vendored libcint by 6.5e-11 absolute. Giving
+//! `rys_roots_ext_dev` the vendor's branch closed it, and the test is a gate now
+//! because there is nothing left to bound.
 
 use cintx_cubecl::math::rys_wheeler;
 
@@ -122,41 +128,35 @@ fn rys_ext_inline_matches_host_wheeler() {
     );
 }
 
-/// **The record**, for `x` below the corpus envelope (1e-8 … 1e-4).
+/// **The gate for `x` below the corpus envelope (1e-8 … 1e-4).**
 ///
-/// Two findings, both asserted so they cannot drift silently:
+/// Bit-identity, every order, every grid point. Two mechanisms produce it, and
+/// the point of the test is that both hold:
 ///
-/// 1. **`nroots` 8..=12 are bit-identical**, everywhere the host reference is
-///    defined. That is not luck: for those orders `rys_roots_host_wheeler`
-///    already dispatches to the `#[cube]` device solvers (`rys_jacobi_device`,
-///    `lrys_*_device`), so the inline entry and the host entry run the *same*
-///    kernel bodies, once inline and once behind a launch.
-/// 2. **`nroots` 6 and 7 move, by at most ~1.3e-8 relative.** Those two orders
-///    are the parity-honest escape hatch: the host routes them through the
-///    pure-host `rys_jacobi` / `rys_schmidt` rather than through the device
-///    kernels, so here — and only here — two different transcriptions of the
-///    same algorithm are being compared. Below `SMALLX_LIMIT = 3e-7` the Flocke
-///    moment recursion is ill-conditioned and that shows; above it the gate
-///    above finds no divergence at all.
+/// 1. **Below `SMALLX_LIMIT = 3e-7`** both paths read the vendor's global affine
+///    table (`rys_roots.c:58-78`) at the same triangular offset, so they agree
+///    exactly and neither runs a solver.
+/// 2. **Between 3e-7 and 1e-4** the inline entry and the host dispatch run the
+///    same `#[cube]` solver bodies, once inline and once behind a launch.
 ///
-/// The host reference reports solver error 1 (and `debug_assert`s on it) for
-/// part of this range at `nroots` 11 and 12, so calls are caught rather than
-/// assumed to return. The count of caught points is asserted to stay confined
-/// to those two orders — if a lower order ever starts failing there, that is a
-/// regression in the reference, and this test is where it surfaces.
+/// `undefined` counts points where the host reference's own solver reported an
+/// error and tripped its `debug_assert`. That used to happen across roughly
+/// `[1.5e-8, 8.7e-5]` at `nroots = 12` and at one point at 11 — precisely the
+/// ill-conditioned region the small-x branch now short-circuits — so the count
+/// is asserted to be zero for every order. If it comes back, the reference has
+/// started reaching the recurrence where it should not, and this is where that
+/// surfaces.
 #[test]
-fn rys_ext_inline_below_corpus_envelope_is_bounded() {
-    /// Bound on the relative inline-vs-host divergence for the two pure-host
-    /// orders, measured at 1.2e-8 and rounded up by an order of magnitude.
-    const SUB_ENVELOPE_RTOL: f64 = 1e-7;
-
-    // The host reference `debug_assert`s on its own solver error in this range;
-    // the hook is silenced so the expected unwinds do not bury the report.
+fn rys_ext_inline_below_corpus_envelope_is_bit_identical() {
+    // The host reference `debug_assert`s on its own solver error; the hook is
+    // silenced so an unexpected unwind is counted rather than burying the
+    // report.
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
 
     let mut worst = [0.0f64; 13];
     let mut undefined = [0usize; 13];
+    let mut compared = 0usize;
     for nroots in 6..=12usize {
         for x in log_grid(-8, GATE_X_MIN_EXP, 32) {
             let Ok((hr, hw)) =
@@ -168,6 +168,7 @@ fn rys_ext_inline_below_corpus_envelope_is_bounded() {
             let (dr, dw) = rys_wheeler::rys_roots_ext_host(nroots, x);
             for i in 0..nroots {
                 for (inline, host) in [(dr[i], hr[i]), (dw[i], hw[i])] {
+                    compared += 1;
                     let rel = (inline - host).abs() / host.abs().max(f64::MIN_POSITIVE);
                     if rel > worst[nroots] {
                         worst[nroots] = rel;
@@ -185,30 +186,22 @@ fn rys_ext_inline_below_corpus_envelope_is_bounded() {
             worst[nroots], undefined[nroots]
         );
     }
+    eprintln!("rys_ext_inline sub-envelope: {compared} values compared");
 
-    for nroots in 8..=12usize {
-        assert_eq!(
-            worst[nroots], 0.0,
-            "nroots={nroots} shares the device solvers with the host path, so it \
-             must stay bit-identical below the corpus envelope; worst relative \
-             divergence was {:e}",
-            worst[nroots]
-        );
-    }
-    for nroots in [6usize, 7] {
-        assert!(
-            worst[nroots] <= SUB_ENVELOPE_RTOL,
-            "nroots={nroots} diverged by {:e} relative below the corpus envelope, \
-             over the {SUB_ENVELOPE_RTOL:e} bound this test records",
-            worst[nroots]
-        );
-    }
-    for nroots in 6..=10usize {
+    for nroots in 6..=12usize {
         assert_eq!(
             undefined[nroots], 0,
-            "the host reference newly fails to converge at nroots={nroots} below \
-             the corpus envelope; only nroots 11 and 12 did so when this bound \
-             was recorded"
+            "the host reference failed to converge at nroots={nroots} below the \
+             corpus envelope; the small-x branch is supposed to keep it out of \
+             the ill-conditioned recurrence entirely"
+        );
+        assert_eq!(
+            worst[nroots], 0.0,
+            "nroots={nroots}: below the corpus envelope the inline entry and the \
+             host dispatch read the same vendor table and run the same solver \
+             bodies, so they must be bit-identical; worst relative divergence \
+             was {:e}",
+            worst[nroots]
         );
     }
 }
