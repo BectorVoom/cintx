@@ -3781,10 +3781,8 @@ pub(crate) fn rys_roots_ext_dev(
         // The global `CINTrys_roots` branch, before the per-order dispatch.
         #[unroll]
         for i in 0..nroots {
-            u[(i) as usize] =
-                tab[(smallx_r0 + i) as usize] + tab[(smallx_r1 + i) as usize] * x;
-            w[(i) as usize] =
-                tab[(smallx_w0 + i) as usize] + tab[(smallx_w1 + i) as usize] * x;
+            u[(i) as usize] = tab[(smallx_r0 + i) as usize] + tab[(smallx_r1 + i) as usize] * x;
+            w[(i) as usize] = tab[(smallx_w0 + i) as usize] + tab[(smallx_w1 + i) as usize] * x;
         }
     } else {
         if comptime!(nroots <= 7) {

@@ -419,7 +419,10 @@ fn oracle_gate_all_five_families() {
             "2e output is all zeros — kernel not implemented"
         );
         if mc > 0 {
-            eprintln!("FAIL: 2e family: {mc} mismatches at atol={:.1e}/rtol={:.1e}", tol.atol, tol.rtol);
+            eprintln!(
+                "FAIL: 2e family: {mc} mismatches at atol={:.1e}/rtol={:.1e}",
+                tol.atol, tol.rtol
+            );
             all_passed = false;
         } else {
             println!("  PASS: 2e (int2e_sph) shells ({si},{sj},{sk},{sl}): mismatch_count=0");

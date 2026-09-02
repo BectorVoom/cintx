@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `gen-rys-tables --check` reported formatting as table drift (2026-09-03)
+
+The Rys drift gate had been failing on `main` since 2026-08-30, and CI's `manifest_drift_gate`
+with it. The committed table was never wrong: `roots_jacobi_data.rs` is **value-identical** to
+the vendored libcint source, table for table and digit for digit.
+
+What diverged was layout. The generator packs several values per line to keep a 2080-entry
+table readable; rustfmt's default for an array literal is one element per line, and
+`roots_jacobi_data.rs` is an ordinary module in `cintx-cubecl`, so `cargo fmt --all` rewrote
+it. From then on the committed file no longer matched what the generator emits, and `--check`
+called that drift. Proof of the diagnosis: generate, then `cargo fmt`, and you reproduce the
+committed file **byte for byte**.
+
+`gen-c2s-table` already carries `#[rustfmt::skip]` for exactly this reason, with a comment
+saying so — the older Rys generator predates that lesson. It now emits the same guard, plus
+one more thing the c2s generator gets for free: the value loop leaves a blank line after the
+last table and rustfmt strips a trailing blank line at EOF, so the renderer trims it and the
+emitted text is fmt-stable as written. `every_generated_static_is_fmt_skipped` is the
+regression anchor for both halves.
+
+Verified idempotent: generate → `cargo fmt --all` → `--check` is green twice over, and all
+four table gates (`gen-c2s-table`, `gen-c2spinor-table`, `gen-rys-tables`, `gen-ecp-tables`)
+now pass.
+
+One neighbouring file is deliberately left alone: `cintx-ops/src/generated/api_manifest.rs`
+is tracked but rewritten by `cintx-ops`'s **build script** on every build, in a layout rustfmt
+disagrees with — so `cargo fmt --all -- --check` reports it, a `cargo fmt` "fixes" it, and the
+next `cargo build` puts it back. It is the same class of problem as the one fixed here and
+wants the same treatment (emit fmt-shaped output, or `#[rustfmt::skip]`), but that is
+`build.rs`'s change to make, not this one's. Its own gate, `manifest-audit --check-lock`,
+passes.
+
 ### Fixed — the spinor transform now covers libcint's whole `l` range, and refuses past it (2026-09-03)
 
 The Cartesian-to-spinor Clebsch-Gordan tables in `c2spinor_coeffs.rs` were transcribed by

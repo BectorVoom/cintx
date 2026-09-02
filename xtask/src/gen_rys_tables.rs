@@ -187,6 +187,11 @@ fn render_module(root: &Path) -> Result<String> {
          //! Long-double (`lJACOBI_*`) tables are stored as f64. The cintx vendor build disables\n\
          //! `HAVE_SQRTL`/`HAVE_QUADMATH_H` (build.rs), so the lrys path uses c99_sqrtl/c99_expl\n\
          //! (f64-backed); these decimal literals round to the same f64 the C compiler emits.\n\
+         //!\n\
+         //! Every `static` below carries `#[rustfmt::skip]`: the packed layout is what this\n\
+         //! generator emits, and without the attribute `cargo fmt --all` would explode each\n\
+         //! array to one value per line and `--check` would then report drift on every\n\
+         //! formatting run.\n\
          \n\
          #![allow(clippy::all)]\n\
          #![allow(clippy::approx_constant)]\n\
@@ -207,6 +212,7 @@ fn render_module(root: &Path) -> Result<String> {
                     v.len(),
                     spec.file
                 ));
+                out.push_str(RUSTFMT_SKIP);
                 out.push_str(&format!("pub static {rname}: [f64; {}] = [\n", v.len()));
                 push_values(&mut out, v.iter().map(|x| format!("{x:?}")));
                 out.push_str("];\n\n");
@@ -218,14 +224,36 @@ fn render_module(root: &Path) -> Result<String> {
                     v.len(),
                     spec.file
                 ));
+                out.push_str(RUSTFMT_SKIP);
                 out.push_str(&format!("pub static {rname}: [i32; {}] = [\n", v.len()));
                 push_values(&mut out, v.iter().map(|x| format!("{x}")));
                 out.push_str("];\n\n");
             }
         }
     }
+    // The loop leaves a blank line after the last table, and rustfmt strips a
+    // trailing blank line at EOF — a one-byte difference that shows up as
+    // "drift". Trim it here so the rendered text is already fmt-stable.
+    while out.ends_with("\n\n") {
+        out.pop();
+    }
     Ok(out)
 }
+
+/// Emitted before every generated `static`.
+///
+/// **Load-bearing, not cosmetic.** `push_values` packs several values per line
+/// to keep a 2080-entry table readable; rustfmt's default for an array literal
+/// is one element per line. `roots_jacobi_data.rs` is an ordinary module in
+/// `cintx-cubecl`, so `cargo fmt --all` rewrites it — and the committed file
+/// then stops matching what this generator emits, so `--check` reports drift
+/// that is pure formatting.
+///
+/// That is exactly what happened: the gate was red from the first `cargo fmt`
+/// run after generation until 2026-09-03, with the committed table
+/// *value-identical* to the vendored source the whole time. `gen-c2s-table`
+/// carries the same guard for the same reason.
+const RUSTFMT_SKIP: &str = "#[rustfmt::skip]\n";
 
 /// Append comma-separated values, wrapping at ~100 columns.
 fn push_values(out: &mut String, items: impl Iterator<Item = String>) {
@@ -281,6 +309,37 @@ pub fn run_gen_rys_tables(check: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// The rendered module must carry `#[rustfmt::skip]` on every `static`, or
+    /// the next `cargo fmt --all` silently re-breaks the drift gate. This is the
+    /// regression anchor for that: the gate was red for three months because the
+    /// attribute was missing.
+    #[test]
+    fn every_generated_static_is_fmt_skipped() {
+        let module = super::render_module(&super::workspace_root())
+            .expect("render the module from the vendored source");
+        // Count the emitted attribute *line*, not every mention of the string:
+        // the module header talks about the attribute too.
+        let statics = module
+            .lines()
+            .filter(|l| l.starts_with("pub static "))
+            .count();
+        let skips = module
+            .lines()
+            .filter(|l| l.trim_end() == "#[rustfmt::skip]")
+            .count();
+        assert_eq!(statics, super::TABLES.len(), "one static per table spec");
+        assert_eq!(
+            skips, statics,
+            "every generated static needs #[rustfmt::skip]; without it `cargo fmt` \
+             reformats the committed file and `--check` reports formatting as drift"
+        );
+        assert!(
+            !module.ends_with("\n\n"),
+            "a trailing blank line is stripped by rustfmt, which `--check` then \
+             reports as drift"
+        );
+    }
+
     use super::*;
 
     #[test]

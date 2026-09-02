@@ -320,7 +320,10 @@ mod tests {
     #[test]
     fn the_scope_is_the_scalar_coulomb_rows_plus_their_ip_derivatives() {
         for family in ["2e", "3c2e", "2c2e"] {
-            assert!(supports_range_omega(family, "electron-repulsion"), "{family}");
+            assert!(
+                supports_range_omega(family, "electron-repulsion"),
+                "{family}"
+            );
             for op in ["ip1", "ip2", "ipip1", "ip1ip2"] {
                 assert!(supports_range_omega(family, op), "{family}:{op}");
             }
@@ -356,12 +359,18 @@ mod tests {
         for (family, arity) in [("2e", 4usize), ("3c2e", 3), ("2c2e", 2)] {
             let scalar = derivative_headroom(family, "electron-repulsion").unwrap();
             assert_eq!(scalar.len(), arity, "{family} scalar arity");
-            assert!(scalar.iter().all(|&r| r == 0), "{family} scalar raises nothing");
+            assert!(
+                scalar.iter().all(|&r| r == 0),
+                "{family} scalar raises nothing"
+            );
 
             for op in ["ip1", "ip2", "ipip1", "ip1ip2"] {
                 let h = derivative_headroom(family, op).unwrap();
                 assert_eq!(h.len(), arity, "{family}:{op} arity");
-                assert!(h.iter().sum::<usize>() > 0, "{family}:{op} must raise something");
+                assert!(
+                    h.iter().sum::<usize>() > 0,
+                    "{family}:{op} must raise something"
+                );
             }
         }
         assert_eq!(derivative_headroom("2e", "unknown-row"), None);
