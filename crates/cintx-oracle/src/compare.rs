@@ -1719,9 +1719,18 @@ mod tests {
             tol.rtol, F32_UNIFIED_RTOL,
             "f32 tolerance for '1e' must use F32_UNIFIED_RTOL"
         );
+        // The two thresholds are deliberately *not* shared any more. The f64
+        // contract dropped its near-zero branch (`F64_ZERO_THRESHOLD = 0.0`)
+        // because the mixed comparison already reduces to `abs <= atol` at a
+        // zero reference; the frozen f32 policy (D-09) keeps its own 1e-18.
         assert_eq!(
-            tol.zero_threshold, F64_ZERO_THRESHOLD,
-            "zero_threshold must be shared"
+            tol.zero_threshold, F32_ZERO_THRESHOLD,
+            "the f32 gate keeps its own frozen near-zero threshold"
+        );
+        assert_ne!(
+            F32_ZERO_THRESHOLD, F64_ZERO_THRESHOLD,
+            "if these ever converge, say so here rather than letting one \
+             silently take the other's value"
         );
 
         let tol2e = f32_tolerance_for_family("2e");
@@ -1751,9 +1760,14 @@ mod tests {
         let tol = tolerance_for_family("1e");
         assert_eq!(tol.atol, 1e-12_f64, "PREC-04: f64 atol must be 1e-12");
         assert_eq!(tol.rtol, 1e-12_f64, "PREC-04: f64 rtol must be 1e-12");
+        // PREC-04 froze `atol`/`rtol`, and they are still 1e-12. The near-zero
+        // threshold is a different question and was retired deliberately: at a
+        // zero reference the mixed comparison already reduces to
+        // `abs_error <= atol`, so a separate 1e-18 branch changed no verdict at
+        // f64 precision while making the policy look like it did.
         assert_eq!(
-            tol.zero_threshold, 1e-18_f64,
-            "PREC-04: zero_threshold must be 1e-18"
+            tol.zero_threshold, 0.0_f64,
+            "the f64 contract has no separate near-zero regime"
         );
 
         // Check other families
