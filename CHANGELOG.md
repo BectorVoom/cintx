@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — def2 precision budget, autotune artifact, and the nightly/PR split (2026-09-02)
+
+`docs/design/def2_speed_precision_plan.md` D3.4, D4 and D5, and the end of that plan's
+execution. `docs/design/def2_speed_precision_plan.md` §7 is the full record; the parts that
+change behaviour:
+
+- **D4.1/D4.3 — the budget reaches Rys orders 6 and 7.** `OracleRawInputs::def2_high_order`
+  is a sibling sampler, not a widened `sample`: two centres 2.2 bohr apart carrying def2-TZVP's
+  own polarization exponents, `l = (3, 2, 5, 3)`. Its same-centre bra pair sits at `x_rys = 0`
+  exactly — the global small-x branch — and its arity-3 and arity-4 tuples give orders 6 and 7.
+  `def2_high_order_range_separated` crosses those with `env[PTR_RANGE_OMEGA]`. The recorded
+  baseline now carries 34 rows the base sampler could not reach, and `--check-headroom` passes
+  across all three sets.
+- **D3.4 — `cintx_cubecl_autotune.json` is no longer `not_collected`.** It carries the tuner's
+  schema version, the per-decomposition policy defaults, the candidate widths, the search
+  bounds and the persistent cache's contents. Two of the three things the old placeholder said
+  were unavailable were never measurements — they are compiled-in facts, and a report that
+  omits them cannot say what a run would have searched.
+- **D4.4 — the unverified matrix carries per-backend extended-Rys status.** `cpu` and `rocm`
+  record a passing FMA probe with the test that measured it; `cuda`, `wgpu` and `metal` are
+  marked `unprobed` and say what would settle them. A failing probe is a *reported reduced
+  capability*, not a bug: TZVP's high-order classes are refused rather than evaluated at a
+  lower order, and the matrix now says so.
+- **D5.1 — the PR/nightly split.** `def2_coverage_gate` runs the cheap, deterministic gates on
+  every PR, with the feature on and off. `def2_throughput_nightly` runs the benchmark on the
+  release schedule and asserts, from the artifact, that every timed case was comparable — a
+  timing on a shared PR runner is a number about the runner.
+
+**And one thing the plan asked for that is deliberately not done: the `extended-device-rys`
+default flip (D1.3).** G4 gates it on "recorded budget entries with headroom >= 10x at 1e-12",
+and the budget cannot supply that — its `max_abs_error` compares `eval_raw` against the `cint*`
+legacy wrapper for the same symbol, two cintx entry points onto one kernel, so every entry is
+`0.0` with infinite headroom and has been since the budget was introduced. The artifact and its
+Markdown report now say this in as many words (`comparison_is_vendor: false`) and point at where
+the vendor envelope really is measured. The extended path's accuracy *is* well evidenced — six
+`ext_rys_*_parity` gates against vendored libcint at every order 6..=12, bit-identity to the
+host dispatch across `x` from 1e-8 to 1e6, and both reproduced on ROCm's cooperative launch
+shape — but not by the instrument G4 names. The feature stays opt-in until the budget measures
+the vendor.
+
+### Fixed — two defects the def2 fixtures exposed, recorded not repaired (2026-09-02)
+
+Neither is in the def2 path. Both were found by pointing the manifest sweep at angular momenta
+and geometries nothing had used before, and both are checked in as `#[ignore]`d reproductions
+rather than left as folklore.
+
+- **`int3c1e_p2` evaluates `int3c1e`.** The `p2` operator is not applied at all — 1500/1500
+  elements bit-identical to the plain integral, at every angular momentum tested. It survived
+  because its only fixture puts all shells on one centre at `l = (0, 1, 0)`, where both sides
+  are identically zero. `crates/cintx-oracle/tests/int3c1e_p2_operator_defect.rs`.
+- **The spinor transform panics above `l = 4`** instead of returning a typed refusal, reachable
+  from `eval_raw`. `SPHERIC_L_MAX` exists because the spherical transform had the same shape of
+  gap; the spinor side has the same finite table and no such constant.
+  `crates/cintx-oracle/tests/spinor_l_max_panic_defect.rs`.
+
+The common cause is worth stating: **the whole-manifest oracle matrix runs at `l <= 1`, on one
+atom, at one geometry.** The def2 samplers had to be narrowed four times — by family, component
+rank, representation and symbol — to get past capability limits nothing had exercised. A
+high-angular-momentum sampler for the whole manifest is the obvious next piece of work.
+
 ### Changed — autotuning is on by default where its ranking is trustworthy (2026-09-02)
 
 `docs/design/def2_speed_precision_plan.md` D3.1, and the answer to the question Phase 6 left

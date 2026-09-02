@@ -31,8 +31,8 @@ pub use capability::{
     CapabilityReason, WgpuCapabilitySnapshot, WgpuPreflightReport, capability_fingerprint,
 };
 pub use device_rys_ceiling::{
-    BASE_DEVICE_NROOTS, EXTENDED_DEVICE_NROOTS, FmaProbeResult, ProbeTarget, RysFamily,
-    device_nroots_ceiling, fma_fusion_verified, probe_fma_fusion,
+    BASE_DEVICE_NROOTS, EXTENDED_DEVICE_NROOTS, EXTENDED_DEVICE_RYS_COMPILED, FmaProbeResult,
+    ProbeTarget, RysFamily, device_nroots_ceiling, fma_fusion_verified, probe_fma_fusion,
 };
 pub use executor::{
     BackendCache, CUBECL_RUNTIME_PROFILE, CubeClExecutor, check_shader_f64_in_features,

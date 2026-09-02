@@ -8,7 +8,7 @@ use cintx_compat::helpers::{CINTcgto_cart, CINTcgto_spheric, CINTcgto_spinor};
 use cintx_compat::raw::{
     ANG_OF, ATM_SLOTS, ATOM_OF, BAS_SLOTS, CHARGE_OF, NCTR_OF, NGRIDS, NPRIM_OF, NUC_MOD_OF,
     POINT_NUC, PTR_COEFF, PTR_COMMON_ORIG, PTR_COORD, PTR_ENV_START, PTR_EXP, PTR_F12_ZETA,
-    PTR_GRIDS, PTR_ZETA,
+    PTR_GRIDS, PTR_RANGE_OMEGA, PTR_ZETA,
 };
 use cintx_core::Representation;
 use cintx_ops::resolver::{HelperKind, ManifestEntry, Resolver};
@@ -990,6 +990,13 @@ pub struct OracleRawInputs {
     shls2: Vec<i32>,
     shls3: Vec<i32>,
     shls4: Vec<i32>,
+    /// Short name for the fixture set, used to file its error-budget entries.
+    ///
+    /// Two samplers measure the same symbols at different angular momenta, and
+    /// their entries must not collide in a budget keyed on
+    /// `family:symbol:representation:backend:nroots_class`. The tag is what
+    /// separates them; see [`Self::nroots_class`].
+    tag: &'static str,
 }
 
 impl OracleRawInputs {
@@ -1114,6 +1121,274 @@ impl OracleRawInputs {
             shls2: vec![0, 1],
             shls3: vec![0, 1, 2],
             shls4: vec![0, 1, 2, 3],
+            tag: BASE_FIXTURE_TAG,
+        }
+    }
+
+    /// A def2-TZVP-shaped fixture set, for the Rys orders the base sampler
+    /// cannot reach (`def2_speed_precision_plan.md` D4.1).
+    ///
+    /// # Why a sibling sampler rather than a wider [`Self::sample`]
+    ///
+    /// `sample` carries `l = 0, 1, 0, 1`, so its 2e fixtures sit at Rys order 2
+    /// and its budget is blind exactly where def2-TZVP is new. Widening it would
+    /// move every recorded number in the checked-in envelope at once, which is a
+    /// ratchet reset dressed as a fixture change. This adds orders instead of
+    /// replacing them.
+    ///
+    /// # The geometry, and what each part is for
+    ///
+    /// Two centres 2.2 bohr apart — a real heavy-atom separation — carrying
+    /// polarization exponents of the size def2-TZVP actually uses (its oxygen
+    /// `f` sits near 1.4). The shapes are the workload's, not a stress test's:
+    ///
+    /// * **shells 0 and 1** — `f` and `d`, *both on centre 0*. A same-centre
+    ///   pair has `rr = 0`, so `x_rys = 0` **exactly**: the global
+    ///   `x <= SMALLX_LIMIT` branch, which is the one the inline device entry
+    ///   was missing until it was fixed and the one every single-centre quartet
+    ///   in a real molecule hits.
+    /// * **shells 2 and 3** — `h` and `f` on centre 1. Crossed with the bra
+    ///   pair these give `x_rys` of order 5, the intermediate Jacobi arm where
+    ///   def2-TZVP's high-order classes actually live.
+    ///
+    /// # Why `(3, 2, 5, 3)` and not the tidier `(3, 3, 4, 3)`
+    ///
+    /// Because a sampler that only *this* budget can evaluate is worth less than
+    /// one the whole 1e surface can. Two σ-GIAO kernels (`int1e_cg_irxp`,
+    /// `int1e_giao_irjxp`) carry their own non-Rys bound, `l_i + l_j + 3 <= 8`,
+    /// and `(3, 3)` on the bra pair breaks it — the sweep then fails on a
+    /// capability limit that has nothing to do with Rys orders. Dropping shell 1
+    /// to `d` puts the bra pair at `l_i + l_j = 5`, exactly on that bound, and
+    /// raising shell 2 to `h` restores every Rys order the budget needs.
+    ///
+    /// The far ends of the `x` range are not this fixture's job: they belong to
+    /// `rys_ext_inline_parity` and the `ext_rys_*` gates, which sweep `x` from
+    /// 1e-8 to 1e6 against the vendor directly. A budget fixture pushed out to
+    /// `x = 20` would have to be several bohr apart with tight exponents, and
+    /// the resulting blocks are numerically zero — measured: an `int3c1e_p2`
+    /// block at 6 bohr had a peak element of 2.5e-9 and the two engines
+    /// disagreed on its noise by 100%. That is a fixture in a cancellation
+    /// regime, not an error envelope.
+    ///
+    /// The resulting Rys orders: the arity-4 tuple `(3, 3, 4, 3)` gives
+    /// `13 / 2 + 1 = 7`, the arity-3 tuple `(3, 3, 4)` gives `10 / 2 + 1 = 6`.
+    /// Both are past the polynomial-fit ceiling, which is the point.
+    ///
+    /// The arity-2 tuple `(3, 2)` puts the GIAO nuclear engine, whose shape
+    /// carries `nmax = l_i + l_j + 5`, at `10 / 2 + 1 = 6` — the family whose
+    /// def2-TZVP `(f|f)` classes D1.2 unblocked, budgeted on the geometry that
+    /// unblocked them.
+    #[allow(clippy::erasing_op)]
+    pub fn def2_high_order() -> Self {
+        let mut env = vec![0.0_f64; PTR_ENV_START];
+        env[NGRIDS] = 1.0;
+        env[PTR_F12_ZETA] = 1.2;
+
+        // Two centres at a heavy-atom separation. Sharing centre 0 between the
+        // first two shells is what puts that pair at x = 0 exactly.
+        let coord0 = env.len() as i32;
+        env.extend_from_slice(&[0.0, 0.0, 0.0]);
+        let coord1 = env.len() as i32;
+        env.extend_from_slice(&[0.0, 0.0, 2.2]);
+
+        // (l, exponent, coefficient, atom) per shell. The exponents are the
+        // size def2-TZVP's polarization functions carry, not extremes.
+        let shells: [(i32, f64, f64, i32); 4] = [
+            (3, 1.40, 1.0, 0), // f, centre 0
+            (2, 0.85, 0.9, 0), // d, centre 0 -> same-centre pair, x = 0
+            (5, 1.10, 0.8, 1), // h, centre 1
+            (3, 1.30, 0.7, 1), // f, centre 1
+        ];
+
+        let mut bas = vec![0_i32; 4 * BAS_SLOTS];
+        for (index, &(l, exponent, coefficient, atom)) in shells.iter().enumerate() {
+            let exp_ptr = env.len() as i32;
+            env.push(exponent);
+            let coeff_ptr = env.len() as i32;
+            env.push(coefficient);
+            bas[index * BAS_SLOTS + ATOM_OF] = atom;
+            bas[index * BAS_SLOTS + ANG_OF] = l;
+            bas[index * BAS_SLOTS + NPRIM_OF] = 1;
+            bas[index * BAS_SLOTS + NCTR_OF] = 1;
+            bas[index * BAS_SLOTS + PTR_EXP] = exp_ptr;
+            bas[index * BAS_SLOTS + PTR_COEFF] = coeff_ptr;
+        }
+
+        let grid_ptr = env.len() as i32;
+        env.extend_from_slice(&[0.0, 0.0, 0.0]);
+        env[PTR_GRIDS] = grid_ptr as f64;
+
+        let mut atm = vec![0_i32; 2 * ATM_SLOTS];
+        for (index, (charge, coord_ptr)) in [(8, coord0), (8, coord1)].into_iter().enumerate() {
+            atm[index * ATM_SLOTS + CHARGE_OF] = charge;
+            atm[index * ATM_SLOTS + PTR_COORD] = coord_ptr;
+            atm[index * ATM_SLOTS + NUC_MOD_OF] = POINT_NUC;
+            atm[index * ATM_SLOTS + PTR_ZETA] = 0;
+        }
+
+        Self {
+            atm,
+            bas,
+            env,
+            shls2: vec![0, 1],
+            shls3: vec![0, 1, 2],
+            shls4: vec![0, 1, 2, 3],
+            tag: DEF2_HIGH_ORDER_FIXTURE_TAG,
+        }
+    }
+
+    /// [`Self::def2_high_order`] with range separation switched on.
+    ///
+    /// D4.3: `env[PTR_RANGE_OMEGA]` combined with `nroots > 5` is the newest
+    /// feature crossed with the newest feature, and it gets its own budget
+    /// entry rather than being assumed to inherit either one's headroom. The
+    /// short-range Rys rule doubles the root count for a given order, so this
+    /// row measures the arm nothing else in the budget reaches.
+    ///
+    /// `0.11` is a typical range-separation parameter (the ω of a
+    /// range-separated hybrid) rather than a stress value: the point is the
+    /// interaction, not an extreme.
+    ///
+    /// Its symbol set is narrower than [`Self::def2_high_order`]'s — see
+    /// [`Self::includes_symbol`] — because range separation is implemented for
+    /// the scalar Coulomb operators and their ip rows and fails closed
+    /// elsewhere. Sweeping past that boundary would record a refusal, not an
+    /// envelope.
+    pub fn def2_high_order_range_separated() -> Self {
+        let mut inputs = Self::def2_high_order();
+        inputs.env[PTR_RANGE_OMEGA] = 0.11;
+        inputs.tag = DEF2_RANGE_OMEGA_FIXTURE_TAG;
+        inputs
+    }
+
+    /// This fixture set's short name.
+    #[must_use]
+    pub fn tag(&self) -> &'static str {
+        self.tag
+    }
+
+    /// Does this fixture set evaluate `symbol`?
+    ///
+    /// Always, for the base sampler.
+    ///
+    /// The def2 samplers keep only symbols whose kernel actually goes through
+    /// the Rys quadrature, because a *Rys-order* budget row for a symbol with no
+    /// Rys roots is a label with nothing behind it. The `1e` family is where
+    /// this bites: the manifest files nuclear attraction, `rinv`, `drinv` and
+    /// the GIAO nuclear engine in the same bucket as overlap, kinetic, the
+    /// position moments and `p4`, and only the first group quadratures.
+    ///
+    /// It is also where two hard, non-Rys kernel bounds live —
+    /// `int1e_p4` requires `l_i + l_j + 4 <= 8` and the moment kernels
+    /// `l_i + l_j + order <= 8` — which a bra pair at `l_i + l_j = 5` breaks.
+    /// Excluding them keeps the sweep from failing on a capability limit that
+    /// has nothing to do with the envelope being measured. Those limits are real
+    /// and worth their own coverage; this is not the instrument for it.
+    #[must_use]
+    pub fn includes_symbol(&self, family: &str, symbol: &str) -> bool {
+        if self.tag == BASE_FIXTURE_TAG {
+            return true;
+        }
+        if self.tag == DEF2_RANGE_OMEGA_FIXTURE_TAG {
+            // Range separation is implemented for the scalar Coulomb operators
+            // — `int2e`, `int3c2e`, `int2c2e` — and their ip-family gradient and
+            // Hessian rows, and fails closed elsewhere with a typed refusal
+            // naming exactly that set. The GIAO 2e rows (`g1`, `ig1`, ...) are
+            // outside it by design, so asking them here would be measuring a
+            // documented boundary rather than an error envelope.
+            return matches!(family, "2e" | "2c2e" | "3c2e") && !symbol.contains("g1");
+        }
+        if !family.ends_with("1e") {
+            // 2e, 2c2e and 3c2e are Rys families throughout.
+            return true;
+        }
+        // `nuc`/`rinv` cover the scalar and derivative nuclear kernels; `a01`
+        // and `a11part` are the GIAO nuclear engine's remaining names
+        // (`a01gp`, `ia01p`, `cg_a11part`, `giao_a11part`), whose shape carries
+        // `nmax = l_i + l_j + 5` and reaches Rys order 6 at `l = (3, 2)`.
+        symbol.contains("nuc")
+            || symbol.contains("rinv")
+            || symbol.contains("a01")
+            || symbol.contains("a11part")
+    }
+
+    /// The largest component rank this fixture set evaluates.
+    ///
+    /// `None` for the base sampler — it runs everything, and at `l <= 1` that is
+    /// cheap.
+    ///
+    /// The def2 samplers cap it at 3, which keeps every scalar symbol and every
+    /// first-derivative one and drops the rank-9 Hessians and the rank-27/81
+    /// `deriv3`/`deriv4` sets. Two reasons, and the second is the real one:
+    ///
+    /// 1. **Cost.** At `l = (3, 2, 5, 3)` a Cartesian 2e block is 12 600
+    ///    elements, so a rank-81 symbol is a million-element evaluation. A budget
+    ///    sweep that takes half an hour per profile is not a gate anyone will
+    ///    keep running, and this budget is meant to be ratcheted nightly.
+    /// 2. **It would measure the wrong thing.** The rank-27/81 families are
+    ///    *host-routed* by design (FND-02): their `+2`/`+3` headroom can push the
+    ///    Rys order past the device ceiling, so they never touch the extended
+    ///    device entry these fixtures exist to budget. Their envelope is the host
+    ///    Wheeler path's, which the base sampler and `rys_nroots_sweep_parity`
+    ///    already cover.
+    #[must_use]
+    pub fn max_component_rank(&self) -> Option<usize> {
+        if self.tag == BASE_FIXTURE_TAG {
+            None
+        } else {
+            Some(3)
+        }
+    }
+
+    /// Which representations this fixture set evaluates.
+    ///
+    /// `None` for the base sampler — all three.
+    ///
+    /// The def2 samplers evaluate `cart` and `spheric` only. The extended device
+    /// Rys path produces Cartesian blocks and the representation is a transform
+    /// applied afterwards, so a Rys-order budget entry is visible in cart and
+    /// sph; the spinor fold's own correctness is gated by the c2spinor tests,
+    /// not by a quadrature envelope.
+    ///
+    /// There is also a hard reason: `cart_to_spinor_sf_2d` **panics** above
+    /// `l = 4` ("l=5 > 4 not supported"), and these samplers carry an `h` shell.
+    /// That panic is a defect in its own right — a library should return a typed
+    /// refusal, not unwind, on an input a public entry point accepted, and
+    /// `SPHERIC_L_MAX` exists because the *spherical* transform had the same
+    /// shape of gap. It is recorded in
+    /// `crates/cintx-oracle/tests/spinor_l_max_panic_defect.rs` rather than
+    /// worked around silently; fixing it is what would let this filter go.
+    #[must_use]
+    pub fn representations(&self) -> Option<&'static [&'static str]> {
+        if self.tag == BASE_FIXTURE_TAG {
+            None
+        } else {
+            Some(&["cart", "spheric"])
+        }
+    }
+
+    /// Which families this fixture set is a valid instrument for.
+    ///
+    /// `None` means all of them — the base sampler is the manifest-wide one and
+    /// every gate that sweeps the whole surface uses it.
+    ///
+    /// The def2 samplers return `Some(RYS_FAMILIES)`. They exist to add Rys
+    /// orders 6 and 7 to the precision budget, and their geometry — two centres
+    /// at 2.2 bohr with `f`/`g` polarization functions — was chosen for the
+    /// extended Rys entry. Sweeping the *whole* manifest on them would evaluate
+    /// families at angular momenta nothing has ever measured them at, which is a
+    /// different piece of work with a different purpose.
+    ///
+    /// That is not hypothetical. Doing exactly that is how `int3c1e_p2` was
+    /// caught returning plain `int3c1e` — see
+    /// `crates/cintx-oracle/tests/int3c1e_p2_operator_defect.rs`. Widening these
+    /// samplers to the manifest is worth doing, deliberately, as its own change.
+    #[must_use]
+    pub fn families(&self) -> Option<&'static [&'static str]> {
+        if self.tag == BASE_FIXTURE_TAG {
+            None
+        } else {
+            Some(RYS_FAMILIES)
         }
     }
 
@@ -1125,7 +1400,62 @@ impl OracleRawInputs {
             _ => &[],
         }
     }
+
+    /// The angular momentum of one shell of this fixture set.
+    #[must_use]
+    pub fn shell_l(&self, shell: i32) -> usize {
+        self.bas[shell as usize * BAS_SLOTS + ANG_OF] as usize
+    }
+
+    /// The error-budget bucket a fixture of this arity is filed under.
+    ///
+    /// For the base sampler this is the family-wide label the budget has always
+    /// used, so its recorded entries keep their keys. For every other sampler it
+    /// is `<tag>_nroots_<n>`, where `n` is the **scalar** Rys order of the
+    /// fixture's own shell tuple — `(sum of l) / 2 + 1`.
+    ///
+    /// Scalar, not per-symbol: a derivative symbol's shape adds headroom on top
+    /// of that (`int2e_ip1` raises the bra by one), so its true order is at
+    /// least this. Filing it under the scalar order groups a family's
+    /// derivative rows with the tuple they were measured on, which is the
+    /// question the budget is asked — "what does this shell tuple cost?" — and
+    /// keeps one bucket per tuple instead of one per symbol.
+    #[must_use]
+    pub fn nroots_class(&self, family: &str, arity: usize) -> String {
+        if self.tag == BASE_FIXTURE_TAG {
+            return crate::compare::nroots_class_for_family(family).to_string();
+        }
+        let shells = self.shells_for_arity(arity);
+        if shells.is_empty() {
+            return format!("{}_nroots_unknown", self.tag);
+        }
+        let order = shells.iter().map(|&s| self.shell_l(s)).sum::<usize>() / 2 + 1;
+        format!("{}_nroots_{order}", self.tag)
+    }
 }
+
+/// The sampler whose budget entries keep the family-wide `nroots_class` labels.
+pub const BASE_FIXTURE_TAG: &str = "base";
+/// The def2-TZVP-shaped sampler (D4.1).
+pub const DEF2_HIGH_ORDER_FIXTURE_TAG: &str = "def2hi";
+/// The same shapes with `env[PTR_RANGE_OMEGA]` set (D4.3).
+pub const DEF2_RANGE_OMEGA_FIXTURE_TAG: &str = "def2hi_omega";
+
+/// The families whose kernels go through the Rys quadrature, and therefore the
+/// families a Rys-order budget entry can be about.
+///
+/// `3c1e` is absent because its kernel is an overlap-type recurrence with no
+/// Rys roots at all: a "nroots 7" row for it would be a label with nothing
+/// behind it.
+pub const RYS_FAMILIES: &[&str] = &[
+    "1e",
+    "2e",
+    "2c2e",
+    "3c2e",
+    "unstable::source::1e",
+    "unstable::source::2e",
+    "unstable::source::3c2e",
+];
 
 #[derive(Clone, Debug)]
 pub struct ArtifactWriteResult {

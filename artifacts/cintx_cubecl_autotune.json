@@ -1,0 +1,81 @@
+{
+  "artifact": "cintx_cubecl_autotune",
+  "cache": {
+    "entries": [],
+    "entry_count": 0,
+    "exists": false,
+    "path": "/tmp/cintx_artifacts/autotune",
+    "source": "CINTX_AUTOTUNE_CACHE"
+  },
+  "device_timing": {
+    "cooperative": "device timestamps, via CubeCL's profiled autotune ranking",
+    "measured": "crates/cintx-oracle/tests/def2_rocm_extended_and_tuning.rs",
+    "per_unit": "host wall clock; not a device timing, which is why the per-unit default is off",
+    "status": "per_decomposition"
+  },
+  "extensive_available": true,
+  "policy": {
+    "configured": null,
+    "cooperative": "Balanced",
+    "levels": [
+      "off",
+      "balanced",
+      "extensive"
+    ],
+    "override_env": "CINTX_AUTOTUNE",
+    "per_unit": "Off",
+    "process_default": "Off"
+  },
+  "provenance": {
+    "bench_report": {
+      "actual_path": "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json",
+      "fallback_env_var": "CINTX_ARTIFACT_DIR",
+      "fallback_reason": null,
+      "required_path": "/tmp/cintx_artifacts/cintx_phase_04_bench_report.json",
+      "used_required_path": true
+    },
+    "benchmark_row_sources": [
+      "threshold_baseline"
+    ],
+    "command": "cargo run --locked --manifest-path xtask/Cargo.toml -- bench-report --thresholds ci/benchmark-thresholds.json --mode calibration",
+    "git_revision": null,
+    "limitations": [
+      "No GPU adapter/device identity was recorded by benchmark rows.",
+      "pack_ns, submit_ns, and readback_ns are host wall-clock intervals, not device timestamps.",
+      "No device-memory telemetry or oracle-comparison result was supplied to bench-report.",
+      "The autotune artifact reports the tuner's configuration and its persistent cache; it does not contain per-candidate measurements, which live in the tuner's own cache files and in def2_rocm_extended_and_tuning's output."
+    ],
+    "report_mode": "calibration",
+    "runtime_diagnostics": {
+      "actual_path": "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json",
+      "fallback_env_var": "CINTX_ARTIFACT_DIR",
+      "fallback_reason": null,
+      "required_path": "/tmp/cintx_artifacts/cintx_phase_04_runtime_diagnostics.json",
+      "used_required_path": true
+    },
+    "xtask_version": "0.1.0"
+  },
+  "schema_version": 2,
+  "search": {
+    "candidate_cube_widths": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128,
+      256,
+      512
+    ],
+    "max_tuned_keys": 128,
+    "min_tune_items": 64,
+    "sample_max_items": 1024,
+    "sample_min_items": 64,
+    "sample_work_budget": 262144
+  },
+  "status": "configuration_collected",
+  "suite_rows_are_device_timings": false,
+  "tuning_schema_version": 1
+}

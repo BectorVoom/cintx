@@ -1,10 +1,16 @@
 # Precision Error Budget Report (2026-08-30)
 
+## What the error columns compare
+
+`max_abs_error` and `max_rel_error` are **`eval_raw` against the `cint*` legacy wrapper for the same symbol** — two cintx entry points onto one kernel — not cintx against vendored libcint. They are consequently 0.0 with infinite headroom throughout, and `--check-headroom` cannot fire on them. Read this table as a path-equivalence envelope: it says the raw and legacy surfaces have not drifted apart, which is a real property and not the one the word *precision* suggests.
+
+The cintx-vs-libcint envelope is measured by `verify_legacy_wrapper_parity` (flat `atol = 1e-12`, pass/fail) and by the per-family oracle parity gates, including `ext_rys_*_parity` for the extended Rys orders.
+
 ## Executive Summary
 
 - **Tolerance Model**: Unified `atol = 1.0e-12`, `rtol = 1.0e-12` across all families.
-- **Evaluated Operations**: 264 unique fixture combinations
-- **Passed**: 264
+- **Evaluated Operations**: 300 unique fixture combinations
+- **Passed**: 300
 - **Mismatches**: 0
 - **Worst Observed Abs Error**: `0.000e0`
 - **Worst Observed Rel Error**: `0.000e0`
@@ -27,7 +33,9 @@
 | `1e` | `int1e_cg_sa10nucsp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_cg_sa10sa01_spinor` | `spinor` | `cpu` | `nroots_1_2` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_cg_sa10sp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `1e` | `int1e_drinv_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_drinv_cart` | `cart` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_drinv_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_drinv_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_drinv_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_giao_a11part_cart` | `cart` | `cpu` | `nroots_1_2` | 54 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -39,19 +47,25 @@
 | `1e` | `int1e_giao_sa10nucsp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_giao_sa10sa01_spinor` | `spinor` | `cpu` | `nroots_1_2` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_giao_sa10sp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `1e` | `int1e_gnuc_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 360 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_gnuc_cart` | `cart` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_gnuc_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 210 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_gnuc_sph` | `spheric` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_gnuc_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_govlp_cart` | `cart` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_govlp_sph` | `spheric` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_govlp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `1e` | `int1e_ia01p_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 360 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ia01p_cart` | `cart` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_ia01p_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 210 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ia01p_sph` | `spheric` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ia01p_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_igkin_cart` | `cart` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_igkin_sph` | `spheric` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_igkin_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `1e` | `int1e_ignuc_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 360 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ignuc_cart` | `cart` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_ignuc_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 210 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ignuc_sph` | `spheric` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ignuc_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_igovlp_cart` | `cart` | `cpu` | `nroots_1_2` | 18 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -107,7 +121,9 @@
 | `1e` | `int1e_ipkinip_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipkinip_sph` | `spheric` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipkinip_spinor` | `spinor` | `cpu` | `nroots_1_2` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_ipnuc_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipnuc_cart` | `cart` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_ipnuc_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipnuc_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipnuc_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_ipnucip_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -119,19 +135,25 @@
 | `1e` | `int1e_ipovlpip_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipovlpip_sph` | `spheric` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipovlpip_spinor` | `spinor` | `cpu` | `nroots_1_2` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_ippnucp_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ippnucp_cart` | `cart` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_ippnucp_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ippnucp_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ippnucp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_ippnucpip_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ippnucpip_sph` | `spheric` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ippnucpip_spinor` | `spinor` | `cpu` | `nroots_1_2` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_ipprinvp_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipprinvp_cart` | `cart` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_ipprinvp_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipprinvp_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipprinvp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_ipprinvpip_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipprinvpip_sph` | `spheric` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ipprinvpip_spinor` | `spinor` | `cpu` | `nroots_1_2` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_iprinv_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_iprinv_cart` | `cart` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_iprinv_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_iprinv_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_iprinv_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_iprinvip_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -147,7 +169,9 @@
 | `1e` | `int1e_kin_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_kin_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_kin_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_nuc_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 60 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_nuc_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_nuc_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 35 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_nuc_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_nuc_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_ovlp_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -156,10 +180,14 @@
 | `1e` | `int1e_p4_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_p4_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_p4_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `1e` | `int1e_pnucp_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 60 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_pnucp_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_pnucp_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 35 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_pnucp_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_pnucp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_prinvp_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 60 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_prinvp_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_prinvp_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 35 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_prinvp_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_prinvp_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_r2_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -180,7 +208,9 @@
 | `1e` | `int1e_r_origj_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_r_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_r_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `1e` | `int1e_rinv_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 60 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_rinv_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `1e` | `int1e_rinv_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 35 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_rinv_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_rinv_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_rr_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -218,22 +248,38 @@
 | `1e` | `int1e_zz_origj_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `1e` | `int1e_zz_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `1e` | `int1e_zz_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `2c2e` | `int2c2e_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 60 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_cart` | `cart` | `cpu` | `def2hi_omega_nroots_3` | 60 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_ip1_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_ip1_cart` | `cart` | `cpu` | `def2hi_omega_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ip1_cart` | `cart` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_ip1_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_ip1_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ip1_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ip1_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `2c2e` | `int2c2e_ip1ip2_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ip1ip2_sph` | `spheric` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ip1ip2_spinor` | `spinor` | `cpu` | `nroots_1_2` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `2c2e` | `int2c2e_ip2_cart` | `cart` | `cpu` | `def2hi_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_ip2_cart` | `cart` | `cpu` | `def2hi_omega_nroots_3` | 180 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ip2_cart` | `cart` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_ip2_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_ip2_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_3` | 105 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ip2_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ip2_spinor` | `spinor` | `cpu` | `nroots_1_2` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `2c2e` | `int2c2e_ipip1_cart` | `cart` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_ipip1_sph` | `spheric` | `cpu` | `nroots_1_2` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_sph` | `spheric` | `cpu` | `def2hi_nroots_3` | 35 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2c2e` | `int2c2e_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_3` | 35 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2c2e` | `int2c2e_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_cart` | `cart` | `cpu` | `def2hi_nroots_7` | 12600 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_cart` | `cart` | `cpu` | `def2hi_omega_nroots_7` | 12600 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_cart` | `cart` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_g1_cart` | `cart` | `cpu` | `def2hi_nroots_7` | 75600 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_g1_cart` | `cart` | `cpu` | `nroots_1_5` | 54 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_g1_sph` | `spheric` | `cpu` | `def2hi_nroots_7` | 16170 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_g1_sph` | `spheric` | `cpu` | `nroots_1_5` | 54 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_g1_spinor` | `spinor` | `cpu` | `nroots_1_5` | 864 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `2e` | `int2e_g1g2_cart` | `cart` | `cpu` | `nroots_1_5` | 162 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -242,10 +288,16 @@
 | `2e` | `int2e_gg1_cart` | `cart` | `cpu` | `nroots_1_5` | 162 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_gg1_sph` | `spheric` | `cpu` | `nroots_1_5` | 162 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_gg1_spinor` | `spinor` | `cpu` | `nroots_1_5` | 2592 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `2e` | `int2e_ig1_cart` | `cart` | `cpu` | `def2hi_nroots_7` | 75600 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ig1_cart` | `cart` | `cpu` | `nroots_1_5` | 54 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_ig1_sph` | `spheric` | `cpu` | `def2hi_nroots_7` | 16170 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ig1_sph` | `spheric` | `cpu` | `nroots_1_5` | 54 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ig1_spinor` | `spinor` | `cpu` | `nroots_1_5` | 864 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `2e` | `int2e_ip1_cart` | `cart` | `cpu` | `def2hi_nroots_7` | 37800 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_ip1_cart` | `cart` | `cpu` | `def2hi_omega_nroots_7` | 37800 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ip1_cart` | `cart` | `cpu` | `nroots_1_5` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_ip1_sph` | `spheric` | `cpu` | `def2hi_nroots_7` | 8085 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_ip1_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_7` | 8085 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ip1_sph` | `spheric` | `cpu` | `nroots_1_5` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ip1_spinor` | `spinor` | `cpu` | `nroots_1_5` | 864 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `2e` | `int2e_ip1ip2_cart` | `cart` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -259,7 +311,11 @@
 | `2e` | `int2e_ip1v_rc1_cart` | `cart` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ip1v_rc1_sph` | `spheric` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ip1v_rc1_spinor` | `spinor` | `cpu` | `nroots_1_5` | 2592 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_ip2_cart` | `cart` | `cpu` | `def2hi_nroots_7` | 37800 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_ip2_cart` | `cart` | `cpu` | `def2hi_omega_nroots_7` | 37800 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ip2_cart` | `cart` | `cpu` | `nroots_1_5` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_ip2_sph` | `spheric` | `cpu` | `def2hi_nroots_7` | 8085 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_ip2_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_7` | 8085 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ip2_sph` | `spheric` | `cpu` | `nroots_1_5` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ip2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 864 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `2e` | `int2e_ipip1_cart` | `cart` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -284,6 +340,8 @@
 | `2e` | `int2e_ipvip1ipvip2_cart` | `cart` | `cpu` | `nroots_1_5` | 729 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ipvip1ipvip2_sph` | `spheric` | `cpu` | `nroots_1_5` | 729 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ipvip1ipvip2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 23328 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `2e` | `int2e_sph` | `spheric` | `cpu` | `def2hi_nroots_7` | 2695 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `2e` | `int2e_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_7` | 2695 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_sps1sps2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -299,20 +357,10 @@
 | `2e` | `int2e_srsr1srsr2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ssp1sps2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_ssp1ssp2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_stg_ip1_sph` | `spheric` | `cpu` | `nroots_1_5` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_stg_ip1ip2_sph` | `spheric` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_stg_ipip1_sph` | `spheric` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_stg_ipvip1_sph` | `spheric` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_stg_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_vsp1_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_vsp1spsp2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_vsp1spv2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `2e` | `int2e_vsp1vsp2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_yp_ip1_sph` | `spheric` | `cpu` | `nroots_1_5` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_yp_ip1ip2_sph` | `spheric` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_yp_ipip1_sph` | `spheric` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_yp_ipvip1_sph` | `spheric` | `cpu` | `nroots_1_5` | 81 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `2e` | `int2e_yp_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c1e` | `int3c1e_cart` | `cart` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c1e` | `int3c1e_ip1_cart` | `cart` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c1e` | `int3c1e_ip1_sph` | `spheric` | `cpu` | `nroots_1_2` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -324,14 +372,24 @@
 | `3c1e` | `int3c1e_p2_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c1e` | `int3c1e_sph` | `spheric` | `cpu` | `nroots_1_2` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c1e` | `int3c1e_spinor` | `spinor` | `cpu` | `nroots_1_2` | 24 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `3c2e` | `int3c2e_cart` | `cart` | `cpu` | `def2hi_nroots_6` | 1260 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_cart` | `cart` | `cpu` | `def2hi_omega_nroots_6` | 1260 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_cart` | `cart` | `cpu` | `nroots_1_4` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_ip1_cart` | `cart` | `cpu` | `def2hi_nroots_6` | 3780 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_ip1_cart` | `cart` | `cpu` | `def2hi_omega_nroots_6` | 3780 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ip1_cart` | `cart` | `cpu` | `nroots_1_4` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_ip1_sph` | `spheric` | `cpu` | `def2hi_nroots_6` | 1155 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_ip1_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_6` | 1155 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ip1_sph` | `spheric` | `cpu` | `nroots_1_4` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ip1_spinor` | `spinor` | `cpu` | `nroots_1_4` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `3c2e` | `int3c2e_ip1ip2_cart` | `cart` | `cpu` | `nroots_1_4` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ip1ip2_sph` | `spheric` | `cpu` | `nroots_1_4` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ip1ip2_spinor` | `spinor` | `cpu` | `nroots_1_4` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `3c2e` | `int3c2e_ip2_cart` | `cart` | `cpu` | `def2hi_nroots_6` | 3780 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_ip2_cart` | `cart` | `cpu` | `def2hi_omega_nroots_6` | 3780 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ip2_cart` | `cart` | `cpu` | `nroots_1_4` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_ip2_sph` | `spheric` | `cpu` | `def2hi_nroots_6` | 1155 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_ip2_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_6` | 1155 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ip2_sph` | `spheric` | `cpu` | `nroots_1_4` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ip2_spinor` | `spinor` | `cpu` | `nroots_1_4` | 72 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
 | `3c2e` | `int3c2e_ipip1_cart` | `cart` | `cpu` | `nroots_1_4` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
@@ -342,24 +400,6 @@
 | `3c2e` | `int3c2e_ipvip1_cart` | `cart` | `cpu` | `nroots_1_4` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ipvip1_sph` | `spheric` | `cpu` | `nroots_1_4` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_ipvip1_spinor` | `spinor` | `cpu` | `nroots_1_4` | 216 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
+| `3c2e` | `int3c2e_sph` | `spheric` | `cpu` | `def2hi_nroots_6` | 385 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
+| `3c2e` | `int3c2e_sph` | `spheric` | `cpu` | `def2hi_omega_nroots_6` | 385 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
 | `3c2e` | `int3c2e_sph` | `spheric` | `cpu` | `nroots_1_4` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `4c1e` | `int4c1e_cart` | `cart` | `cpu` | `nroots_1_3` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `4c1e` | `int4c1e_sph` | `spheric` | `cpu` | `nroots_1_3` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::breit` | `int2e_breit_r1p2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
-| `unstable::source::breit` | `int2e_breit_r2p2_spinor` | `spinor` | `cpu` | `nroots_1_5` | 288 | `0.00e0` | `0.00e0` | ∞ | ∞ | **skipped** |
-| `unstable::source::grids` | `int1e_grids_ip_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::grids` | `int1e_grids_ipip_sph` | `spheric` | `cpu` | `nroots_1_5` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::grids` | `int1e_grids_ipvip_sph` | `spheric` | `cpu` | `nroots_1_5` | 27 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::grids` | `int1e_grids_sph` | `spheric` | `cpu` | `nroots_1_5` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::grids` | `int1e_grids_spvsp_sph` | `spheric` | `cpu` | `nroots_1_5` | 12 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origi` | `int1e_r2_origi_ip2_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origi` | `int1e_r2_origi_sph` | `spheric` | `cpu` | `nroots_1_5` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origi` | `int1e_r4_origi_ip2_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origi` | `int1e_r4_origi_sph` | `spheric` | `cpu` | `nroots_1_5` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origk` | `int3c1e_ip1_r2_origk_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origk` | `int3c1e_ip1_r4_origk_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origk` | `int3c1e_ip1_r6_origk_sph` | `spheric` | `cpu` | `nroots_1_5` | 9 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origk` | `int3c1e_r2_origk_sph` | `spheric` | `cpu` | `nroots_1_5` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origk` | `int3c1e_r4_origk_sph` | `spheric` | `cpu` | `nroots_1_5` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::origk` | `int3c1e_r6_origk_sph` | `spheric` | `cpu` | `nroots_1_5` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |
-| `unstable::source::ssc` | `int3c2e_sph_ssc` | `spheric` | `cpu` | `nroots_1_5` | 3 | `0.00e0` | `0.00e0` | ∞ | ∞ | **pass** |

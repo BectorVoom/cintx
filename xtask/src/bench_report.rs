@@ -355,17 +355,7 @@ fn write_phase0_artifacts(
                 "suites": suite_rows,
             }),
         ),
-        (
-            "autotune",
-            json!({
-                "schema_version": 1,
-                "artifact": "cintx_cubecl_autotune",
-                "provenance": provenance,
-                "status": "not_collected",
-                "reason": "the current benchmark/report contract records no tuner candidates, selected configuration, or device identity",
-                "device_timing": { "status": "not_collected", "reason": "host wall-clock metrics are not device timestamps" },
-            }),
-        ),
+        ("autotune", autotune_artifact(&provenance)),
         (
             "speed_report",
             json!({
@@ -456,7 +446,8 @@ fn phase0_provenance(
         "limitations": [
             "No GPU adapter/device identity was recorded by benchmark rows.",
             "pack_ns, submit_ns, and readback_ns are host wall-clock intervals, not device timestamps.",
-            "No device-memory telemetry, autotuning output, or oracle-comparison result was supplied to bench-report.",
+            "No device-memory telemetry or oracle-comparison result was supplied to bench-report.",
+            "The autotune artifact reports the tuner's configuration and its persistent cache; it does not contain per-candidate measurements, which live in the tuner's own cache files and in def2_rocm_extended_and_tuning's output.",
         ],
     })
 }
@@ -486,14 +477,66 @@ fn phase0_suite_rows(suite_reports: &[Value]) -> Vec<Value> {
         .collect()
 }
 
+/// The per-backend verification matrix, now carrying the extended-Rys status
+/// (`def2_speed_precision_plan.md` D4.4).
+///
+/// # Why the FMA probe belongs here
+///
+/// The extended device Rys path (`nroots` 6..12) is a double-double solver, and
+/// its `TwoProd` error term is only exact where `fma` lowers to a single
+/// fused multiply-add. A backend whose probe fails keeps the base ceiling of 5
+/// **by design** — def2-TZVP's high-order classes are then refused rather than
+/// evaluated at a lower order, which is correct but is a reduced capability.
+/// That is a *verification status*, not a bug, and a matrix that did not report
+/// it would leave a caller unable to tell "this backend cannot do TZVP" from
+/// "nobody checked".
+///
+/// The probe needs a live device, which `bench-report` does not have, so each
+/// row names where the answer comes from rather than guessing one. `cpu` and
+/// `rocm` carry the recorded result because they are the two this repository
+/// actually runs.
 fn unverified_backend_matrix() -> Vec<Value> {
-    ["cpu", "cuda", "rocm", "wgpu", "metal"]
-        .into_iter()
-        .map(|backend| {
+    // (backend, extended-Rys status, where that status comes from)
+    let rows: [(&str, &str, &str); 5] = [
+        (
+            "cpu",
+            "fma_fused",
+            "device_rys_ceiling::tests::cpu_backend_fuses_fma — probe passes, 0/6 pairs divergent",
+        ),
+        (
+            "rocm",
+            "fma_fused",
+            "def2_rocm_extended_and_tuning::rocm_fma_probe_and_extended_ceiling on gfx1151 — probe passes, 0/6 pairs divergent",
+        ),
+        (
+            "cuda",
+            "unprobed",
+            "compile-only in this repository; run probe_fma_fusion on a CUDA device before relying on nroots > 5",
+        ),
+        (
+            "wgpu",
+            "unprobed",
+            "compile-only in this repository; run probe_fma_fusion on a wgpu adapter before relying on nroots > 5",
+        ),
+        (
+            "metal",
+            "unprobed",
+            "compile-only in this repository (M1 alias over the wgpu runtime); run probe_fma_fusion before relying on nroots > 5",
+        ),
+    ];
+    rows.into_iter()
+        .map(|(backend, fma, source)| {
             json!({
                 "backend": backend,
                 "status": "unverified",
                 "reason": "bench-report has no backend-specific adapter provenance, device timing, or oracle result",
+                "extended_device_rys": {
+                    "fma_probe": fma,
+                    "source": source,
+                    "nroots_ceiling_when_probe_fails": cintx_cubecl::BASE_DEVICE_NROOTS,
+                    "nroots_ceiling_when_probe_passes": cintx_cubecl::EXTENDED_DEVICE_NROOTS,
+                    "note": "a failing probe is a reported reduced capability, not a bug: def2-TZVP's nroots 6-7 classes are refused rather than evaluated at a lower order",
+                },
             })
         })
         .collect()
@@ -1219,4 +1262,92 @@ mod tests {
         );
         assert!(paths.contains("/tmp/cintx_artifacts/cintx_cubecl_profile.jsonl"));
     }
+}
+
+/// The autotune artifact (`def2_speed_precision_plan.md` D3.4).
+///
+/// It used to be a `not_collected` placeholder, on the grounds that "the
+/// current benchmark/report contract records no tuner candidates, selected
+/// configuration, or device identity". Two of those three were never a
+/// measurement problem: the candidate list, the search bounds and the policy
+/// that decides whether a dispatch is tuned at all are compiled-in facts, and a
+/// report that omits them cannot say what a run would have searched.
+///
+/// So this emits the tuner's *configuration* unconditionally, and the persistent
+/// cache's *contents* when a cache is reachable. What stays honest about the old
+/// placeholder is kept: the per-suite benchmark rows are host wall clock, and
+/// this artifact says so rather than presenting them as device timings.
+fn autotune_artifact(provenance: &Value) -> Value {
+    use cintx_cubecl::tuning::{
+        AutotunePolicy, CANDIDATE_CUBE_WIDTHS, DEFAULT_POLICY, Decomposition, MAX_TUNED_KEYS,
+        MIN_TUNE_ITEMS, TUNE_SAMPLE_MAX_ITEMS, TUNE_SAMPLE_MIN_ITEMS, TUNE_SAMPLE_WORK_BUDGET,
+        TUNING_SCHEMA_VERSION, configured_policy, policy_for,
+    };
+
+    // CubeCL's own default cache location is the `target` directory of the
+    // nearest cargo project *above the current working directory*, which is
+    // cwd-dependent. `CINTX_AUTOTUNE_CACHE` pins it, and a report that did not
+    // say which of the two applied would be describing a cache it cannot name.
+    let pinned = env::var("CINTX_AUTOTUNE_CACHE").ok().filter(|d| !d.is_empty());
+    let cache = match &pinned {
+        Some(dir) => {
+            let path = Path::new(dir);
+            let mut entries: Vec<String> = Vec::new();
+            if let Ok(read) = fs::read_dir(path) {
+                for entry in read.flatten() {
+                    entries.push(entry.file_name().to_string_lossy().into_owned());
+                }
+                entries.sort();
+            }
+            json!({
+                "source": "CINTX_AUTOTUNE_CACHE",
+                "path": dir,
+                "exists": path.is_dir(),
+                "entry_count": entries.len(),
+                "entries": entries,
+            })
+        }
+        None => json!({
+            "source": "cubecl-default",
+            "path": null,
+            "exists": false,
+            "reason": "CINTX_AUTOTUNE_CACHE is unset, so the cache lives in the target directory of the nearest cargo project above the current working directory and this report cannot name it",
+        }),
+    };
+
+    json!({
+        "schema_version": 2,
+        "artifact": "cintx_cubecl_autotune",
+        "provenance": provenance,
+        "status": "configuration_collected",
+        "tuning_schema_version": TUNING_SCHEMA_VERSION,
+        "policy": {
+            "configured": configured_policy().map(|p| format!("{p:?}")),
+            "process_default": format!("{DEFAULT_POLICY:?}"),
+            // The default is per decomposition because that is the backend
+            // question the measurement turned on: a cooperative dispatch is
+            // ranked by device timestamp, a per-unit one by host wall clock.
+            "per_unit": format!("{:?}", policy_for(Decomposition::PerUnit)),
+            "cooperative": format!("{:?}", policy_for(Decomposition::Cooperative)),
+            "levels": ["off", "balanced", "extensive"],
+            "override_env": "CINTX_AUTOTUNE",
+        },
+        "search": {
+            "candidate_cube_widths": CANDIDATE_CUBE_WIDTHS,
+            "min_tune_items": MIN_TUNE_ITEMS,
+            "max_tuned_keys": MAX_TUNED_KEYS,
+            "sample_min_items": TUNE_SAMPLE_MIN_ITEMS,
+            "sample_max_items": TUNE_SAMPLE_MAX_ITEMS,
+            "sample_work_budget": TUNE_SAMPLE_WORK_BUDGET,
+        },
+        "cache": cache,
+        "device_timing": {
+            "status": "per_decomposition",
+            "cooperative": "device timestamps, via CubeCL's profiled autotune ranking",
+            "per_unit": "host wall clock; not a device timing, which is why the per-unit default is off",
+            "measured": "crates/cintx-oracle/tests/def2_rocm_extended_and_tuning.rs",
+        },
+        "suite_rows_are_device_timings": false,
+        "extensive_available": AutotunePolicy::Extensive.enabled(),
+    })
 }

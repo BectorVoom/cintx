@@ -14,6 +14,14 @@ default = []
 # kernels. Double-gated with CINTX_ORACLE_BUILD_VENDOR=1 for byte-identity
 # parity (reference_oracle_vendor_parity_invocation).
 cpu = ["cintx-oracle/cpu", "cintx-compat/cpu"]
+# The extended device Rys path (nroots 6..12). `error-budget` needs it: its
+# def2-shaped fixture sets exist precisely to record the envelope of the
+# nroots 6-7 classes, and without the feature those classes are refused (fail
+# closed, correctly) rather than measured.
+extended-device-rys = [
+    "cintx-oracle/extended-device-rys",
+    "cintx-compat/extended-device-rys",
+]
 
 [dependencies]
 anyhow = "1.0.102"

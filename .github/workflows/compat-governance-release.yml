@@ -263,6 +263,96 @@ jobs:
                       ${{ env.CINTX_RUNTIME_DIAGNOSTICS_FALLBACK }}
                       target/criterion
 
+    # def2_speed_precision_plan.md D5.1. The throughput benchmark, on the
+    # nightly/release schedule rather than on PRs: it takes minutes, and its
+    # numbers only mean something on a runner that is not shared with four other
+    # jobs. It is `--ignored` by default, so this is the deliberate invocation.
+    #
+    # Every honesty rule the benchmark enforces still applies here — both engines
+    # run the identical screened work list, values are compared before any timing
+    # is printed, and a case with a mismatch reports NOT COMPARABLE instead of a
+    # ratio. The artifact carries the work list, the per-bucket rows and the
+    # match status alongside the times, which is what makes a number quotable
+    # (G5).
+    def2_throughput_nightly:
+        name: def2_throughput_nightly
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+        env:
+            CINTX_ARTIFACT_DIR: /tmp/cintx_artifacts
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
+
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Prepare artifact directories
+              run: |
+                  mkdir -p /mnt/data || true
+                  mkdir -p "${CINTX_ARTIFACT_DIR}"
+
+            - name: Run the def2 throughput benchmark (full scope)
+              run: |
+                  CINTX_ORACLE_BUILD_VENDOR=1 CINTX_BENCH_SCOPE=full \
+                    cargo test --release --locked -p cintx-oracle \
+                    --features cpu,extended-device-rys \
+                    --test def2_throughput_benchmark -- --ignored --nocapture --test-threads=1
+
+            - name: Assert every timed case was comparable
+              run: |
+                  python <<'PY'
+                  import json
+                  from pathlib import Path
+
+                  for candidate in (
+                      Path("/mnt/data/cintx_def2_throughput.json"),
+                      Path("/tmp/cintx_artifacts/cintx_def2_throughput.json"),
+                  ):
+                      if candidate.is_file():
+                          report = json.loads(candidate.read_text())
+                          break
+                  else:
+                      raise SystemExit("def2 throughput artifact was not written")
+
+                  bad = [c["case"] + " / " + c["mode"] for c in report["cases"] if not c["comparable"]]
+                  if bad:
+                      raise SystemExit(f"cases whose values did not match the vendor: {bad}")
+                  print(f"{len(report['cases'])} cases, all comparable")
+                  PY
+
+            - name: Upload def2 throughput artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: def2-throughput-${{ github.run_id }}
+                  if-no-files-found: warn
+                  path: |
+                      /mnt/data/cintx_def2_throughput.json
+                      ${{ env.CINTX_ARTIFACT_DIR }}/cintx_def2_throughput.json
+
     wgpu_capability_required:
         name: wgpu_capability_required
         runs-on: [self-hosted, linux, x64, gpu]

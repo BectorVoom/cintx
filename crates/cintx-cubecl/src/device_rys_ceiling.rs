@@ -246,6 +246,16 @@ pub fn fma_fusion_verified(backend: &ResolvedBackend) -> bool {
     probe_fma_fusion(backend).fused
 }
 
+/// Was the `extended-device-rys` feature compiled into this build?
+///
+/// A `const`, not a `cfg!` at each call site, because callers outside this
+/// crate cannot ask about its features: an `xtask` gate that needs to know
+/// whether the `nroots` 6..12 path exists in the binary it is running has no
+/// other way to find out. Still necessary-but-not-sufficient — the backend's
+/// FMA probe and the family's own flip decide the rest; see
+/// [`device_nroots_ceiling`].
+pub const EXTENDED_DEVICE_RYS_COMPILED: bool = cfg!(feature = "extended-device-rys");
+
 /// Which family's launcher is asking for a ceiling.
 ///
 /// # Why the ceiling is per family as well as per backend

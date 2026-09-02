@@ -1142,13 +1142,32 @@ fn build_profile_parity_report(
     profile: &str,
     include_unstable_source: bool,
 ) -> Result<Phase2ParityReport> {
-    if profile != "unstable-source" {
+    // The helper/legacy surface check is a claim about the *surface* — that every
+    // compat wrapper exists and agrees with its vendor counterpart — not about a
+    // geometry. The base sampler is the one it was written for and answers it
+    // once; re-asking it on a sampler built for a different question adds no
+    // coverage and evaluates wrappers at angular momenta they were never
+    // calibrated at.
+    if profile != "unstable-source" && inputs.families().is_none() {
         verify_helper_surface_coverage(inputs)?;
     }
 
-    let matrix = build_profile_representation_matrix(inputs, profile, include_unstable_source)?;
+    let mut matrix = build_profile_representation_matrix(inputs, profile, include_unstable_source)?;
+    // The representation-matrix artifact is a claim about the *profile's whole
+    // manifest surface*, so it is written from the unfiltered matrix — and its
+    // own completeness check would reject a filtered one, correctly.
     let matrix_artifact =
         write_profile_representation_matrix_artifact(profile, include_unstable_source, &matrix)?;
+    if let Some(families) = inputs.families() {
+        matrix.retain(|fixture| families.contains(&fixture.family.as_str()));
+    }
+    if let Some(max_rank) = inputs.max_component_rank() {
+        matrix.retain(|fixture| fixture.component_count.max(1) <= max_rank);
+    }
+    if let Some(representations) = inputs.representations() {
+        matrix.retain(|fixture| representations.contains(&fixture.representation.as_str()));
+    }
+    matrix.retain(|fixture| inputs.includes_symbol(&fixture.family, &fixture.symbol));
     let mut fixture_results = Vec::new();
     let mut report_rows = Vec::new();
     let mut mismatches = Vec::new();
@@ -1189,7 +1208,7 @@ fn build_profile_parity_report(
                 max_rel_error: 0.0,
                 within_tolerance: true,
             };
-            let nroots_class = nroots_class_for_family(&fixture.family);
+            let nroots_class = inputs.nroots_class(&fixture.family, fixture.arity);
             fixture_results.push(FixtureParityResult {
                 symbol: fixture.symbol.clone(),
                 family: fixture.family.clone(),
@@ -1552,7 +1571,7 @@ fn build_profile_parity_report(
             );
         }
 
-        let nroots_class = nroots_class_for_family(&fixture.family);
+        let nroots_class = inputs.nroots_class(&fixture.family, fixture.arity);
         let headroom_abs = if raw_vs_upstream.max_abs_error > 0.0 {
             tolerance.atol / raw_vs_upstream.max_abs_error
         } else {

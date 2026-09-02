@@ -118,9 +118,78 @@ jobs:
               run: |
                   CINTX_BACKEND=cpu cargo run --manifest-path xtask/Cargo.toml -- oracle-compare --profiles "${{ matrix.profile }}" --include-unstable-source false
 
+            # `extended-device-rys` is required, not optional, for this step:
+            # the budget's def2 high-order fixture sets exist to record the
+            # nroots 6-7 envelope, and a build without the feature refuses those
+            # classes instead of measuring them (and skips the sets, saying so).
             - name: Ratchet precision headroom for ${{ matrix.profile }}
               run: |
-                  CINTX_ORACLE_BUILD_VENDOR=1 CINTX_BACKEND=cpu cargo run --release --manifest-path xtask/Cargo.toml --features cpu -- error-budget --profiles "${{ matrix.profile }}" --check-headroom
+                  CINTX_ORACLE_BUILD_VENDOR=1 CINTX_BACKEND=cpu cargo run --release --manifest-path xtask/Cargo.toml --features cpu,extended-device-rys -- error-budget --profiles "${{ matrix.profile }}" --check-headroom
+
+    # def2_speed_precision_plan.md D5.1. PR CI runs the def2 gates that are
+    # cheap and deterministic: the launch-class census (G1/G2), the
+    # one-launch-per-signature check (D2.2), and the prewarm's coverage. The
+    # throughput benchmark is NOT here — a timing on a shared runner is a
+    # number about the runner, and the plan's G5 says a speed claim needs the
+    # work list, coverage and match status behind it. It runs nightly on the
+    # release workflow instead.
+    def2_coverage_gate:
+        name: def2_coverage_gate
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
+
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Run def2 coverage and consolidation gates
+              run: |
+                  CINTX_ORACLE_BUILD_VENDOR=1 cargo test --release --locked -p cintx-oracle \
+                    --features cpu,extended-device-rys \
+                    --test def2_device_coverage \
+                    --test def2_prewarm_and_consolidation \
+                    --test def2_prewarm_cold_start \
+                    --test def2_throughput_benchmark
+
+            - name: Run the same coverage census with the extended path OFF
+              run: |
+                  CINTX_ORACLE_BUILD_VENDOR=1 cargo test --release --locked -p cintx-oracle \
+                    --features cpu \
+                    --test def2_device_coverage \
+                    --test def2_prewarm_and_consolidation
+
+            - name: Upload def2 coverage artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: def2-coverage-${{ github.run_id }}
+                  if-no-files-found: warn
+                  path: |
+                      /tmp/cintx_artifacts/cintx_def2_coverage.json
 
     helper_legacy_parity_gate:
         name: helper_legacy_parity_gate

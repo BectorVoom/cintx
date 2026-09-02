@@ -89,5 +89,3 @@ cintx is a public Rust library that redesigns and reimplements libcint with resu
 
 ## Rust optimiser manual
 /home/user/Documents/workspace/cubecl_manual/manual/optimiser
-
-Do not need to check FMA

@@ -1,6 +1,8 @@
 # def2-SVP / def2-TZVP Speed and Precision Plan
 
-Status: proposed
+Status: executed 2026-09-02 — see §7 for what landed, what was measured, and the
+three defects the work uncovered. D1.3 (the `extended-device-rys` default flip)
+is deliberately **not** taken; §7.4 says why.
 Scope: basis-set-targeted follow-on to `docs/design/cubecl_speed_optimization_plan.md`
 Primary compatibility target: libcint 6.1.3, unified `atol = rtol = 1e-12`
 CubeCL target: pinned workspace version `0.10.0`
@@ -222,3 +224,156 @@ headroom.
 | Tuning noise on CPU hosts repeats the Phase 6 no-win | D3 only claims wins from device-timestamp profiles; CPU default stays `off`. |
 | Benchmark fixture too small (H2O) to load nroots 6–7 buckets | D0.1 adds heavier molecules before TZVP numbers are quoted. |
 | Derivative-family flip changes results | One-flip-one-gate pattern: the parity fixture lands in the same commit as the flag. |
+
+## 7. Execution record (2026-09-02)
+
+Everything below is a measurement or a landed change, with the test or artifact
+that carries it. Where a workstream item was not done, it says so and why.
+
+### 7.1 What landed
+
+| Item | Status | Evidence |
+|---|---|---|
+| D0.1 second-row fixture | done | `def2_fixtures::sulfur_dioxide`; `so2_def2_tzvp_carries_f_shells_on_sulfur` |
+| D0.2 machine-readable rows | done | `cintx_def2_throughput.json`, schema `cintx_def2_throughput/1` |
+| D0.3 envelope-split baseline | done | `envelope` block per case in that artifact |
+| D1.1 `Int3c2eDeriv` flip | done | `ext_rys_3c2e_deriv_parity` (5 tests) |
+| D1.2 `Int1eDeriv` flip | done | `ext_rys_1e_deriv_parity` (9 tests) |
+| D1.3 default flip | **not taken** | §7.4 |
+| D2.1 specialization prewarm | done | `prewarm_2e_work_list`; `def2_prewarm_cold_start` |
+| D2.2 launch consolidation | done | `def2_batches_launch_once_per_signature` |
+| D2.3 screening in the artifact | done | `kept_fraction` per case row |
+| D2.4 contraction shape | recorded, not acted on | `max_nprim_product` / `max_nctr_product` per bucket |
+| D3.1 GPU tuning | done | `def2_rocm_extended_and_tuning`; default now per decomposition |
+| D3.2 tuning for derivative/σ launchers | **not done** | §7.5 |
+| D3.3 vectorization-factor candidate | **not done** | §7.5 |
+| D3.4 autotune artifact | done | `cintx_cubecl_autotune.json`, schema 2 |
+| D4.1 nroots 6/7 fixtures | done | `OracleRawInputs::def2_high_order` |
+| D4.2 recorded baseline | done, with a caveat | §7.3 |
+| D4.3 range-separated row | done | `OracleRawInputs::def2_high_order_range_separated` |
+| D4.4 FMA status per backend | done | `unverified_backend_matrix` |
+| D5.1 nightly / PR split | done | `def2_coverage_gate`, `def2_throughput_nightly` |
+| D5.2 final artifacts | done | §7.2 |
+| D5.3 CHANGELOG | done | one entry per workstream |
+
+### 7.2 The numbers
+
+**Coverage (G1, G2).** `def2_device_coverage` runs one representative tuple per
+launch class through the real batch surfaces, for four workloads and five
+families. With the extended path on: **32 classes above the base ceiling, zero
+refusals**. With it off: every one of those 32 refused, asserted class for class
+so a regression cannot turn a refusal into a silent lower-order evaluation.
+
+**Throughput (G3).** Batched route, CPU backend, best of 9, values compared
+before timing, 0 mismatched elements throughout:
+
+| workload | quartets | libcint 6.1.3 | cintx batched | |
+|---|---|---|---|---|
+| CH4 / def2-SVP | 14 706 | 9.97 ms | 5.47 ms | 1.82x |
+| SO2 / def2-SVP | 21 271 | 29.5 ms | 19.9 ms | 1.48x |
+| H2O / def2-TZVP | 18 145 | 15.2 ms | 10.9 ms | 1.50x |
+| SO2 / def2-TZVP | 181 070 | 351 ms | 279 ms | 1.40x |
+
+G3 asked for a win on def2-SVP on at least one verified backend. It holds on the
+CPU backend, which the benchmark's own header had said to expect only on a GPU,
+and it holds for def2-TZVP too — which exists as a batched row at all only
+because D1 put its `nroots` 6-7 classes on the device.
+
+**Tuning.** On ROCm gfx1151, where CubeCL ranks candidates by device timestamp:
+1.06x / 1.44x / 1.36x over the three def2 work lists, bit-identical values. The
+per-decomposition default follows.
+
+### 7.3 D4's caveat: the budget does not measure what its name says
+
+The precision budget's `max_abs_error` compares `eval_raw` against the `cint*`
+legacy wrapper **for the same symbol** — two cintx entry points onto one kernel
+— not cintx against vendored libcint. Every entry is therefore `0.0` with
+infinite headroom, and has been since the budget was introduced;
+`--check-headroom` compares `0.0 <= 0.0` and cannot fire.
+
+That is a real property (the raw and legacy surfaces have not drifted) and it is
+not the property the word *precision* implies. The artifact and the Markdown
+report now say so in as many words, with `comparison_is_vendor: false` and a
+pointer to where the vendor envelope actually is measured: the per-family oracle
+parity gates, and `verify_legacy_wrapper_parity`'s flat 1e-12 pass/fail.
+
+The def2 fixture sets do add the rows D4.1 and D4.3 asked for — `nroots 6` and
+`nroots 7`, scalar and range-separated, in the recorded baseline — and those
+rows are structurally sound. Their *error* column is as vacuous as every other
+row's.
+
+### 7.4 Why D1.3 is not taken
+
+G4 gates the default flip on "recorded budget entries with headroom >= 10x at
+1e-12". §7.3 is why that gate cannot be honestly declared met: the instrument it
+names returns infinite headroom for every entry in the repository, so passing it
+says nothing about the extended path.
+
+What *is* measured about the extended path's accuracy, and is strong:
+
+- `ext_rys_{1e,2c2e,2e,3c2e,3c2e_deriv,1e_deriv}_parity` compare it against
+  vendored libcint 6.1.3 at every order 6..=12, on real def2 lists and on
+  synthetic sweeps, at `max(atol 1e-11, rtol 1e-9)`.
+- `rys_ext_inline_parity` holds the inline entry to **bit-identity** with the
+  host dispatch across `x` from 1e-8 to 1e6.
+- `def2_rocm_extended_and_tuning` reproduces both on a GPU backend's cooperative
+  launch shape, with the two shapes agreeing to 6.1e-14.
+
+So the flip is defensible on evidence — but not on the evidence G4 names. Making
+the budget measure the vendor is the prerequisite, and it is a change to
+`compare.rs`'s fixture loop (a symbol-to-vendor mapping across the manifest),
+not to this plan. Until then the feature stays opt-in, which costs a caller one
+cargo flag and costs the project nothing it can currently prove.
+
+### 7.5 D3.2 and D3.3, not done
+
+**D3.2 (tuning for the derivative and σ launchers).** The tuner is wired by
+giving a launcher a cloneable dispatch struct with a `launch(cube_dim)` method,
+a tuning key, a truncation and a tunable set — about 120 lines each, times the
+3c2e-scalar, 3c2e-derivative, six 1e-derivative and σ-family launchers. It is
+mechanical and worth doing; it was not started, because D3.1's measurement is
+what tells you whether it pays, and D3.1 only just produced a GPU number.
+
+**D3.3 (vectorization factor).** This is not wiring. A vectorization candidate
+means the kernel processes several work items per lane with vectorized loads,
+which changes the kernel body and its scratch layout, not just its launch
+geometry. The plan asks for it "only with def2 evidence"; the def2 evidence now
+exists (a 1.44x GPU tuning win on a *width* search alone), so the case for
+trying it is stronger than it was — but it is a kernel change with its own
+correctness gate, not a candidate to add to a list.
+
+### 7.6 Three defects found on the way
+
+None is in the def2 path; all three were exposed by pointing existing
+instruments at angular momenta and geometries nothing had used before.
+
+1. **The inline extended Rys entry skipped the vendor's small-x branch.**
+   `rys_roots_ext_dev` fell through to the moment recursion below
+   `x <= 3e-7`, where it is ill-conditioned: 1.5e-10 relative at `nroots = 6`,
+   3.6 — 360% — at 12. Reachable from ordinary work, because a single-centre
+   quartet has `x = 0` exactly; the def2-TZVP `(f f | f f)` block on oxygen
+   missed libcint by 6.5e-11, 65x the project tolerance. **Fixed** in this work;
+   the worst same-centre TZVP error is now 7.8e-16.
+
+2. **`int3c1e_p2` evaluates `int3c1e`.** The `p2` operator is not applied at all
+   — 1500/1500 elements bit-identical to the plain integral, at every angular
+   momentum tested. It survived because the only fixture it has ever been
+   evaluated on puts all shells on one centre at `l = (0, 1, 0)`, where both
+   sides are identically zero. **Not fixed**; recorded in
+   `crates/cintx-oracle/tests/int3c1e_p2_operator_defect.rs`.
+
+3. **The spinor transform panics above `l = 4`.** `cart_to_spinor_sf_2d`
+   `panic!`s rather than returning a typed refusal, reachable from `eval_raw`.
+   `SPHERIC_L_MAX` exists because the spherical transform had the same shape of
+   gap; the spinor side has the same finite table and no such constant. **Not
+   fixed**; recorded in
+   `crates/cintx-oracle/tests/spinor_l_max_panic_defect.rs`.
+
+The common cause is worth stating on its own: **the whole-manifest oracle matrix
+runs at `l <= 1`, on one atom, at one geometry.** Everything above that is
+covered only where a family has its own dedicated test. Defects 2 and 3 were
+both found by the first fixture set to leave that corner, and the def2 samplers
+had to be narrowed four times — by family, by component rank, by representation
+and by symbol — to get past capability limits nothing had exercised. A
+high-angular-momentum sampler for the whole manifest is the obvious next piece
+of work, and it is a project, not a follow-up.

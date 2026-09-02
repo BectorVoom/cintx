@@ -215,11 +215,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_drinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_drinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_drinv_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -419,11 +453,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 360,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_gnuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 18,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_gnuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 210,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_gnuc_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -521,11 +589,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 360,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ia01p_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 18,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_ia01p_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 210,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ia01p_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -623,11 +725,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 360,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ignuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 18,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_ignuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 210,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ignuc_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -1575,11 +1711,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipnuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_ipnuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipnuc_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -1779,11 +1949,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ippnucp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_ippnucp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ippnucp_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -1881,11 +2085,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_ipprinvp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_ipprinvp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_ipprinvp_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -1983,11 +2221,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_iprinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_iprinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_iprinv_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -2255,11 +2527,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 60,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_nuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 3,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_nuc_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 35,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_nuc_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -2408,11 +2714,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 60,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_pnucp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 3,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_pnucp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 35,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_pnucp_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -2459,11 +2799,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 60,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_prinvp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 3,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_prinvp_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 35,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_prinvp_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -2816,11 +3190,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 60,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int1e_rinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 3,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int1e_rinv_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "1e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 35,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int1e_rinv_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -3462,6 +3870,40 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 60,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 60,
+      "nroots_class": "def2hi_omega_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 3,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
@@ -3479,11 +3921,79 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_omega_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int2c2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_omega_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_ip1_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -3581,11 +4091,79 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 180,
+      "nroots_class": "def2hi_omega_nroots_3",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2c2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_2",
       "representation": "cart",
       "status": "pass",
       "symbol": "int2c2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 105,
+      "nroots_class": "def2hi_omega_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_ip2_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -3666,6 +4244,40 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 35,
+      "nroots_class": "def2hi_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 35,
+      "nroots_class": "def2hi_omega_nroots_3",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2c2e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 3,
       "nroots_class": "nroots_1_2",
       "representation": "spheric",
@@ -3700,6 +4312,40 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 12600,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 12600,
+      "nroots_class": "def2hi_omega_nroots_7",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_5",
       "representation": "cart",
@@ -3717,11 +4363,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 75600,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_g1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 54,
       "nroots_class": "nroots_1_5",
       "representation": "cart",
       "status": "pass",
       "symbol": "int2e_g1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 16170,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_g1_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -3870,11 +4550,45 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 75600,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ig1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 54,
       "nroots_class": "nroots_1_5",
       "representation": "cart",
       "status": "pass",
       "symbol": "int2e_ig1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 16170,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ig1_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -3921,11 +4635,79 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 37800,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 37800,
+      "nroots_class": "def2hi_omega_nroots_7",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 27,
       "nroots_class": "nroots_1_5",
       "representation": "cart",
       "status": "pass",
       "symbol": "int2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 8085,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 8085,
+      "nroots_class": "def2hi_omega_nroots_7",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip1_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -4159,11 +4941,79 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 37800,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 37800,
+      "nroots_class": "def2hi_omega_nroots_7",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 27,
       "nroots_class": "nroots_1_5",
       "representation": "cart",
       "status": "pass",
       "symbol": "int2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 8085,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 8085,
+      "nroots_class": "def2hi_omega_nroots_7",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_ip2_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -4584,6 +5434,40 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 2695,
+      "nroots_class": "def2hi_nroots_7",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 2695,
+      "nroots_class": "def2hi_omega_nroots_7",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int2e_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_5",
       "representation": "spheric",
@@ -4839,91 +5723,6 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
-      "n_elements": 27,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_stg_ip1_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 81,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_stg_ip1ip2_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 81,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_stg_ipip1_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 81,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_stg_ipvip1_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_stg_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
       "n_elements": 288,
       "nroots_class": "nroots_1_5",
       "representation": "spinor",
@@ -4980,91 +5779,6 @@
       "representation": "spinor",
       "status": "pass",
       "symbol": "int2e_vsp1vsp2_spinor"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 27,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_yp_ip1_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 81,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_yp_ip1ip2_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 81,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_yp_ipip1_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 81,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_yp_ipvip1_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "2e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int2e_yp_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -5264,6 +5978,40 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 1260,
+      "nroots_class": "def2hi_nroots_6",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1260,
+      "nroots_class": "def2hi_omega_nroots_6",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 3,
       "nroots_class": "nroots_1_4",
       "representation": "cart",
@@ -5281,11 +6029,79 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 3780,
+      "nroots_class": "def2hi_nroots_6",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3780,
+      "nroots_class": "def2hi_omega_nroots_6",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_4",
       "representation": "cart",
       "status": "pass",
       "symbol": "int3c2e_ip1_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1155,
+      "nroots_class": "def2hi_nroots_6",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ip1_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1155,
+      "nroots_class": "def2hi_omega_nroots_6",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ip1_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -5383,11 +6199,79 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
+      "n_elements": 3780,
+      "nroots_class": "def2hi_nroots_6",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 3780,
+      "nroots_class": "def2hi_omega_nroots_6",
+      "representation": "cart",
+      "status": "pass",
+      "symbol": "int3c2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
       "n_elements": 9,
       "nroots_class": "nroots_1_4",
       "representation": "cart",
       "status": "pass",
       "symbol": "int3c2e_ip2_cart"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1155,
+      "nroots_class": "def2hi_nroots_6",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ip2_sph"
+    },
+    {
+      "applied_atol": 1e-12,
+      "applied_rtol": 1e-12,
+      "backend": "cpu",
+      "family": "3c2e",
+      "headroom": {
+        "abs": null,
+        "rel": null
+      },
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "n_elements": 1155,
+      "nroots_class": "def2hi_omega_nroots_6",
+      "representation": "spheric",
+      "status": "pass",
+      "symbol": "int3c2e_ip2_sph"
     },
     {
       "applied_atol": 1e-12,
@@ -5570,8 +6454,8 @@
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
-      "n_elements": 3,
-      "nroots_class": "nroots_1_4",
+      "n_elements": 385,
+      "nroots_class": "def2hi_nroots_6",
       "representation": "spheric",
       "status": "pass",
       "symbol": "int3c2e_sph"
@@ -5580,126 +6464,24 @@
       "applied_atol": 1e-12,
       "applied_rtol": 1e-12,
       "backend": "cpu",
-      "family": "4c1e",
+      "family": "3c2e",
       "headroom": {
         "abs": null,
         "rel": null
       },
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_3",
-      "representation": "cart",
-      "status": "pass",
-      "symbol": "int4c1e_cart"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "4c1e",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_3",
+      "n_elements": 385,
+      "nroots_class": "def2hi_omega_nroots_6",
       "representation": "spheric",
       "status": "pass",
-      "symbol": "int4c1e_sph"
+      "symbol": "int3c2e_sph"
     },
     {
       "applied_atol": 1e-12,
       "applied_rtol": 1e-12,
       "backend": "cpu",
-      "family": "unstable::source::breit",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 288,
-      "nroots_class": "nroots_1_5",
-      "representation": "spinor",
-      "status": "skipped",
-      "symbol": "int2e_breit_r1p2_spinor"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::breit",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 288,
-      "nroots_class": "nroots_1_5",
-      "representation": "spinor",
-      "status": "skipped",
-      "symbol": "int2e_breit_r2p2_spinor"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::grids",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int1e_grids_ip_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::grids",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 27,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int1e_grids_ipip_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::grids",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 27,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int1e_grids_ipvip_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::grids",
+      "family": "3c2e",
       "headroom": {
         "abs": null,
         "rel": null
@@ -5707,233 +6489,37 @@
       "max_abs_error": 0.0,
       "max_rel_error": 0.0,
       "n_elements": 3,
-      "nroots_class": "nroots_1_5",
+      "nroots_class": "nroots_1_4",
       "representation": "spheric",
       "status": "pass",
-      "symbol": "int1e_grids_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::grids",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 12,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int1e_grids_spvsp_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origi",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int1e_r2_origi_ip2_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origi",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 3,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int1e_r2_origi_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origi",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int1e_r4_origi_ip2_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origi",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 3,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int1e_r4_origi_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origk",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int3c1e_ip1_r2_origk_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origk",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int3c1e_ip1_r4_origk_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origk",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 9,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int3c1e_ip1_r6_origk_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origk",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 3,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int3c1e_r2_origk_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origk",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 3,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int3c1e_r4_origk_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::origk",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 3,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int3c1e_r6_origk_sph"
-    },
-    {
-      "applied_atol": 1e-12,
-      "applied_rtol": 1e-12,
-      "backend": "cpu",
-      "family": "unstable::source::ssc",
-      "headroom": {
-        "abs": null,
-        "rel": null
-      },
-      "max_abs_error": 0.0,
-      "max_rel_error": 0.0,
-      "n_elements": 3,
-      "nroots_class": "nroots_1_5",
-      "representation": "spheric",
-      "status": "pass",
-      "symbol": "int3c2e_sph_ssc"
+      "symbol": "int3c2e_sph"
     }
   ],
   "measurement": {
+    "comparison": "raw_api_vs_legacy_wrapper",
+    "comparison_is_vendor": false,
+    "fixture_sets": [
+      "base",
+      "def2hi",
+      "def2hi_omega"
+    ],
     "perturbation": false,
     "profiles": [
-      "base",
-      "with-f12",
-      "with-4c1e",
-      "with-f12+with-4c1e",
-      "unstable-source"
+      "base"
+    ],
+    "vendor_envelope_source": [
+      "cintx_oracle::compare::verify_legacy_wrapper_parity (flat atol=1e-12, pass/fail)",
+      "crates/cintx-oracle/tests/ext_rys_*_parity.rs (extended Rys orders, vs vendored libcint 6.1.3)",
+      "crates/cintx-oracle/tests/rys_ext_inline_parity.rs (inline entry vs host dispatch, bit-identity)"
     ]
   },
   "summary": {
-    "evaluated_entries": 264,
+    "evaluated_entries": 300,
     "min_headroom_abs": "inf",
     "min_headroom_rel": "inf",
     "mismatched": 0,
-    "passed": 264,
-    "total_unique_entries": 348,
+    "passed": 300,
+    "total_unique_entries": 382,
     "worst_max_abs_error": 0.0,
     "worst_max_rel_error": 0.0
   },

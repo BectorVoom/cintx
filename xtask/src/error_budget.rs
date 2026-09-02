@@ -80,14 +80,53 @@ pub fn run_error_budget(
         profiles.iter().map(|s| s.as_str()).collect()
     };
 
-    let inputs = OracleRawInputs::sample();
+    // Three fixture sets, not one (`def2_speed_precision_plan.md` D4).
+    //
+    // `sample` carries `l = 0, 1, 0, 1`, so its 2e fixtures sit at Rys order 2
+    // and the budget was blind exactly where def2-TZVP is new. The def2-shaped
+    // samplers add orders 6 and 7 — one at `x = 0` on a same-centre pair and
+    // one in the large-x asymptotic arm — and the third crosses those with
+    // `env[PTR_RANGE_OMEGA]`, which is the newest feature against the newest.
+    //
+    // They are added rather than substituted: widening `sample` would move every
+    // number in the checked-in envelope at once, which is a ratchet reset
+    // dressed as a fixture change. Each sampler files its entries under its own
+    // `nroots_class` tag, so the keys cannot collide.
+    //
+    // The def2 sets need the extended device Rys path to be *in the binary*:
+    // their whole point is the `nroots` 6-7 classes, which without the feature
+    // are refused — correctly, fail-closed — rather than measured. A build
+    // without it drops them and says so, instead of reporting a sweep of
+    // refusals as a precision failure.
+    let mut samplers = vec![OracleRawInputs::sample()];
+    if cintx_cubecl::EXTENDED_DEVICE_RYS_COMPILED {
+        samplers.push(OracleRawInputs::def2_high_order());
+        samplers.push(OracleRawInputs::def2_high_order_range_separated());
+    } else {
+        println!(
+            "  NOTE: `extended-device-rys` is not compiled in, so the def2 high-order \
+             fixture sets are skipped — their nroots 6-7 classes would be refused, not \
+             measured. Build with --features extended-device-rys to include them."
+        );
+    }
     let mut entries_by_key: BTreeMap<String, BudgetEntry> = BTreeMap::new();
 
-    for &profile in &active_profiles {
-        println!("Evaluating precision error budget for profile `{profile}`...");
+    for (inputs, &profile) in samplers
+        .iter()
+        .flat_map(|inputs| active_profiles.iter().map(move |p| (inputs, p)))
+    {
+        println!(
+            "Evaluating precision error budget for profile `{profile}` on fixture set `{}`...",
+            inputs.tag()
+        );
         let include_unstable = profile == "unstable-source";
-        let report = generate_profile_parity_report(&inputs, profile, include_unstable)
-            .with_context(|| format!("generating parity report for profile `{profile}`"))?;
+        let report = generate_profile_parity_report(inputs, profile, include_unstable)
+            .with_context(|| {
+                format!(
+                    "generating parity report for profile `{profile}` on fixture set `{}`",
+                    inputs.tag()
+                )
+            })?;
 
         for f in report.fixtures {
             let mut max_abs = f.raw_vs_upstream.max_abs_error;
@@ -207,7 +246,29 @@ pub fn run_error_budget(
         "tolerance_policy": "unified_1e-12",
         "measurement": {
             "profiles": active_profiles,
+            "fixture_sets": samplers.iter().map(|i| i.tag()).collect::<Vec<_>>(),
             "perturbation": perturb_test,
+            // What the error columns actually compare. Not the vendor: `raw` is
+            // `cintx_compat::raw::eval_raw` and `upstream` is
+            // `cintx_compat::legacy`'s `cint*` wrapper for the same symbol —
+            // two cintx entry points onto the same kernel. Every entry is
+            // therefore 0.0 with infinite headroom, and has been since the
+            // budget was introduced.
+            //
+            // That makes this a *path-equivalence* envelope, which is worth
+            // having — the raw and legacy surfaces must not drift — but it is
+            // not the cintx-vs-libcint envelope the name suggests, and
+            // `--check-headroom` cannot fire on it. The vendor comparison lives
+            // in `verify_legacy_wrapper_parity` (pass/fail at a flat 1e-12) and
+            // in the per-family oracle parity gates, which do record measured
+            // divergences.
+            "comparison": "raw_api_vs_legacy_wrapper",
+            "comparison_is_vendor": false,
+            "vendor_envelope_source": [
+                "cintx_oracle::compare::verify_legacy_wrapper_parity (flat atol=1e-12, pass/fail)",
+                "crates/cintx-oracle/tests/ext_rys_*_parity.rs (extended Rys orders, vs vendored libcint 6.1.3)",
+                "crates/cintx-oracle/tests/rys_ext_inline_parity.rs (inline entry vs host dispatch, bit-identity)",
+            ],
         },
         "summary": {
             "total_unique_entries": all_entries.len(),
@@ -231,6 +292,10 @@ pub fn run_error_budget(
 
     if check_headroom {
         let baseline = load_baseline(baseline_path)?;
+        // Only entries this build *produced* are checked. A recorded entry the
+        // run did not reach is not a regression — most often it is a def2
+        // high-order row in a build without `extended-device-rys` — and
+        // treating it as one would make the ratchet fire on a feature flag.
         for entry in &evaluated_entries {
             let Some(recorded) = baseline.get(&entry.key()) else {
                 failures.push(format!("missing recorded budget entry for {}", entry.key()));
@@ -288,6 +353,18 @@ pub fn run_error_budget(
     let date_str = "2026-08-30";
     let mut md = String::new();
     md.push_str(&format!("# Precision Error Budget Report ({date_str})\n\n"));
+    md.push_str("## What the error columns compare\n\n");
+    md.push_str(
+        "`max_abs_error` and `max_rel_error` are **`eval_raw` against the `cint*` legacy \
+         wrapper for the same symbol** — two cintx entry points onto one kernel — not cintx \
+         against vendored libcint. They are consequently 0.0 with infinite headroom \
+         throughout, and `--check-headroom` cannot fire on them. Read this table as a \
+         path-equivalence envelope: it says the raw and legacy surfaces have not drifted \
+         apart, which is a real property and not the one the word *precision* suggests.\n\n\
+         The cintx-vs-libcint envelope is measured by `verify_legacy_wrapper_parity` (flat \
+         `atol = 1e-12`, pass/fail) and by the per-family oracle parity gates, including \
+         `ext_rys_*_parity` for the extended Rys orders.\n\n",
+    );
     md.push_str("## Executive Summary\n\n");
     md.push_str(&format!(
         "- **Tolerance Model**: Unified `atol = 1.0e-12`, `rtol = 1.0e-12` across all families.\n\
