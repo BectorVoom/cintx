@@ -288,15 +288,16 @@ impl RysFamily {
     /// Has this family been flipped onto the inline extended Rys entry
     /// (`math::rys_wheeler::rys_roots_ext_dev`)?
     ///
-    /// The list grows one entry per commit in task 33-03, in the order the plan
-    /// sets by workload weight: `int3c2e` (which unblocks def2-TZVP + def2/J
-    /// RI-J), then `int2e`, `int2c2e`, `int1e_*`. Each entry is added in the
+    /// The list grew one entry per commit in task 33-03, in the order the plan
+    /// set by workload weight: `int3c2e` (which unblocks def2-TZVP + def2/J
+    /// RI-J), then `int2e`, `int2c2e`, `int1e_*`, and finally the derivative
+    /// sets under `def2_speed_precision_plan.md` D1. Each entry landed in the
     /// same commit as the parity gate that justifies it.
     #[must_use]
     pub const fn runs_extended_rys(self) -> bool {
         matches!(
             self,
-            Self::Int3c2e | Self::Int2e | Self::Int2c2e | Self::Int1e
+            Self::Int3c2e | Self::Int3c2eDeriv | Self::Int2e | Self::Int2c2e | Self::Int1e
         )
     }
 
@@ -406,7 +407,7 @@ mod tests {
     /// somewhere else — and gives the per-family gates one place to read from
     /// instead of each guessing which of its neighbours is still unflipped.
     #[test]
-    fn the_flipped_set_is_exactly_the_four_scalar_families() {
+    fn the_flipped_set_is_exactly_the_gated_families() {
         let flipped: Vec<&str> = [
             RysFamily::Int3c2e,
             RysFamily::Int3c2eDeriv,
@@ -419,7 +420,10 @@ mod tests {
         .filter(|f| f.runs_extended_rys())
         .map(RysFamily::name)
         .collect();
-        assert_eq!(flipped, ["int3c2e", "int2e", "int2c2e", "int1e"]);
+        assert_eq!(
+            flipped,
+            ["int3c2e", "int3c2e-deriv", "int2e", "int2c2e", "int1e"]
+        );
     }
 
     /// **The per-family gate.** A family that has not been flipped keeps the

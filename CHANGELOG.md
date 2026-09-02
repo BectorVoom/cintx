@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the 3c2e derivative set on the extended device Rys path (2026-09-02)
+
+`docs/design/def2_speed_precision_plan.md` D1.1. `int3c2e` was flipped onto the inline
+Wheeler/Jacobi entry in task 33-03; its derivative set was left behind and used, in three
+sibling gates, as the live proof that the ceiling really is per family. The cost of leaving
+it there was concrete: the derivative shape raises the bra (`ip1`) or the real auxiliary
+(`ip2`) by one, so `nroots = (li + lj + lk + 1) / 2 + 1` crosses 5 one class **earlier**
+than the scalar family does. An RI-J *gradient* list was therefore refusing triples whose
+`int3c2e` energy counterparts had been running on the device since 33-03 — H2O/def2-TZVP
+against def2/J reaches order 6 on exactly those.
+
+- **`center_3c2e_ip1_kernel` and `center_3c2e_ip2_kernel`** take the extended-Rys constant
+  table, size `urys`/`wrys` by `ext_rys_slots(nroots)` instead of a literal 5, and gain the
+  `nroots >= 6` arm that casts the f64 double-double roots back into `F`. This is the same
+  edit the scalar 3c2e kernel carries, in the same shape.
+- **`run_3c2e_deriv_batches`** uploads the table once per dispatch and enumerates the
+  6..=12 launch arms under the feature. The arms are spelled out rather than folded because
+  the `_` arm must never become a silent clamp to order 5 for a class above it — that is
+  the failure this whole per-family mechanism exists to prevent.
+- **The per-tuple path's ceiling was a hardcoded `5`.** `launch_center_3c2e_ip1` and
+  `_ip2` now ask `device_nroots_ceiling(backend, Int3c2eDeriv)`, so the two entry points
+  agree on one answer instead of two.
+- **`RysFamily::Int3c2eDeriv` joins the flipped list**, in this commit, with the gate that
+  justifies it — the established one-flip-one-gate pattern.
+
+`ext_rys_3c2e_deriv_parity` is that gate: the ceiling precondition (raised for the 3c2e
+derivatives, still base for the 1e ones, in the same build), the RI-J gradient lists over
+def2/J and def2/JK through both the batch and per-tuple routes, a synthetic sweep that
+reaches every extended order 6..=12 for both families, and the fail-closed refusal at 13
+where the vendor itself would need quadmath. The three sibling gates that named
+`Int3c2eDeriv` as their unflipped counterexample now name `Int1eDeriv`, which is the family
+that is still genuinely unflipped.
+
 ### Added — autotuned launch geometry with a persistent cache (2026-08-30)
 
 Every batched dispatch picked its cube width from a hand-fitted heuristic: `two_e_cube_dim`,

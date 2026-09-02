@@ -147,9 +147,9 @@ fn ext_rys_ceiling_is_raised_for_int2e() {
         EXTENDED_DEVICE_NROOTS
     );
     assert_eq!(
-        device_nroots_ceiling(&backend, RysFamily::Int3c2eDeriv),
+        device_nroots_ceiling(&backend, RysFamily::Int1eDeriv),
         BASE_DEVICE_NROOTS,
-        "the 3c2e derivative set has not been flipped and must keep the base ceiling"
+        "the 1e derivative set has not been flipped and must keep the base ceiling"
     );
 }
 

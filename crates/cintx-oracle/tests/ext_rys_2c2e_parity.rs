@@ -99,7 +99,7 @@ fn cpu_backend() -> ResolvedBackend {
     .expect("cpu backend")
 }
 
-/// The precondition, and its complement: `int2c2e` is flipped, the 3c2e
+/// The precondition, and its complement: `int2c2e` is flipped, the 1e
 /// derivative set is not, in the same build.
 #[test]
 fn ext_rys_ceiling_is_raised_for_int2c2e() {
@@ -109,9 +109,9 @@ fn ext_rys_ceiling_is_raised_for_int2c2e() {
         EXTENDED_DEVICE_NROOTS
     );
     assert_eq!(
-        device_nroots_ceiling(&backend, RysFamily::Int3c2eDeriv),
+        device_nroots_ceiling(&backend, RysFamily::Int1eDeriv),
         BASE_DEVICE_NROOTS,
-        "the 3c2e derivative set has not been flipped and must keep the base ceiling"
+        "the 1e derivative set has not been flipped and must keep the base ceiling"
     );
 }
 

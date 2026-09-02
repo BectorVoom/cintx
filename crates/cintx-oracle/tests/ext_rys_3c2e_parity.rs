@@ -143,21 +143,21 @@ fn high_order_triples(arrays: &RawArrays) -> Vec<[u32; 3]> {
 /// Without this the parity tests below would pass trivially by finding nothing
 /// to compare.
 ///
-/// The second half is the other side of the same claim: the 3c2e *derivative*
+/// The second half is the other side of the same claim: the 1e *derivative*
 /// set has not been flipped, and keeps the base ceiling in the very same build.
 /// Raising the ceiling for everyone at once is what made the then-unflipped
 /// `int2e` batch accept an `(f f | f f)` class and evaluate it at order 5.
 #[test]
-fn ext_rys_ceiling_is_raised_for_int3c2e_and_not_its_derivatives() {
+fn ext_rys_ceiling_is_raised_for_int3c2e_and_not_the_1e_derivatives() {
     let backend = cpu_backend();
     assert_eq!(
         device_nroots_ceiling(&backend, RysFamily::Int3c2e),
         EXTENDED_DEVICE_NROOTS
     );
     assert_eq!(
-        device_nroots_ceiling(&backend, RysFamily::Int3c2eDeriv),
+        device_nroots_ceiling(&backend, RysFamily::Int1eDeriv),
         BASE_DEVICE_NROOTS,
-        "the 3c2e derivative set has not been flipped and must keep the base ceiling"
+        "the 1e derivative set has not been flipped and must keep the base ceiling"
     );
 }
 

@@ -14,8 +14,8 @@
 //!
 //! `RysFamily::Int1e` covers `one_electron_scalar_kernel`. The one-electron
 //! *derivative* set — the nuclear gradient, `drinv`, the second-derivative and
-//! GIAO kernels — is `RysFamily::Int1eDeriv` and stays on the base ceiling,
-//! exactly as `Int3c2eDeriv` does. Those are six further kernels with their own
+//! GIAO kernels — is `RysFamily::Int1eDeriv` and stays on the base ceiling.
+//! Those are six further kernels with their own
 //! guards, and flipping them is a separate change with its own gate; nothing
 //! here silently drags them along, which is what
 //! [`ext_rys_ceiling_is_raised_for_scalar_int1e_only`] asserts.
