@@ -29,9 +29,21 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut rs_buffer = String::new();
     writeln!(rs_buffer, "// Generated manifest; do not edit.")?;
+    // Every `pub const` below carries `#[rustfmt::skip]`. This file is rewritten
+    // on *every* build but is tracked in git, so without the attribute `cargo fmt`
+    // reformats it and the next build writes it straight back: the tree is dirty
+    // one way or the other and `cargo fmt --all -- --check` can never pass. The
+    // same round-trip is what kept `gen-rys-tables --check` red (see the matching
+    // `RUSTFMT_SKIP` in `xtask::gen_rys_tables`). Skipping is the fix rather than
+    // matching rustfmt's output, because this buffer is assembled by `writeln!`
+    // and has no reason to reproduce rustfmt's line-breaking.
+    //
+    // The attribute must be the *outer* form on each item: a file-level
+    // `#![rustfmt::skip]` is an unstable custom inner attribute and does not
+    // compile on the pinned stable toolchain.
     writeln!(
         rs_buffer,
-        "pub const MANIFEST_SCHEMA_VERSION: u32 = {};",
+        "#[rustfmt::skip]\npub const MANIFEST_SCHEMA_VERSION: u32 = {};",
         lock.schema_version
     )?;
 
@@ -47,7 +59,10 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
             .join(", ");
         format!("&[{}]", joined)
     };
-    writeln!(rs_buffer, "pub const PROFILE_SCOPE_APPROVED: &[&str] =")?;
+    writeln!(
+        rs_buffer,
+        "#[rustfmt::skip]\npub const PROFILE_SCOPE_APPROVED: &[&str] ="
+    )?;
     writeln!(rs_buffer, "    {};", approved_literals)?;
 
     writeln!(rs_buffer, "use crate::resolver::{{")?;
@@ -59,7 +74,7 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(rs_buffer, "use cintx_core::OperatorId;")?;
     writeln!(
         rs_buffer,
-        "pub const MANIFEST_ENTRIES: &[ManifestEntry] = &["
+        "#[rustfmt::skip]\npub const MANIFEST_ENTRIES: &[ManifestEntry] = &["
     )?;
 
     for entry in &entries {
@@ -173,7 +188,7 @@ fn try_generate_manifest() -> Result<(), Box<dyn std::error::Error>> {
     writeln!(rs_buffer, "];")?;
     writeln!(
         rs_buffer,
-        "pub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &["
+        "#[rustfmt::skip]\npub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &["
     )?;
     for idx in 0..entries.len() {
         writeln!(rs_buffer, "    OperatorDescriptor {{")?;

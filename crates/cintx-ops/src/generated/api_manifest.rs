@@ -1,5 +1,7 @@
 // Generated manifest; do not edit.
+#[rustfmt::skip]
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
+#[rustfmt::skip]
 pub const PROFILE_SCOPE_APPROVED: &[&str] =
     &["base", "with-f12", "with-4c1e", "with-f12+with-4c1e", "unstable-source"];
 use crate::resolver::{
@@ -7,6 +9,7 @@ use crate::resolver::{
     UnsupportedPolicy,
 };
 use cintx_core::OperatorId;
+#[rustfmt::skip]
 pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
     ManifestEntry {
         family_name: "1e",
@@ -8540,6 +8543,7 @@ pub const MANIFEST_ENTRIES: &[ManifestEntry] = &[
         unsupported_policy: None,
     },
 ];
+#[rustfmt::skip]
 pub const OPERATOR_DESCRIPTORS: &[OperatorDescriptor] = &[
     OperatorDescriptor {
         id: OperatorId::new(0),

@@ -62,9 +62,14 @@ jobs:
               uses: dtolnay/rust-toolchain@master
               with:
                   toolchain: ${{ steps.rust.outputs.channel }}
+                  components: rustfmt
 
             - name: Cache Rust artifacts
               uses: Swatinem/rust-cache@v2
+
+            - name: Run formatting gate
+              run: |
+                  cargo fmt --all -- --check
 
             - name: Run manifest drift gate
               run: |
@@ -85,6 +90,11 @@ jobs:
             - name: Run cart-to-spinor table drift gate
               run: |
                   cargo run --manifest-path xtask/Cargo.toml --locked -- gen-c2spinor-table --check
+
+            - name: Run build-script manifest drift gate
+              run: |
+                  cargo build --locked -p cintx-ops
+                  git diff --exit-code -- crates/cintx-ops/src/generated
 
     oracle_parity_gate:
         name: oracle_parity_gate (${{ matrix.profile }})
