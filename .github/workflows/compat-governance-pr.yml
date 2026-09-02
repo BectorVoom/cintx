@@ -34,8 +34,8 @@ env:
     CINTX_REQUIRED_PROFILES: base,with-f12,with-4c1e,with-f12+with-4c1e
 
 jobs:
-    manifest_drift_gate:
-        name: manifest_drift_gate
+    formatting_gate:
+        name: formatting_gate
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
@@ -64,12 +64,41 @@ jobs:
                   toolchain: ${{ steps.rust.outputs.channel }}
                   components: rustfmt
 
-            - name: Cache Rust artifacts
-              uses: Swatinem/rust-cache@v2
-
             - name: Run formatting gate
               run: |
                   cargo fmt --all -- --check
+
+    manifest_drift_gate:
+        name: manifest_drift_gate
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Resolve pinned Rust channel
+              id: rust
+              run: |
+                  python <<'PY'
+                  import os
+                  import tomllib
+                  from pathlib import Path
+
+                  data = tomllib.loads(Path("rust-toolchain.toml").read_text())
+                  toolchain = data.get("toolchain", {})
+                  channel = toolchain.get("channel")
+                  if not channel:
+                      raise SystemExit("failed to resolve channel from rust-toolchain.toml")
+                  with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                      fh.write(f"channel={channel}\n")
+                  PY
+
+            - name: Install pinned Rust toolchain
+              uses: dtolnay/rust-toolchain@master
+              with:
+                  toolchain: ${{ steps.rust.outputs.channel }}
+
+            - name: Cache Rust artifacts
+              uses: Swatinem/rust-cache@v2
 
             - name: Run manifest drift gate
               run: |
