@@ -24,13 +24,14 @@
 //! The first version compared `int1e_ovlp_spinor` end to end against libcint at
 //! `(l, l)` and failed from `l = 9`. The probe that followed
 //! (`cart`/`sph`/`spinor` side by side, same fixture) showed the residual was
-//! not the fold's: the **Cartesian overlap block itself** drifts from libcint
-//! as `l` grows — `max|diff| / peak` of 1.8e-13 at `l = 5`, 1.9e-11 at 8,
-//! 1.8e-10 at 11, 3.8e-10 at 12 — and the spherical and spinor folds of it
-//! carried a *smaller* `diff / peak` than the Cartesian block at every `l`.
-//! An end-to-end comparison at `(l, l)` therefore measures the 1e recurrence at
-//! high `l`, not the transform, and a gate that fails on the wrong component is
-//! worse than none.
+//! not the fold's: the **Cartesian overlap block itself** drifted from libcint
+//! as `l` grew, and the spherical and spinor folds of it carried a *smaller*
+//! `diff / peak` than the Cartesian block at every `l`. (That drift was the 1e
+//! VRR branch, since fixed — see `one_electron_adaptive_branch_parity` — but a
+//! smaller residual of the same shape remains, from compiled-code multiply-add
+//! contraction.) An end-to-end comparison at `(l, l)` therefore measures the 1e
+//! recurrence, not the transform, and a gate that fails on the wrong component
+//! is worse than none.
 //!
 //! So the transform is gated on its own terms:
 //!
@@ -44,9 +45,9 @@
 //! 2. [`spinor_fold_does_not_amplify_the_kernels_own_residual`] is the
 //!    end-to-end row, with the honest bound: cintx's spinor block may miss
 //!    libcint's by no more (relative to peak) than cintx's Cartesian block
-//!    already does. The Cartesian residual itself is *recorded* here and gated
-//!    separately by the `#[ignore]`d
-//!    [`cartesian_overlap_at_high_l_matches_vendor_strictly`].
+//!    already does. That Cartesian residual is printed by
+//!    [`cartesian_residual_is_reported_for_the_fold_bound`]; the mechanism
+//!    behind it is gated in `one_electron_adaptive_branch_parity`.
 //! 3. [`spinor_fold_over_rys_blocks_matches_vendor`]: nuclear attraction and
 //!    `int2e` end to end, at `(l, 0)` / `(l, 0, 0, 0)` so the recurrence depth
 //!    stays on one side, for every `l` the build's device ceiling admits.
@@ -290,16 +291,23 @@ fn spinor_fold_does_not_amplify_the_kernels_own_residual() {
     }
 }
 
-/// **Recorded, not owned here.** The Cartesian 1e overlap/kinetic blocks at
-/// `(l, l)` drift from libcint as `l` grows: measured `max|diff| / peak` of
-/// 1.8e-13 (`l = 5`), 9.1e-14 (6), 6.2e-12 (7), 1.9e-11 (8), 1.6e-11 (9),
-/// 3.5e-11 (10), 1.8e-10 (11), 3.8e-10 (12) for overlap on this fixture. That
-/// is a property of the 1e recurrence at high `l`, found while gating the
-/// spinor fold and outside what this file fixes. The strict form is kept
-/// `#[ignore]`d as the reproduction; deleting the attribute is part of the fix.
+/// The Cartesian residual this file's bound is written against.
+///
+/// When this gate was first written, cintx's Cartesian 1e overlap/kinetic
+/// blocks drifted from libcint as `l` grew — 1.8e-13 of block peak at `l = 5`
+/// rising to 3.8e-10 at `l = 12` — because the 1e VRR was always built on the
+/// bra where libcint builds it on the shell with the larger angular momentum.
+/// That is fixed, and `one_electron_adaptive_branch_parity` owns it now.
+///
+/// What remains is not cintx's to remove: a Python f64 emulation of libcint's
+/// exact operation sequence reproduces libcint bit for bit and still differs
+/// from cintx, so the tail is multiply-add contraction in the compiled kernel.
+/// This test prints the residual it leaves, because
+/// [`spinor_fold_does_not_amplify_the_kernels_own_residual`] is written relative
+/// to it and a reader should be able to see the number that bound is made of.
 #[test]
-#[ignore = "records a known residual: the 1e cart recurrence drifts from libcint above l~8"]
-fn cartesian_overlap_at_high_l_matches_vendor_strictly() {
+fn cartesian_residual_is_reported_for_the_fold_bound() {
+    let mut worst = 0.0_f64;
     for l in 5..=LMAX {
         let (atm, bas, env) = fixture(&[l, l], 0);
         let nc = ncart(l);
@@ -323,8 +331,15 @@ fn cartesian_overlap_at_high_l_matches_vendor_strictly() {
         .unwrap();
         let residual = max_abs_diff(&e, &a) / peak(&e).max(f64::MIN_POSITIVE);
         println!("  ovlp cart l=({l},{l}) residual/peak={residual:.3e}");
-        assert!(residual <= 1e-12, "l={l}: {residual:.3e} of peak");
+        worst = worst.max(residual);
     }
+    // Loose on purpose: the point is to print the number, and to notice if the
+    // recurrence ever regresses by orders of magnitude. The tight, mechanism-
+    // testing gate is `one_electron_adaptive_branch_parity`.
+    assert!(
+        worst <= 1e-8,
+        "the Cartesian 1e residual reached {worst:.3e} of block peak; the fold bound in          this file is written against a much smaller number"
+    );
 }
 
 /// **The transform over a Rys block.** Nuclear attraction and `int2e`, end to

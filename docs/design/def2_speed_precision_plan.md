@@ -370,9 +370,11 @@ instruments at angular momenta and geometries nothing had used before.
    vendored source (`xtask gen-c2spinor-table`, drift-gated), `SPINOR_L_MAX = 12`
    is enforced at `Shell::try_new` like `SPHERIC_L_MAX`, and
    `spinor_high_l_parity` gates the fold against libcint at every new order.
-   Gating it surfaced one more residual, recorded there and not owned by the
-   fix: the Cartesian 1e overlap/kinetic recurrence drifts from libcint as `l`
-   grows (3.8e-10 of block peak at `l = 12`).
+   Gating it surfaced one more residual, **also fixed (2026-09-03)**: the
+   Cartesian 1e overlap/kinetic recurrence drifted from libcint as `l` grew
+   because the 1e VRR was always built on the bra, where libcint builds it on
+   whichever shell carries the larger angular momentum. See
+   `one_electron_adaptive_branch_parity`.
 
 The common cause is worth stating on its own: **the whole-manifest oracle matrix
 runs at `l <= 1`, on one atom, at one geometry.** Everything above that is

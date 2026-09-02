@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the 1e recurrence is built on the shell libcint builds it on (2026-09-03)
+
+`CINTinit_int1e_EnvVars` splits on `ibase = li_ceil > lj_ceil`, and `CINTg1e_ovlp` /
+`CINTg1e_nuc` build the vertical recurrence on whichever shell carries the larger *ceiling*
+angular momentum, transferring to the smaller one. cintx's scalar 1e kernel always built on
+the bra — its host reference said so outright: *"For simplicity we always VRR on bra (center
+i) then HRR to ket."*
+
+Same answer in exact arithmetic, differently rounded in f64, and the gap grows with `l`
+because the HRR's `G(i,j) = G(i+1,j-1) + rirj*G(i,j-1)` subtracts whenever `rirj` is negative.
+It showed up as a *direction*: `(12,5)` agreed with libcint to 1.1e-12 while its transpose
+`(5,12)` was 1.4e-10 out — the same integral, 127x worse for being written the other way
+round.
+
+Two things now match libcint operation for operation: the adaptive branch (VRR centre, HRR
+displacement sign, transfer depth, and the component-to-axis mapping — libcint's `di`/`dj`
+swap changes only which memory axis holds the recurrence, never the sequence of
+floating-point operations, so cintx keeps the VRR contiguous and swaps the *read index*
+instead), and the primitive pair data, which libcint forms as `aij = 1/(ai+aj)` once and
+reuses — `rij = ri + wj*(rj-ri)`, `eij = rr*ai*aj*aij` — rather than `(ai*ri + aj*rj)/aij`.
+
+Measured over the whole `li, lj = 0..=12` grid against vendored libcint, on centres in
+general position:
+
+| | worst `diff/peak` | improved >2x | worse >2x |
+|---|---|---|---|
+| overlap | 5.64e-11 → **1.54e-11** | 71 | 2 |
+| kinetic | 5.87e-09 → **3.58e-10** | 101 | 3 |
+
+with the best classes gaining 2000-4400x (`int1e_kin` at `(0,10)`: 1.7e-12 → 3.9e-16).
+
+**What is left is not cintx's to remove.** A Python f64 emulation of libcint's exact
+operation sequence reproduces libcint **bit for bit at every `l`**, and still differs from
+cintx — so the remainder is multiply-add contraction in the compiled kernel, which is codegen
+and differs per backend. Against a 60-digit mpmath reference both engines drift at high `l`
+(libcint itself is 1.8e-10 of block peak from exact at `l = 12`), so the goal was never to
+beat libcint but to round the way it does.
+
+`one_electron_adaptive_branch_parity` gates the mechanism rather than the noise floor: no
+`(li,lj)`/`(lj,li)` pair may disagree with libcint by more than 30x depending on orientation.
+Before, the worst orientation asymmetry was 833x (overlap) and 3670x (kinetic) with 76 pairs
+over 30x; now it is 19.4x and 17.5x with **none**.
+
+Scope: the scalar 1e kernel (`int1e_ovlp`, `int1e_kin`, `int1e_nuc` — all three share it).
+The six 1e *derivative* kernels still always build on the bra; the same treatment applies to
+them and is left as its own change, since each carries its own ceiling arithmetic and would
+need its own gate.
+
 ### Fixed — `gen-rys-tables --check` reported formatting as table drift (2026-09-03)
 
 The Rys drift gate had been failing on `main` since 2026-08-30, and CI's `manifest_drift_gate`

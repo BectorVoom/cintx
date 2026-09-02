@@ -368,9 +368,46 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
             nmax = li + lj + 2u32;
             lj_ext = lj + 2u32;
         }
-        // Stride between consecutive j-levels within an axis block.
+        // ── libcint's adaptive VRR/HRR branch ─────────────────────────────
+        //
+        // `CINTinit_int1e_EnvVars` (g1e.c) splits on
+        // `ibase = li_ceil > lj_ceil` and `CINTg1e_ovlp`/`CINTg1e_nuc` build the
+        // recurrence on whichever shell carries the larger *ceiling* angular
+        // momentum, transferring to the smaller one. `li_ceil` is `li` for all
+        // three scalar arms; `lj_ceil` is `lj + 2` for kinetic (libcint's
+        // `ng[JINC] = 2` in autocode/intor1.c) and `lj` otherwise — which is
+        // exactly what `lj_ext` already holds.
+        //
+        // Building on the wrong side is not a different answer, it is a
+        // differently-rounded one, and the error grows with `l`. Measured
+        // against a 60-digit mpmath reference on an `(l, l)` Cartesian overlap:
+        // always-VRR-on-bra drifted from libcint by 3.8e-10 of the block peak at
+        // `l = 12` and 1.9e-11 at `l = 8`, where a matching branch sits at
+        // ~1e-13. Both engines lose accuracy at high `l` — libcint is itself
+        // 1.8e-10 from exact at `l = 12` — so the goal is not to be *better*
+        // than the reference but to round the same way it does, which is what
+        // result compatibility means here.
+        let li_ceil = li;
+        let lj_ceil = lj_ext;
+        let ibase = li_ceil > lj_ceil;
+
+        // How many HRR levels the transfer runs — and so how wide the block's
+        // second axis is.
+        let mut hrr_levels = li_ceil;
+        if ibase {
+            hrr_levels = lj_ceil;
+        }
+
+        // Stride between consecutive HRR levels within an axis block.
+        //
+        // The VRR stays *contiguous* whichever branch is taken. libcint swaps
+        // `di`/`dj` so the recurrence runs along the other memory axis, but that
+        // only changes which slot each value lands in — the sequence of
+        // floating-point operations is identical either way. Keeping the VRR
+        // contiguous and swapping the read index in the gout below is therefore
+        // bit-faithful to libcint and leaves the recurrence helpers untouched.
         let dj = nmax + 1u32;
-        let g_per_axis = (nmax + 1u32) * (lj_ext + 1u32);
+        let g_per_axis = (nmax + 1u32) * (hrr_levels + 1u32);
         let gx = gbase;
         let gy = gbase + g_per_axis;
         let gz = gbase + 2u32 * g_per_axis;
@@ -395,6 +432,37 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
         let rjy = centers[(cj3 + 1u32) as usize];
         let rjz = centers[(cj3 + 2u32) as usize];
 
+        // `rx` in `CINTg1e_ovlp`: the centre the VRR is built from.
+        let mut vrr_rx = rjx;
+        let mut vrr_ry = rjy;
+        let mut vrr_rz = rjz;
+        // `envs->rirj`, whose sign flips with the branch so the HRR body stays
+        // the one expression (`g[n] = g[n+di-dj] + rirj * g[n-dj]`).
+        let mut hrr_dx = rjx - rix;
+        let mut hrr_dy = rjy - riy;
+        let mut hrr_dz = rjz - riz;
+        if ibase {
+            vrr_rx = rix;
+            vrr_ry = riy;
+            vrr_rz = riz;
+            hrr_dx = rix - rjx;
+            hrr_dy = riy - rjy;
+            hrr_dz = riz - rjz;
+        }
+
+        // Which memory axis each component indexes. The VRR axis is the
+        // contiguous one, so under `ibase` the bra rides it and the ket is
+        // strided; otherwise the roles swap. These are libcint's `g_stride_i`
+        // and `g_stride_j` seen from the other side of its `di`/`dj` swap, and
+        // they are what the gout below and the kinetic second derivative (which
+        // differentiates the *ket*) index with.
+        let mut i_stride = dj;
+        let mut j_stride = 1u32;
+        if ibase {
+            i_stride = 1u32;
+            j_stride = dj;
+        }
+
         let out_total = nctr_i * nctr_j * block_len;
 
         // Zero this pair's accumulation block across the slot's lanes.
@@ -417,17 +485,40 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
             while pj < nprim_j {
                 let aj = exps[(eoff_j + pj) as usize];
 
-                // Pair data, computed in-kernel in F (norm_i = norm_j = 1.0).
+                // Pair data, computed in-kernel in F (norm_i = norm_j = 1.0),
+                // in libcint's own association.
+                //
+                // `CINTset_pairdata` (optimizer.c:320-333) forms the reciprocal
+                // *once* and reuses it:
+                //
+                // ```c
+                // aij = 1/(ai[ip] + aj[jp]);
+                // eij = rr_ij * ai[ip] * aj[jp] * aij;
+                // wj  = aj[jp] * aij;
+                // pdata->rij[0] = ri[0] + wj * (rj[0]-ri[0]);
+                // pdata->eij    = exp(-eij);
+                // ```
+                //
+                // The obvious rewrites — `(ai*ri + aj*rj)/aij` for the centre,
+                // `ai*aj/aij*rr` for the exponent — are the same value in exact
+                // arithmetic and a different one in f64. That last bit is then
+                // the seed of a degree-`nmax` recurrence: on an `(l, l)`
+                // Cartesian overlap it left cintx 4.1e-10 of the block peak from
+                // libcint at `l = 12`, where matching the association brings it
+                // to ~1e-13. `aij2 = .5 / aij` stays a true division because
+                // that is what `CINTg1e_ovlp` writes.
                 let zeta = ai + aj;
                 let aij2 = F::new(0.5_f32) / zeta;
+                let aij_inv = F::new(1.0_f32) / zeta;
                 let rirjx = rix - rjx;
                 let rirjy = riy - rjy;
                 let rirjz = riz - rjz;
                 let rr = rirjx * rirjx + rirjy * rirjy + rirjz * rirjz;
-                let fac = F::exp(-ai * aj / zeta * rr);
-                let px = (ai * rix + aj * rjx) / zeta;
-                let py = (ai * riy + aj * rjy) / zeta;
-                let pz = (ai * riz + aj * rjz) / zeta;
+                let fac = F::exp(-(rr * ai * aj * aij_inv));
+                let wj = aj * aij_inv;
+                let px = rix + wj * (rjx - rix);
+                let py = riy + wj * (rjy - riy);
+                let pz = riz + wj * (rjz - riz);
 
                 let prim_weight_1e = if is_uncontracted_1e {
                     coeffs[(coff_i + pi) as usize] * coeffs[(coff_j + pj) as usize]
@@ -443,16 +534,16 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                             g[gy as usize] = F::new(1.0_f32);
                             g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
 
-                            // VRR on bra (center i): rijrx = P - Ri, per axis sub-block.
-                            one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
-                            one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
-                            one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+                            // VRR from the branch's centre: rijrx = P - rx.
+                            one_electron_vrr_axis::<F>(g, gx, px - vrr_rx, aij2, nmax);
+                            one_electron_vrr_axis::<F>(g, gy, py - vrr_ry, aij2, nmax);
+                            one_electron_vrr_axis::<F>(g, gz, pz - vrr_rz, aij2, nmax);
 
-                            // HRR to ket center on all 3 axes: rirj = Ri - Rj.
-                            if lj >= 1u32 {
-                                one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj);
-                                one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
-                                one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
+                            // HRR to the other centre on all 3 axes.
+                            if hrr_levels >= 1u32 {
+                                one_electron_hrr_axis::<F>(g, gx, hrr_dx, dj, nmax, hrr_levels);
+                                one_electron_hrr_axis::<F>(g, gy, hrr_dy, dj, nmax, hrr_levels);
+                                one_electron_hrr_axis::<F>(g, gz, hrr_dz, dj, nmax, hrr_levels);
                             }
                         } else {
                             // ===== KINETIC: overlap G-tensor with lj+2 HRR levels =====
@@ -460,15 +551,16 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                             g[gy as usize] = F::new(1.0_f32);
                             g[gz as usize] = fac * sqrtpi * pi_const / (zeta * F::sqrt(zeta));
 
-                            one_electron_vrr_axis::<F>(g, gx, px - rix, aij2, nmax);
-                            one_electron_vrr_axis::<F>(g, gy, py - riy, aij2, nmax);
-                            one_electron_vrr_axis::<F>(g, gz, pz - riz, aij2, nmax);
+                            one_electron_vrr_axis::<F>(g, gx, px - vrr_rx, aij2, nmax);
+                            one_electron_vrr_axis::<F>(g, gy, py - vrr_ry, aij2, nmax);
+                            one_electron_vrr_axis::<F>(g, gz, pz - vrr_rz, aij2, nmax);
 
-                            // HRR to lj_ext = lj+2 levels.
-                            if lj_ext >= 1u32 {
-                                one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj_ext);
-                                one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj_ext);
-                                one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj_ext);
+                            // HRR to `hrr_levels`; for kinetic the ket ceiling
+                            // is `lj + 2`, so `ibase` is `li > lj + 2`.
+                            if hrr_levels >= 1u32 {
+                                one_electron_hrr_axis::<F>(g, gx, hrr_dx, dj, nmax, hrr_levels);
+                                one_electron_hrr_axis::<F>(g, gy, hrr_dy, dj, nmax, hrr_levels);
+                                one_electron_hrr_axis::<F>(g, gz, hrr_dz, dj, nmax, hrr_levels);
                             }
                         }
                     }
@@ -502,25 +594,31 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                         let mut val = F::new(0.0_f32);
                                         if comptime!(op_kind == 0u32) {
                                             // Overlap: vx*vy*vz from shared g.
-                                            let vx = g[(gx + jx * dj + ix) as usize];
-                                            let vy = g[(gy + jy * dj + iy) as usize];
-                                            let vz = g[(gz + jz * dj + iz) as usize];
+                                            let vx =
+                                                g[(gx + jx * j_stride + ix * i_stride) as usize];
+                                            let vy =
+                                                g[(gy + jy * j_stride + iy * i_stride) as usize];
+                                            let vz =
+                                                g[(gz + jz * j_stride + iz * i_stride) as usize];
                                             val = vx * vy * vz;
                                         } else {
                                             // Kinetic: T = -0.5*(g3x*g0y*g0z + ...)
-                                            let nx = jx * dj + ix;
-                                            let ny = jy * dj + iy;
-                                            let nz = jz * dj + iz;
+                                            let nx = jx * j_stride + ix * i_stride;
+                                            let ny = jy * j_stride + iy * i_stride;
+                                            let nz = jz * j_stride + iz * i_stride;
                                             let vx0 = g[(gx + nx) as usize];
                                             let vy0 = g[(gy + ny) as usize];
                                             let vz0 = g[(gz + nz) as usize];
 
-                                            let g3x =
-                                                one_electron_kin_d2::<F>(g, gx, nx, dj, jx, aj);
-                                            let g3y =
-                                                one_electron_kin_d2::<F>(g, gy, ny, dj, jy, aj);
-                                            let g3z =
-                                                one_electron_kin_d2::<F>(g, gz, nz, dj, jz, aj);
+                                            let g3x = one_electron_kin_d2::<F>(
+                                                g, gx, nx, j_stride, jx, aj,
+                                            );
+                                            let g3y = one_electron_kin_d2::<F>(
+                                                g, gy, ny, j_stride, jy, aj,
+                                            );
+                                            let g3z = one_electron_kin_d2::<F>(
+                                                g, gz, nz, j_stride, jz, aj,
+                                            );
                                             val = F::new(-0.5_f32)
                                                 * (g3x * vy0 * vz0
                                                     + vx0 * g3y * vz0
@@ -648,9 +746,9 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                     let tau = u_n / (F::new(1.0_f32) + u_n);
                                     let rt = aij2 * (F::new(1.0_f32) - tau);
 
-                                    let c00x = (px - rix) + tau * crijx;
-                                    let c00y = (py - riy) + tau * crijy;
-                                    let c00z = (pz - riz) + tau * crijz;
+                                    let c00x = (px - vrr_rx) + tau * crijx;
+                                    let c00y = (py - vrr_ry) + tau * crijy;
+                                    let c00z = (pz - vrr_rz) + tau * crijz;
 
                                     // Base case: gx=1, gy=1, gz=fac1*w_n
                                     g[gx as usize] = F::new(1.0_f32);
@@ -660,10 +758,16 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
                                     one_electron_vrr2e_axis::<F>(g, gx, c00x, rt, nmax);
                                     one_electron_vrr2e_axis::<F>(g, gy, c00y, rt, nmax);
                                     one_electron_vrr2e_axis::<F>(g, gz, c00z, rt, nmax);
-                                    if lj >= 1u32 {
-                                        one_electron_hrr_axis::<F>(g, gx, rirjx, dj, nmax, lj);
-                                        one_electron_hrr_axis::<F>(g, gy, rirjy, dj, nmax, lj);
-                                        one_electron_hrr_axis::<F>(g, gz, rirjz, dj, nmax, lj);
+                                    if hrr_levels >= 1u32 {
+                                        one_electron_hrr_axis::<F>(
+                                            g, gx, hrr_dx, dj, nmax, hrr_levels,
+                                        );
+                                        one_electron_hrr_axis::<F>(
+                                            g, gy, hrr_dy, dj, nmax, hrr_levels,
+                                        );
+                                        one_electron_hrr_axis::<F>(
+                                            g, gz, hrr_dz, dj, nmax, hrr_levels,
+                                        );
                                     }
                                 }
                                 if comptime!(per_unit == 0u32) {
@@ -693,9 +797,12 @@ fn one_electron_scalar_kernel<F: Float + CubeElement>(
 
                                                 let elem_idx = cj_idx * nci + ci_idx;
                                                 if ((elem_idx as u32) % lanes) == lane {
-                                                    let vx = g[(gx + jx * dj + ix) as usize];
-                                                    let vy = g[(gy + jy * dj + iy) as usize];
-                                                    let vz = g[(gz + jz * dj + iz) as usize];
+                                                    let vx = g[(gx + jx * j_stride + ix * i_stride)
+                                                        as usize];
+                                                    let vy = g[(gy + jy * j_stride + iy * i_stride)
+                                                        as usize];
+                                                    let vz = g[(gz + jz * j_stride + iz * i_stride)
+                                                        as usize];
                                                     let val = vx * vy * vz;
 
                                                     let mut ci = 0u32;
